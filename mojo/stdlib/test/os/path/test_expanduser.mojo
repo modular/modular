@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,28 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.env import getenv, setenv
-from os.path import expanduser, join
-from sys.info import CompilationTarget
+import std.os
+from std.os.env import getenv, setenv
+from std.os.path import expanduser, join
+from std.sys.info import CompilationTarget
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-fn get_user_path() -> String:
+def get_user_path() -> String:
     return "/home/user"
 
 
-fn get_current_home() -> String:
+def get_current_home() -> String:
     return getenv("HOME")
 
 
-def set_home(path: String):
-    _ = os.env.setenv("HOME", path)
+def set_home(path: String) raises:
+    _ = std.os.env.setenv("HOME", path)
 
 
-def test_expanduser():
-    alias user_path = get_user_path()
+def test_expanduser() raises:
+    comptime user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
 
@@ -60,5 +60,5 @@ def test_expanduser():
     set_home(original_home)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_bit_width
-from sys.info import CompilationTarget
+from std.sys import simd_bit_width
+from std.sys.info import CompilationTarget
 
-from testing import assert_equal, assert_false, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_false, assert_true
+from std.testing import TestSuite
 
 
-def test_arch_query():
+def test_arch_query() raises:
     assert_true(CompilationTarget.has_neon())
 
     assert_equal(simd_bit_width(), 128)
@@ -26,5 +26,5 @@ def test_arch_query():
     assert_false(CompilationTarget.has_avx512f())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,0 +1,66 @@
+load("//bazel:api.bzl", "modular_sphinx_docs", "modular_versioned_expand_template")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_sphinx_docs(
+    name = "python-api-docs",
+    srcs = ["//max/python/docs:python-api-rst"],
+    builder = "markdown",
+    config_file = ":python-conf-py",
+    data = [
+        ":python-api-templates",
+        "@numpy-objects-inv",
+        "@python-objects-inv",
+    ],
+    tags = ["skip-remote-macos"],
+)
+
+modular_sphinx_docs(
+    name = "cli-docs",
+    srcs = ["//max/python/docs:cli-rst"],
+    builder = "markdown",
+    config_file = ":cli-conf-py",
+    tags = ["skip-remote-macos"],
+)
+
+modular_versioned_expand_template(
+    name = "python-conf-py",
+    out = "conf.py",
+    data = [
+        "@numpy-objects-inv",
+        "@python-objects-inv",
+    ],
+    substitutions = {
+        "PYTHON_OBJECTS_INV": "$(location @python-objects-inv)",
+        "NUMPY_OBJECTS_INV": "$(location @numpy-objects-inv)",
+    },
+    template = ":conf.py.in",
+)
+
+modular_versioned_expand_template(
+    name = "cli-conf-py",
+    out = "cli/conf.py",
+    substitutions = {},
+    template = ":cli/conf.py.in",
+)
+
+filegroup(
+    name = "python-api-rst",
+    srcs = glob(
+        ["**/*.rst"],
+        exclude = [
+            "cli/**",
+            "_templates/**",
+        ],
+    ),
+)
+
+filegroup(
+    name = "python-api-templates",
+    srcs = glob(["_templates/**"]),
+)
+
+filegroup(
+    name = "cli-rst",
+    srcs = glob(["cli/*.rst"]),
+)

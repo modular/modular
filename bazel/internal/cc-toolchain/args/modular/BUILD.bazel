@@ -31,6 +31,7 @@ cc_args(
         "//:modular_config_ci_build": [
             "-g0",
             "-O3",
+            "-Werror",
         ],
         "//:modular_config_release": [
             "-gline-tables-only",

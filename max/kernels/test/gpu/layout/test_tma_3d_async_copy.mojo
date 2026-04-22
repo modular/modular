@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,105 +11,103 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, grid_dim, thread_idx
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, grid_dim, thread_idx
 from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
-from testing import assert_equal
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    _idx_product,
+    create_tensor_tile,
+)
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.utils.index import Index, IndexList
 
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn test_tma_3d_load_kernel[
+def test_tma_3d_load_kernel[
     dtype: DType,
     dst_layout: Layout,
-    cta_tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    cta_tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
     smem_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    tma_tile: TMATensorTile[dtype, cta_tile_layout, desc_layout],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    tma_tile: TMATensorTile[dtype, tile_rank, cta_tile_shape, desc_shape],
 ):
-    constrained[
-        cta_tile_layout.size() == smem_layout.size(),
-        "CTA Tile and SMEM tile should be the same size",
-    ]()
+    comptime assert (
+        _idx_product[tile_rank, cta_tile_shape]() == smem_layout.size()
+    ), "CTA Tile and SMEM tile should be the same size"
 
-    constrained[
-        cta_tile_layout == smem_layout,
-        "for these test cases cta and smem should have the same size",
-    ]()
+    comptime dst_dim0 = dst_layout.shape[0].value()
+    comptime dst_dim1 = dst_layout.shape[1].value()
 
-    alias dst_dim0 = dst_layout.shape[0].value()
-    alias dst_dim1 = dst_layout.shape[1].value()
+    comptime cta_tile_dim0 = cta_tile_shape[0]
+    comptime cta_tile_dim1 = cta_tile_shape[1]
+    comptime cta_tile_dim2 = cta_tile_shape[2]
 
-    alias cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    alias cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    alias cta_tile_dim2 = cta_tile_layout.shape[2].value()
-
-    constrained[
-        dst_dim1 == cta_tile_dim2,
-        "dst and cta should have the same last dimension for these test cases",
-    ]()
+    comptime assert (
+        dst_dim1 == cta_tile_dim2
+    ), "dst and cta should have the same last dimension for these test cases"
 
     smem_tile = LayoutTensor[
         dtype,
         smem_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime expected_bytes = _idx_product[
+        tile_rank, cta_tile_shape
+    ]() * size_of[dtype]()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy_3d(
             smem_tile,
             mbar[0],
             (
-                UInt(block_idx.x * UInt(cta_tile_dim2)),
-                UInt(block_idx.y * UInt(cta_tile_dim1)),
-                UInt(block_idx.z * UInt(cta_tile_dim0)),
+                block_idx.x * cta_tile_dim2,
+                block_idx.y * cta_tile_dim1,
+                block_idx.z * cta_tile_dim0,
             ),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    alias smem_dim0 = smem_layout.shape[0].value()
-    alias smem_dim1 = smem_layout.shape[1].value()
-    alias smem_dim2 = smem_layout.shape[2].value()
+    comptime smem_dim0 = smem_layout.shape[0].value()
+    comptime smem_dim1 = smem_layout.shape[1].value()
+    comptime smem_dim2 = smem_layout.shape[2].value()
 
     var idx = (
-        block_idx.z * grid_dim.x * grid_dim.y
-        + block_idx.y * grid_dim.x
-        + block_idx.x
-    )
+        block_idx.z * grid_dim.y + block_idx.y
+    ) * grid_dim.x + block_idx.x
     for i in range(cta_tile_dim0):
         smem_tile_i = smem_tile.tile[1, cta_tile_dim1, cta_tile_dim2](i)
 
         dst_tile = dst.tile[cta_tile_dim1, cta_tile_dim2](
-            idx * UInt(cta_tile_dim0) + UInt(i), 0
+            idx * cta_tile_dim0 + i, 0
         )
         if thread_idx.x == 0:
             dst_tile.copy_from(smem_tile_i)
@@ -121,18 +119,18 @@ def test_tma_3d_load_row_major[
     cta_tile_layout: Layout,
     smem_tile_layout: Layout,
     swizzle_mode: TensorMapSwizzle,
-](ctx: DeviceContext):
+](ctx: DeviceContext) raises:
     print("test_tma_3d_load")
 
-    alias src_dim0 = src_layout.shape[0].value()
-    alias src_dim1 = src_layout.shape[1].value()
-    alias src_dim2 = src_layout.shape[2].value()
+    comptime src_dim0 = src_layout.shape[0].value()
+    comptime src_dim1 = src_layout.shape[1].value()
+    comptime src_dim2 = src_layout.shape[2].value()
 
-    alias cta_tile_dim0 = cta_tile_layout.shape[0].value()
-    alias cta_tile_dim1 = cta_tile_layout.shape[1].value()
-    alias cta_tile_dim2 = cta_tile_layout.shape[2].value()
+    comptime cta_tile_dim0 = cta_tile_layout.shape[0].value()
+    comptime cta_tile_dim1 = cta_tile_layout.shape[1].value()
+    comptime cta_tile_dim2 = cta_tile_layout.shape[2].value()
 
-    alias dst_layout = Layout.row_major(
+    comptime dst_layout = Layout.row_major(
         src_dim0 * src_dim1 * src_dim2 // cta_tile_dim2, cta_tile_dim2
     )
 
@@ -141,26 +139,26 @@ def test_tma_3d_load_row_major[
 
     arange(src.tensor(), 1)
 
-    tma_tensor = create_tma_tile[
+    tma_tensor = create_tensor_tile[
         Index(cta_tile_dim0, cta_tile_dim1, cta_tile_dim2),
         swizzle_mode=swizzle_mode,
-        __tile_layout=cta_tile_layout,
     ](ctx, src.device_tensor())
 
     ctx.synchronize()
 
-    print("src layout:", src_layout)
-    print("cta tile layout:", cta_tile_layout)
-    print("desc layout:", type_of(tma_tensor).desc_layout)
+    print("src layout:", materialize[src_layout]())
+    print("cta tile layout:", materialize[cta_tile_layout]())
+    print("desc shape:", type_of(tma_tensor).desc_shape)
 
-    alias kernel = test_tma_3d_load_kernel[
+    comptime kernel = test_tma_3d_load_kernel[
         type_of(tma_tensor).dtype,
         dst_layout,  # dst layout
-        type_of(tma_tensor).layout,  # cta_tile
-        type_of(tma_tensor).desc_layout,  # desc_tile
+        type_of(tma_tensor).rank,
+        type_of(tma_tensor).tile_shape,  # cta_tile
+        type_of(tma_tensor).desc_shape,  # desc_tile
         smem_tile_layout,  # smem layout
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
@@ -174,20 +172,20 @@ def test_tma_3d_load_row_major[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
-    alias cta_tile_size = cta_tile_layout.size()
+    comptime cta_tile_size = cta_tile_layout.size()
 
-    alias desc_tile_dim0 = type_of(tma_tensor).desc_layout.shape[0].value()
-    alias desc_tile_dim1 = type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_dim2 = type_of(tma_tensor).desc_layout.shape[2].value()
+    comptime desc_tile_dim0 = type_of(tma_tensor).desc_shape[0]
+    comptime desc_tile_dim1 = type_of(tma_tensor).desc_shape[1]
+    comptime desc_tile_dim2 = type_of(tma_tensor).desc_shape[2]
 
-    alias desc_tile_size = desc_tile_dim1 * desc_tile_dim2
+    comptime desc_tile_size = desc_tile_dim1 * desc_tile_dim2
 
     desc_tile = LayoutTensor[
         dtype,
         Layout.row_major(desc_tile_dim1, desc_tile_dim2),
-        MutableAnyOrigin,
+        MutAnyOrigin,
     ].stack_allocation()
 
     var dest_ptr = dst_host.ptr
@@ -219,310 +217,310 @@ def test_tma_3d_load_row_major[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(1, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(1, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 8),
                 IntTuple(128, 8, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 32, 8),
                 IntTuple(256, 8, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 32, 8),
                 IntTuple(256, 8, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 32, 8),
                 IntTuple(256, 8, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 16),
                 IntTuple(256, 16, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 8),
                 IntTuple(64, 8, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 16),
                 IntTuple(256, 16, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 64),
                 IntTuple(1024, 64, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 16, 64),
                 IntTuple(1024, 64, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 16, 64),
                 IntTuple(1024, 64, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 64),
                 IntTuple(1024, 64, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 64),
                 IntTuple(512, 64, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 64),
                 IntTuple(512, 64, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 32, 64),
                 IntTuple(2048, 64, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 32, 64),
                 IntTuple(2048, 64, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 32, 64),
                 IntTuple(2048, 64, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 8, 128),
                 IntTuple(1024, 128, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 128),
                 IntTuple(1024, 128, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 128),
                 IntTuple(1024, 128, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 32),
                 IntTuple(512, 32, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 16, 32),
                 IntTuple(512, 32, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 16, 32),
                 IntTuple(512, 32, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 32),
                 IntTuple(512, 32, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 32),
                 IntTuple(256, 32, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 32),
                 IntTuple(256, 32, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 32, 32),
                 IntTuple(1024, 32, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 32, 32),
                 IntTuple(1024, 32, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 32, 32),
                 IntTuple(1024, 32, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 8, 64),
                 IntTuple(512, 64, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 64),
                 IntTuple(512, 64, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 64),
                 IntTuple(512, 64, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 16),
                 IntTuple(256, 16, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 16, 16),
                 IntTuple(256, 16, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 16, 16),
                 IntTuple(256, 16, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 16, 16),
                 IntTuple(256, 16, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 16),
                 IntTuple(128, 16, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 32, 16),
                 IntTuple(512, 16, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 32, 16),
                 IntTuple(512, 16, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 32, 16),
                 IntTuple(512, 16, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_3d_load_row_major[
             DType.bfloat16,
-            src_layout = Layout(
+            src_layout=Layout(
                 IntTuple(4, 8, 32),
                 IntTuple(256, 32, 1),
             ),
-            cta_tile_layout = Layout(
+            cta_tile_layout=Layout(
                 IntTuple(2, 8, 32),
                 IntTuple(256, 32, 1),
             ),
-            smem_tile_layout = Layout(
+            smem_tile_layout=Layout(
                 IntTuple(2, 8, 32),
                 IntTuple(256, 32, 1),
             ),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)

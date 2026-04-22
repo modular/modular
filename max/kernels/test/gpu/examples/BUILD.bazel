@@ -1,40 +1,25 @@
 load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _FILECHECK_TESTS = [
     "test_stencil1d.mojo",
     "test_stencil2d.mojo",
 ]
 
+_APPLE_GPU_INCOMPATIBLE = select({
+    "//:apple_gpu": ["@platforms//:incompatible"],
+    "//conditions:default": [],
+})
+
 _EXTRA_CONSTRAINTS = {
     "test_tiled_matmul_backtoback.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377
-    "test_matmul_int.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
-    "test_matmul_kernel_10.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: GEX-2578
-    "test_stencil2d.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
-    "test_stencil1d.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2397
-    "test_double_buffer_gemm.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2415
-    "test_stencil_gpu.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2435
-    "test_mandelbrot.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),  # FIXME: MOCO-2435
+    "test_matmul_int.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2397
+    "test_double_buffer_gemm.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
+}
+
+_TEST_SIZE = {
+    "test_matmul_kernel_10.mojo": "large",
 }
 
 [
@@ -44,12 +29,12 @@ _EXTRA_CONSTRAINTS = {
         tags = ["gpu"],
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
-            "@mojo//:stdlib",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
         ],
     )
     for src in _FILECHECK_TESTS
@@ -58,6 +43,7 @@ _EXTRA_CONSTRAINTS = {
 [
     mojo_test(
         name = src + ".test",
+        size = _TEST_SIZE.get(src, "medium"),
         srcs = [src],
         exec_properties = {
             "test.resources:gpu-memory": "1.5",
@@ -67,12 +53,12 @@ _EXTRA_CONSTRAINTS = {
         ),
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
-            "@mojo//:stdlib",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
         ],
     )
     for src in glob(

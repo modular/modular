@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,31 +11,31 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal, assert_true
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal, assert_true
 
-from utils.numerics import inf, isnan, nan, neg_inf
+from std.utils.numerics import inf, isnan, nan, neg_inf
 
 
-fn id(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def id(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = Float32(BFloat16(input[tid]))
 
 
 @no_inline
-fn run_vec_add(ctx: DeviceContext) raises:
+def run_vec_add(ctx: DeviceContext) raises:
     print("== run_vec_add")
 
-    alias length = 1024
+    comptime length = 1024
 
-    var in_host = UnsafePointer[Float32].alloc(length)
+    var in_host = alloc[Float32](length)
 
     for i in range(length):
         in_host[i] = Float32(i)
@@ -52,8 +52,8 @@ fn run_vec_add(ctx: DeviceContext) raises:
 
     var block_dim = 32
 
-    alias kernel = id
-    ctx.enqueue_function_checked[kernel, kernel](
+    comptime kernel = id
+    ctx.enqueue_function_experimental[kernel](
         in_device,
         out_device,
         length,
@@ -61,7 +61,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         block_dim=(block_dim),
     )
 
-    var expected = List[Float32](
+    var expected: List[Float32] = [
         0.0,
         1.0,
         2.0,
@@ -72,7 +72,7 @@ fn run_vec_add(ctx: DeviceContext) raises:
         -0.0,
         8.0,
         9.0,
-    )
+    ]
     with out_device.map_to_host() as out_host:
         for i in range(10):
             print("at index", i, "the value is", out_host[i])
@@ -86,6 +86,6 @@ fn run_vec_add(ctx: DeviceContext) raises:
     in_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_vec_add(ctx)

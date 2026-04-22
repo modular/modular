@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,12 +13,12 @@
 
 
 @fieldwise_init
-struct Foobat(ImplicitlyCopyable, Movable):
+struct Foobat(ImplicitlyCopyable):
     var x: Int
 
-    fn __copyinit__(out self, other: Self):
-        self.x = other.x
-        print("__copyinit__")
+    def __init__(out self, *, copy: Self):
+        self.x = copy.x
+        print("copy ctor")
 
 
 def main():

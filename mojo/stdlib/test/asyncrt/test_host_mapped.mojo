@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,30 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from testing import TestSuite
+from asyncrt_test_utils import create_test_device_context
+from std.testing import TestSuite, assert_equal
 
 
-def test_host_mapped():
+def test_host_mapped() raises:
     var ctx = create_test_device_context()
 
-    alias length = 20
+    comptime length = 20
 
     var in_buf = ctx.enqueue_create_buffer[DType.int64](length)
     var out_buf = ctx.enqueue_create_buffer[DType.int64](length)
 
     with in_buf.map_to_host() as in_map:
         for i in range(length):
-            in_map[i] = i
+            in_map[i] = Int64(i)
 
     in_buf.enqueue_copy_to(out_buf)
 
     with out_buf.map_to_host() as out_map:
         for i in range(length):
-            expect_eq(out_map[i], i)
+            assert_equal(out_map[i], Int64(i))
 
     print("Done")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

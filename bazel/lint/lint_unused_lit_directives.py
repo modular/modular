@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -72,9 +72,19 @@ def _get_files(bazel: Path, query: str) -> set[Path]:
     }
 
 
+# Add more binary suffixes here if needed
+_BINARY_SUFFIXES = {".jpg", ".jpeg", ".png"}
+
+
 def _get_lit_directives(file: Path) -> set[str]:
+    if file.suffix in _BINARY_SUFFIXES:
+        return set()
     with file.open() as f:
-        return set(_LIT_REGEX.findall(f.read()))
+        try:
+            content = f.read()
+        except UnicodeDecodeError as e:
+            raise RuntimeError(f"error: failed to read {file}: {e}") from e
+        return set(_LIT_REGEX.findall(content))
 
 
 def _main() -> None:

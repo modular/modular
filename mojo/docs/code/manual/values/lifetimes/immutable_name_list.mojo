@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,18 +20,18 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref [self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:
             raise Error("index out of bounds")
 
 
-fn pass_immutable_list(list: NameList) raises:
+def pass_immutable_list(list: NameList) raises:
     print(list[2])
     # list[2] += "?" # Error, this list is immutable
 
 
-def main():
+def main() raises:
     list = NameList("Sophie", "Jack", "Diana")
     pass_immutable_list(list)

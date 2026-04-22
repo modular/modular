@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import gcd
-from sys import (
+from std.math import gcd
+from std.sys import (
     compressed_store,
     masked_load,
     masked_store,
     strided_load,
     strided_store,
 )
-from sys.intrinsics import assume, likely, unlikely
+from std.sys.intrinsics import assume, likely, unlikely
 
-from memory import memset_zero
-from testing import assert_equal
-from testing import TestSuite
+from std.memory import memset_zero
+from std.testing import assert_equal
+from std.testing import TestSuite
 
-alias F32x4 = SIMD[DType.float32, 4]
-alias F32x8 = SIMD[DType.float32, 8]
-alias iota_4 = F32x4(0.0, 1.0, 2.0, 3.0)
-alias iota_8 = F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
+comptime F32x4 = SIMD[DType.float32, 4]
+comptime F32x8 = SIMD[DType.float32, 8]
+comptime iota_4 = F32x4(0.0, 1.0, 2.0, 3.0)
+comptime iota_8 = F32x8(0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0)
 
 
-def test_intrinsic_comp_eval():
-    alias res = gcd(5, 4)
+def test_intrinsic_comp_eval() raises:
+    comptime res = gcd(5, 4)
     assert_equal(res, gcd(5, 4))
 
 
-def test_compressed_store():
-    var vector = UnsafePointer[Float32]().alloc(5)
+def test_compressed_store() raises:
+    var vector = alloc[Float32](5)
     memset_zero(vector, 5)
 
     compressed_store(iota_4, vector, iota_4.ge(2))
@@ -52,8 +52,8 @@ def test_compressed_store():
     vector.free()
 
 
-def test_masked_load():
-    var vector = UnsafePointer[Float32]().alloc(5)
+def test_masked_load() raises:
+    var vector = alloc[Float32](5)
     for i in range(5):
         vector[i] = 1
 
@@ -82,8 +82,8 @@ def test_masked_load():
     vector.free()
 
 
-def test_masked_store():
-    var vector = UnsafePointer[Float32]().alloc(5)
+def test_masked_store() raises:
+    var vector = alloc[Float32](5)
     memset_zero(vector, 5)
 
     masked_store[4](iota_4, vector, iota_4.lt(5))
@@ -97,12 +97,12 @@ def test_masked_store():
     vector.free()
 
 
-fn test_strided_load() raises:
-    alias size = 16
-    var vector = UnsafePointer[Float32]().alloc(size)
+def test_strided_load() raises:
+    comptime size = 16
+    var vector = alloc[Float32](size)
 
     for i in range(size):
-        vector[i] = i
+        vector[i] = Float32(i)
 
     var s = strided_load[4](vector, 4)
     assert_equal(s, SIMD[DType.float32, 4](0, 4, 8, 12))
@@ -110,9 +110,9 @@ fn test_strided_load() raises:
     vector.free()
 
 
-fn test_strided_store() raises:
-    alias size = 8
-    var vector = UnsafePointer[Float32]().alloc(size)
+def test_strided_store() raises:
+    comptime size = 8
+    var vector = alloc[Float32](size)
     memset_zero(vector, size)
 
     strided_store(SIMD[DType.float32, 4](99, 12, 23, 56), vector, 2)
@@ -128,14 +128,14 @@ fn test_strided_store() raises:
     vector.free()
 
 
-def test_likely_unlikely():
+def test_likely_unlikely() raises:
     assert_equal(likely(True), True)
     assert_equal(unlikely(True), True)
 
 
-def test_assume():
+def test_assume() raises:
     assume(True)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

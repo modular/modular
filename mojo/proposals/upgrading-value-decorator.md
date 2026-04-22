@@ -29,7 +29,8 @@ effects:
   conformance to `Copyable`. It also adds a `copy()` member and conformance to
   `ExplicitlyCopyable` as well
 
-- Similarly, if the members are all movable, it adds a `__moveinit__` when missing.
+- Similarly, if the members are all movable, it adds a `__moveinit__` when
+  missing.
 
 - Finally, unless the user declared it already, it adds a “fieldwise”
   `__init__` method that allows one to construct the struct by specifying all of
@@ -41,19 +42,19 @@ On the example above, it is as if you wrote out this:
 struct Simple(Copyable, Movable, ExplicitlyCopyable):
   var x: Int
   var y: String
-  
+
   fn __init__(x: Int, owned y: String):
      self.x = x
      self.y = y^
-   
+
   fn __copyinit__(out self, existing: Self):
      self.x = existing.x
      self.y = existing.y
-     
+
   fn copy(out self, existing: Self):
      self.x = existing.x
      self.y = existing.y
-  
+
   fn __moveinit__(out self, owned existing: Self):
      self.x = existing.x
      self.y = existing.y^
@@ -142,7 +143,7 @@ struct InventoryItem(Copyable, Movable, ExplicitlyCopyable):
     var unit_price: Float64
     # unrelated to this proposal, we want to support default field values someday
     var quantity_on_hand: Int = 0
-    
+
     def total_cost(self) -> Float:
        return self.unit_price * self.quantity_on_hand
 ```
@@ -165,7 +166,7 @@ this proposal removes), but is quite different from this proposal:
 
 - Second, the point of this proposal is to get rid of monolithic things like
   `@value` and `@dataclass` and replace them with more modular things that
-  better reflect the behavior: trait conformance.  Python doesn’t have traits,
+  better reflect the behavior: trait conformance. Python doesn’t have traits,
   so this solution doesn’t work for it.
 
 There are a fairly common set of traits that “record like” types need to

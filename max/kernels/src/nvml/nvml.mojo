@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,33 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 """Implements wrappers around the NVIDIA Management Library (nvml)."""
 
-from collections.string.string_slice import _to_string_list
-from os import abort
-from pathlib import Path
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle, _try_find_dylib, c_char
+from std.collections.string.string_slice import _to_string_list
+from std.os import abort
+from std.pathlib import Path
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle, _try_find_dylib, c_char
 
-from memory import stack_allocation
+from std.memory import stack_allocation
 
 # ===-----------------------------------------------------------------------===#
 # Constants
 # ===-----------------------------------------------------------------------===#
 
-alias CUDA_NVML_LIBRARY_DIR = Path("/usr/lib/x86_64-linux-gnu")
-alias CUDA_NVML_LIBRARY_BASE_NAME = "libnvidia-ml"
-alias CUDA_NVML_LIBRARY_EXT = ".so"
+comptime CUDA_NVML_LIBRARY_DIR = Path("/usr/lib/x86_64-linux-gnu")
+comptime CUDA_NVML_LIBRARY_BASE_NAME = "libnvidia-ml"
+comptime CUDA_NVML_LIBRARY_EXT = ".so"
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_nvml_library_paths() raises -> List[Path]:
+def _get_nvml_library_paths() raises -> List[Path]:
     var paths = List[Path]()
-    var common_path = CUDA_NVML_LIBRARY_DIR / (
-        CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
-    )
-    paths.append(common_path)
+    var lib_name = CUDA_NVML_LIBRARY_BASE_NAME + CUDA_NVML_LIBRARY_EXT
+    # Look for libnvidia-ml.so
+    paths.append(CUDA_NVML_LIBRARY_DIR / lib_name)
+    # Look for libnvida-ml.so.1
+    paths.append(CUDA_NVML_LIBRARY_DIR / (lib_name + ".1"))
+    # Look for libnvidia-ml.so.<driver>.<major>.<minor>
     for fd in CUDA_NVML_LIBRARY_DIR.listdir():
         var path = CUDA_NVML_LIBRARY_DIR / fd
         if CUDA_NVML_LIBRARY_BASE_NAME in String(fd):
@@ -46,25 +48,23 @@ fn _get_nvml_library_paths() raises -> List[Path]:
     return paths^
 
 
-alias CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
+comptime CUDA_NVML_LIBRARY = _Global["CUDA_NVML_LIBRARY", _init_dylib]
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     try:
         var dylib = _try_find_dylib(_get_nvml_library_paths())
         _check_error(
-            dylib._handle.get_function[fn () -> Result]("nvmlInit_v2")()
+            dylib.get_function[def() thin abi("C") -> Result]("nvmlInit_v2")()
         )
         return dylib^
     except e:
-        return abort[_OwnedDLHandle](
-            String("CUDA NVML library initialization failed: ", e)
-        )
+        abort(t"CUDA NVML library initialization failed: {e}")
 
 
 @always_inline
-fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+def _get_dylib_function[
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         CUDA_NVML_LIBRARY(),
@@ -78,26 +78,34 @@ fn _get_dylib_function[
 # ===-----------------------------------------------------------------------===#
 
 
-struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
+struct DriverVersion(ImplicitlyCopyable, Writable):
     var _value: List[String]
 
-    fn __init__(out self, var value: List[String]):
+    def __init__(out self, var value: List[String]):
         self._value = value^
 
-    fn __copyinit__(out self, other: Self):
-        self._value = other._value.copy()
+    def __init__(out self, *, copy: Self):
+        self._value = copy._value.copy()
 
-    fn major(self) raises -> Int:
+    def major(self) raises -> Int:
         return Int(self._value[0])
 
-    fn minor(self) raises -> Int:
+    def minor(self) raises -> Int:
         return Int(self._value[1])
 
-    fn patch(self) raises -> Int:
+    def patch(self) raises -> Int:
         return Int(self._value[2]) if len(self._value) > 2 else 0
 
-    fn __str__(self) raises -> String:
-        return String(self.major(), ".", self.minor(), ".", self.patch())
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes the driver version string.
+
+        Args:
+            writer: The writer to write to.
+        """
+        ref major = self._value[0]
+        ref minor = self._value[1]
+        var patch = self._value[2] if len(self._value) > 2 else ""
+        t"{major}.{minor}.{patch}".write_to(writer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -106,109 +114,108 @@ struct DriverVersion(ImplicitlyCopyable, Movable, StringableRaising):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct Result(
-    EqualityComparable, ImplicitlyCopyable, Movable, Stringable, Writable
-):
+struct Result(Equatable, TrivialRegisterPassable, Writable):
     var code: Int32
 
-    alias SUCCESS = Self(0)
-    """The operation was successful"""
+    comptime SUCCESS = Self(0)
+    """The operation was successful."""
 
-    alias UNINITIALIZED = Self(1)
-    """NVML was not first initialized with nvmlInit()"""
+    comptime UNINITIALIZED = Self(1)
+    """NVML was not first initialized with `nvmlInit()`."""
 
-    alias INVALID_ARGUMENT = Self(2)
-    """A supplied argument is invalid"""
+    comptime INVALID_ARGUMENT = Self(2)
+    """A supplied argument is invalid."""
 
-    alias NOT_SUPPORTED = Self(3)
-    """The requested operation is not available on target device"""
+    comptime NOT_SUPPORTED = Self(3)
+    """The requested operation is not available on target device."""
 
-    alias NO_PERMISSION = Self(4)
-    """The current user does not have permission for operation"""
+    comptime NO_PERMISSION = Self(4)
+    """The current user does not have permission for operation."""
 
-    alias ALREADY_INITIALIZED = Self(5)
+    comptime ALREADY_INITIALIZED = Self(5)
     """Deprecated: Multiple initializations are now allowed through ref
-    counting"""
+    counting.
+    """
 
-    alias NOT_FOUND = Self(6)
-    """A query to find an object was unsuccessful"""
+    comptime NOT_FOUND = Self(6)
+    """A query to find an object was unsuccessful."""
 
-    alias INSUFFICIENT_SIZE = Self(7)
-    """An input argument is not large enough"""
+    comptime INSUFFICIENT_SIZE = Self(7)
+    """An input argument is not large enough."""
 
-    alias INSUFFICIENT_POWER = Self(8)
-    """A device's external power cables are not properly attached"""
+    comptime INSUFFICIENT_POWER = Self(8)
+    """A device's external power cables are not properly attached."""
 
-    alias DRIVER_NOT_LOADED = Self(9)
-    """NVIDIA driver is not loaded"""
+    comptime DRIVER_NOT_LOADED = Self(9)
+    """NVIDIA driver is not loaded."""
 
-    alias TIMEOUT = Self(10)
-    """User provided timeout passed"""
+    comptime TIMEOUT = Self(10)
+    """User provided timeout passed."""
 
-    alias IRQ_ISSUE = Self(11)
-    """NVIDIA Kernel detected an interrupt issue with a GPU"""
+    comptime IRQ_ISSUE = Self(11)
+    """NVIDIA Kernel detected an interrupt issue with a GPU."""
 
-    alias LIBRARY_NOT_FOUND = Self(12)
-    """NVML Shared Library couldn't be found or loaded"""
+    comptime LIBRARY_NOT_FOUND = Self(12)
+    """NVML Shared Library couldn't be found or loaded."""
 
-    alias FUNCTION_NOT_FOUND = Self(13)
-    """Local version of NVML doesn't implement this function"""
+    comptime FUNCTION_NOT_FOUND = Self(13)
+    """Local version of NVML doesn't implement this function."""
 
-    alias CORRUPTED_INFOROM = Self(14)
-    """infoROM is corrupted"""
+    comptime CORRUPTED_INFOROM = Self(14)
+    """The infoROM is corrupted."""
 
-    alias GPU_IS_LOST = Self(15)
-    """The GPU has fallen off the bus or has otherwise become inaccessible"""
+    comptime GPU_IS_LOST = Self(15)
+    """The GPU has fallen off the bus or has otherwise become inaccessible."""
 
-    alias RESET_REQUIRED = Self(16)
-    """The GPU requires a reset before it can be used again"""
+    comptime RESET_REQUIRED = Self(16)
+    """The GPU requires a reset before it can be used again."""
 
-    alias OPERATING_SYSTEM = Self(17)
-    """The GPU control device has been blocked by the operating system/cgroups"""
+    comptime OPERATING_SYSTEM = Self(17)
+    """The GPU control device has been blocked by the operating system/cgroups."""
 
-    alias LIB_RM_VERSION_MISMATCH = Self(18)
-    """RM detects a driver/library version mismatch"""
+    comptime LIB_RM_VERSION_MISMATCH = Self(18)
+    """RM detects a driver/library version mismatch."""
 
-    alias IN_USE = Self(19)
-    """An operation cannot be performed because the GPU is currently in use"""
+    comptime IN_USE = Self(19)
+    """An operation cannot be performed because the GPU is currently in use."""
 
-    alias MEMORY = Self(20)
-    """Insufficient memory"""
+    comptime MEMORY = Self(20)
+    """Insufficient memory."""
 
-    alias NO_DATA = Self(21)
-    """No data"""
+    comptime NO_DATA = Self(21)
+    """No data."""
 
-    alias VGPU_ECC_NOT_SUPPORTED = Self(22)
+    comptime VGPU_ECC_NOT_SUPPORTED = Self(22)
     """The requested vgpu operation is not available on target device, because
-    ECC is enabled"""
+    ECC is enabled.
+    """
 
-    alias INSUFFICIENT_RESOURCES = Self(23)
-    """Ran out of critical resources, other than memory"""
+    comptime INSUFFICIENT_RESOURCES = Self(23)
+    """Ran out of critical resources, other than memory."""
 
-    alias FREQ_NOT_SUPPORTED = Self(24)
-    """Ran out of critical resources, other than memory"""
+    comptime FREQ_NOT_SUPPORTED = Self(24)
+    """Ran out of critical resources, other than memory."""
 
-    alias ARGUMENT_VERSION_MISMATCH = Self(25)
-    """The provided version is invalid/unsupported"""
+    comptime ARGUMENT_VERSION_MISMATCH = Self(25)
+    """The provided version is invalid/unsupported."""
 
-    alias DEPRECATED = Self(26)
-    """The requested functionality has been deprecated"""
+    comptime DEPRECATED = Self(26)
+    """The requested functionality has been deprecated."""
 
-    alias NOT_READY = Self(27)
-    """The system is not ready for the request"""
+    comptime NOT_READY = Self(27)
+    """The system is not ready for the request."""
 
-    alias GPU_NOT_FOUND = Self(28)
-    """No GPUs were found"""
+    comptime GPU_NOT_FOUND = Self(28)
+    """No GPUs were found."""
 
-    alias UNKNOWN = Self(999)
-    """An internal driver error occurred"""
+    comptime UNKNOWN = Self(999)
+    """An internal driver error occurred."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Result.SUCCESS:
             writer.write("SUCCESS")
         elif self == Result.UNINITIALIZED:
@@ -270,12 +277,9 @@ struct Result(
         else:
             writer.write("NVML_UNKNOWN")
 
-    fn __str__(self) -> String:
-        return String(self)
-
 
 @always_inline
-fn _check_error(err: Result) raises:
+def _check_error(err: Result) raises:
     if err != Result.SUCCESS:
         raise Error(err)
 
@@ -286,18 +290,17 @@ fn _check_error(err: Result) raises:
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
+struct EnableState(Equatable, TrivialRegisterPassable):
     var code: Int32
 
-    alias DISABLED = Self(0)
-    """Feature disabled"""
+    comptime DISABLED = Self(0)
+    """Feature disabled."""
 
-    alias ENABLED = Self(1)
-    """Feature enabled"""
+    comptime ENABLED = Self(1)
+    """Feature enabled."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
 
@@ -307,24 +310,23 @@ struct EnableState(EqualityComparable, ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
+struct ClockType(Equatable, TrivialRegisterPassable):
     var code: Int32
 
-    alias GRAPHICS = Self(0)
-    """Graphics clock domain"""
+    comptime GRAPHICS = Self(0)
+    """Graphics clock domain."""
 
-    alias SM = Self(1)
-    """SM clock domain"""
+    comptime SM = Self(1)
+    """SM clock domain."""
 
-    alias MEM = Self(2)
-    """Memory clock domain"""
+    comptime MEM = Self(2)
+    """Memory clock domain."""
 
-    alias VIDEO = Self(2)
-    """Video clock domain"""
+    comptime VIDEO = Self(2)
+    """Video clock domain."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.code == other.code
 
 
@@ -334,16 +336,15 @@ struct ClockType(EqualityComparable, ImplicitlyCopyable, Movable):
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _DeviceImpl(Defaultable, ImplicitlyCopyable, Movable):
-    var handle: OpaquePointer
+struct _DeviceImpl(Defaultable, ImplicitlyCopyable, RegisterPassable):
+    var handle: Optional[UnsafePointer[NoneType, MutAnyOrigin]]
 
     @always_inline
-    fn __init__(out self):
-        self.handle = OpaquePointer()
+    def __init__(out self):
+        self.handle = {}
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         return self.handle.__bool__()
 
 
@@ -351,26 +352,32 @@ struct Device(Writable):
     var idx: Int
     var device: _DeviceImpl
 
-    fn __init__(out self, idx: Int = 0) raises:
+    def __init__(out self, idx: Int = 0) raises:
         var device = _DeviceImpl()
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetHandleByIndex_v2",
-                fn (UInt32, UnsafePointer[_DeviceImpl]) -> Result,
+                def(
+                    UInt32, UnsafePointer[_DeviceImpl, MutAnyOrigin]
+                ) thin -> Result,
             ]()(UInt32(idx), UnsafePointer(to=device))
         )
         self.idx = idx
         self.device = device
 
-    fn get_driver_version(self) raises -> DriverVersion:
-        """Returns NVIDIA driver version."""
-        alias max_length = 16
+    def get_driver_version(self) raises -> DriverVersion:
+        """Returns NVIDIA driver version.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
+        comptime max_length = 16
         var driver_version_buffer = stack_allocation[max_length, c_char]()
 
         _check_error(
             _get_dylib_function[
                 "nvmlSystemGetDriverVersion",
-                fn (UnsafePointer[c_char], UInt32) -> Result,
+                def(UnsafePointer[c_char, MutAnyOrigin], UInt32) thin -> Result,
             ]()(driver_version_buffer, UInt32(max_length))
         )
         var driver_version_list = StringSlice(
@@ -378,46 +385,52 @@ struct Device(Writable):
         ).split(".")
         return DriverVersion(_to_string_list(driver_version_list))
 
-    fn _max_clock(self, clock_type: ClockType) raises -> Int:
+    def _max_clock(self, clock_type: ClockType) raises -> Int:
         var clock = UInt32()
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetMaxClockInfo",
-                fn (_DeviceImpl, ClockType, UnsafePointer[UInt32]) -> Result,
+                def(
+                    _DeviceImpl, ClockType, UnsafePointer[UInt32, MutAnyOrigin]
+                ) thin -> Result,
             ]()(self.device, clock_type, UnsafePointer(to=clock))
         )
         return Int(clock)
 
-    fn max_mem_clock(self) raises -> Int:
+    def max_mem_clock(self) raises -> Int:
         return self._max_clock(ClockType.MEM)
 
-    fn max_graphics_clock(self) raises -> Int:
+    def max_graphics_clock(self) raises -> Int:
         return self._max_clock(ClockType.GRAPHICS)
 
-    fn mem_clocks(self) raises -> List[Int]:
+    def mem_clocks(self) raises -> List[Int]:
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
             "nvmlDeviceGetSupportedMemoryClocks",
-            fn (
-                _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
-            ) -> Result,
+            def(
+                _DeviceImpl,
+                UnsafePointer[UInt32, MutAnyOrigin],
+                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32](),
+            None,
         )
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
+        var clocks = List[UInt32](length=Int(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetSupportedMemoryClocks",
-                fn (
-                    _DeviceImpl, UnsafePointer[UInt32], UnsafePointer[UInt32]
-                ) -> Result,
+                def(
+                    _DeviceImpl,
+                    UnsafePointer[UInt32, MutAnyOrigin],
+                    UnsafePointer[UInt32, MutAnyOrigin],
+                ) thin -> Result,
             ]()(self.device, UnsafePointer(to=num_clocks), clocks.unsafe_ptr())
         )
 
@@ -427,22 +440,22 @@ struct Device(Writable):
 
         return res^
 
-    fn graphics_clocks(self, memory_clock_mhz: Int) raises -> List[Int]:
+    def graphics_clocks(self, memory_clock_mhz: Int) raises -> List[Int]:
         var num_clocks = UInt32()
 
         var result = _get_dylib_function[
             "nvmlDeviceGetSupportedGraphicsClocks",
-            fn (
+            def(
                 _DeviceImpl,
                 UInt32,
-                UnsafePointer[UInt32],
-                UnsafePointer[UInt32],
-            ) -> Result,
+                UnsafePointer[UInt32, MutAnyOrigin],
+                Optional[UnsafePointer[UInt32, MutAnyOrigin]],
+            ) thin abi("C") -> Result,
         ]()(
             self.device,
             UInt32(memory_clock_mhz),
             UnsafePointer(to=num_clocks),
-            UnsafePointer[UInt32](),
+            None,
         )
 
         if result == Result.SUCCESS:
@@ -451,17 +464,17 @@ struct Device(Writable):
         if result != Result.INSUFFICIENT_SIZE:
             _check_error(result)
 
-        var clocks = List[UInt32](length=UInt(num_clocks), fill=0)
+        var clocks = List[UInt32](length=Int(num_clocks), fill=0)
 
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetSupportedGraphicsClocks",
-                fn (
+                def(
                     _DeviceImpl,
                     UInt32,
-                    UnsafePointer[UInt32],
-                    UnsafePointer[UInt32],
-                ) -> Result,
+                    UnsafePointer[UInt32, MutAnyOrigin],
+                    UnsafePointer[UInt32, MutAnyOrigin],
+                ) thin -> Result,
             ]()(
                 self.device,
                 UInt32(memory_clock_mhz),
@@ -476,26 +489,30 @@ struct Device(Writable):
 
         return res^
 
-    fn set_clock(self, mem_clock: Int, graphics_clock: Int) raises:
+    def set_clock(self, mem_clock: Int, graphics_clock: Int) raises:
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetApplicationsClocks",
-                fn (_DeviceImpl, UInt32, UInt32) -> Result,
+                def(_DeviceImpl, UInt32, UInt32) thin -> Result,
             ]()(self.device, UInt32(mem_clock), UInt32(graphics_clock))
         )
 
-    fn gpu_turbo_enabled(self) raises -> Bool:
-        """Returns True if the gpu turbo is enabled."""
+    def gpu_turbo_enabled(self) raises -> Bool:
+        """Returns True if the gpu turbo is enabled.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         var is_enabled = _EnableState.DISABLED
         var default_is_enabled = _EnableState.DISABLED
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetAutoBoostedClocksEnabled",
-                fn (
+                def(
                     _DeviceImpl,
-                    UnsafePointer[_EnableState],
-                    UnsafePointer[_EnableState],
-                ) -> Result,
+                    UnsafePointer[_EnableState, MutAnyOrigin],
+                    UnsafePointer[_EnableState, MutAnyOrigin],
+                ) thin -> Result,
             ]()(
                 self.device,
                 UnsafePointer(to=is_enabled),
@@ -504,25 +521,35 @@ struct Device(Writable):
         )
         return is_enabled == _EnableState.ENABLED
 
-    fn set_gpu_turbo(self, enabled: Bool = True) raises:
-        """Sets the GPU turbo state."""
+    def set_gpu_turbo(self, enabled: Bool = True) raises:
+        """Sets the GPU turbo state.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetAutoBoostedClocksEnabled",
-                fn (_DeviceImpl, _EnableState) -> Result,
+                def(_DeviceImpl, _EnableState) thin -> Result,
             ]()(
                 self.device,
                 _EnableState.ENABLED if enabled else _EnableState.DISABLED,
             )
         )
 
-    fn get_persistence_mode(self) raises -> Bool:
-        """Returns True if the gpu persistence mode is enabled."""
+    def get_persistence_mode(self) raises -> Bool:
+        """Returns True if the gpu persistence mode is enabled.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         var is_enabled = _EnableState.DISABLED
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceGetPersistenceMode",
-                fn (_DeviceImpl, UnsafePointer[_EnableState]) -> Result,
+                def(
+                    _DeviceImpl, UnsafePointer[_EnableState, MutAnyOrigin]
+                ) thin -> Result,
             ]()(
                 self.device,
                 UnsafePointer(to=is_enabled),
@@ -530,33 +557,38 @@ struct Device(Writable):
         )
         return is_enabled == _EnableState.ENABLED
 
-    fn set_persistence_mode(self, enabled: Bool = True) raises:
-        """Sets the persistence mode."""
+    def set_persistence_mode(self, enabled: Bool = True) raises:
+        """Sets the persistence mode.
+
+        Raises:
+            If the dynamic library cannot be found.
+        """
         _check_error(
             _get_dylib_function[
                 "nvmlDeviceSetPersistenceMode",
-                fn (_DeviceImpl, _EnableState) -> Result,
+                def(_DeviceImpl, _EnableState) thin -> Result,
             ]()(
                 self.device,
                 _EnableState.ENABLED if enabled else _EnableState.DISABLED,
             )
         )
 
-    fn set_max_gpu_clocks(device: Device) raises:
+    def set_max_gpu_clocks(device: Device) raises:
         var max_mem_clock = device.mem_clocks()
         sort(max_mem_clock)
+        var max_mem = max_mem_clock[len(max_mem_clock) - 1]
 
-        var max_graphics_clock = device.graphics_clocks(max_mem_clock[-1])
+        var max_graphics_clock = device.graphics_clocks(max_mem)
         sort(max_graphics_clock)
 
         for clock_val in reversed(max_graphics_clock):
             try:
-                device.set_clock(max_mem_clock[-1], clock_val)
+                device.set_clock(max_mem, clock_val)
                 print(
                     "the device clocks for device=",
                     device,
                     " were set to mem=",
-                    max_mem_clock[-1],
+                    max_mem,
                     " and graphics=",
                     clock_val,
                     sep="",
@@ -568,25 +600,20 @@ struct Device(Writable):
         raise Error("unable to set max gpu clock for ", device)
 
     @no_inline
-    fn __str__(self) -> String:
-        return self.__repr__()
+    def write_to(self, mut writer: Some[Writer]):
+        t"Device({self.idx})".write_to(writer)
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        writer.write("Device(", self.idx, ")")
-
-    @no_inline
-    fn __repr__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct _EnableState(ImplicitlyCopyable, Movable):
+struct _EnableState(TrivialRegisterPassable):
     var state: Int32
 
-    alias DISABLED = _EnableState(0)  # Feature disabled
-    alias ENABLED = _EnableState(1)  # Feature enabled
+    comptime DISABLED = _EnableState(0)  # Feature disabled
+    comptime ENABLED = _EnableState(1)  # Feature enabled
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self.state == other.state

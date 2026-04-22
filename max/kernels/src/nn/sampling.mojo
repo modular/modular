@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,31 +11,32 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-import gpu.block as block
-from algorithm.functional import elementwise
-from gpu import block_idx, thread_idx
-from gpu.host.info import is_gpu
-from layout import Layout, LayoutTensor
+import std.gpu.primitives.block as block
+from std.algorithm.functional import elementwise
+from std.gpu import block_idx, thread_idx
+from std.gpu.host.info import is_gpu
+from layout import TensorLayout, TileTensor
 from nn._ragged_utils import get_batch_from_row_offsets
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn apply_penalties_to_logits[
+def apply_penalties_to_logits[
     logit_type: DType,
-    penalty_type: DType, //,
+    penalty_type: DType,
+    //,
     target: StaticString,
 ](
-    logits: LayoutTensor[mut=True, logit_type, **_],
-    compressed_frequency_data: LayoutTensor[DType.int32, **_],
-    frequency_offsets: LayoutTensor[DType.uint32, **_],
-    frequency_penalty: LayoutTensor[penalty_type, **_],
-    presence_penalty: LayoutTensor[penalty_type, **_],
-    repetition_penalty: LayoutTensor[penalty_type, **_],
+    logits: TileTensor[mut=True, logit_type, ...],
+    compressed_frequency_data: TileTensor[DType.int32, ...],
+    frequency_offsets: TileTensor[DType.uint32, ...],
+    frequency_penalty: TileTensor[penalty_type, ...],
+    presence_penalty: TileTensor[penalty_type, ...],
+    repetition_penalty: TileTensor[penalty_type, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -48,12 +49,27 @@ fn apply_penalties_to_logits[
     - frequency_data[i, 1] is the frequency of the token in the sequence
     """
 
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert repetition_penalty.flat_rank == 1
+    comptime assert presence_penalty.flat_rank == 1
+    comptime assert frequency_penalty.flat_rank == 1
+    comptime assert logits.flat_rank == 2
+
+    # all scalars
+    comptime assert frequency_offsets.element_size == 1
+    comptime assert compressed_frequency_data.element_size == 1
+    comptime assert repetition_penalty.element_size == 1
+    comptime assert presence_penalty.element_size == 1
+    comptime assert frequency_penalty.element_size == 1
+    comptime assert logits.element_size == 1
+
     @always_inline
     @parameter
-    fn apply_penalties_fn[
+    def apply_penalties_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx: IndexList[rank_]):
-        constrained[rank_ == 1, "apply_penalties_fn: rank must be 1"]()
+        comptime assert rank_ == 1, "apply_penalties_fn: rank must be 1"
 
         var batch_id = get_batch_from_row_offsets(frequency_offsets, idx[0])
         var token = Int(compressed_frequency_data[idx[0], 0])
@@ -63,11 +79,11 @@ fn apply_penalties_to_logits[
         var frequency_penalty_val = frequency_penalty[batch_id][0]
         # skip padding tokens
         if token >= 0:
-            var count = rebind[Int32](
-                compressed_frequency_data[idx[0], 1]
-            ).cast[logit_type]()
+            var count = compressed_frequency_data[idx[0], 1][0].cast[
+                logit_type
+            ]()
 
-            var logit = logits[batch_id, token]
+            var logit = logits[batch_id, token][0]
 
             if logit > 0:
                 logit = logit / repetition_penalty_val.cast[logit_type]()
@@ -75,13 +91,13 @@ fn apply_penalties_to_logits[
                 logit = logit * repetition_penalty_val.cast[logit_type]()
 
             logit -= (
-                frequency_penalty_val.cast[logit_type]() * count
-                + presence_penalty_val.cast[logit_type]()
+                frequency_penalty_val[0].cast[logit_type]() * count
+                + presence_penalty_val[0].cast[logit_type]()
             )
 
             logits[batch_id, token] = logit
 
-    var dispatch_shape = IndexList[1](compressed_frequency_data.dim[0]())
+    var dispatch_shape = IndexList[1](Int(compressed_frequency_data.dim[0]()))
     elementwise[
         func=apply_penalties_fn,
         simd_width=1,
@@ -90,20 +106,24 @@ fn apply_penalties_to_logits[
     ](dispatch_shape, ctx)
 
 
-fn update_frequency_data_kernel[
+@__name(t"update_frequency_data_{token_type}", mangle=True)
+def update_frequency_data_kernel[
+    freq_data_origin: MutOrigin,
+    FreqDataLayoutType: TensorLayout,
+    freq_offsets_origin: ImmutOrigin,
+    FreqOffsetsLayoutType: TensorLayout,
+    new_tokens_origin: ImmutOrigin,
+    NewTokensLayoutType: TensorLayout,
     token_type: DType,
     block_size: Int,
-    freq_data_layout: Layout,
-    freq_offsets_layout: Layout,
-    new_tokens_layout: Layout,
 ](
-    compressed_frequency_data: LayoutTensor[
-        mut=True, DType.int32, freq_data_layout, MutableAnyOrigin
+    compressed_frequency_data: TileTensor[
+        DType.int32, FreqDataLayoutType, freq_data_origin
     ],
-    frequency_offsets: LayoutTensor[
-        DType.uint32, freq_offsets_layout, MutableAnyOrigin
+    frequency_offsets: TileTensor[
+        DType.uint32, FreqOffsetsLayoutType, freq_offsets_origin
     ],
-    new_tokens: LayoutTensor[token_type, new_tokens_layout, MutableAnyOrigin],
+    new_tokens: TileTensor[token_type, NewTokensLayoutType, new_tokens_origin],
 ):
     """
     GPU kernel to update token frequency data in CSR format.
@@ -112,43 +132,40 @@ fn update_frequency_data_kernel[
     their count or adds them to the first available padding slot.
     """
 
-    alias simd_width = simd_width_of[DType.int32]()
-    alias PADDING_TOKEN = -1
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert new_tokens.flat_rank == 1
+
+    comptime simd_width = simd_width_of[DType.int32]()
+    comptime PADDING_TOKEN = -1
 
     var tid = thread_idx.x
     var batch_id = block_idx.x
 
     var tok_start = Int(frequency_offsets[batch_id])
     var tok_end = Int(frequency_offsets[batch_id + 1])
-    var new_token = rebind[Scalar[token_type]](new_tokens[batch_id]).cast[
-        DType.int32
-    ]()
+    var new_token = new_tokens[batch_id].cast[DType.int32]()
 
     var num_scans = ceildiv(tok_end - tok_start, block_size * simd_width)
 
     # search if the new token is already in the frequency data
     for scan_idx in range(num_scans):
-        var tok_idx = tok_start + (tid + UInt(scan_idx * block_size)) * UInt(
-            simd_width
-        )
+        var tok_idx = tok_start + ((tid + scan_idx * block_size) * simd_width)
 
         var val = SIMD[DType.int32, simd_width](0)
 
-        @parameter
-        for i in range(simd_width):
+        comptime for i in range(simd_width):
             if tok_idx + i < tok_end:
-                val[i] = rebind[Int32](
-                    compressed_frequency_data[tok_idx + i, 0]
-                )
+                val[i] = compressed_frequency_data[tok_idx + i, 0]
             else:
                 val[i] = Int32.MAX_FINITE
 
         var if_found = val.eq(new_token).select(
-            iota[DType.int32, simd_width](tok_idx),
+            iota[DType.int32, simd_width](Int32(tok_idx)),
             SIMD[DType.int32, simd_width](Int32.MIN_FINITE),
         )
         var first_padding_idx = val.eq(PADDING_TOKEN).select(
-            iota[DType.int32, simd_width](tok_idx),
+            iota[DType.int32, simd_width](Int32(tok_idx)),
             SIMD[DType.int32, simd_width](Int32.MAX_FINITE),
         )
 
@@ -172,13 +189,18 @@ fn update_frequency_data_kernel[
             return
 
 
-fn update_frequency_data[
-    token_type: DType, //,
+def update_frequency_data[
+    token_type: DType,
+    //,
     target: StaticString,
 ](
-    compressed_frequency_data: LayoutTensor[mut=True, DType.int32, **_],
-    frequency_offsets: LayoutTensor[DType.uint32, **_],
-    new_tokens: LayoutTensor[token_type, **_],
+    compressed_frequency_data: TileTensor[
+        mut=True, DType.int32, address_space=AddressSpace.GENERIC, ...
+    ],
+    frequency_offsets: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    new_tokens: TileTensor[token_type, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """
@@ -187,23 +209,30 @@ fn update_frequency_data[
     The frequency data is stored in a CSR format. This kernel expects there will be
     enough padding for each sequence to store the new tokens.
     """
+    comptime assert frequency_offsets.flat_rank == 1
+    comptime assert compressed_frequency_data.flat_rank == 2
+    comptime assert new_tokens.flat_rank == 1
+    comptime assert compressed_frequency_data.element_size == 1
+    comptime assert new_tokens.element_size == 1
 
-    @parameter
-    if is_gpu[target]():
-        alias block_size = 128
+    comptime if is_gpu[target]():
+        comptime block_size = 128
 
         dev_ctx = ctx.get_device_context()
-        alias kernel = update_frequency_data_kernel[
-            token_type,
-            block_size,
-            compressed_frequency_data.layout,
-            frequency_offsets.layout,
-            new_tokens.layout,
+        comptime kernel = update_frequency_data_kernel[
+            freq_data_origin=compressed_frequency_data.origin,
+            FreqDataLayoutType=compressed_frequency_data.LayoutType,
+            freq_offsets_origin=ImmutOrigin(frequency_offsets.origin),
+            FreqOffsetsLayoutType=frequency_offsets.LayoutType,
+            new_tokens_origin=ImmutOrigin(new_tokens.origin),
+            NewTokensLayoutType=new_tokens.LayoutType,
+            token_type=token_type,
+            block_size=block_size,
         ]
-        dev_ctx.enqueue_function_checked[kernel, kernel](
+        dev_ctx.enqueue_function[kernel, kernel](
             compressed_frequency_data,
-            frequency_offsets,
-            new_tokens,
+            frequency_offsets.as_immut(),
+            new_tokens.as_immut(),
             grid_dim=new_tokens.dim[0](),
             block_dim=block_size,
         )
@@ -212,19 +241,17 @@ fn update_frequency_data[
 
         @always_inline
         @parameter
-        fn update_frequency_data_fn[
+        def update_frequency_data_fn[
             width: Int, rank_: Int, alignment: Int = 1
         ](idx: IndexList[rank_]):
-            constrained[
-                rank_ == 1, "update_frequency_data_fn: rank must be 1"
-            ]()
+            comptime assert (
+                rank_ == 1
+            ), "update_frequency_data_fn: rank must be 1"
 
             var tok_start = frequency_offsets[idx[0]]
             var tok_end = frequency_offsets[idx[0] + 1]
 
-            var new_token = rebind[Scalar[token_type]](new_tokens[idx[0]]).cast[
-                DType.int32
-            ]()
+            var new_token = new_tokens[idx[0]][0].cast[DType.int32]()
 
             for tok_id in range(tok_start, tok_end):
                 if compressed_frequency_data[tok_id, 0] == new_token:
@@ -238,7 +265,7 @@ fn update_frequency_data[
                     compressed_frequency_data[tok_id, 1] = 1
                     break
 
-        var dispatch_shape = IndexList[1](new_tokens.size())
+        var dispatch_shape = IndexList[1](new_tokens.num_elements())
         elementwise[
             func=update_frequency_data_fn,
             simd_width=1,

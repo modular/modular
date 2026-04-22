@@ -1,15 +1,22 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 _DEPS = [
-    "@mojo//:internal_utils",
-    "@mojo//:linalg",
-    "@mojo//:quantization",
-    "@mojo//:stdlib",
+    "//max:internal_utils",
+    "//max:linalg",
+    "//max:quantization",
+    "@mojo//:std",
 ]
 
-_FP8_TESTS = [
+_FP8_FP4_TESTS = [
     "test_scaled_matmul.mojo",
     "test_scaled_fp8_quantization.mojo",
+    "test_scaled_nvfp4_quantization.mojo",
+    "test_nvfp4_block_scales_interleave.mojo",
+    "test_scaled_mxfp8_quantization.mojo",
+    "test_scaled_nvfp4_quantization_async.mojo",
+    "test_grouped_nvfp4_quantization.mojo",
 ]
 
 _EXTRA_CONSTRAINTS = {
@@ -19,7 +26,26 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_scaled_fp8_quantization.mojo": select({
-        "//:h100_gpu": ["//:h100_gpu"],
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    "test_scaled_nvfp4_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_nvfp4_block_scales_interleave.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_scaled_mxfp8_quantization.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_scaled_nvfp4_quantization_async.mojo": select({
+        "//:b200_gpu": ["//:b200_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_grouped_nvfp4_quantization.mojo": select({
         "//:b200_gpu": ["//:b200_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -36,7 +62,7 @@ _EXTRA_CONSTRAINTS = {
         target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
         deps = _DEPS,
     )
-    for src in _FP8_TESTS
+    for src in _FP8_FP4_TESTS
 ]
 
 [
@@ -51,13 +77,15 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "test_multistage_gemm_q.mojo",
-        ] + _FP8_TESTS,
+        ] + _FP8_FP4_TESTS,
     )
 ]
 
 mojo_test(
     name = "test_multistage_gemm_q.mojo.test",
     srcs = ["test_multistage_gemm_q.mojo"],
+    # KERN-2339: Bounds check reveals vectorized store bug: n=0, width=4 but valid range is [0, 2]
+    enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "3",
     },

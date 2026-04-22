@@ -1,9 +1,11 @@
-This directory contains code examples for the
+# Code examples and tests for get started with Mojo
+
+This directory contains Code examples and tests for the
 [Get started with Mojo](../../../../docs/manual/get-started.mdx) tutorial of the
 Mojo Manual. These are only "checkpoints" for various steps of the tutorial, to
 ensure that the code for these intermediate steps is correct. The complete
 reference solution for the tutorial is in
-[examples/mojo/life](../../../../../examples/mojo/life/) directory, which is
+[examples/mojo/life](../../../../examples/life/) directory, which is
 deployed to the public GitHub repo. Checkpoints aren't needed for steps that
 simply "accrete" functionality or for the final result, so there isn't a
 checkpoint for each step of the tutorial.

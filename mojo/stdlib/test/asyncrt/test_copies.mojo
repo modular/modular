@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import TestSuite
+from asyncrt_test_utils import create_test_device_context
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
-fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
+def _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
 
@@ -27,8 +27,8 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Float32(i)
+        out_host[i] = Float32(length + i)
 
     # Copy to and from device buffers.
     in_dev.enqueue_copy_from(in_host)
@@ -45,10 +45,14 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     for i in range(len(out_span)):
         if i < 10:
             print("at index", i, "the value is", out_span[i])
-        expect_eq(out_span[i], i, "at index ", i, " the value is ", out_span[i])
+        assert_equal(
+            out_span[i],
+            Float32(i),
+            String("at index ", i, " the value is ", out_span[i]),
+        )
 
 
-fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
+def _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
     print("-")
     print("_run_sub_memcpy(", length, ")")
 
@@ -65,8 +69,8 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Int64(i)
+        out_host[i] = Int64(length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
@@ -78,7 +82,7 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
+    first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -91,12 +95,16 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
             expected = i - half_length
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], expected, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            Int64(expected),
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
-fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
+def _run_fake_memcpy(
+    ctx: DeviceContext, length: Int, use_take_ptr: Bool
+) raises:
     print("-")
     print("_run_fake_memcpy(", length, ", take_ptr = ", use_take_ptr, ")")
 
@@ -109,14 +117,14 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Int64(i)
+        out_host[i] = Int64(length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
     in_dev.enqueue_copy_to(out_dev)
 
-    var out_ptr: UnsafePointer[Int64]
+    var out_ptr: UnsafePointer[Int64, MutAnyOrigin]
     if use_take_ptr:
         out_ptr = out_dev.take_ptr()
     else:
@@ -125,7 +133,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
     var first_out_dev = DeviceBuffer[DType.int64](
         ctx, out_ptr, half_length, owning=use_take_ptr
     )
-    var interior_out_ptr: UnsafePointer[Int64] = out_ptr.offset(half_length)
+    var interior_out_ptr = out_ptr + half_length
     var second_out_dev = DeviceBuffer[DType.int64](
         ctx, interior_out_ptr, half_length, owning=False
     )
@@ -136,7 +144,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr().offset(half_length))
+    first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -149,45 +157,47 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
             expected = i - half_length
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], expected, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            Int64(expected),
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
-fn _run_cpu_ctx_memcpy_async(
+def _run_cpu_ctx_memcpy_async(
     ctx: DeviceContext, cpu_ctx: DeviceContext, length: Int
 ) raises:
     print("-")
     print("_run_cpu_ctx_memcpy_async(", length, ")")
 
     var host_buf = cpu_ctx.enqueue_create_host_buffer[DType.int64](length)
-    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length).enqueue_fill(
-        13
-    )
+    var dev_buf = ctx.enqueue_create_buffer[DType.int64](length)
+    dev_buf.enqueue_fill(13)
 
     for i in range(length):
-        host_buf[i] = 2 * i
+        host_buf[i] = Int64(2 * i)
 
     ctx.enqueue_copy(dev_buf, host_buf)
 
     with dev_buf.map_to_host() as dev_buf:
         for i in range(length):
-            expect_eq(dev_buf[i], 2 * i)
+            assert_equal(dev_buf[i], Int64(2 * i))
 
-    host_buf = host_buf.enqueue_fill(12)
+    host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
+    cpu_ctx.synchronize()
 
     for i in range(length):
-        expect_eq(host_buf[i], 2 * i)
+        assert_equal(host_buf[i], Int64(2 * i))
 
 
-def test_copies():
+def test_copies() raises:
     var ctx = create_test_device_context()
 
     print("-------")
     print("Running test_copies(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memcpy(ctx, 64, True)
     _run_memcpy(ctx, one_mb, True)
@@ -206,5 +216,5 @@ def test_copies():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

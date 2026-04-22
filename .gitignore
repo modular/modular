@@ -8,6 +8,7 @@ __pycache__/
 
 # Distribution / packaging
 .Python
+local.bazelrc
 /bazel-*
 /MODULE.bazel.lock
 /external
@@ -17,7 +18,6 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
 lib64/
 parts/
 sdist/
@@ -113,6 +113,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*.venv
+
 
 
 # Spyder project settings
@@ -159,5 +161,5 @@ cython_debug/
 examples/models/*
 !examples/models/README.md
 
-# Magic cache
-.magic
+# Kgen trace
+kgen.trace.*

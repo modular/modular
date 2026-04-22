@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-dict-example
-from python import Python
+from std.python import Python
 
 
-def main():
+def main() raises:
     py_dict = Python.dict()
     py_dict["item_name"] = "whizbang"
     py_dict["price"] = 11.75

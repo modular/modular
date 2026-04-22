@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,28 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up, ceildiv
-from os.atomic import Atomic
-from sys import size_of
+from std.math import align_up, ceildiv
+from std.math.uutils import umod, ualign_up
+from std.atomic import Atomic
+from std.sys import size_of
 
-from gpu import NamedBarrierSemaphore
-from gpu.globals import WARPGROUP_SIZE
-from gpu.host.info import H100
-from gpu.id import block_idx, grid_dim, thread_idx
-from gpu.memory import AddressSpace
-from layout import Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
-from stdlib.bit import log2_floor
+from std.gpu import NamedBarrierSemaphore
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu.host.info import H100
+from std.gpu import block_idx, grid_dim, thread_idx
+from layout import Layout, LayoutTensor, RuntimeLayout
+from std.bit import log2_floor
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .tile_scheduler import RasterOrder, WorkInfo
 
-from ...structuring import RegTileType
+from ...structuring import RegTile
 
 
 @always_inline("nodebug")
-fn _check_scheduler_constraints[
+def _check_scheduler_constraints[
     prob_shape_nk: IndexList[2],
     tile_shape: IndexList[3],
     splits: UInt32,
@@ -42,42 +41,40 @@ fn _check_scheduler_constraints[
     raster_order: RasterOrder,
     reduction_mode: ReductionMode,
 ]():
-    alias num_k_iters = ceildiv(prob_shape_nk[1], tile_shape[2])
+    comptime num_k_iters = ceildiv(prob_shape_nk[1], tile_shape[2])
 
-    constrained[
-        reduction_mode == ReductionMode.Deterministic,
-        "Currently SplitK only supports Deterministic reduction",
-    ]()
+    comptime assert (
+        reduction_mode == ReductionMode.Deterministic
+    ), "Currently SplitK only supports Deterministic reduction"
 
-    constrained[
-        splits <= H100.sm_count,
-        "splits must be less than or equal to the number of SMs",
-    ]()
+    comptime assert splits <= UInt32(
+        H100.sm_count
+    ), "splits must be less than or equal to the number of SMs"
 
-    constrained[
-        splits <= num_k_iters,
-        "splits must be less than or equal to the number of output tiles",
-    ]()
-    constrained[(num_k_iters % splits) == 0, "BK must be divisible by splits"]()
+    comptime assert splits <= UInt32(
+        num_k_iters
+    ), "splits must be less than or equal to the number of output tiles"
+    comptime assert (
+        UInt32(num_k_iters) % splits
+    ) == 0, "BK must be divisible by splits"
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ReductionMode(ImplicitlyCopyable, Movable):
+struct ReductionMode(TrivialRegisterPassable):
     var _value: Int32
 
     # CTAs perform reduction in a serialized fashion so we will have deterministic numeric behavior
-    alias Deterministic = Self(0)
+    comptime Deterministic = Self(0)
 
     # CTAs perform reduction atomically but we will have nondeterministic numeric behavior
-    alias Nondeterministic = Self(1)
+    comptime Nondeterministic = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
@@ -86,7 +83,6 @@ struct ReductionMode(ImplicitlyCopyable, Movable):
 # ===----------------------------------------------------------------------=== #
 
 
-@register_passable("trivial")
 struct SplitKTileScheduler[
     problem_shape_nk: IndexList[2],
     tile_shape: IndexList[3],
@@ -96,7 +92,7 @@ struct SplitKTileScheduler[
     cluster_shape: IndexList[2],
     raster_order: RasterOrder,
     reduction_mode: ReductionMode = ReductionMode.Deterministic,
-]:
+](TrivialRegisterPassable):
     var prob_shape: IndexList[3]  # M x N x K
     var block_id_in_cluster: IndexList[2]
     var blocks_per_problem: UInt32
@@ -112,89 +108,107 @@ struct SplitKTileScheduler[
 
     var cluster_blk_major: UInt32
 
-    var locks_ptr: UnsafePointer[Int32]
+    var locks_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
-    alias k_tiles_per_output_tile = ceildiv(problem_shape_nk[1], tile_shape[2])
+    comptime k_tiles_per_output_tile = UInt32(
+        ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2])
+    )
     # we don't support uneven splits so for num_iters per split can be compile time constant
-    alias k_tiles_per_split = ceildiv(
-        problem_shape_nk[1], tile_shape[2]
-    ) // splits
+    comptime k_tiles_per_split = UInt32(
+        ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2])
+    ) // Self.splits
     # cluster size is power of 2 (1, 2 ,4)
-    alias log_cluster_size = log2_floor(cluster_shape[0] * cluster_shape[1])
+    comptime log_cluster_size = log2_floor(
+        Self.cluster_shape[0] * Self.cluster_shape[1]
+    )
 
-    alias WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
-        dtype, layout, MutableAnyOrigin
+    comptime WorkTileType[dtype: DType, layout: Layout] = LayoutTensor[
+        dtype, layout, MutAnyOrigin
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         prob_shape: IndexList[3],
         block_id_in_cluster: IndexList[2],
-        locks_ptr: UnsafePointer[NoneType],
+        locks_ptr: UnsafePointer[mut=True, UInt8, _],
     ):
         _check_scheduler_constraints[
-            problem_shape_nk,
-            tile_shape,
-            splits,
-            num_consumer,
-            num_pipeline_stages,
-            cluster_shape,
-            raster_order,
-            reduction_mode,
+            Self.problem_shape_nk,
+            Self.tile_shape,
+            Self.splits,
+            Self.num_consumer,
+            Self.num_pipeline_stages,
+            Self.cluster_shape,
+            Self.raster_order,
+            Self.reduction_mode,
         ]()
 
         self.prob_shape = prob_shape
         self.block_id_in_cluster = block_id_in_cluster
 
-        self.locks_ptr = locks_ptr.bitcast[Int32]()
+        self.locks_ptr = rebind[UnsafePointer[Int32, MutAnyOrigin]](
+            locks_ptr.bitcast[Int32]()
+        )
 
         var problem_blocks = Self.get_problem_blocks_shape(
-            prob_shape, tile_shape, cluster_shape
+            prob_shape, Self.tile_shape, Self.cluster_shape
         )
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(self.cluster_shape[0]),
+        var problem_blocks_m = ualign_up(
+            problem_blocks[0],
+            self.cluster_shape[0],
         )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(self.cluster_shape[1]),
+        var problem_blocks_n = ualign_up(
+            problem_blocks[1],
+            self.cluster_shape[1],
         )
 
-        @parameter
-        if raster_order == RasterOrder.AlongN:
-            self.current_work_linear_idx = (
-                block_idx.x + grid_dim.x * block_idx.y
+        comptime if Self.raster_order == RasterOrder.AlongN:
+            self.current_work_linear_idx = UInt32(block_idx.x) + UInt32(
+                grid_dim.x
+            ) * UInt32(block_idx.y)
+            self.log_cluster_shape_major = UInt32(
+                log2_floor(self.cluster_shape[1])
             )
-            self.log_cluster_shape_major = log2_floor(self.cluster_shape[1])
-            self.log_cluster_shape_minor = log2_floor(self.cluster_shape[0])
-            self.cluster_blk_major = (
-                problem_blocks_n >> self.log_cluster_shape_major
+            self.log_cluster_shape_minor = UInt32(
+                log2_floor(self.cluster_shape[0])
+            )
+            self.cluster_blk_major = UInt32(
+                problem_blocks_n >> Int(self.log_cluster_shape_major)
             )
 
         else:  # rasterize along M
-            self.current_work_linear_idx = (
-                block_idx.x * grid_dim.y + block_idx.y
+            self.current_work_linear_idx = UInt32(block_idx.x) * UInt32(
+                grid_dim.y
+            ) + UInt32(block_idx.y)
+            self.log_cluster_shape_major = UInt32(
+                log2_floor(self.cluster_shape[0])
             )
-            self.log_cluster_shape_major = log2_floor(self.cluster_shape[0])
-            self.log_cluster_shape_minor = log2_floor(self.cluster_shape[1])
-            self.cluster_blk_major = (
-                problem_blocks_m >> self.log_cluster_shape_major
+            self.log_cluster_shape_minor = UInt32(
+                log2_floor(self.cluster_shape[1])
+            )
+            self.cluster_blk_major = UInt32(
+                problem_blocks_m >> Int(self.log_cluster_shape_major)
             )
 
-        self.blocks_per_problem = problem_blocks_m * problem_blocks_n
+        self.blocks_per_problem = UInt32(problem_blocks_m) * UInt32(
+            problem_blocks_n
+        )
 
     @always_inline
-    fn get_sm_num(self) -> UInt32:
-        @parameter
-        if raster_order == RasterOrder.AlongN:
-            return block_idx.x + grid_dim.x * block_idx.y
+    def get_sm_num(self) -> UInt32:
+        comptime if Self.raster_order == RasterOrder.AlongN:
+            return UInt32(block_idx.x) + UInt32(grid_dim.x) * UInt32(
+                block_idx.y
+            )
         else:
-            return block_idx.x * grid_dim.y + block_idx.y
+            return UInt32(block_idx.x) * UInt32(grid_dim.y) + UInt32(
+                block_idx.y
+            )
 
     @staticmethod
     @always_inline
-    fn get_problem_blocks_shape(
+    def get_problem_blocks_shape(
         problem_shape: IndexList[3],
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
@@ -219,12 +233,15 @@ struct SplitKTileScheduler[
         )
 
     @always_inline
-    fn initial_work_tile_info(mut self) -> WorkInfo:
+    def initial_work_tile_info(mut self) -> WorkInfo:
         return self.get_current_work_info()
 
     @always_inline
-    fn get_current_work_info(mut self) -> WorkInfo:
-        if self.current_work_linear_idx >= self.blocks_per_problem * splits:
+    def get_current_work_info(mut self) -> WorkInfo:
+        if (
+            self.current_work_linear_idx
+            >= self.blocks_per_problem * Self.splits
+        ):
             return WorkInfo.INVALID_WORK_INFO
 
         var work_tile_info = WorkInfo()
@@ -235,7 +252,7 @@ struct SplitKTileScheduler[
         return work_tile_info
 
     @always_inline
-    fn get_worktile_m_n_idx(
+    def get_worktile_m_n_idx(
         mut self,
         mut work_tile_info: WorkInfo,
         linear_tile_id: UInt32,
@@ -254,11 +271,10 @@ struct SplitKTileScheduler[
 
         var cluster_minor_offset: UInt32
 
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
-            cluster_minor_offset = rank_m_in_cluster
+        comptime if self.raster_order == RasterOrder.AlongN:
+            cluster_minor_offset = UInt32(rank_m_in_cluster)
         else:
-            cluster_minor_offset = rank_n_in_cluster
+            cluster_minor_offset = UInt32(rank_n_in_cluster)
 
         var cluster_idx_minor = cluster_id / self.cluster_blk_major
         var cluster_idx_major = cluster_id % self.cluster_blk_major
@@ -274,8 +290,7 @@ struct SplitKTileScheduler[
         var work_idx_m: UInt32
         var work_idx_n: UInt32
 
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
+        comptime if self.raster_order == RasterOrder.AlongN:
             work_idx_m = minor_work_idx
             work_idx_n = major_work_idx
         else:
@@ -286,7 +301,7 @@ struct SplitKTileScheduler[
         work_tile_info.n = work_idx_n
 
     @always_inline
-    fn assign_work(mut self, mut work_tile_info: WorkInfo, linear_idx: UInt32):
+    def assign_work(mut self, mut work_tile_info: WorkInfo, linear_idx: UInt32):
         var linear_tile_id = self.get_k_start_and_linear_tile_id(
             work_tile_info, linear_idx
         )
@@ -294,45 +309,53 @@ struct SplitKTileScheduler[
         self.get_worktile_m_n_idx(work_tile_info, linear_tile_id)
 
     @always_inline
-    fn get_k_start_and_linear_tile_id(
+    def get_k_start_and_linear_tile_id(
         mut self, mut work_tile_info: WorkInfo, linear_idx: UInt32
     ) -> UInt32:
-        var linear_cluster_id = linear_idx >> self.log_cluster_size
-        var num_tile_clusters = self.blocks_per_problem >> self.log_cluster_size
+        var linear_cluster_id = linear_idx >> UInt32(self.log_cluster_size)
+        var num_tile_clusters = self.blocks_per_problem >> UInt32(
+            self.log_cluster_size
+        )
 
         var split = linear_cluster_id / num_tile_clusters
         var cluster_linear_idx = linear_cluster_id % num_tile_clusters
 
         # Bring the linearized tile ID back into the space of tiles, rather than clusters
-        var linear_tile_id = cluster_linear_idx << self.log_cluster_size
+        var linear_tile_id = cluster_linear_idx << UInt32(self.log_cluster_size)
 
         var rank_m_in_cluster = self.block_id_in_cluster[0]
         var rank_n_in_cluster = self.block_id_in_cluster[1]
 
         # The final linearized tile ID is in units of the cluster dimension over which we rasterize.
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
-            linear_tile_id += rank_n_in_cluster << self.log_cluster_shape_minor
+        comptime if self.raster_order == RasterOrder.AlongN:
+            linear_tile_id += (
+                UInt32(rank_n_in_cluster) << self.log_cluster_shape_minor
+            )
         else:
-            linear_tile_id += rank_m_in_cluster << self.log_cluster_shape_minor
+            linear_tile_id += (
+                UInt32(rank_m_in_cluster) << self.log_cluster_shape_minor
+            )
 
         work_tile_info.k_start = self.k_tiles_per_split * split
         work_tile_info.num_k_tiles = (
-            ceildiv(problem_shape_nk[1], tile_shape[2]) // splits
+            UInt32(ceildiv(Self.problem_shape_nk[1], Self.tile_shape[2]))
+            // Self.splits
         )
 
         return linear_tile_id  # basically linear index of the output tile
 
     @always_inline
-    fn fetch_next_work(mut self, mut work_tile_info: WorkInfo) -> WorkInfo:
+    def fetch_next_work(mut self, mut work_tile_info: WorkInfo) -> WorkInfo:
         self.advance_to_next_work()
         return self.get_current_work_info()
 
     @always_inline
-    fn requires_reduction(self, work_tile_info: WorkInfo) -> Bool:
-        var m = work_tile_info.m * self.tile_shape[0]
-        var n = work_tile_info.n * self.tile_shape[1]
-        var is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
+    def requires_reduction(self, work_tile_info: WorkInfo) -> Bool:
+        var m = work_tile_info.m * UInt32(self.tile_shape[0])
+        var n = work_tile_info.n * UInt32(self.tile_shape[1])
+        var is_valid = m < UInt32(self.prob_shape[0]) and n < UInt32(
+            self.prob_shape[1]
+        )
 
         return (
             is_valid
@@ -341,17 +364,21 @@ struct SplitKTileScheduler[
         )
 
     @always_inline
-    fn advance_to_next_work(mut self):
-        self.current_work_linear_idx += grid_dim.x * grid_dim.y * grid_dim.z
+    def advance_to_next_work(mut self):
+        self.current_work_linear_idx += (
+            UInt32(grid_dim.x) * UInt32(grid_dim.y) * UInt32(grid_dim.z)
+        )
 
     @always_inline
-    fn is_last_split(
+    def is_last_split(
         self,
         work_tile_info: WorkInfo,
     ) -> Bool:
-        var m = work_tile_info.m * self.tile_shape[0]
-        var n = work_tile_info.n * self.tile_shape[1]
-        var is_valid = m < self.prob_shape[0] and n < self.prob_shape[1]
+        var m = work_tile_info.m * UInt32(self.tile_shape[0])
+        var n = work_tile_info.n * UInt32(self.tile_shape[1])
+        var is_valid = m < UInt32(self.prob_shape[0]) and n < UInt32(
+            self.prob_shape[1]
+        )
         return (
             is_valid
             and work_tile_info.is_valid()
@@ -360,7 +387,7 @@ struct SplitKTileScheduler[
 
     @staticmethod
     @always_inline
-    fn get_grid_shape(
+    def get_grid_shape(
         dyn_cluster_shape: IndexList[3],
         dyn_raster_order: RasterOrder = RasterOrder.AlongN,
     ) raises -> IndexList[3]:
@@ -375,24 +402,20 @@ struct SplitKTileScheduler[
 
         if cluster_size == 1:
             if dyn_raster_order == RasterOrder.AlongN:
-                launch_grid_shape[1] = Int(H100.sm_count)
+                launch_grid_shape[1] = H100.sm_count
             else:
-                launch_grid_shape[0] = Int(H100.sm_count)
+                launch_grid_shape[0] = H100.sm_count
         else:
             if dyn_raster_order == RasterOrder.AlongN:
-                launch_grid_shape[1] = Int(H100.sm_count) // Int(
-                    dyn_cluster_shape[0]
-                )
+                launch_grid_shape[1] = H100.sm_count // dyn_cluster_shape[0]
             else:
-                launch_grid_shape[0] = Int(H100.sm_count) // Int(
-                    dyn_cluster_shape[1]
-                )
+                launch_grid_shape[0] = H100.sm_count // dyn_cluster_shape[1]
 
         return launch_grid_shape
 
     @staticmethod
     @always_inline
-    fn get_num_tiles(
+    def get_num_tiles(
         problem_shape: IndexList[3],
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
@@ -401,61 +424,48 @@ struct SplitKTileScheduler[
             problem_shape, dyn_tile_shape, dyn_cluster_shape
         )
 
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(dyn_cluster_shape[0]),
+        var problem_blocks_m = ualign_up(
+            problem_blocks[0],
+            dyn_cluster_shape[0],
         )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(dyn_cluster_shape[1]),
+        var problem_blocks_n = ualign_up(
+            problem_blocks[1],
+            dyn_cluster_shape[1],
         )
-        return Int(problem_blocks_m * problem_blocks_n)
+        return problem_blocks_m * problem_blocks_n
 
     @staticmethod
     @always_inline
-    fn get_required_locks_buffer_size_bytes[
+    def get_required_locks_buffer_size_bytes[
         accum_type: DType, dyn_num_consumer: UInt32
     ](
         problem_shape: IndexList[3],
         dyn_tile_shape: IndexList[3],
         dyn_cluster_shape: IndexList[2],
     ) -> Int:
-        var problem_blocks = Self.get_problem_blocks_shape(
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
+
+        var num_output_tiles = Self.get_num_tiles(
             problem_shape, dyn_tile_shape, dyn_cluster_shape
         )
 
-        var problem_blocks_m = align_up(
-            UInt(problem_blocks[0]),
-            UInt(dyn_cluster_shape[0]),
-        )
-        var problem_blocks_n = align_up(
-            UInt(problem_blocks[1]),
-            UInt(dyn_cluster_shape[1]),
-        )
-
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
-
-        var num_output_tiles = problem_blocks_m * problem_blocks_n
-
         var locks_workspace_bytes = (
-            num_output_tiles * UInt(size_of[Int32]()) * dyn_num_consumer
+            UInt32(num_output_tiles * size_of[Int32]()) * dyn_num_consumer
         )
 
         return Int(locks_workspace_bytes)
 
     @always_inline
-    fn get_linear_idx_from_m_and_n(
+    def get_linear_idx_from_m_and_n(
         self, tile_m: UInt32, tile_n: UInt32
     ) -> UInt32:
         var minor_work_idx: UInt32
         var major_work_idx: UInt32
         var cluster_minor_offset: UInt32
 
-        @parameter
-        if self.raster_order == RasterOrder.AlongN:
+        comptime if self.raster_order == RasterOrder.AlongN:
             minor_work_idx = tile_m
             major_work_idx = tile_n
             var cluster_m = (
@@ -494,20 +504,20 @@ struct SplitKTileScheduler[
         return linear_idx
 
     @always_inline
-    fn output_tile_index(self, work_tile_info: WorkInfo) -> UInt32:
+    def output_tile_index(self, work_tile_info: WorkInfo) -> UInt32:
         return self.get_linear_idx_from_m_and_n(
             work_tile_info.m, work_tile_info.n
         )
 
     @always_inline
-    fn reduction[
+    def reduction[
         accum_type: DType,
         c_reg_layout: Layout,
         workspace_layout: Layout,
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
         work_tile_info: WorkInfo,
         num_barriers: UInt32,
         warp_group_local_idx: UInt32,
@@ -522,10 +532,7 @@ struct SplitKTileScheduler[
             reduction_tile_idx * num_barriers
         ) + warp_group_local_idx
 
-        var num_peers = 0
-        var reduction_peer_offset = 0
-
-        var warp_group_thread_idx = thread_idx.x % UInt(WARPGROUP_SIZE)
+        var warp_group_thread_idx = umod(thread_idx.x, WARPGROUP_SIZE)
 
         if not self.is_last_split(work_tile_info):
             if work_tile_info.k_start == 0:
@@ -535,18 +542,16 @@ struct SplitKTileScheduler[
                     c_reg_tile,
                     reduction_tile_idx,
                     warp_group_local_idx,
-                    warp_group_thread_idx,
+                    UInt32(warp_group_thread_idx),
                 )
 
             else:
-
-                @parameter
-                if reduction_mode == ReductionMode.Deterministic:
+                comptime if Self.reduction_mode == ReductionMode.Deterministic:
                     # Wait until the preceding split added its accumulators
                     Self.wait_eq(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        Int(warp_group_thread_idx),
+                        warp_group_thread_idx,
                         lock_idx,
                         work_tile_info.k_start,
                     )
@@ -555,7 +560,7 @@ struct SplitKTileScheduler[
                     Self.wait_lt(
                         self.locks_ptr,
                         Int32(warp_group_local_idx),
-                        Int(warp_group_thread_idx),
+                        warp_group_thread_idx,
                         lock_idx,
                         1,
                     )
@@ -565,7 +570,7 @@ struct SplitKTileScheduler[
                     c_reg_tile,
                     reduction_tile_idx,
                     warp_group_local_idx,
-                    warp_group_thread_idx,
+                    UInt32(warp_group_thread_idx),
                 )
 
             var increment = work_tile_info.num_k_tiles + work_tile_info.k_start
@@ -573,7 +578,7 @@ struct SplitKTileScheduler[
             Self.arrive_set(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                Int(warp_group_thread_idx),
+                warp_group_thread_idx,
                 lock_idx,
                 increment,
             )
@@ -583,7 +588,7 @@ struct SplitKTileScheduler[
             Self.wait_eq(
                 self.locks_ptr,
                 Int32(warp_group_local_idx),
-                Int(warp_group_thread_idx),
+                warp_group_thread_idx,
                 lock_idx,
                 work_tile_info.k_start,
             )
@@ -593,161 +598,152 @@ struct SplitKTileScheduler[
                 c_reg_tile,
                 reduction_tile_idx,
                 warp_group_local_idx,
-                warp_group_thread_idx,
+                UInt32(warp_group_thread_idx),
             )
 
     @staticmethod
     @always_inline
-    fn wait_eq(
-        lock_ptr: UnsafePointer[Int32],
+    def wait_eq(
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
         val: UInt32,
     ):
         var sema = NamedBarrierSemaphore[
-            Int32(WARPGROUP_SIZE), 4, Int32(num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+            Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.wait_eq(barrier_id, Int32(val))
 
     @staticmethod
     @always_inline
-    fn wait_lt(
-        lock_ptr: UnsafePointer[Int32],
+    def wait_lt(
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
         count: UInt32,
     ):
         var sema = NamedBarrierSemaphore[
-            Int32(WARPGROUP_SIZE), 4, Int32(num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+            Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.wait_lt(barrier_id, Int32(count))
 
     @staticmethod
     @always_inline
-    fn arrive_set(
-        lock_ptr: UnsafePointer[Int32],
+    def arrive_set(
+        lock_ptr: UnsafePointer[Int32, MutAnyOrigin],
         barrier_id: Int32,
         barrier_group_thread_idx: Int,
         lock_idx: UInt32,
         increment: UInt32,
     ):
         var sema = NamedBarrierSemaphore[
-            Int32(WARPGROUP_SIZE), 4, Int32(num_consumer)
-        ](lock_ptr.offset(lock_idx), barrier_group_thread_idx)
+            Int32(WARPGROUP_SIZE), 4, Int32(Self.num_consumer)
+        ](lock_ptr + lock_idx, barrier_group_thread_idx)
         sema.arrive_set(barrier_id, Int32(increment))
 
     @always_inline
-    fn store_accumulator[
+    def store_accumulator[
         accum_type: DType,
         c_reg_layout: Layout,
         workspace_layout: Layout,
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
     ):
-        alias BM = workspace_layout.shape[1].value()
-        alias BN = workspace_layout.shape[2].value()
+        comptime BM = workspace_layout.shape[1].value()
+        comptime BN = workspace_layout.shape[2].value()
 
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
-        alias num_mma = c_reg_tile.layout.shape[0].value()
-        alias c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.layout.shape[0].value()
+        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
 
         var workspace_tile = self._get_workspace_tile_reshaped(
             reduction_workspace, reduction_tile_idx
         )
 
         var tile_crd_idx = workspace_tile.tile_with_offset[
-            Int(BM // num_consumer), BN
+            Int(UInt32(BM) // Self.num_consumer), BN
         ](Int(warp_group_local_idx), 0)
         var work_space_tile_split = tile_crd_idx[0]
         var work_space_tile_reshaped = work_space_tile_split.reshape[
             Layout.row_major(
-                (Int(BM // num_consumer) * BN) // WARPGROUP_SIZE,
+                (Int(UInt32(BM) // Self.num_consumer) * BN) // WARPGROUP_SIZE,
                 WARPGROUP_SIZE,
             )
         ]()
 
-        @parameter
-        for mma_id in range(num_mma):
-
-            @parameter
-            for i in range(c_frag_size):
+        comptime for mma_id in range(num_mma):
+            comptime for i in range(c_frag_size):
                 work_space_tile_reshaped[
-                    Int(mma_id * c_frag_size + i), Int(warp_group_thread_idx)
+                    mma_id * c_frag_size + i, Int(warp_group_thread_idx)
                 ] = c_reg_tile[mma_id, i]
 
     @always_inline
-    fn reduce_add[
+    def reduce_add[
         accum_type: DType,
         c_reg_layout: Layout,
-        workspace_layout: Layout, //,
+        workspace_layout: Layout,
+        //,
         *,
         write_back: Bool,
     ](
         self,
         reduction_workspace: Self.WorkTileType[accum_type, workspace_layout],
-        c_reg_tile: RegTileType[accum_type, c_reg_layout, _],
+        c_reg_tile: RegTile[accum_type, c_reg_layout],
         reduction_tile_idx: UInt32,
         warp_group_local_idx: UInt32,
         warp_group_thread_idx: UInt32,
     ):
-        alias BM = workspace_layout.shape[1].value()
-        alias BN = workspace_layout.shape[2].value()
+        comptime BM = workspace_layout.shape[1].value()
+        comptime BN = workspace_layout.shape[2].value()
 
-        constrained[
-            accum_type == DType.float32,
-            "Only support float32 accumulator type",
-        ]()
+        comptime assert (
+            accum_type == DType.float32
+        ), "Only support float32 accumulator type"
 
-        alias num_mma = c_reg_tile.layout.shape[0].value()
-        alias c_frag_size = c_reg_tile.layout.shape[1].value()
+        comptime num_mma = c_reg_tile.layout.shape[0].value()
+        comptime c_frag_size = c_reg_tile.layout.shape[1].value()
 
         var workspace_tile = self._get_workspace_tile_reshaped(
             reduction_workspace, reduction_tile_idx
         )
 
         var tile_crd_idx = workspace_tile.tile_with_offset[
-            Int(BM // num_consumer), BN
+            Int(UInt32(BM) // Self.num_consumer), BN
         ](Int(warp_group_local_idx), 0)
         var work_space_tile_split = tile_crd_idx[0]
         var work_space_tile_reshaped = work_space_tile_split.reshape[
             Layout.row_major(
-                (Int(BM // num_consumer) * BN) // WARPGROUP_SIZE,
+                (Int(UInt32(BM) // Self.num_consumer) * BN) // WARPGROUP_SIZE,
                 WARPGROUP_SIZE,
             )
         ]()
 
-        @parameter
-        for mma_id in range(num_mma):
-
-            @parameter
-            for i in range(c_frag_size):
+        comptime for mma_id in range(num_mma):
+            comptime for i in range(c_frag_size):
                 var sum_val = (
                     work_space_tile_reshaped[
-                        Int(mma_id * c_frag_size + i),
+                        mma_id * c_frag_size + i,
                         Int(warp_group_thread_idx),
                     ]
                     + c_reg_tile[mma_id, i]
                 )
 
-                @parameter
-                if write_back:
-
-                    @parameter
-                    if reduction_mode == ReductionMode.Nondeterministic:
+                comptime if write_back:
+                    comptime if Self.reduction_mode == ReductionMode.Nondeterministic:
                         var offset = (
-                            mma_id * c_frag_size + i
-                        ) * WARPGROUP_SIZE + warp_group_thread_idx
+                            UInt32((mma_id * c_frag_size + i) * WARPGROUP_SIZE)
+                            + warp_group_thread_idx
+                        )
 
                         _ = Atomic.fetch_add(
                             work_space_tile_reshaped.ptr + offset,
@@ -755,14 +751,14 @@ struct SplitKTileScheduler[
                         )
                     else:
                         work_space_tile_reshaped[
-                            Int(mma_id * c_frag_size + i),
+                            mma_id * c_frag_size + i,
                             Int(warp_group_thread_idx),
                         ] = sum_val
                 else:
                     c_reg_tile[mma_id, i] = sum_val
 
     @always_inline
-    fn _get_workspace_tile_reshaped[
+    def _get_workspace_tile_reshaped[
         accum_type: DType,
         workspace_layout: Layout,
     ](
@@ -776,10 +772,11 @@ struct SplitKTileScheduler[
             ),
         ],
     ):
-        alias BM = workspace_layout.shape[1].value()
-        alias BN = workspace_layout.shape[2].value()
+        comptime BM = workspace_layout.shape[1].value()
+        comptime BN = workspace_layout.shape[2].value()
 
         return {
-            reduction_workspace.ptr + reduction_tile_idx * BM * BN,
+            reduction_workspace.ptr
+            + reduction_tile_idx * UInt32(BM) * UInt32(BN),
             RuntimeLayout[reshaped_workspace.layout].row_major(Index(BM, BN)),
         }

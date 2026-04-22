@@ -1,4 +1,4 @@
-<!-- markdownlint-disable -->
+<!-- rumdl-disable -->
 {# Print YAML front matter #}
 {% import 'macros.jinja' as macros %}
 {% set api_path = "/mojo" %}
@@ -14,6 +14,11 @@ type: {{ decl.kind }}
 {% endif %}
 namespace: {{ decl.namespace }}
 lang: mojo
+show_stability_marker: {{ decl.showStabilityMarker }}
+{% if decl.isStable %}is_stable: true
+{% endif %}
+{% if decl.sinceVersion %}since_version: {{ decl.sinceVersion }}
+{% endif %}
 description: {% if decl.summary
   %}"{{ macros.escape_quotes(decl.summary) }}"
   {% else %}"Mojo {{ decl.kind }} `{{ decl.namespace }}.{{ decl.name }}` documentation"
@@ -24,15 +29,24 @@ description: {% if decl.summary
 
 {% endmacro -%}
 {# Print each declaration #}
-{% macro process_decl_body(decl) %}
-{% if decl.signature or decl.convention %}
+{% macro process_decl_body(decl, overload=False) %}
+
+{% if decl.signature %}
 <div class="mojo-function-sig">
 
-{% if decl.convention %}
-`{{decl.convention}}`
+{% if decl.implicit %}
+`@implicit`
 {% endif %}
+{# For values that could contain IR (signatures, types, values), use #}
+{# double backticks to preserve literal backticks. #}
+{# Spaces between the double-backticks and content need to be balanced, #}
+{# so we either add them manually (as here) or use pad_backticks filter. #}
 {% if decl.signature %}
-`{% if decl.isStatic %}static {% endif %}{{ decl.signature }}`
+`` {% if decl.isStatic %}static {% endif %}{{ decl.signature }} ``
+{% endif %}
+{# for function overloads, show stability marker. #}
+{% if overload %}
+{{ macros.stability_marker(decl) }}
 {% endif %}
 
 </div>
@@ -55,6 +69,7 @@ description: {% if decl.summary
 {% for param in decl.parameters -%}
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
+            {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
                 [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
             {%- else -%}
@@ -64,9 +79,9 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{ param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}
@@ -77,8 +92,8 @@ description: {% if decl.summary
 
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
-        %}[`{{ arg.type }}`]({{ api_path }}{{ arg.path }}){% else
-        %}`{{ arg.type }}`{% endif %}): {{ arg.description }}
+        %}[``{{ arg.type | pad_backticks }}``]({{ api_path }}{{ arg.path }}){% else
+        %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
 {% endfor %}
 {% endif %}
 {% if (decl.returns and decl.returns.type != 'Self') or (decl.returns and decl.returns.doc) %}
@@ -87,8 +102,8 @@ description: {% if decl.summary
 **Returns:**
 
 {% if decl.returns.path
-  %}[`{{ decl.returns.type }}`]({{ api_path }}{{ decl.returns.path }}){% else
-  %}`{{ decl.returns.type }}`{% endif %}{% if decl.returns.doc
+  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_path }}{{ decl.returns.path }}){% else
+  %}``{{ decl.returns.type | pad_backticks }}``{% endif %}{% if decl.returns.doc
     %}: {{ decl.returns.doc }}{% endif %}
 {% endif %}
 {% if decl.raisesDoc %}
@@ -113,7 +128,7 @@ description: {% if decl.summary
 {% for overload in decl.overloads %}
 <div class='mojo-function-detail'>
 
-{{ process_decl_body(overload) }}
+{{ process_decl_body(overload, overload=True) }}
 
 </div>
 
@@ -126,9 +141,7 @@ description: {% if decl.summary
 
 {% if decl.deprecated %}
 
-**Deprecated:**
-
-{{ decl.deprecated }}
+**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.parameters and not decl.kind == 'function' %}
@@ -147,9 +160,9 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}
@@ -159,7 +172,7 @@ description: {% if decl.summary
 ## Fields
 
 {% for field in decl.fields %}
-* ​<b>{{ field.name }}</b> (`{{field.type}}`): {{ field.summary }}
+* ​<b>{{ field.name }}</b> (``{{field.type | pad_backticks }}``): {{ field.summary }}
 {% if field.description %}
 {{field.description | indent(2, True, False)}}
 {% endif %}
@@ -178,18 +191,25 @@ description: {% if decl.summary
 {% endif %}
 {% if decl.aliases %}
 
-## Aliases
+## `comptime` members
 
 {% for alias in decl.aliases | sort(attribute='name') %}
 
+{# Extra div to flex align stability marker. #}
+<div class='mojo-alias-header'>
+
 ###  `{{ alias.name }}`
+
+{{ macros.stability_marker(alias, header=True) }}
+
+</div>
 
 <div class='mojo-alias-detail'>
 <div class="mojo-alias-sig">
 
 {# don't show value for trait aliases (no value) or if name == value #}
 {% if alias.value and alias.name != alias.value %}
-`{{ alias.signature }} = {{ alias.value }}`
+`` {{ alias.signature }} = {{ alias.value }} ``
 {% else %}
 `{{ alias.signature }}`
 {% endif %}
@@ -223,9 +243,9 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{ param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}

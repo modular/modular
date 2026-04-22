@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import size_of
+from std.sys.info import size_of
 
 from test_utils import (
     CopyCountedStruct,
     CopyCounter,
     DelCounter,
     MoveCounter,
+    Observable,
     TriviallyCopyableMoveCounter,
+    check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
@@ -28,12 +30,18 @@ from testing import (
     assert_true,
     TestSuite,
 )
+from std.testing.prop import PropTest
+
+# TODO(MOCO-522): Figure out desired behavior for importing files with only
+# extensions in them.
+from std.testing.prop.strategy import SIMD, List
+from std.sys.intrinsics import _type_is_eq
 
 
-def test_mojo_issue_698():
+def test_mojo_issue_698() raises:
     var list = List[Float64]()
     for i in range(5):
-        list.append(i)
+        list.append(Float64(i))
 
     assert_equal(0.0, list[0])
     assert_equal(1.0, list[1])
@@ -42,7 +50,7 @@ def test_mojo_issue_698():
     assert_equal(4.0, list[4])
 
 
-def test_list():
+def test_list() raises:
     var list = List[Int]()
 
     for i in range(5):
@@ -56,38 +64,38 @@ def test_list():
     assert_equal(3, list[3])
     assert_equal(4, list[4])
 
-    assert_equal(0, list[-5])
-    assert_equal(3, list[-2])
-    assert_equal(4, list[-1])
+    assert_equal(0, list[len(list) - 5])
+    assert_equal(3, list[len(list) - 2])
+    assert_equal(4, list[len(list) - 1])
 
     list[2] = -2
     assert_equal(-2, list[2])
 
-    list[-5] = 5
-    assert_equal(5, list[-5])
-    list[-2] = 3
-    assert_equal(3, list[-2])
-    list[-1] = 7
-    assert_equal(7, list[-1])
+    list[len(list) - 5] = 5
+    assert_equal(5, list[len(list) - 5])
+    list[len(list) - 2] = 3
+    assert_equal(3, list[len(list) - 2])
+    list[len(list) - 1] = 7
+    assert_equal(7, list[len(list) - 1])
 
 
 struct WeirdList[T: AnyType]:
-    fn __init__(out self, var *values: T, __list_literal__: ()):
+    def __init__(out self, var *values: Self.T, __list_literal__: ()):
         pass
 
 
-def take_generic_weird_list(list: WeirdList[_]):
+def take_generic_weird_list(list: WeirdList[_]) raises:
     pass
 
 
-def test_list_literal():
+def test_list_literal() raises:
     var list: List[Int] = [1, 2, 3]
     assert_equal(3, len(list))
     assert_equal(1, list[0])
     assert_equal(2, list[1])
     assert_equal(3, list[2])
 
-    var list2 = [1, 2.5]
+    var list2 = [1.0, 2.5]
     assert_equal(2, len(list2))
     assert_equal(1.0, list2[0])
     assert_equal(2.5, list2[1])
@@ -100,7 +108,7 @@ def test_list_literal():
     # take_generic_weird_list([1, 2.0])
 
 
-def test_list_unsafe_get():
+def test_list_unsafe_get() raises:
     var list = List[Int]()
 
     for i in range(5):
@@ -121,7 +129,7 @@ def test_list_unsafe_get():
     assert_equal(2, list.unsafe_get(0))
 
 
-def test_list_unsafe_set():
+def test_list_unsafe_set() raises:
     var list = List[Int]()
 
     for i in range(5):
@@ -141,7 +149,7 @@ def test_list_unsafe_set():
     assert_equal(list[4], 40)
 
 
-def test_list_clear():
+def test_list_clear() raises:
     var list = [1, 2, 3]
     assert_equal(len(list), 3)
     assert_equal(list.capacity, 3)
@@ -151,14 +159,14 @@ def test_list_clear():
     assert_equal(list.capacity, 3)
 
 
-def test_list_to_bool_conversion():
+def test_list_to_bool_conversion() raises:
     assert_false(List[String]())
-    assert_true(List[String]("a"))
-    assert_true(List[String]("", "a"))
-    assert_true(List[String](""))
+    assert_true(List[String](["a"]))
+    assert_true(List[String](["", "a"]))
+    assert_true(List[String]([""]))
 
 
-def test_list_pop():
+def test_list_pop() raises:
     var list = List[Int]()
     # Test pop with index
     for i in range(6):
@@ -174,9 +182,9 @@ def test_list_pop():
     assert_equal(1, list[1])
     assert_equal(2, list[2])
 
-    # Test pop with negative index
+    # Test pop with index 0 (first element)
     for i in range(0, 2):
-        assert_equal(i, list.pop(-len(list)))
+        assert_equal(i, list.pop(0))
 
     # test default index as well
     assert_equal(2, list.pop())
@@ -187,7 +195,7 @@ def test_list_pop():
     assert_equal(0, len(list))
 
 
-def test_list_variadic_constructor():
+def test_list_variadic_constructor() raises:
     var l = [2, 4, 6]
     assert_equal(3, len(l))
     assert_equal(2, l[0])
@@ -202,7 +210,7 @@ def test_list_variadic_constructor():
     # Test variadic construct copying behavior
     #
 
-    var l2 = List[CopyCounter](CopyCounter(), CopyCounter(), CopyCounter())
+    var l2 = [CopyCounter(), CopyCounter(), CopyCounter()]
 
     assert_equal(len(l2), 3)
     assert_equal(l2[0].copy_count, 0)
@@ -210,8 +218,8 @@ def test_list_variadic_constructor():
     assert_equal(l2[2].copy_count, 0)
 
 
-def test_list_resize():
-    var l = List[Int](1)
+def test_list_resize() raises:
+    var l: List[Int] = [1]
     assert_equal(1, len(l))
     l.resize(2, 0)
     assert_equal(2, len(l))
@@ -220,7 +228,23 @@ def test_list_resize():
     assert_equal(len(l), 0)
 
 
-def test_list_reverse():
+# TODO: Rework to use property testing framework.
+def test_list_reverse_property_test() raises:
+    @parameter
+    def properties(forward: List[Scalar[DType.int]]) raises:
+        var rev = forward.copy()
+        rev.reverse()
+
+        assert_equal(len(forward), len(rev))
+        for a, b in zip(forward, reversed(rev)):
+            assert_equal(a, b)
+
+    PropTest().test[properties](
+        List[Scalar[DType.int]].strategy(Scalar[DType.int].strategy())
+    )
+
+
+def test_list_reverse() raises:
     #
     # Test reversing the list []
     #
@@ -286,7 +310,7 @@ def test_list_reverse():
     assert_equal(vec[1], 5)
 
 
-def test_list_reverse_move_count():
+def test_list_reverse_move_count() raises:
     # Create this vec with enough capacity to avoid moves due to resizing.
     var vec = List[MoveCounter[Int]](capacity=5)
     vec.append(MoveCounter(1))
@@ -331,7 +355,7 @@ def test_list_reverse_move_count():
     assert_equal(vec[4].move_count, 3)
 
 
-def test_list_insert():
+def test_list_insert() raises:
     #
     # Test the list [1, 2, 3] created with insert
     #
@@ -393,7 +417,7 @@ def test_list_insert():
         assert_equal(value, i + 1)
 
 
-def test_list_index():
+def test_list_index() raises:
     var test_list_a = [10, 20, 30, 40, 50]
 
     # Basic Functionality Tests
@@ -474,42 +498,42 @@ def test_list_index():
         _ = test_list_b.index(20, start=4, stop=5)
 
 
-def test_list_append():
+def test_list_append() raises:
     var items = List[UInt32]()
     items.append(1)
     items.append(2)
     items.append(3)
-    assert_equal(items, List[UInt32](1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3])
 
 
-def test_list_extend():
-    var items = List[UInt32](1, 2, 3)
+def test_list_extend() raises:
+    var items = [UInt32(1), 2, 3]
     var copy = items.copy()
     items.extend(copy^)
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     items = [1, 2, 3]
     copy = [1, 2, 3]
 
     # Extend with span
     items.extend(Span(copy))
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
     # Extend with whole SIMD
-    items = List[UInt32](1, 2, 3)
+    items: List[UInt32] = [1, 2, 3]
     items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4))
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3, 4))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3, 4])
     # Extend with part of SIMD
-    items = List[UInt32](1, 2, 3)
+    items: List[UInt32] = [1, 2, 3]
     items.extend(SIMD[DType.uint32, 4](1, 2, 3, 4), count=3)
-    assert_equal(items, List[UInt32](1, 2, 3, 1, 2, 3))
+    assert_equal(items, [UInt32(1), 2, 3, 1, 2, 3])
 
 
-def test_list_extend_non_trivial():
+def test_list_extend_non_trivial() raises:
     # Tests three things:
     #   - extend() for non-plain-old-data types
     #   - extend() with mixed-length self and other lists
-    #   - extend() using optimal number of __moveinit__() calls
+    #   - extend() using optimal number of move constructor calls
 
     # Preallocate with enough capacity to avoid reallocation making the
     # move count checks below flaky.
@@ -538,19 +562,19 @@ def test_list_extend_non_trivial():
     assert_equal(v1[4].move_count, 2)
 
 
-def test_list_extend_trivial_copy_nontrivial_move():
+def test_list_extend_trivial_copy_nontrivial_move() raises:
     var v1 = List[TriviallyCopyableMoveCounter](capacity=1)
-    var v2 = List(TriviallyCopyableMoveCounter(0))
+    var v2 = [TriviallyCopyableMoveCounter(0)]
 
     assert_equal(v2[0].move_count, 1)
 
     v1.extend(v2^)
 
-    # `extend()` should call __moveinit__, not perform even a trivially copy.
+    # `extend()` should call move constructor, not perform any copies.
     assert_equal(v1[0].move_count, 2)
 
 
-def test_2d_dynamic_list():
+def test_2d_dynamic_list() raises:
     var list = List[List[Int]]()
 
     for i in range(2):
@@ -580,8 +604,8 @@ def test_2d_dynamic_list():
     assert_equal(2, list.capacity)
 
 
-def test_list_explicit_copy():
-    var list = List[CopyCounter]()
+def test_list_explicit_copy() raises:
+    var list = List[CopyCounter[]]()
     list.append(CopyCounter())
     var list_copy = list.copy()
     assert_equal(0, list[0].copy_count)
@@ -597,7 +621,7 @@ def test_list_explicit_copy():
         assert_equal(val1, val2)
 
 
-def test_no_extra_copies_with_sugared_set_by_field():
+def test_no_extra_copies_with_sugared_set_by_field() raises:
     var list = List[List[CopyCountedStruct]](capacity=1)
     var child_list = List[CopyCountedStruct](capacity=2)
     child_list.append(CopyCountedStruct("Hello"))
@@ -615,24 +639,24 @@ def test_no_extra_copies_with_sugared_set_by_field():
     assert_equal(0, list[0][1].counter.copy_count)
 
 
-# Ensure correct behavior of __copyinit__
+# Ensure correct behavior of copy ctor
 # as reported in GH issue 27875 internally and
 # https://github.com/modular/modular/issues/1493
-def test_list_copy_constructor():
+def test_list_copy_constructor() raises:
     var vec = List[Int](capacity=1)
     var vec_copy = vec.copy()
     vec_copy.append(1)  # Ensure copy constructor doesn't crash
     _ = vec^  # To ensure previous one doesn't invoke move constructor
 
 
-def test_list_iter():
+def test_list_iter() raises:
     var vs = List[Int]()
     vs.append(1)
     vs.append(2)
     vs.append(3)
 
     # Borrow immutably
-    fn sum(vs: List[Int]) -> Int:
+    def sum(vs: List[Int]) -> Int:
         var sum = 0
         for v in vs:
             sum += v
@@ -641,7 +665,7 @@ def test_list_iter():
     assert_equal(6, sum(vs))
 
 
-def test_list_iter_mutable():
+def test_list_iter_mutable() raises:
     var vs = [1, 2, 3]
 
     for ref v in vs:
@@ -654,35 +678,128 @@ def test_list_iter_mutable():
     assert_equal(9, sum)
 
 
-def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int):
+# We use `MutAnyOrigin` to bypass exclusivity checking
+# otherwise we cannot construct a list of Observables where
+# all point to the same copy/move/del counter.
+comptime ObservableElement = Observable[
+    CopyOrigin=MutAnyOrigin,
+    MoveOrigin=MutAnyOrigin,
+    DelOrigin=MutAnyOrigin,
+]
+
+
+def make_observable_list(
+    *, mut copies: Int, mut moves: Int, mut dels: Int, length: Int
+) -> List[ObservableElement]:
+    var list = List[ObservableElement](capacity=length)
+    for _i in range(length):
+        list.append(
+            ObservableElement(
+                copies=Pointer[Int, MutAnyOrigin](to=copies),
+                moves=Pointer[Int, MutAnyOrigin](to=moves),
+                dels=Pointer[Int, MutAnyOrigin](to=dels),
+            )
+        )
+    return list^
+
+
+def test_list_iter_owned() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+    assert_equal(copies, 0)
+    assert_equal(moves, 2)
+    assert_equal(dels, 0)
+
+    for _elem in list^:
+        pass
+
+    assert_equal(copies, 0)
+    assert_equal(moves, 4)
+    assert_equal(dels, 2)
+
+
+def test_list_iter_owned_destroys_elements_if_not_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+    var _ = list^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(moves, 2)
+    assert_equal(dels, 2)
+
+
+def test_list_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var copies = 0
+    var moves = 0
+    var dels = 0
+
+    var list = make_observable_list(
+        copies=copies, moves=moves, dels=dels, length=2
+    )
+
+    var iter = list^.__iter__()
+    assert_equal(copies, 0)
+    assert_equal(moves, 2)
+    assert_equal(dels, 0)
+
+    var _ = iter.__next__()
+    assert_equal(copies, 0)
+    assert_equal(moves, 3)
+    assert_equal(dels, 1)
+
+    _ = iter^
+    assert_equal(copies, 0)
+    assert_equal(moves, 3)
+    assert_equal(dels, 2)
+
+
+def test_list_iter_owned_bounds() raises:
+    var iter = iter([1, 2, 3])
+    for i in range(3, 0, -1):
+        assert_equal((i, Optional(i)), iter.bounds())
+        _ = iter.__next__()
+
+
+def _test_list_iter_bounds[I: Iterator](var list_iter: I, list_len: Int) raises:
     var iter = list_iter^
 
     for i in range(list_len):
         var lower, upper = iter.bounds()
         assert_equal(list_len - i, lower)
         assert_equal(list_len - i, upper.value())
-        _ = iter.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()
+        )
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(0, upper.value())
 
 
-def test_list_iter_bounds():
+def test_list_iter_bounds() raises:
     var list = [1, 2, 3]
     _test_list_iter_bounds(iter(list), len(list))
     _test_list_iter_bounds(reversed(list), len(list))
 
 
-def test_list_span():
+def test_list_span() raises:
     var vs = [1, 2, 3]
 
-    var es = vs[1:]
+    var es = List(vs[1:])
     assert_equal(es[0], 2)
     assert_equal(es[1], 3)
     assert_equal(len(es), 2)
 
-    es = vs[:-1]
+    es = List(vs[:-1])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(len(es), 2)
@@ -697,7 +814,7 @@ def test_list_span():
     assert_equal(es[2], 1)
     assert_equal(len(es), 3)
 
-    es = vs[:]
+    es = List(vs[:])
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
     assert_equal(es[2], 3)
@@ -714,7 +831,7 @@ def test_list_span():
 
     assert_equal(0, len(vs[:-1:-2]))
     assert_equal(0, len(vs[-50::-1]))
-    es = vs[-50::]
+    es = List(vs[-50::])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -724,7 +841,7 @@ def test_list_span():
     assert_equal(es[0], 3)
     assert_equal(es[1], 2)
     assert_equal(es[2], 1)
-    es = vs[:50:]
+    es = List(vs[:50:])
     assert_equal(3, len(es))
     assert_equal(es[0], 1)
     assert_equal(es[1], 2)
@@ -743,7 +860,7 @@ def test_list_span():
     assert_equal(es[0], 1)
 
 
-def test_list_realloc_trivial_types():
+def test_list_realloc_trivial_types() raises:
     a = List[Int]()
     for i in range(100):
         a.append(i)
@@ -761,7 +878,7 @@ def test_list_realloc_trivial_types():
         assert_equal(b[i], Int8(i))
 
 
-def test_list_realloc_trivial_copy_nontrivial_move():
+def test_list_realloc_trivial_copy_nontrivial_move() raises:
     var lst = List[TriviallyCopyableMoveCounter](capacity=1)
 
     lst.append(TriviallyCopyableMoveCounter(0))
@@ -769,28 +886,25 @@ def test_list_realloc_trivial_copy_nontrivial_move():
 
     lst.reserve(10)
 
-    # Reallocating the list should call __moveinit__(), not perform a copy.
+    # Reallocating the list should call move constructor, not perform any copies.
     assert_equal(lst[0].move_count, 2)
 
 
-def test_list_boolable():
-    assert_true(List[Int](1))
+def test_list_boolable() raises:
+    assert_true(List[Int]([1]))
     assert_false(List[Int]())
 
 
-def test_converting_list_to_string():
-    # This is also testing the method `to_format` because
-    # essentially, `List.__str__()` just creates a String and applies `to_format` to it.
-    # If we were to write unit tests for `to_format`, we would essentially copy-paste the code
-    # of `List.__str__()`
-    var my_list = [1, 2, 3]
-    assert_equal(my_list.__str__(), "[1, 2, 3]")
-
-    var my_list4 = ["a", "b", "c", "foo"]
-    assert_equal(my_list4.__str__(), "['a', 'b', 'c', 'foo']")
+def test_list_write_to() raises:
+    check_write_to([1, 2, 3], expected="[1, 2, 3]", is_repr=False)
+    check_write_to(
+        ["a", "b", "c", "foo"], expected="[a, b, c, foo]", is_repr=False
+    )
+    check_write_to(List[Int](), expected="[]", is_repr=False)
+    check_write_to([42], expected="[42]", is_repr=False)
 
 
-def test_list_count():
+def test_list_count() raises:
     var list = [1, 2, 3, 2, 5, 6, 7, 8, 9, 10]
     assert_equal(1, list.count(1))
     assert_equal(2, list.count(2))
@@ -800,7 +914,7 @@ def test_list_count():
     assert_equal(0, list2.count(1))
 
 
-def test_list_add():
+def test_list_add() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
     var c = a + b.copy()
@@ -808,40 +922,40 @@ def test_list_add():
     # check that original values aren't modified
     assert_equal(len(a), 3)
     assert_equal(len(b), 3)
-    assert_equal(c.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(c), "[1, 2, 3, 4, 5, 6]")
 
     a += b.copy()
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(a), "[1, 2, 3, 4, 5, 6]")
     assert_equal(len(b), 3)
 
     a = [1, 2, 3]
     a += b^
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(a), "[1, 2, 3, 4, 5, 6]")
 
     var d = [1, 2, 3]
     var e = [4, 5, 6]
     var f = d + e^
     assert_equal(len(f), 6)
-    assert_equal(f.__str__(), "[1, 2, 3, 4, 5, 6]")
+    assert_equal(String(f), "[1, 2, 3, 4, 5, 6]")
 
     var l = [1, 2, 3]
     l += []
     assert_equal(len(l), 3)
 
 
-def test_list_mult():
+def test_list_mult() raises:
     var a = [1, 2, 3]
     var b = a * 2
     assert_equal(len(b), 6)
-    assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3]")
+    assert_equal(String(b), "[1, 2, 3, 1, 2, 3]")
     b = a * 3
     assert_equal(len(b), 9)
-    assert_equal(b.__str__(), "[1, 2, 3, 1, 2, 3, 1, 2, 3]")
+    assert_equal(String(b), "[1, 2, 3, 1, 2, 3, 1, 2, 3]")
     a *= 2
     assert_equal(len(a), 6)
-    assert_equal(a.__str__(), "[1, 2, 3, 1, 2, 3]")
+    assert_equal(String(a), "[1, 2, 3, 1, 2, 3]")
 
     var l = [1, 2]
     l *= 1
@@ -849,23 +963,23 @@ def test_list_mult():
 
     l *= 0
     assert_equal(len(l), 0)
-    assert_equal(len(List[Int](1, 2, 3) * 0), 0)
+    assert_equal(len(List[Int]([1, 2, 3]) * 0), 0)
 
 
-def test_list_contains():
+def test_list_contains() raises:
     var x = [1, 2, 3]
     assert_false(0 in x)
     assert_true(1 in x)
     assert_false(4 in x)
 
-    # TODO: implement List.__eq__ for Self[Copyable & Movable & Comparable]
+    # TODO: implement List.__eq__ for Self[Copyable & Comparable]
     # var y = List[List[Int]]()
     # y.append([1, 2])
     # assert_equal([1, 2] in y,True)
     # assert_equal([0, 1] in y,False)
 
 
-def test_list_eq_ne():
+def test_list_eq_ne() raises:
     var l1 = [1, 2, 3]
     var l2 = [1, 2, 3]
     assert_true(l1 == l2)
@@ -888,7 +1002,19 @@ def test_list_eq_ne():
     assert_false(l6 == l8)
 
 
-def test_list_init_span():
+struct NonEquatable(Copyable):
+    pass
+
+
+def test_list_conditional_conformances() raises:
+    assert_true(conforms_to(List[Int], Equatable))
+    assert_false(conforms_to(List[NonEquatable], Equatable))
+
+    assert_true(conforms_to(List[Int], Writable))
+    assert_false(conforms_to(List[NonEquatable], Writable))
+
+
+def test_list_init_span() raises:
     var l = [String("a"), "bb", "cc", "def"]
     var sp = Span(l)
     var l2 = List[String](sp)
@@ -896,7 +1022,7 @@ def test_list_init_span():
         assert_equal(val1, val2)
 
 
-def test_list_init_iter():
+def test_list_init_iter() raises:
     var l = [String("a"), "bb", "cc", "def"]
     var it = iter(l)
     var l2 = List[String](it)
@@ -907,11 +1033,9 @@ def test_list_init_iter():
     assert_equal(l[3], l2[3])
 
 
-def test_indexing():
+def test_indexing() raises:
     var l = [1, 2, 3]
     assert_equal(l[Int(1)], 2)
-    assert_equal(l[False], 1)
-    assert_equal(l[True], 2)
     assert_equal(l[2], 3)
 
 
@@ -920,7 +1044,7 @@ def test_indexing():
 # ===-------------------------------------------------------------------===#
 
 
-def test_list_dtor():
+def test_list_dtor() raises:
     var dtor_count = 0
 
     var ptr = UnsafePointer(to=dtor_count).as_immutable()
@@ -934,7 +1058,7 @@ def test_list_dtor():
     assert_equal(dtor_count, 1)
 
 
-def test_destructor_trivial_elements():
+def test_destructor_trivial_elements() raises:
     var dtor_count = 0
 
     var ptr = UnsafePointer(to=dtor_count).as_immutable()
@@ -946,14 +1070,15 @@ def test_destructor_trivial_elements():
     assert_equal(dtor_count, 0)
 
 
-def test_list_repr():
-    var l = [1, 2, 3]
-    assert_equal(l.__repr__(), "[1, 2, 3]")
-    var empty = List[Int]()
-    assert_equal(empty.__repr__(), "[]")
+def test_list_write_repr_to() raises:
+    check_write_to(
+        [1, 2, 3], expected="List[Int]([Int(1), Int(2), Int(3)])", is_repr=True
+    )
+    check_write_to([1], expected="List[Int]([Int(1)])", is_repr=True)
+    check_write_to(List[Int](), expected="List[Int]([])", is_repr=True)
 
 
-def test_list_fill_constructor():
+def test_list_fill_constructor() raises:
     var l = List[Int32](length=10, fill=3)
     assert_equal(len(l), 10)
 
@@ -967,7 +1092,7 @@ def test_list_fill_constructor():
         assert_equal(l2[i], "hi")
 
 
-def test_uninit_ctor():
+def test_uninit_ctor() raises:
     var list = List[String](unsafe_uninit_length=2)
 
     UnsafePointer(to=list[0]).init_pointee_move("hello ")
@@ -984,17 +1109,16 @@ def test_uninit_ctor():
     assert_equal(list2[1], "world")
 
 
-def _test_copyinit_trivial_types[dt: DType]():
-    alias sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
+def _test_copyinit_trivial_types[dt: DType]() raises:
+    comptime sizes = (1, 2, 4, 8, 16, 32, 64, 128, 256, 512)
     assert_equal(len(sizes), 10)
     var test_current_size = 1
 
-    @parameter
-    for sizes_index in range(len(sizes)):
-        alias current_size = sizes[sizes_index]
+    comptime for sizes_index in range(len(sizes)):
+        comptime current_size = sizes[sizes_index]
         x = List[Scalar[dt]]()
         for i in range(current_size):
-            x.append(i)
+            x.append(Scalar[dt](i))
         y = x.copy()
         assert_equal(test_current_size, current_size)
         assert_equal(len(y), current_size)
@@ -1006,8 +1130,8 @@ def _test_copyinit_trivial_types[dt: DType]():
     assert_equal(test_current_size, 1024)
 
 
-def test_copyinit_trivial_types_dtypes():
-    alias dtypes = (
+def test_copyinit_trivial_types_dtypes() raises:
+    comptime dtypes = (
         DType.int64,
         DType.int32,
         DType.float64,
@@ -1017,12 +1141,11 @@ def test_copyinit_trivial_types_dtypes():
         DType.bool,
     )
 
-    @parameter
-    for index_dtype in range(len(dtypes)):
+    comptime for index_dtype in range(len(dtypes)):
         _test_copyinit_trivial_types[dtypes[index_dtype]]()
 
 
-def test_list_comprehension():
+def test_list_comprehension() raises:
     var l1 = [x * x for x in range(10) if x & 1]
     assert_equal(l1, [1, 9, 25, 49, 81])
 
@@ -1030,21 +1153,40 @@ def test_list_comprehension():
     assert_equal(l2, [0, 0, 0, 0, 0, 1, 9, 25, 49, 81, 2, 18, 50, 98, 162])
 
 
-def test_list_repr_wrap():
-    assert_equal(repr(List("Hello", "World")), "['Hello', 'World']")
+def test_list_can_infer_iterable_element_type() raises:
+    var string = "Mojo🔥"
+    var l = List(string.codepoints())
+    assert_true(_type_is_eq[type_of(l), List[Codepoint]]())
     assert_equal(
-        repr(List[UInt8](0, 1)),
-        "[SIMD[DType.uint8, 1](0), SIMD[DType.uint8, 1](1)]",
+        l,
+        [
+            Codepoint.ord("M"),
+            Codepoint.ord("o"),
+            Codepoint.ord("j"),
+            Codepoint.ord("o"),
+            Codepoint.ord("🔥"),
+        ],
     )
-    var l = List(DType.int8, DType.int16)
-    assert_equal(
-        repr(l),
-        "[DType.int8, DType.int16]",
-    )
+
+
+def test_list_hash() raises:
+    # Equal lists should produce the same hash.
+    assert_equal(hash([1, 2, 3]), hash([1, 2, 3]))
+
+    # Empty list hashing.
+    assert_equal(hash(List[Int]()), hash(List[Int]()))
+
+    # Different lists should (likely) produce different hashes.
+    assert_not_equal(hash([1, 2, 3]), hash([1, 2, 4]))
+    assert_not_equal(hash([1, 2]), hash([2, 1]))
+
+    # Hashable conformance is conditional.
+    assert_true(conforms_to(List[Int], Hashable))
+    assert_true(conforms_to(List[String], Hashable))
 
 
 # ===-------------------------------------------------------------------===#
 # main
 # ===-------------------------------------------------------------------===#
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

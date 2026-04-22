@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import modf
+from std.math import modf
 
-from testing import TestSuite
-from testing import assert_almost_equal, assert_equal
+from std.testing import TestSuite
+from std.testing import assert_almost_equal, assert_equal
 
 
-def test_modf():
+def test_modf() raises:
     var i32 = modf(Int32(123))
-    assert_equal(i32[0], 123)
-    assert_equal(i32[1], 0)
+    assert_equal(i32, (Int32(123), Int32(0)))
 
     var f32 = modf(Float32(123.5))
     assert_almost_equal(f32[0], 123)
@@ -47,5 +46,5 @@ def test_modf():
     assert_almost_equal(f64[1], -0.5)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

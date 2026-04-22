@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from tempfile import NamedTemporaryFile
+from std.tempfile import NamedTemporaryFile
 
-from builtin._location import __call_location, _SourceLocation
-from testing import TestSuite
+from std.reflection import call_location, SourceLocation
+from std.testing import TestSuite
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @always_inline
-fn _assert_error[T: Writable](msg: T, loc: _SourceLocation) -> Error:
+def _assert_error[T: Writable](msg: T, loc: SourceLocation) -> Error:
     return Error(loc.prefix(String("AssertionError: ", msg)))
 
 
-fn _assert_equal_error(
-    lhs: String, rhs: String, msg: String, loc: _SourceLocation
+def _assert_equal_error(
+    lhs: String, rhs: String, msg: String, loc: SourceLocation
 ) -> Error:
     var err = (
         "`left == right` comparison failed:\n   left: "
@@ -41,45 +41,50 @@ fn _assert_equal_error(
 struct PrintChecker(Movable):
     var tmp: NamedTemporaryFile
     var cursor: UInt64
-    var call_location: _SourceLocation
+    var call_location: SourceLocation
 
     @always_inline
-    fn __init__(out self) raises:
+    def __init__(out self) raises:
         self.tmp = NamedTemporaryFile("rw")
-        self.call_location = __call_location()
+        self.call_location = call_location()
         self.cursor = 0
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         return self^
 
-    fn stream(self) -> FileDescriptor:
+    def stream(self) -> FileDescriptor:
         return FileDescriptor(self.tmp._file_handle._get_raw_fd())
 
-    fn check_line(mut self, expected: String, msg: String = "") raises:
+    def check_line(mut self, expected: String, msg: String = "") raises:
         print(end="", file=self.stream(), flush=True)
         _ = self.tmp.seek(self.cursor)
-        var result = self.tmp.read()[:-1]
+        var result = self.tmp.read()[byte=:-1]
         if result != expected:
-            raise _assert_equal_error(result, expected, msg, self.call_location)
-        self.cursor += len(result) + 1
+            raise _assert_equal_error(
+                String(result), expected, msg, self.call_location
+            )
+        self.cursor += UInt64(result.byte_length() + 1)
 
-    fn check_line_starts_with(
+    def check_line_starts_with(
         mut self, prefix: String, msg: String = ""
     ) raises:
         print(end="", file=self.stream(), flush=True)
         _ = self.tmp.seek(self.cursor)
-        var result = self.tmp.read()[:-1]
-        var prefix_len = len(prefix)
-        if len(result) < prefix_len:
+        var result = self.tmp.read()[byte=:-1]
+        var prefix_len = prefix.byte_length()
+        if result.byte_length() < prefix_len:
             raise _assert_error(msg, self.call_location)
-        if result[:prefix_len] != prefix:
+        if result[byte=:prefix_len] != prefix:
             raise _assert_equal_error(
-                result[:prefix_len], prefix, msg, self.call_location
+                String(result[byte=:prefix_len]),
+                prefix,
+                msg,
+                self.call_location,
             )
-        self.cursor += len(result) + 1
+        self.cursor += UInt64(result.byte_length() + 1)
 
 
-def test_print():
+def test_print() raises:
     with PrintChecker() as checker:
         print("Hello", file=checker.stream())
         checker.check_line("Hello")
@@ -118,13 +123,13 @@ def test_print():
         checker.check_line("Hello world")
 
 
-def test_print_end():
+def test_print_end() raises:
     with PrintChecker() as checker:
         print("Hello", end=" World\n", file=checker.stream())
         checker.check_line("Hello World")
 
 
-def test_print_sep():
+def test_print_sep() raises:
     with PrintChecker() as checker:
         print("a", "b", "c", sep="/", file=checker.stream())
         checker.check_line("a/b/c")
@@ -133,5 +138,5 @@ def test_print_sep():
         checker.check_line("a/1/2xx")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

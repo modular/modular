@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,12 +14,12 @@
 # We pass an_argument here to avoid the compiler from optimizing the code
 # away.
 
-from os import abort
-from sys import argv
+from std.os import abort
+from std.sys import argv
 
 
 # CHECK-LABEL: OK
-fn main():
+def main():
     if len(argv()) == 0:
         abort()
     print("== OK")

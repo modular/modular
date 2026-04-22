@@ -25,9 +25,16 @@ macos_sysroot_repository(name = "sysroot-macos")
 
 include("//bazel:mojo.MODULE.bazel")
 
+link_hack = use_repo_rule("//bazel/internal:link_hack.bzl", "link_hack")
+
+link_hack(
+    name = "build_bazel_rules_android",  # See link_hack.bzl for details
+)
+
 register_toolchains(
     "@mojo_toolchains//...",
     "//bazel/internal/cc-toolchain:all",
+    "//bazel/internal:mojo_copts_toolchain",
 )
 
 http_archive = use_repo_rule("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
@@ -59,9 +66,9 @@ http_archive(
 )
 
 # NOTE: These versions don't particularly match what modular uses internally, this is only used for test dependencies
-LLVM_COMMIT = "f645d209d42c0d4ccb31d48c6663676098d7ec4d"
+LLVM_COMMIT = "3b0880a2c270c3bd493f39b2812afc7984198d8c"
 
-LLVM_SHA = "78e3990768c2325709f2f5cb54cb193422e35bf4a96ebb8f3de024b371b71dfc"
+LLVM_SHA = "f5b48d9c444fd4bcc19e97e560ff05d209abcd2244e12209fa274cb5bcca42c7"
 
 http_archive(
     name = "llvm-raw",
@@ -76,18 +83,6 @@ llvm_configure = use_repo_rule("@llvm-raw//utils/bazel:configure.bzl", "llvm_con
 
 llvm_configure(name = "llvm-project")
 
-npm = use_extension("@aspect_rules_js//npm:extensions.bzl", "npm", dev_dependency = True)
-npm.npm_translate_lock(
-    name = "npm",
-    data = ["//bazel/lint:package.json"],
-    lifecycle_hooks_exclude = [
-        "cpu-features",
-    ],
-    npm_package_lock = "//bazel/lint:package-lock.json",
-    pnpm_lock = "//bazel/lint:pnpm-lock.yaml",
-    verify_node_modules_ignored = "//:.bazelignore",
-)
-use_repo(npm, "npm")
+cfg_workaround = use_repo_rule("//bazel/internal:cfg_workaround.bzl", "cfg_workaround")
 
-pnpm = use_extension("@aspect_rules_js//npm:extensions.bzl", "pnpm", dev_dependency = True)
-use_repo(pnpm, "pnpm")
+cfg_workaround(name = "cfg_workaround.bzl")

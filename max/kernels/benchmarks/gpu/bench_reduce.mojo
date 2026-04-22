@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,104 +11,124 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import align_of, env_get_int, env_get_string, simd_width_of
-from sys.info import _TargetType
+from std.sys import align_of, get_defined_int, get_defined_string, simd_width_of
+from std.sys.info import _TargetType
 
-from algorithm._gpu.reduction import reduce_launch
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext, get_gpu_target
-from internal_utils import DeviceNDBuffer
-from testing import assert_equal
+from std.algorithm.backend.gpu.reduction import reduce_launch
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from layout import Layout, LayoutTensor, RuntimeLayout
+from std.gpu.host import DeviceContext, get_gpu_target
+from internal_utils import (
+    CacheBustingBuffer,
+    get_defined_shape,
+    int_list_to_tuple,
+)
+from std.testing import assert_equal
 
-from utils import IndexList, StaticTuple
-from utils.index import product
+from std.utils import IndexList, StaticTuple
 
 
-fn align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
+def align_of_simd[dtype: DType, simd_target: _TargetType]() -> Int:
     # TODO: move this utility function to a module.
-    alias pack_size = simd_width_of[dtype, target=simd_target]()
+    comptime pack_size = simd_width_of[dtype, target=simd_target]()
     return align_of[SIMD[dtype, pack_size]]()
 
 
-fn run_reduce[
-    reduce_fn: fn[dtype: DType, width: Int] (
+def run_reduce[
+    reduce_fn: def[dtype: DType, width: Int](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) capturing [_] -> SIMD[dtype, width],
+    ) capturing[_] -> SIMD[dtype, width],
     dtype: DType,
     rank: Int,
     num_reductions: Int = 1,
-](mut m: Bench, shape: IndexList[rank], ctx: DeviceContext,) raises:
+    cache_busting: Bool = True,
+](mut m: Bench, shape: IndexList[rank], axis: Int, ctx: DeviceContext,) raises:
     print("run_reduce", shape)
-    var axis = rank - 1
+
     var out_shape = shape
     out_shape[axis] = 1
-    alias init: Scalar[dtype] = Scalar[dtype](0.0)
+    comptime init: Scalar[dtype] = Scalar[dtype](0.0)
+    comptime align = align_of_simd[dtype, simd_target=get_gpu_target()]()
 
     var in_size = shape.flattened_length()
-    var out_size = product(shape, rank - 1)
+    var out_size = in_size // shape[axis]
 
-    alias align = align_of_simd[dtype, simd_target = get_gpu_target()]()
-    var expected_vals = UnsafePointer[Scalar[dtype]].alloc(
-        out_size, alignment=align
-    )
+    var cb_in = CacheBustingBuffer[dtype](in_size, align, ctx, cache_busting)
 
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(in_size)
-    var res_host = UnsafePointer[Scalar[dtype]].alloc(out_size)
+    # Allocate & initialize host data
+    var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
 
-    for i in range(in_size):
-        in_host[i] = (i // shape[axis]) + 1
+    var in_host = alloc[Scalar[dtype]](cb_in.alloc_size())
+    var res_host = alloc[Scalar[dtype]](out_size)
+
+    for i in range(cb_in.alloc_size()):
+        in_host[i] = 1
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
-        expected_vals[i] = shape[axis] * Scalar[dtype](i + 1)
+        expected_vals[i] = Scalar[dtype](shape[axis]) * Scalar[dtype](1)
 
-    var vec_device = DeviceNDBuffer[dtype, rank](shape, ctx=ctx)
-    var res_device = DeviceNDBuffer[dtype, rank](out_shape, ctx=ctx)
-    var input_buf_device = vec_device.tensor
-    var output_buf_device = res_device.tensor
+    var res_buffer = ctx.enqueue_create_buffer[dtype](in_size)
 
-    ctx.enqueue_copy(vec_device.buffer, in_host)
+    comptime res_layout = Layout.row_major[rank]()
+    var res_device = LayoutTensor[dtype, res_layout](
+        res_buffer, RuntimeLayout[res_layout].row_major(out_shape)
+    )
+
+    ctx.enqueue_copy(cb_in.device_buffer(), in_host)
 
     @always_inline
     @parameter
-    fn reduce_wrapper[
+    def reduce_wrapper[
         dtype: DType, width: Int, reduction_idx: Int
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
-        constrained[reduction_idx < num_reductions, "invalid reduction idx"]()
+        comptime assert reduction_idx < num_reductions, "invalid reduction idx"
 
         return reduce_fn[dtype, width](lhs, rhs)
 
-    @__copy_capture(input_buf_device)
+    @__copy_capture(res_device)
     @parameter
-    fn input_fn[
-        dtype: DType,
-        width: Int,
-        _rank: Int,
-    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        return rebind[SIMD[dtype, width]](
-            input_buf_device.load[width=width](rebind[IndexList[rank]](coords))
-        )
-
-    @__copy_capture(output_buf_device)
-    @parameter
-    fn output_fn[
+    def output_fn[
         _dtype: DType, width: Int, _rank: Int
     ](
         coords: IndexList[_rank],
         val: StaticTuple[SIMD[_dtype, width], num_reductions],
     ):
-        output_buf_device[rebind[IndexList[rank]](coords)] = rebind[
-            Scalar[dtype]
-        ](val[0])
+        res_device.store[width=width](
+            rebind[IndexList[rank]](coords), rebind[SIMD[dtype, width]](val[0])
+        )
 
     @__copy_capture(axis)
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var input_lt = LayoutTensor[
+                dtype, Layout.row_major[rank](), MutAnyOrigin
+            ](
+                cb_in.offset_ptr(iteration),
+                RuntimeLayout[Layout.row_major[rank]()].row_major(shape),
+            )
+
+            @__copy_capture(input_lt)
+            @parameter
+            def input_fn[
+                dtype: DType,
+                width: Int,
+                _rank: Int,
+            ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+                return rebind[SIMD[dtype, width]](
+                    input_lt.load[width=width](rebind[IndexList[rank]](coords))
+                )
+
             reduce_launch[
                 num_reductions, input_fn, output_fn, reduce_wrapper, rank, dtype
             ](shape, axis, StaticTuple[_, num_reductions](init), ctx)
@@ -116,45 +136,60 @@ fn run_reduce[
         b.iter_custom[kernel_launch](ctx)
 
     m.bench_function[bench_func](
-        BenchId("reduce", input_id=String(dtype, "/shape=", shape)),
-        ThroughputMeasure(BenchMetric.elements, in_size),
+        BenchId(
+            "reduce",
+            input_id=String(
+                dtype,
+                "/shape=",
+                shape,
+                "/axis=",
+                axis,
+                "/cache_busting=",
+                cache_busting,
+            ),
+        ),
+        [ThroughputMeasure(BenchMetric.elements, in_size)],
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(res_host, res_device.buffer)
+    ctx.enqueue_copy(res_host, res_buffer)
 
     for i in range(out_size):
         assert_equal(res_host[i], expected_vals[i])
 
-    _ = vec_device
+    _ = cb_in
     _ = res_device
 
     in_host.free()
     res_host.free()
+    expected_vals.free()
 
 
 @parameter
-fn reduce_add[
+def reduce_add[
     dtype: DType,
     width: Int,
 ](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
     return x + y
 
 
-def main():
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
+def main() raises:
+    comptime dtype = DType._from_str(
+        get_defined_string["dtype", "DType.float16"]()
+    )
 
-    # DimList(1, 1, 4096) baby-llama-LPTG-kernels
-    alias M = env_get_int["M", 1]()
-    alias N = env_get_int["N", 1]()
-    alias K = env_get_int["K", 4096]()
+    comptime shape_in_list = get_defined_shape["shape", "1x1x4096"]()
+    comptime shape = int_list_to_tuple[shape_in_list]()
+    comptime axis = get_defined_int["axis", 1]()
+    comptime cache_busting = True
 
     var m = Bench()
     with DeviceContext() as ctx:
-        alias dims = IndexList[3](M, N, K)
-        run_reduce[reduce_add, dtype](
+        comptime dims = shape
+        run_reduce[reduce_add, dtype, cache_busting=cache_busting](
             m,
             dims,
+            axis,
             ctx,
         )
 

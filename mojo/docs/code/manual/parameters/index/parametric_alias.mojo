@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,35 +10,37 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from testing import assert_true
+from std.testing import assert_true
 
 
-def main():
+def main() raises:
     # start-basic-example
-    alias addOne[x: Int]: Int = x + 1
-    alias nine = addOne[8]
+    comptime addOne[x: Int]: Int = x + 1
+    comptime nine = addOne[8]
     assert_true(nine == 9)
     # end-basic-example
 
     # start-function-example
-    fn add_one(a: Int) -> Int:
+    def add_one(a: Int) -> Int:
         return a + 1
 
-    alias ten = add_one(9)
+    comptime ten = add_one(9)
     # end-function-example
     assert_true(ten == 10)
 
     # this example includes a an error case, and must be edited in manually.
-    # fn return_type() -> AnyType:
+    # def return_type() -> AnyType:
     #     return Int  # dynamic type values not permitted yet
 
-    alias IntType = Int
+    comptime IntType = Int
 
     # start-type-examples
-    alias TwoOfAKind[dt: DType] = SIMD[dt, 2]
+    comptime TwoOfAKind[dt: DType] = SIMD[dt, 2]
     twoFloats = TwoOfAKind[DType.float32](1.0, 2.0)
 
-    alias StringKeyDict[ValueType: Copyable & Movable] = Dict[String, ValueType]
+    comptime StringKeyDict[ValueType: Copyable & ImplicitlyDestructible] = Dict[
+        String, ValueType
+    ]
     var b: StringKeyDict[UInt8] = {"answer": 42}
     # end-type-examples
     assert_true(twoFloats[0] == 1.0)
@@ -46,7 +48,7 @@ def main():
     assert_true(b["answer"] == 42)
 
     # start-floats-example
-    alias Floats[size: Int, half_width: Bool = False] = SIMD[
+    comptime Floats[size: Int, half_width: Bool = False] = SIMD[
         (DType.float16 if half_width else DType.float32), size
     ]
     var floats = Floats[2](6.0, 8.0)

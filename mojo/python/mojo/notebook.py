@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -51,13 +51,13 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             from os import abort
 
             @export
-            fn PyInit_mojo_module() -> PythonObject:
+            def PyInit_mojo_module() -> PythonObject:
                 try:
                     var m = PythonModuleBuilder("thing")
                     m.def_function[hello]("hello", docstring="Hello!")
                     return m.finalize()
                 except e:
-                    return abort[PythonObject](String("error creating Python Mojo module:", e))
+                    abort(String("error creating Python Mojo module:", e))
 
             def hello() -> PythonObject:
                 return "Hello from Mojo!"
@@ -79,7 +79,7 @@ def mojo(line, cell) -> None:  # noqa: ANN001
             %%mojo package -o kernels.mojopkg
 
             from runtime.asyncrt import DeviceContextPtr
-            from tensor_internal import InputTensor, ManagedTensorSlice, OutputTensor
+            from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
             @compiler.register("histogram")
             struct Histogram:

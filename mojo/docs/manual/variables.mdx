@@ -7,7 +7,7 @@ description: Introduction to Mojo variables.
 A variable is a name that holds a value or object. All variables in Mojo are
 mutable—their value can be changed. (If you want to define a constant value that
 can't change at runtime, see the
-[`alias` keyword](/mojo/manual/parameters/#alias-named-parameter-expressions).)
+[`comptime` keyword](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-values).)
 
 When you declare a variable in Mojo, you allocate a logical storage location,
 and bind a name to that storage location.
@@ -21,15 +21,15 @@ The `var` statement above does three things:
 - It declares a logical storage location (in this case, a storage location sized
   to hold a `String` struct).
 - It binds the name `greeting` to this logical storage location.
-- It *initializes* the storage space with a newly-created `String` value,
-  with the text, “Hello World”. The new value is *owned by* the variable.
+- It *initializes* the storage space with a newly created `String` value,
+  with the text, "Hello World". The new value is *owned by* the variable.
   No other variable can own this value unless we intentionally transfer it.
 
 ## Variable declarations
 
 Mojo has two ways to declare a variable:
 
-* Explicitly-declared variables are created with the `var` keyword.
+- Explicitly-declared variables are created with the `var` keyword.
 
   ```mojo {doctest="foo"}
   var a = 5
@@ -37,8 +37,8 @@ Mojo has two ways to declare a variable:
   var c: String
   ```
 
-* Implicitly-declared variables are created the first time the variable is used,
-  either with an assignment statement, or with a type annotation:
+- Implicitly-declared variables are created the first time the variable is used,
+  either with an assignment statement or with a type annotation:
 
   ```mojo
   a = 5
@@ -72,7 +72,7 @@ print(temperature)
 ```
 
 In this example, the `temperature` variable is explicitly typed as `Float64`,
-but assigned an integer value, so the  value is implicitly converted to a
+but assigned an integer value, so the value is implicitly converted to a
 `Float64`.
 
 ## Implicitly-declared variables
@@ -97,7 +97,7 @@ name: String = "Sam"
 user_id: Int
 ```
 
-Here the `user_id` variable has a type, but is uninitialized.
+Here, the `user_id` variable has a type, but is uninitialized.
 
 Implicitly-declared variables are scoped at the function level. You create an
 implicitly-declared variable the first time you assign a value to a given name
@@ -127,8 +127,7 @@ not compile:
 var user_id: Int = "Sam"
 ```
 
-Explicitly-declared variables follow [lexical scoping](#variable-scopes), unlike
-implicitly-declared variables.
+Explicitly-declared variables have block-level [scope](#variable-scopes).
 
 ## Type annotations
 
@@ -167,7 +166,7 @@ that the `z` variable is first declared with just a type, and the value is
 assigned later:
 
 ```mojo
-fn my_function(x: Int):
+def my_function(x: Int):
     var z: Float32
     if x != 0:
         z = 1.0
@@ -175,7 +174,7 @@ fn my_function(x: Int):
         z = foo()
     print(z)
 
-fn foo() -> Float32:
+def foo() -> Float32:
     return 3.14
 ```
 
@@ -243,10 +242,10 @@ because `Float64` includes an implicit conversion constructor that takes an
 `Int`:
 
 ```mojo
-fn take_float(value: Float64):
+def take_float(value: Float64):
     print(value)
 
-fn pass_integer():
+def pass_integer():
     var value: Int = 1
     take_float(value)
 ```
@@ -255,13 +254,18 @@ For more details on implicit conversion, see
 [Constructors and implicit
 conversion](/mojo/manual/lifecycle/life/#constructors-and-implicit-conversion).
 
-
 ## Variable scopes
 
-Variables declared with `var` are bound by *lexical scoping*. This
-means that nested code blocks can read and modify variables defined in an
-outer scope. But an outer scope **cannot** read variables defined in an
-inner scope at all.
+Variables in Mojo use *lexical scoping*. A variable's definition is
+determined by where it appears in the source code, not when it executes
+at runtime. The specific scope level depends on how the variable is
+declared.
+
+Nested code can read and modify variables defined in an outer scope.
+An outer scope can't read variables defined in an inner scope.
+
+Variables [explicitly declared](#explicitly-declared-variables) with `var`
+have **block-level** scope.
 
 For example, the `if` code block shown here creates an inner scope where outer
 variables are accessible to read/write, but any new variables do not live
@@ -278,8 +282,6 @@ def lexical_scopes():
         dig = 2             # Updates the outer-scope "dig"
     print("num:", num)      # Reads the outer-scope "num"
     print("dig:", dig)      # Reads the outer-scope "dig"
-
-lexical_scopes()
 ```
 
 ```output
@@ -297,11 +299,11 @@ scope variable hides or "shadows" a variable from an outer scope.)
 The lifetime of the inner `num` ends exactly where the `if` code block ends,
 because that's the scope in which the variable was defined.
 
-This is in contrast to implicitly-declared variables (those without the `var`
-keyword), which use **function-level scoping** (consistent with Python variable
-behavior). That means, when you change the value of an implicitly-declared
-variable inside the `if` block, it actually changes the value for the entire
-function.
+This is in contrast to [implicitly-declared](#implicitly-declared-variables)
+variables (those without the `var` keyword), which use
+**function-level scoping** (consistent with Python variable behavior). That
+means, when you change the value of an implicitly-declared variable inside the
+`if` block, it actually changes the value for the entire function.
 
 For example, here's the same code but *without* the `var` declarations:
 
@@ -313,8 +315,6 @@ def function_scopes():
         num = 2      # Updates the function-scope variable
         print(num)   # Reads the function-scope "num"
     print(num)       # Reads the function-scope "num"
-
-function_scopes()
 ```
 
 ```output
@@ -324,8 +324,8 @@ function_scopes()
 ```
 
 Now, the last `print()` function sees the updated `num` value from the inner
-scope, because implicitly-declared variables (Python-style variables) use function-level
-scope (instead of lexical scope).
+scope, because implicitly-declared variables are scoped at the function level,
+as in Python, rather than at the block level.
 
 ## Copying and moving values
 
@@ -358,14 +358,15 @@ value from `first` to `second`? Or create a copy of the original value?
 These choices depend on some features of the type of the values involved:
 specifically, if the values are movable, copyable, or implicitly copyable.
 
-- A *copyable* type can be copied explicitly, by calling its `copy()` method.
+- A *copyable* type can be copied explicitly, by calling its copy initializer or
+  the `copy()` method.
 
   ```mojo
   second = first.copy()
   ```
 
-  This leaves `first` unchanged and assigns `second` its own, uniquely owned copy
-  of the list.
+  This leaves `first` unchanged and assigns `second` its own, uniquely owned
+  copy of the list.
 
 - An *implicitly copyable* type can be copied without an explicit signal from
   the user.
@@ -375,12 +376,12 @@ specifically, if the values are movable, copyable, or implicitly copyable.
   another_value = one_value  # implicit copy
   ```
 
-  Here `one_value` is unchanged, and `another_value` gets a copy of the value.
+  Here, `one_value` is unchanged, and `another_value` gets a copy of the value.
 
   Implicitly copyable types are generally simple value types like `Int`,
-  `Float64`, and `Bool` which can be copied trivially.
+  `Float64`, and `Bool`, which can be copied trivially.
 
-- The ownership of a value can be  be explicitly transferred from one variable
+- The ownership of a value can be explicitly transferred from one variable
   to another by appending the *transfer sigil* (`^`) after the value to
   transfer:
 
@@ -394,7 +395,7 @@ specifically, if the values are movable, copyable, or implicitly copyable.
   one memory location to another, which requires the value to be either movable
   or copyable.
 
-You don't have to digest all of these details now: copyability and movabiltiy
+You don't have to digest all of these details now: copyability and movability
 are discussed in more detail in the section on
 [making structs copyable and movable](/mojo/manual/structs#making-a-struct-copyable-and-movable)
 and in the section on the [value lifecycle](/mojo/manual/lifecycle/life).
@@ -408,7 +409,7 @@ when you retrieve a value from a collection, the collection returns a reference,
 instead of a copy.
 
 ```mojo
-animals: List[String] = ["Cats", "Dogs, "Zebras"]
+animals: List[String] = ["Cats", "Dogs", "Zebras"]
 print(animals[2])  # Prints "Zebras", does not copy the value.
 ```
 
@@ -430,7 +431,7 @@ item_ref += 1  # increments items[1]
 print(items[1])  # prints 78
 ```
 
-Here the name `item_ref` is bound to the reference to `items[1]`. All reads and
+Here, the name `item_ref` is bound to the reference to `items[1]`. All reads and
 writes to `item_ref` go to the referenced item.
 
 Reference bindings can also be used when iterating through collections with

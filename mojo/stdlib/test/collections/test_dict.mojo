@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.dict import OwnedKwargsDict
-from hashlib import Hasher, default_comp_time_hasher
+from std.collections.dict import (
+    Dict,
+    DictKeyError,
+    EmptyDictError,
+    OwnedKwargsDict,
+    _GROUP_WIDTH,
+)
 
-from test_utils import CopyCounter
-from testing import (
+from std.hashlib import Hasher, default_comp_time_hasher
+
+from test_utils import CopyCounter, DelCounter, check_write_to
+from std.testing import (
     assert_equal,
     assert_false,
     assert_raises,
@@ -24,12 +31,12 @@ from testing import (
 )
 
 
-def test_dict_construction():
+def test_dict_construction() raises:
     _ = Dict[Int, Int]()
     _ = Dict[String, Int]()
 
 
-def test_dict_literals():
+def test_dict_literals() raises:
     a = {"foo": 1, "bar": 2}
     assert_equal(a["foo"], 1)
 
@@ -40,8 +47,8 @@ def test_dict_literals():
     assert_false(4 in b)
 
 
-def test_dict_fromkeys():
-    alias keys = [String("a"), "b"]
+def test_dict_fromkeys() raises:
+    comptime keys = [String("a"), "b"]
     var expected_dict = Dict[String, Int]()
     expected_dict["a"] = 1
     expected_dict["b"] = 1
@@ -56,8 +63,8 @@ def test_dict_fromkeys():
         assert_equal(dict[k], v)
 
 
-def test_dict_fromkeys_optional():
-    alias keys = [String("a"), "b", "c"]
+def test_dict_fromkeys_optional() raises:
+    comptime keys = [String("a"), "b", "c"]
     var expected_dict: Dict[String, Optional[Int]] = {
         "a": None,
         "b": None,
@@ -74,7 +81,7 @@ def test_dict_fromkeys_optional():
         assert_false(v)
 
 
-def test_basic():
+def test_basic() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -88,7 +95,7 @@ def test_basic():
     assert_equal(17, dict["a"])
 
 
-def test_basic_no_copies():
+def test_basic_no_copies() raises:
     var dict = Dict[String, Int]()
     dict["a"] = 1
     dict["b"] = 2
@@ -97,7 +104,7 @@ def test_basic_no_copies():
     assert_equal(2, dict["b"])
 
 
-def test_multiple_resizes():
+def test_multiple_resizes() raises:
     var dict: Dict[String, Int] = {}
     for i in range(20):
         dict[String("key", i)] = i + 1
@@ -105,7 +112,7 @@ def test_multiple_resizes():
     assert_equal(20, dict["key19"])
 
 
-def test_bool_conversion():
+def test_bool_conversion() raises:
     var dict: Dict[String, Int] = {}
     assert_false(dict)
     dict["a"] = 1
@@ -118,40 +125,34 @@ def test_bool_conversion():
     assert_false(dict)
 
 
-def test_big_dict():
+def test_big_dict() raises:
     var dict: Dict[String, Int] = {}
     for i in range(2000):
         dict[String("key", i)] = i + 1
     assert_equal(2000, len(dict))
 
 
-def test_dict_string_representation_string_int():
-    var some_dict: Dict[String, Int] = {}
-    some_dict["a"] = 1
-    some_dict["b"] = 2
-    dict_as_string = some_dict.__str__()
-    assert_true(
-        some_dict._minimum_size_of_string_representation()
-        <= len(dict_as_string)
+def test_dict_string_representation_string_int() raises:
+    var d: Dict[String, Int] = {"a": 1, "b": 2}
+    check_write_to(d, expected="{a: 1, b: 2}", is_repr=False)
+    check_write_to(
+        d,
+        expected="Dict[String, Int]({'a': Int(1), 'b': Int(2)})",
+        is_repr=True,
     )
-    assert_equal(dict_as_string, "{'a': 1, 'b': 2}")
 
 
-def test_dict_string_representation_int_int():
-    var some_dict: Dict[Int, Int] = {}
-    some_dict[3] = 1
-    some_dict[4] = 2
-    some_dict[5] = 3
-    some_dict[6] = 4
-    dict_as_string = some_dict.__str__()
-    # one char per key and value, we should have the minimum size of string possible
-    assert_equal(
-        some_dict._minimum_size_of_string_representation(), len(dict_as_string)
+def test_dict_string_representation_int_int() raises:
+    var d: Dict[Int, Int] = {1: 2, 3: 4}
+    check_write_to(d, expected="{1: 2, 3: 4}", is_repr=False)
+    check_write_to(
+        d,
+        expected="Dict[Int, Int]({Int(1): Int(2), Int(3): Int(4)})",
+        is_repr=True,
     )
-    assert_equal(dict_as_string, "{3: 1, 4: 2, 5: 3, 6: 4}")
 
 
-def test_compact():
+def test_compact() raises:
     var dict: Dict[String, Int] = {}
     for i in range(20):
         var key = String("key", i)
@@ -160,7 +161,7 @@ def test_compact():
     assert_equal(0, len(dict))
 
 
-def test_compact_with_elements():
+def test_compact_with_elements() raises:
     var dict: Dict[String, Int] = {}
     for i in range(5):
         var key = String("key", i)
@@ -172,7 +173,7 @@ def test_compact_with_elements():
     assert_equal(5, len(dict))
 
 
-def test_pop_default():
+def test_pop_default() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -182,7 +183,7 @@ def test_pop_default():
     assert_equal(-1, dict.pop("c", -1))
 
 
-def test_key_error():
+def test_key_error() raises:
     var dict: Dict[String, Int] = {}
 
     with assert_raises(contains="KeyError"):
@@ -193,20 +194,22 @@ def test_key_error():
 
 def _test_iter_bounds[
     I: Iterator, //
-](var dict_iter: I, dict_len: Int,):
+](var dict_iter: I, dict_len: Int,) raises:
     var iter = dict_iter^
     for i in range(dict_len):
         var lower, upper = iter.bounds()
         assert_equal(dict_len - i, lower)
         assert_equal(dict_len - i, upper.value())
-        _ = iter.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()
+        )
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(0, upper.value())
 
 
-def test_iter():
+def test_iter() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -219,10 +222,12 @@ def test_iter():
     _test_iter_bounds(dict.__iter__(), len(dict))
 
     var empty_dict: Dict[String, Int] = {}
-    assert_equal(iter(empty_dict).__has_next__(), False)
+    with assert_raises():
+        var it = iter(empty_dict)
+        _ = it.__next__()  # raises StopIteration
 
 
-def test_iter_keys():
+def test_iter_keys() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -235,7 +240,7 @@ def test_iter_keys():
     _test_iter_bounds(dict.keys(), len(dict))
 
 
-def test_iter_values():
+def test_iter_values() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -248,7 +253,7 @@ def test_iter_values():
     _test_iter_bounds(dict.values(), len(dict))
 
 
-def test_iter_values_mut():
+def test_iter_values_mut() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -262,7 +267,7 @@ def test_iter_values_mut():
     _test_iter_bounds(dict.values(), len(dict))
 
 
-def test_iter_items():
+def test_iter_items() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -280,7 +285,7 @@ def test_iter_items():
     # _test_iter_bounds(dict.values(), len(dict))
 
 
-def test_iter_take_items():
+def test_iter_take_items() raises:
     var dict: Dict[Int, String] = {0: "a", 1: "b", 2: "c"}
 
     var values = String()
@@ -293,14 +298,16 @@ def test_iter_take_items():
     assert_equal(values, "abc")
     assert_equal(keys, 3)
     assert_equal(len(dict), 0)
-    assert_false(dict.take_items().__has_next__())
+    with assert_raises():
+        var it = dict.take_items()
+        _ = it.__next__()  # raises StopIteration
 
     for i in range(3):
         with assert_raises(contains="KeyError"):
             _ = dict[i]
 
 
-def test_iter_take_items_empty():
+def test_iter_take_items_empty() raises:
     var dict: Dict[Int, String] = {}
 
     var count = 0
@@ -310,7 +317,7 @@ def test_iter_take_items_empty():
     assert_equal(count, 0)
 
 
-def test_dict_contains():
+def test_dict_contains() raises:
     var dict: Dict[String, Int] = {}
     dict["abc"] = 1
     dict["def"] = 2
@@ -319,7 +326,7 @@ def test_dict_contains():
     assert_false("c" in dict)
 
 
-def test_dict_copy():
+def test_dict_copy() raises:
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
 
@@ -334,7 +341,7 @@ def test_dict_copy():
     assert_equal(1, orig["a"])
 
 
-def test_dict_copy_delete_original():
+def test_dict_copy_delete_original() raises:
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
 
@@ -345,7 +352,7 @@ def test_dict_copy_delete_original():
     assert_equal(1, copy["a"])
 
 
-def test_dict_copy_add_new_item():
+def test_dict_copy_add_new_item() raises:
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
 
@@ -359,8 +366,8 @@ def test_dict_copy_add_new_item():
     assert_false(String(2) in orig)
 
 
-def test_dict_copy_calls_copy_constructor():
-    var orig: Dict[String, CopyCounter] = {}
+def test_dict_copy_calls_copy_constructor() raises:
+    var orig: Dict[String, CopyCounter[]] = {}
     orig["a"] = CopyCounter()
 
     # test values copied to new Dict
@@ -371,7 +378,7 @@ def test_dict_copy_calls_copy_constructor():
     assert_equal(1, copy._find_ref("a").copy_count)
 
 
-def test_dict_update_nominal():
+def test_dict_update_nominal() raises:
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
     orig["b"] = 2
@@ -387,7 +394,7 @@ def test_dict_update_nominal():
     assert_equal(orig["c"], 4)
 
 
-def test_dict_update_empty_origin():
+def test_dict_update_empty_origin() raises:
     var orig: Dict[String, Int] = {}
     var new: Dict[String, Int] = {}
     new["b"] = 3
@@ -399,7 +406,7 @@ def test_dict_update_empty_origin():
     assert_equal(orig["c"], 4)
 
 
-def test_dict_or():
+def test_dict_or() raises:
     var orig: Dict[String, Int] = {}
     var new: Dict[String, Int] = {}
 
@@ -459,7 +466,7 @@ def test_dict_or():
     assert_equal(len(orig | new), 0)
 
 
-def test_dict_update_empty_new():
+def test_dict_update_empty_new() raises:
     var orig: Dict[String, Int] = {}
     orig["a"] = 1
     orig["b"] = 2
@@ -477,17 +484,17 @@ def test_dict_update_empty_new():
 struct DummyKey(KeyElement):
     var value: Int
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         return hasher.update(self.value)
 
-    fn __eq__(self, other: DummyKey) -> Bool:
+    def __eq__(self, other: DummyKey) -> Bool:
         return self.value == other.value
 
-    fn __ne__(self, other: DummyKey) -> Bool:
+    def __ne__(self, other: DummyKey) -> Bool:
         return self.value != other.value
 
 
-def test_mojo_issue_1729():
+def test_mojo_issue_1729() raises:
     var keys = [
         7005684093727295727,
         2833576045803927472,
@@ -503,10 +510,10 @@ def test_mojo_issue_1729():
         d[DummyKey(key)] = i
     assert_equal(len(d), len(keys))
     for i, key in enumerate(keys):
-        assert_equal(i, d[key])
+        assert_equal(i, d[DummyKey(key)])
 
 
-def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
+def _test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]) raises:
     assert_equal(len(kwargs), 2)
 
     assert_true("fruit" in kwargs)
@@ -548,14 +555,14 @@ def test_taking_owned_kwargs_dict(var kwargs: OwnedKwargsDict[Int]):
     assert_equal(sum, 19)
 
 
-def test_owned_kwargs_dict():
+def test_owned_kwargs_dict() raises:
     var owned_kwargs = OwnedKwargsDict[Int]()
     owned_kwargs._insert("fruit", 8)
     owned_kwargs._insert("dessert", 9)
-    test_taking_owned_kwargs_dict(owned_kwargs^)
+    _test_taking_owned_kwargs_dict(owned_kwargs^)
 
 
-def test_find_get():
+def test_find_get() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
     assert_equal(some_dict.find("key").value(), 1)
@@ -564,7 +571,7 @@ def test_find_get():
     assert_equal(some_dict.get("not_key", 0), 0)
 
 
-def test_dict_popitem():
+def test_dict_popitem() raises:
     var dict: Dict[String, Int] = {}
     dict["a"] = 1
     dict["b"] = 2
@@ -578,11 +585,11 @@ def test_dict_popitem():
     assert_equal(item.key, "a")
     assert_equal(item.value, 1)
     assert_equal(len(dict), 0)
-    with assert_raises(contains="KeyError"):
+    with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
 
 
-def test_pop_string_values():
+def test_pop_string_values() raises:
     var dict: Dict[String, String] = {}
     dict["mojo"] = "lang"
     dict["max"] = "engine"
@@ -597,7 +604,7 @@ def test_pop_string_values():
         _ = dict.pop("absent")
 
 
-fn test_clear() raises:
+def test_clear() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key"] = 1
     some_dict.clear()
@@ -609,20 +616,28 @@ fn test_clear() raises:
     assert_equal(len(some_dict), 0)
 
 
-def test_init_initial_capacity():
-    var initial_capacity = 16
-    var x = Dict[Int, Int](power_of_two_initial_capacity=initial_capacity)
-    assert_equal(x._reserved(), initial_capacity)
+def test_init_initial_capacity() raises:
+    var initial_capacity = 14
+    var x = Dict[Int, Int](capacity=initial_capacity)
+    assert_equal(x._reserved(), 16)
     for i in range(initial_capacity):
         x[i] = i
     for i in range(initial_capacity):
         assert_equal(i, x[i])
 
-    var y = Dict[Int, Int](power_of_two_initial_capacity=64)
-    assert_equal(y._reserved(), 64)
+    var y = Dict[Int, Int](capacity=64)
+    assert_equal(y._reserved(), 128)
+
+    # Non-power-of-two capacity is rounded up
+    var z = Dict[Int, Int](capacity=50)
+    assert_equal(z._reserved(), 64)
+
+    # Small capacity is clamped to minimum (16)
+    var w = Dict[Int, Int](capacity=3)
+    assert_equal(w._reserved(), 16)
 
 
-fn test_dict_setdefault() raises:
+def test_dict_setdefault() raises:
     var some_dict: Dict[String, Int] = {}
     some_dict["key1"] = 1
     some_dict["key2"] = 2
@@ -632,7 +647,7 @@ fn test_dict_setdefault() raises:
     assert_equal(some_dict["not_key"], 0)
 
     # Check that there is no copy of the default value, so it's performant
-    var other_dict: Dict[String, CopyCounter] = {}
+    var other_dict: Dict[String, CopyCounter[]] = {}
     var a = CopyCounter()
     var a_def = CopyCounter()
     var b_def = CopyCounter()
@@ -644,38 +659,25 @@ fn test_dict_setdefault() raises:
     assert_equal(0, other_dict["b"].copy_count)
 
 
-def test_compile_time_dict():
-    alias N = 10
+def test_compile_time_dict() raises:
+    comptime N = 10
 
-    fn _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+    def _get_dict() -> Dict[String, Int32, default_comp_time_hasher]:
         var res = Dict[String, Int32, default_comp_time_hasher]()
         for i in range(N):
-            res[String(i)] = i
+            res[String(i)] = Int32(i)
         return res^
 
-    alias my_dict = _get_dict()
+    comptime my_dict = _get_dict()
 
-    @parameter
-    for i in range(N):
-        alias val = my_dict.get(String(i)).value()
-        assert_equal(val, i)
-
-
-# FIXME: Dictionaries should be equatable when their keys/values are.
-def is_equal[
-    K: KeyElement, V: EqualityComparable & Copyable & Movable
-](a: Dict[K, V], b: Dict[K, V]) -> Bool:
-    if len(a) != len(b):
-        return False
-    for k in a.keys():
-        if a[k] != b[k]:
-            return False
-    return True
+    comptime for i in range(N):
+        comptime val = my_dict.get(String(i)).value()
+        assert_equal(val, Int32(i))
 
 
-def test_dict_comprehension():
+def test_dict_comprehension() raises:
     var d1 = {x: x * x for x in range(10) if x & 1}
-    assert_true(is_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81}))
+    assert_equal(d1, {1: 1, 3: 9, 5: 25, 7: 49, 9: 81})
 
     var s2 = {a * b: b for a in ["foo", "bar"] for b in [1, 2]}
     var d1reference = {
@@ -684,22 +686,23 @@ def test_dict_comprehension():
         "foofoo": 2,
         "barbar": 2,
     }
-    assert_true(is_equal(s2, d1reference))
+    assert_equal(s2, d1reference)
 
 
-def test_dict_repr_wrap():
+def test_dict_repr_wrap() raises:
     var tmp_dict = {"one": 1.0, "two": 2.0}
     assert_equal(
         repr(tmp_dict),
         (
-            "{'one': SIMD[DType.float64, 1](1.0), 'two': SIMD[DType.float64,"
-            " 1](2.0)}"
+            "Dict[String, SIMD[DType.float64, 1]]"
+            "({'one': SIMD[DType.float64, 1](1.0), "
+            "'two': SIMD[DType.float64, 1](2.0)})"
         ),
     )
 
 
-def test_popitem_no_copies():
-    var dict: Dict[String, CopyCounter] = {}
+def test_popitem_no_copies() raises:
+    var dict: Dict[String, CopyCounter[]] = {}
     dict["a"] = CopyCounter()
     dict["b"] = CopyCounter()
 
@@ -712,9 +715,544 @@ def test_popitem_no_copies():
     assert_equal(item.key, "a")
     assert_equal(item.value.copy_count, 0)
     assert_equal(len(dict), 0)
-    with assert_raises(contains="KeyError"):
+    with assert_raises(contains="EmptyDictError"):
         _ = dict.popitem()
 
 
-def main():
+def test_dict_key_error_repr() raises:
+    var e = DictKeyError[Int]()
+    check_write_to(e, expected="DictKeyError[Int]()", is_repr=False)
+    check_write_to(e, expected="DictKeyError[Int]()", is_repr=True)
+
+
+def test_empty_dict_error_repr() raises:
+    var e = EmptyDictError()
+    check_write_to(e, expected="EmptyDictError()", is_repr=False)
+    check_write_to(e, expected="EmptyDictError()", is_repr=True)
+
+
+def test_high_fill() raises:
+    """Fill a dict near its 7/8 load factor to exercise resize triggers."""
+    var d = Dict[Int, Int]()
+    # Insert enough to trigger multiple resizes (initial capacity is 16,
+    # 7/8 load factor means resize at 14, then at 28, 56, 112, etc.)
+    for i in range(200):
+        d[i] = i * 2
+    assert_equal(len(d), 200)
+    # Verify all entries survived resizes
+    for i in range(200):
+        assert_equal(d[i], i * 2)
+
+
+def test_tombstone_accumulation() raises:
+    """Repeatedly insert and delete to accumulate tombstones without resize."""
+    var d = Dict[Int, Int]()
+    # Pre-fill with 10 entries
+    for i in range(10):
+        d[i] = i
+    # Insert and delete many transient entries to create tombstones
+    for i in range(100, 500):
+        d[i] = i
+        _ = d.pop(i)
+    # Original entries must still be found correctly despite tombstones
+    assert_equal(len(d), 10)
+    for i in range(10):
+        assert_equal(d[i], i)
+
+
+def test_ctrl_mirroring_boundary() raises:
+    """Keys landing near the end of the ctrl array exercise mirror bytes."""
+    var d = Dict[Int, Int](capacity=16)
+    # Insert keys that, when hashed, are likely to probe at positions
+    # near the end of the 16-slot table (positions 14, 15) where SIMD
+    # loads read into the mirror region.
+    for i in range(16):
+        d[i] = i
+    # All entries must be findable
+    for i in range(16):
+        assert_equal(d[i], i)
+    # Delete some near-boundary entries and re-verify
+    _ = d.pop(14)
+    _ = d.pop(15)
+    assert_false(14 in d)
+    assert_false(15 in d)
+    for i in range(14):
+        assert_equal(d[i], i)
+
+
+def test_delete_and_relookup() raises:
+    """Delete entries then look them up to ensure correct miss detection."""
+    var d = Dict[Int, Int]()
+    for i in range(50):
+        d[i] = i
+    # Delete every other entry
+    for i in range(0, 50, 2):
+        _ = d.pop(i)
+    assert_equal(len(d), 25)
+    # Deleted keys must not be found
+    for i in range(0, 50, 2):
+        assert_false(i in d)
+    # Remaining keys must still be found
+    for i in range(1, 50, 2):
+        assert_equal(d[i], i)
+
+
+def test_order_preserved_after_heavy_deletion() raises:
+    """Insertion order is preserved even after many deletions."""
+    var d = Dict[Int, Int]()
+    for i in range(20):
+        d[i] = i
+    # Delete first 10
+    for i in range(10):
+        _ = d.pop(i)
+    # Iteration should yield 10..19 in insertion order
+    var idx = 10
+    for k in d:
+        assert_equal(k, idx)
+        idx += 1
+    assert_equal(idx, 20)
+
+
+def test_order_compaction() raises:
+    """The _order array is compacted when it has too many stale entries."""
+    # Use a large initial capacity so inserts+deletes don't trigger resize,
+    # allowing stale entries to accumulate in _order until compaction fires.
+    var d = Dict[Int, Int](capacity=1024)
+    # Insert 100 entries (well under 7/8 * 1024 = 896)
+    for i in range(100):
+        d[i] = i
+    # Delete 90, leaving 10 live entries but 100 stale _order entries
+    for i in range(90):
+        _ = d.pop(i)
+    assert_equal(len(d), 10)
+    # Now insert new entries. Each insert calls _maybe_resize which checks
+    # compaction (len(_order) > 2 * _len). With 100 order entries and 10
+    # live, compaction should trigger on the next insert.
+    d[1000] = 1000
+    assert_equal(len(d), 11)
+    # Verify all live entries are intact and iteration order is correct
+    for i in range(90, 100):
+        assert_equal(d[i], i)
+    assert_equal(d[1000], 1000)
+    # Verify iteration yields entries in insertion order
+    var keys = List[Int]()
+    for k in d:
+        keys.append(k)
+    # Should be 90..99 (surviving originals) then 1000
+    for i in range(10):
+        assert_equal(keys[i], 90 + i)
+    assert_equal(keys[10], 1000)
+
+
+def test_reversed_items() raises:
+    """Reversed item iteration must use _order, not _capacity."""
+    # Fresh dict: reversed items should be reverse insertion order
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+    var keys = List[String]()
+    var vals = List[Int]()
+    for item in reversed(d.items()):
+        keys.append(item.key)
+        vals.append(item.value)
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "c")
+    assert_equal(keys[1], "b")
+    assert_equal(keys[2], "a")
+    assert_equal(vals[0], 3)
+    assert_equal(vals[1], 2)
+    assert_equal(vals[2], 1)
+
+    # After deletions: stale _order entries skipped in reverse
+    _ = d.pop("b")
+    keys = List[String]()
+    for item in reversed(d.items()):
+        keys.append(item.key)
+    assert_equal(len(keys), 2)
+    assert_equal(keys[0], "c")
+    assert_equal(keys[1], "a")
+
+    # After delete + re-insert: new entries appear at end of _order
+    d["x"] = 10
+    keys = List[String]()
+    vals = List[Int]()
+    for item in reversed(d.items()):
+        keys.append(item.key)
+        vals.append(item.value)
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "x")
+    assert_equal(keys[1], "c")
+    assert_equal(keys[2], "a")
+    assert_equal(vals[0], 10)
+    assert_equal(vals[1], 3)
+    assert_equal(vals[2], 1)
+
+    # Empty dict: reversed items yields nothing
+    var empty = Dict[String, Int]()
+    var count = 0
+    for _ in reversed(empty.items()):
+        count += 1
+    assert_equal(count, 0)
+
+
+def test_minimum_capacity() raises:
+    """The minimum capacity is _GROUP_WIDTH (16) for SIMD correctness."""
+    var d = Dict[Int, Int](capacity=16)
+    assert_true(d._capacity >= _GROUP_WIDTH)
+    # Default constructor also gets at least _GROUP_WIDTH capacity
+    var d2 = Dict[Int, Int]()
+    assert_true(d2._capacity >= _GROUP_WIDTH)
+
+
+def test_inplace_rehash() raises:
+    """In-place rehash reclaims tombstones without growing capacity."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Fill to max_load so _growth_left = 0 after this
+    for i in range(max_load):
+        d[i] = i
+
+    # Delete most entries -> _len well below capacity*7/16
+    var keep = 4
+    for i in range(max_load - keep):
+        _ = d.pop(i)
+
+    assert_equal(len(d), keep)
+
+    # Next insert triggers _maybe_resize. Since _len <= capacity*7/16,
+    # should rehash in-place, NOT double capacity.
+    d[100] = 100
+    assert_equal(d._reserved(), initial_cap)
+    assert_equal(len(d), keep + 1)
+
+    # Verify all entries are findable
+    for i in range(max_load - keep, max_load):
+        assert_equal(d[i], i)
+    assert_equal(d[100], 100)
+
+
+def test_inplace_rehash_preserves_order() raises:
+    """In-place rehash preserves iteration (insertion) order."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    for i in range(max_load):
+        d[i] = i
+    # Delete even keys
+    for i in range(0, max_load, 2):
+        _ = d.pop(i)
+    # _len = 7, capacity*7/16 = 7, so this is on the boundary.
+    # Insert one more to trigger rehash.
+    d[99] = 99
+    # Verify iteration order: odd keys 1,3,5,7,9,11,13 then 99
+    var keys = List(d.keys())
+    assert_equal(keys[0], 1)
+    assert_equal(keys[1], 3)
+    assert_equal(keys[2], 5)
+    assert_equal(keys[3], 7)
+    assert_equal(keys[4], 9)
+    assert_equal(keys[5], 11)
+    assert_equal(keys[6], 13)
+    assert_equal(keys[7], 99)
+
+
+def test_tombstone_heavy_no_capacity_growth() raises:
+    """Repeated insert/delete cycles should not grow capacity unboundedly."""
+    var capacity = 16
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Repeated insert+delete of same key range - generates tombstones
+    # but _len stays low, so in-place rehash should keep capacity stable.
+    for cycle in range(20):
+        for i in range(10):
+            d[1000 + i] = cycle
+        for i in range(10):
+            _ = d.pop(1000 + i)
+
+    # Capacity should stay at initial_cap thanks to in-place rehash
+    assert_equal(d._reserved(), initial_cap)
+
+
+def test_high_load_still_doubles() raises:
+    """When most slots are genuinely occupied, resize should still double."""
+    var max_load = 14
+    var d = Dict[Int, Int](capacity=max_load)
+    assert_equal(d._reserved(), 16)
+
+    # Fill to capacity without deleting
+    for i in range(max_load):
+        d[i] = i
+
+    # _len(14) > capacity*7/16(7), so next insert should double
+    d[max_load] = max_load
+    assert_equal(d._reserved(), 32)
+
+
+def test_inplace_rehash_string_keys() raises:
+    """In-place rehash works with non-trivial key types."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[String, String](capacity=capacity)
+
+    # Fill to capacity
+    for i in range(max_load):
+        d[String("key", i)] = String("val", i)
+
+    # Delete most entries
+    for i in range(max_load - 4):
+        _ = d.pop(String("key", i))
+
+    assert_equal(len(d), 4)
+    var cap_before = d._reserved()
+
+    # Trigger in-place rehash
+    d["new_key"] = "new_val"
+
+    assert_equal(d._reserved(), cap_before)
+    assert_equal(len(d), 5)
+
+    # Verify all remaining entries
+    for i in range(max_load - 4, max_load):
+        assert_equal(d[String("key", i)], String("val", i))
+    assert_equal(d["new_key"], "new_val")
+
+
+def test_inplace_rehash_via_setdefault() raises:
+    """`setdefault` triggers in-place rehash correctly."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+
+    # Fill to capacity, then delete most
+    for i in range(max_load):
+        d[i] = i
+    for i in range(max_load - 4):
+        _ = d.pop(i)
+
+    assert_equal(len(d), 4)
+    var cap_before = d._reserved()
+
+    # setdefault calls _maybe_resize, should trigger in-place rehash
+    var val = d.setdefault(200, 200)
+    assert_equal(val, 200)
+    assert_equal(d._reserved(), cap_before)
+    assert_equal(len(d), 5)
+
+    # Verify existing entries survived
+    for i in range(max_load - 4, max_load):
+        assert_equal(d[i], i)
+    assert_equal(d[200], 200)
+
+
+def test_inplace_rehash_all_deleted() raises:
+    """In-place rehash when _len == 0 (all entries deleted)."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+    var initial_cap = d._reserved()
+
+    # Fill to capacity then delete everything
+    for i in range(max_load):
+        d[i] = i
+    for i in range(max_load):
+        _ = d.pop(i)
+
+    assert_equal(len(d), 0)
+
+    # _growth_left is 0 from the 14 inserts, _len(0) <= 7 -> in-place rehash
+    d[999] = 999
+    assert_equal(d._reserved(), initial_cap)
+    assert_equal(len(d), 1)
+    assert_equal(d[999], 999)
+
+
+def test_compile_time_dict_with_rehash() raises:
+    """Compile-time dict that triggers in-place rehash."""
+
+    def _build_dict() -> Dict[String, Int32, default_comp_time_hasher]:
+        var capacity = 16
+        var max_load = capacity * 7 // 8  # 14
+        var keep = 4
+        var d = Dict[String, Int32, default_comp_time_hasher](capacity=capacity)
+        # Fill to max_load
+        for i in range(max_load):
+            d[String(i)] = Int32(i)
+        # Delete most entries to create tombstones
+        for i in range(max_load - keep):
+            _ = d.pop(String(i), -1)
+        # This insert triggers _maybe_resize -> in-place rehash at compile time
+        d["ct"] = 42
+        return d^
+
+    comptime ct_dict = _build_dict()
+
+    # Verify values survive compile-time in-place rehash
+    comptime for i in range(10, 14):
+        comptime val = ct_dict.get(String(i)).value()
+        assert_equal(val, Int32(i))
+
+    comptime ct_val = ct_dict.get("ct").value()
+    assert_equal(ct_val, 42)
+
+
+def test_inplace_rehash_via_update() raises:
+    """`update()` on a tombstone-heavy dict triggers in-place rehash."""
+    var capacity = 16
+    var max_load = capacity * 7 // 8  # 14
+    var d = Dict[Int, Int](capacity=capacity)
+
+    # Fill to capacity, then delete most
+    for i in range(max_load):
+        d[i] = i
+    for i in range(max_load - 4):
+        _ = d.pop(i)
+
+    assert_equal(len(d), 4)
+    var cap_before = d._reserved()
+
+    # update() inserts multiple entries; the first triggers in-place rehash
+    var other = Dict[Int, Int]()
+    for i in range(5):
+        other[200 + i] = 200 + i
+    d.update(other)
+
+    assert_equal(d._reserved(), cap_before)
+    assert_equal(len(d), 9)
+
+    # Verify all entries
+    for i in range(max_load - 4, max_load):
+        assert_equal(d[i], i)
+    for i in range(5):
+        assert_equal(d[200 + i], 200 + i)
+
+
+def test_dict_eq() raises:
+    # Equal dicts
+    assert_equal(Dict[String, Int](), Dict[String, Int]())
+    assert_equal({"a": 1, "b": 2}, {"a": 1, "b": 2})
+
+    # Different insertion order, same content
+    var d1 = Dict[String, Int]()
+    d1["b"] = 2
+    d1["a"] = 1
+    var d2 = Dict[String, Int]()
+    d2["a"] = 1
+    d2["b"] = 2
+    assert_equal(d1, d2)
+
+    # Different lengths
+    assert_true({"a": 1} != {"a": 1, "b": 2})
+    assert_true({"a": 1, "b": 2} != {"a": 1})
+
+    # Different values
+    assert_true({"a": 1} != {"a": 2})
+
+    # Different keys
+    assert_true({"a": 1} != {"b": 1})
+
+
+def test_dict_hash() raises:
+    # Same content, same hash
+    assert_equal(hash({"a": 1, "b": 2}), hash({"a": 1, "b": 2}))
+
+    # Different insertion order, same hash
+    var d1 = Dict[String, Int]()
+    d1["b"] = 2
+    d1["a"] = 1
+    var d2 = Dict[String, Int]()
+    d2["a"] = 1
+    d2["b"] = 2
+    assert_equal(hash(d1), hash(d2))
+
+    # Different content, different hash (probabilistic but extremely unlikely
+    # to collide for these simple values)
+    assert_true(hash({"a": 1}) != hash({"a": 2}))
+    assert_true(hash({"a": 1}) != hash({"b": 1}))
+
+    # Empty dicts
+    assert_equal(hash(Dict[String, Int]()), hash(Dict[String, Int]()))
+
+
+struct NonWritable(Copyable, ImplicitlyDestructible):
+    pass
+
+
+def test_dict_conditional_conformances() raises:
+    assert_true(conforms_to(Dict[Int, Int], Writable))
+    assert_true(conforms_to(Dict[Int, Int], Equatable))
+    assert_true(conforms_to(Dict[Int, Int], Hashable))
+    assert_false(conforms_to(Dict[Int, NonWritable], Writable))
+
+
+def test_dict_iter_owned() raises:
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    var keys = List[String]()
+    for key in d^:
+        keys.append(key)
+
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "a")
+    assert_equal(keys[1], "b")
+    assert_equal(keys[2], "c")
+
+
+def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
+    var del_count = 0
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var d = Dict[Int, DelCounter[ptr.origin]]()
+    d[1] = DelCounter(ptr)
+    d[2] = DelCounter(ptr)
+    d[3] = DelCounter(ptr)
+    assert_equal(del_count, 0)
+
+    # Create the owned iterator but never consume it; all values should
+    # still be destroyed when the iterator is dropped.
+    var _ = d^.__iter__()
+    assert_equal(del_count, 3)
+
+
+def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var del_count = 0
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var d = Dict[Int, DelCounter[ptr.origin]]()
+    d[1] = DelCounter(ptr)
+    d[2] = DelCounter(ptr)
+    d[3] = DelCounter(ptr)
+    assert_equal(del_count, 0)
+
+    var it = d^.__iter__()
+    _ = it.__next__()  # consume one key; entry (including value) is dropped
+    assert_equal(del_count, 1)
+
+    # Drop the iterator with two unconsumed entries remaining.
+    _ = it^
+    assert_equal(del_count, 3)
+
+
+def test_dict_iter_owned_bounds() raises:
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    var it = d^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,0 +1,26 @@
+# -- Project information -----------------------------------------------------
+
+project = "MAX CLI APIs"
+copyright = "2025, Modular Inc"
+author = "Modular"
+
+# The semantic version
+version = "@MODULAR_VERSION_MAJOR@.@MODULAR_VERSION_MINOR@.@MODULAR_VERSION_PATCH@"
+
+# The suffix of source filenames.
+source_suffix = ".rst"
+
+# The master document is in the cli subdirectory
+master_doc = "cli/index"
+
+extensions = ["sphinx.ext.autodoc",
+              "sphinx_markdown_builder",
+              "sphinx_click",]
+
+markdown_cli_docs = True
+markdown_meta_front_matter = True
+markdown_meta_wrapper_class = "sphinx-docs cli-docs"
+markdown_field_definition_lists = True
+
+# templates_path = ["_templates"]
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store"]

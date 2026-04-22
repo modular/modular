@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import CompilationTarget, is_64bit
+from std.sys.info import CompilationTarget, is_64bit
 
-from testing import (
+from std.testing import (
     TestSuite,
     assert_almost_equal,
     assert_equal,
@@ -21,7 +21,7 @@ from testing import (
     assert_true,
 )
 
-from utils.numerics import (
+from std.utils.numerics import (
     FPUtils,
     get_accum_type,
     inf,
@@ -39,11 +39,11 @@ from utils.numerics import (
 
 
 # TODO: improve coverage and organization of these tests
-def test_FPUtils():
+def test_FPUtils() raises:
     assert_equal(FPUtils[DType.float32].mantissa_width(), 23)
     assert_equal(FPUtils[DType.float32].exponent_bias(), 127)
 
-    alias FPU64 = FPUtils[DType.float64]
+    comptime FPU64 = FPUtils[DType.float64]
 
     assert_equal(FPU64.mantissa_width(), 52)
     assert_equal(FPU64.exponent_bias(), 1023)
@@ -66,7 +66,7 @@ def test_FPUtils():
     assert_equal(FPU64.get_mantissa(FPU64.pack(True, 6, 12)), 12)
 
 
-def test_get_accum_type():
+def test_get_accum_type() raises:
     assert_equal(get_accum_type[DType.float32](), DType.float32)
     assert_equal(get_accum_type[DType.float64](), DType.float64)
     assert_equal(get_accum_type[DType.bfloat16](), DType.float32)
@@ -80,7 +80,7 @@ def test_get_accum_type():
     assert_equal(get_accum_type[DType.uint64](), DType.uint64)
 
 
-def test_isfinite():
+def test_isfinite() raises:
     assert_true(isfinite(Float32(33)))
 
     assert_false(isfinite(inf[DType.bfloat16]()))
@@ -98,7 +98,7 @@ def test_isfinite():
     assert_false(isfinite(nan[DType.float64]()))
 
 
-def test_isinf():
+def test_isinf() raises:
     assert_false(isinf(Float32(33)))
 
     assert_true(isinf(inf[DType.bfloat16]()))
@@ -116,7 +116,7 @@ def test_isinf():
     assert_false(isinf(nan[DType.float64]()))
 
 
-def test_isnan():
+def test_isnan() raises:
     assert_false(isnan(Float32(33)))
 
     assert_false(isnan(inf[DType.bfloat16]()))
@@ -134,22 +134,21 @@ def test_isnan():
     assert_true(isnan(nan[DType.float64]()))
 
 
-fn overflow_int[dtype: DType]() -> Bool:
-    constrained[
-        dtype.is_integral(), "comparison only valid on integral types"
-    ]()
+def overflow_int[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_integral()
+    ), "comparison only valid on integral types"
     return max_finite[dtype]() + 1 < max_finite[dtype]()
 
 
-fn overflow_fp[dtype: DType]() -> Bool:
-    constrained[
-        dtype.is_floating_point(),
-        "comparison only valid on floating point types",
-    ]()
+def overflow_fp[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_floating_point()
+    ), "comparison only valid on floating point types"
     return max_finite[dtype]() + 1 == max_finite[dtype]()
 
 
-def test_max_finite():
+def test_max_finite() raises:
     assert_almost_equal(max_finite[DType.float32](), 3.4028235e38)
     assert_almost_equal(max_finite[DType.float64](), 1.7976931348623157e308)
 
@@ -193,8 +192,7 @@ def test_max_finite():
     #     0xFFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF_FFFF,
     # )
 
-    @parameter
-    if is_64bit():
+    comptime if is_64bit():
         assert_equal(max_finite[DType.int](), 9223372036854775807)
         assert_equal(max_finite[DType.uint](), 18446744073709551615)
     else:
@@ -202,22 +200,21 @@ def test_max_finite():
         assert_equal(max_finite[DType.uint](), 4294967295)
 
 
-fn underflow_int[dtype: DType]() -> Bool:
-    constrained[
-        dtype.is_integral(), "comparison only valid on integral types"
-    ]()
+def underflow_int[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_integral()
+    ), "comparison only valid on integral types"
     return min_finite[dtype]() - 1 > min_finite[dtype]()
 
 
-fn underflow_fp[dtype: DType]() -> Bool:
-    constrained[
-        dtype.is_floating_point(),
-        "comparison only valid on floating point types",
-    ]()
+def underflow_fp[dtype: DType]() -> Bool:
+    comptime assert (
+        dtype.is_floating_point()
+    ), "comparison only valid on floating point types"
     return min_finite[dtype]() - 1 == min_finite[dtype]()
 
 
-def test_min_finite():
+def test_min_finite() raises:
     assert_almost_equal(min_finite[DType.float32](), -3.4028235e38)
     assert_almost_equal(min_finite[DType.float64](), -1.7976931348623157e308)
 
@@ -250,8 +247,7 @@ def test_min_finite():
     #     -0x8000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000_0000,
     # )
 
-    @parameter
-    if is_64bit():
+    comptime if is_64bit():
         assert_equal(min_finite[DType.int](), -9223372036854775808)
         assert_equal(min_finite[DType.uint](), 0)
     else:
@@ -259,13 +255,13 @@ def test_min_finite():
         assert_equal(min_finite[DType.uint](), 0)
 
 
-def test_max_or_inf():
+def test_max_or_inf() raises:
     assert_almost_equal(max_or_inf[DType.float32](), inf[DType.float32]())
     assert_almost_equal(max_or_inf[DType.float64](), inf[DType.float64]())
     assert_true(max_or_inf[DType.bool]())
 
 
-def test_min_or_neg_inf():
+def test_min_or_neg_inf() raises:
     assert_almost_equal(
         min_or_neg_inf[DType.float32](), neg_inf[DType.float32]()
     )
@@ -275,7 +271,7 @@ def test_min_or_neg_inf():
     assert_false(min_or_neg_inf[DType.bool]())
 
 
-def test_neg_inf():
+def test_neg_inf() raises:
     assert_false(isfinite(neg_inf[DType.float32]()))
     assert_false(isfinite(neg_inf[DType.float64]()))
     assert_true(isinf(neg_inf[DType.float32]()))
@@ -286,7 +282,7 @@ def test_neg_inf():
     assert_equal(-inf[DType.float64](), neg_inf[DType.float64]())
 
 
-def test_nextafter():
+def test_nextafter() raises:
     assert_true(isnan(nextafter(nan[DType.float32](), nan[DType.float32]())))
     assert_true(isinf(nextafter(inf[DType.float32](), inf[DType.float32]())))
     assert_true(isinf(nextafter(-inf[DType.float32](), -inf[DType.float32]())))
@@ -319,5 +315,5 @@ def test_nextafter():
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

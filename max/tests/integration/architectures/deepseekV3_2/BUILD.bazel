@@ -1,0 +1,65 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_library(
+    name = "torch_reference",
+    testonly = True,
+    srcs = [
+        "conftest.py",
+    ],
+    ignore_unresolved_imports = [
+        # `transformers` code, checks if flash_attn is installed
+        "flash_attn",
+    ],
+    imports = ["."],
+    tags = [
+        "no-mypy",
+    ],
+    deps = [
+        requirement("scipy"),
+        requirement("tilelang"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "deepseekV3_2",
+    size = "large",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["conftest.py"],
+    ),
+    env = {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":torch_reference",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/kv_cache",
+        "//max/python/max/nn",
+        "//max/python/max/pipelines/architectures",
+        "//max/tests/integration/test_common:context_utils",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("numpy"),
+        requirement("scipy"),
+        requirement("torch"),
+        requirement("transformers"),
+    ],
+)

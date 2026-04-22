@@ -1,0 +1,69 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
+_MACOS_INCOMPATIBLE_TESTS = [
+    "test_sampling_gpu.py",
+]
+
+# CPU-only local suites should not pull in the dedicated GPU test target.
+_CPU_TEST_SRCS = glob(
+    ["test_*.py"],
+    exclude = ["*_gpu.py"],
+)
+
+# Tests that need a longer timeout on remote GPU CI.
+_LONG_TIMEOUT_TESTS = [
+    "test_sampling_gpu.py",
+]
+
+[
+    modular_py_test(
+        name = src.replace(".py", ""),
+        timeout = "long" if src in _LONG_TIMEOUT_TESTS else None,
+        srcs = [
+            "__init__.py",
+            "conftest.py",
+            "norm_test_utils.py",
+            src,
+        ],
+        gpu_constraints = ["//:has_gpu"] if "_gpu.py" in src else [],
+        tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
+            # FIXME: SDLC-3032
+            "test_module.py",
+        ] else []) + (["gpu"] if "_gpu.py" in src else []),
+        target_compatible_with = select({
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }) if src in _MACOS_INCOMPATIBLE_TESTS else [],
+        deps = [
+            "//max/python/max/driver",
+            "//max/python/max/dtype",
+            "//max/python/max/engine",
+            "//max/python/max/graph",
+            "//max/python/max/mlir",
+            "//max/python/max/nn",
+            requirement("numpy"),
+            requirement("torch"),
+        ] + (
+            # pipelines/lib is only needed by the GPU sampling test; keep it
+            # out of the default dep list so cpu_tests stays lightweight.
+            ["//max/python/max/pipelines/lib"] if src == "test_sampling_gpu.py" else []
+        ),
+    )
+    for src in glob(["test_*.py"])
+]
+
+test_suite(
+    name = "cpu_tests",
+    tests = [
+        ":" + src.replace(".py", "")
+        for src in _CPU_TEST_SRCS
+    ],
+)

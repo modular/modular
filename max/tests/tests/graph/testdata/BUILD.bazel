@@ -1,0 +1,30 @@
+load("//bazel:api.bzl", "modular_py_binary", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+filegroup(
+    name = "testdata",
+    testonly = True,
+    srcs = glob(
+        ["*"],
+        exclude = ["*.py"],
+    ),
+)
+
+modular_py_binary(
+    name = "gen_external_checkpoints",
+    testonly = True,
+    srcs = ["gen_external_checkpoints.py"],
+    deps = [
+        requirement("torch"),
+        requirement("gguf"),
+        requirement("click"),
+        requirement("numpy"),
+        requirement("safetensors"),
+    ],
+)

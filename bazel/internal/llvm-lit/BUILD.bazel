@@ -1,5 +1,6 @@
-load("@bazel_skylib//rules:expand_template.bzl", "expand_template")
-load("//bazel:api.bzl", "modular_py_library")
+load("//bazel:api.bzl", "modular_py_library", "modular_versioned_expand_template")
+
+package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "validate_lit_features.py",
@@ -11,7 +12,7 @@ modular_py_library(
     testonly = True,
     srcs = ["modular_test_format.py"],
     imports = ["."],
-    visibility = ["//visibility:public"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "@llvm-project//llvm:lit",
     ],
@@ -25,10 +26,9 @@ filegroup(
         "modular_test_format.py",
         ":lit_common_configured",
     ],
-    visibility = ["//visibility:public"],
 )
 
-expand_template(
+modular_versioned_expand_template(
     name = "lit_common_configured",
     testonly = True,
     out = "lit.common.configured",
@@ -40,6 +40,10 @@ expand_template(
     }) | select({
         "//:modular_config_production": {"@ENABLE_ASSERTIONS@": "False"},
         "//conditions:default": {"@ENABLE_ASSERTIONS@": "True"},
+    }) | select({
+        "//:linux_aarch64": {"@TARGET_TRIPLE@": "aarch64-unknown-linux-gnu"},
+        "//:linux_x86_64": {"@TARGET_TRIPLE@": "x86_64-unknown-linux-gnu"},
+        "@platforms//os:macos": {"@TARGET_TRIPLE@": "arm64-apple-macosx"},
     }),
     template = "lit.common.configured.in",
 )

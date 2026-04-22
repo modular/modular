@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import *
+from std.math import *
 
-from gpu.host import DeviceContext
-from testing import TestSuite
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite
 
 
-fn run_func[
+def run_func[
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
 ](ctx: DeviceContext, val: Scalar[dtype] = 0) raises:
     @parameter
-    fn kernel(output: UnsafePointer[Scalar[dtype]], input: Scalar[dtype]):
+    def kernel(
+        output: UnsafePointer[Scalar[dtype], MutAnyOrigin], input: Scalar[dtype]
+    ):
         output[0] = kernel_fn(input)
 
     var out = ctx.enqueue_create_buffer[dtype](1)
@@ -34,74 +36,73 @@ fn run_func[
     _ = out
 
 
-fn hypot_fn(val: SIMD) -> type_of(val):
+def hypot_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return hypot(val, val)
 
 
-fn remainder_fn(val: SIMD) -> type_of(val):
+def remainder_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return remainder(val, val)
 
 
-fn scalb_fn(val: SIMD) -> type_of(val):
+def scalb_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return scalb(val, val)
 
 
-fn gcd_fn(val: SIMD) -> type_of(val):
-    return gcd(Int(val), Int(val))
+def gcd_fn(val: SIMD) -> type_of(val):
+    return type_of(val)(gcd(Int(val), Int(val)))
 
 
-fn lcm_fn(val: SIMD) -> type_of(val):
-    return lcm(Int(val), Int(val))
+def lcm_fn(val: SIMD) -> type_of(val):
+    return type_of(val)(lcm(Int(val), Int(val)))
 
 
-fn sqrt_fn(val: SIMD) -> type_of(val):
+def sqrt_fn(val: SIMD) -> type_of(val):
     return sqrt(val)
 
 
-fn ldexp_fn(val: SIMD) -> type_of(val):
+def ldexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return ldexp(val, 1)
 
 
-fn frexp_fn(val: SIMD) -> type_of(val):
+def frexp_fn(val: SIMD) -> type_of(val) where val.dtype.is_floating_point():
     return frexp(val)[0]
 
 
-fn floor_fn(val: SIMD) -> type_of(val):
+def floor_fn(val: SIMD) -> type_of(val):
     return floor(val)
 
 
-fn ceil_fn(val: SIMD) -> type_of(val):
+def ceil_fn(val: SIMD) -> type_of(val):
     return floor(val)
 
 
-fn pow_fn(val: SIMD) -> type_of(val):
+def pow_fn(val: SIMD) -> type_of(val):
     return val**val
 
 
-fn powi_fn(val: SIMD) -> type_of(val):
+def powi_fn(val: SIMD) -> type_of(val):
     return val**9
 
 
-fn powf_fn(val: SIMD) -> type_of(val):
+def powf_fn(val: SIMD) -> type_of(val):
     return val**3.2
 
 
-def test_math():
+def test_math() raises:
     with DeviceContext() as ctx:
 
         @parameter
-        fn test[
-            *kernel_fns: fn[dtype: DType, width: Int] (
+        def test[
+            *kernel_fns: def[dtype: DType, width: Int](
                 SIMD[dtype, width]
-            ) -> SIMD[dtype, width]
+            ) thin -> SIMD[dtype, width]
         ](ctx: DeviceContext) raises:
-            alias ls = stdlib.builtin.variadic_size(kernel_fns)
+            comptime ls = kernel_fns.size
 
-            @parameter
-            for idx in range(ls):
-                alias kernel_fn = kernel_fns[idx]
-                run_func[DType.float32, kernel_fn[]](ctx)
-                run_func[DType.float16, kernel_fn[]](ctx)
+            comptime for idx in range(ls):
+                comptime kernel_fn = kernel_fns[idx]
+                run_func[DType.float32, kernel_fn[...]](ctx)
+                run_func[DType.float16, kernel_fn[...]](ctx)
 
         # Anything that's commented does not work atm and needs to be
         # implemented. This list is also not exhaustive and needs to be
@@ -132,6 +133,8 @@ def test_math():
             asin,
             cos,
             acos,
+            cosh,
+            sinh,
             tanh,
             atanh,
             exp,
@@ -145,5 +148,5 @@ def test_math():
         ](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

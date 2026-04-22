@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,49 +11,49 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import time
+import std.time
 
-from gpu import AddressSpace, memory, sync, thread_idx
-from gpu.host import DeviceContext
-from memory import stack_allocation
+from std.gpu import memory, sync, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import stack_allocation
 
 
-fn copy_via_shared(
-    src: UnsafePointer[Float32],
-    dst: UnsafePointer[Float32],
+def copy_via_shared(
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
     var thread_id = Int(thread_idx.x)
     var mem_buff: UnsafePointer[
-        Float32, address_space = AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
+        Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
     var src_global: UnsafePointer[
-        Float32, address_space = AddressSpace.GLOBAL
+        Float32, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     memory.async_copy[4](
-        src_global.offset(thread_id),
-        mem_buff.offset(thread_id),
+        src_global + thread_id,
+        mem_buff + thread_id,
     )
 
     var m_barrier = stack_allocation[
-        1, DType.int32, address_space = AddressSpace.SHARED
+        1, DType.int32, address_space=AddressSpace.SHARED
     ]()
     sync.mbarrier_init(m_barrier, 16)
     sync.mbarrier(m_barrier)
     var state = sync.mbarrier_arrive(m_barrier)
     var not_wait = False
     while not not_wait:
-        time.sleep(100 * 1e-6)
+        std.time.sleep(100 * 1e-6)
         not_wait = sync.mbarrier_test_wait(m_barrier, state)
 
     dst[thread_id] = mem_buff[thread_id]
 
 
 # CHECK-LABEL: run_copy_via_shared
-fn run_copy_via_shared(ctx: DeviceContext) raises:
+def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
-    var in_data = UnsafePointer[Float32].alloc(16)
-    var out_data = UnsafePointer[Float32].alloc(16)
+    var in_data = alloc[Float32](16)
+    var out_data = alloc[Float32](16)
 
     for i in range(16):
         in_data[i] = i + 1
@@ -65,8 +65,8 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     ctx.enqueue_copy(in_device, in_data)
     ctx.enqueue_copy(out_device, out_data)
 
-    alias kernel = copy_via_shared
-    ctx.enqueue_function_checked[kernel, kernel](
+    comptime kernel = copy_via_shared
+    ctx.enqueue_function_experimental[kernel](
         in_device,
         out_device,
         grid_dim=(1,),
@@ -103,6 +103,6 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     _ = copy_via_shared_gpu^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)

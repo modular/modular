@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,47 +14,46 @@
 # on GPUs.
 
 
-from gpu import global_idx
-from gpu.host import DeviceContext
-from testing import assert_equal
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
-alias buffer_size = 1024
-alias block_dim = 32
-alias simd_width = 4
+comptime buffer_size = 1024
+comptime block_dim = 32
+comptime simd_width = 4
 
 
-def test_simd_reduction(ctx: DeviceContext):
-    var input_host = UnsafePointer[Scalar[DType.int]].alloc(buffer_size)
-    var output_host = UnsafePointer[Scalar[DType.int]].alloc(
-        buffer_size // simd_width
-    )
+def test_simd_reduction(ctx: DeviceContext) raises:
+    var input_host = alloc[Scalar[DType.int]](buffer_size)
+    var output_host = alloc[Scalar[DType.int]](buffer_size // simd_width)
 
     for i in range(0, buffer_size, simd_width):
         for j in range(simd_width):
             # Fill with sensible values, but make sure the addition does not
             # blow up.
             if j == 0:
-                input_host[i + j] = i
+                input_host[i + j] = Scalar[DType.int](i)
             else:
-                input_host[i + j] = j
+                input_host[i + j] = Scalar[DType.int](j)
 
     var input_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
 
     var output_buffer = ctx.enqueue_create_buffer[DType.int](
         buffer_size // simd_width
-    ).enqueue_fill(9)
+    )
+    output_buffer.enqueue_fill(9)
 
     ctx.enqueue_copy(input_buffer, input_host)
 
-    fn kernel(
-        output: UnsafePointer[Scalar[DType.int]],
-        input: UnsafePointer[Scalar[DType.int]],
+    def kernel(
+        output: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+        input: UnsafePointer[Scalar[DType.int], ImmutAnyOrigin],
     ):
         output[global_idx.x] = input.load[width=simd_width](
             simd_width * global_idx.x
         ).reduce_add()
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         output_buffer,
         input_buffer,
         grid_dim=buffer_size // (block_dim * simd_width),
@@ -69,12 +68,14 @@ def test_simd_reduction(ctx: DeviceContext):
         simd_sum += i
 
     for i in range(buffer_size // simd_width):
-        assert_equal(output_host[i], i * simd_width + simd_sum)
+        assert_equal(
+            output_host[i], Scalar[DType.int](i * simd_width + simd_sum)
+        )
 
     input_host.free()
     output_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_simd_reduction(ctx)

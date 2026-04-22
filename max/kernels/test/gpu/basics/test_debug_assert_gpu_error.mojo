@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import global_idx
-from gpu.host import DeviceContext
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_fail
-def main():
+def main() raises:
     print("== test_fail")
     # CHECK: block: [0,0,0] thread: [0,0,0] Assert Error: forcing failure on thread: 0 with multiple args: 2.0 True
     with DeviceContext() as ctx:
 
-        fn fail_assert():
+        def fail_assert():
             debug_assert(
                 False,
                 "forcing failure on thread: ",
@@ -34,9 +34,9 @@ def main():
             # CHECK-NOT: won't print this due to assert failure
             print("won't print this due to assert failure")
 
-        alias kernel = fail_assert
+        comptime kernel = fail_assert
 
-        ctx.enqueue_function_checked[kernel, kernel](
+        ctx.enqueue_function_experimental[kernel](
             grid_dim=2,
             block_dim=(2, 2),
         )

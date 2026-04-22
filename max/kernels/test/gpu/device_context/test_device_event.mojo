@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,41 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import global_idx
-from gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
-from testing import (
-    assert_equal,
-    assert_false,
-    assert_not_equal,
-    assert_raises,
-    assert_true,
-)
+from std.math import ceildiv
+from std.gpu import global_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
+from std.testing import assert_equal
 
 
 # Simple kernel for testing event synchronization
-fn simple_kernel(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def simple_kernel(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     multiplier: Float32,
 ):
     """Simple kernel that multiplies input by a multiplier."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = input[tid] * multiplier
 
 
 # Kernel that does more work to test timing
-fn heavy_kernel(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def heavy_kernel(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     iterations: Int,
 ):
     """Kernel that does multiple iterations of work."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
     var value = input[tid]
@@ -54,11 +49,11 @@ fn heavy_kernel(
     output[tid] = value
 
 
-def test_event_record_and_synchronize(ctx: DeviceContext):
+def test_event_record_and_synchronize(ctx: DeviceContext) raises:
     print("Test event recording and synchronization.")
 
-    alias length = 256
-    alias multiplier = Float32(3.0)
+    comptime length = 256
+    comptime multiplier = Float32(3.0)
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -77,7 +72,7 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
     # Create event and stream
     var event = ctx.create_event()
     var stream = ctx.create_stream()
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Launch kernel on stream
     stream.enqueue_function(
@@ -86,7 +81,7 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
         output_device,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -106,12 +101,12 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def test_stream_enqueue_wait_for(ctx: DeviceContext):
+def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
     print("Test stream waiting for events from other streams.")
 
-    alias length = 512
-    alias multiplier1 = Float32(2.0)
-    alias multiplier2 = Float32(3.0)
+    comptime length = 512
+    comptime multiplier1 = Float32(2.0)
+    comptime multiplier2 = Float32(3.0)
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -135,7 +130,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
     var stream1 = ctx.create_stream()
     var stream2 = ctx.create_stream()
     var event = ctx.create_event()
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Stream 1: input -> intermediate (multiply by multiplier1)
     stream1.enqueue_function(
@@ -144,7 +139,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
         intermediate_device,
         length,
         multiplier1,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -159,7 +154,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
         output_device,
         length,
         multiplier2,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -177,11 +172,11 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def test_multiple_events_synchronization(ctx: DeviceContext):
+def test_multiple_events_synchronization(ctx: DeviceContext) raises:
     print("Test complex synchronization with multiple events.")
 
-    alias length = 256
-    alias num_streams = 4
+    comptime length = 256
+    comptime num_streams = 4
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -204,7 +199,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
         output_devices.append(ctx.enqueue_create_buffer[DType.float32](length))
         multipliers.append(Float32(i + 1))
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Launch kernels on all streams
     for i in range(num_streams):
@@ -214,7 +209,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
             output_devices[i],
             length,
             multipliers[i],
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
         # Record event for each stream
@@ -236,10 +231,10 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
             assert_equal(output_host[i], expected)
 
 
-def test_event_dependency_chain(ctx: DeviceContext):
+def test_event_dependency_chain(ctx: DeviceContext) raises:
     print("Test creating a dependency chain using events.")
 
-    alias length = 128
+    comptime length = 128
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -265,7 +260,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
     var event1_copied = event1
     var event2_moved = event2^
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Stage 1: input -> buffer1 (multiply by 2)
     stream1.enqueue_function(
@@ -274,7 +269,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         buffer1,
         length,
         Float32(2.0),
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     stream1.record_event(event1_copied)
@@ -287,7 +282,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         buffer2,
         length,
         Float32(3.0),
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     stream2.record_event(event2_moved)
@@ -300,7 +295,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         buffer3,
         length,
         Float32(5.0),
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -318,13 +313,13 @@ def test_event_dependency_chain(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def test_event_across_context_streams(ctx: DeviceContext):
+def test_event_across_context_streams(ctx: DeviceContext) raises:
     print(
         "Test event synchronization between default stream and created streams."
     )
 
-    alias length = 256
-    alias multiplier = Float32(4.0)
+    comptime length = 256
+    comptime multiplier = Float32(4.0)
 
     # Create buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -350,14 +345,14 @@ def test_event_across_context_streams(ctx: DeviceContext):
     custom_stream.enqueue_wait_for(event)
 
     # Launch kernel on custom stream
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
     custom_stream.enqueue_function(
         func,
         input_device,
         output_device,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
 
@@ -372,7 +367,7 @@ def test_event_across_context_streams(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_event_record_and_synchronize(ctx)
         test_stream_enqueue_wait_for(ctx)

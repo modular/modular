@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, nan
+from std.math import inf, nan
 
-from gpu.host import DeviceContext
-from memory import bitcast
+from std.gpu.host import DeviceContext
+from std.memory import bitcast
 
 
 # CHECK-LABEL: test_e5m2_initialization
@@ -50,7 +50,7 @@ from memory import bitcast
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_e5m2_initialization():
+def test_e5m2_initialization():
     print("== test_e5m2_initialization")
 
     var simd_e5m2 = SIMD[DType.float8_e5m2, 256](
@@ -351,7 +351,7 @@ fn test_e5m2_initialization():
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f32():
+def test_simd_e5m2_to_f32():
     print("== test_simd_e5m2_to_f32")
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
@@ -360,8 +360,8 @@ fn test_simd_e5m2_to_f32():
 
     e5m2_casted_f32 = e5m2_simd.cast[DType.float32]()
 
-    alias M = 32
-    alias N = 8
+    comptime M = 32
+    comptime N = 8
     for i in range(M):
         for j in range(N):
             print(e5m2_casted_f32[i * N + j], end=", ")
@@ -401,7 +401,7 @@ fn test_simd_e5m2_to_f32():
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f16():
+def test_simd_e5m2_to_f16():
     print("== test_simd_e5m2_to_f16")
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
@@ -410,8 +410,8 @@ fn test_simd_e5m2_to_f16():
 
     e5m2_casted_f16 = e5m2_simd.cast[DType.float16]()
 
-    alias M = 32
-    alias N = 8
+    comptime M = 32
+    comptime N = 8
     for i in range(M):
         for j in range(N):
             print(e5m2_casted_f16[i * N + j], end=", ")
@@ -451,7 +451,7 @@ fn test_simd_e5m2_to_f16():
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_bf16():
+def test_simd_e5m2_to_bf16():
     print("== test_simd_e5m2_to_bf16")
 
     var e5m2_simd = SIMD[DType.float8_e5m2, 256](0.0)
@@ -460,8 +460,8 @@ fn test_simd_e5m2_to_bf16():
 
     e5m2_casted_bf16 = e5m2_simd.cast[DType.bfloat16]()
 
-    alias M = 32
-    alias N = 8
+    comptime M = 32
+    comptime N = 8
     for i in range(M):
         for j in range(N):
             print(e5m2_casted_bf16[i * N + j], end=", ")
@@ -533,14 +533,14 @@ fn test_simd_e5m2_to_bf16():
 # CHECK: 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
-fn test_simd_f32_to_e5m2():
+def test_simd_f32_to_e5m2():
     print("== test_simd_f32_to_e5m2")
 
-    alias M = 512
+    comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
 
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
     f32_casted_e5m2 = f32_simd.cast[DType.float8_e5m2]()
 
@@ -550,15 +550,15 @@ fn test_simd_f32_to_e5m2():
         print("")
 
 
-fn test_simd_float8[
+def test_simd_float8[
     dtype: DType,
     size: Int,
     target: DType,
 ](x: SIMD[dtype, size]):
     var x_casted = x.cast[target]()
 
-    alias M = 32
-    alias N = size // M
+    comptime M = 32
+    comptime N = size // M
     for i in range(M):
         for j in range(N):
             print(x_casted[i * N + j], end=", ")
@@ -598,15 +598,15 @@ fn test_simd_float8[
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e5m2_to_f16_ptx_path")
 
-    alias M = 256
+    comptime M = 256
     var e5m2_simd = SIMD[DType.float8_e5m2, M](0.0)
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    alias kernel = test_simd_float8[DType.float8_e5m2, M, DType.float16]
+    comptime kernel = test_simd_float8[DType.float8_e5m2, M, DType.float16]
     ctx.enqueue_function_experimental[kernel](
         e5m2_simd, grid_dim=1, block_dim=1
     )
@@ -646,29 +646,29 @@ fn test_simd_e5m2_to_f16_ptx_path(ctx: DeviceContext) raises:
 # CHECK: -2048.0, -2560.0, -3072.0, -3584.0, -4096.0, -5120.0, -6144.0, -7168.0,
 # CHECK: -8192.0, -10240.0, -12288.0, -14336.0, -16384.0, -20480.0, -24576.0, -28672.0,
 # CHECK: -32768.0, -40960.0, -49152.0, -57344.0, -inf, nan, nan, nan,
-fn test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
+def test_simd_e5m2_to_f32_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_e5m2_to_f32_ptx_path")
 
-    alias M = 256
+    comptime M = 256
     var e5m2_simd = SIMD[DType.float8_e5m2, M](0.0)
     for i in range(M):
         e5m2_simd[i] = bitcast[DType.float8_e5m2](UInt8(i))
 
-    alias kernel = test_simd_float8[DType.float8_e5m2, M, DType.float32]
+    comptime kernel = test_simd_float8[DType.float8_e5m2, M, DType.float32]
     ctx.enqueue_function_experimental[kernel](
         e5m2_simd, grid_dim=1, block_dim=1
     )
     ctx.synchronize()
 
 
-fn test_simd_float32[
+def test_simd_float32[
     size: Int,
     target: DType,
 ](x: SIMD[DType.float32, size]):
     var x_casted = x.cast[target]()
 
-    alias M = 64
-    alias N = size // M
+    comptime M = 64
+    comptime N = size // M
     for i in range(M):
         for j in range(N):
             print(x_casted[i * N + j], end=", ")
@@ -740,20 +740,20 @@ fn test_simd_float32[
 # CHECK: 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0, 224.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
 # CHECK: 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0, 256.0,
-fn test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
+def test_simd_f32_to_e5m2_ptx_path(ctx: DeviceContext) raises:
     print("== test_simd_f32_to_e5m2_ptx_path")
 
-    alias M = 512
+    comptime M = 512
     var f32_simd = SIMD[DType.float32, M](0.0)
     for i in range(M):
-        f32_simd[i] = i - 256
+        f32_simd[i] = Float32(i - 256)
 
-    alias kernel = test_simd_float32[M, DType.float8_e5m2]
+    comptime kernel = test_simd_float32[M, DType.float8_e5m2]
     ctx.enqueue_function_experimental[kernel](f32_simd, grid_dim=1, block_dim=1)
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_e5m2_initialization()
     test_simd_e5m2_to_f32()
     test_simd_e5m2_to_f16()

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,8 +22,8 @@ FILTER=""
 if [[ $# -gt 0 ]]; then
   FILTER="${1#./}" # remove leading relative file path if it has one
   if [[ -f ${FILTER} ]]; then # specific file
-    FILTER="//mojo/$(dirname $FILTER):$(basename $FILTER)"
-    FILTER=$("$REPO_ROOT"/bazelw query $FILTER)
+    FILTER="//mojo/$(dirname "$FILTER"):$(basename "$FILTER")"
+    FILTER=$("$REPO_ROOT"/bazelw query "$FILTER")
   else
     # specific test directory
     FILTER="${FILTER%/}" # remove trailing / if it has one
@@ -33,4 +33,4 @@ else
   FILTER="//mojo/stdlib/test/..."
 fi
 
-exec "$REPO_ROOT"/bazelw test ${FILTER}
+exec "$REPO_ROOT"/bazelw test "$FILTER"

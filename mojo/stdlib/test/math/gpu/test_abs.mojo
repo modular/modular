@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import assert_true, TestSuite
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_true, TestSuite
 
-alias A100_TARGET = get_gpu_target["sm_80"]()
-alias MI300X_TARGET = get_gpu_target["mi300x"]()
+comptime A100_TARGET = get_gpu_target["sm_80"]()
+comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
 
-def test_abs():
-    fn do_abs[
+def test_abs() raises:
+    def do_abs[
         dtype: DType, *, width: Int = 1
     ](val: SIMD[dtype, width]) -> type_of(val):
         return abs(val)
 
     # AMD GPU kernels cannot have a return value
-    fn do_abs_noreturn[
+    def do_abs_noreturn[
         dtype: DType, *, width: Int = 1
-    ](val: SIMD[dtype, width], x: UnsafePointer[Scalar[dtype]]):
+    ](val: SIMD[dtype, width], x: UnsafePointer[mut=True, Scalar[dtype], _]):
         x.store(0, abs(val))
 
     # Check the NVIDIA PTX.
@@ -54,38 +54,38 @@ def test_abs():
     # Set the sign bit to zero.
     assert_true(
         "s_and_b32 s0, s4, 0x7fffffff"
-        in _compile_code[do_abs_noreturn[DType.float32], target=MI300X_TARGET]()
+        in _compile_code[do_abs_noreturn[DType.float32], target=MI355X_TARGET]()
     )
 
     # Mask out the lower half sign bit.
     assert_true(
         "s_and_b32 s0, s4, 0x7fff"
         in _compile_code[
-            do_abs_noreturn[DType.float16, width=1], target=MI300X_TARGET
+            do_abs_noreturn[DType.float16, width=1], target=MI355X_TARGET
         ]()
     )
     # Mask out the lower and upper half sign bit
     assert_true(
         "s_and_b32 s0, s4, 0x7fff7fff"
         in _compile_code[
-            do_abs_noreturn[DType.float16, width=2], target=MI300X_TARGET
+            do_abs_noreturn[DType.float16, width=2], target=MI355X_TARGET
         ]()
     )
     # Mask out the sign bit.
     assert_true(
         "s_and_b32 s0, s4, 0x7fff"
         in _compile_code[
-            do_abs_noreturn[DType.bfloat16, width=1], target=MI300X_TARGET
+            do_abs_noreturn[DType.bfloat16, width=1], target=MI355X_TARGET
         ]()
     )
     # Mask out the lower and upper half sign bit.
     assert_true(
         "s_and_b32 s0, s4, 0x7fff7fff"
         in _compile_code[
-            do_abs_noreturn[DType.bfloat16, width=2], target=MI300X_TARGET
+            do_abs_noreturn[DType.bfloat16, width=2], target=MI355X_TARGET
         ]()
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

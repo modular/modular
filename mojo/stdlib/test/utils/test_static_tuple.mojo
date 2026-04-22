@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal, assert_true, assert_false
 
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
-def test_getitem():
+def test_getitem() raises:
     # Should be constructible from a single element
     # as well as a variadic list of elements.
     var tup1 = StaticTuple[Int, 1](1)
@@ -34,7 +34,7 @@ def test_getitem():
     assert_equal(tup1[Int(0)], 1)
 
 
-def test_setitem():
+def test_setitem() raises:
     var t = StaticTuple[Int, 3](1, 2, 3)
 
     t[0] = 100
@@ -46,10 +46,60 @@ def test_setitem():
     t[2] = 300
     assert_equal(t[2], 300)
 
-    alias idx: Int = 0
-    t.__setitem__[idx](400)
+    comptime idx: Int = 0
+    t[idx] = 400
     assert_equal(t[0], 400)
 
 
-def main():
+def test_equality() raises:
+    var a = StaticTuple[Int, 3](1, 2, 3)
+    var b = StaticTuple[Int, 3](1, 2, 3)
+    var c = StaticTuple[Int, 3](1, 2, 4)
+
+    assert_true(a == b)
+    assert_false(a == c)
+    assert_false(a != b)
+    assert_true(a != c)
+
+
+def test_comparison() raises:
+    var a = StaticTuple[Int, 3](1, 2, 3)
+    var b = StaticTuple[Int, 3](1, 2, 4)
+    var c = StaticTuple[Int, 3](1, 2, 3)
+    var d = StaticTuple[Int, 3](2, 0, 0)
+
+    # Less than
+    assert_true(a < b)
+    assert_false(b < a)
+    assert_false(a < c)
+
+    # First element dominates
+    assert_true(a < d)
+    assert_false(d < a)
+
+    # Less than or equal
+    assert_true(a <= c)
+    assert_true(a <= b)
+    assert_false(b <= a)
+
+    # Greater than
+    assert_true(b > a)
+    assert_false(a > b)
+    assert_false(a > c)
+
+    # Greater than or equal
+    assert_true(a >= c)
+    assert_true(b >= a)
+    assert_false(a >= b)
+
+    # Empty tuple
+    var e1 = StaticTuple[Int, 0]()
+    var e2 = StaticTuple[Int, 0]()
+    assert_true(e1 == e2)
+    assert_false(e1 < e2)
+    assert_true(e1 <= e2)
+    assert_true(e1 >= e2)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,10 +15,10 @@
 Script to generate random inputs and expected output values:
 
 ```python
-import math
+import std.math
 import torch
 
-def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1):
+def run_fold(output_size, kernel_size, stride=1, dilation=1, padding=0, batch=1, channel=1) raises:
     # Compute dimension of input tensor.
     L = 1
     dilation = dilation if isinstance(dilation, tuple) else (dilation, dilation)
@@ -51,16 +51,17 @@ run_fold((5,6), (3,2), stride=1, dilation=1, padding=0)
 ```
 """
 
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeLayout
+from layout import Coord, TileTensor, row_major
 from nn.fold import fold
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # CHECK-LABEL: test_fold
-fn test[
-    dtype: DType, //,
+def test[
+    dtype: DType,
+    //,
     input_shape: IndexList[3],
     output_shape: IndexList[4],
     stride: Tuple[Int, Int],
@@ -74,39 +75,30 @@ fn test[
 ) raises:
     print("== test_fold")
 
-    alias unknown_layout_3d = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    # Create input tensor with dynamic layout
+    comptime input_layout = row_major(Coord(input_shape))
+    var input_stack = List[Scalar[dtype]](
+        capacity=input_shape.flattened_length()
     )
-    var input_layout = RuntimeLayout[unknown_layout_3d].row_major(input_shape)
-    var input_data = UnsafePointer[Scalar[dtype]].alloc(input_layout.size())
-    var input = LayoutTensor[dtype, unknown_layout_3d, MutableAnyOrigin](
-        input_data,
-        input_layout,
-    )
-    _copy_values_to_layout_tensor(input, input_values)
+    input_stack.resize(input_shape.flattened_length(), 0)
+    var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
+    _copy_values_to_tile_tensor(input, input_values)
 
-    alias unknown_layout_4d = Layout.row_major(
-        UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE
+    # Create expected tensor with dynamic layout
+    comptime output_layout = row_major(Coord(output_shape))
+    var expected_stack = List[Scalar[dtype]](
+        capacity=output_shape.flattened_length()
     )
-    var runtime_layout_4d = RuntimeLayout[unknown_layout_4d].row_major(
-        output_shape
-    )
-    var expected_data = UnsafePointer[Scalar[dtype]].alloc(
-        runtime_layout_4d.size()
-    )
-    var expected = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
-        expected_data,
-        runtime_layout_4d,
-    )
-    _copy_values_to_layout_tensor(expected, expected_output)
+    expected_stack.resize(output_shape.flattened_length(), 0)
+    var expected = TileTensor(expected_stack.unsafe_ptr(), output_layout)
+    _copy_values_to_tile_tensor(expected, expected_output)
 
-    var output_data = UnsafePointer[Scalar[dtype]].alloc(
-        runtime_layout_4d.size()
+    # Create output tensor with dynamic layout
+    var output_stack = List[Scalar[dtype]](
+        capacity=output_shape.flattened_length()
     )
-    var output = LayoutTensor[dtype, unknown_layout_4d, MutableAnyOrigin](
-        output_data,
-        runtime_layout_4d,
-    )
+    output_stack.resize(output_shape.flattened_length(), 0)
+    var output = TileTensor(output_stack.unsafe_ptr(), output_layout)
 
     fold[stride=stride, dilation=dilation, padding=padding, target="cpu"](
         input=input,
@@ -143,37 +135,29 @@ fn test[
                             "Actual value: ",
                             output_val,
                         )
-                        output_data.free()
-                        expected_data.free()
-                        input_data.free()
                         return
 
     # CHECK: Succeed
     print("Succeed")
 
-    output_data.free()
-    expected_data.free()
-    input_data.free()
 
-
-fn _copy_values_to_layout_tensor[
+def _copy_values_to_tile_tensor[
     dtype: DType,
-    layout: Layout,
 ](
-    tensor: LayoutTensor[dtype, layout, MutableAnyOrigin],
+    tensor: TileTensor[mut=True, dtype, ...],
     values: List[Scalar[dtype]],
 ) raises:
-    var num_elements = tensor.size()
+    var num_elements = tensor.num_elements()
 
     if num_elements != len(values):
         raise Error("Tensor size and values size mismatch")
 
     for i in range(num_elements):
-        tensor.ptr[i] = values[i]
+        tensor.raw_store(i, values[i])
 
 
-def main():
-    alias dtype = DType.float32
+def main() raises:
+    comptime dtype = DType.float32
     # fmt: off
     test[
         input_shape = IndexList[3](1, 6, 15),
@@ -184,21 +168,21 @@ def main():
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            24., 43., 47., 13., 27., 24., 16.,  1., 41.,  1., 45., 24.,  4.,  7., 36.,
+        input_values=[
+            Scalar[dtype](24.), 43., 47., 13., 27., 24., 16.,  1., 41.,  1., 45., 24.,  4.,  7., 36.,
             11., 13., 36., 14.,  1., 28.,  2., 20., 20., 45., 27., 44., 20., 40., 14.,
             36., 45., 12., 30., 35., 15., 34.,  7., 32., 18., 32., 13.,  4., 39., 4.,
             38., 36., 24., 27., 16., 11., 49., 30., 37.,  1., 46.,  6., 41., 31., 26.,
             47., 45.,  7., 36., 14., 40., 23., 27.,  4., 22., 11.,  9., 28., 19., 48.,
             26., 26.,  8., 32.,  4., 23., 11., 34., 46., 15., 31., 45., 33.,  3., 17.
-        ),
-        expected_output=List[Scalar[dtype]](
-            24.,  54.,  60.,  49.,  41.,   1.,
+        ],
+        expected_output=[
+            Scalar[dtype](24.),  54.,  60.,  49.,  41.,   1.,
             60., 127.,  51., 115.,  83.,  61.,
             107., 167., 137., 133., 177.,  19.,
             72., 105.,  48., 118., 103.,  41.,
             11.,  40.,  73.,  52.,  51.,  17.
-        ),
+        ],
     )
 
     # Test with dilation.
@@ -211,21 +195,21 @@ def main():
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            49., 24., 22.,  9.,
+        input_values=[
+            Scalar[dtype](49.), 24., 22.,  9.,
             48., 38., 32., 30.,
             8., 35.,  1.,  1.,
             5., 13., 16., 10.,
             2., 26., 14., 47.,
             14., 46., 38.,  7.
-        ),
-        expected_output=List[Scalar[dtype]](
-            49., 24., 70., 47., 32., 30.,
+        ],
+        expected_output=[
+            Scalar[dtype](49.), 24., 70., 47., 32., 30.,
             0.,  0.,  0.,  0.,  0.,  0.,
             8., 35.,  6., 14., 16., 10.,
             0.,  0.,  0.,  0.,  0.,  0.,
             2., 26., 28., 93., 38.,  7.
-        ),
+        ],
     )
 
     # Test with stride and dilation.
@@ -238,21 +222,21 @@ def main():
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            6.,  8.,
+        input_values=[
+            Scalar[dtype](6.),  8.,
             39., 43.,
             43., 32.,
             32., 12.,
             13., 12.,
             44., 27.
-        ),
-        expected_output=List[Scalar[dtype]](
-            6.,  0., 47.,  0., 43.,  0.,
+        ],
+        expected_output=[
+            Scalar[dtype](6.),  0., 47.,  0., 43.,  0.,
             0.,  0.,  0.,  0.,  0.,  0.,
             43.,  0., 64.,  0., 12.,  0.,
             0.,  0.,  0.,  0.,  0.,  0.,
             13.,  0., 56.,  0., 27.,  0.
-        ),
+        ],
     )
 
     # Test with stride, dilation and padding.
@@ -265,21 +249,21 @@ def main():
     ](
         output_size=Index(5, 6),
         kernel_size=Index(3, 2),
-        input_values=List[Scalar[dtype]](
-            20., 23., 46., 16., 22., 40.,  9.,  6., 17., 31., 31.,  7.,
+        input_values=[
+            Scalar[dtype](20.), 23., 46., 16., 22., 40.,  9.,  6., 17., 31., 31.,  7.,
             6.,  3., 26.,  6., 34., 15.,  2., 21., 10.,  8., 48., 37.,
             16., 49., 10., 49.,  1., 47., 40., 26., 26., 42.,  4., 34.,
             9., 26., 18., 35., 18.,  5.,  4., 20., 21., 29., 18., 22.,
             43., 21., 18., 23., 33.,  4.,  2., 26., 46., 43., 15., 46.,
             6., 34.,  8.,  1., 34., 46., 39., 14.,  3., 44., 12., 22.
-        ),
-        expected_output=List[Scalar[dtype]](
-            9., 49., 26., 10., 18., 49.,
+        ],
+        expected_output=[
+            Scalar[dtype](9.), 49., 26., 10., 18., 49.,
             40., 61., 49., 27., 10., 29.,
             18., 47.,  5., 40.,  4., 26.,
             44., 35., 54., 33., 87., 33.,
             21., 42., 29.,  4., 18., 34.
-        ),
+        ],
     )
 
     # Test with batch > 1.
@@ -292,8 +276,8 @@ def main():
     ](
         output_size=Index(2, 3),
         kernel_size=Index(2, 2),
-        input_values=List[Scalar[dtype]](
-            39., 32.,
+        input_values=[
+            Scalar[dtype](39.), 32.,
             42., 31.,
             36., 48.,
             36.,  7.,
@@ -301,13 +285,13 @@ def main():
             49., 47.,
             36., 32.,
             9.,  4.
-        ),
-        expected_output=List[Scalar[dtype]](
-            39., 74., 31.,
+        ],
+        expected_output=[
+            Scalar[dtype](39.), 74., 31.,
             36., 84.,  7.,
             3., 61., 47.,
             36., 41.,  4.
-        ),
+        ],
     )
 
 
@@ -321,8 +305,8 @@ def main():
     ](
         output_size=Index(2, 3),
         kernel_size=Index(2, 2),
-        input_values=List[Scalar[dtype]](
-            42.,  3.,
+        input_values=[
+            Scalar[dtype](42.),  3.,
             39., 27.,
             37., 26.,
             25., 49.,
@@ -330,13 +314,13 @@ def main():
             29., 32.,
             38., 32.,
             18., 34.
-        ),
-        expected_output=List[Scalar[dtype]](
-            42., 42., 27.,
+        ],
+        expected_output=[
+            Scalar[dtype](42.), 42., 27.,
             37., 51., 49.,
             6., 71., 32.,
             38., 50., 34.
-        ),
+        ],
     )
 
     # fmt: on

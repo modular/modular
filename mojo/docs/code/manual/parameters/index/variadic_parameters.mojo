@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,15 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn sum_params[*values: Int]() -> Int:
-    alias list = VariadicList(values)
+def sum_params[*values: Int]() -> Int:
     var sum = 0
-    for v in list:
+    for v in values:
         sum += v
     return sum
 
 
-alias sum = sum_params[1, 2, 3, 4, 5]()
+comptime sum = sum_params[1, 2, 3, 4, 5]()
 
 
 def main():

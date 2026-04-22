@@ -48,7 +48,13 @@ def _py_repl_impl(ctx):
         expanded_env["PYTHONPATH"] = python_path
 
     is_linux = ctx.target_platform_has_constraint(ctx.attr._linux_constraint[platform_common.ConstraintValueInfo])
-    env = ctx.attr.env | env_for_available_tools(os = "linux" if is_linux else "macos", location_specifier = "execpath")
+    is_x86_64 = ctx.target_platform_has_constraint(ctx.attr._x86_64_constraint[platform_common.ConstraintValueInfo])
+    os = "linux_aarch64"
+    if is_x86_64:
+        os = "linux_x86_64"
+    elif not is_linux:
+        os = "macos"
+    env = ctx.attr.env | env_for_available_tools(os = os, location_specifier = "execpath")
     for key, value in env.items():
         expanded_env[key] = ctx.expand_make_variables(
             "env",
@@ -93,6 +99,9 @@ _py_repl = rule(
         "_linux_constraint": attr.label(
             default = Label("@platforms//os:linux"),
         ),
+        "_x86_64_constraint": attr.label(
+            default = Label("@platforms//cpu:x86_64"),
+        ),
     },
     toolchains = [
         "@bazel_tools//tools/python:toolchain_type",
@@ -126,9 +135,6 @@ def py_repl(
     extra_data = []
     extra_env = {}
 
-    if "//bazel/internal:lib_toolchain" not in toolchains and "@//bazel/internal:lib_toolchain" not in toolchains:
-        extra_toolchains.append("@//bazel/internal:lib_toolchain")
-
     if direct:
         transitive_mojo_deps = name + ".mojo_deps"
         collect_transitive_mojoinfo(
@@ -148,6 +154,7 @@ def py_repl(
             "MODULAR_MOJO_MAX_LINKER_DRIVER": "$(MOJO_LINKER_DRIVER)",
             "MODULAR_MOJO_MAX_LLD_PATH": "$(LLD_PATH)",
             "MODULAR_MOJO_MAX_SHARED_LIBS": "$(COMPUTED_LIBS)",
+            "MODULAR_MOJO_MAX_SYSTEM_LIBS": "$(MOJO_LINKER_SYSTEM_LIBS)",
         }
         mojo_test_environment(
             name = env_name,

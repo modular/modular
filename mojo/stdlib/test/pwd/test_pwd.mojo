@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,40 +11,40 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-import pwd
+import std.os
+import std.pwd
 
-from testing import assert_equal, assert_raises, assert_true, TestSuite
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
-def test_pwuid():
+def test_pwuid() raises:
     # Test current process user works
-    passwd = pwd.getpwuid(os.getuid())
-    assert_true(len(passwd.pw_dir) > 2)
+    passwd = std.pwd.getpwuid(std.os.getuid())
+    assert_true(passwd.pw_dir.byte_length() > 2)
     assert_true(passwd.pw_uid >= 0)
-    assert_true(len(passwd.pw_name) > 0)
+    assert_true(passwd.pw_name.byte_length() > 0)
     # Test root user works
-    passwd = pwd.getpwuid(0)
-    assert_true(len(passwd.pw_dir) > 2)
+    passwd = std.pwd.getpwuid(0)
+    assert_true(passwd.pw_dir.byte_length() > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")
 
     # Ensure incorrect ID fails
     with assert_raises():
-        _ = pwd.getpwuid(456789431974)
+        _ = std.pwd.getpwuid(456789431974)
 
 
-def test_pwnam():
+def test_pwnam() raises:
     # Test root user works
-    passwd = pwd.getpwnam("root")
-    assert_true(len(passwd.pw_dir) > 2)
+    passwd = std.pwd.getpwnam("root")
+    assert_true(passwd.pw_dir.byte_length() > 2)
     assert_equal(passwd.pw_uid, 0)
     assert_equal(passwd.pw_name, "root")
 
     # Ensure incorrect name fails
     with assert_raises():
-        _ = pwd.getpwnam("zxcvarahoijewklvnab")
+        _ = std.pwd.getpwnam("zxcvarahoijewklvnab")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

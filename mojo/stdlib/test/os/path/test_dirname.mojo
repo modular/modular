@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import dirname
+from std.os.path import dirname
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-def test_dirname():
+def test_dirname() raises:
     # Root directories
     assert_equal("/", dirname("/"))
 
@@ -76,5 +76,5 @@ def test_dirname():
     assert_equal("/path/to/dir", dirname("/path/to/dir/.hiddenfile"))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

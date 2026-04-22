@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,104 +11,127 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import env_get_int
+from std.sys import get_defined_int
 
-from benchmark import Bench, Bencher, BenchId
-from builtin._closure import __ownership_keepalive
-from gpu import *
-from gpu.grid_controls import pdl_launch_attributes
-from gpu.host import DeviceContext
+from std.benchmark import Bench, Bencher, BenchId
+from std.builtin._closure import __ownership_keepalive
+from std.gpu import (
+    block_dim,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
+from std.gpu.primitives.grid_controls import pdl_launch_attributes
+from std.gpu.host import DeviceContext
 
 
-fn copy1(
-    a: UnsafePointer[Float32],
-    b: UnsafePointer[Float32],
+def copy1(
+    a: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: UnsafePointer[Float32, MutAnyOrigin],
     n: Int,
 ):
     var tmp = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         tmp += b[i]
 
     launch_dependent_grids()
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         b[i] = a[i] + tmp
 
 
-fn copy2(
-    b: UnsafePointer[Float32],
-    c: UnsafePointer[Float32],
-    d: UnsafePointer[Float32],
+def copy2(
+    b: UnsafePointer[Float32, ImmutAnyOrigin],
+    c: UnsafePointer[Float32, MutAnyOrigin],
+    d: UnsafePointer[Float32, ImmutAnyOrigin],
     n: Int,
 ):
     var result = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         result += d[i]
 
     wait_on_dependent_grids()
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         c[i] = b[i] + result + 2.0
 
 
-fn copy1_n(
-    a: UnsafePointer[Float32],
-    b: UnsafePointer[Float32],
+def copy1_n(
+    a: UnsafePointer[Float32, ImmutAnyOrigin],
+    b: UnsafePointer[Float32, MutAnyOrigin],
     n: Int,
 ):
     var tmp = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         tmp += b[i]
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         b[i] = a[i] + tmp
 
 
-fn copy2_n(
-    b: UnsafePointer[Float32],
-    c: UnsafePointer[Float32],
-    d: UnsafePointer[Float32],
+def copy2_n(
+    b: UnsafePointer[Float32, ImmutAnyOrigin],
+    c: UnsafePointer[Float32, MutAnyOrigin],
+    d: UnsafePointer[Float32, ImmutAnyOrigin],
     n: Int,
 ):
     var result = Float32()
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         result += d[i]
 
     for i in range(
-        block_idx.x * block_dim.x + thread_idx.x, n, block_dim.x * grid_dim.x
+        block_idx.x * block_dim.x + thread_idx.x,
+        n,
+        block_dim.x * grid_dim.x,
     ):
         c[i] = b[i] + result + 2.0
 
 
 @no_inline
-fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
-    alias dtype = DType.float32
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var d_host = UnsafePointer[Scalar[dtype]].alloc(length)
+def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+    comptime dtype = DType.float32
+    var a_host = alloc[Scalar[dtype]](length)
+    var b_host = alloc[Scalar[dtype]](length)
+    var c_host = alloc[Scalar[dtype]](length)
+    var d_host = alloc[Scalar[dtype]](length)
 
-    alias grid_dim = 16
-    alias block_dim = 256
+    comptime grid_dim = 16
+    comptime block_dim = 256
 
     for i in range(length):
-        a_host[i] = i
-        b_host[i] = i
-        d_host[i] = i
+        a_host[i] = Float32(i)
+        b_host[i] = Float32(i)
+        d_host[i] = Float32(i)
 
     for i in range(length):
         c_host[i] = 0
@@ -125,9 +148,9 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    def run_func() raises:
         for _ in range(10):
-            context.enqueue_function_checked[copy1, copy1](
+            context.enqueue_function_experimental[copy1](
                 a_device,
                 b_device,
                 length,
@@ -135,7 +158,7 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
                 block_dim=(block_dim),
                 attributes=pdl_launch_attributes(),
             )
-            context.enqueue_function_checked[copy2, copy2](
+            context.enqueue_function_experimental[copy2](
                 b_device,
                 c_device,
                 d_device,
@@ -147,10 +170,10 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
         b.iter_custom[kernel_launch](context)
@@ -170,20 +193,20 @@ fn bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
 
 @no_inline
-fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
-    alias dtype = DType.float32
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var b_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(length)
-    var d_host = UnsafePointer[Scalar[dtype]].alloc(length)
+def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
+    comptime dtype = DType.float32
+    var a_host = alloc[Scalar[dtype]](length)
+    var b_host = alloc[Scalar[dtype]](length)
+    var c_host = alloc[Scalar[dtype]](length)
+    var d_host = alloc[Scalar[dtype]](length)
 
-    alias grid_dim = 16
-    alias block_dim = 256
+    comptime grid_dim = 16
+    comptime block_dim = 256
 
     for i in range(length):
-        a_host[i] = i
-        b_host[i] = i
-        d_host[i] = i
+        a_host[i] = Float32(i)
+        b_host[i] = Float32(i)
+        d_host[i] = Float32(i)
 
     for i in range(length):
         c_host[i] = 0
@@ -200,16 +223,16 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @always_inline
     @parameter
-    fn run_func() raises:
+    def run_func() raises:
         for _ in range(10):
-            context.enqueue_function_checked[copy1_n, copy1_n](
+            context.enqueue_function_experimental[copy1_n](
                 a_device,
                 b_device,
                 length,
                 grid_dim=(grid_dim),
                 block_dim=(block_dim),
             )
-            context.enqueue_function_checked[copy2_n, copy2_n](
+            context.enqueue_function_experimental[copy2_n](
                 b_device,
                 c_device,
                 d_device,
@@ -220,10 +243,10 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             run_func()
 
         b.iter_custom[kernel_launch](context)
@@ -242,8 +265,8 @@ fn bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     d_host.free()
 
 
-def main():
-    alias length = env_get_int["length", 4096]()
+def main() raises:
+    comptime length = get_defined_int["length", 4096]()
     var m = Bench()
 
     with DeviceContext() as ctx:

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,38 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import DimList
-from gpu import barrier
-from gpu.host import DeviceContext
+from std.gpu import barrier, warp_id, lane_id
+from std.gpu.host import DeviceContext
 
 # from testing import assert_almost_equal
-from gpu.id import thread_idx
-from gpu.memory import AddressSpace
-from gpu.mma import (
+from std.gpu import thread_idx
+from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_equal,
-    random,
-    zero,
-)
-from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from internal_utils import assert_equal
+from std.random import rand
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout.tensor_core_async import (
     _lhs_descriptor,
     _rhs_descriptor,
     tile_layout_k_major,
 )
+from std.utils import StaticTuple
 
-from utils import StaticTuple
 
-
-fn wgmma_kernel_ss[
+def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -57,33 +48,33 @@ fn wgmma_kernel_ss[
     b_smem_layout: Layout,
     transpose_b: Bool = False,
 ](
-    a_gmem: LayoutTensor[a_type, a_layout, MutableAnyOrigin],
-    b_gmem: LayoutTensor[b_type, b_layout, MutableAnyOrigin],
-    c_gmem: LayoutTensor[c_type, c_layout, MutableAnyOrigin],
+    a_gmem: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    b_gmem: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
+    c_gmem: LayoutTensor[c_type, c_layout, MutAnyOrigin],
 ):
     var a_smem_tile = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
-    alias num_output_regs = WMMA_M * WMMA_N // 128
+    comptime num_output_regs = WMMA_M * WMMA_N // 128
     var c_reg = StaticTuple[Float32, num_output_regs](0)
 
-    alias M = a_layout.shape[0].value()
-    alias K = a_layout.shape[1].value()
-    alias N = c_layout.shape[1].value()
+    comptime M = a_layout.shape[0].value()
+    comptime K = a_layout.shape[1].value()
+    comptime N = c_layout.shape[1].value()
 
-    alias b_tile_dim0 = N if transpose_b else WMMA_K
-    alias b_tile_dim1 = WMMA_K if transpose_b else N
+    comptime b_tile_dim0 = N if transpose_b else WMMA_K
+    comptime b_tile_dim1 = WMMA_K if transpose_b else N
 
     for k_i in range(K // WMMA_K):
         var a_gmem_tile = a_gmem.tile[M, WMMA_K](0, k_i)
@@ -115,13 +106,10 @@ fn wgmma_kernel_ss[
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
-    var warp_id = thread_idx.x // 32
-    var lane_id = thread_idx.x % 32
-
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](warp_id, 0)
+        c_gmem.tile[16, WMMA_N](warp_id(), 0)
         .vectorize[1, 2]()
-        .distribute[Layout.row_major(8, 4)](lane_id)
+        .distribute[Layout.row_major(8, 4)](lane_id())
     )
 
     for i in range(num_output_regs):
@@ -130,7 +118,7 @@ fn wgmma_kernel_ss[
         ]()
 
 
-fn wgmma_e4m3_e4m3_f32[
+def wgmma_e4m3_e4m3_f32[
     M: Int,
     N: Int,
     K: Int,
@@ -145,48 +133,55 @@ fn wgmma_e4m3_e4m3_f32[
         sep="",
     )
 
-    alias static_a_shape = DimList(M, K)
-    alias static_b_shape = DimList(N, K) if transpose_b else DimList(K, N)
-    alias static_c_shape = DimList(M, N)
+    comptime a_shape = row_major[M, K]()
+    comptime b_shape = row_major[
+        N if transpose_b else K, K if transpose_b else N
+    ]()
+    comptime c_shape = row_major[M, N]()
 
-    var a_host = HostNDBuffer[DType.float8_e4m3fn, 2, static_a_shape]()
-    var b_host = HostNDBuffer[DType.float8_e4m3fn, 2, static_b_shape]()
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape]()
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape]()
+    var a_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](M * K)
+    var a_host = TileTensor(a_host_ptr, a_shape)
+    var b_size = N * K if transpose_b else K * N
+    var b_host_ptr = alloc[Scalar[DType.float8_e4m3fn]](b_size)
+    var b_host = TileTensor(b_host_ptr, b_shape)
+    var c_host_ptr = alloc[Scalar[c_type]](M * N)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
-    var a_device = DeviceNDBuffer[DType.float8_e4m3fn, 2, static_a_shape](
-        ctx=ctx
-    )
-    var b_device = DeviceNDBuffer[DType.float8_e4m3fn, 2, static_b_shape](
-        ctx=ctx
-    )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](ctx=ctx)
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](ctx=ctx)
+    var a_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](M * K)
+    var a_device_tt = TileTensor(a_device, a_shape)
+    var b_device = ctx.enqueue_create_buffer[DType.float8_e4m3fn](b_size)
+    var b_device_tt = TileTensor(b_device, b_shape)
+    var c_device = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_tt = TileTensor(c_device, c_shape)
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_ref_tt = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
-    random(a_host.tensor)
-    random(b_host.tensor)
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
+    _ = c_host.fill(0)
+    _ = c_host_ref.fill(0)
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref_ptr)
 
-    var c_tensor = from_ndbuffer_row_major(c_device.tensor)
-    var a_tensor = from_ndbuffer_row_major(a_device.tensor)
-    var b_tensor = from_ndbuffer_row_major(b_device.tensor)
+    var c_tensor = c_device_tt.to_layout_tensor()
+    var a_tensor = a_device_tt.to_layout_tensor()
+    var b_tensor = b_device_tt.to_layout_tensor()
 
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         DType.float8_e4m3fn, BM=M, BK=32
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         DType.float8_e4m3fn, BM=N, BK=32
     ]()
 
-    alias kernel = wgmma_kernel_ss[
+    comptime kernel = wgmma_kernel_ss[
         DType.float8_e4m3fn,
         DType.float8_e4m3fn,
         c_type,
@@ -201,7 +196,7 @@ fn wgmma_e4m3_e4m3_f32[
         transpose_b=transpose_b,
     ]
 
-    ctx.enqueue_function_checked[kernel, kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_tensor,
         b_tensor,
         c_tensor,
@@ -209,69 +204,66 @@ fn wgmma_e4m3_e4m3_f32[
         block_dim=(128),
     )
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
+
+    var c_ref_lt = c_device_ref_tt.to_layout_tensor()
+    var a_lt = a_device_tt.to_layout_tensor()
+    var b_lt = b_device_tt.to_layout_tensor()
 
     if transpose_b:
         vendor_blas.matmul(
             ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
+            c_ref_lt,
+            a_lt,
+            b_lt,
             c_row_major=True,
             transpose_b=True,
         )
 
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
-        var b_host_col_major = HostNDBuffer[
-            DType.float8_e4m3fn, 2, DimList(N, K)
-        ]()
+        var b_host_col_major_ptr = alloc[Scalar[DType.float8_e4m3fn]](N * K)
 
         for i in range(N):
             for j in range(K):
-                b_host_col_major.tensor[i, j] = b_host.tensor[j, i]
+                b_host_col_major_ptr[i * K + j] = b_host_ptr[j * N + i]
 
-        var b_device_col_major = DeviceNDBuffer[
-            DType.float8_e4m3fn, 2, DimList(N, K)
-        ](ctx=ctx)
-        ctx.enqueue_copy(
-            b_device_col_major.buffer, b_host_col_major.tensor.data
+        var b_device_col_major = ctx.enqueue_create_buffer[DType.float8_e4m3fn](
+            N * K
         )
+        var b_device_col_major_tt = TileTensor(
+            b_device_col_major, row_major[N, K]()
+        )
+        ctx.enqueue_copy(b_device_col_major, b_host_col_major_ptr)
 
         vendor_blas.matmul(
             ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device_col_major.tensor,
+            c_ref_lt,
+            a_lt,
+            b_device_col_major_tt.to_layout_tensor(),
             c_row_major=True,
             transpose_b=True,
         )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        b_host_col_major_ptr.free()
+        _ = b_device_col_major^
+
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
     ctx.synchronize()
 
-    assert_equal(c_host.tensor, c_host_ref.tensor)
+    assert_equal(c_host.ptr, c_host_ref.ptr, c_host.num_elements())
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
-
-    _ = a_tensor
-    _ = b_tensor
-    _ = c_tensor
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-
-        @parameter
-        for n in range(8, 32, 8):
+        comptime for n in range(8, 32, 8):
             wgmma_e4m3_e4m3_f32[
                 64,
                 n,

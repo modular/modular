@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,6 +22,7 @@ trap 'rm -rf "$tmpdir"' EXIT
 ln -s "$PWD/{{pyproject}}" "$tmpdir/pyproject.toml"
 cp "$PWD/{{existing_lockfile}}" "$tmpdir/uv.lock"
 
+# shellcheck disable=SC2288
 "{{uv}}" \
   lock \
   --directory "$tmpdir" \

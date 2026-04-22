@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.compile import _compile_code
-from testing import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import *
 
 
-def test_convert_asm():
+def test_convert_asm() raises:
     @parameter
-    fn my_cast[
+    def my_cast[
         frm: DType, to: DType
-    ](output: UnsafePointer[Scalar[to]], x: Scalar[frm]):
+    ](output: UnsafePointer[Scalar[to], MutAnyOrigin], x: Scalar[frm]):
         output[] = x.cast[to]()
 
     assert_true(
@@ -28,7 +28,7 @@ def test_convert_asm():
         in _compile_code[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = get_gpu_target["sm_80"](),
+            target=get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -37,7 +37,7 @@ def test_convert_asm():
         in _compile_code[
             my_cast[DType.float32, DType.float16],
             emission_kind="asm",
-            target = get_gpu_target["mi300x"](),
+            target=get_gpu_target["mi355x"](),
         ]()
     )
 
@@ -46,7 +46,7 @@ def test_convert_asm():
         in _compile_code[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = get_gpu_target["sm_80"](),
+            target=get_gpu_target["sm_80"](),
         ]()
     )
 
@@ -55,42 +55,43 @@ def test_convert_asm():
         in _compile_code[
             my_cast[DType.float16, DType.float32],
             emission_kind="asm",
-            target = get_gpu_target["mi300x"](),
+            target=get_gpu_target["mi355x"](),
         ]()
     )
 
 
-fn convert_kernel[
+def convert_kernel[
     src_type: DType, dst_type: DType, size: Int
-](dst_ptr: UnsafePointer[Scalar[dst_type]]):
-    @parameter
-    for i in range(0, size, 2):
-        var src_vec = SIMD[src_type, 2](i, i + 1)
+](dst_ptr: UnsafePointer[Scalar[dst_type], MutAnyOrigin]):
+    comptime for i in range(0, size, 2):
+        var src_vec = SIMD[src_type, 2](
+            Scalar[src_type](i), Scalar[src_type](i + 1)
+        )
         var dst_vec = src_vec.cast[dst_type]()
         dst_ptr.store(i, dst_vec)
 
 
-fn test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
+def test_convert[src_type: DType, dst_type: DType](ctx: DeviceContext) raises:
     """Test the conversion ptx instruction.
 
     We can't verify this just by compilation. The instruction converts two values
      and swaps their reorder, which should be verified by checking runtime results.
     """
 
-    alias size = 4
+    comptime size = 4
     var device_buf = ctx.enqueue_create_buffer[dst_type](size)
-    _ = device_buf.enqueue_fill(0)
+    device_buf.enqueue_fill(0)
 
-    alias kernel = convert_kernel[src_type, dst_type, size]
-    ctx.enqueue_function_checked[kernel, kernel](
+    comptime kernel = convert_kernel[src_type, dst_type, size]
+    ctx.enqueue_function_experimental[kernel](
         device_buf, grid_dim=(1), block_dim=(1)
     )
     with device_buf.map_to_host() as host_buf:
         for i in range(size):
-            assert_equal(host_buf[i], i)
+            assert_equal(host_buf[i], Scalar[dst_type](i))
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_convert_asm()
         # Only support 2xFP32 -> 2xBF16 conversion via ptx.

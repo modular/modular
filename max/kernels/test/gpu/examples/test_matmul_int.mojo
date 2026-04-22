@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,38 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
+from std.math.uutils import udivmod
 
-from buffer import DimList, NDBuffer
-from gpu import (
-    AddressSpace,
-    barrier,
-    block_dim,
-    block_idx,
-    global_idx,
-    thread_idx,
+from std.gpu import AddressSpace, barrier, block_idx, global_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.memory import (
+    memset_zero,
+    stack_allocation,
 )
-from gpu.host import DeviceContext
-from memory import memset_zero, stack_allocation
+from layout import Coord, Idx, TileTensor, row_major
 
-from utils.index import Index
-
-alias TILE_SZ_A = 128
-alias TILE_SZ_B = 16
-alias TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
+comptime TILE_SZ_A = 128
+comptime TILE_SZ_B = 16
+comptime TILE_SZ_RATIO = TILE_SZ_A // TILE_SZ_B
 
 
-fn matmul(
-    a_ptr: UnsafePointer[Scalar[DType.int]],
-    b_ptr: UnsafePointer[Scalar[DType.int]],
-    c_ptr: UnsafePointer[Scalar[DType.int]],
+def matmul(
+    a_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    b_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
+    c_ptr: UnsafePointer[Scalar[DType.int], MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    var a = NDBuffer[DType.int, 2](a_ptr, Index(m, k))
-    var b = NDBuffer[DType.int, 2](b_ptr, Index(k, n))
-    var c = NDBuffer[DType.int, 2](c_ptr, Index(m, n))
+    var a = TileTensor(a_ptr, row_major(Coord(Idx(m), Idx(k))))
+    var b = TileTensor(b_ptr, row_major(Coord(Idx(k), Idx(n))))
+    var c = TileTensor(c_ptr, row_major(Coord(Idx(m), Idx(n))))
 
     # Compute C = A x B
     #   where A is a (m x k) matrix
@@ -57,12 +52,12 @@ fn matmul(
     var b_shared = stack_allocation[
         TILE_SZ_RATIO * TILE_SZ_B,
         DType.int,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     # Thread indexing offsets.
-    var row: UInt = global_idx.x
-    var col: UInt = block_idx.y * TILE_SZ_B
+    var row = global_idx.x
+    var col = block_idx.y * TILE_SZ_B
 
     # Privatization of the C matrix.
     var c_reg = stack_allocation[TILE_SZ_B, DType.int]()
@@ -71,12 +66,11 @@ fn matmul(
 
     # Loop over each input tile.
     for tile_idx in range((k - 1) // TILE_SZ_RATIO + 1):
-        var i: UInt = thread_idx.x // TILE_SZ_B
-        var j: UInt = thread_idx.x % TILE_SZ_B
+        var i, j = udivmod(thread_idx.x, TILE_SZ_B)
 
         # Load the B matrix into shared memory.
-        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + Int(i), Int(col) + Int(j)])
-        b_shared[i * TILE_SZ_B + j] = b_val
+        var b_val = Int(b[tile_idx * TILE_SZ_RATIO + i, col + j])
+        b_shared[i * TILE_SZ_B + j] = Scalar[DType.int](b_val)
 
         barrier()
 
@@ -84,7 +78,7 @@ fn matmul(
         for idx in range(TILE_SZ_RATIO):
             # Load the A tile into the register.
             var a_reg: Int
-            if row < UInt(m) and tile_idx * TILE_SZ_RATIO + idx < k:
+            if row < m and tile_idx * TILE_SZ_RATIO + idx < k:
                 a_reg = Int(a[row, tile_idx * TILE_SZ_RATIO + idx])
             else:
                 a_reg = 0
@@ -92,30 +86,31 @@ fn matmul(
             # Compute the output element for each thread.
             for out_idx in range(TILE_SZ_B):
                 c_reg[out_idx] += (
-                    a_reg * b_shared[idx * TILE_SZ_RATIO + out_idx]
+                    Scalar[DType.int](a_reg)
+                    * b_shared[idx * TILE_SZ_RATIO + out_idx]
                 )
         barrier()
 
     # Store the values into the output matrix.
     for out_idx in range(TILE_SZ_B):
-        if row < UInt(m) and col + UInt(out_idx) < UInt(n):
-            c[Index(row, col + UInt(out_idx))] = c_reg.load(out_idx)
+        if row < m and col + out_idx < n:
+            c[row, col + out_idx] = c_reg.load(out_idx)
 
 
-fn run_matmul(ctx: DeviceContext) raises:
+def run_matmul(ctx: DeviceContext) raises:
     print("== run_matmul")
 
-    alias m = 512
-    alias n = 512
-    alias k = 512
+    comptime m = 512
+    comptime n = 512
+    comptime k = 512
 
-    var a_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(m * k)
-    var b_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(k * n)
-    var c_host_ptr = UnsafePointer[Scalar[DType.int]].alloc(m * n)
+    var a_host_ptr = alloc[Scalar[DType.int]](m * k)
+    var b_host_ptr = alloc[Scalar[DType.int]](k * n)
+    var c_host_ptr = alloc[Scalar[DType.int]](m * n)
 
-    var a_host = NDBuffer[DType.int, 2, _, DimList(m, k)](a_host_ptr)
-    var b_host = NDBuffer[DType.int, 2, _, DimList(k, n)](b_host_ptr)
-    var c_host = NDBuffer[DType.int, 2, _, DimList(m, n)](c_host_ptr)
+    var a_host = TileTensor(a_host_ptr, row_major[m, k]())
+    var b_host = TileTensor(b_host_ptr, row_major[k, n]())
+    var c_host = TileTensor(c_host_ptr, row_major[m, n]())
 
     for i in range(m):
         for j in range(k):
@@ -136,7 +131,7 @@ fn run_matmul(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_function_checked[matmul, matmul](
+    ctx.enqueue_function_experimental[matmul](
         a_device,
         b_device,
         c_device,
@@ -154,15 +149,7 @@ fn run_matmul(ctx: DeviceContext) raises:
         for j in range(10):
             print("at index = [", i, ",", j, "]the value is", c_host[i, j])
 
-    _ = a_device
-    _ = b_device
-    _ = c_device
 
-    _ = a_host
-    _ = b_host
-    _ = c_host
-
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_matmul(ctx)

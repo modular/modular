@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.os import abort
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with MojoPair type that supports non-trivial initialization.
     """
     try:
@@ -35,23 +34,21 @@ fn PyInit_mojo_module() -> PythonObject:
 
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 @fieldwise_init
-struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
+struct MojoPair(Defaultable, ImplicitlyCopyable, Writable):
     """A pair of integers that can be initialized with custom values."""
 
     var first: Int
     var second: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         """Default constructor."""
         self = Self(0, 0)
 
-    fn __init__(out self, args: PythonObject, kwargs: PythonObject) raises:
+    def __init__(out self, args: PythonObject, kwargs: PythonObject) raises:
         """Non-trivial constructor that takes Python positional and keyword arguments.
         """
         # Check for null arguments before calling len()
@@ -83,7 +80,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
         # Extract positional arguments
         if tuple_len >= 1:
             try:
-                first_val = Int(args[0])
+                first_val = Int(py=args[0])
             except e:
                 raise Error("Failed to convert first argument to integer: ", e)
         else:
@@ -91,7 +88,7 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
 
         if tuple_len >= 2:
             try:
-                second_val = Int(args[1])
+                second_val = Int(py=args[1])
             except e:
                 raise Error("Failed to convert second argument to integer: ", e)
         else:
@@ -108,11 +105,11 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
             try:
                 # Check for 'first' keyword argument
                 if "first" in kwargs:
-                    first_val = Int(kwargs["first"])
+                    first_val = Int(py=kwargs["first"])
 
                 # Check for 'second' keyword argument
                 if "second" in kwargs:
-                    second_val = Int(kwargs["second"])
+                    second_val = Int(py=kwargs["second"])
             except e:
                 raise Error("Failed to process keyword arguments: ", e)
 
@@ -142,36 +139,34 @@ struct MojoPair(Defaultable, ImplicitlyCopyable, Movable, Representable):
         self.second = second_val
 
     @staticmethod
-    fn pyinit(out self: Self, args: PythonObject, kwargs: PythonObject) raises:
+    def pyinit(out self: Self, args: PythonObject, kwargs: PythonObject) raises:
         self = Self(args, kwargs)
 
-    fn __repr__(self) -> String:
-        """String representation of the MojoPair."""
-        return String("MojoPair(", self.first, ", ", self.second, ")")
-
     @staticmethod
-    fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
+    def _get_self_ptr(
+        py_self: PythonObject,
+    ) -> UnsafePointer[Self, MutAnyOrigin]:
         """Helper to extract the self pointer from Python object."""
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            alias m = "Python method receiver object did not have the"
-            return abort[UnsafePointer[Self]](String(m, " expected type: ", e))
+            comptime m = "Python method receiver object did not have the"
+            abort(String(m, " expected type: ", e))
 
     @staticmethod
-    fn get_first(py_self: PythonObject) -> PythonObject:
+    def get_first(py_self: PythonObject) -> PythonObject:
         """Get the first value of the pair."""
         var self_ptr = Self._get_self_ptr(py_self)
         return PythonObject(self_ptr[].first)
 
     @staticmethod
-    fn get_second(py_self: PythonObject) -> PythonObject:
+    def get_second(py_self: PythonObject) -> PythonObject:
         """Get the second value of the pair."""
         var self_ptr = Self._get_self_ptr(py_self)
         return PythonObject(self_ptr[].second)
 
     @staticmethod
-    fn swap(py_self: PythonObject) -> PythonObject:
+    def swap(py_self: PythonObject) -> PythonObject:
         """Swap the first and second values."""
         var self_ptr = Self._get_self_ptr(py_self)
         var temp = self_ptr[].first

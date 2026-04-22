@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,39 +12,42 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import CopyCounter
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal, assert_raises
 
 
-def test_map():
+def test_map() raises:
     var l = [1, 2, 3]
 
-    fn add_one(x: Int) -> Int:
+    def add_one(x: Int) -> Int:
         return x + 1
 
     var m = map[add_one](l)
     assert_equal(next(m), 2)
     assert_equal(next(m), 3)
     assert_equal(next(m), 4)
-    assert_equal(m.__has_next__(), False)
+    with assert_raises():
+        _ = m.__next__()  # raises StopIteration
 
-    fn to_str(x: Int) -> String:
+    def to_str(x: Int) -> String:
         return String(x)
 
     var m2 = map[to_str](l)
     assert_equal(next(m2), "1")
     assert_equal(next(m2), "2")
     assert_equal(next(m2), "3")
-    assert_equal(m2.__has_next__(), False)
+    with assert_raises():
+        _ = m2.__next__()  # raises StopIteration
 
 
-def test_map_function_can_take_owned_value():
-    fn report_copies_owned(var counter: CopyCounter[NoneType]) -> Int:
+def test_map_function_can_take_owned_value() raises:
+    def report_copies_owned(var counter: CopyCounter[NoneType]) -> Int:
         return counter.copy_count
 
-    fn report_copies_ref(counter: CopyCounter[NoneType]) -> Int:
+    def report_copies_ref(counter: CopyCounter[NoneType]) -> Int:
         return counter.copy_count
 
-    var list = [CopyCounter(None)]
+    # FIXME: fix compiler, just to make progress.
+    var list = [CopyCounter[NoneType](None)]
 
     # ensure the number of copies are equal between an "owned" and
     # "borrowed" mapping function.
@@ -54,5 +57,18 @@ def test_map_function_can_take_owned_value():
     assert_equal(next(m1), next(m2))
 
 
-def main():
+def test_map_owned() raises:
+    def double(x: Int) -> Int:
+        return x * 2
+
+    var l: List[Int] = [1, 2, 3]
+    var m = map[double](l^)
+    assert_equal(next(m), 2)
+    assert_equal(next(m), 4)
+    assert_equal(next(m), 6)
+    with assert_raises():
+        _ = next(m)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

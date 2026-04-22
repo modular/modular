@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,6 +13,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import platform
 import shutil
 import sys
 from pathlib import Path
@@ -73,95 +74,61 @@ llvm_config.with_environment(
     append_path=True,
 )
 
-extra_mojo_args = []
+if sys.platform == "darwin":
+    # Expose macOS 26+ as a lit feature so tests can be selectively skipped.
+    # The ASAN runtime (libclang_rt.asan_osx_dynamic.dylib) comes from the
+    # pre-built @clang-macos toolchain (LLVM 20.1.8), which hangs on macOS 26
+    # in FindAvailableMemoryRange (fixed in llvm/llvm-project#191039,
+    # merged 2026-04-09 to LLVM main, not yet in any release). Remove once
+    # @clang-macos is updated to a release that includes the fix. MOTO-1516.
+    _mac_ver = platform.mac_ver()[0]
+    if _mac_ver and int(_mac_ver.split(".")[0]) >= 26:
+        config.available_features.add("macos-26+")
+
+#---------------------------------------
+# Mojo tools
+#---------------------------------------
 
 mojo_exe = "mojo"
 if shutil.which("mojo-compiler-only"):
     mojo_exe = "mojo-compiler-only"
 
+def mojo_subst(name, args):
+    return ToolSubst(name, mojo_exe, extra_args=args)
+
+sanitize_args = []
 if config.llvm_use_sanitizer and config.llvm_use_sanitizer != "undefined":
-    extra_mojo_args.extend(["--sanitize", config.llvm_use_sanitizer.lower()])
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-no-debug-no-assert",
-            mojo_exe,
-            extra_args=extra_mojo_args,
-        )
-    ]
-)
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build-no-debug-no-assert",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args,
-        )
-    ]
-)
+    sanitize_args = ["--sanitize", config.llvm_use_sanitizer.lower()]
 
 # The rest of the mojo commands just inherit the assert options. In this case
 # run with assertions enabled unless one explicitly sets
 # MOJO_ENABLE_ASSERTIONS_IN_TESTS=0 environment variable.
-if bool(int(os.environ.get("MOJO_ENABLE_ASSERTIONS_IN_TESTS", 1))):
-    extra_mojo_args.extend(["-D", "ASSERT=all"])
+assert_args = ["-D", "ASSERT=all"] if bool(int(os.environ.get("MOJO_ENABLE_ASSERTIONS_IN_TESTS", 1))) else []
 
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-no-debug",
-            mojo_exe,
-            extra_args=extra_mojo_args,
-        )
-    ]
+asan_args = ["--sanitize", "address"] if "--sanitize" not in set(sanitize_args) else []
+debug_full_args = ["--debug-level", "full"]
+
+llvm_config.add_tool_substitutions([
+    mojo_subst("%mojo-no-debug-no-assert",       [         "-Werror"] + sanitize_args                                            ),
+    mojo_subst("%mojo-build-no-debug-no-assert", ["build", "-Werror"] + sanitize_args                                            ),
+    mojo_subst("%mojo-no-debug",                 [         "-Werror"] + sanitize_args + assert_args                              ),
+    mojo_subst("%mojo-build-no-debug",           ["build", "-Werror"] + sanitize_args + assert_args                              ),
+    mojo_subst("%mojo",                          [         "-Werror"] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build",                    ["build", "-Werror"] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build-no-werror",          ["build"           ] + sanitize_args + assert_args + debug_full_args            ),
+    mojo_subst("%mojo-build-asan",               ["build", "-Werror"] + sanitize_args + assert_args + debug_full_args + asan_args),
+])
+
+#---------------------------------------
+
+# For %mpirun-gpu-per-process, we dynamically detect the number of GPUs at runtime
+mpirun_gpu_per_process = (
+    "N=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l);"
+    "mpirun --allow-run-as-root --bind-to none -n $N"
 )
 
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build-no-debug",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args,
-        )
-    ]
-)
-
-extra_mojo_args = ["--debug-level", "full"] + extra_mojo_args
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo",
-            mojo_exe,
-            extra_args=extra_mojo_args,
-        )
-    ]
-)
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mojo-build",
-            mojo_exe,
-            extra_args=["build"] + extra_mojo_args,
-        )
-    ]
-)
-
-llvm_config.add_tool_substitutions(
-    [
-        ToolSubst(
-            "%mpirun",
-            "mpirun",
-            extra_args=[
-                "--allow-run-as-root",
-                "--bind-to",
-                "none",
-            ],
-        )
-    ]
-)
-
+config.substitutions.append(("%mpirun-gpu-per-process", mpirun_gpu_per_process))
 config.substitutions.append(("%bare-mojo", mojo_exe))
+config.substitutions.append(("%{mojo_version_major}", str(config.mojo_version_major)))
+config.substitutions.append(("%{mojo_version_minor}", str(config.mojo_version_minor)))
+config.substitutions.append(("%{mojo_version_patch}", str(config.mojo_version_patch)))

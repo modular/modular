@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,17 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from time.time import global_perf_counter_ns
-from gpu import block_idx, thread_idx, WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.id import sm_id
+from std.time.time import global_perf_counter_ns
+from std.gpu import WARP_SIZE, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu import sm_id
 
 
-alias MatmulWarpSpecializationWorkSpaceManager[
+comptime MatmulWarpSpecializationWorkSpaceManager[
     max_entries_per_warp: UInt32
 ] = BlackwellWarpProfilingWorkspaceManager[1, 1, 1, 4, max_entries_per_warp]
 
-alias MatmulProfileWarp[
+comptime MatmulProfileWarp[
     warp_role: UInt32, max_entries_per_warp: UInt32
 ] = BlackwellProfileWarp[
     MatmulWarpSpecializationWorkSpaceManager[max_entries_per_warp](),
@@ -31,14 +31,13 @@ alias MatmulProfileWarp[
 
 
 @fieldwise_init
-@register_passable("trivial")
 struct BlackwellWarpProfilingWorkspaceManager[
     load_warps: UInt32,
     mma_warps: UInt32,
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
     max_entries_per_warp: UInt32,
-](ImplicitlyCopyable, Movable):
+](TrivialRegisterPassable):
     """
     This struct manages the profiling workspace. The workspaces consists of equal sized chunks, the total number of
     which is equal to the total number of active SMs. Each SM chunk consists of sequences of entries, with a maximum
@@ -53,38 +52,39 @@ struct BlackwellWarpProfilingWorkspaceManager[
     """
 
     # load, scheduler, mma, epilogue
-    alias total_warp_roles = 4
+    comptime total_warp_roles = 4
 
     # how many values will be recorded per entry
-    alias total_data_points = 7
+    comptime total_data_points = 7
 
     # this header shows what each value in an entry symbolizes in a csv friendly format
-    alias header = "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
+    comptime header = (
+        "time_start,time_end,sm_id,block_idx_x,block_idx_y,role,entry_idx\n"
+    )
 
-    alias sm_count = B200.sm_count
-    alias entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
+    comptime sm_count = B200.sm_count
+    comptime entries_per_sm = Self.total_warp_roles * Self.max_entries_per_warp
 
     @staticmethod
     @parameter
-    fn _get_warp_count[warp_role: UInt32]() -> UInt32:
-        @parameter
-        if warp_role == 0:
-            return load_warps
+    def _get_warp_count[warp_role: UInt32]() -> UInt32:
+        comptime if warp_role == 0:
+            return Self.load_warps
         elif warp_role == 1:
-            return scheduler_warps
+            return Self.scheduler_warps
         elif warp_role == 2:
-            return mma_warps
+            return Self.mma_warps
         else:
-            return epilogue_warps
+            return Self.epilogue_warps
 
     @staticmethod
     @parameter
-    fn _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
-        return warp_role * max_entries_per_warp
+    def _calculate_entries_before_role[warp_role: UInt32]() -> UInt32:
+        return warp_role * Self.max_entries_per_warp
 
     @staticmethod
     @always_inline
-    fn _get_workspace_offset[
+    def _get_workspace_offset[
         warp_role: UInt32
     ](sm_idx: UInt32, entry_idx: UInt32) -> UInt32:
         var sm_length = Self.total_data_points * Self.entries_per_sm
@@ -100,38 +100,41 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @parameter
-    fn _calculate_buffer_length() -> UInt32:
-        return Self.sm_count * Self.entries_per_sm * Self.total_data_points
+    def _calculate_buffer_length() -> UInt32:
+        return (
+            UInt32(Self.sm_count) * Self.entries_per_sm * Self.total_data_points
+        )
 
     @staticmethod
     @always_inline
-    fn get_workspace(
+    def get_workspace(
         ctx: DeviceContext,
-    ) raises -> Span[UInt64, MutableAnyOrigin]:
+    ) raises -> Span[UInt64, MutAnyOrigin]:
         var length = Int(Self._calculate_buffer_length())
-        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](
-            length
-        ).enqueue_fill(0)
-        return Span[UInt64, MutableAnyOrigin](
+        var device_buffer = ctx.enqueue_create_buffer[DType.uint64](length)
+        device_buffer.enqueue_fill(0)
+        return Span[UInt64, MutAnyOrigin](
             ptr=device_buffer.unsafe_ptr(),
             length=length,
         )
 
     @staticmethod
     @always_inline
-    fn write_to_workspace[
+    def write_to_workspace[
         warp_role: UInt32
     ](
         sm_idx: UInt32,
         entry_idx: UInt32,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         timeline: Tuple[UInt64, UInt64],
     ):
-        alias total_threads = WARP_SIZE * Self._get_warp_count[warp_role]()
+        comptime total_threads = UInt32(WARP_SIZE) * Self._get_warp_count[
+            warp_role
+        ]()
 
         var start_idx = Self._get_workspace_offset[warp_role](sm_idx, entry_idx)
 
-        if thread_idx.x % total_threads == 0:
+        if UInt32(thread_idx.x) % total_threads == 0:
             workspace[start_idx] = timeline[0]
             workspace[start_idx + 1] = timeline[1]
             workspace[start_idx + 2] = UInt64(sm_idx)
@@ -142,14 +145,14 @@ struct BlackwellWarpProfilingWorkspaceManager[
 
     @staticmethod
     @always_inline
-    fn dump_workspace_as_csv(
+    def dump_workspace_as_csv(
         ctx: DeviceContext,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         filename: StaticString,
     ) raises:
         var length = Int(Self._calculate_buffer_length())
         var host_buffer = ctx.enqueue_create_host_buffer[DType.uint64](length)
-        ctx.enqueue_copy(host_buffer, workspace.unsafe_ptr())
+        ctx.enqueue_copy(host_buffer, workspace)
         ctx.synchronize()
 
         var host_span = host_buffer.as_span()
@@ -177,7 +180,8 @@ struct BlackwellProfileWarp[
     mma_warps: UInt32,
     scheduler_warps: UInt32,
     epilogue_warps: UInt32,
-    max_entries_per_warp: UInt32, //,
+    max_entries_per_warp: UInt32,
+    //,
     WorkspaceManager: BlackwellWarpProfilingWorkspaceManager[
         load_warps,
         mma_warps,
@@ -186,24 +190,24 @@ struct BlackwellProfileWarp[
         max_entries_per_warp,
     ],
     warp_role: UInt32 = 0,
-](ImplicitlyCopyable, Movable):
+](ImplicitlyCopyable):
     """
     This struct calculates execution time for a warp/s,
     and writes a single entry to the workspace.
     """
 
-    alias enable_profiling = max_entries_per_warp > 0
+    comptime enable_profiling = Self.max_entries_per_warp > 0
 
     var timeline: Tuple[UInt64, UInt64]
-    var workspace: Span[UInt64, MutableAnyOrigin]
+    var workspace: Span[UInt64, MutAnyOrigin]
 
     # which entry is going to be written to the workspace for this warp
     var entry_idx: UInt32
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
-        workspace: Span[UInt64, MutableAnyOrigin],
+        workspace: Span[UInt64, MutAnyOrigin],
         entry_idx: UInt32,
     ):
         self.timeline = (0, 0)
@@ -211,18 +215,16 @@ struct BlackwellProfileWarp[
         self.entry_idx = entry_idx
 
     @always_inline
-    fn __enter__(mut self):
-        @parameter
-        if Self.enable_profiling:
+    def __enter__(mut self):
+        comptime if Self.enable_profiling:
             self.timeline[0] = global_perf_counter_ns()
 
     @always_inline
-    fn __exit__(mut self):
-        @parameter
-        if Self.enable_profiling:
+    def __exit__(mut self):
+        comptime if Self.enable_profiling:
             self.timeline[1] = global_perf_counter_ns()
-            WorkspaceManager.write_to_workspace[warp_role](
-                sm_id(),
+            Self.WorkspaceManager.write_to_workspace[Self.warp_role](
+                UInt32(sm_id()),
                 self.entry_idx,
                 self.workspace,
                 self.timeline,

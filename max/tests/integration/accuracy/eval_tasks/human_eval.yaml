@@ -1,0 +1,33 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+task: human_eval
+dataset_path: openai/openai_humaneval
+training_split: null
+validation_split: null
+test_split: test
+output_type: generate_until
+generation_kwargs:
+  max_gen_toks: 512
+  temperature: 0
+  until:
+    "<|endoftext|>"
+doc_to_text: !function human_eval_utils.doc_to_text
+doc_to_target: !function human_eval_utils.doc_to_target
+process_results: !function human_eval_utils.check_correctness
+metric_list:
+  - metric: pass@1
+    aggregation: mean
+    higher_is_better: True
+metadata:
+  version: 1.0

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "mojo_test")
 
+package(default_visibility = ["//max:consumers"])
+
 # Special configuration for multimem allreduce test - only runs on SM90+ hardware
 mojo_test(
     name = "test_multimem_allreduce.mojo.test",
@@ -19,12 +21,78 @@ mojo_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
-        "@mojo//:stdlib",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
+
+# Special configuration for multimem reducescatter test - only runs on SM90+ hardware
+mojo_test(
+    name = "test_multimem_reducescatter.mojo.test",
+    size = "large",
+    srcs = [
+        "test_multimem_reducescatter.mojo",
+        "test_reducescatter.mojo",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    main = "test_multimem_reducescatter.mojo",
+    tags = ["gpu"],
+    target_compatible_with = select({
+        "//:h100_gpu": ["//:has_multi_gpu"],
+        "//:b200_gpu": ["//:has_multi_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)
+
+# Tests requiring higher GPU memory allocation (20GB instead of 4GB)
+HIGH_GPU_MEMORY_TESTS = [
+    "test_p2p_ep_combine.mojo",
+    "test_p2p_ep_dispatch.mojo",
+]
+
+# Tests where assertions push register usage past hardware limits,
+# causing CUDA_ERROR_LAUNCH_OUT_OF_RESOURCES on NVIDIA GPUs.
+DISABLE_ASSERTIONS_TESTS = []
+
+# Standalone multi-GPU test: allreduce + RMSNorm + FP8 quantization.
+# Needs multi-GPU constraints, disabled assertions, special env vars,
+# 4GB GPU memory, and extra deps that the standard comm glob doesn't provide.
+mojo_test(
+    name = "test_allreduce_residual_rmsnorm_fp8.mojo.test",
+    size = "large",
+    srcs = ["test_allreduce_residual_rmsnorm_fp8.mojo"],
+    enable_assertions = False,  # MSTDL-2301: register pressure
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:has_multi_gpu",
+    ],
+    deps = [
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:shmem",
+        "@mojo//:std",
     ],
 )
 
@@ -32,29 +100,36 @@ mojo_test(
 [
     mojo_test(
         name = src + ".test",
-        size = "large",
+        size = "medium",  # MI355s only need small
         srcs = [src],
+        # NOTE: test_allgather.mojo tests deprecated functionality.
+        copts = ["-Wno-error"] if src == "test_allgather.mojo" else [],
+        enable_assertions = src not in DISABLE_ASSERTIONS_TESTS,
         exec_properties = {
-            "test.resources:gpu-memory": "4",
+            "test.resources:gpu-memory": "20" if src in HIGH_GPU_MEMORY_TESTS else "4",
         },
+        main = src,
         tags = ["gpu"],
         target_compatible_with = [
             "//:has_gpu",
             "//:has_multi_gpu",
         ],
         deps = [
-            "@mojo//:internal_utils",
-            "@mojo//:kv_cache",
-            "@mojo//:linalg",
-            "@mojo//:nn",
-            "@mojo//:quantization",
-            "@mojo//:stdlib",
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "//max:shmem",
+            "@mojo//:std",
         ],
     )
     for src in glob(
         ["**/*.mojo"],
         exclude = [
             "test_multimem_allreduce.mojo",
+            "test_multimem_reducescatter.mojo",
+            "test_allreduce_residual_rmsnorm_fp8.mojo",  # Has its own standalone rule above
         ],
     )
 ]

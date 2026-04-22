@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from sys import has_amd_gpu_accelerator, size_of
-from sys.ffi import _get_global_or_null, external_call
+
+from std.sys import has_amd_gpu_accelerator, size_of
+from std.ffi import _get_global_or_null, external_call
 
 import _rocblas
 from _cublas.cublas import (
@@ -20,7 +21,7 @@ from _cublas.cublas import (
     _convert_to_cublas_datatype,
     _convert_to_cublas_transpose,
     check_cublas_error,
-    cublasContext,
+    cublasHandle_t,
     cublasCreate,
     cublasDestroy,
     cublasGemmEx,
@@ -31,7 +32,6 @@ from _cublas.cublas import (
     cublasSetStream,
 )
 from _cublas.cublaslt import (
-    Context,
     Preference,
     cublasLtLoggerSetLevel,
     cublasLtMatmul,
@@ -49,6 +49,7 @@ from _cublas.cublaslt import (
     cublasLtMatrixLayout_t,
     cublasLtMatrixLayoutCreate,
     cublasLtMatrixLayoutDestroy,
+    cublasLtMatmulMatrixScale_t,
 )
 from _cublas.dtype import DataType
 from _rocblas.hipblaslt import (
@@ -66,6 +67,7 @@ from _rocblas.hipblaslt import (
     hipblasLtMatmulDescDestroy,
     hipblasLtMatmulDescSetAttribute,
     hipblasLtMatmulHeuristicResult_t,
+    hipblasLtMatmulMatrixScale_t,
     hipblasLtMatmulPreference_t,
     hipblasLtMatmulPreferenceCreate,
     hipblasLtMatmulPreferenceDestroy,
@@ -77,54 +79,69 @@ from _rocblas.hipblaslt import (
     hipblasOperation_t,
     hipDataType_t,
 )
-from buffer import NDBuffer
-from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import HIP
-from gpu.host._nvidia_cuda import CUDA
-from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from runtime.tracing import Trace, TraceLevel
-
-from utils import IndexList
-from utils.variant import Variant
+from std.gpu.host import DeviceContext
+from std.gpu.host._amdgpu_hip import HIP
+from std.gpu.host._nvidia_cuda import CUDA
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from layout.tile_tensor import NullableTileTensor
+from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
+from std.utils import IndexList
+from std.utils.variant import Variant
+from std.gpu.host.info import B200, _is_sm10x_gpu
+from std.collections import OptionalReg
+from linalg.fp4_utils import (
+    SF_ATOM_M,
+    SF_ATOM_K,
+    SF_MN_GROUP_SIZE,
+    MXFP4_SF_VECTOR_SIZE,
+    MXFP8_SF_VECTOR_SIZE,
+    MXFP8_SF_DTYPE,
+    NVFP4_SF_VECTOR_SIZE,
+    NVFP4_SF_DTYPE,
+)
 
 # ===----------------------------------------------------------------------===#
 # Backend
 # ===----------------------------------------------------------------------===#
 
 
-@register_passable("trivial")
-struct Backend(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
+struct Backend(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
 
-    alias AUTOMATIC = Self(0)
-    alias CUBLAS = Self(1)
-    alias CUBLASLT = Self(2)
-    alias ROCBLAS = Self(3)
-    alias HIPBLASLT = Self(4)
+    comptime AUTOMATIC = Self(0)
+    comptime CUBLAS = Self(1)
+    comptime CUBLASLT = Self(2)
+    comptime ROCBLAS = Self(3)
+    comptime HIPBLASLT = Self(4)
 
-    fn __init__(out self, value: Int):
-        self._value = value
+    def __init__(out self, value: Int):
+        self._value = Int32(value)
 
-    fn __is__(self, other: Self) -> Bool:
+    def __is__(self, other: Self) -> Bool:
         return self == other
 
-    fn __isnot__(self, other: Self) -> Bool:
+    def __isnot__(self, other: Self) -> Bool:
         return self != other
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return not (self == other)
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)
 
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self is Self.AUTOMATIC:
             return writer.write("AUTOMATIC")
         if self is Self.CUBLAS:
@@ -136,15 +153,19 @@ struct Backend(EqualityComparable, ImplicitlyCopyable, Movable, Writable):
         writer.write("HIPBLASLT")
 
 
-fn _resolve_backend[
+def _resolve_backend[
     backend: Backend, dtype: DType = DType.invalid
 ]() -> Backend:
-    @parameter
-    if backend is not Backend.AUTOMATIC:
+    comptime if backend is not Backend.AUTOMATIC:
         return backend
+    # TODO: Remove this once we have a proper hipBLASLt backend for float32.
+    elif dtype == DType.float32 and has_amd_gpu_accelerator():
+        return Backend.ROCBLAS
     elif has_amd_gpu_accelerator():
         return Backend.HIPBLASLT
-    elif dtype.is_float8():
+    # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+    # Replace this with float4-e2m1fn when GENAI-337 is fixed.
+    elif dtype.is_float8() or dtype == DType.uint8:
         return Backend.CUBLASLT
     return Backend.CUBLAS
 
@@ -155,22 +176,21 @@ fn _resolve_backend[
 
 
 struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
-    ImplicitlyCopyable, Movable
+    ImplicitlyCopyable
 ):
-    alias resolved_backend = _resolve_backend[backend]()
-    alias _cublas_type = UnsafePointer[cublasContext]
-    alias _rocblas_type = _rocblas.Handle
-    alias _hipblaslt_type = hipblasLtHandle_t
-    alias type = Variant[
+    comptime resolved_backend = _resolve_backend[Self.backend]()
+    comptime _cublas_type = Optional[OpaquePointer[AnyOrigin[mut=True]]]
+    comptime _rocblas_type = _rocblas.Handle
+    comptime _hipblaslt_type = hipblasLtHandle_t
+    comptime type = Variant[
         Self._cublas_type,
         Self._rocblas_type,
         Self._hipblaslt_type,
     ]
     var _handle: Self.type
 
-    fn __init__(out self) raises:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+    def __init__(out self) raises:
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             var handle = Self._cublas_type()
             check_cublas_error(cublasCreate(UnsafePointer(to=handle)))
             self._handle = handle
@@ -187,18 +207,17 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
         else:
             raise Error(
                 "the backend '",
-                backend,
+                Self.backend,
                 "' is not currently supported",
             )
 
     @always_inline
-    fn __enter__(self) -> Self:
+    def __enter__(self) -> Self:
         return self
 
     @always_inline
-    fn __exit__(mut self) raises:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+    def __exit__(mut self) raises:
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             check_cublas_error(cublasDestroy(self._get_cublas()))
             self._handle = Self._cublas_type()
             return
@@ -215,9 +234,8 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
         raise Error("the backend is not currently supported")
 
-    fn _is_null(self) -> Bool:
-        @parameter
-        if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+    def _is_null(self) -> Bool:
+        comptime if Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
             return self._get_cublas() == Self._cublas_type()
         elif Self.resolved_backend is Backend.ROCBLAS:
             return self._get_rocblas() == Self._rocblas_type()
@@ -226,30 +244,29 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 
         return False
 
-    fn _get_cublas(self) -> Self._cublas_type:
-        constrained[
-            Self.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT),
-            "backend must be CUBLAS/CUBLASLT",
-        ]()
+    def _get_cublas(self) -> Self._cublas_type:
+        comptime assert Self.resolved_backend in (
+            Backend.CUBLAS,
+            Backend.CUBLASLT,
+        ), "backend must be CUBLAS/CUBLASLT"
         return self._handle[Self._cublas_type]
 
-    fn _get_rocblas(self) -> Self._rocblas_type:
-        constrained[
-            Self.resolved_backend is Backend.ROCBLAS, "backend must be ROCBLAS"
-        ]()
+    def _get_rocblas(self) -> Self._rocblas_type:
+        comptime assert (
+            Self.resolved_backend is Backend.ROCBLAS
+        ), "backend must be ROCBLAS"
         return self._handle[Self._rocblas_type]
 
-    fn _get_hipblaslt(self) -> Self._hipblaslt_type:
-        constrained[
-            Self.resolved_backend is Backend.HIPBLASLT,
-            "backend must be HIPBLASLT",
-        ]()
+    def _get_hipblaslt(self) -> Self._hipblaslt_type:
+        comptime assert (
+            Self.resolved_backend is Backend.HIPBLASLT
+        ), "backend must be HIPBLASLT"
         return self._handle[Self._hipblaslt_type]
 
-    fn __is__(self, other: Backend) -> Bool:
+    def __is__(self, other: Backend) -> Bool:
         return Self.resolved_backend is other
 
-    fn __isnot__(self, other: Backend) -> Bool:
+    def __isnot__(self, other: Backend) -> Bool:
         return Self.resolved_backend is not other
 
 
@@ -257,23 +274,50 @@ struct Handle[backend: Backend = _resolve_backend[Backend.AUTOMATIC]()](
 # Matmul
 # ===----------------------------------------------------------------------===#
 
-alias _DEBUG_VENDOR_BLAS = False
+comptime _DEBUG_VENDOR_BLAS = False
 
 
-fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
-    @parameter
-    if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
+@always_inline
+def _ffi_void_ptr[
+    T: AnyType, origin: Origin, addr: AddressSpace
+](ptr: UnsafePointer[T, origin, address_space=addr]) -> UnsafePointer[
+    NoneType, MutAnyOrigin
+]:
+    """Cast any pointer to a void pointer for vendor FFI calls."""
+    return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr)
+
+
+@always_inline
+def _ffi_void_ptr[
+    T: AnyType, origin: Origin, addr: AddressSpace
+](ptr: Optional[UnsafePointer[T, origin, address_space=addr]]) -> Optional[
+    UnsafePointer[NoneType, MutAnyOrigin]
+]:
+    """Cast an optional non-null pointer to a nullable void pointer for vendor
+    FFI calls.
+
+    Returns None when the optional is empty.
+    """
+    if ptr:
+        return rebind[UnsafePointer[NoneType, MutAnyOrigin]](ptr.unsafe_value())
+    return None
+
+
+def _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
+    comptime if handle.resolved_backend in (Backend.CUBLAS, Backend.CUBLASLT):
         check_cublas_error(
             cublasSetStream(handle._get_cublas(), CUDA(ctx.stream()))
         )
 
-        @parameter
-        if _DEBUG_VENDOR_BLAS:
-
-            @parameter
-            if handle.resolved_backend is Backend.CUBLAS:
+        comptime if _DEBUG_VENDOR_BLAS:
+            comptime if handle.resolved_backend is Backend.CUBLAS:
                 check_cublas_error(
-                    cublasLoggerConfigure(1, 1, 0, UnsafePointer[Int8]())
+                    cublasLoggerConfigure(
+                        1,
+                        1,
+                        0,
+                        OptionalUnsafePointer[Int8, MutAnyOrigin](),
+                    )
                 )
             else:
                 check_cublas_error(cublasLtLoggerSetLevel(5))
@@ -286,19 +330,18 @@ fn _attach_handle_to_stream(ctx: DeviceContext, handle: Handle) raises:
         )
 
 
-fn _get_global_handle[
+def _get_global_handle[
     dtype: DType,
     backend: Backend = _resolve_backend[Backend.AUTOMATIC, dtype=dtype](),
 ](ctx: DeviceContext) raises -> Handle[backend]:
-    var HANDLE_NAME = String("LINALG_VENDOR_BLAS_", backend, "_", ctx.id())
-    if global_ptr := _get_global_or_null(HANDLE_NAME).bitcast[
-        Handle[backend]
-    ]():
-        _attach_handle_to_stream(ctx, global_ptr[])
-        return global_ptr[]
+    var HANDLE_NAME = String(t"LINALG_VENDOR_BLAS_{backend}_{ctx.id()}")
+    if global_ptr := _get_global_or_null(HANDLE_NAME):
+        var ptr = global_ptr.value().bitcast[Handle[backend]]()
+        _attach_handle_to_stream(ctx, ptr[])
+        return ptr[]
 
     # Otherwise, we have not initialized the handle yet.
-    var handle_ptr = UnsafePointer[Handle[backend]].alloc(1)
+    var handle_ptr = alloc[Handle[backend]](1)
     handle_ptr.init_pointee_move(Handle[backend]())
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(HANDLE_NAME),
@@ -310,13 +353,13 @@ fn _get_global_handle[
     return handle_ptr[]
 
 
-fn matmul[
-    use_tf32: Bool = False
+def matmul[
+    use_tf32: Bool = False,
 ](
     ctx: DeviceContext,
-    c: NDBuffer[_, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
+    c: NullableTileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -325,23 +368,22 @@ fn matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    """
-    Matmul using the vendor BLAS library. With a global handle.
-    """
+    """Matmul using the vendor BLAS library for NullableTileTensor operands.
 
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    Note: This overload does not support a_scales/b_scales. Add scale
+    parameters here when a TileTensor caller needs scaled vendor matmul.
+    """
+    comptime assert c.flat_rank == 2, "c must be of rank 2"
+    comptime assert a.flat_rank == 2, "a must be of rank 2"
+    comptime assert b.flat_rank == 2, "b must be of rank 2"
 
-    # Push the device context to ensure correct CUDA context is current for all
-    # vendor BLAS calls.
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32](
+        return matmul[use_tf32=use_tf32, scales_type=DType.invalid](
             cur_ctx,
-            _get_global_handle[a.type](ctx),
-            c_tensor,
-            a_tensor,
-            b_tensor,
+            _get_global_handle[a.dtype](ctx),
+            c,
+            a,
+            b,
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
@@ -351,20 +393,30 @@ fn matmul[
         )
 
 
-fn matmul[
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
     c_layout: Layout,
     a_layout: Layout,
     b_layout: Layout,
+    *,
     use_tf32: Bool = False,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    c_tensor: LayoutTensor[c_type, c_layout, *_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_],
+    c_tensor: LayoutTensor[mut=True, c_type, c_layout, _],
+    a_tensor: LayoutTensor[mut=False, a_type, a_layout, _],
+    b_tensor: LayoutTensor[mut=False, b_type, b_layout, _],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
+    ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -372,13 +424,116 @@ fn matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
+    var c_tt = TileTensor(
+        rebind[UnsafePointer[Scalar[c_type], MutAnyOrigin]](c_tensor.ptr),
+        row_major(Coord(Idx(c_tensor.dim(0)), Idx(c_tensor.dim(1)))),
+    )
+    var a_tt = TileTensor(
+        rebind[UnsafePointer[Scalar[a_type], ImmutAnyOrigin]](a_tensor.ptr),
+        row_major(Coord(Idx(a_tensor.dim(0)), Idx(a_tensor.dim(1)))),
+    )
+    var b_tt = TileTensor(
+        rebind[UnsafePointer[Scalar[b_type], ImmutAnyOrigin]](b_tensor.ptr),
+        row_major(Coord(Idx(b_tensor.dim(0)), Idx(b_tensor.dim(1)))),
+    )
     with ctx.push_context() as cur_ctx:
-        return matmul[use_tf32=use_tf32](
+        return matmul[use_tf32=use_tf32, scales_type=scales_type](
+            cur_ctx,
+            _get_global_handle[a_type](ctx),
+            c_tt,
+            a_tt,
+            b_tt,
+            a_scales=a_scales,
+            b_scales=b_scales,
+            c_row_major=c_row_major,
+            transpose_a=transpose_a,
+            transpose_b=transpose_b,
+            alpha=alpha,
+            beta=beta,
+            batch_size=batch_size,
+        )
+
+
+def matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    *,
+    use_tf32: Bool = False,
+    scales_type: DType,
+](
+    ctx: DeviceContext,
+    c_tensor: TileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
+    *,
+    a_scales: TileTensor[scales_type, ...],
+    b_scales: TileTensor[scales_type, ...],
+    c_row_major: Bool = False,
+    transpose_a: Bool = False,
+    transpose_b: Bool = False,
+    alpha: Float32 = 1.0,
+    beta: Float32 = 0.0,
+    batch_size: Int = 1,
+) raises:
+    """Overload accepting TileTensors for all operands and scale factors.
+
+    Converts TileTensor scale factors to LayoutTensor for the core dispatch
+    which passes them through to the cublasLt backend.
+    """
+    comptime sfa_layout = Layout.row_major(
+        a_scales.static_shape[0],
+        a_scales.static_shape[1],
+        a_scales.static_shape[2],
+        a_scales.static_shape[3],
+        a_scales.static_shape[4],
+    )
+    comptime sfb_layout = Layout.row_major(
+        b_scales.static_shape[0],
+        b_scales.static_shape[1],
+        b_scales.static_shape[2],
+        b_scales.static_shape[3],
+        b_scales.static_shape[4],
+    )
+
+    var a_scales_lt = LayoutTensor[scales_type, sfa_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[scales_type], ImmutAnyOrigin]](
+            a_scales.ptr
+        ),
+        RuntimeLayout[sfa_layout].row_major(
+            IndexList[5](
+                Int(a_scales.dim[0]()),
+                Int(a_scales.dim[1]()),
+                Int(a_scales.dim[2]()),
+                Int(a_scales.dim[3]()),
+                Int(a_scales.dim[4]()),
+            )
+        ),
+    )
+    var b_scales_lt = LayoutTensor[scales_type, sfb_layout, ImmutAnyOrigin](
+        rebind[UnsafePointer[Scalar[scales_type], ImmutAnyOrigin]](
+            b_scales.ptr
+        ),
+        RuntimeLayout[sfb_layout].row_major(
+            IndexList[5](
+                Int(b_scales.dim[0]()),
+                Int(b_scales.dim[1]()),
+                Int(b_scales.dim[2]()),
+                Int(b_scales.dim[3]()),
+                Int(b_scales.dim[4]()),
+            )
+        ),
+    )
+
+    with ctx.push_context() as cur_ctx:
+        matmul[use_tf32=use_tf32, scales_type=scales_type](
             cur_ctx,
             _get_global_handle[a_type](ctx),
             c_tensor,
             a_tensor,
             b_tensor,
+            a_scales=a_scales_lt,
+            b_scales=b_scales_lt,
             c_row_major=c_row_major,
             transpose_a=transpose_a,
             transpose_b=transpose_b,
@@ -388,21 +543,27 @@ fn matmul[
         )
 
 
-fn matmul[
+def matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
     use_tf32: Bool = False,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     handle: Handle,
-    c_tensor: LayoutTensor[c_type, c_layout, *_],
-    a_tensor: LayoutTensor[a_type, a_layout, *_],
-    b_tensor: LayoutTensor[b_type, b_layout, *_],
+    c_tensor: NullableTileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
+    ] = None,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -410,9 +571,39 @@ fn matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
+    @always_inline
     @parameter
-    if handle.resolved_backend is Backend.CUBLAS:
-        with Trace[TraceLevel.OP]("_cublas_matmul"):
+    def description_fn() -> String:
+        return String(
+            trace_arg(
+                "A",
+                IndexList[2](Int(a_tensor.dim[0]()), Int(a_tensor.dim[1]())),
+                a_type,
+            ),
+            ";",
+            trace_arg(
+                "B",
+                IndexList[2](Int(b_tensor.dim[0]()), Int(b_tensor.dim[1]())),
+                b_type,
+            ),
+            ";",
+            trace_arg(
+                "C",
+                IndexList[2](Int(c_tensor.dim[0]()), Int(c_tensor.dim[1]())),
+                c_type,
+            ),
+            ";transpose_a=",
+            transpose_a,
+            ";transpose_b=",
+            transpose_b,
+        )
+
+    with Trace[TraceLevel.OP, target=StaticString("gpu")](
+        String(t"{handle.resolved_backend}_matmul"),
+        Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+        task_id=get_safe_task_id(ctx),
+    ):
+        comptime if handle.resolved_backend is Backend.CUBLAS:
             _cublas_matmul[use_tf32=use_tf32](
                 ctx,
                 handle._get_cublas(),
@@ -425,8 +616,7 @@ fn matmul[
                 alpha=alpha,
                 beta=beta,
             )
-    elif handle.resolved_backend is Backend.ROCBLAS:
-        with Trace[TraceLevel.OP]("_rocblas_matmul"):
+        elif handle.resolved_backend is Backend.ROCBLAS:
             _rocblas_matmul[use_tf32=use_tf32](
                 ctx,
                 handle._get_rocblas(),
@@ -439,28 +629,30 @@ fn matmul[
                 alpha=alpha,
                 beta=beta,
             )
-    elif handle.resolved_backend is Backend.CUBLASLT:
-        with Trace[TraceLevel.OP]("_cublasLt_matmul"):
+        elif handle.resolved_backend is Backend.CUBLASLT:
             _cublasLt_matmul(
                 ctx,
-                handle._get_cublas().bitcast[Context](),
+                _ffi_void_ptr(handle._get_cublas()),
                 c_tensor,
                 a_tensor,
                 b_tensor,
+                a_scales=a_scales,
+                b_scales=b_scales,
                 c_row_major=c_row_major,
                 transpose_a=transpose_a,
                 transpose_b=transpose_b,
                 alpha=alpha,
                 beta=beta,
             )
-    elif handle.resolved_backend is Backend.HIPBLASLT:
-        with Trace[TraceLevel.OP]("_hipblasLt_matmul"):
+        elif handle.resolved_backend is Backend.HIPBLASLT:
             _hipblasLt_matmul(
                 ctx,
                 handle._get_hipblaslt(),
                 c_tensor,
                 a_tensor,
                 b_tensor,
+                a_scales=a_scales,
+                b_scales=b_scales,
                 c_row_major=c_row_major,
                 transpose_a=transpose_a,
                 transpose_b=transpose_b,
@@ -468,45 +660,12 @@ fn matmul[
                 beta=beta,
                 batch_size=batch_size,
             )
-    else:
-        raise Error(
-            "the backend '",
-            handle.backend,
-            "' is not currently supported",
-        )
-
-
-fn matmul[
-    use_tf32: Bool = False
-](
-    ctx: DeviceContext,
-    handle: Handle,
-    c: NDBuffer[_, 2, _, _],
-    a: NDBuffer[_, 2, _, _],
-    b: NDBuffer[_, 2, _, _],
-    *,
-    c_row_major: Bool = False,
-    transpose_a: Bool = False,
-    transpose_b: Bool = False,
-    alpha: Float32 = 1.0,
-    beta: Float32 = 0.0,
-) raises:
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
-
-    matmul[use_tf32=use_tf32](
-        ctx,
-        handle,
-        c_tensor,
-        a_tensor,
-        b_tensor,
-        c_row_major=c_row_major,
-        transpose_a=transpose_a,
-        transpose_b=transpose_b,
-        alpha=alpha,
-        beta=beta,
-    )
+        else:
+            raise Error(
+                "the backend '",
+                handle.backend,
+                "' is not currently supported",
+            )
 
 
 # ===----------------------------------------------------------------------===#
@@ -514,20 +673,17 @@ fn matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _cublas_matmul[
+def _cublas_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
     use_tf32: Bool = False,
 ](
     ctx: DeviceContext,
-    handle: UnsafePointer[cublasContext],
-    c: LayoutTensor[c_type, c_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    handle: cublasHandle_t,
+    c: NullableTileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -535,29 +691,26 @@ fn _cublas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    constrained[
-        a_type == b_type
-        and (a_type is DType.float32 or a_type.is_half_float()),
-        (
-            "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
-            " it if more types are needed."
-        ),
-    ]()
+    comptime assert a_type == b_type and (
+        a_type == DType.float32 or a_type.is_half_float()
+    ), (
+        "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
+        " it if more types are needed."
+    )
 
-    var M = c.dim(0)
-    var N = c.dim(1)
-    var K = a.dim(1) if not transpose_a else a.dim(0)
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
+    var K = Int(a.dim[1]()) if not transpose_a else Int(a.dim[0]())
 
-    var c_dynamic_shape = IndexList[2](c.dim(0), c.dim(1))
-    var a_dynamic_shape = IndexList[2](a.dim(0), a.dim(1))
-    var b_dynamic_shape = IndexList[2](b.dim(0), b.dim(1))
+    var c_dynamic_shape = IndexList[2](M, N)
+    var a_dynamic_shape = IndexList[2](Int(a.dim[0]()), Int(a.dim[1]()))
+    var b_dynamic_shape = IndexList[2](Int(b.dim[0]()), Int(b.dim[1]()))
 
     var compute_type: ComputeType
 
-    @parameter
-    if a_type is DType.float16:
+    comptime if a_type == DType.float16:
         compute_type = ComputeType.COMPUTE_32F
-    elif a_type is DType.bfloat16:
+    elif a_type == DType.bfloat16:
         compute_type = ComputeType.COMPUTE_32F
     else:
         compute_type = (
@@ -566,8 +719,7 @@ fn _cublas_matmul[
 
     # When use_tf32 is True, CUBLAS will use TF32 to speedup the computation.
     # However, the result is not bit-wise identical to the result of FP32.
-    @parameter
-    if use_tf32:
+    comptime if use_tf32:
         check_cublas_error(
             cublasSetMathMode(handle, cublasMath_t.CUBLAS_TF32_TENSOR_OP_MATH)
         )
@@ -594,20 +746,20 @@ fn _cublas_matmul[
                 handle,
                 _convert_to_cublas_transpose(transpose_b),
                 _convert_to_cublas_transpose(transpose_a),
-                N,
-                M,
-                K,
+                Int32(N),
+                Int32(M),
+                Int32(K),
                 UnsafePointer(to=alpha).bitcast[NoneType](),
-                UnsafePointer(b.ptr.bitcast[NoneType]()),
+                _ffi_void_ptr(b.ptr),
                 _convert_to_cublas_datatype[b_type](),
-                K if transpose_b else N,
-                UnsafePointer(a.ptr.bitcast[NoneType]()),
+                Int32(K) if transpose_b else Int32(N),
+                _ffi_void_ptr(a.ptr),
                 _convert_to_cublas_datatype[a_type](),
-                K,
+                Int32(M) if transpose_a else Int32(K),
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                UnsafePointer(c.ptr.bitcast[NoneType]()),
+                _ffi_void_ptr(c.ptr),
                 _convert_to_cublas_datatype[c_type](),
-                N,
+                Int32(N),
                 compute_type,
                 Algorithm.DEFAULT,
             ),
@@ -632,20 +784,20 @@ fn _cublas_matmul[
             handle,
             _convert_to_cublas_transpose(transpose_a),
             _convert_to_cublas_transpose(transpose_b),
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             UnsafePointer(to=alpha).bitcast[NoneType](),
-            UnsafePointer(a.ptr.bitcast[NoneType]()),
+            _ffi_void_ptr(a.ptr),
             _convert_to_cublas_datatype[a_type](),
-            M,
-            UnsafePointer(b.ptr.bitcast[NoneType]()),
+            Int32(M),
+            _ffi_void_ptr(b.ptr),
             _convert_to_cublas_datatype[b_type](),
-            N if transpose_b else K,
+            Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta).bitcast[NoneType](),
-            UnsafePointer(c.ptr.bitcast[NoneType]()),
+            _ffi_void_ptr(c.ptr),
             _convert_to_cublas_datatype[c_type](),
-            M,
+            Int32(M),
             compute_type,
             Algorithm.DEFAULT,
         ),
@@ -671,20 +823,17 @@ fn _cublas_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _rocblas_matmul[
+def _rocblas_matmul[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
     use_tf32: Bool = False,
 ](
     ctx: DeviceContext,
     handle: _rocblas.Handle,
-    c: LayoutTensor[c_type, c_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    c: NullableTileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     *,
     c_row_major: Bool = False,
     transpose_a: Bool = False,
@@ -692,18 +841,16 @@ fn _rocblas_matmul[
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    constrained[
-        a_type == b_type
-        and (a_type is DType.float32 or a_type.is_half_float()),
-        (
-            "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
-            " it if more types are needed."
-        ),
-    ]()
+    comptime assert a_type == b_type and (
+        a_type == DType.float32 or a_type.is_half_float()
+    ), (
+        "Only support FP32, FP16 and BF16 for cublas wrapper. Please extend"
+        " it if more types are needed."
+    )
 
-    var M = c.dim(0)
-    var N = c.dim(1)
-    var K = a.dim(1) if not transpose_a else a.dim(0)
+    var M = Int(c.dim[0]())
+    var N = Int(c.dim[1]())
+    var K = Int(a.dim[1]()) if not transpose_a else Int(a.dim[0]())
 
     var compute_type = _rocblas.types.DataType(DType.float32)
 
@@ -719,7 +866,7 @@ fn _rocblas_matmul[
     # transformation. To be rigorous though, we should set `c_is_row_major = True`
     # for accuracy validations and uses default column-major in benchmark.
 
-    fn _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
+    def _convert_to_rocblas_transpose(tr: Bool) -> _rocblas.types.Operation:
         if tr:
             return _rocblas.types.Operation.TRANSPOSE
         return _rocblas.types.Operation.NONE
@@ -730,23 +877,23 @@ fn _rocblas_matmul[
                 handle,
                 _convert_to_rocblas_transpose(transpose_b),
                 _convert_to_rocblas_transpose(transpose_a),
-                N,
-                M,
-                K,
+                Int32(N),
+                Int32(M),
+                Int32(K),
                 UnsafePointer(to=alpha).bitcast[NoneType](),
-                UnsafePointer(b.ptr.bitcast[NoneType]()),
+                _ffi_void_ptr(b.ptr),
                 _rocblas.types.DataType(b_type),
-                K if transpose_b else N,
-                UnsafePointer(a.ptr.bitcast[NoneType]()),
+                Int32(K) if transpose_b else Int32(N),
+                _ffi_void_ptr(a.ptr),
                 _rocblas.types.DataType(a_type),
-                K,
+                Int32(K),
                 UnsafePointer(to=beta).bitcast[NoneType](),
-                UnsafePointer(c.ptr.bitcast[NoneType]()),
+                _ffi_void_ptr(c.ptr),
                 _rocblas.types.DataType(c_type),
-                N,
-                UnsafePointer(c.ptr.bitcast[NoneType]()),
+                Int32(N),
+                _ffi_void_ptr(c.ptr),
                 _rocblas.types.DataType(c_type),
-                N,
+                Int32(N),
                 compute_type,
                 _rocblas.rocblas.types.Algorithm.STANDARD,
                 0,
@@ -759,23 +906,23 @@ fn _rocblas_matmul[
             handle,
             _convert_to_rocblas_transpose(transpose_a),
             _convert_to_rocblas_transpose(transpose_b),
-            M,
-            N,
-            K,
+            Int32(M),
+            Int32(N),
+            Int32(K),
             UnsafePointer(to=alpha).bitcast[NoneType](),
-            UnsafePointer(a.ptr.bitcast[NoneType]()),
+            _ffi_void_ptr(a.ptr),
             _rocblas.types.DataType(a_type),
-            M,
-            UnsafePointer(b.ptr.bitcast[NoneType]()),
+            Int32(M),
+            _ffi_void_ptr(b.ptr),
             _rocblas.types.DataType(b_type),
-            N if transpose_b else K,
+            Int32(N) if transpose_b else Int32(K),
             UnsafePointer(to=beta).bitcast[NoneType](),
-            UnsafePointer(c.ptr.bitcast[NoneType]()),
+            _ffi_void_ptr(c.ptr),
             _rocblas.types.DataType(c_type),
-            M,
-            UnsafePointer(c.ptr.bitcast[NoneType]()),
+            Int32(M),
+            _ffi_void_ptr(c.ptr),
             _rocblas.types.DataType(c_type),
-            M,
+            Int32(M),
             compute_type,
             _rocblas.rocblas.types.Algorithm.STANDARD,
             0,
@@ -789,57 +936,55 @@ fn _rocblas_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _cublasLt_matmul[
+def _cublasLt_matmul[
     d_type: DType,
     a_type: DType,
     b_type: DType,
-    d_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
-    handle: UnsafePointer[Context],
-    d: LayoutTensor[d_type, d_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    handle: cublasHandle_t[_],
+    d: NullableTileTensor[mut=True, d_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
+    ] = None,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
     alpha: Float32 = 1.0,
     beta: Float32 = 0.0,
 ) raises:
-    var M = d.dim(0)
-    var N = d.dim(1)
-    var K = a.dim(1)
+    var M = Int(d.dim[0]())
+    var N = Int(d.dim[1]())
+    var K = Int(a.dim[1]())
 
-    constrained[
-        (
-            a_type
-            in (
-                DType.float8_e4m3fn,
-                DType.float8_e5m2,
-                DType.bfloat16,
-                DType.float16,
-            )
-        ),
-        (
-            "Only E4M3, E5M2, bfloat16, and float16 input data types are"
-            " supported. Please extend it if you need more data types."
-        ),
-    ]()
+    comptime assert a_type in (
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+        DType.bfloat16,
+        DType.float16,
+        DType.uint8,
+    ), (
+        "Only E4M3, E5M2, bfloat16, float16, and E2M1x2 (UInt8) input data"
+        " types are supported. Please extend it if you need more data"
+        " types."
+    )
 
-    constrained[a_type == b_type, "A and B must have the same type"]()
+    comptime assert a_type == b_type, "A and B must have the same type"
 
-    @parameter
-    if a_type.is_float8():
-        constrained[
-            not (a_type == b_type == DType.float8_e5m2),
-            (
-                "E5M2xE5m2 is not supported! Please refer to"
-                " `https://docs.nvidia.com/cuda/cublas/#id105`"
-            ),
-        ]()
+    comptime if a_type.is_float8():
+        comptime assert not (a_type == b_type == DType.float8_e5m2), (
+            "E5M2xE5m2 is not supported! Please refer to"
+            " `https://docs.nvidia.com/cuda/cublas/#id105`"
+        )
 
     if transpose_a or not transpose_b:
         raise Error(
@@ -908,6 +1053,143 @@ fn _cublasLt_matmul[
         msg="failed to set cublasLtMatmulDescAttribute for transb",
     )
 
+    comptime if _is_sm10x_gpu(ctx.default_device_info):
+        if a_scales or b_scales:
+            if not (a_scales and b_scales):
+                raise Error("a_scales and b_scales must be provided together")
+            a_scale_tensor = a_scales.value()
+            b_scale_tensor = b_scales.value()
+
+            comptime SF_VECTOR_SIZE = NVFP4_SF_VECTOR_SIZE if scales_type == NVFP4_SF_DTYPE else MXFP8_SF_VECTOR_SIZE
+
+            if scales_type not in (MXFP8_SF_DTYPE, NVFP4_SF_DTYPE):
+                raise Error(
+                    "Only float8_e8m0fnu(scaling type: MXFP8) and"
+                    " float8_e4m3fn(scaling type: MXFP4) are supported for B200"
+                )
+            if not (
+                a_type == b_type
+                and (
+                    (
+                        a_type == DType.float8_e4m3fn
+                        and scales_type == MXFP8_SF_DTYPE
+                    )
+                    or (a_type == DType.uint8 and scales_type == NVFP4_SF_DTYPE)
+                )
+            ):
+                raise Error(
+                    "Only E4M3 input with MXFP8 scales or E2M1x2(i.e,"
+                    " UINT8) input with NVFP4 scales are supported for block"
+                    " scaled matmul"
+                )
+
+            # TODO (KERN-2238): uint8 is a proxy data type for two Float4-E2M1 values for now.
+            # We need to double the K dimension as we are allocating for uint8 input data type.
+            # Remove this when GENAI-337 is fixed.
+            if a_type == DType.uint8 and scales_type == NVFP4_SF_DTYPE:
+                K = K * 2
+
+            if not (
+                (a_type == DType.uint8 and K % 32 == 0)
+                or (a_type == DType.float8_e4m3fn and K % 16 == 0)
+            ):
+                raise Error(
+                    "Due to TMA 16B alignment requirement, K must be divisible"
+                    " by 16/32 for MXFP8/NVFP4 input data type, respectively"
+                )
+
+            if comptime (
+                a_scales_layout.rank() != 5 or b_scales_layout.rank() != 5
+            ):
+                raise Error(
+                    "Invalid A/B scales dimensions. Expected 5D tensors."
+                )
+
+            if (
+                a_scale_tensor.dim(0) != ceildiv(M, SF_MN_GROUP_SIZE)
+                or a_scale_tensor.dim(1)
+                != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
+                or b_scale_tensor.dim(0) != ceildiv(N, SF_MN_GROUP_SIZE)
+                or b_scale_tensor.dim(1)
+                != ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)
+                or a_scale_tensor.dim(2)
+                != b_scale_tensor.dim(2)
+                != SF_ATOM_M[0]
+                or a_scale_tensor.dim(3)
+                != b_scale_tensor.dim(3)
+                != SF_ATOM_M[1]
+                or a_scale_tensor.dim(4) != b_scale_tensor.dim(4) != SF_ATOM_K
+            ):
+                raise Error("Invalid A/B scales dimensions.")
+
+            var a_scale_mode: cublasLtMatmulMatrixScale_t
+            var b_scale_mode: cublasLtMatmulMatrixScale_t
+
+            a_scale_mode = b_scale_mode = (
+                cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC16_UE4M3 if scales_type
+                == NVFP4_SF_DTYPE else cublasLtMatmulMatrixScale_t.MATRIX_SCALE_VEC32_UE8M0
+            )
+
+            var a_scale_ptr = b_scale_tensor.ptr.bitcast[
+                NoneType
+            ]() if c_row_major else a_scale_tensor.ptr.bitcast[NoneType]()
+            var b_scale_ptr = a_scale_tensor.ptr.bitcast[
+                NoneType
+            ]() if c_row_major else b_scale_tensor.ptr.bitcast[NoneType]()
+
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_MODE,
+                    UnsafePointer(to=a_scale_mode).bitcast[NoneType](),
+                    size_of[Int32](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix A"
+                    " scale mode"
+                ),
+            )
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_MODE,
+                    UnsafePointer(to=b_scale_mode).bitcast[NoneType](),
+                    size_of[Int32](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix B"
+                    " scale mode"
+                ),
+            )
+
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_A_SCALE_POINTER,
+                    UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
+                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix A"
+                    " scale factor"
+                ),
+            )
+            check_cublas_error(
+                cublasLtMatmulDescSetAttribute(
+                    compute_desc,
+                    cublasLtMatmulDescAttributes_t.CUBLASLT_MATMUL_DESC_B_SCALE_POINTER,
+                    UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
+                    size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+                ),
+                msg=(
+                    "failed to set cublasLtMatmulDescAttribute for Matrix B"
+                    " scale factor"
+                ),
+            )
+    else:
+        if a_scales or b_scales:
+            raise Error("block scaling is only supported on B200 devices")
+
     # create matrix descriptors, we are good with the details here so no need to set any extra attributes
     # table of supported type combinations can be found in the documentation: https://docs.nvidia.com/cuda/cublas/index.html#cublasltmatmul
     var _adesc = cublasLtMatrixLayout_t()
@@ -915,9 +1197,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer(to=_adesc),
             _convert_to_cublas_datatype[a_type](),
-            K,
-            N if c_row_major else M,
-            K,
+            UInt64(K),
+            UInt64(N) if c_row_major else UInt64(M),
+            Int64(K),
         ),
         msg="failed to create cublasLtMatrixLayout for adesc",
     )
@@ -927,9 +1209,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer(to=_bdesc),
             _convert_to_cublas_datatype[b_type](),
-            K,
-            M if c_row_major else N,
-            K,
+            UInt64(K),
+            UInt64(M) if c_row_major else UInt64(N),
+            Int64(K),
         ),
         msg="failed to create cublasLtMatrixLayout for bdesc",
     )
@@ -939,9 +1221,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer(to=_ddesc),
             _convert_to_cublas_datatype[d_type](),
-            N if c_row_major else M,
-            M if c_row_major else N,
-            N if c_row_major else M,
+            UInt64(N) if c_row_major else UInt64(M),
+            UInt64(M) if c_row_major else UInt64(N),
+            Int64(N) if c_row_major else Int64(M),
         ),
         msg="failed to create cublasLtMatrixLayout for ddesc",
     )
@@ -951,9 +1233,9 @@ fn _cublasLt_matmul[
         cublasLtMatrixLayoutCreate(
             UnsafePointer(to=_cdesc),
             _convert_to_cublas_datatype[d_type](),
-            N if c_row_major else M,
-            M if c_row_major else N,
-            N if c_row_major else M,
+            UInt64(N) if c_row_major else UInt64(M),
+            UInt64(M) if c_row_major else UInt64(N),
+            Int64(N) if c_row_major else Int64(M),
         ),
         msg="failed to create cublasLtMatrixLayout for cdesc",
     )
@@ -1008,20 +1290,20 @@ fn _cublasLt_matmul[
             cublasLtMatmul(
                 handle,  # light_handle
                 compute_desc,  # compute_desc
-                UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-                UnsafePointer(b.ptr.bitcast[NoneType]()),  # _a
+                UnsafePointer(to=alpha).bitcast[NoneType](),
+                _ffi_void_ptr(b.ptr),
                 _adesc,  # _adesc
-                UnsafePointer(a.ptr.bitcast[NoneType]()),  # _b
+                _ffi_void_ptr(a.ptr),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                OpaquePointer(),  # _c
+                None,  # _c
                 _cdesc,  # _cdesc
-                UnsafePointer(d.ptr.bitcast[NoneType]()),  # _d
+                _ffi_void_ptr(d.ptr),  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo),  # algo
                 matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
-                cuda_stream[],  # stream
+                cuda_stream.value()[],  # stream
             ),
             msg="failed to cublasLtMatmul for c_row_major=True",
         )
@@ -1031,19 +1313,19 @@ fn _cublasLt_matmul[
                 handle,  # light_handle
                 compute_desc,  # compute_desc
                 UnsafePointer(to=alpha).bitcast[NoneType](),  # alpha
-                UnsafePointer(a.ptr.bitcast[NoneType]()),  # _a
+                _ffi_void_ptr(a.ptr),  # _a
                 _adesc,  # _adesc
-                UnsafePointer(b.ptr.bitcast[NoneType]()),  # _b
+                _ffi_void_ptr(b.ptr),  # _b
                 _bdesc,  # _bdesc
                 UnsafePointer(to=beta).bitcast[NoneType](),  # beta
-                OpaquePointer(),  # _c
+                None,  # _c
                 _cdesc,  # _cdesc
-                UnsafePointer(d.ptr.bitcast[NoneType]()),  # _d
+                _ffi_void_ptr(d.ptr),  # _d
                 _ddesc,  # _ddesc
                 UnsafePointer(to=heuristic_result.algo),  # algo
                 matmul_workspace.unsafe_ptr().bitcast[NoneType](),  # workspace
                 workspace_size,  # workspace_size_in_bytes
-                cuda_stream[],  # stream
+                cuda_stream.value()[],  # stream
             ),
             msg="failed to cublasLtMatmul for c_row_major=False",
         )
@@ -1081,20 +1363,26 @@ fn _cublasLt_matmul[
 # ===----------------------------------------------------------------------===#
 
 
-fn _hipblasLt_matmul[
+def _hipblasLt_matmul[
     d_type: DType,
     a_type: DType,
     b_type: DType,
-    d_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
+    scales_type: DType = DType.invalid,
+    a_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
+    b_scales_layout: Layout = Layout.row_major(UNKNOWN_VALUE),
 ](
     ctx: DeviceContext,
     handle: hipblasLtHandle_t,
-    d: LayoutTensor[d_type, d_layout, *_],
-    a: LayoutTensor[a_type, a_layout, *_],
-    b: LayoutTensor[b_type, b_layout, *_],
+    d: NullableTileTensor[mut=True, d_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     *,
+    a_scales: OptionalReg[
+        LayoutTensor[scales_type, a_scales_layout, ImmutAnyOrigin]
+    ] = None,
+    b_scales: OptionalReg[
+        LayoutTensor[scales_type, b_scales_layout, ImmutAnyOrigin]
+    ] = None,
     c_row_major: Bool = True,
     transpose_a: Bool = False,
     transpose_b: Bool = False,
@@ -1102,46 +1390,37 @@ fn _hipblasLt_matmul[
     beta: Float32 = 0.0,
     batch_size: Int = 1,
 ) raises:
-    constrained[
-        (
-            a_type
-            in (
-                DType.float32,
-                DType.float16,
-                DType.bfloat16,
-                DType.float8_e4m3fn,
-                DType.float8_e5m2,
-                DType.float8_e4m3fnuz,
-                DType.float8_e5m2fnuz,
-            )
-        ),
-        "Unsupported data type. Please extend it if you need more data types.",
-    ]()
+    comptime assert a_type in (
+        DType.float32,
+        DType.float16,
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+        DType.float8_e5m2,
+        DType.float8_e4m3fnuz,
+        DType.float8_e5m2fnuz,
+        DType.uint8,
+    ), "Unsupported data type. Please extend it if you need more data types."
 
-    constrained[a_type == b_type, "A and B must have the same type"]()
+    comptime assert a_type == b_type, "A and B must have the same type"
 
     @always_inline
-    @parameter
-    fn create_matrix_layout[
+    def create_hipblas_matrix_layout[
         buf_type: DType,
-        buf_layout: Layout,
-    ](
-        buf: LayoutTensor[buf_type, buf_layout, *_]
-    ) raises -> hipblasLtMatrixLayout_t:
+    ](rows: Int, cols: Int) raises -> hipblasLtMatrixLayout_t:
         var _desc = hipblasLtMatrixLayout_t()
         _check_hipblas_error(
             hipblasLtMatrixLayoutCreate(
                 UnsafePointer(to=_desc),
                 _convert_to_hip_datatype[buf_type](),
-                buf.dim(1),
-                buf.dim(0),
-                buf.dim(1),
+                UInt64(cols),
+                UInt64(rows),
+                Int64(cols),
             )
         )
         return _desc
 
     @always_inline
-    fn set_matrix_layout_batch_size(
+    def set_matrix_layout_batch_size(
         mat_layout: hipblasLtMatrixLayout_t,
         batch_size: Int,
         batch_stride: Int64,
@@ -1163,19 +1442,103 @@ fn _hipblasLt_matmul[
             )
         )
 
-    var _adata = UnsafePointer(a.ptr.bitcast[NoneType]())
-    var _bdata = UnsafePointer(b.ptr.bitcast[NoneType]())
-    var _ddata = UnsafePointer(d.ptr.bitcast[NoneType]())
+    var a_rows = Int(a.dim[0]())
+    var a_cols = Int(a.dim[1]())
+    var b_rows = Int(b.dim[0]())
+    var b_cols = Int(b.dim[1]())
+    var d_rows = Int(d.dim[0]())
+    var d_cols = Int(d.dim[1]())
 
-    var _adesc = create_matrix_layout(a)
-    var _bdesc = create_matrix_layout(b)
-    var _ddesc = create_matrix_layout(d)
+    var operationDesc = hipblasLtMatmulDesc_t()
+    _check_hipblas_error(
+        hipblasLtMatmulDescCreate(
+            UnsafePointer(to=operationDesc),
+            hipblasComputeType_t.COMPUTE_32F,
+            hipDataType_t.R_32F,
+        )
+    )
+
+    if a_scales or b_scales:
+        if not (a_scales and b_scales):
+            raise Error("a_scales and b_scales must be provided together")
+        a_scale_tensor = a_scales.value()
+        b_scale_tensor = b_scales.value()
+
+        if comptime (scales_type != MXFP8_SF_DTYPE):
+            raise Error("Only float8_e8m0fnu(scale type: MXFP8) supported")
+        if comptime (a_type != DType.uint8):
+            raise Error("Only float4_e2m1fnx2 input type supported")
+        if not c_row_major or transpose_a or not transpose_b:
+            raise Error("Unexpected transpose flags")
+
+        # Convert to the logical number of columns (K) for FP4.
+        a_cols *= 2
+        b_cols *= 2
+
+        if comptime (
+            a_scales_layout.rank() != 2 or b_scales_layout.rank() != 2
+        ):
+            raise Error("Invalid A/B scales dimensions. Expected 2D tensors.")
+
+        if (
+            a_scale_tensor.dim(0) != a_rows
+            or a_scale_tensor.dim(1) != ceildiv(a_cols, MXFP4_SF_VECTOR_SIZE)
+            or b_scale_tensor.dim(0) != b_rows
+            or b_scale_tensor.dim(1) != ceildiv(b_cols, MXFP4_SF_VECTOR_SIZE)
+        ):
+            raise Error("Invalid A/B scales dimensions.")
+
+        var scale_mode = hipblasLtMatmulMatrixScale_t.VEC32_UE8M0
+
+        _check_hipblas_error(
+            hipblasLtMatmulDescSetAttribute(
+                operationDesc,
+                hipblasLtMatmulDescAttributes_t.A_SCALE_MODE,
+                UnsafePointer(to=scale_mode).bitcast[NoneType](),
+                size_of[hipblasLtMatmulMatrixScale_t](),
+            )
+        )
+        _check_hipblas_error(
+            hipblasLtMatmulDescSetAttribute(
+                operationDesc,
+                hipblasLtMatmulDescAttributes_t.B_SCALE_MODE,
+                UnsafePointer(to=scale_mode).bitcast[NoneType](),
+                size_of[hipblasLtMatmulMatrixScale_t](),
+            )
+        )
+
+        var a_scale_ptr = a_scale_tensor.ptr.bitcast[NoneType]()
+        var b_scale_ptr = b_scale_tensor.ptr.bitcast[NoneType]()
+
+        if c_row_major:
+            swap(a_scale_ptr, b_scale_ptr)
+
+        _check_hipblas_error(
+            hipblasLtMatmulDescSetAttribute(
+                operationDesc,
+                hipblasLtMatmulDescAttributes_t.A_SCALE_POINTER,
+                UnsafePointer(to=a_scale_ptr).bitcast[NoneType](),
+                size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+            )
+        )
+        _check_hipblas_error(
+            hipblasLtMatmulDescSetAttribute(
+                operationDesc,
+                hipblasLtMatmulDescAttributes_t.B_SCALE_POINTER,
+                UnsafePointer(to=b_scale_ptr).bitcast[NoneType](),
+                size_of[OpaquePointer[ExternalOrigin[mut=True]]](),
+            )
+        )
+
+    var _adesc = create_hipblas_matrix_layout[a_type](a_rows, a_cols)
+    var _bdesc = create_hipblas_matrix_layout[b_type](b_rows, b_cols)
+    var _ddesc = create_hipblas_matrix_layout[d_type](d_rows, d_cols)
 
     # set batch size accordingly
     if batch_size > 1:
-        set_matrix_layout_batch_size(_adesc, batch_size, a.dim(0) * a.dim(1))
-        set_matrix_layout_batch_size(_bdesc, batch_size, b.dim(0) * b.dim(1))
-        set_matrix_layout_batch_size(_ddesc, batch_size, d.dim(0) * d.dim(1))
+        set_matrix_layout_batch_size(_adesc, batch_size, Int64(a_rows * a_cols))
+        set_matrix_layout_batch_size(_bdesc, batch_size, Int64(b_rows * b_cols))
+        set_matrix_layout_batch_size(_ddesc, batch_size, Int64(d_rows * d_cols))
 
     var transa = (
         hipblasOperation_t.OP_T if transpose_a else hipblasOperation_t.OP_N
@@ -1187,18 +1550,8 @@ fn _hipblasLt_matmul[
     # hipblasLt is by default column-major but we like to have the output in row-major
     # to compare with our results. Use `c_row_major` to determine the output layout.
     if c_row_major:
-        swap(_adata, _bdata)
         swap(_adesc, _bdesc)
         swap(transa, transb)
-
-    var operationDesc = hipblasLtMatmulDesc_t()
-    _check_hipblas_error(
-        hipblasLtMatmulDescCreate(
-            UnsafePointer(to=operationDesc),
-            hipblasComputeType_t.COMPUTE_32F,
-            hipDataType_t.R_32F,
-        )
-    )
 
     _check_hipblas_error(
         hipblasLtMatmulDescSetAttribute(
@@ -1242,26 +1595,51 @@ fn _hipblasLt_matmul[
     if returnedResults == 0:
         raise Error("No algorithm was found!")
 
-    _check_hipblas_error(
-        hipblasLtMatmul(
-            handle,
-            operationDesc,
-            UnsafePointer(to=alpha).bitcast[NoneType](),
-            _adata,
-            _adesc,
-            _bdata,
-            _bdesc,
-            UnsafePointer(to=beta).bitcast[NoneType](),
-            _ddata,
-            _ddesc,
-            _ddata,
-            _ddesc,
-            UnsafePointer(to=heuristicResult.algo),
-            OpaquePointer(),
-            0,
-            HIP(ctx.stream()),
+    var workspace_size = heuristicResult.workspaceSize
+    var workspace = ctx.enqueue_create_buffer[DType.uint8](workspace_size)
+
+    if c_row_major:
+        _check_hipblas_error(
+            hipblasLtMatmul(
+                handle,
+                operationDesc,
+                UnsafePointer(to=alpha).bitcast[NoneType](),
+                _ffi_void_ptr(b.ptr),
+                _adesc,
+                _ffi_void_ptr(a.ptr),
+                _bdesc,
+                UnsafePointer(to=beta).bitcast[NoneType](),
+                _ffi_void_ptr(d.ptr),
+                _ddesc,
+                _ffi_void_ptr(d.ptr),
+                _ddesc,
+                UnsafePointer(to=heuristicResult.algo),
+                workspace.unsafe_ptr().bitcast[NoneType](),
+                workspace_size,
+                HIP(ctx.stream()),
+            )
         )
-    )
+    else:
+        _check_hipblas_error(
+            hipblasLtMatmul(
+                handle,
+                operationDesc,
+                UnsafePointer(to=alpha).bitcast[NoneType](),
+                _ffi_void_ptr(a.ptr),
+                _adesc,
+                _ffi_void_ptr(b.ptr),
+                _bdesc,
+                UnsafePointer(to=beta).bitcast[NoneType](),
+                _ffi_void_ptr(d.ptr),
+                _ddesc,
+                _ffi_void_ptr(d.ptr),
+                _ddesc,
+                UnsafePointer(to=heuristicResult.algo),
+                workspace.unsafe_ptr().bitcast[NoneType](),
+                workspace_size,
+                HIP(ctx.stream()),
+            )
+        )
 
     _check_hipblas_error(hipblasLtMatmulPreferenceDestroy(preference))
     _check_hipblas_error(hipblasLtMatmulDescDestroy(operationDesc))

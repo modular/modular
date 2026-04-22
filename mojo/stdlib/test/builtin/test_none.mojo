@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,40 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
+from test_utils import check_write_to
 
 
-def test_str():
-    assert_equal(NoneType().__str__(), "None")
-
-
-def test_repr():
-    assert_equal(NoneType().__repr__(), "None")
-
-
-def test_format_to():
-    assert_equal(String.write(NoneType()), "None")
+def test_write_to() raises:
+    check_write_to(NoneType(), expected="None", is_repr=False)
+    check_write_to(NoneType(), expected="None", is_repr=True)
 
 
 struct FromNone:
     var value: Int
 
     @implicit
-    fn __init__(out self, none: NoneType):
+    def __init__(out self, none: NoneType):
         self.value = -1
 
     # FIXME: None literal should be of NoneType not !kgen.none.
     @always_inline
     @implicit
-    fn __init__(out self, none: __mlir_type.`!kgen.none`):
+    def __init__(out self, none: __mlir_type.`!kgen.none`):
         self = NoneType()
 
     @implicit
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
 
-def test_type_from_none():
+def test_type_from_none() raises:
     _ = FromNone(5)
 
     _ = FromNone(None)
@@ -53,7 +47,7 @@ def test_type_from_none():
     # Test implicit conversion from `None`
     # -------------------------------------
 
-    fn foo(arg: FromNone):
+    def foo(arg: FromNone):
         pass
 
     # FIXME:
@@ -66,5 +60,5 @@ def test_type_from_none():
     var _obj2: FromNone = None
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,7 +1,7 @@
-# CLAUDE.md
+# Development Guidelines
 
-This file provides guidance to Claude Code (claude.ai/code) when working with
-code in this repository.
+This file provides guidelines for AI coding assistants such as Claude Code when
+working with code in this repository.
 
 ## Repository Overview
 
@@ -33,7 +33,7 @@ All builds use the `./bazelw` wrapper from the repository root:
 
 # Find targets
 ./bazelw query '//max/...'
-./bazelw query 'tests(//...)' 
+./bazelw query 'tests(//...)'
 ```
 
 ### Pixi Environment Management
@@ -69,7 +69,7 @@ pixi task list
 
 ```bash
 # Install the MAX nightly within a Python virtual environment using pip
-pip install modular --index-url https://dl.modular.com/public/nightly/python/simple/
+pip install modular --extra-index-url https://whl.modular.com/nightly/simple/
 
 # Install MAX globally using Pixi, an alternative to the above
 pixi global install -c conda-forge -c https://conda.modular.com/max-nightly
@@ -155,12 +155,12 @@ modular/
 ### Performance Development
 
 ```bash
-# Run benchmarks with environment variables
-./bazelw run //max/kernels/benchmarks/gpu:bench_matmul -- \
-    env_get_int[M]=1024 env_get_int[N]=1024 env_get_int[K]=1024
+# Run benchmarks with compile-time defines
+./bazelw run //max/kernels/benchmarks/gpu/linalg:bench_matmul -- \
+    get_defined_int[M]=1024 get_defined_int[N]=1024 get_defined_int[K]=1024
 
 # Use autotune tools
-python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yaml
+python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/linalg/bench_matmul.yaml
 ```
 
 ## Critical Development Notes
@@ -188,13 +188,13 @@ python max/kernels/benchmarks/autotune/kbench.py benchmarks/gpu/bench_matmul.yam
 - Avoid global state in kernels
 - Never commit secrets or large binary files
 
-### Environment Variables
+### Compile-Time Defines
 
-Many benchmarks and tests use environment variables:
+Many benchmarks and tests use compile-time defines:
 
-- `env_get_int[param_name]=value`
-- `env_get_bool[flag_name]=true/false`
-- `env_get_dtype[type]=float16/float32`
+- `get_defined_int[param_name]=value`
+- `get_defined_bool[flag_name]=true/false`
+- `get_defined_dtype[type]=float16/float32`
 
 ## Contributing Areas
 

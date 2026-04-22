@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,31 +13,31 @@
 
 
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         ...
 
 
 @fieldwise_init
-struct Duck(Copyable, Movable, Quackable):
-    fn quack(self):
+struct Duck(Copyable, Quackable):
+    def quack(self):
         print("Quack")
 
 
 @fieldwise_init
-struct StealthCow(Copyable, Movable, Quackable):
-    fn quack(self):
+struct StealthCow(Copyable, Quackable):
+    def quack(self):
         print("Moo!")
 
 
-fn make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
+def make_it_quack[DuckType: Quackable](maybe_a_duck: DuckType):
     maybe_a_duck.quack()
 
 
-fn make_it_quack2(maybe_a_duck: Some[Quackable]):
+def make_it_quack2(maybe_a_duck: Some[Quackable]):
     maybe_a_duck.quack()
 
 
-fn take_two_quackers[
+def take_two_quackers[
     DuckType: Quackable
 ](quacker1: DuckType, quacker2: DuckType):
     pass

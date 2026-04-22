@@ -1,23 +1,25 @@
 # Mojo documentation code examples
 
-This directory includes code examples used in the Mojo Manual and related
-documentation at [docs.modular.com/mojo](https://docs.modular.com/mojo).
-Reference solutions for Mojo tutorials can be found in the
-[`/examples/mojo`](../../examples/mojo) directory. The primary purpose of this
-directory is to enable automated testing of code examples.
+This directory includes code examples used in the Mojo Manual and stdlib
+docstrings to ensure those code snippets are tested.
 
-**Note:** Code examples in the API reference documentation for the Mojo Standard
-Library and other Modular open source libraries are embedded in the source files
-for those libraries and are not included here.
+## Running with Bazel
+
+Example command to run from the Modular internal repo:
+
+```sh
+br //oss/modular/mojo/docs/code/stdlib/algorithm:map_sample
+```
 
 ## Contributing
 
 If you see something in the documentation or the code examples that is incorrect
-or could be improved, we'd love to accept your contributions. At this time, code
-from this directory is **not** automatically included in the corresponding
-documentation file. If you contribute a change to a code example, please be sure
-to make a corresponding change to the copy of the code in the related
-documentation, as well as any explanatory text.
+or could be improved, we'd love to accept your contributions.
+
+Be aware that code from this directory is **not** automatically included in the
+corresponding documentation file. If you contribute a change to a code example,
+please update the code example in the related documentation, as well as any
+explanatory text.
 
 Be aware that we don't provide tools to generate a preview of the website,
 because the Mojo docs are built along with other content that's not included in

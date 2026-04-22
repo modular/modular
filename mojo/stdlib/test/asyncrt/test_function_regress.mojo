@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,150 +11,150 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import is_gpu
+from std.sys import is_gpu
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from builtin.device_passable import DevicePassable
-from gpu import *
-from gpu.host import DeviceContext
-from testing import TestSuite
+from asyncrt_test_utils import create_test_device_context
+from std.builtin.device_passable import DevicePassable
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
+from std.sys import has_apple_gpu_accelerator
 
-alias T = DType.float64
-alias S = Scalar[T]
+comptime T = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+comptime S = Scalar[T]
 
 
-@register_passable("trivial")
-trait MaybeZeroSized:
-    fn value(self) -> S:
+trait MaybeZeroSized(TrivialRegisterPassable):
+    def value(self) -> S:
         ...
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct ZeroSized(DevicePassable, MaybeZeroSized, Writable):
-    alias device_type: AnyType = Self
+struct ZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
+):
+    comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    def _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "ZeroSized"
 
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
-
     @always_inline
-    fn value(self) -> S:
+    def value(self) -> S:
         return 2
 
-    fn write_to(self, mut writer: Some[Writer]):
-        constrained[
-            not is_gpu(),
-            "ZeroSized is not supported on GPUs",
-        ]()
+    def write_to(self, mut writer: Some[Writer]):
+        comptime assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("ZeroSized(")
         writer.write(self.value())
         writer.write(")")
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct NotZeroSized(DevicePassable, MaybeZeroSized, Writable):
-    alias device_type: AnyType = Self
+struct NotZeroSized(
+    DevicePassable, MaybeZeroSized, TrivialRegisterPassable, Writable
+):
+    comptime device_type: AnyType = Self
 
-    fn _to_device_type(self, target: OpaquePointer):
+    def _to_device_type[
+        origin: MutOrigin
+    ](self, target: UnsafePointer[NoneType, origin]):
         target.bitcast[Self.device_type]()[] = self
 
     @staticmethod
-    fn get_type_name() -> String:
+    def get_type_name() -> String:
         return "ZeroSized"
-
-    @staticmethod
-    fn get_device_type_name() -> String:
-        return Self.get_type_name()
 
     var val: S
 
-    fn __init__(out self):
+    def __init__(out self):
         self.val = 2
 
     @always_inline
-    fn value(self) -> S:
+    def value(self) -> S:
         return self.val
 
-    fn write_to(self, mut writer: Some[Writer]):
-        constrained[
-            not is_gpu(),
-            "ZeroSized is not supported on GPUs",
-        ]()
+    def write_to(self, mut writer: Some[Writer]):
+        comptime assert not is_gpu(), "ZeroSized is not supported on GPUs"
         writer.write("NotZeroSized(")
         writer.write(self.value())
         writer.write(")")
 
 
-fn _vec_func_zero(
+def _vec_func_zero(
     zs: ZeroSized,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-fn _vec_func_not_zero(
+def _vec_func_not_zero(
     zs: NotZeroSized,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-fn _vec_func[
+def _vec_func[
     zero_sized_t: MaybeZeroSized
 ](
     zs: zero_sized_t,
-    in0: UnsafePointer[S],
-    in1: UnsafePointer[S],
-    output: UnsafePointer[S],
+    in0: UnsafePointer[S, MutAnyOrigin],
+    in1: UnsafePointer[S, MutAnyOrigin],
+    output: UnsafePointer[S, MutAnyOrigin],
     len: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = in0[tid] + in1[tid] + zs.value()
 
 
-def test_function_compilation():
+def test_function_compilation() raises:
     var ctx = create_test_device_context()
     _run_test_function_compilation(ctx)
 
 
-fn _run_test_function_compilation(ctx: DeviceContext) raises:
+def _run_test_function_compilation(ctx: DeviceContext) raises:
     # Compile all combinations with and without declaring the trait in
     # the signature.
 
     print("Compiling _vec_func[NotZeroSized]")
-    var compiled_vec_func_0 = ctx.compile_function[_vec_func[NotZeroSized]]()
+    var compiled_vec_func_0 = ctx.compile_function_experimental[
+        _vec_func[NotZeroSized]
+    ]()
 
     print("Compiling _vec_func[ZeroSizet]")
-    var compiled_vec_func_1 = ctx.compile_function[_vec_func[ZeroSized]]()
+    var compiled_vec_func_1 = ctx.compile_function_experimental[
+        _vec_func[ZeroSized]
+    ]()
 
     print("Compiling _vec_func_not_zero")
-    var compiled_vec_func_2 = ctx.compile_function[_vec_func_not_zero]()
+    var compiled_vec_func_2 = ctx.compile_function_experimental[
+        _vec_func_not_zero
+    ]()
 
     print("Compiling _vec_func_zero")
-    var compiled_vec_func_3 = ctx.compile_function[_vec_func_zero]()
+    var compiled_vec_func_3 = ctx.compile_function_experimental[
+        _vec_func_zero
+    ]()
 
     _ = compiled_vec_func_0
     _ = compiled_vec_func_1
@@ -162,73 +162,17 @@ fn _run_test_function_compilation(ctx: DeviceContext) raises:
     _ = compiled_vec_func_3
 
 
-def test_function_unchecked():
-    var ctx = create_test_device_context()
-    _run_test_function_unchecked(ctx)
-
-
-fn _run_test_function_unchecked(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
-
-    alias zero_sized_t = NotZeroSized
-    alias vec_func = _vec_func[zero_sized_t]
-    # alias vec_func = _vec_func_not_zero
-    # alias vec_func = _vec_func_zero
-
-    var zs = zero_sized_t()
-    print(zs)
-
-    var scalar: S = 2
-
-    # Initialize the input and outputs with known values.
-    var in0 = ctx.enqueue_create_buffer[T](length)
-    var out = ctx.enqueue_create_buffer[T](length)
-    with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
-        for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
-
-    print("compiling vec_func")
-    var compiled_vec_func = ctx.compile_function_unchecked[vec_func]()
-    print("calling vec_func")
-    ctx.enqueue_function_unchecked(
-        compiled_vec_func,
-        zs,
-        in0,
-        in1,
-        out,
-        length,
-        grid_dim=(length // block_dim),
-        block_dim=(block_dim),
-    )
-
-    with out.map_to_host() as out_host:
-        for i in range(length):
-            if i < 10:
-                print("at index", i, "the value is", out_host[i])
-            expect_eq(
-                out_host[i],
-                i + 4,
-                "at index ",
-                i,
-                " the value is ",
-                out_host[i],
-            )
-
-
-def test_function_checked():
+def test_function_checked() raises:
     var ctx = create_test_device_context()
     _run_test_function_checked(ctx)
 
 
-fn _run_test_function_checked(ctx: DeviceContext) raises:
-    alias length = 1024
-    alias block_dim = 32
+def _run_test_function_checked(ctx: DeviceContext) raises:
+    comptime length = 1024
+    comptime block_dim = 32
 
-    alias zero_sized_t = ZeroSized
-    alias vec_func = _vec_func[zero_sized_t]
+    comptime zero_sized_t = ZeroSized
+    comptime vec_func = _vec_func[zero_sized_t]
     # alias vec_func = _vec_func_not_zero
     # alias vec_func = _vec_func_zero
 
@@ -242,15 +186,15 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
     var out = ctx.enqueue_create_buffer[T](length)
     with in0.map_to_host() as in0_host, out.map_to_host() as out_host:
         for i in range(length):
-            in0_host[i] = i
-            out_host[i] = length + i
-    var in1 = ctx.enqueue_create_buffer[T](length).enqueue_fill(scalar)
+            in0_host[i] = Scalar[T](i)
+            out_host[i] = Scalar[T](length + i)
+    var in1 = ctx.enqueue_create_buffer[T](length)
+    in1.enqueue_fill(scalar)
 
     print("compiling vec_func")
-    # TODO(MAXPLAT-333): Make compile_function_experimental support this case.
-    var compiled_vec_func = ctx.compile_function_checked[vec_func, vec_func]()
+    var compiled_vec_func = ctx.compile_function_experimental[vec_func]()
     print("calling vec_func")
-    ctx.enqueue_function_checked(
+    ctx.enqueue_function(
         compiled_vec_func,
         zs,
         in0,
@@ -265,23 +209,24 @@ fn _run_test_function_checked(ctx: DeviceContext) raises:
         for i in range(length):
             if i < 10:
                 print("at index", i, "the value is", out_host[i])
-            expect_eq(
+            assert_equal(
                 out_host[i],
-                i + 4,
-                "at index ",
-                i,
-                " the value is ",
-                out_host[i],
+                Scalar[T](i + 4),
+                String(
+                    "at index ",
+                    i,
+                    " the value is ",
+                    out_host[i],
+                ),
             )
 
 
-def main():
+def main() raises:
     # TODO(MOCO-2556): Use automatic discovery when it can handle global_idx.
     # TestSuite.discover_tests[__functions_in_module()]().run()
     var suite = TestSuite()
 
     suite.test[test_function_compilation]()
-    suite.test[test_function_unchecked]()
     suite.test[test_function_checked]()
 
     suite^.run()

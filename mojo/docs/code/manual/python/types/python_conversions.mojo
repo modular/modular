@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,19 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 
 # start-python-to-mojo-conversions
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 
-def main():
+def main() raises:
     var py_string = PythonObject("Hello, Mojo!")
     var py_bool = PythonObject(True)
     var py_int = PythonObject(123)
     var py_float = PythonObject(3.14)
 
-    var mojo_string = String(py_string)
-    var mojo_bool = Bool(py_bool)
-    var mojo_int = Int(py_int)
-    var mojo_float = Float64(py_float)
+    var mojo_string = String(py=py_string)
+    var mojo_bool = Bool(py=py_bool)
+    var mojo_int = Int(py=py_int)
+    var mojo_float = Float64(py=py_float)
     # end-python-to-mojo-conversions
     _ = mojo_string^
     _ = mojo_bool

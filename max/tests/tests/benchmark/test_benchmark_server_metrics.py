@@ -1,0 +1,617 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Unit tests for benchmark server metrics module."""
+
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
+from unittest.mock import patch
+
+import pytest
+from max.benchmark.benchmark_shared.metrics import (
+    BenchmarkMetrics,
+    StandardPercentileMetrics,
+    ThroughputMetrics,
+)
+from max.benchmark.benchmark_shared.server_metrics import (
+    HistogramData,
+    ParsedMetrics,
+    _format_metric_key,
+    collect_benchmark_metrics,
+    collect_server_metrics,
+    compute_metrics_delta,
+    fetch_and_parse_metrics,
+    get_metrics_url,
+    parse_metrics,
+    print_server_metrics,
+)
+
+if TYPE_CHECKING:
+    from unittest.mock import MagicMock
+
+
+@pytest.fixture
+def sample_metrics() -> str:
+    """Representative Prometheus metrics with all types including labeled histograms."""
+    return """# HELP requests Total requests
+# TYPE requests counter
+requests 100.0
+# HELP memory_bytes Current memory
+# TYPE memory_bytes gauge
+memory_bytes 1024.0
+# HELP latency Latency
+# TYPE latency histogram
+latency_bucket{le="0.1"} 50.0
+latency_bucket{le="+Inf"} 100.0
+latency_sum 25.0
+latency_count 100.0
+# HELP maxserve_batch_execution_time_milliseconds Batch execution time
+# TYPE maxserve_batch_execution_time_milliseconds histogram
+maxserve_batch_execution_time_milliseconds_bucket{batch_type="CE",le="100"} 10.0
+maxserve_batch_execution_time_milliseconds_bucket{batch_type="CE",le="+Inf"} 15.0
+maxserve_batch_execution_time_milliseconds_sum{batch_type="CE"} 900.0
+maxserve_batch_execution_time_milliseconds_count{batch_type="CE"} 15.0
+maxserve_batch_execution_time_milliseconds_bucket{batch_type="TG",le="100"} 80.0
+maxserve_batch_execution_time_milliseconds_bucket{batch_type="TG",le="+Inf"} 100.0
+maxserve_batch_execution_time_milliseconds_sum{batch_type="TG"} 2000.0
+maxserve_batch_execution_time_milliseconds_count{batch_type="TG"} 100.0
+"""
+
+
+def _make_metrics(
+    metrics_by_endpoint: dict[str, ParsedMetrics],
+) -> BenchmarkMetrics:
+    """Minimal BenchmarkMetrics carrying only the fields under test."""
+    return BenchmarkMetrics(
+        duration=10.0,
+        completed=100,
+        failures=0,
+        total_input=1000,
+        total_output=500,
+        nonempty_response_chunks=500,
+        max_concurrency=10,
+        request_throughput=10.0,
+        input_throughput=ThroughputMetrics([1.0]),
+        output_throughput=ThroughputMetrics([1.0]),
+        ttft_ms=StandardPercentileMetrics([0.1]),
+        tpot_ms=StandardPercentileMetrics([0.01]),
+        itl_ms=StandardPercentileMetrics([0.01]),
+        latency_ms=StandardPercentileMetrics([1.0]),
+        max_input=100,
+        max_output=50,
+        max_total=150,
+        peak_gpu_memory_mib=[],
+        available_gpu_memory_mib=[],
+        gpu_utilization=[],
+        metrics_by_endpoint=metrics_by_endpoint,
+    )
+
+
+def test_get_histogram_truth() -> None:
+    """Test HistogramData truthiness based on having data."""
+    # Empty histogram is falsy
+    hist_empty = HistogramData(buckets=[], sum=0.0, count=0.0)
+    assert not hist_empty
+
+    # Histogram with data is truthy
+    hist_with_buckets = HistogramData(
+        buckets=[("100", 1.0)], sum=0.0, count=100.0
+    )
+    assert hist_with_buckets
+
+
+def test_histogram_mean() -> None:
+    """Test HistogramData calculates mean correctly."""
+    hist = HistogramData(buckets=[], sum=150.0, count=10.0)
+    assert hist.mean == 15.0
+
+    hist_zero = HistogramData(buckets=[], sum=0.0, count=0.0)
+    assert hist_zero.mean == 0.0
+
+
+def test_get_metrics_url_supported_backends() -> None:
+    """Test get_metrics_url returns correct URLs for supported backends."""
+    url = get_metrics_url("modular", "http://localhost:8000")
+    assert url == "http://localhost:8001/metrics"
+
+    # Test vllm backend (uses same port as base_url)
+    url = get_metrics_url("vllm", "http://localhost:8000")
+    assert url == "http://localhost:8000/metrics"
+
+
+def test_get_metrics_url_ipv6() -> None:
+    """Bracketed IPv6 base_url must produce bracketed metrics URL."""
+    url = get_metrics_url("modular", "http://[fdc3:5d58:ceb7::8:91fa]:8000")
+    assert url == "http://[fdc3:5d58:ceb7::8:91fa]:8001/metrics"
+
+    url = get_metrics_url("vllm", "http://[::1]:8000")
+    assert url == "http://[::1]:8000/metrics"
+
+
+def test_parse_metrics_success(sample_metrics: str) -> None:
+    """Test parse_metrics extracts all metric types."""
+    result = parse_metrics(sample_metrics)
+
+    # Should parse all three metric types
+    assert len(result.counters) > 0
+    assert len(result.gauges) > 0
+    assert len(result.histograms) > 0
+    assert result.raw_text == sample_metrics
+
+
+@patch("max.benchmark.benchmark_shared.server_metrics.requests.get")
+def test_fetch_and_parse_http_error(mock_get: MagicMock) -> None:
+    """Test that HTTP errors raise HTTPError."""
+    import requests
+
+    mock_response = type("Response", (), {"status_code": 500})()
+    mock_get.return_value = mock_response
+
+    with pytest.raises(requests.HTTPError, match="Failed to fetch metrics"):
+        fetch_and_parse_metrics(
+            backend="modular", base_url="http://localhost:8000"
+        )
+
+
+def test_print_server_metrics(
+    sample_metrics: str, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Test that print_server_metrics outputs formatted metrics."""
+    metrics = parse_metrics(sample_metrics)
+    print_server_metrics(metrics)
+
+    captured = capsys.readouterr()
+    # Check section headers
+    assert "Server Metrics (from Prometheus)" in captured.out
+    assert "Counters:" in captured.out
+    assert "Gauges:" in captured.out
+    assert "Histograms:" in captured.out
+    # Check specific metrics
+    assert "requests" in captured.out
+    assert "memory_bytes" in captured.out
+    # Check labeled histogram breakdown
+    assert "Breakdown:" in captured.out
+
+
+def test_compute_metrics_delta() -> None:
+    """Test that compute_metrics_delta correctly computes deltas."""
+    baseline = ParsedMetrics(
+        counters={"requests": 100.0},
+        gauges={"memory_bytes": 1024.0},
+        histograms={
+            "latency": HistogramData(
+                buckets=[("0.1", 50.0), ("+Inf", 100.0)],
+                sum=25.0,
+                count=100.0,
+            )
+        },
+        raw_text="",
+    )
+
+    final = ParsedMetrics(
+        counters={"requests": 250.0},
+        gauges={"memory_bytes": 2048.0},
+        histograms={
+            "latency": HistogramData(
+                buckets=[("0.1", 125.0), ("+Inf", 250.0)],
+                sum=75.0,
+                count=250.0,
+            )
+        },
+        raw_text="",
+    )
+
+    delta = compute_metrics_delta(baseline, final)
+
+    # Counters should be delta (final - baseline)
+    assert delta.counters["requests"] == 150.0
+
+    # Gauges should be final value
+    assert delta.gauges["memory_bytes"] == 2048.0
+
+    # Histograms should be delta
+    assert delta.histograms["latency"].sum == 50.0
+    assert delta.histograms["latency"].count == 150.0
+    assert dict(delta.histograms["latency"].buckets) == {
+        "0.1": 75.0,
+        "+Inf": 150.0,
+    }
+
+
+def test_compute_metrics_delta_with_labeled_histograms() -> None:
+    """Test delta computation preserves histogram labels."""
+    baseline = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'batch_time{type="prefill"}': HistogramData(
+                buckets=[("100", 5.0), ("+Inf", 10.0)],
+                sum=500.0,
+                count=10.0,
+            ),
+            'batch_time{type="decode"}': HistogramData(
+                buckets=[("100", 40.0), ("+Inf", 50.0)],
+                sum=1000.0,
+                count=50.0,
+            ),
+        },
+        raw_text="",
+    )
+
+    final = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'batch_time{type="prefill"}': HistogramData(
+                buckets=[("100", 25.0), ("+Inf", 30.0)],
+                sum=1500.0,
+                count=30.0,
+            ),
+            'batch_time{type="decode"}': HistogramData(
+                buckets=[("100", 140.0), ("+Inf", 150.0)],
+                sum=3000.0,
+                count=150.0,
+            ),
+        },
+        raw_text="",
+    )
+
+    delta = compute_metrics_delta(baseline, final)
+
+    # Check deltas for both labeled histograms
+    prefill_delta = delta.get_histogram("batch_time", {"type": "prefill"})
+    assert prefill_delta is not None
+    assert prefill_delta.sum == 1000.0  # 1500 - 500
+    assert prefill_delta.count == 20.0  # 30 - 10
+    assert prefill_delta.mean == 50.0
+    assert dict(prefill_delta.buckets) == {
+        "100": 20.0,  # 25 - 5
+        "+Inf": 20.0,  # 30 - 10
+    }
+
+    decode_delta = delta.get_histogram("batch_time", {"type": "decode"})
+    assert decode_delta is not None
+    assert decode_delta.sum == 2000.0  # 3000 - 1000
+    assert decode_delta.count == 100.0  # 150 - 50
+    assert decode_delta.mean == 20.0
+    assert dict(decode_delta.buckets) == {
+        "100": 100.0,  # 140 - 40
+        "+Inf": 100.0,  # 150 - 50
+    }
+
+
+@pytest.mark.parametrize(
+    "name,labels,expected",
+    [
+        ("metric_name", {}, "metric_name"),
+        ("metric_name", {"label": "value"}, 'metric_name{label="value"}'),
+        # Multiple labels should be sorted alphabetically
+        (
+            "metric_name",
+            {"b": "val2", "a": "val1"},
+            'metric_name{a="val1",b="val2"}',
+        ),
+    ],
+)
+def test_format_metric_key(name: str, labels: dict, expected: str) -> None:  # type: ignore[type-arg]
+    """Test formatting metric keys with various label combinations."""
+    assert _format_metric_key(name, labels) == expected
+
+
+def test_parse_metrics_with_labeled_histogram(sample_metrics: str) -> None:
+    """Test parsing histograms with labels (e.g., batch_type)."""
+    metrics = parse_metrics(sample_metrics)
+
+    # Should create separate histogram for each label value
+    assert (
+        'maxserve_batch_execution_time_milliseconds{batch_type="CE"}'
+        in metrics.histograms
+    )
+    assert (
+        'maxserve_batch_execution_time_milliseconds{batch_type="TG"}'
+        in metrics.histograms
+    )
+
+    prefill = metrics.histograms[
+        'maxserve_batch_execution_time_milliseconds{batch_type="CE"}'
+    ]
+    assert prefill.count == 15.0
+    assert prefill.sum == 900.0
+    assert prefill.mean == 60.0
+
+    decode = metrics.histograms[
+        'maxserve_batch_execution_time_milliseconds{batch_type="TG"}'
+    ]
+    assert decode.count == 100.0
+    assert decode.sum == 2000.0
+    assert decode.mean == 20.0
+
+
+def test_get_histogram_helper() -> None:
+    """Test ParsedMetrics.get_histogram() helper method."""
+    # Create metrics with labeled histograms
+    prefill_hist = HistogramData(buckets=[], sum=900.0, count=15.0)
+    decode_hist = HistogramData(buckets=[], sum=2000.0, count=100.0)
+
+    metrics = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}': prefill_hist,
+            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}': decode_hist,
+        },
+        raw_text="",
+    )
+
+    # Test accessing with labels
+    result_prefill = metrics.get_histogram(
+        "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
+    )
+    assert result_prefill is not None
+    assert result_prefill.mean == 60.0
+
+    result_decode = metrics.get_histogram(
+        "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
+    )
+    assert result_decode is not None
+    assert result_decode.mean == 20.0
+
+    # Test accessing non-existent metric returns None
+    result_missing = metrics.get_histogram(
+        "maxserve_batch_execution_time_milliseconds", {"batch_type": "missing"}
+    )
+    assert result_missing is None
+
+
+@patch("max.benchmark.benchmark_shared.server_metrics.fetch_and_parse_metrics")
+def test_collect_server_metrics_without_baseline(
+    mock_fetch: MagicMock, sample_metrics: str
+) -> None:
+    """Test collect_server_metrics returns metrics directly when no baseline."""
+    mock_metrics = parse_metrics(sample_metrics)
+    mock_fetch.return_value = mock_metrics
+
+    result = collect_server_metrics("modular", "http://localhost:8000")
+
+    assert result.counters == mock_metrics.counters
+    assert result.gauges == mock_metrics.gauges
+    mock_fetch.assert_called_once_with(
+        backend="modular", base_url="http://localhost:8000"
+    )
+
+
+@patch("max.benchmark.benchmark_shared.server_metrics.compute_metrics_delta")
+@patch("max.benchmark.benchmark_shared.server_metrics.fetch_and_parse_metrics")
+def test_collect_server_metrics_with_baseline(
+    mock_fetch: MagicMock, mock_delta: MagicMock
+) -> None:
+    """Test collect_server_metrics delegates to compute_metrics_delta when baseline provided."""
+    baseline = ParsedMetrics(counters={}, gauges={}, histograms={}, raw_text="")
+    final = ParsedMetrics(counters={}, gauges={}, histograms={}, raw_text="")
+    mock_fetch.return_value = final
+
+    collect_server_metrics("modular", "http://localhost:8000", baseline)
+
+    mock_delta.assert_called_once_with(baseline=baseline, final=final)
+
+
+@patch("max.benchmark.benchmark_shared.server_metrics.fetch_and_parse_metrics")
+def test_collect_server_metrics_raises_on_error(mock_fetch: MagicMock) -> None:
+    """Test collect_server_metrics propagates exceptions."""
+    mock_fetch.side_effect = Exception("Connection failed")
+
+    with pytest.raises(Exception, match="Connection failed"):
+        collect_server_metrics("modular", "http://localhost:8000")
+
+
+def test_metrics_by_endpoint_defaults_to_empty() -> None:
+    """With no endpoints scraped, convenience batch-time properties return
+    safe defaults (None / 0) rather than raising."""
+    metrics = _make_metrics({})
+
+    assert dict(metrics.metrics_by_endpoint) == {}
+    assert metrics.mean_prefill_batch_time_ms is None
+    assert metrics.mean_decode_batch_time_ms is None
+    assert metrics.prefill_batch_count == 0
+    assert metrics.decode_batch_count == 0
+
+
+class TestCollectBenchmarkMetrics:
+    """Exercises the single collection path: empty urls -> auto-derive one
+    endpoint; populated urls -> scrape each label as given."""
+
+    PROM = "# HELP r Total\n# TYPE r counter\nr 1.0\n"
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_empty_urls_synthesizes_default(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Empty mapping -> one endpoint derived from backend + base_url."""
+        mock_fetch.return_value = self.PROM
+        result = collect_benchmark_metrics(
+            urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
+        )
+        mock_fetch.assert_called_once_with("http://10.0.0.1:8000/metrics")
+        assert list(result.keys()) == ["server"]
+        assert result["server"].counters["r"] == 1.0
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_explicit_urls_used_as_is(self, mock_fetch: MagicMock) -> None:
+        """Populated mapping -> each label scraped from its exact URL."""
+        mock_fetch.return_value = self.PROM
+        result = collect_benchmark_metrics(
+            urls={"engine": "http://10.0.0.2:9090/metrics"},
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+        )
+        mock_fetch.assert_called_once_with("http://10.0.0.2:9090/metrics")
+        assert list(result.keys()) == ["engine"]
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_baseline_computes_delta_per_label(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Counter growing from baseline -> final must produce the delta, not
+        the raw final value. Baseline reads 10.0, final reads 35.0, delta=25.0."""
+        urls = {"eng": "http://10.0.0.2:9090/metrics"}
+        mock_fetch.return_value = "# TYPE r counter\nr 10.0\n"
+        baseline = collect_benchmark_metrics(
+            urls=urls, backend="vllm", base_url="http://10.0.0.1:8000"
+        )
+        assert baseline["eng"].counters["r"] == 10.0
+
+        mock_fetch.return_value = "# TYPE r counter\nr 35.0\n"
+        final = collect_benchmark_metrics(
+            urls=urls,
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+            baseline=baseline,
+        )
+        assert final["eng"].counters["r"] == 25.0
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_partial_failure_does_not_drop_ok_endpoints(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Exception on one endpoint's fetch is logged + skipped; the other
+        endpoints' results are still returned. Keyed by URL so the test isn't
+        coupled to dict iteration order."""
+        responses: dict[str, str | Exception] = {
+            "http://ok:8001/metrics": "# TYPE r counter\nr 7.0\n",
+            "http://bad:8001/metrics": ConnectionError("refused"),
+        }
+
+        def fake_fetch(url: str) -> str:
+            value = responses[url]
+            if isinstance(value, Exception):
+                raise value
+            return value
+
+        mock_fetch.side_effect = fake_fetch
+        result = collect_benchmark_metrics(
+            urls={
+                "ok": "http://ok:8001/metrics",
+                "bad": "http://bad:8001/metrics",
+            },
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+        )
+        assert set(result.keys()) == {"ok"}
+        assert result["ok"].counters["r"] == 7.0
+
+
+def test_batch_histograms_found_on_non_first_endpoint() -> None:
+    """`mean_prefill_batch_time_ms` scans across endpoints — it must find the
+    engine's MAX-serve histogram even when the orchestrator (no such
+    histogram) is listed first in the mapping."""
+    orchestrator = ParsedMetrics(
+        counters={"requests": 42.0}, gauges={}, histograms={}, raw_text=""
+    )
+    engine_prefill = HistogramData(
+        buckets=[("100", 10.0)], sum=500.0, count=10.0
+    )
+    engine_decode = HistogramData(
+        buckets=[("100", 80.0)], sum=2000.0, count=100.0
+    )
+    engine = ParsedMetrics(
+        counters={},
+        gauges={},
+        histograms={
+            'maxserve_batch_execution_time_milliseconds{batch_type="CE"}': engine_prefill,
+            'maxserve_batch_execution_time_milliseconds{batch_type="TG"}': engine_decode,
+        },
+        raw_text="",
+    )
+    metrics = _make_metrics({"orchestrator": orchestrator, "engine-0": engine})
+
+    assert metrics.mean_prefill_batch_time_ms == 50.0
+    assert metrics.mean_decode_batch_time_ms == 20.0
+    assert metrics.prefill_batch_count == 10
+    assert metrics.decode_batch_count == 100
+
+
+class TestMetricsResultOutput:
+    """E2E: Prometheus response -> collect_benchmark_metrics -> _add_optional_result JSON."""
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_single_endpoint_emits_both_keys_with_matching_content(
+        self, mock_fetch: MagicMock, sample_metrics: str
+    ) -> None:
+        """Auto-derive (urls={}) produces one endpoint labeled `server`.
+        Both `server_metrics` and `server_metrics_by_endpoint.server` appear
+        in the output JSON and carry the same counter/gauge/histogram data."""
+        from max.benchmark.benchmark_serving import _add_optional_result
+
+        mock_fetch.return_value = sample_metrics
+        final = collect_benchmark_metrics(
+            urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
+        )
+        result: dict[str, Any] = {}
+        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+
+        sm = result["server_metrics"]
+        by_ep = result["server_metrics_by_endpoint"]
+        assert set(by_ep.keys()) == {"server"}
+
+        assert sm["counters"] == by_ep["server"]["counters"]
+        assert sm["histograms"] == by_ep["server"]["histograms"]
+        assert set(sm.keys()) >= {
+            "prefill_batch_execution_time_ms",
+            "decode_batch_count",
+        }
+
+    @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
+    def test_multi_endpoint_attributes_per_label_and_mirrors_first(
+        self, mock_fetch: MagicMock
+    ) -> None:
+        """Orchestrator and engine expose different metric families.
+        Output must attribute each to its label, and `server_metrics` must
+        mirror the FIRST endpoint (orchestrator), not the engine."""
+        from max.benchmark.benchmark_serving import _add_optional_result
+
+        orch_prom = (
+            "# TYPE orchestrator_requests counter\norchestrator_requests 42.0\n"
+        )
+        engine_prom = (
+            "# TYPE engine_generation_tokens counter\n"
+            "engine_generation_tokens 1000.0\n"
+        )
+        responses = {
+            "http://orch:8001/metrics": orch_prom,
+            "http://engine:8001/metrics": engine_prom,
+        }
+        mock_fetch.side_effect = lambda url: responses[url]
+
+        final = collect_benchmark_metrics(
+            urls={
+                "orch": "http://orch:8001/metrics",
+                "engine-0": "http://engine:8001/metrics",
+            },
+            backend="vllm",
+            base_url="http://10.0.0.1:8000",
+        )
+        result: dict[str, Any] = {}
+        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+
+        by_ep = result["server_metrics_by_endpoint"]
+        assert set(by_ep.keys()) == {"orch", "engine-0"}
+        assert by_ep["orch"]["counters"] == {"orchestrator_requests": 42.0}
+        assert by_ep["engine-0"]["counters"] == {
+            "engine_generation_tokens": 1000.0
+        }
+
+        # server_metrics mirrors the FIRST inserted endpoint (orch), which is
+        # how existing BigQuery/analysis consumers keep working.
+        sm = result["server_metrics"]
+        assert sm["counters"] == by_ep["orch"]["counters"]
+        assert sm["counters"] != by_ep["engine-0"]["counters"]

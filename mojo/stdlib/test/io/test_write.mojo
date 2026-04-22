@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,29 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.write import Writable, Writer, _hex_digits_to_hex_chars, _write_hex
-
-from memory.memory import memset_zero
-from testing import assert_equal
-
-from testing import TestSuite
+from std.format import Writable, Writer
+from std.format._utils import _hex_digits_to_hex_chars, _write_hex
+from std.memory.memory import memset_zero
+from std.testing import assert_equal, TestSuite
 
 
 @fieldwise_init
-struct Point(Stringable, Writable):
+struct Point(Writable):
     var x: Int
     var y: Int
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("Point(", self.x, ", ", self.y, ")")
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
 
-
-def test_writer_of_string():
+def test_writer_of_string() raises:
     #
     # Test write_to(String)
     #
@@ -49,7 +43,7 @@ def test_writer_of_string():
     assert_equal(s2, "Point(3, 8)")
 
 
-def test_string_write_seq():
+def test_string_write_seq() raises:
     var s1 = String.write("Hello, ", "World!")
     assert_equal(s1, "Hello, World!")
 
@@ -60,20 +54,28 @@ def test_string_write_seq():
     assert_equal(s3, "")
 
 
-def test_stringable_based_on_format():
+def test_stringable_based_on_format() raises:
     assert_equal(String(Point(10, 11)), "Point(10, 11)")
 
 
-def test_write_int_padded():
+def test_write_int_padded() raises:
     var s1 = String()
 
     Int(5).write_padded(s1, width=5)
 
     assert_equal(s1, "    5")
 
+    Int(-5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5")
+
     Int(123).write_padded(s1, width=5)
 
-    assert_equal(s1, "    5  123")
+    assert_equal(s1, "    5   -5  123")
+
+    Int(0).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5  123    0")
 
     # ----------------------------------
     # Test writing int larger than width
@@ -85,52 +87,122 @@ def test_write_int_padded():
 
     assert_equal(s2, "12345")
 
+    Int(-1).write_padded(s2, width=1)
 
-def test_hex_digits_to_hex_chars():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[origin_of(items)]
+    assert_equal(s2, "12345-1")
+
+    Int(-1).write_padded(s2, width=0)
+
+    assert_equal(s2, "12345-1-1")
+
+
+def test_write_simd_padded() raises:
+    # ----------------------------------
+    # Test writing scalar Int32
+    # ----------------------------------
+    var s1 = String()
+
+    Int32(5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5")
+
+    # Test negative integers - note that negative signs aren't counted
+    Int32(-5).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5")
+
+    Int32(123).write_padded(s1, width=5)
+
+    assert_equal(s1, "    5   -5  123")
+
+    # ----------------------------------
+    # Test writing scalar Int32 larger than width
+    # ----------------------------------
+
+    var s2 = String()
+
+    Int32(12345).write_padded(s2, width=3)
+
+    assert_equal(s2, "12345")
+
+    Int32(-1).write_padded(s2, width=1)
+
+    assert_equal(s2, "12345-1")
+
+    Int32(-1).write_padded(s2, width=0)
+
+    assert_equal(s2, "12345-1-1")
+
+    # ----------------------------------
+    # Test writing vector Int32
+    # ----------------------------------
+
+    var s3 = String()
+    SIMD[DType.int32, 2](12345).write_padded(s3, width=3)
+    assert_equal(s3, "[12345,12345]")
+
+    s3 = String()
+    SIMD[DType.int32, 2](12345).write_padded(s3, width=5)
+    assert_equal(s3, "[12345,12345]")
+
+    s3 = String()
+    SIMD[DType.int32, 2](12345).write_padded(s3, width=6)
+    assert_equal(s3, "[ 12345, 12345]")
+
+    s3 = String()
+    SIMD[DType.int32, 2](-12345).write_padded(s3, width=7)
+    assert_equal(s3, "[ -12345, -12345]")
+
+    s3 = String()
+    SIMD[DType.int8, 4](127, 1, 10, 0).write_padded(s3, width=6)
+    assert_equal(s3, "[   127,     1,    10,     0]")
+
+
+def test_hex_digits_to_hex_chars() raises:
+    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+    comptime S = StringSlice[origin_of(items)]
     ptr = items.unsafe_ptr()
-    _hex_digits_to_hex_chars(ptr, UInt32(ord("🔥")))
-    assert_equal("0001f525", String(S(ptr=ptr, length=8)))
+    ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
+    assert_equal("0001f525", S(ptr=ptr, length=8))
     memset_zero(ptr, len(items))
-    _hex_digits_to_hex_chars(ptr, UInt16(ord("你")))
-    assert_equal("4f60", String(S(ptr=ptr, length=4)))
+    ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
+    assert_equal("4f60", S(ptr=ptr, length=4))
     memset_zero(ptr, len(items))
-    _hex_digits_to_hex_chars(ptr, UInt8(ord("Ö")))
-    assert_equal("d6", String(S(ptr=ptr, length=2)))
-    _hex_digits_to_hex_chars(ptr, UInt8(0))
-    assert_equal("00", String(S(ptr=ptr, length=2)))
-    _hex_digits_to_hex_chars(ptr, UInt16(0))
-    assert_equal("0000", String(S(ptr=ptr, length=4)))
-    _hex_digits_to_hex_chars(ptr, UInt32(0))
-    assert_equal("00000000", String(S(ptr=ptr, length=8)))
-    _hex_digits_to_hex_chars(ptr, ~UInt8(0))
-    assert_equal("ff", String(S(ptr=ptr, length=2)))
-    _hex_digits_to_hex_chars(ptr, ~UInt16(0))
-    assert_equal("ffff", String(S(ptr=ptr, length=4)))
-    _hex_digits_to_hex_chars(ptr, ~UInt32(0))
-    assert_equal("ffffffff", String(S(ptr=ptr, length=8)))
+    ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
+    assert_equal("d6", S(ptr=ptr, length=2))
+    ptr.store(_hex_digits_to_hex_chars(UInt8(0)))
+    assert_equal("00", S(ptr=ptr, length=2))
+    ptr.store(_hex_digits_to_hex_chars(UInt16(0)))
+    assert_equal("0000", S(ptr=ptr, length=4))
+    ptr.store(_hex_digits_to_hex_chars(UInt32(0)))
+    assert_equal("00000000", S(ptr=ptr, length=8))
+    ptr.store(_hex_digits_to_hex_chars(~UInt8(0)))
+    assert_equal("ff", S(ptr=ptr, length=2))
+    ptr.store(_hex_digits_to_hex_chars(~UInt16(0)))
+    assert_equal("ffff", S(ptr=ptr, length=4))
+    ptr.store(_hex_digits_to_hex_chars(~UInt32(0)))
+    assert_equal("ffffffff", S(ptr=ptr, length=8))
 
 
-def test_write_hex():
-    items = List[Byte](0, 0, 0, 0, 0, 0, 0, 0, 0, 0)
-    alias S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
-    _write_hex[8](ptr, ord("🔥"))
-    assert_equal(r"\U0001f525", String(S(ptr=ptr, length=10)))
-    memset_zero(ptr, len(items))
-    _write_hex[4](ptr, ord("你"))
-    assert_equal(r"\u4f60", String(S(ptr=ptr, length=6)))
-    memset_zero(ptr, len(items))
-    _write_hex[2](ptr, ord("Ö"))
-    assert_equal(r"\xd6", String(S(ptr=ptr, length=4)))
+def test_write_hex() raises:
+    var s = String()
+    _write_hex[amnt_hex_bytes=8](s, Scalar[DType.int](ord("🔥")))
+    assert_equal(r"\U0001f525", s)
+    s = ""
+    _write_hex[amnt_hex_bytes=4](s, Scalar[DType.int](ord("你")))
+    assert_equal(r"\u4f60", s)
+    s = ""
+    _write_hex[amnt_hex_bytes=2](s, Scalar[DType.int](ord("Ö")))
+    assert_equal(r"\xd6", s)
 
 
-def test_closure_non_capturing():
-    fn write_closure(mut writer: Some[Writer]):
+def test_closure_non_capturing() raises:
+    def write_closure(mut writer: Some[Writer]):
         writer.write("Hello Mojo!")
 
-    def write_non_capturing[func: fn (mut writer: Some[Writer]) -> None]():
+    def write_non_capturing[
+        func: def(mut writer: Some[Writer]) thin raises -> None
+    ]() raises:
         var writer2 = String()
         func(writer2)
 
@@ -139,11 +211,11 @@ def test_closure_non_capturing():
     write_non_capturing[write_closure]()
 
 
-def test_closure_capturing(mut writer: Some[Writer & Writable]):
-    fn write_closure() capturing:
+def _test_closure_capturing(mut writer: Some[Writer & Writable]) raises:
+    def write_closure() capturing:
         writer.write("Hello Mojo!")
 
-    fn write_capturing[func: fn () capturing -> None]():
+    def write_capturing[func: def() capturing -> None]():
         func()
 
     write_capturing[write_closure]()
@@ -154,5 +226,10 @@ def test_closure_capturing(mut writer: Some[Writer & Writable]):
     assert_equal(result, "Hello Mojo!")
 
 
-def main():
+def test_closure_capturing() raises:
+    var writer = String()
+    _test_closure_capturing(writer)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

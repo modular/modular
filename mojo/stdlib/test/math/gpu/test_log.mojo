@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,46 +11,49 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import log, log2, log10
-from sys import simd_width_of
+from std.math import log, log2, log10
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from buffer import NDBuffer
-from gpu import *
-from gpu.host import DeviceContext, get_gpu_target
-from testing import assert_almost_equal, TestSuite
+from std.algorithm.functional import elementwise
+from std.gpu import *
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.testing import assert_almost_equal, TestSuite
 
-from utils import Index, IndexList
+from std.utils import IndexList
 
 
 def run_elementwise[
-    dtype: DType, log_fn: fn (x: SIMD) -> type_of(x)
-](ctx: DeviceContext):
-    alias length = 8192
+    dtype: DType, log_fn: def(x: SIMD) thin -> type_of(x)
+](ctx: DeviceContext) raises:
+    comptime length = 8192
 
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     var in_device = ctx.enqueue_create_buffer[dtype](length)
     var out_device = ctx.enqueue_create_buffer[dtype](length)
 
-    alias epsilon = 0.001
+    comptime epsilon = 0.001
     with in_device.map_to_host() as in_host:
         for i in range(length):
             in_host[i] = Scalar[dtype](i) + epsilon
 
-    var in_buffer = NDBuffer[dtype, 1](in_device.unsafe_ptr(), Index(length))
-    var out_buffer = NDBuffer[dtype, 1](out_device.unsafe_ptr(), Index(length))
+    var in_buffer = Span[Scalar[dtype]](
+        ptr=in_device.unsafe_ptr(), length=length
+    )
+    var out_buffer = Span[Scalar[dtype]](
+        ptr=out_device.unsafe_ptr(), length=length
+    )
 
     @always_inline
     @__copy_capture(out_buffer, in_buffer)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[1]](idx0)
-        var val = in_buffer.load[width=simd_width](idx)
+        var val = in_buffer.unsafe_ptr().load[width=simd_width](idx[0])
         var result = log_fn(val)
-        out_buffer.store[width=simd_width](idx, result)
+        out_buffer.unsafe_ptr().store[width=simd_width](idx[0], result)
 
     elementwise[func, pack_size, target="gpu"](IndexList[1](length), ctx)
 
@@ -58,8 +61,8 @@ def run_elementwise[
         for i in range(length):
             var expected_value = log_fn(in_host[i])
 
-            alias atol = 1e-07 if dtype is DType.float32 else 1e-4
-            alias rtol = 2e-07 if dtype is DType.float32 else 2e-2
+            comptime atol = 1e-07 if dtype == DType.float32 else 1e-4
+            comptime rtol = 2e-07 if dtype == DType.float32 else 2e-2
             assert_almost_equal(
                 out_host[i],
                 expected_value,
@@ -69,7 +72,7 @@ def run_elementwise[
             )
 
 
-def test_log():
+def test_log() raises:
     with DeviceContext() as ctx:
         run_elementwise[DType.float32, log](ctx)
         run_elementwise[DType.float32, log10](ctx)
@@ -82,5 +85,5 @@ def test_log():
         run_elementwise[DType.bfloat16, log2](ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

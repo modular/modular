@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,17 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import size_of
+from std.sys.info import size_of
 
-from memory.maybe_uninitialized import UnsafeMaybeUninitialized
-from test_utils import CopyCounter, DelRecorder, MoveCounter
-from testing import assert_equal, assert_true, TestSuite
+from std.compile import compile_info
+from std.hashlib import hash
+from std.memory import UnsafeMaybeUninit
+from test_utils import CopyCounter, DelRecorder, MoveCounter, check_write_to
+from std.testing import assert_equal, assert_true, assert_false, TestSuite
 
 
-def test_array_unsafe_get():
+def test_array_unsafe_get() raises:
     # Negative indexing is undefined behavior with unsafe_get
     # so there are not test cases for it.
-    var arr = InlineArray[Int, 3](0, 0, 0)
+    var arr: InlineArray[Int, 3] = [0, 0, 0]
 
     assert_equal(arr.unsafe_get(0), 0)
     assert_equal(arr.unsafe_get(1), 0)
@@ -36,8 +38,8 @@ def test_array_unsafe_get():
     assert_equal(arr.unsafe_get(2), 3)
 
 
-def test_array_int():
-    var arr = InlineArray[Int, 3](0, 0, 0)
+def test_array_int() raises:
+    var arr: InlineArray[Int, 3] = [0, 0, 0]
 
     assert_equal(arr[0], 0)
     assert_equal(arr[1], 0)
@@ -51,17 +53,17 @@ def test_array_int():
     assert_equal(arr[1], 2)
     assert_equal(arr[2], 3)
 
-    # test negative indexing
-    assert_equal(arr[-1], 3)
-    assert_equal(arr[-2], 2)
+    # test indexing from end
+    assert_equal(arr[len(arr) - 1], 3)
+    assert_equal(arr[len(arr) - 2], 2)
 
-    # test negative indexing with dynamic index
-    var i = -1
+    # test indexing from end with dynamic index
+    var i = len(arr) - 1
     assert_equal(arr[i], 3)
     i -= 1
     assert_equal(arr[i], 2)
 
-    var copy = arr
+    var copy = arr.copy()
     assert_equal(arr[0], copy[0])
     assert_equal(arr[1], copy[1])
     assert_equal(arr[2], copy[2])
@@ -77,10 +79,12 @@ def test_array_int():
     assert_equal(arr2[1], 5)
     assert_equal(arr2[2], 5)
 
-    var arr3 = InlineArray[Int, 1](5)
+    var arr3: InlineArray[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
-    def test_init_fill[size: Int, batch_size: Int, dt: DType](arg: Scalar[dt]):
+    def test_init_fill[
+        size: Int, batch_size: Int, dt: DType
+    ](arg: Scalar[dt]) raises:
         var arr = InlineArray[Scalar[dt], size].__init__[batch_size=batch_size](
             fill=arg
         )
@@ -89,15 +93,10 @@ def test_array_int():
 
     def test_init_fill_scalars[
         *dts: DType, sizes: List[Int], batch_sizes: List[Int]
-    ]():
-        @parameter
-        for current_batch_size in range(len(batch_sizes)):
-
-            @parameter
-            for current_size in range(len(sizes)):
-
-                @parameter
-                for current_type in range(len(VariadicList(dts))):
+    ]() raises:
+        comptime for current_batch_size in range(len(batch_sizes)):
+            comptime for current_size in range(len(sizes)):
+                comptime for current_type in range(dts.size):
                     test_init_fill[
                         sizes[current_size], batch_sizes[current_batch_size]
                     ](Scalar[dts[current_type]].MAX)
@@ -105,15 +104,15 @@ def test_array_int():
     test_init_fill_scalars[
         Int64.dtype,
         Int8.dtype,
-        sizes= [1, 32, 64, 129, 256, 512, 768, 1000],
-        batch_sizes= [1, 8, 32, 64, 128],
+        sizes=[1, 32, 64, 129, 256, 512, 768, 1000],
+        batch_sizes=[1, 8, 32, 64, 128],
     ]()
 
     test_init_fill[2048, 512](Int64.MAX)
     test_init_fill[2048, 1](Int64.MAX)
 
 
-def test_array_str():
+def test_array_String() raises:
     var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
 
     assert_equal(arr[0], "hi")
@@ -129,11 +128,11 @@ def test_array_str():
     assert_equal(arr[1], "morning")
     assert_equal(arr[2], "wazzup")
 
-    # test negative indexing
-    assert_equal(arr[-1], "wazzup")
-    assert_equal(arr[-2], "morning")
+    # test indexing from end
+    assert_equal(arr[len(arr) - 1], "wazzup")
+    assert_equal(arr[len(arr) - 2], "morning")
 
-    var copy = arr
+    var copy = arr.copy()
     assert_equal(arr[0], copy[0])
     assert_equal(arr[1], copy[1])
     assert_equal(arr[2], copy[2])
@@ -150,12 +149,12 @@ def test_array_str():
     assert_equal(arr2[2], "hi")
 
     # size 1 array to prevent regressions in the constructors
-    var arr3 = InlineArray[String, 1]("hi")
+    var arr3: InlineArray[String, 1] = ["hi"]
     assert_equal(arr3[0], "hi")
 
 
-def test_array_int_pointer():
-    var arr = InlineArray[Int, 3](0, 10, 20)
+def test_array_int_pointer() raises:
+    var arr: InlineArray[Int, 3] = [0, 10, 20]
 
     var ptr = arr.unsafe_ptr()
     assert_equal(ptr[0], 0)
@@ -178,13 +177,13 @@ def test_array_int_pointer():
     _ = arr
 
 
-def test_array_unsafe_assume_initialized_constructor_string():
-    var maybe_uninitialized_arr = InlineArray[
-        UnsafeMaybeUninitialized[String], 3
-    ](uninitialized=True)
-    maybe_uninitialized_arr[0].write("hello")
-    maybe_uninitialized_arr[1].write("mojo")
-    maybe_uninitialized_arr[2].write("world")
+def test_array_unsafe_assume_initialized_constructor_string() raises:
+    var maybe_uninitialized_arr = InlineArray[UnsafeMaybeUninit[String], 3](
+        uninitialized=True
+    )
+    maybe_uninitialized_arr[0].init_from("hello")
+    maybe_uninitialized_arr[1].init_from("mojo")
+    maybe_uninitialized_arr[2].init_from("world")
 
     var initialized_arr = InlineArray[String, 3](
         unsafe_assume_initialized=maybe_uninitialized_arr^
@@ -212,23 +211,23 @@ def test_array_unsafe_assume_initialized_constructor_string():
     # might want to add a test for that in the future.
 
 
-def test_array_contains():
-    var arr = InlineArray[String, 3]("hi", "hello", "hey")
+def test_array_contains() raises:
+    var arr: InlineArray[String, 3] = ["hi", "hello", "hey"]
     assert_true("hi" in arr)
     assert_true(not "greetings" in arr)
 
 
-def test_inline_array_runs_destructors():
+def test_inline_array_runs_destructors() raises:
     """Ensure we delete the right number of elements."""
     var destructor_recorder = List[Int]()
     var ptr = UnsafePointer(to=destructor_recorder).as_immutable()
-    alias capacity = 32
-    var inline_list = InlineArray[DelRecorder[ptr.origin], 4](
+    comptime capacity = 32
+    var inline_list: InlineArray[DelRecorder[ptr.origin], 4] = [
         DelRecorder(0, ptr),
         DelRecorder(10, ptr),
         DelRecorder(20, ptr),
         DelRecorder(30, ptr),
-    )
+    ]
     _ = inline_list
     # This is the last use of the inline list, so it should be destroyed here,
     # along with each element.
@@ -239,8 +238,8 @@ def test_inline_array_runs_destructors():
     assert_equal(destructor_recorder[3], 30)
 
 
-fn test_unsafe_ptr() raises:
-    alias N = 10
+def test_unsafe_ptr() raises:
+    comptime N = 10
     var arr = InlineArray[Int, 10](fill=0)
     for i in range(N):
         arr[i] = i
@@ -250,26 +249,30 @@ fn test_unsafe_ptr() raises:
         assert_equal(arr[i], ptr[i])
 
 
-def test_size_of_array[current_type: Copyable & Movable, capacity: Int]():
+def _test_size_of_array[current_type: Copyable, capacity: Int]() raises:
     """Testing if `size_of` the array equals capacity * `size_of` current_type.
 
     Parameters:
         current_type: The type of the elements of the `InlineList`.
         capacity: The capacity of the `InlineList`.
     """
-    alias size_of_current_type = size_of[current_type]()
+    comptime size_of_current_type = size_of[current_type]()
     assert_equal(
         size_of[InlineArray[current_type, capacity]](),
         capacity * size_of_current_type,
     )
 
 
-def test_move():
+def test_size_of_array() raises:
+    _test_size_of_array[Int, 32]()
+
+
+def test_move() raises:
     """Test that moving an InlineArray works correctly."""
 
     # === 1. Check that the move constructor is called correctly. ===
 
-    var arr = InlineArray[MoveCounter[Int], 3]({1}, {2}, {3})
+    var arr: InlineArray[MoveCounter[Int], 3] = [{1}, {2}, {3}]
     var copied_arr = arr.copy()
 
     for i in range(len(arr)):
@@ -286,7 +289,7 @@ def test_move():
 
     # === 2. Check that the copy constructor is not called when moving. ===
 
-    var arr2 = InlineArray[CopyCounter, 3]({}, {}, {})
+    var arr2: InlineArray[CopyCounter[], 3] = [{}, {}, {}]
     for i in range(len(arr2)):
         # The elements were moved into the array and not copied
         assert_equal(arr2[i].copy_count, 0)
@@ -301,8 +304,10 @@ def test_move():
 
     var del_counter = List[Int]()
     var del_counter_ptr = UnsafePointer(to=del_counter).as_immutable()
-    var del_recorder = DelRecorder(0, del_counter_ptr)
-    var arr3 = InlineArray[DelRecorder[del_counter_ptr.origin], 1](del_recorder)
+    var del_recorder = DelRecorder[del_counter_ptr.origin](0, del_counter_ptr)
+    var arr3: InlineArray[DelRecorder[del_counter_ptr.origin], 1] = [
+        del_recorder
+    ]
 
     assert_equal(len(del_counter_ptr[]), 0)
 
@@ -318,5 +323,237 @@ def test_move():
     _ = del_counter
 
 
-def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+def test_different_types() raises:
+    """Test with different element types."""
+    # Test with single element
+    var single: InlineArray[Int, 1] = [42]
+    var single_str = String(single)
+    assert_equal(single_str, "[42]")
+
+    # Test with default values
+    var default_array = InlineArray[Int, 3](fill=0)
+    var default_str = String(default_array)
+    assert_equal(default_str, "[0, 0, 0]")
+
+    # Test with filled array
+    var filled_array = InlineArray[Int, 4](fill=99)
+    var filled_str = String(filled_array)
+    assert_equal(filled_str, "[99, 99, 99, 99]")
+
+
+def test_write_to() raises:
+    """Test Writable trait implementation."""
+    var array: InlineArray[Int, 3] = [10, 20, 30]
+    check_write_to(array, expected="[10, 20, 30]", is_repr=False)
+
+    var string_array: InlineArray[String, 2] = ["a", "b"]
+    check_write_to(string_array, expected="[a, b]", is_repr=False)
+
+    var single_elem: InlineArray[Int, 1] = [42]
+    check_write_to(single_elem, expected="[42]", is_repr=False)
+
+
+def test_write_repr_to() raises:
+    """Test write_repr_to implementation."""
+    var array: InlineArray[Int, 3] = [1, 2, 3]
+    check_write_to(
+        array,
+        expected="InlineArray[Int, 3]([Int(1), Int(2), Int(3)])",
+        is_repr=True,
+    )
+
+    var single: InlineArray[Int, 1] = [1]
+    check_write_to(
+        single, expected="InlineArray[Int, 1]([Int(1)])", is_repr=True
+    )
+
+
+def test_inline_array_triviality() raises:
+    assert_true(InlineArray[Int, 1].__del__is_trivial)
+    assert_true(InlineArray[Int, 1].__copy_ctor_is_trivial)
+    assert_true(InlineArray[Int, 1].__move_ctor_is_trivial)
+
+    assert_false(InlineArray[String, 1].__del__is_trivial)
+    assert_false(InlineArray[String, 1].__copy_ctor_is_trivial)
+    assert_true(InlineArray[String, 1].__move_ctor_is_trivial)
+
+
+def _return_array[copy: Bool = False]() -> InlineArray[Int32, 4]:
+    var arr = InlineArray[Int32, 4](fill=0)
+
+    comptime if copy:
+        return arr.copy()
+    else:
+        return arr^
+
+
+def test_inline_array_copy_and_move_llvm_ir() raises:
+    def _test(ir: StringSlice) raises:
+        assert_true("initializes((0, 16))" in ir)
+        assert_false('asm sideeffect "nop"' in ir)
+
+    var move_info = compile_info[
+        _return_array[copy=False], emission_kind="llvm-opt"
+    ]()
+    _test(move_info.asm)
+    var copy_info = compile_info[
+        _return_array[copy=True], emission_kind="llvm-opt"
+    ]()
+    _test(copy_info.asm)
+
+
+def test_inline_array_iter() raises:
+    var arr: InlineArray[Int, 3] = [0, 1, 2]
+    var s = 0
+    for el in arr:
+        s += el
+    assert_equal(s, 3)
+
+    for el in reversed(arr):
+        s -= el
+    assert_equal(s, 0)
+
+
+def test_inline_array_iter_mut() raises:
+    var arr: InlineArray[Int, 3] = [0, 1, 2]
+    for ref el in arr:
+        el += 1
+
+    var s = 0
+    for el in arr:
+        s += el
+    assert_equal(s, 6)
+
+
+def _test_inline_array_iter_bounds[
+    I: Iterator
+](var array_iter: I, array_len: Int) raises:
+    var iter = array_iter^
+
+    for i in range(array_len):
+        var lower, upper = iter.bounds()
+        print(lower, upper, i)
+        assert_equal(array_len - i, lower)
+        assert_equal(array_len - i, upper.value())
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()
+        )
+
+    var lower, upper = iter.bounds()
+    assert_equal(0, lower)
+    assert_equal(0, upper.value())
+
+
+struct NonWritable(Copyable):
+    """A simple type that does not conform to Writable."""
+
+    var value: Int
+
+
+def test_inline_array_eq() raises:
+    var a: InlineArray[Int, 3] = [1, 2, 3]
+    var b: InlineArray[Int, 3] = [1, 2, 3]
+    var c: InlineArray[Int, 3] = [1, 2, 4]
+
+    assert_true(a == b)
+    assert_false(a == c)
+    assert_false(a != b)
+    assert_true(a != c)
+
+    var x: InlineArray[Int, 1] = [42]
+    var y: InlineArray[Int, 1] = [42]
+    var z: InlineArray[Int, 1] = [0]
+    assert_true(x == y)
+    assert_true(x != z)
+
+    var s1: InlineArray[String, 2] = ["hello", "world"]
+    var s2: InlineArray[String, 2] = ["hello", "world"]
+    var s3: InlineArray[String, 2] = ["hello", "mojo"]
+    assert_true(s1 == s2)
+    assert_true(s1 != s3)
+
+    # Test arrays of different lengths.
+    var d: InlineArray[Int, 4] = [1, 2, 3, 4]
+    var e: InlineArray[Int, 4] = [1, 2, 3, 4]
+    var f: InlineArray[Int, 4] = [1, 2, 3, 5]
+    assert_true(d == e)
+    assert_true(d != f)
+
+    var g: InlineArray[Int, 5] = [10, 20, 30, 40, 50]
+    var h: InlineArray[Int, 5] = [10, 20, 30, 40, 50]
+    var i: InlineArray[Int, 5] = [10, 20, 99, 40, 50]
+    assert_true(g == h)
+    assert_true(g != i)
+
+
+def test_inline_array_hash() raises:
+    var a: InlineArray[Int, 3] = [1, 2, 3]
+    var b: InlineArray[Int, 3] = [1, 2, 3]
+    var c: InlineArray[Int, 3] = [1, 2, 4]
+
+    # Equal arrays must have equal hashes.
+    assert_equal(hash(a), hash(b))
+
+    # Different arrays should (almost certainly) have different hashes.
+    assert_true(hash(a) != hash(c))
+
+
+def test_inline_array_conditional_conformances() raises:
+    assert_true(conforms_to(InlineArray[Int, 3], Writable))
+    assert_true(conforms_to(InlineArray[Int, 3], Equatable))
+    assert_true(conforms_to(InlineArray[Int, 3], Hashable))
+    assert_true(conforms_to(InlineArray[Int, 3], Copyable))
+    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyCopyable))
+    assert_true(conforms_to(InlineArray[Int, 3], ImplicitlyDestructible))
+    assert_false(conforms_to(InlineArray[NonWritable, 3], Writable))
+
+
+def test_inline_array_iter_bounds() raises:
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    _test_inline_array_iter_bounds(iter(arr), len(arr))
+    _test_inline_array_iter_bounds(reversed(arr), len(arr))
+
+
+def test_inline_array_iter_owned() raises:
+    var arr: InlineArray[Int, 3] = [10, 20, 30]
+    var result = List[Int]()
+    for elem in arr^:
+        result.append(elem)
+
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 10)
+    assert_equal(result[1], 20)
+    assert_equal(result[2], 30)
+
+
+def test_inline_array_iter_owned_destroys_elements_if_not_consumed() raises:
+    # Verify that creating and immediately dropping the iterator doesn't crash.
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var _ = arr^.__iter__()
+
+
+def test_inline_array_iter_owned_destroys_elements_if_partially_consumed() raises:
+    # Verify partial consumption followed by dropping doesn't crash.
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var it = arr^.__iter__()
+    _ = it.__next__()  # consume one element
+    _ = it^  # drop iterator with remaining elements
+
+
+def test_inline_array_iter_owned_bounds() raises:
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var it = arr^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
+def main() raises:
+    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    # TODO: skipped to work around MOCO-3749
+    suite.skip[test_inline_array_copy_and_move_llvm_ir]()
+    suite^.run()

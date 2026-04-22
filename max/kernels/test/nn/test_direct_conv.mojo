@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys.info import num_physical_cores, simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import num_physical_cores, simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from nn.conv import (
+from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import lt_to_tt
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     get_conv_num_partitions,
     get_conv_num_tasks,
@@ -32,14 +32,14 @@ from nn.conv_utils import (
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias dtype = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_direct_conv
-fn test[
+def test[
     dtype: DType, filter_packed: Bool
 ](
     N: Int,
@@ -77,17 +77,17 @@ fn test[
         num_groups=num_groups,
     )
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(R * S * C * F)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * HO * WO * F)
+    var input_ptr = alloc[Scalar[dtype]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[dtype]](R * S * C * F)
+    var output_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
+    var output_ref_ptr = alloc[Scalar[dtype]](N * HO * WO * F)
 
     rand[dtype](input_ptr, N * H * W * C)
     rand[dtype](filter_ptr, R * S * C * F)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var num_threads = num_physical_cores()
     var num_tasks = get_conv_num_tasks(num_threads, conv_shape)
@@ -99,22 +99,34 @@ fn test[
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
-    var input = NDBuffer[dtype, 4](input_ptr, Index(N, H, W, C))
-    var filter = NDBuffer[dtype, 4](filter_ptr, Index(R, S, C // num_groups, F))
-    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    comptime layout_4d = Layout.row_major[4]()
+    comptime layout_5d = Layout.row_major[5]()
+    var input = LayoutTensor[dtype, layout_4d](
+        input_ptr, RuntimeLayout[layout_4d].row_major(Index(N, H, W, C))
+    )
+    var filter = LayoutTensor[dtype, layout_4d](
+        filter_ptr,
+        RuntimeLayout[layout_4d].row_major(Index(R, S, C // num_groups, F)),
+    )
+    var packed_filter_shape = pack_conv_filter_shape(
+        lt_to_tt(filter), num_groups
+    )
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, 5, _, DimList.create_unknown[5]()](
+    var packed_filter = LayoutTensor[dtype, layout_5d](
         packed_filter_ptr,
-        packed_filter_shape,
+        RuntimeLayout[layout_5d].row_major(packed_filter_shape),
     )
-    var output = NDBuffer[dtype, 4](output_ptr, Index(N, HO, WO, F))
-    var output_ref = NDBuffer[dtype, 4](output_ref_ptr, Index(N, HO, WO, F))
+    var output = LayoutTensor[dtype, layout_4d](
+        output_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    )
+    var output_ref = LayoutTensor[dtype, layout_4d](
+        output_ref_ptr, RuntimeLayout[layout_4d].row_major(Index(N, HO, WO, F))
+    )
 
-    @parameter
-    if filter_packed:
-        pack_filter(filter, packed_filter, num_groups)
+    comptime if filter_packed:
+        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -137,20 +149,13 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[2]()
+    comptime conv_attr = ConvInfoStatic[2]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
-            4,
-            5,
-            4,
-            _,
-            _,
-            _,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[5](),
-            DimList.create_unknown[4](),
+            layout_4d,
+            layout_5d,
+            layout_4d,
             dtype,
             dtype,
             dtype,
@@ -164,15 +169,9 @@ fn test[
         )
     else:
         ConvDirectNHWC[
-            4,
-            4,
-            4,
-            _,
-            _,
-            _,
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
-            DimList.create_unknown[4](),
+            layout_4d,
+            layout_4d,
+            layout_4d,
             dtype,
             dtype,
             dtype,
@@ -213,7 +212,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     """It only includes shapes where F is multiple simd_size."""
     # No packing or padding.
     test[DType.float32, False](

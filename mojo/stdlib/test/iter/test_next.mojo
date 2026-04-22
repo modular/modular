@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,30 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal, assert_true
+from std.testing import TestSuite, assert_equal, assert_true, assert_raises
 
 
-fn test_next() raises:
+def test_next() raises:
     var l = [1, 2, 3]
 
     var it = iter(l)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 1)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 2)
-    assert_true(it.__has_next__())
     assert_equal(next(it), 3)
-    assert_true(not it.__has_next__())
+    with assert_raises():
+        _ = next(it)  # raises StopIteration
     var l2 = ["hi", "hey", "hello"]
     var it2 = iter(l2)
-    assert_true(it2.__has_next__())
     assert_equal(next(it2), "hi")
-    assert_true(it2.__has_next__())
     assert_equal(next(it2), "hey")
-    assert_true(it2.__has_next__())
     assert_equal(next(it2), "hello")
-    assert_true(not it2.__has_next__())
+    with assert_raises():
+        _ = next(it2)  # raises StopIteration
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

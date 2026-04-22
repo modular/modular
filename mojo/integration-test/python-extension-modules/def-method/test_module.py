@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,7 +14,7 @@
 import sys
 
 # Imports from 'mojo_module.so'
-import mojo_module as def_method
+import mojo_module as def_method  # type: ignore[import-not-found]
 import pytest
 
 

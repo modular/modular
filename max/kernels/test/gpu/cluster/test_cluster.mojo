@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
+from std.math.uutils import ufloordiv
 
-from buffer import DimList, NDBuffer
-from gpu import barrier, block_dim, block_idx, thread_idx
-from gpu.cluster import (
+from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu.primitives.cluster import (
     cluster_sync,
     cluster_sync_acquire,
     cluster_sync_release,
@@ -25,37 +25,38 @@ from gpu.cluster import (
     elect_one_sync,
     elect_one_sync_with_mask,
 )
-from gpu.host import DeviceContext
-from gpu.id import block_id_in_cluster, lane_id
-from gpu.intrinsics import Scope
-from gpu.memory import _GPUAddressSpace as AddressSpace
-from gpu.memory import fence_mbarrier_init
+from std.gpu.host import DeviceContext
+from std.gpu import block_id_in_cluster, lane_id
+from std.gpu.intrinsics import Scope
+from std.gpu.memory import fence_mbarrier_init
 from layout.tma_async import PipelineState, SharedMemBarrier
-from memory import stack_allocation
-from testing import assert_almost_equal
+from std.memory import stack_allocation
+from std.testing import assert_almost_equal
 
-from utils.static_tuple import StaticTuple
+from std.utils.static_tuple import StaticTuple
+
+from layout import TileTensor, row_major
 
 
 # Derived from https://docs.nvidia.com/cuda/cuda-c-programming-guide/#kernel-example-vector-scalar-multiplication
-fn cluster_launch_control(data: UnsafePointer[Float32], n: Int):
+def cluster_launch_control(data: UnsafePointer[Float32, MutAnyOrigin], n: Int):
     result = stack_allocation[
         1,
         UInt128,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
-    bx: UInt32 = block_idx.x
-    tidx: UInt32 = bx * block_dim.x + thread_idx.x
-    if tidx < n:
+    bx = UInt32(block_idx.x)
+    tidx = bx * UInt32(block_dim.x) + UInt32(thread_idx.x)
+    if tidx < UInt32(n):
         data[tidx] = 1.0
 
     phase: UInt32 = 0
@@ -64,7 +65,7 @@ fn cluster_launch_control(data: UnsafePointer[Float32], n: Int):
     if thread_idx.x == 0:
         mbar[0].init(1)
 
-    alpha: Int64 = thread_idx.x
+    alpha = Int64(thread_idx.x)
 
     # Work-straling loop.
     while True:
@@ -80,9 +81,9 @@ fn cluster_launch_control(data: UnsafePointer[Float32], n: Int):
                 clusterlaunchcontrol_try_cancel(result, mbar.bitcast[Int64]())
 
             # Matches `ptx::mbarrier_arrive_expect_tx`.
-            _ = mbar[0].expect_bytes_relaxed(2 * size_of[UInt64]())
+            _ = mbar[0].expect_bytes_relaxed(Int32(2 * size_of[UInt64]()))
 
-        if tidx < n:
+        if tidx < UInt32(n):
             data[tidx] *= Float32(alpha)
 
         # Cancellation request synchronization:
@@ -101,52 +102,49 @@ fn cluster_launch_control(data: UnsafePointer[Float32], n: Int):
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_shape)
-fn pipeline_test_kernel[
+def pipeline_test_kernel[
     num_stages: Int, cluster_shape: StaticTuple[Int32, 3]
 ]():
     var clc_response = stack_allocation[
         num_stages,
         UInt128,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var full_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
     var empty_mbar = stack_allocation[
         num_stages,
         SharedMemBarrier,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=16,
     ]()
 
-    alias CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
+    comptime CLUSTER_SIZE = cluster_shape[0] * cluster_shape[1]
 
-    alias NUM_PRODUCER = 32
-    alias NUM_CONSUMERS_PER_CTA = 32
-    alias consumer_arv_count = NUM_PRODUCER + (
+    comptime NUM_PRODUCER = 32
+    comptime NUM_CONSUMERS_PER_CTA = 32
+    comptime consumer_arv_count = NUM_PRODUCER + (
         NUM_CONSUMERS_PER_CTA * CLUSTER_SIZE
     )
-    alias producer_arv_count = 1
+    comptime producer_arv_count = 1
 
     var is_first_block_in_cluster = (
         block_id_in_cluster.x == 0 and block_id_in_cluster.y == 0
     )
-    var wid = thread_idx.x // 32
-    var lane_predicate = elect_one_sync()
+    var wid = ufloordiv(thread_idx.x, 32)
 
     var pipeline_state = PipelineState[num_stages]()
     var pipeline_state_write = PipelineState[num_stages](0, 1, 0)
 
-    if thread_idx.x == 0:
-
-        @parameter
-        for i in range(num_stages):
+    if elect_one_sync():
+        comptime for i in range(num_stages):
             full_mbar[i].init(producer_arv_count)
             empty_mbar[i].init(consumer_arv_count)
 
@@ -161,9 +159,9 @@ fn pipeline_test_kernel[
         if is_producer:
             var write_idx = pipeline_state_write.index()
             empty_mbar[write_idx].wait(pipeline_state_write.phase())
-            var pred: UInt32 = 1 if lane_id() < UInt(CLUSTER_SIZE) else 0
+            var pred: UInt32 = UInt32(1 if lane_id() < Int(CLUSTER_SIZE) else 0)
             full_mbar[write_idx].arrive_and_expect_bytes(
-                2 * size_of[UInt64](), lane_id(), pred
+                Int32(2 * size_of[UInt64]()), UInt32(lane_id()), pred
             )
             # The warp sync ensures expect_tx is completed.
             if elect_one_sync():
@@ -194,21 +192,21 @@ fn pipeline_test_kernel[
     cluster_sync()
 
 
-fn test_cluster_launch_control(ctx: DeviceContext) raises:
-    alias n = 4000
+def test_cluster_launch_control(ctx: DeviceContext) raises:
+    comptime n = 4000
 
     data = ctx.enqueue_create_buffer[DType.float32](n)
 
-    alias kernel = cluster_launch_control
-    ctx.enqueue_function_checked[kernel, kernel](
+    comptime kernel = cluster_launch_control
+    ctx.enqueue_function[kernel, kernel](
         data,
         n,
         grid_dim=((n + 1023) // 1024),
         block_dim=(1024),
     )
 
-    var data_host_ptr = UnsafePointer[Float32].alloc(n)
-    var data_host = NDBuffer[DType.float32, 1, _, DimList(n)](data_host_ptr)
+    var data_host_ptr = alloc[Float32](n)
+    var data_host = TileTensor(data_host_ptr, row_major[n]())
 
     ctx.enqueue_copy(data_host_ptr, data)
     ctx.synchronize()
@@ -216,13 +214,10 @@ fn test_cluster_launch_control(ctx: DeviceContext) raises:
     for i in range(n):
         assert_almost_equal(data_host[i], Float32(i % 1024))
 
-    _ = data
-    _ = data_host
 
-
-fn test_cluster_pipeline(ctx: DeviceContext) raises:
-    alias kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
-    ctx.enqueue_function_checked[kernel, kernel](
+def test_cluster_pipeline(ctx: DeviceContext) raises:
+    comptime kernel = pipeline_test_kernel[1, StaticTuple[Int32, 3](2, 2, 1)]
+    ctx.enqueue_function[kernel, kernel](
         # Use more blocks than SMs to ensure cancel happens.
         grid_dim=(4, 4),
         block_dim=(256),
@@ -246,7 +241,7 @@ fn test_cluster_pipeline(ctx: DeviceContext) raises:
     # CHECK-DAG: cancelled:  False 2 3
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_launch_control(ctx)
         test_cluster_pipeline(ctx)

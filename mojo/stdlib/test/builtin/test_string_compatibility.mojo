@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
-def test_literals():
+def test_literals() raises:
     """Test string literal operations and type inference.
 
     String literals now materialize to String by default.
@@ -24,19 +24,19 @@ def test_literals():
 
     # Concatenation with literals
     var concat_static = "foo" + StaticString("bar")
-    var concat_static2 = "foo".as_string_slice() + "bar"
+    var concat_static2 = StringSlice("foo") + "bar"
     assert_equal(concat_static, "foobar")
     assert_equal(concat_static2, "foobar")
 
     # Conditional expressions with literals
     var if_string1 = "foo" if cond else StaticString("bar")
-    var if_string2 = "foo".as_string_slice() if cond else "bar"
+    var if_string2 = StringSlice("foo") if cond else "bar"
     assert_equal(if_string1, "foo")
     assert_equal(if_string2, "foo")
 
     # Logical or with literals
     var or_string1 = "" or StaticString("foo")
-    var or_string2 = "foo".as_string_slice() or ""
+    var or_string2 = StringSlice("foo") or ""
     assert_equal(or_string1, "foo")
     assert_equal(or_string2, "foo")
 
@@ -46,19 +46,19 @@ def test_literals():
     assert_equal(in_place, "this is a string in-place operation")
 
 
-def test_alias_expressions():
+def test_alias_expressions() raises:
     """Test string alias expressions."""
-    alias alias_concat = "foo" + "bar"
-    alias alias_concat_string = "foo" + String("bar")
-    alias alias_concat_static = StaticString("foo") + "bar"
+    comptime alias_concat = "foo" + "bar"
+    comptime alias_concat_string = "foo" + String("bar")
+    comptime alias_concat_static = StaticString("foo") + "bar"
 
-    alias alias_or = "foo" or "bar"
-    alias alias_or_string = "" or String("bar")
-    alias alias_or_static = StaticString("foo") or "bar"
+    comptime alias_or = "foo" or "bar"
+    comptime alias_or_string = "" or String("bar")
+    comptime alias_or_static = StaticString("foo") or "bar"
 
-    alias alias_if = "foo" if True else "bar"
-    alias alias_if_string = "foo" if False else String("bar")
-    alias alias_if_static = StaticString("foo") if True else "bar"
+    comptime alias_if = "foo" if True else "bar"
+    comptime alias_if_string = "foo" if False else String("bar")
+    comptime alias_if_static = StaticString("foo") if True else "bar"
 
     # Test materialization of alias expressions
     assert_equal(alias_concat, "foobar")
@@ -79,7 +79,7 @@ def _test_string_types_compatibility(
     static_string: StaticString,
     string_slice: StringSlice,
     cond: Bool = True,
-):
+) raises:
     """Test compatibility between String, StaticString, and StringSlice in various operations.
     Focus on String and StringSlice compatibility.
     """
@@ -125,10 +125,10 @@ def _test_string_types_compatibility(
 def _test_string_slice_conversions(
     string: String,
     string_slice: StringSlice,
-):
+) raises:
     """Test explicit conversions between String and StringSlice."""
     # Convert String to StringSlice
-    var slice_from_string = string.as_string_slice()
+    var slice_from_string = StringSlice(string)
     assert_equal(String(slice_from_string), string)
 
     # Convert StringSlice to String
@@ -136,7 +136,7 @@ def _test_string_slice_conversions(
     assert_equal(string_from_slice, String(string_slice))
 
     # Test round-trip conversion
-    var round_trip = String(string.as_string_slice())
+    var round_trip = String(StringSlice(string))
     assert_equal(round_trip, string)
 
     # Test that StringSlice content matches when converted to String
@@ -145,11 +145,13 @@ def _test_string_slice_conversions(
 
 def _test_equality_operations(
     string: String, static_string: StaticString, string_slice: StringSlice
-):
+) raises:
     """Test equality operations between different string types."""
     var string_a = String("hello")
     var static_a = "hello"
-    var slice_a = string_a.as_string_slice()
+    # Use a separate string for the slice to avoid aliasing issues
+    var string_for_slice = String("hello")
+    var slice_a = StringSlice(string_for_slice)
 
     var string_b = String("world")
     var static_b = "world"
@@ -171,7 +173,7 @@ def _test_chained_operations(
     static_string: StaticString,
     string_slice: StringSlice,
     cond: Bool = True,
-):
+) raises:
     """Test chained operations with mixed string types."""
     # Chained concatenation
     var chained = string + static_string + string_slice
@@ -195,7 +197,7 @@ def _test_chained_operations(
     assert_equal(complex_cond, expected_complex)
 
 
-def _test_with_collections(string: String, static_string: StaticString):
+def _test_with_collections(string: String, static_string: StaticString) raises:
     """Test string types in collection contexts."""
     # List operations with mixed string types
     var string_list = List[String]()
@@ -216,7 +218,7 @@ def _test_with_collections(string: String, static_string: StaticString):
     assert_equal(string_dict[string + "_key"], static_string)
 
     # Test constructing a List with `StaticString` and `String` types
-    var list_of_strings = List[String](string, static_string)
+    var list_of_strings: List[String] = [string, static_string]
     assert_equal(list_of_strings[0], string)
     assert_equal(list_of_strings[1], static_string)
 
@@ -225,7 +227,7 @@ def _test_dict_literals(
     string: String,
     static_string: StaticString,
     cond: Bool = True,
-):
+) raises:
     """Test dict literal initialization with different string types."""
     # Mixed dict literals - StaticString keys with String values
     var mixed_dict1 = {
@@ -253,7 +255,7 @@ def _test_dict_literals(
     # Dict literal with computed keys and values
     var computed_dict = {
         string if cond else static_string: static_string if cond else string,
-        "conditional": string if len(string) > 0 else static_string,
+        "conditional": string if string else static_string,
     }
     assert_equal(computed_dict[string], static_string)
     assert_equal(computed_dict["conditional"], string)
@@ -262,20 +264,21 @@ def _test_dict_literals(
 def _test_list_comprehensions(
     string: String,
     static_string: StaticString,
-):
+) raises:
     """Test list comprehensions with mixed string types."""
 
     # List comprehension with mixed string types and operations
-    var static_strings = List[String]("one", "two", "three")
+    var static_strings: List[String] = ["one", "two", "three"]
     var mixed_ops = [static_string + String("_") + s for s in static_strings]
     assert_equal(mixed_ops[0], String(static_string) + "_one")
     assert_equal(mixed_ops[1], String(static_string) + "_two")
     assert_equal(mixed_ops[2], String(static_string) + "_three")
 
     # List comprehension with complex conditional logic and mixed types
-    var test_strings = List[String]("short", "medium", "a", "long_string")
+    var test_strings: List[String] = ["short", "medium", "a", "long_string"]
     var categorized = [
-        "short" if len(s) < 6 else ("medium" if len(s) < 11 else String("long"))
+        "short" if s.byte_length()
+        < 6 else ("medium" if s.byte_length() < 11 else String("long"))
         for s in test_strings
     ]
     assert_equal(categorized[0], "short")
@@ -284,7 +287,7 @@ def _test_list_comprehensions(
     assert_equal(categorized[3], "long")
 
     # List comprehension combining different string types
-    var string_types_list = List[String](string, static_string)
+    var string_types_list: List[String] = [string, static_string]
     var combined = [s + "_" + static_string for s in string_types_list]
     assert_equal(combined[0], string + "_" + static_string)
     assert_equal(combined[1], static_string + "_" + static_string)
@@ -295,7 +298,7 @@ def _test_conditional_edge_cases(
     static_string: StaticString,
     cond1: Bool = True,
     cond2: Bool = False,
-):
+) raises:
     """Test edge cases with conditional expressions."""
     var empty_string = String("")
 
@@ -310,56 +313,56 @@ def _test_conditional_edge_cases(
     assert_equal(empty_cond2, empty_string)
 
 
-def test_string_types_compatibility():
+def test_string_types_compatibility() raises:
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_string_types_compatibility(string, static_string, string_slice)
 
 
-def test_string_slice_conversions():
+def test_string_slice_conversions() raises:
     var string = "string"
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_string_slice_conversions(string, string_slice)
 
 
-def test_equality_operations():
+def test_equality_operations() raises:
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_equality_operations(string, static_string, string_slice)
 
 
-def test_chained_operations():
+def test_chained_operations() raises:
     var string = "string"
     var static_string = StaticString("static_string")
-    var string_slice = "string_slice".as_string_slice()
+    var string_slice = StringSlice("string_slice")
     _test_chained_operations(string, static_string, string_slice)
 
 
-def test_with_collections():
+def test_with_collections() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_with_collections(string, static_string)
 
 
-def test_dict_literals():
+def test_dict_literals() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_dict_literals(string, static_string)
 
 
-def test_list_comprehensions():
+def test_list_comprehensions() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_list_comprehensions(string, static_string)
 
 
-def test_conditional_edge_cases():
+def test_conditional_edge_cases() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_conditional_edge_cases(string, static_string)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

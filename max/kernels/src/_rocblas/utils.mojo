@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from sys.ffi import _find_dylib
-from sys.ffi import _get_dylib_function as _ffi_get_dylib_function
-from sys.ffi import _Global, _OwnedDLHandle
+from std.pathlib import Path
+from std.ffi import _find_dylib
+from std.ffi import _get_dylib_function as _ffi_get_dylib_function
+from std.ffi import _Global, OwnedDLHandle
 
 from .types import Status
 
@@ -22,15 +22,15 @@ from .types import Status
 # Library Load
 # ===-----------------------------------------------------------------------===#
 
-alias ROCM_ROCBLAS_LIBRARY_PATHS = List[Path](
+comptime ROCM_ROCBLAS_LIBRARY_PATHS: List[Path] = [
     "librocblas.so.4",
     "librocblas.so.5",
     "/opt/rocm/lib/librocblas.so.4",
     "/opt/rocm/lib/librocblas.so.5",
-)
+]
 
 
-fn _on_error_msg() -> Error:
+def _on_error_msg() -> Error:
     return Error(
         (
             "Cannot find the rocBLAS libraries. Please make sure that "
@@ -45,20 +45,20 @@ fn _on_error_msg() -> Error:
     )
 
 
-alias ROCM_ROCBLAS_LIBRARY = _Global[
+comptime ROCM_ROCBLAS_LIBRARY = _Global[
     "ROCM_ROCBLAS_LIBRARY", _init_dylib, on_error_msg=_on_error_msg
 ]()
 
 
-fn _init_dylib() -> _OwnedDLHandle:
+def _init_dylib() -> OwnedDLHandle:
     return _find_dylib[abort_on_failure=False](
         materialize[ROCM_ROCBLAS_LIBRARY_PATHS]()
     )
 
 
 @always_inline
-fn _get_dylib_function[
-    func_name: StaticString, result_type: AnyTrivialRegType
+def _get_dylib_function[
+    func_name: StaticString, result_type: TrivialRegisterPassable
 ]() raises -> result_type:
     return _ffi_get_dylib_function[
         ROCM_ROCBLAS_LIBRARY,
@@ -68,6 +68,6 @@ fn _get_dylib_function[
 
 
 @always_inline
-fn check_error(stat: Status) raises:
+def check_error(stat: Status) raises:
     if stat != Status.SUCCESS:
         raise Error("ROCBLAS ERROR:", stat)

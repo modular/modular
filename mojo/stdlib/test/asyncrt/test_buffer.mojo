@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import TestSuite
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import TestSuite
 
 
-fn _run_badbuf(ctx: DeviceContext) raises:
+def _run_badbuf(ctx: DeviceContext) raises:
     print("-")
     print("_run_badbuf()")
 
-    alias alloc_size = 256
+    comptime alloc_size = 256
 
     # Construct a bad buffer by adopting the host pointer.
-    var host_ptr = UnsafePointer[Int8].alloc(alloc_size)
+    var host_ptr = alloc[Int8](alloc_size)
     var bad_buf = DeviceBuffer(ctx, host_ptr, alloc_size, owning=True)
 
     # Make a call that should succeed even with a bad buffer having been constructed.
@@ -44,7 +44,7 @@ fn _run_badbuf(ctx: DeviceContext) raises:
     raise "Test failed: Should not reach here."
 
 
-def test_buffer():
+def test_buffer() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -55,5 +55,5 @@ def test_buffer():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

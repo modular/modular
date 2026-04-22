@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,38 +13,38 @@
 
 
 trait Quackable:
-    fn quack(self):
+    def quack(self):
         ...
 
 
 trait Flyable:
-    fn fly(self):
+    def fly(self):
         ...
 
 
-fn quack_and_go[type: Quackable & Flyable](quacker: type):
+def quack_and_go[type: Quackable & Flyable](quacker: type):
     quacker.quack()
     quacker.fly()
 
 
 @fieldwise_init
-struct FlyingDuck(Copyable, Flyable, Movable, Quackable):
-    fn quack(self):
+struct FlyingDuck(Copyable, Flyable, Quackable):
+    def quack(self):
         print("Quack")
 
-    fn fly(self):
+    def fly(self):
         print("Whoosh!")
 
 
-alias DuckLike = Quackable & Flyable
+comptime DuckLike = Quackable & Flyable
 
 
 @fieldwise_init
-struct ToyDuck(Copyable, DuckLike, Movable):
-    fn quack(self):
+struct ToyDuck(Copyable, DuckLike):
+    def quack(self):
         print("Squeak!")
 
-    fn fly(self):
+    def fly(self):
         print("Boing!")
 
 

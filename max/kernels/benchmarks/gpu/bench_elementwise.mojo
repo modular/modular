@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,101 +11,53 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string import StaticString
-from math import align_up, erf, exp, rsqrt, log, sin, sqrt, tanh
-from sys import align_of, env_get_int, env_get_string, simd_width_of, size_of
-from sys.intrinsics import strided_load
+from std.collections.string import StaticString
+from std.math import erf, exp, rsqrt, log, sin, sqrt, tanh
+from std.sys import (
+    align_of,
+    get_defined_string,
+    simd_width_of,
+    size_of,
+)
 
-from algorithm.functional import elementwise
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from buffer import NDBuffer
-from buffer.buffer import _compute_ndbuffer_offset
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.info import B200
-from internal_utils import arg_parse, parse_shape
+from std.algorithm.functional import elementwise
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.info import _is_sm10x_gpu
+from internal_utils import arg_parse, parse_shape, CacheBustingBuffer
 
-from utils import IndexList
-from utils.index import product
+from std.utils import IndexList
+from std.utils.index import product
+
+from layout import TileTensor, Coord, row_major
 
 
-fn add_const_fn(x: SIMD) -> type_of(x):
+def add_const_fn(x: SIMD) -> type_of(x):
     return x + 42
 
 
-fn copy_fn(x: SIMD) -> type_of(x):
+def copy_fn(x: SIMD) -> type_of(x):
     return x
 
 
-fn simd_sqrt(x: SIMD) -> type_of(x):
+def simd_sqrt(x: SIMD) -> type_of(x):
     return sqrt(x)
 
 
-@always_inline
-fn _simd_load_internal[
-    simd_width: Int
-](buffer: NDBuffer, index: Int) -> SIMD[buffer.type, simd_width]:
-    @parameter
-    if buffer.type is DType.bool:
-        var v = buffer.data.bitcast[UInt8]().load[width=simd_width](index)
-        return v.cast[buffer.type]()
-    return buffer.data.load[width=simd_width](index)
-
-
-@always_inline
-fn simd_load[
-    simd_width: Int
-](
-    buffer: NDBuffer,
-    index: IndexList[buffer.rank],
-) -> SIMD[
-    buffer.type, simd_width
-]:
-    var flat_index = _compute_ndbuffer_offset(buffer, index)
-
-    if buffer.is_contiguous():
-        return _simd_load_internal[simd_width](buffer, flat_index)
-
-    var stride = buffer.stride[buffer.rank - 1]()
-    if stride == 0:
-        return buffer.data.load(flat_index)
-
-    if buffer.type is DType.bool:
-        var v = strided_load[simd_width](
-            buffer.data.bitcast[UInt8]().offset(flat_index),
-            stride,
-        )
-        return v.cast[buffer.type]()
-    return strided_load[simd_width](buffer.data.offset(flat_index), stride)
-
-
-@always_inline
-fn simd_store[
-    simd_width: Int
-](
-    buffer: NDBuffer,
-    index: IndexList[buffer.rank],
-    val: SIMD[buffer.type, simd_width],
-):
-    var flat_index = _compute_ndbuffer_offset(buffer, index)
-
-    # We have to cast bools into their runtime storage type.
-    @parameter
-    if buffer.type is DType.bool:
-        buffer.data.bitcast[UInt8]().store(flat_index, val.cast[DType.uint8]())
-    else:
-        buffer.data.store(flat_index, val)
-
-
 @no_inline
-fn run_elementwise[
-    rank: Int, //,
+def run_elementwise[
+    rank: Int,
+    //,
     dtype: DType,
-    kernel_fn: fn[dtype: DType, width: Int] (SIMD[dtype, width]) -> SIMD[
+    kernel_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) thin -> SIMD[
         dtype, width
     ],
-    *,
-    emulate_graph_compiler: Bool,
-    use_aligned_memory: Bool,
 ](
     mut m: Bench,
     fn_name: StaticString,
@@ -115,86 +67,61 @@ fn run_elementwise[
     ctx: DeviceContext,
 ) raises:
     # Blackwell support 32B ld/st, see KERN-2037
-    alias pack_size = 32 // size_of[
-        dtype
-    ]() if ctx.default_device_info is B200 else simd_width_of[
-        dtype, target = get_gpu_target()
-    ]()
-    alias align = align_of[
-        SIMD[dtype, pack_size], target = get_gpu_target()
-    ]() if use_aligned_memory else 1
+    comptime pack_size = 32 // size_of[dtype]() if _is_sm10x_gpu(
+        ctx.default_device_info
+    ) else simd_width_of[dtype, target=get_gpu_target()]()
+    comptime align = align_of[SIMD[dtype, pack_size], target=get_gpu_target()]()
     var N = product(dims, rank)
 
-    # Choose a size larger than the two times the L2 cache
-    # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
-    var stride = align_up(N, pack_size)
-    var N_cache = (
-        align_up(128 * 1024 * 1024, stride * size_of[dtype]())
-        // size_of[dtype]()
+    # Cache busting buffers: sized to exceed 2x GPU cache.
+    var cb_in = CacheBustingBuffer[dtype](N, pack_size, ctx)
+    var cb_out = CacheBustingBuffer[dtype](N, pack_size, ctx)
+
+    var in_host_ptr = alloc[Scalar[dtype]](cb_in.alloc_size(), alignment=align)
+    var out_host_ptr = alloc[Scalar[dtype]](
+        cb_out.alloc_size(), alignment=align
     )
 
-    var in_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        N_cache, alignment=align
-    )
-    var out_host_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        N_cache, alignment=align
-    )
+    var in_host = TileTensor(in_host_ptr, row_major(Coord(dims)))
+    var out_host = TileTensor(out_host_ptr, row_major(Coord(dims)))
 
-    var in_host = NDBuffer[dtype, rank](in_host_ptr, dims)
-    var out_host = NDBuffer[dtype, rank](out_host_ptr, dims)
+    for i in range(cb_in.alloc_size()):
+        in_host_ptr[i] = Scalar[dtype](i)
 
-    for i in range(N_cache):
-        in_host_ptr[i] = i
-
-    var in_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
-    var out_buffer = ctx.enqueue_create_buffer[dtype](N_cache)
-
-    ctx.enqueue_copy(in_buffer, in_host.data)
+    ctx.enqueue_copy(cb_in.device_buffer(), in_host.ptr)
 
     @parameter
-    @__copy_capture(stride, N_cache)
+    @__copy_capture(cb_in, cb_out)
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
-        @__copy_capture(N, stride)
+        @__copy_capture(N)
         @always_inline
-        fn kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-            # cycle through chunks of N_cache to ensure the tensor is not in the cache each iteration
-            var offset = (iteration * stride) % N_cache
-            var in_tensor = NDBuffer[dtype, rank](
-                in_buffer.unsafe_ptr() + offset, dims
+        def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
+            var in_tensor = TileTensor(
+                cb_in.offset_ptr(iteration), row_major(Coord(dims))
             )
-            var out_tensor = NDBuffer[dtype, rank](
-                out_buffer.unsafe_ptr() + offset, dims
+            var out_tensor = TileTensor(
+                cb_out.offset_ptr(iteration), row_major(Coord(dims))
             )
 
             @always_inline
             @__copy_capture(in_tensor, out_tensor)
             @parameter
-            fn func[
+            def func[
                 simd_width: Int, rank_: Int, alignment: Int = 1
             ](idx0: IndexList[rank_]):
                 var idx = rebind[IndexList[rank]](idx0)
+                var coord = Coord(idx)
+                comptime assert out_tensor.flat_rank >= coord.flat_rank
+                comptime assert in_tensor.flat_rank >= coord.flat_rank
 
-                @parameter
-                if emulate_graph_compiler:
-                    # In this mode we use the simd_store / simd_load that are copied
-                    # from MOGG.mojo. This is used to emulate what the graph compiler
-                    # would generate for the elementwise operations.
-                    simd_store(
-                        out_tensor,
-                        idx,
-                        kernel_fn(simd_load[simd_width](in_tensor, idx)),
-                    )
-                else:
-                    out_tensor.store[alignment=align](
-                        idx,
-                        kernel_fn(
-                            in_tensor.load[width=simd_width, alignment=align](
-                                idx
-                            )
-                        ),
-                    )
+                out_tensor.store[alignment=align](
+                    coord,
+                    kernel_fn(
+                        in_tensor.load[width=simd_width, alignment=align](coord)
+                    ),
+                )
 
             elementwise[func, pack_size, target="gpu"](
                 dims,
@@ -209,9 +136,6 @@ fn run_elementwise[
             "elementwise",
             input_id=String(
                 "/",
-                "aligned" if use_aligned_memory else "unaligned",
-                "/graph_compiler_emulated" if emulate_graph_compiler else "",
-                "/",
                 fn_name,
                 "/",
                 dtype,
@@ -219,132 +143,62 @@ fn run_elementwise[
                 name,
             ),
         ),
-        ThroughputMeasure(BenchMetric.bytes, num_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, num_bytes)],
     )
 
     ctx.synchronize()
-    ctx.enqueue_copy(out_host.data, out_buffer)
+    ctx.enqueue_copy(out_host.ptr, cb_out.device_buffer())
 
-    _ = in_buffer
-    _ = out_buffer
+    _ = cb_in
+    _ = cb_out
     in_host_ptr.free()
     out_host_ptr.free()
 
 
-fn list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
+def list_to_static_tuple[x: List[Int]]() -> IndexList[len(x)]:
     var t = IndexList[len(x)]()
 
-    @parameter
-    for i in range(len(x)):
-        alias xi = x[i]
+    comptime for i in range(len(x)):
+        comptime xi = x[i]
         t[i] = xi
     return t
 
 
-def main():
+def main() raises:
     var op = arg_parse("op", "sqrt")
-    alias dtype = DType._from_str(env_get_string["dtype", "DType.bfloat16"]())
-    alias rank = env_get_int["rank", 3]()
-    alias dims_str = env_get_string["dims", "1x1024x3072"]()
-    alias dims = list_to_static_tuple[parse_shape[dims_str]()]()
-    alias aligned_memory_config = env_get_int[
-        "aligned_memory_config", 0
-    ]()  # bool
-    alias emulate_graph_compiler = env_get_int[
-        "emulate_graph_compiler", 0
-    ]()  # bool
-
+    comptime dtype = DType._from_str(
+        get_defined_string["dtype", "DType.bfloat16"]()
+    )
+    comptime dims_str = get_defined_string["dims", "1x1024x3072"]()
+    comptime dims = list_to_static_tuple[parse_shape[dims_str]()]()
     var m = Bench()
     with DeviceContext() as ctx:
-
-        @parameter
-        if emulate_graph_compiler and aligned_memory_config:
-            # The graph compiler simd_load and store are not
-            # compatible with aligned load/store since it
-            # does a dynamic check on the stride.
-            return
-
         if op == "sqrt":
-            run_elementwise[
-                dtype,
-                simd_sqrt,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "sqrt", dims, name=dims_str, ctx=ctx)
-
+            run_elementwise[dtype, simd_sqrt](
+                m, "sqrt", dims, name=dims_str, ctx=ctx
+            )
         elif op == "rsqrt":
-            run_elementwise[
-                dtype,
-                rsqrt,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](
-                m,
-                "rsqrt",
-                dims,
-                name=dims_str,
-                ctx=ctx,
+            run_elementwise[dtype, rsqrt](
+                m, "rsqrt", dims, name=dims_str, ctx=ctx
             )
-
         elif op == "log":
-            run_elementwise[
-                dtype,
-                log,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "log", dims, name=dims_str, ctx=ctx)
-
+            run_elementwise[dtype, log](m, "log", dims, name=dims_str, ctx=ctx)
         elif op == "sin":
-            run_elementwise[
-                dtype,
-                sin,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "sin", dims, name=dims_str, ctx=ctx)
-
+            run_elementwise[dtype, sin](m, "sin", dims, name=dims_str, ctx=ctx)
         elif op == "tanh":
-            run_elementwise[
-                dtype,
-                tanh,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "tanh", dims, name=dims_str, ctx=ctx)
-
-        elif op == "exp":
-            run_elementwise[
-                dtype,
-                exp,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "exp", dims, name=dims_str, ctx=ctx)
-
-        elif op == "erf":
-            run_elementwise[
-                dtype,
-                erf,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "erf", dims, name=dims_str, ctx=ctx)
-
-        elif op == "add_const":
-            run_elementwise[
-                dtype,
-                add_const_fn,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](
-                m,
-                "add_const",
-                dims,
-                name=dims_str,
-                ctx=ctx,
+            run_elementwise[dtype, tanh](
+                m, "tanh", dims, name=dims_str, ctx=ctx
             )
-
+        elif op == "exp":
+            run_elementwise[dtype, exp](m, "exp", dims, name=dims_str, ctx=ctx)
+        elif op == "erf":
+            run_elementwise[dtype, erf](m, "erf", dims, name=dims_str, ctx=ctx)
+        elif op == "add_const":
+            run_elementwise[dtype, add_const_fn](
+                m, "add_const", dims, name=dims_str, ctx=ctx
+            )
         elif op == "copy":
-            run_elementwise[
-                dtype,
-                copy_fn,
-                use_aligned_memory = aligned_memory_config != 0,
-                emulate_graph_compiler = emulate_graph_compiler != 0,
-            ](m, "copy", dims, name=dims_str, ctx=ctx)
+            run_elementwise[dtype, copy_fn](
+                m, "copy", dims, name=dims_str, ctx=ctx
+            )
     m.dump_report()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,49 +11,64 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import sqrt
-from sys.info import simd_width_of
+from std.sys.info import simd_width_of
 
-from algorithm.functional import elementwise
-from internal_utils import HostNDBuffer, random
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor, RuntimeTuple
-from layout.int_tuple import fill_like
+from std.algorithm.functional import elementwise
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout._fillers import random
+from std.memory import alloc
 from nn.normalization import rms_norm_cpu, rms_norm_fused_residual_add_cpu
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-fn run_rms_norm_fused_residual_add_gpu[
-    rank: Int, //,
+def run_rms_norm_fused_residual_add_gpu[
+    rank: Int,
+    //,
     dtype: DType,
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var data_h = HostNDBuffer[dtype, rank](shape)
-    var unfused_intermediate_h = HostNDBuffer[dtype, rank](shape)
-    var result_unfused_h = HostNDBuffer[dtype, rank](shape)
-    var result_fused_h = HostNDBuffer[dtype, rank](shape)
-    var residual_fused_output_h = HostNDBuffer[dtype, rank](shape)
-    var gamma1_h = HostNDBuffer[dtype, 1](Index(cols))
-    var gamma2_h = HostNDBuffer[dtype, 1](Index(cols))
+    var data_heap = alloc[Scalar[dtype]](rows * cols)
+    var data_h = TileTensor(data_heap, row_major(Coord(shape)))
+    var unfused_intermediate_heap = alloc[Scalar[dtype]](rows * cols)
+    var unfused_intermediate_h = TileTensor(
+        unfused_intermediate_heap, row_major(Coord(shape))
+    ).fill(0)
+    var result_unfused_heap = alloc[Scalar[dtype]](rows * cols)
+    var result_unfused_h = TileTensor(
+        result_unfused_heap, row_major(Coord(shape))
+    ).fill(0)
+    var result_fused_heap = alloc[Scalar[dtype]](rows * cols)
+    var result_fused_h = TileTensor(
+        result_fused_heap, row_major(Coord(shape))
+    ).fill(0)
+    var residual_fused_output_heap = alloc[Scalar[dtype]](rows * cols)
+    var residual_fused_output_h = TileTensor(
+        residual_fused_output_heap, row_major(Coord(shape))
+    ).fill(0)
+    var gamma1_heap = alloc[Scalar[dtype]](cols)
+    var gamma1_h = TileTensor(gamma1_heap, row_major(Idx(cols)))
+    var gamma2_heap = alloc[Scalar[dtype]](cols)
+    var gamma2_h = TileTensor(gamma2_heap, row_major(Idx(cols)))
 
     # Initialize input data
-    random(data_h.tensor)
-    random(gamma1_h.tensor)
-    random(gamma2_h.tensor)
+    random(data_h)
+    random(gamma1_h)
+    random(gamma2_h)
 
-    var param_shape = Index(cols)
+    var _ = Index(cols)
 
-    var data_buf = data_h.to_layout_tensor()
-    var gamma1 = gamma1_h.to_layout_tensor()
-    var gamma2 = gamma2_h.to_layout_tensor()
-    var result_fused_buf = result_fused_h.to_layout_tensor()
-    var result_unfused_buf = result_unfused_h.to_layout_tensor()
-    var unfused_intermediate_buf = unfused_intermediate_h.to_layout_tensor()
-    var residual_fused_output_buf = residual_fused_output_h.to_layout_tensor()
+    var data_buf = data_h
+    var gamma1 = gamma1_h
+    var gamma2 = gamma2_h
+    var result_fused_buf = result_fused_h
+    var result_unfused_buf = result_unfused_h
+    var unfused_intermediate_buf = unfused_intermediate_h
+    var residual_fused_output_buf = residual_fused_output_h
     var epsilon1 = Scalar[dtype](0.001)
     var epsilon2 = Scalar[dtype](0.002)
     var weight_offset1 = Scalar[dtype](0.0)
@@ -63,53 +78,37 @@ fn run_rms_norm_fused_residual_add_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
-        return data_buf.ptr.load[width=width](idx)
+        var idx = data_buf.layout(Coord(coords))
+        return data_buf.raw_load[width=width](idx)
 
     @parameter
     @always_inline
-    fn residual_input_fn[
+    def residual_input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-        var idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
-        )
-        return data_buf.ptr.load[width=width](idx)
+        var idx = data_buf.layout(Coord(coords))
+        return data_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(result_fused_buf)
     @parameter
-    fn fused_output_fn[
+    def fused_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = result_fused_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(result_fused_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-        result_fused_buf.ptr.store[width=width, alignment=alignment](idx, val)
+        var idx = result_fused_buf.layout(Coord(coords))
+        result_fused_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     @always_inline
     @__copy_capture(residual_fused_output_buf)
     @parameter
-    fn fused_residual_output_fn[
+    def fused_residual_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = residual_fused_output_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(residual_fused_output_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-        residual_fused_output_buf.ptr.store[width=width, alignment=alignment](
+        var idx = residual_fused_output_buf.layout(Coord(coords))
+        residual_fused_output_buf.raw_store[width=width, alignment=alignment](
             idx, val
         )
 
@@ -134,15 +133,11 @@ fn run_rms_norm_fused_residual_add_gpu[
     @always_inline
     @__copy_capture(unfused_intermediate_buf)
     @parameter
-    fn unfused_output_fn[
+    def unfused_output_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = unfused_intermediate_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-        unfused_intermediate_buf.ptr.store[width=width, alignment=alignment](
+        var idx = unfused_intermediate_buf.layout(Coord(coords))
+        unfused_intermediate_buf.raw_store[width=width, alignment=alignment](
             idx, val
         )
 
@@ -154,65 +149,45 @@ fn run_rms_norm_fused_residual_add_gpu[
     @parameter
     @always_inline
     @__copy_capture(unfused_intermediate_buf, data_buf)
-    fn sum_fn[
+    def sum_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](coords: IndexList[rank_]):
-        var data_buf_idx = data_buf.runtime_layout(
-            RuntimeTuple[fill_like(data_buf.layout.shape, UNKNOWN_VALUE)](
-                coords
-            )
+        var data_buf_idx = data_buf.layout(Coord(coords))
+        var residual_val = data_buf.raw_load[width=width](data_buf_idx)
+        var unfused_intermediate_buf_idx = unfused_intermediate_buf.layout(
+            Coord(coords)
         )
-        var residual_val = data_buf.ptr.load[width=width](data_buf_idx)
-        var unfused_intermediate_buf_idx = (
-            unfused_intermediate_buf.runtime_layout(
-                RuntimeTuple[
-                    fill_like(
-                        unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE
-                    )
-                ](coords)
-            )
-        )
-        var result_val = unfused_intermediate_buf.ptr.load[width=width](
+        var result_val = unfused_intermediate_buf.raw_load[width=width](
             unfused_intermediate_buf_idx
         )
 
         var residual_add_val = residual_val + result_val
-        unfused_intermediate_buf.ptr.store[width=width](
+        unfused_intermediate_buf.raw_store[width=width](
             unfused_intermediate_buf_idx, residual_add_val
         )
 
     elementwise[sum_fn, simd_width_of[dtype](), target="cpu"](
-        unfused_intermediate_buf.runtime_layout.shape.value.canonicalize(),
+        coord_to_index_list(unfused_intermediate_buf.layout.shape_coord()),
     )
 
     @parameter
     @always_inline
     @__copy_capture(unfused_intermediate_buf)
-    fn unfused_input2_fn[
+    def unfused_input2_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
-        var idx = unfused_intermediate_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(unfused_intermediate_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-
-        return unfused_intermediate_buf.ptr.load[width=width](idx)
+        var idx = unfused_intermediate_buf.layout(Coord(coords))
+        return unfused_intermediate_buf.raw_load[width=width](idx)
 
     # Test unfused operations for comparison
     @always_inline
     @__copy_capture(result_unfused_buf)
     @parameter
-    fn unfused_output2_fn[
+    def unfused_output2_fn[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
-        var idx = result_unfused_buf.runtime_layout(
-            RuntimeTuple[
-                fill_like(result_unfused_buf.layout.shape, UNKNOWN_VALUE)
-            ](coords)
-        )
-
-        result_unfused_buf.ptr.store[width=width, alignment=alignment](idx, val)
+        var idx = result_unfused_buf.layout(Coord(coords))
+        result_unfused_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     rms_norm_cpu[
         unfused_input2_fn,
@@ -223,18 +198,25 @@ fn run_rms_norm_fused_residual_add_gpu[
     var flattened_size = rows * cols
     for i in range(flattened_size):
         assert_almost_equal(
-            result_fused_h.tensor.data[i],
-            result_unfused_h.tensor.data[i],
+            result_fused_h.raw_load(i),
+            result_unfused_h.raw_load(i),
             rtol=rtol,
         )
         assert_almost_equal(
-            residual_fused_output_h.tensor.data[i],
-            unfused_intermediate_h.tensor.data[i],
+            residual_fused_output_h.raw_load(i),
+            unfused_intermediate_h.raw_load(i),
             rtol=rtol,
         )
+    data_heap.free()
+    unfused_intermediate_heap.free()
+    result_unfused_heap.free()
+    result_fused_heap.free()
+    residual_fused_output_heap.free()
+    gamma1_heap.free()
+    gamma2_heap.free()
 
 
-def main():
+def main() raises:
     # Test various shapes similar to test_rms_norm.mojo
     run_rms_norm_fused_residual_add_gpu[DType.float32](Index(5))
     run_rms_norm_fused_residual_add_gpu[DType.float32](Index(3, 4, 10, 20, 8))

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin.simd import FastMathFlag
-from compile import compile_info
-from testing import TestSuite, assert_false, assert_true
+from std.builtin.simd import FastMathFlag
+from std.compile import compile_info
+from std.testing import TestSuite, assert_false, assert_true
 
 
-def test_simd_fma_fastmath():
-    fn my_fma(a: Float32, b: Float32, c: Float32) -> Float32:
+def test_simd_fma_fastmath() raises:
+    def my_fma(a: Float32, b: Float32, c: Float32) -> Float32:
         return a.fma[FastMathFlag.FAST](c, b)
 
     var asm = compile_info[my_fma, emission_kind="llvm"]()
@@ -25,7 +25,7 @@ def test_simd_fma_fastmath():
     assert_true(" call fast float @llvm.fma.f32" in asm)
 
 
-def main():
+def main() raises:
     var suite = TestSuite()
 
     suite.test[test_simd_fma_fastmath]()

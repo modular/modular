@@ -1,4 +1,4 @@
-<!-- markdownlint-disable -->
+<!-- rumdl-disable -->
 {% import 'macros.jinja' as macros %}
 {# Print YAML front matter #}
 {% set api_path = "/mojo" %}
@@ -14,6 +14,11 @@ type: function
 {% endif %}
 namespace: {{ decl.namespace }}
 lang: mojo
+show_stability_marker: {{ decl.showStabilityMarker }}
+{% if decl.isStable %}is_stable: true
+{% endif %}
+{% if decl.sinceVersion %}since_version: {{ decl.sinceVersion }}
+{% endif %}
 description: {% if decl.overloads[0].summary
   %}"{{ macros.escape_quotes(decl.overloads[0].summary) }}"
   {% else %}"Mojo function `{{ decl.namespace }}.{{ decl.name }}` documentation"
@@ -24,11 +29,19 @@ description: {% if decl.overloads[0].summary
 
 {% endmacro -%}
 {# Print each declaration #}
-{% macro process_decl_body(decl) %}
+{% macro process_decl_body(decl, overload=False) %}
+{# For values that could contain IR (signatures, types, values), use #}
+{# double backticks to preserve literal backticks. #}
+{# Spaces between the double-backticks and content need to be balanced, #}
+{# so we either add them manually or use pad_backticks filter. #}
 {% if decl.signature %}
 <div class="mojo-function-sig">
 
-`{% if decl.isStatic %}static {% endif %}{{ decl.signature }}`
+{% if decl.isStatic %}`static` {% endif %}``{{ decl.signature | pad_backticks }}``
+{# for function overloads, show stability marker. #}
+{% if overload %}
+{{ macros.stability_marker(decl) }}
+{% endif %}
 
 </div>
 {% endif %}
@@ -39,9 +52,7 @@ description: {% if decl.overloads[0].summary
 
 {% if decl.deprecated %}
 
-**Deprecated:**
-
-{{ decl.deprecated }}
+**Deprecated:** {{ decl.deprecated }}
 {% endif %}
 
 {% if decl.constraints %}
@@ -57,6 +68,7 @@ description: {% if decl.overloads[0].summary
 {% for param in decl.parameters -%}
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
+            {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
                 [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
             {%- else -%}
@@ -66,9 +78,9 @@ description: {% if decl.overloads[0].summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{ param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}
@@ -79,8 +91,8 @@ description: {% if decl.overloads[0].summary
 
 {% for arg in decl.args -%}
 *   ​<b>{{ arg.name }}</b> ({% if arg.path
-        %}[`{{ arg.type }}`]({{ api_path }}{{ arg.path }}){% else
-        %}`{{ arg.type }}`{% endif %}): {{ arg.description }}
+        %}[``{{ arg.type | pad_backticks }}``]({{ api_path }}{{ arg.path }}){% else
+        %}``{{ arg.type | pad_backticks }}``{% endif %}): {{ arg.description }}
 {% endfor %}
 {% endif %}
 {% if (decl.returns and decl.returns.type != 'Self') or (decl.returns and decl.returns.doc) %}
@@ -89,8 +101,8 @@ description: {% if decl.overloads[0].summary
 **Returns:**
 
 {% if decl.returns.path
-  %}[`{{ decl.returns.type }}`]({{ api_path }}{{ decl.returns.path }}){% else
-  %}`{{ decl.returns.type }}`{% endif %}{% if decl.returns.doc
+  %}[``{{ decl.returns.type | pad_backticks }}``]({{ api_path }}{{ decl.returns.path }}){% else
+  %}``{{ decl.returns.type | pad_backticks }}``{% endif %}{% if decl.returns.doc
     %}: {{ decl.returns.doc }}{% endif %}
 {% endif %}
 {% if decl.raisesDoc %}
@@ -115,7 +127,7 @@ description: {% if decl.overloads[0].summary
 {% for overload in decl.overloads %}
 <div class='mojo-function-detail'>
 
-{{ process_decl_body(overload) }}
+{{ process_decl_body(overload, overload=True) }}
 
 </div>
 

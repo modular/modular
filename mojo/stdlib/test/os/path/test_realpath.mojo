@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import realpath
-from pathlib import Path, cwd
-from sys import CompilationTarget
+from std.os.path import realpath
+from std.pathlib import Path, cwd
+from std.sys import CompilationTarget
 
-from python import Python
-from testing import TestSuite, assert_equal, assert_raises, assert_true
+from std.python import Python
+from std.testing import TestSuite, assert_equal, assert_raises, assert_true
 
 
-def test_realpath():
+def test_realpath() raises:
     print("test resolution of: .. . ./")
     var cwd_realpath = realpath("../.././.")
     var os_cwd = String(realpath(".././.././."))
@@ -60,5 +60,5 @@ def test_realpath():
     assert_equal(root_path, "/")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

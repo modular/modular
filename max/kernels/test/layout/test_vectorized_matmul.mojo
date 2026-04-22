@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,7 +15,7 @@ from layout import IntTuple, Layout, LayoutTensor
 from layout._fillers import arange
 
 
-fn outer_product[
+def outer_product[
     TM: Int, TN: Int
 ](
     lhs: SIMD[DType.float32, TM],
@@ -31,28 +31,28 @@ fn outer_product[
     return res
 
 
-fn test_tiled_and_vectorized_matmul():
+def test_tiled_and_vectorized_matmul():
     print("== test_tiled_and_vectorized_matmul")
-    alias M = 8
-    alias N = 8
-    alias K = 8
+    comptime M = 8
+    comptime N = 8
+    comptime K = 8
 
-    alias BM = 4
-    alias BN = 4
-    alias BK = 4
+    comptime BM = 4
+    comptime BN = 4
+    comptime BK = 4
 
-    alias TM = 2
-    alias TN = 2
+    comptime TM = 2
+    comptime TN = 2
 
-    alias a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
+    comptime a_layout = Layout(IntTuple(M, K), IntTuple(K, 1))
     var a_stack = InlineArray[Float32, a_layout.size()](uninitialized=True)
     var tensor_a = LayoutTensor[DType.float32, a_layout](a_stack)
 
-    alias b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
+    comptime b_layout = Layout(IntTuple(K, N), IntTuple(N, 1))
     var b_stack = InlineArray[Float32, b_layout.size()](uninitialized=True)
     var tensor_b = LayoutTensor[DType.float32, b_layout](b_stack)
 
-    alias c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
+    comptime c_layout = Layout(IntTuple(M, N), IntTuple(N, 1))
     var c_stack = InlineArray[Float32, c_layout.size()](uninitialized=True)
     var tensor_c = LayoutTensor[DType.float32, c_layout](c_stack)
 
@@ -81,7 +81,7 @@ fn test_tiled_and_vectorized_matmul():
     print(tensor_c)
 
 
-fn main():
+def main():
     # CHECK-LABEL: test_tiled_and_vectorized_matmul
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

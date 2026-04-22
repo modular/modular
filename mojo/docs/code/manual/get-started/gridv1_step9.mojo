@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,23 +13,22 @@
 
 
 @fieldwise_init
-struct Grid(Copyable, Movable, Stringable):
+struct Grid(Copyable, Writable):
     var rows: Int
     var cols: Int
     var data: List[List[Int]]
 
-    fn __str__(self) -> String:
-        # Create an empty String
-        str = String()
-
+    def write_to(self, mut writer: Some[Writer]):
         # Iterate through rows 0 through rows-1
         for row in range(self.rows):
             # Iterate through columns 0 through cols-1
             for col in range(self.cols):
                 if self.data[row][col] == 1:
-                    str += "*"  # If cell is populated, append an asterisk
+                    # If cell is populated, write an asterisk
+                    writer.write_string("*")
                 else:
-                    str += " "  # If cell is not populated, append a space
+                    # If cell is not populated, write a space
+                    writer.write_string(" ")
             if row != self.rows - 1:
-                str += "\n"  # Add a newline between rows, but not at the end
-        return str
+                # Write a newline between rows, but not at the end
+                writer.write_string("\n")

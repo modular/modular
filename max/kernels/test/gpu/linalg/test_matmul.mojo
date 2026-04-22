@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,39 +13,43 @@
 # mojo build --debug-level=full --mcmodel=medium --large-data-threshold=1048576
 # to build this file if running into linking issues with large PTX kernels.
 
-from collections.optional import OptionalReg
-from sys import (
+from std.sys import (
     align_of,
     bit_width_of,
     has_nvidia_gpu_accelerator,
     simd_width_of,
+    size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
-from algorithm.functional import elementwise
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext, get_gpu_target
-from internal_utils import DeviceNDBuffer, HostNDBuffer, arange, random, zero
-from internal_utils._utils import ValOrDim, dynamic, static
-from linalg.matmul.gpu import _matmul_gpu
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import (
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
+)
+from layout._fillers import arange as arange, random
+from linalg.matmul.gpu import _matmul_gpu, multistage_gemm
 from linalg.utils_gpu import MatmulConfig
 from test_utils import ulp_distance
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
-alias init_fn_type = fn (buff: NDBuffer[mut=True, *_]) capturing -> None
 
-alias epilogue_func_type = fn[dtype: DType, width: Int, *, alignment: Int = 1] (
-    IndexList[2], IndexList[2], SIMD[dtype, width]
-) capturing -> SIMD[dtype, width]
+comptime epilogue_func_type = def[
+    dtype: DType, width: Int, *, alignment: Int = 1
+](IndexList[2], IndexList[2], SIMD[dtype, width]) capturing -> SIMD[
+    dtype, width
+]
 
 
 @parameter
 @always_inline
-fn epilogue_test_fn[
+def epilogue_test_fn[
     dtype: DType, width: Int, *, alignment: Int = 1
 ](
     idx: IndexList[2],
@@ -56,119 +60,137 @@ fn epilogue_test_fn[
 ]:
     var bias = SIMD[dtype, width](0)
 
-    @parameter
-    for i in range(width):
+    comptime for i in range(width):
         bias[i] = (
             0.5
-            + ((idx[0] + idx[1] + i) / (dim_space[0] + dim_space[1])).cast[
-                dtype
-            ]()
-        )
+            + Float64(idx[0] + idx[1] + i)
+            / Float64(dim_space[0] + dim_space[1])
+        ).cast[dtype]()
 
     return val + bias
 
 
-fn select_max_ulp_distance[
+def select_max_ulp_distance[
     lambda_fn: Optional[epilogue_func_type]
 ](max_ulp_distance: Optional[Int]) -> Int:
     if max_ulp_distance:
         return max_ulp_distance.value()
     else:
-
-        @parameter
-        if lambda_fn:
+        comptime if lambda_fn:
             return 4
         return 2
 
 
-fn test[
+def test[
     dtype: DType,
     /,
     *,
     transpose_b: Bool = False,
-    init_a: Optional[init_fn_type] = None,
-    init_b: Optional[init_fn_type] = None,
+    arange_a: Bool = False,
+    arange_b: Bool = False,
     lambda_fn: Optional[epilogue_func_type] = None,
-    config: OptionalReg[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
+    config: Optional[MatmulConfig[dtype, dtype, dtype, transpose_b]] = None,
+    M: Optional[Int] = None,
+    N: Optional[Int] = None,
+    K: Optional[Int] = None,
 ](
     ctx: DeviceContext,
-    m: ValOrDim,
-    n: ValOrDim,
-    k: ValOrDim,
-    rtol: Float64 = 1e-3 if dtype is DType.float32 else 1e-2,
+    m: Int,
+    n: Int,
+    k: Int,
+    rtol: Float64 = 1e-3 if dtype == DType.float32 else 1e-2,
     max_ulp_distance: Optional[Int] = None,
 ) raises:
-    constrained[
-        Int(n.dim) > 0 and Int(k.dim) > 0,
-        "This test currently requires static N and K.",
-    ]()
+    comptime assert Bool(N) and Bool(
+        K
+    ), "This test currently requires static N and K."
 
-    var M = m.value
-    var N = n.value
-    var K = k.value
-    print(M, "x", N, "x", K)
+    print(m, "x", n, "x", k)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    alias static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var a_size = m * k
+    var b_size = n * k if transpose_b else k * n
+    var c_size = m * n
 
-    var a_host = HostNDBuffer[dtype, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[dtype, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[dtype, 2, static_c_shape](dynamic_c_shape)
+    # Host allocations
+    var a_host_ptr = alloc[Scalar[dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[dtype]](c_size)
+    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
 
-    var a_device = DeviceNDBuffer[dtype, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
+    var a_host = TileTensor(
+        a_host_ptr,
+        row_major(Coord(Idx(m), Idx[K.value()]())),
     )
-    var b_device = DeviceNDBuffer[dtype, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
+    var b_host = TileTensor(
+        b_host_ptr,
+        row_major(
+            Coord(
+                Idx[N.value() if transpose_b else K.value()](),
+                Idx[K.value() if transpose_b else N.value()](),
+            )
+        ),
     )
-    var c_device = DeviceNDBuffer[dtype, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host = TileTensor(
+        c_host_ptr,
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
-    var c_device_ref = DeviceNDBuffer[dtype, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var c_host_ref = TileTensor(
+        c_host_ref_ptr,
+        row_major(Coord(Idx(m), Idx[N.value()]())),
+    )
+
+    # Device allocations
+    var a_device_buffer = ctx.enqueue_create_buffer[dtype](a_size)
+    var b_device_buffer = ctx.enqueue_create_buffer[dtype](b_size)
+    var c_device_buffer = ctx.enqueue_create_buffer[dtype](c_size)
+    var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
+
+    var a_device = TileTensor(
+        a_device_buffer,
+        row_major(Coord(Idx(m), Idx[K.value()]())),
+    )
+    var b_device = TileTensor(
+        b_device_buffer,
+        row_major(
+            Coord(
+                Idx[N.value() if transpose_b else K.value()](),
+                Idx[K.value() if transpose_b else N.value()](),
+            )
+        ),
+    )
+    var c_device = TileTensor(
+        c_device_buffer,
+        row_major(Coord(Idx(m), Idx[N.value()]())),
+    )
+    var c_device_ref = TileTensor(
+        c_device_ref_buffer,
+        row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
     # Initialize matmul operands
-    @parameter
-    if init_a:
-        alias init_a_fn = init_a.value()
-        init_a_fn(a_host.tensor)
+    comptime if arange_a:
+        arange(a_host)
     else:
-        random(a_host.tensor)
+        random(a_host)
 
-    @parameter
-    if init_b:
-        alias init_b_fn = init_b.value()
-        init_b_fn(b_host.tensor)
+    comptime if arange_b:
+        arange(b_host)
     else:
-        random(b_host.tensor)
+        random(b_host)
 
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    _ = c_host.fill(0)
+    _ = c_host_ref.fill(0)
 
     # Move operands to the Device
-
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
-
-    var c_tensor = c_device.tensor
+    ctx.enqueue_copy(a_device_buffer, a_host_ptr)
+    ctx.enqueue_copy(b_device_buffer, b_host_ptr)
+    ctx.enqueue_copy(c_device_buffer, c_host_ptr)
+    ctx.enqueue_copy(c_device_ref_buffer, c_host_ref_ptr)
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor, M, N)
-    fn epilogue_fn[
+    @__copy_capture(c_device, m, n)
+    def epilogue_fn[
         _dtype: DType,
         width: Int,
         *,
@@ -176,142 +198,160 @@ fn test[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
         var update_val: SIMD[_dtype, width] = val
 
-        @parameter
-        if lambda_fn:
-            alias func = lambda_fn.value()
-            update_val = func(idx, (M, N), update_val)
-        c_tensor.store[alignment=alignment](
+        comptime if lambda_fn:
+            comptime func = lambda_fn.value()
+            update_val = func(idx, (m, n), update_val)
+        c_device.store_linear[alignment=alignment * size_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](update_val)
         )
 
-    @parameter
-    if lambda_fn:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=epilogue_fn,
-            config=config,
-        ](
-            c_device.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            ctx,
-        )
+    comptime if lambda_fn:
+        comptime if config:
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config.value(),
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                c_device,
+                a_device,
+                b_device,
+                ctx,
+            )
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=epilogue_fn,
+            ](
+                c_device,
+                a_device,
+                b_device,
+                ctx,
+            )
     else:
-        _matmul_gpu[
-            use_tensor_core=True,
-            transpose_b=transpose_b,
-            config=config,
-        ](
-            c_device.tensor,
-            a_device.tensor,
-            b_device.tensor,
-            ctx,
-        )
+        comptime if config:
+            multistage_gemm[
+                transpose_b=transpose_b,
+                config=config.value(),
+            ](
+                c_device,
+                a_device,
+                b_device,
+                ctx,
+            )
+        else:
+            _matmul_gpu[
+                use_tensor_core=True,
+                transpose_b=transpose_b,
+            ](
+                c_device,
+                a_device,
+                b_device,
+                ctx,
+            )
 
     ctx.synchronize()
 
     vendor_blas.matmul(
         ctx,
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_ref,
+        a_device,
+        b_device,
         c_row_major=True,
         transpose_b=transpose_b,
     )
 
-    var c_ref_tensor = c_device_ref.tensor
-    alias pack_size = simd_width_of[dtype, target = get_gpu_target()]()
+    comptime pack_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     @always_inline
-    @__copy_capture(c_ref_tensor, M, N)
+    @__copy_capture(c_device_ref, m, n)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var idx = rebind[IndexList[2]](idx0)
 
-        var val = c_ref_tensor.load[width=simd_width](idx)
+        var val = c_device_ref.load_linear[width=simd_width](idx)
 
         var update_val = val
 
-        @parameter
-        if lambda_fn:
-            alias element_lambda = lambda_fn.value()
-            update_val = element_lambda(idx, (M, N), val)
+        comptime if lambda_fn:
+            comptime element_lambda = lambda_fn.value()
+            update_val = element_lambda(idx, (m, n), val)
 
-        c_ref_tensor.store(
+        c_device_ref.store_linear[alignment=alignment * size_of[dtype]()](
             idx,
             update_val,
         )
 
-    @parameter
-    if lambda_fn:
+    comptime if lambda_fn:
         elementwise[func, pack_size, target="gpu"](
-            IndexList[2](M, Int(N)),
+            IndexList[2](m, n),
             ctx,
         )
     ctx.synchronize()
 
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device_buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref_buffer)
     ctx.synchronize()
 
-    c_host_tensor = c_host.tensor
-    c_host_ref_tensor = c_host_ref.tensor
     var _max_ulp_distance = select_max_ulp_distance[lambda_fn](max_ulp_distance)
-    for m in range(M):
-        for n in range(N):
-            var expect = c_host_ref_tensor[m, n]
-            var actual = c_host_tensor[m, n]
+    for mi in range(m):
+        for ni in range(n):
+            var expect = c_host_ref[mi, ni][0]
+            var actual = c_host[mi, ni][0]
 
-            @parameter
-            if dtype.bit_width() <= 16:
+            comptime if bit_width_of[dtype]() <= 16:
                 var ulp_dist = ulp_distance(actual, expect)
                 if ulp_dist <= _max_ulp_distance:
                     continue
 
             assert_almost_equal(actual, expect, rtol=rtol)
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    c_host_ref_ptr.free()
+    _ = a_device_buffer^
+    _ = b_device_buffer^
+    _ = c_device_buffer^
+    _ = c_device_ref_buffer^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("===> tfloat32-float32 mma")
         test[
             DType.float32,
-            init_a=arange,
-            init_b=arange,
-        ](ctx, dynamic(512), static[12288](), static[4096]())
-        test[DType.float32, init_a=arange](
-            ctx, dynamic(256), static[384](), static[128]()
+            arange_a=True,
+            arange_b=True,
+            N=Int(12288),
+            K=Int(4096),
+        ](ctx, 512, 12288, 4096)
+        test[DType.float32, arange_a=True, N=Int(384), K=Int(128)](
+            ctx, 256, 384, 128
         )
-        test[DType.float32, init_b=arange](
-            ctx, dynamic(128), static[4096](), static[4096]()
+        test[DType.float32, arange_b=True, N=Int(4096), K=Int(4096)](
+            ctx, 128, 4096, 4096
         )
         test[
             DType.float32,
-            init_a=arange,
-            init_b=arange,
-        ](ctx, dynamic(512), static[12288](), static[4096]())
-        test[DType.float32](ctx, dynamic(23), static[4096](), static[11008]())
-        test[DType.float32](ctx, dynamic(67), static[4096](), static[12288]())
-        test[DType.float32](ctx, dynamic(555), static[4096](), static[4096]())
+            arange_a=True,
+            arange_b=True,
+            N=Int(12288),
+            K=Int(4096),
+        ](ctx, 512, 12288, 4096)
+        test[DType.float32, N=Int(4096), K=Int(11008)](ctx, 23, 4096, 11008)
+        test[DType.float32, N=Int(4096), K=Int(12288)](ctx, 67, 4096, 12288)
+        test[DType.float32, N=Int(4096), K=Int(4096)](ctx, 555, 4096, 4096)
 
         print("===> bfloat16-float32 mma")
         test[
             DType.bfloat16,
-            init_a=arange,
+            arange_a=True,
             transpose_b=True,
-            config = MatmulConfig[
+            config=MatmulConfig[
                 DType.bfloat16,
                 DType.bfloat16,
                 DType.bfloat16,
@@ -321,26 +361,27 @@ def main():
                 warp_tile_shape=Index(16, 128, 64),
                 num_pipeline_stages=3,
             ),
-        ](ctx, dynamic(100), static[128](), static[128]())
-        test[DType.bfloat16, init_b=arange](
-            ctx, dynamic(1024), static[12288](), static[3072]()
+            N=Int(128),
+            K=Int(128),
+        ](ctx, 100, 128, 128)
+        test[DType.bfloat16, arange_b=True, N=Int(12288), K=Int(3072)](
+            ctx, 1024, 12288, 3072
         )
         test[
             DType.bfloat16,
-            init_a=arange,
-            init_b=arange,
-        ](ctx, dynamic(1024), static[5120](), static[3072]())
-        test[DType.bfloat16](
-            ctx, dynamic(1024), static[3072](), static[32768]()
-        )
-        test[DType.bfloat16](ctx, dynamic(1024), static[3072](), static[3072]())
+            arange_a=True,
+            arange_b=True,
+            N=Int(5120),
+            K=Int(3072),
+        ](ctx, 1024, 5120, 3072)
+        test[DType.bfloat16, N=Int(3072), K=Int(32768)](ctx, 1024, 3072, 32768)
+        test[DType.bfloat16, N=Int(3072), K=Int(3072)](ctx, 1024, 3072, 3072)
 
-        @parameter
-        if has_nvidia_gpu_accelerator():
+        comptime if has_nvidia_gpu_accelerator():
             test[
                 DType.bfloat16,
                 transpose_b=True,
-                config = MatmulConfig[
+                config=MatmulConfig[
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
@@ -352,11 +393,13 @@ def main():
                     num_k_partitions=1,
                     num_warp_k_partitions=2,
                 ),
-            ](ctx, dynamic(32), static[4096](), static[4096]())
+                N=Int(4096),
+                K=Int(4096),
+            ](ctx, 32, 4096, 4096)
             test[
                 DType.bfloat16,
                 transpose_b=True,
-                config = MatmulConfig[
+                config=MatmulConfig[
                     DType.bfloat16,
                     DType.bfloat16,
                     DType.bfloat16,
@@ -368,17 +411,23 @@ def main():
                     num_k_partitions=1,
                     num_warp_k_partitions=4,
                 ),
-            ](ctx, dynamic(32), static[4096](), static[4096]())
+                N=Int(4096),
+                K=Int(4096),
+            ](ctx, 32, 4096, 4096)
 
         print("===> tfloat32-float32 mma with epilogue")
         test[
             DType.float32,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(999), static[3072](), static[3072]())
+            N=Int(3072),
+            K=Int(3072),
+        ](ctx, 999, 3072, 3072)
         test[
             DType.float32,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(777), static[12288](), static[2048]())
+            N=Int(12288),
+            K=Int(2048),
+        ](ctx, 777, 12288, 2048)
 
         print("===> bfloat16-float32 mma with epilogue")
         # Our default split-k reduction precision is output precision. For
@@ -388,49 +437,69 @@ def main():
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(14), static[3072](), static[12288](), rtol=2e-2)
+            N=Int(3072),
+            K=Int(12288),
+        ](ctx, 14, 3072, 12288, rtol=2e-2)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(33), static[12288](), static[3072]())
+            N=Int(12288),
+            K=Int(3072),
+        ](ctx, 33, 12288, 3072)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(101), static[5120](), static[3072]())
+            N=Int(5120),
+            K=Int(3072),
+        ](ctx, 101, 5120, 3072)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(400), static[3072](), static[32768](), rtol=2e-2)
+            N=Int(3072),
+            K=Int(32768),
+        ](ctx, 400, 3072, 32768, rtol=2e-2)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(910), static[3072](), static[3072]())
+            N=Int(3072),
+            K=Int(3072),
+        ](ctx, 910, 3072, 3072)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(50), static[6144](), static[4096]())
+            N=Int(6144),
+            K=Int(4096),
+        ](ctx, 50, 6144, 4096)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(22), static[4096](), static[4096]())
+            N=Int(4096),
+            K=Int(4096),
+        ](ctx, 22, 4096, 4096)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(88), static[28672](), static[4096]())
+            N=Int(28672),
+            K=Int(4096),
+        ](ctx, 88, 28672, 4096)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(100), static[4096](), static[14336]())
+            N=Int(4096),
+            K=Int(14336),
+        ](ctx, 100, 4096, 14336)
         test[
             DType.bfloat16,
             transpose_b=True,
             lambda_fn=epilogue_test_fn,
-        ](ctx, dynamic(600), static[128256](), static[4096]())
+            N=Int(128256),
+            K=Int(4096),
+        ](ctx, 600, 128256, 4096)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.host import DeviceContext
-from testing import TestSuite
+from asyncrt_test_utils import create_test_device_context
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
 @parameter
-fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
-    alias length = 64
+def _timed_iter_func(context: DeviceContext, iter: Int) raises:
+    comptime length = 64
 
     var in_host = context.enqueue_create_host_buffer[DType.float32](length)
     var out_host = context.enqueue_create_host_buffer[DType.float32](length)
@@ -27,8 +27,8 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i + iter
-        out_host[i] = length + i
+        in_host[i] = Float32(i + iter)
+        out_host[i] = Float32(length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(in_dev)
@@ -39,28 +39,32 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
     context.synchronize()
 
     for i in range(length):
-        expect_eq(
-            out_host[i], i + iter, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            Float32(i + iter),
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
 @parameter
-fn _timed_func(context: DeviceContext) raises:
+def _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 
 
-def test_timing():
+def test_timing() raises:
     var ctx = create_test_device_context()
     print("Running test_timing(" + ctx.name() + "):")
 
     # Measure the time to run the function 100 times.
     var elapsed_time = ctx.execution_time[_timed_func](100)
-    print("Elapsed time for _timed_func: ", elapsed_time / 1e9, "s")
+    print("Elapsed time for _timed_func: ", Float64(elapsed_time) / 1e9, "s")
 
     elapsed_time = ctx.execution_time_iter[_timed_iter_func](100)
-    print("Elapsed time for _timed_iter_func: ", elapsed_time / 1e9, "s")
+    print(
+        "Elapsed time for _timed_iter_func: ", Float64(elapsed_time) / 1e9, "s"
+    )
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

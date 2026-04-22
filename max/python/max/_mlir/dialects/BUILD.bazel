@@ -1,0 +1,18 @@
+load("//bazel:api.bzl", "copy_files")
+
+package(default_visibility = ["//max:consumers"])
+
+copy_files(
+    name = "dialects",
+    srcs = [
+        "//GraphCompiler:MOBindingIncGen",
+        "//GraphCompiler:RMOBindingIncGen",
+        "@llvm-project//mlir/python:DialectCorePyFiles",
+    ],
+    outs = [
+        "_ods_common.py",
+        "ext.py",
+        "mo.py",
+        "rmo.py",
+    ],
+)

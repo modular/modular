@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,27 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import vectorize
-from buffer import NDBuffer
-from memory import memcmp
-from testing import assert_equal
-from testing import TestSuite
+from std.algorithm import vectorize
+from std.memory import memcmp
+from std.testing import assert_equal
+from std.testing import TestSuite
+from std.math import iota
+from std.sys.intrinsics import masked_load, masked_store
 
 
-def test_vectorize():
+def test_vectorize() raises:
     # Create a mem of size 5
-    var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
-    var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack)
+    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector = Span(vector_stack)
 
-    @__copy_capture(vector)
     @always_inline
-    @parameter
-    fn add_two[simd_width: Int](idx: Int):
-        vector.store[width=simd_width](
-            idx, vector.load[width=simd_width](idx) + 2
+    def add_two[width: Int](idx: Int) unified {var vector}:
+        vector.unsafe_ptr().store[width=width](
+            idx, vector.unsafe_ptr().load[width=width](idx) + 2
         )
 
-    vectorize[add_two, 2](len(vector))
+    vectorize[2](len(vector), add_two)
 
     assert_equal(vector[0], 3.0)
     assert_equal(vector[1], 4.0)
@@ -40,16 +39,14 @@ def test_vectorize():
     assert_equal(vector[4], 7.0)
 
     @always_inline
-    @__copy_capture(vector)
-    @parameter
-    fn add[simd_width: Int](idx: Int):
-        vector.store[width=simd_width](
+    def add[width: Int](idx: Int) unified {var vector}:
+        vector.unsafe_ptr().store[width=width](
             idx,
-            vector.load[width=simd_width](idx)
-            + vector.load[width=simd_width](idx),
+            vector.unsafe_ptr().load[width=width](idx)
+            + vector.unsafe_ptr().load[width=width](idx),
         )
 
-    vectorize[add, 2](len(vector))
+    vectorize[2](len(vector), add)
 
     assert_equal(vector[0], 6.0)
     assert_equal(vector[1], 8.0)
@@ -58,60 +55,108 @@ def test_vectorize():
     assert_equal(vector[4], 14.0)
 
 
-def test_vectorize_unroll():
-    alias buf_len = 23
+def test_vectorize_evl() raises:
+    # Create a mem of size 5
+    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector = Span(vector_stack)
+
+    @always_inline
+    def add_two[width: Int](idx: Int, evl: Int) unified {var vector}:
+        if evl == width:
+            vector.unsafe_ptr().store[width=width](
+                idx, vector.unsafe_ptr().load[width=width](idx) + 2
+            )
+        else:
+            for i in range(evl):
+                vector[idx + i] = vector[idx + i] + 2
+
+    vectorize[2](len(vector), add_two)
+
+    assert_equal(vector[0], 3.0)
+    assert_equal(vector[1], 4.0)
+    assert_equal(vector[2], 5.0)
+    assert_equal(vector[3], 6.0)
+    assert_equal(vector[4], 7.0)
+
+    @always_inline
+    def add[width: Int](idx: Int, evl: Int) unified {var vector}:
+        if evl == width:
+            vector.unsafe_ptr().store[width=width](
+                idx,
+                vector.unsafe_ptr().load[width=width](idx)
+                + vector.unsafe_ptr().load[width=width](idx),
+            )
+        else:
+            var ptr = vector.unsafe_ptr() + idx
+            var incr = iota[DType.int32, width]()
+            var mask = incr.lt(Int32(evl))
+            var loaded = masked_load[width](
+                ptr, mask, SIMD[DType.float32, width]()
+            )
+            var result = loaded + loaded
+            masked_store[width](result, ptr, mask)
+
+    vectorize[2](len(vector), add)
+
+    assert_equal(vector[0], 6.0)
+    assert_equal(vector[1], 8.0)
+    assert_equal(vector[2], 10.0)
+    assert_equal(vector[3], 12.0)
+    assert_equal(vector[4], 14.0)
+
+
+def test_vectorize_unroll() raises:
+    comptime buf_len = 23
 
     var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
-    var vec = NDBuffer[DType.float32, 1, _, buf_len](vec_stack)
+    var vec = Span(vec_stack)
     var buf_stack = InlineArray[Float32, buf_len](uninitialized=True)
-    var buf = NDBuffer[DType.float32, 1, _, buf_len](buf_stack)
+    var buf = Span(buf_stack)
 
     for i in range(buf_len):
-        vec[i] = i
-        buf[i] = i
+        vec[i] = Float32(i)
+        buf[i] = Float32(i)
 
     @always_inline
-    @__copy_capture(buf)
-    @parameter
-    fn double_buf[simd_width: Int](idx: Int):
-        buf.store[width=simd_width](
+    def double_buf[simd_width: Int](idx: Int) unified {var buf}:
+        buf.unsafe_ptr().store[width=simd_width](
             idx,
-            buf.load[width=simd_width](idx) + buf.load[width=simd_width](idx),
+            buf.unsafe_ptr().load[width=simd_width](idx)
+            + buf.unsafe_ptr().load[width=simd_width](idx),
         )
 
-    @parameter
-    @__copy_capture(vec)
     @always_inline
-    fn double_vec[simd_width: Int](idx: Int):
-        vec.store[width=simd_width](
+    def double_vec[simd_width: Int](idx: Int) unified {var vec}:
+        vec.unsafe_ptr().store[width=simd_width](
             idx,
-            vec.load[width=simd_width](idx) + vec.load[width=simd_width](idx),
+            vec.unsafe_ptr().load[width=simd_width](idx)
+            + vec.unsafe_ptr().load[width=simd_width](idx),
         )
 
-    alias simd_width = 4
-    alias unroll_factor = 2
+    comptime simd_width = 4
+    comptime unroll_factor = 2
 
-    vectorize[double_vec, simd_width, unroll_factor=unroll_factor](len(vec))
-    vectorize[double_buf, simd_width](len(buf))
+    vectorize[simd_width, unroll_factor=unroll_factor](len(vec), double_vec)
+    vectorize[simd_width](len(buf), double_buf)
 
-    var err = memcmp(vec.data, buf.data, len(buf))
+    var err = memcmp(vec.unsafe_ptr(), buf.unsafe_ptr(), len(buf))
     assert_equal(err, 0)
 
 
-def test_vectorize_size_param():
+def test_vectorize_size_param() raises:
     var output = String()
 
     # remainder elements are correctly printed
     @parameter
-    fn printer[els: Int](n: Int):
+    def printer[els: Int](n: Int) unified {mut output}:
         output.write(els, " ", n, "\n")
 
-    vectorize[printer, 16, size=40]()
+    vectorize[16, size=40](printer)
     assert_equal(output, "16 0\n16 16\n8 32\n")
 
-    vectorize[printer, 16, size=8]()
+    vectorize[16, size=8](printer)
     assert_equal(output, "16 0\n16 16\n8 32\n8 0\n")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

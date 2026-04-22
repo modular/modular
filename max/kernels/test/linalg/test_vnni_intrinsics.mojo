@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,71 +17,60 @@
 # REQUIRES: avx2
 # RUN: %mojo-no-debug %s
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
-from buffer import NDBuffer
+from std.memory import stack_allocation
 from linalg.arch.cpu.vnni_intrinsics import (
     dot_i8_to_i32_AVX2,
     dot_i8_to_i32_saturated_AVX2,
     dot_i16_to_i32_AVX2,
     dot_i16_to_i32_x86,
 )
-from memory import bitcast
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-def test_i8_to_i32():
-    var a = NDBuffer[
-        DType.uint8, 1, MutableAnyOrigin, 16 * 64
-    ].stack_allocation[alignment=64]()
-    var asat = NDBuffer[
-        DType.uint8, 1, MutableAnyOrigin, 16 * 64
-    ].stack_allocation[alignment=64]()
-    var b = NDBuffer[DType.int8, 1, MutableAnyOrigin, 64 * 16].stack_allocation[
-        alignment=64
-    ]()
+def test_i8_to_i32() raises:
+    var a = stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    var asat = stack_allocation[16 * 64, DType.uint8, alignment=64]()
+    var b = stack_allocation[64 * 16, DType.int8, alignment=64]()
 
-    var c = NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, 16 * 16
-    ].stack_allocation[alignment=64]()
-    var csat = NDBuffer[
-        DType.int32, 1, MutableAnyOrigin, 16 * 16
-    ].stack_allocation[alignment=64]()
+    var c = stack_allocation[16 * 16, DType.int32, alignment=64]()
+    var csat = stack_allocation[16 * 16, DType.int32, alignment=64]()
 
     for i in range(16 * 64):
-        a[i] = i & 255
-        asat[i] = i & 127
-        b[i] = (i & 255) - 128
+        a[i] = UInt8(i & 255)
+        asat[i] = UInt8(i & 127)
+        b[i] = Int8((i & 255) - 128)
 
     for i in range(16 * 16):
-        c[i] = i
+        c[i] = Int32(i)
         csat[i] = c[i]
 
-    var av16u = a.data.offset(128 + 64).bitcast[Int32]().load[width=16]()
-    var av16s = asat.data.offset(128 + 64).bitcast[Int32]().load[width=16]()
-    var bv16 = b.data.offset(0).bitcast[Int32]().load[width=16]()
-    var cv16u: SIMD[DType.int32, 16] = 0
-    var cv16s: SIMD[DType.int32, 16] = 0
+    var av16u = (a + 128 + 64).bitcast[Int32]().load[width=16]()
+    var av16s = (asat + 128 + 64).bitcast[Int32]().load[width=16]()
+    var bv16 = b.bitcast[Int32]().load[width=16]()
+    var cv16u: SIMD[DType.int32, 16]
+    var cv16s: SIMD[DType.int32, 16]
     if CompilationTarget.has_avx512f():
-        cv16u = dot_i8_to_i32_AVX2[16](c.data.load[width=16](), av16u, bv16)
+        cv16u = dot_i8_to_i32_AVX2[16](c.load[width=16](), av16u, bv16)
         cv16s = dot_i8_to_i32_saturated_AVX2[16](
-            c.data.load[width=16](), av16s, bv16
+            c.load[width=16](), av16s, bv16
         )
     else:
         # split the vectors into high and low
         var cv8ul = dot_i8_to_i32_AVX2[8](
-            c.data.load[width=8](), av16u.slice[8](), bv16.slice[8]()
+            c.load[width=8](), av16u.slice[8](), bv16.slice[8]()
         )
         var cv8sl = dot_i8_to_i32_saturated_AVX2[8](
-            c.data.load[width=8](), av16s.slice[8](), bv16.slice[8]()
+            c.load[width=8](), av16s.slice[8](), bv16.slice[8]()
         )
         var cv8uh = dot_i8_to_i32_AVX2[8](
-            c.data.offset(8).load[width=8](),
+            (c + 8).load[width=8](),
             av16u.slice[8, offset=8](),
             bv16.slice[8, offset=8](),
         )
         var cv8sh = dot_i8_to_i32_saturated_AVX2[8](
-            c.data.offset(8).load[width=8](),
+            (c + 8).load[width=8](),
             av16s.slice[8, offset=8](),
             bv16.slice[8, offset=8](),
         )
@@ -131,12 +120,14 @@ def test_i8_to_i32():
         ),
     )
 
-    var av8u = a.data.offset(128 + 64).bitcast[Int32]().load[width=8]()
-    var av8s = asat.data.offset(128 + 64).bitcast[Int32]().load[width=8]()
-    var bv8 = b.data.offset(0).bitcast[Int32]().load[width=8]()
-    var cv8u = dot_i8_to_i32_AVX2[8](c.data.load[width=8](), av8u, bv8)
+    var av8u = (a + 128 + 64).bitcast[Int32]().load[width=8]()
+    var av8s = (asat + 128 + 64).bitcast[Int32]().load[width=8]()
+    var bv8 = b.bitcast[Int32]().load[width=8]()
+    var cv8u = dot_i8_to_i32_AVX2[8](
+        c.bitcast[Int32]().load[width=8](), av8u, bv8
+    )
     var cv8s = dot_i8_to_i32_saturated_AVX2[8](
-        c.data.load[width=8](), av8s, bv8
+        c.bitcast[Int32]().load[width=8](), av8s, bv8
     )
 
     assert_equal(
@@ -152,66 +143,55 @@ def test_i8_to_i32():
         ),
     )
 
-    var av4u = a.data.offset(128 + 64).bitcast[Int32]().load[width=4]()
-    var av4s = asat.data.offset(128 + 64).bitcast[Int32]().load[width=4]()
-    var bv4 = b.data.offset(0).bitcast[Int32]().load[width=4]()
-    var cv4u = dot_i8_to_i32_AVX2[4](c.data.load[width=4](), av4u, bv4)
+    var av4u = (a + 128 + 64).bitcast[Int32]().load[width=4]()
+    var av4s = (asat + 128 + 64).bitcast[Int32]().load[width=4]()
+    var bv4 = b.bitcast[Int32]().load[width=4]()
+    var cv4u = dot_i8_to_i32_AVX2[4](
+        c.bitcast[Int32]().load[width=4](), av4u, bv4
+    )
     var cv4s = dot_i8_to_i32_saturated_AVX2[4](
-        c.data.load[width=4](), av4s, bv4
+        c.bitcast[Int32]().load[width=4](), av4s, bv4
     )
 
     assert_equal(cv4u, SIMD[DType.int32, 4](-97906, -96769, -95504, -94111))
     assert_equal(cv4s, SIMD[DType.int32, 4](-33138, -34049, -34832, -35487))
 
 
-def test_i16_to_i32():
-    def test_simd_width[width: Int]():
+def test_i16_to_i32() raises:
+    def test_simd_width[width: Int]() raises:
         var a = SIMD[DType.int16, width * 2]()
         var b = SIMD[DType.int16, width * 2]()
         var c_start = SIMD[DType.int32, width]()
         var c_golden = SIMD[DType.int32, width]()
 
-        @parameter
-        for i in range(width * 2):
-            a[i] = i * 17 - 191
-            b[i] = i * 19 + 155
+        comptime for i in range(width * 2):
+            a[i] = Int16(i * 17 - 191)
+            b[i] = Int16(i * 19 + 155)
 
-        @parameter
-        for i in range(width):
-            c_start[i] = i * 233 - 322
+        comptime for i in range(width):
+            c_start[i] = Int32(i * 233 - 322)
 
-        @parameter
-        for i in range(width):
+        comptime for i in range(width):
             c_golden[i] = c_start[i]
 
-            @parameter
-            for j in range(2):
+            comptime for j in range(2):
                 var a_val = a[i * 2 + j].cast[DType.int32]()
                 var b_val = b[i * 2 + j].cast[DType.int32]()
                 c_golden[i] += a_val * b_val
 
-        var c_avx2 = dot_i16_to_i32_AVX2(
-            c_start,
-            bitcast[DType.int32, width](a),
-            bitcast[DType.int32, width](b),
-        )
+        var c_avx2 = dot_i16_to_i32_AVX2(c_start, a, b)
         assert_equal(c_golden, c_avx2)
 
-        var c_x86 = dot_i16_to_i32_x86(
-            c_start,
-            bitcast[DType.int32, width](a),
-            bitcast[DType.int32, width](b),
-        )
+        var c_x86 = dot_i16_to_i32_x86(c_start, a, b)
         assert_equal(c_golden, c_x86)
 
-    @parameter
-    if CompilationTarget.has_avx512f():
+    comptime if CompilationTarget.has_avx512f():
         test_simd_width[16]()
 
     test_simd_width[8]()
     test_simd_width[4]()
 
 
-def main():
+def main() raises:
     test_i8_to_i32()
     test_i16_to_i32()

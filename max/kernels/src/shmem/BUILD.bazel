@@ -1,18 +1,38 @@
 load("//bazel:api.bzl", "mojo_library")
 
-package(default_visibility = ["//visibility:public"])
+package(default_visibility = ["//max:consumers"])
 
 mojo_library(
     name = "shmem",
     srcs = glob(["**/*.mojo"]),
-    additional_compiler_inputs = ["@nvshmem_prebuilt//:device"],
-    copts = [
-        "--bitcode-libs",
-        "$(location @nvshmem_prebuilt//:device)",
-    ],
-    visibility = ["//visibility:public"],
+    additional_compiler_inputs = select({
+        "//:linux_x86_64": [
+            "@nvshmem_prebuilt//:device",
+            "@rocshmem//:device",
+        ],
+        "//conditions:default": [],
+    }),
+    copts = select({
+        "//:linux_x86_64": [
+            "--bitcode-libs",
+            "$(location @nvshmem_prebuilt//:device)",
+            "--bitcode-libs",
+            "$(location @rocshmem//:device)",
+        ],
+        "//conditions:default": [],
+    }),
+    data = select({
+        "//:linux_x86_64": [
+            "@nvshmem_prebuilt//:host",
+            "@rocshmem//:host",
+        ],
+        "//conditions:default": [],
+    }),
+    validate_missing_docs = False,
     deps = [
-        "@mojo//:layout",
-        "@mojo//:stdlib",
+        "//max:layout",
+        "//max:linalg",
+        "//max:structured_kernels",
+        "@mojo//:std",
     ],
 )

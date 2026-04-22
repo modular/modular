@@ -1,6 +1,6 @@
 #!/bin/bash
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,11 +12,12 @@
 # limitations under the License.
 ##===----------------------------------------------------------------------===##
 
-echo $kplot
 shopt -s expand_aliases
 dir="$(pwd)"
-source $MODULAR_PATH/utils/start-modular.sh
-cd $dir
+# This doesn't exist in the public repo
+# shellcheck disable=SC1091
+source "$MODULAR_PATH/utils/start-modular.sh"
+cd "$dir" || exit 1
 
 kplot output_base.csv output_branch.csv -o base_vs_branch
 kplot output_base.csv output_branch.csv -o base_vs_branch -x pdf

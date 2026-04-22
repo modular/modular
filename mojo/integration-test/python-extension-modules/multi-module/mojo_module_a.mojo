@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 from common import TestStruct
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module_a() -> PythonObject:
+def PyInit_mojo_module_a() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module_a")
         _ = (
@@ -30,6 +30,4 @@ fn PyInit_mojo_module_a() -> PythonObject:
         )
         return m.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))

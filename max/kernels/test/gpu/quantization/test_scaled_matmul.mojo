@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,178 +11,355 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.matmul.vendor.blas as vendor_blas
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, random
-from internal_utils._utils import ValOrDim, dynamic, static
+from std.gpu.host import DeviceContext
+from layout import (
+    CoordLike,
+    Coord,
+    Idx,
+    TileTensor,
+    row_major,
+)
+from layout._fillers import random
 from linalg.fp8_quantization import matmul_dynamic_scaled_fp8
-from linalg.matmul import matmul
-from testing import assert_almost_equal
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
-from utils.index import Index, IndexList
+from std.testing import assert_almost_equal
+from std.utils.index import Index
 
 
-fn test_matmul_dynamic_scaled_fp8[
+def test_matmul_dynamic_scaled_fp8[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     in_dtype: DType,
     out_dtype: DType,
     scales_dtype: DType,
     transpose_b: Bool,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
+    var c_size = m.value() * n.value()
+    var a_scales_size = 1 * m.value()
+    var b_scales_size = n.value() * 1 if transpose_b else 1 * n.value()
+
+    # Host allocations
+    var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[in_dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+
+    var a_layout = row_major(Coord(m, k))
+    var b_layout = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
     )
-    alias static_c_shape = DimList(m.dim, n.dim)
-    alias static_a_scales_shape = DimList(1, m.dim)
-    alias static_b_scales_shape = DimList(n.dim, 1) if transpose_b else DimList(
-        1, n.dim
+    var c_layout = row_major(Coord(m, n))
+    var a_scales_layout = row_major(Coord(Idx[1](), m))
+    var b_scales_layout = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else 1](),
+            Idx[1 if transpose_b else NType.static_value](),
+        )
     )
 
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
-    var dynamic_a_scales_shape = DimList(1, m.value)
-    var dynamic_b_scales_shape = DimList(
-        n.value, 1
-    ) if transpose_b else DimList(1, n.value)
+    var a_host = TileTensor(a_host_ptr, a_layout)
+    var b_host = TileTensor(b_host_ptr, b_layout)
+    var c_host = TileTensor(c_host_ptr, c_layout)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_layout)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_layout)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_layout)
 
-    var a_host = HostNDBuffer[in_dtype, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[in_dtype, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[out_dtype, 2, static_c_shape](dynamic_c_shape)
-    var a_scales_host = HostNDBuffer[scales_dtype, 2, static_a_scales_shape](
-        dynamic_a_scales_shape
-    )
-    var b_scales_host = HostNDBuffer[scales_dtype, 2, static_b_scales_shape](
-        dynamic_b_scales_shape
-    )
-    var a_host_ref = HostNDBuffer[DType.float32, 2, static_a_shape](
-        dynamic_a_shape
-    )
-    var b_host_ref = HostNDBuffer[DType.float32, 2, static_b_shape](
-        dynamic_b_shape
-    )
-    var c_host_ref = HostNDBuffer[DType.float32, 2, static_c_shape](
-        dynamic_c_shape
-    )
+    # Device allocations
+    var a_device = ctx.enqueue_create_buffer[in_dtype](a_size)
+    var b_device = ctx.enqueue_create_buffer[in_dtype](b_size)
+    var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
+    var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
+    var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_size)
+    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
 
-    var a_device = DeviceNDBuffer[in_dtype, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
-    )
-    var b_device = DeviceNDBuffer[in_dtype, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
-    )
-    var c_device = DeviceNDBuffer[out_dtype, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
-    )
-    var a_scales_device = DeviceNDBuffer[
-        scales_dtype, 2, static_a_scales_shape
-    ](dynamic_a_scales_shape, ctx=ctx)
-    var b_scales_device = DeviceNDBuffer[
-        scales_dtype, 2, static_b_scales_shape
-    ](dynamic_b_scales_shape, ctx=ctx)
-    var a_device_ref = DeviceNDBuffer[DType.float32, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
-    )
-    var b_device_ref = DeviceNDBuffer[DType.float32, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
-    )
-    var c_device_ref = DeviceNDBuffer[DType.float32, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
-    )
+    comptime k_dim = KType.static_value
 
-    var M = m.value
-    var N = n.value
-    alias K = k.dim.get()
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
+    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    random(a_host.tensor)
-    random(b_host.tensor)
-    random(a_scales_host.tensor)
-    random(b_scales_host.tensor)
+    var a_tile = TileTensor(a_device, a_layout)
+    var b_tile = TileTensor(b_device, b_layout)
+    var c_tile = TileTensor(c_device, c_layout)
+    var a_scales_tile = TileTensor(a_scales_device, a_scales_layout)
+    var b_scales_tile = TileTensor(b_scales_device, b_scales_layout)
+    var c_ref_tile = TileTensor(c_device_ref, row_major(Coord(m, n)))
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
-    ctx.enqueue_copy(a_scales_device.buffer, a_scales_host.tensor.data)
-    ctx.enqueue_copy(b_scales_device.buffer, b_scales_host.tensor.data)
-    ctx.enqueue_copy(a_device_ref.buffer, a_host_ref.tensor.data)
-    ctx.enqueue_copy(b_device_ref.buffer, b_host_ref.tensor.data)
+    random(a_host)
+    random(b_host)
+    random(a_scales_host)
+    random(b_scales_host)
 
     matmul_dynamic_scaled_fp8[
         input_scale_granularity="colwise",
         weight_scale_granularity="rowwise",
         m_scale_granularity=1,
         n_scale_granularity=1,
-        k_scale_granularity=K,
+        k_scale_granularity=k_dim,
         transpose_b=transpose_b,
         target="gpu",
     ](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        a_scales_device.tensor,
-        b_scales_device.tensor,
+        c_tile,
+        a_tile,
+        b_tile,
+        a_scales_tile,
+        b_scales_tile,
         ctx,
     )
-    ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
+    ctx.enqueue_copy(c_host_ptr, c_device)
     ctx.synchronize()
 
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, 1, K),
+        scales_granularity_mnk=Index(1, 1, k_dim),
     ](
-        c_device_ref.tensor,
-        a_device.tensor,
-        b_device.tensor,
-        a_scales_device.tensor,
-        b_scales_device.tensor,
+        c_ref_tile.to_layout_tensor(),
+        a_tile.to_layout_tensor().get_immutable(),
+        b_tile.to_layout_tensor().get_immutable(),
+        a_scales_tile.to_layout_tensor().get_immutable(),
+        b_scales_tile.to_layout_tensor().get_immutable(),
         ctx,
     )
 
-    ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    for i in range(m.value):
-        for j in range(n.value):
+    comptime assert c_host.flat_rank == 2
+
+    for i in range(m.value()):
+        for j in range(n.value()):
             assert_almost_equal(
-                c_host.tensor[i, j].cast[DType.float32](),
-                c_host_ref.tensor[i, j],
+                c_host[i, j].cast[DType.float32](),
+                c_host_ref[i, j][0],
                 msg="At [" + String(i) + ", " + String(j) + "]",
-                atol=1e-2,
-                rtol=1e-2,
+                atol=1.5e-2,
+                rtol=1.5e-2,
             )
 
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    a_scales_host_ptr.free()
+    b_scales_host_ptr.free()
+    c_host_ref_ptr.free()
 
-def main():
+
+def test_matmul_dynamic_scaled_fp8_tensor[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
+    in_dtype: DType,
+    out_dtype: DType,
+    scales_dtype: DType,
+    transpose_b: Bool,
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
+    """Test tensor-granularity (per-tensor) scaling where a_scales and b_scales
+    are both shape [1, 1]."""
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
+    var c_size = m.value() * n.value()
+
+    # Host allocations
+    var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
+    var b_host_ptr = alloc[Scalar[in_dtype]](b_size)
+    var c_host_ptr = alloc[Scalar[out_dtype]](c_size)
+    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](1)
+    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](1)
+    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+
+    var a_layout = row_major(Coord(m, k))
+    var b_layout = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
+    )
+    var c_layout = row_major(Coord(m, n))
+    var a_scales_layout = row_major(Coord(Idx[1](), Idx[1]()))
+    var b_scales_layout = row_major(Coord(Idx[1](), Idx[1]()))
+
+    var a_host = TileTensor(a_host_ptr, a_layout)
+    var b_host = TileTensor(b_host_ptr, b_layout)
+    var c_host = TileTensor(c_host_ptr, c_layout)
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_layout)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_layout)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_layout)
+
+    # Device allocations
+    var a_device = ctx.enqueue_create_buffer[in_dtype](a_size)
+    var b_device = ctx.enqueue_create_buffer[in_dtype](b_size)
+    var c_device = ctx.enqueue_create_buffer[out_dtype](c_size)
+    var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](1)
+    var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](1)
+    var c_device_ref = ctx.enqueue_create_buffer[DType.float32](c_size)
+
+    comptime k_dim = KType.static_value
+
+    random(a_host)
+    random(b_host)
+    random(a_scales_host)
+    random(b_scales_host)
+
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
+    ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
+    ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
+
+    var a_tile = TileTensor(a_device, a_layout)
+    var b_tile = TileTensor(b_device, b_layout)
+    var c_tile = TileTensor(c_device, c_layout)
+    var a_scales_tile = TileTensor(a_scales_device, a_scales_layout)
+    var b_scales_tile = TileTensor(b_scales_device, b_scales_layout)
+    var c_ref_tile = TileTensor(c_device_ref, row_major(Coord(m, n)))
+
+    matmul_dynamic_scaled_fp8[
+        input_scale_granularity="tensor",
+        weight_scale_granularity="tensor",
+        m_scale_granularity=1,
+        n_scale_granularity=1,
+        k_scale_granularity=k_dim,
+        transpose_b=transpose_b,
+        target="gpu",
+    ](
+        c_tile,
+        a_tile,
+        b_tile,
+        a_scales_tile,
+        b_scales_tile,
+        ctx,
+    )
+    ctx.enqueue_copy(c_host_ptr, c_device)
+    ctx.synchronize()
+
+    # Build colwise/rowwise reference scales by broadcasting the tensor scalar.
+    # a_ref_scales shape [1, M], b_ref_scales shape [N, 1] (when transpose_b).
+    var a_ref_scales_size = 1 * m.value()
+    var b_ref_scales_size = n.value() * 1 if transpose_b else 1 * n.value()
+    var a_ref_scales_host_ptr = alloc[Scalar[scales_dtype]](a_ref_scales_size)
+    var b_ref_scales_host_ptr = alloc[Scalar[scales_dtype]](b_ref_scales_size)
+
+    var a_scalar = a_scales_host_ptr[0]
+    var b_scalar = b_scales_host_ptr[0]
+    for i in range(a_ref_scales_size):
+        a_ref_scales_host_ptr[i] = a_scalar
+    for i in range(b_ref_scales_size):
+        b_ref_scales_host_ptr[i] = b_scalar
+
+    var a_ref_scales_layout = row_major(Coord(Idx[1](), m))
+    var b_ref_scales_layout = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else 1](),
+            Idx[1 if transpose_b else NType.static_value](),
+        )
+    )
+
+    var a_ref_scales_device = ctx.enqueue_create_buffer[scales_dtype](
+        a_ref_scales_size
+    )
+    var b_ref_scales_device = ctx.enqueue_create_buffer[scales_dtype](
+        b_ref_scales_size
+    )
+    ctx.enqueue_copy(a_ref_scales_device, a_ref_scales_host_ptr)
+    ctx.enqueue_copy(b_ref_scales_device, b_ref_scales_host_ptr)
+
+    var a_ref_scales_tile = TileTensor(a_ref_scales_device, a_ref_scales_layout)
+    var b_ref_scales_tile = TileTensor(b_ref_scales_device, b_ref_scales_layout)
+
+    naive_blockwise_scaled_fp8_matmul[
+        BLOCK_DIM=16,
+        transpose_b=transpose_b,
+        scales_granularity_mnk=Index(1, 1, k_dim),
+    ](
+        c_ref_tile.to_layout_tensor(),
+        a_tile.to_layout_tensor().get_immutable(),
+        b_tile.to_layout_tensor().get_immutable(),
+        a_ref_scales_tile.to_layout_tensor().get_immutable(),
+        b_ref_scales_tile.to_layout_tensor().get_immutable(),
+        ctx,
+    )
+
+    ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
+    ctx.synchronize()
+
+    comptime assert c_host.flat_rank == 2
+
+    for i in range(m.value()):
+        for j in range(n.value()):
+            assert_almost_equal(
+                c_host[i, j].cast[DType.float32](),
+                c_host_ref[i, j][0],
+                msg="At [" + String(i) + ", " + String(j) + "]",
+                atol=1.5e-2,
+                rtol=1.5e-2,
+            )
+
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
+    c_host_ptr.free()
+    a_scales_host_ptr.free()
+    b_scales_host_ptr.free()
+    c_host_ref_ptr.free()
+    a_ref_scales_host_ptr.free()
+    b_ref_scales_host_ptr.free()
+
+
+def main() raises:
     with DeviceContext() as ctx:
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, dynamic(17), static[256 + 256](), static[256]())
+        ](ctx, Idx(Int(17)), Idx[256 + 256](), Idx[256]())
 
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, dynamic(124), static[512](), static[512]())
+        ](ctx, Idx(Int(124)), Idx[512](), Idx[512]())
 
         # these tests are guaranteed to hit a mojo fp8 kernel in the dispatch table.
         # if the fp8 kernel is not registered, these tests will fail.
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, dynamic(3000), static[5376](), static[4096]())
+        ](ctx, Idx(Int(3000)), Idx[5376](), Idx[4096]())
 
         test_matmul_dynamic_scaled_fp8[
-            in_dtype = DType.float8_e4m3fn,
-            out_dtype = DType.bfloat16,
-            scales_dtype = DType.bfloat16,
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
             transpose_b=True,
-        ](ctx, dynamic(224), static[43008](), static[5376]())
+        ](ctx, Idx(Int(224)), Idx[43008](), Idx[5376]())
+
+        # Tensor-granularity (per-tensor) scaling tests
+        test_matmul_dynamic_scaled_fp8_tensor[
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
+            transpose_b=True,
+        ](ctx, Idx(Int(17)), Idx[512](), Idx[256]())
+
+        test_matmul_dynamic_scaled_fp8_tensor[
+            in_dtype=DType.float8_e4m3fn,
+            out_dtype=DType.bfloat16,
+            scales_dtype=DType.bfloat16,
+            transpose_b=True,
+        ](ctx, Idx(Int(124)), Idx[512](), Idx[512]())

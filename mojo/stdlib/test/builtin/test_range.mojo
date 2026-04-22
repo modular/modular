@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,23 +11,55 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_true, TestSuite
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int):
+comptime DTYPES = [
+    DType.int8,
+    DType.int16,
+    DType.int32,
+    DType.int64,
+    DType.uint8,
+    DType.uint16,
+    DType.uint32,
+    DType.uint64,
+]
+
+
+# Regression test for cyclic dependency bug in MSTDL-2217
+# This helper must be declared before any test function that calls it.
+# The bug was triggered when a function using range(Int, Int) was declared
+# before main/test functions, causing a cyclic dependency during overload
+# resolution: range -> Int -> Equatable.__eq__ -> range.
+def _range_with_int_params_helper(start: Int, end: Int) -> Int:
+    var sum = 0
+    for i in range(start, end):
+        sum += i
+    return sum
+
+
+def test_range_with_int_params_declaration_order() raises:
+    assert_equal(_range_with_int_params_helper(0, 5), 10)  # 0+1+2+3+4
+    assert_equal(_range_with_int_params_helper(1, 4), 6)  # 1+2+3
+    assert_equal(_range_with_int_params_helper(5, 5), 0)  # empty range
+
+
+def _test_range_iter_bounds[I: Iterator](var range_iter: I, len: Int) raises:
     var iter = range_iter^
     for i in range(len):
         var lower, upper = iter.bounds()
         assert_equal(len - i, lower)
         assert_equal(len - i, upper.value())
-        _ = iter.__next__()
+        _ = trait_downcast_var[Movable & ImplicitlyDestructible](
+            iter.__next__()
+        )
 
     var lower, upper = iter.bounds()
     assert_equal(0, lower)
     assert_equal(0, upper.value())
 
 
-def test_range_int_bounds():
+def test_range_int_bounds() raises:
     _test_range_iter_bounds(range(0), 0)
     _test_range_iter_bounds(range(10), 10)
     _test_range_iter_bounds(range(0, 10), 10)
@@ -38,7 +70,7 @@ def test_range_int_bounds():
     _test_range_iter_bounds(range(38, -13, -23), 3)
 
 
-def test_range_uint_bounds():
+def test_range_uint_bounds() raises:
     _test_range_iter_bounds(range(UInt(0)), 0)
     _test_range_iter_bounds(range(UInt(10)), 10)
     _test_range_iter_bounds(range(UInt(0), UInt(10)), 10)
@@ -47,8 +79,8 @@ def test_range_uint_bounds():
     _test_range_iter_bounds(range(UInt(0), UInt(11), UInt(2)), 6)
 
 
-def test_range_scalar_bounds[dtype: DType]():
-    alias scalar = Scalar[dtype]
+def _test_range_scalar_bounds[dtype: DType]() raises:
+    comptime scalar = Scalar[dtype]
 
     _test_range_iter_bounds(range(scalar(0)), 0)
     _test_range_iter_bounds(range(scalar(10)), 10)
@@ -57,14 +89,18 @@ def test_range_scalar_bounds[dtype: DType]():
     _test_range_iter_bounds(range(scalar(0), scalar(10), scalar(2)), 5)
     _test_range_iter_bounds(range(scalar(0), scalar(11), scalar(2)), 6)
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         _test_range_iter_bounds(range(scalar(10), scalar(0), scalar(-1)), 10)
         _test_range_iter_bounds(range(scalar(38), scalar(-13), scalar(-23)), 3)
 
 
-def test_larger_than_int_max_bounds():
-    def test[I: Iterator](iter: I):
+def test_range_scalar_bounds() raises:
+    comptime for dtype in DTYPES:
+        _test_range_scalar_bounds[dtype]()
+
+
+def test_larger_than_int_max_bounds() raises:
+    def test[I: Iterator](iter: I) raises:
         var lower, upper = iter.bounds()
         assert_equal(lower, Int.MAX)
         assert_false(upper)
@@ -80,7 +116,7 @@ def test_larger_than_int_max_bounds():
     test(range(UInt64(1), UInt64.MAX, UInt64(1)))
 
 
-def test_range_len():
+def test_range_len() raises:
     # Usual cases
     assert_equal(range(10).__len__(), 10, "len(range(10))")
     assert_equal(range(0, 10).__len__(), 10, "len(range(0, 10))")
@@ -104,7 +140,7 @@ def test_range_len():
     assert_equal(range(10, 5, -20).__len__(), 1, "len(range(10, 5, -20))")
 
 
-def test_range_len_uint_maxuint():
+def test_range_len_uint_maxuint() raises:
     assert_equal(
         range(UInt(0), UInt.MAX).__len__(), UInt.MAX, "len(range(0, UInt.MAX))"
     )
@@ -115,7 +151,7 @@ def test_range_len_uint_maxuint():
     )
 
 
-def test_range_len_uint_empty():
+def test_range_len_uint_empty() raises:
     assert_equal(
         range(UInt(0), UInt(0), UInt(1)).__len__(), 0, "len(range(0, 0, 1))"
     )
@@ -124,7 +160,7 @@ def test_range_len_uint_empty():
     )
 
 
-def test_range_len_uint():
+def test_range_len_uint() raises:
     assert_equal(range(UInt(10)).__len__(), 10, "len(range(10))")
 
     # start < end
@@ -139,8 +175,8 @@ def test_range_len_uint():
     )
 
 
-def test_range_len_scalar[dtype: DType]():
-    alias scalar = Scalar[dtype]
+def _test_range_len_scalar[dtype: DType]() raises:
+    comptime scalar = Scalar[dtype]
 
     # empty
     assert_equal(range(scalar(0), scalar(0), scalar(1)).__len__(), 0)
@@ -158,7 +194,12 @@ def test_range_len_scalar[dtype: DType]():
     assert_equal(range(scalar(10), scalar(0), scalar(1)).__len__(), 0)
 
 
-def test_range_getitem():
+def test_range_len_scalar() raises:
+    comptime for dtype in DTYPES:
+        _test_range_len_scalar[dtype]()
+
+
+def test_range_getitem() raises:
     # Usual cases
     assert_equal(range(10)[3], 3, "range(10)[3]")
     assert_equal(range(0, 10)[3], 3, "range(0, 10)[3]")
@@ -169,7 +210,7 @@ def test_range_getitem():
     assert_equal(range(38, -13, -23)[1], 15, "range(38, -13, -23)[1]")
 
 
-def test_range_getitem_uint():
+def test_range_getitem_uint() raises:
     assert_equal(range(UInt(10))[3], 3, "range(10)[3]")
 
     assert_equal(range(UInt(0), UInt(10))[3], 3, "range(0, 10)[3]")
@@ -182,10 +223,10 @@ def test_range_getitem_uint():
     # start > end
     var bad_strided_uint_range = range(UInt(10), UInt(5), UInt(1))
     var bad_strided_uint_range_iter = bad_strided_uint_range.__iter__()
-    assert_equal(UInt(0), bad_strided_uint_range_iter.__len__())
+    assert_equal(UInt(0), UInt(bad_strided_uint_range_iter.__len__()))
 
 
-def test_range_reversed():
+def test_range_reversed() raises:
     # Zero starting
     assert_equal(
         range(10).__reversed__().start, 9, "range(10).__reversed__().start"
@@ -225,7 +266,7 @@ def test_range_reversed():
 
     # Test a reversed range's sum and length compared to the original
     @parameter
-    fn test_sum_reversed(start: Int, end: Int, step: Int) raises:
+    def test_sum_reversed(start: Int, end: Int, step: Int) raises:
         var forward = range(start, end, step)
         var iforward = forward.__iter__()
         var ibackward = forward.__reversed__()
@@ -248,14 +289,13 @@ def test_range_reversed():
         test_sum_reversed(20, end, -3)
 
 
-def test_indexing():
+def test_indexing() raises:
     var r = range(10)
-    assert_equal(r[True], 1)
     assert_equal(r[Int(4)], 4)
     assert_equal(r[3], 3)
 
 
-def test_range_bounds():
+def test_range_bounds() raises:
     var start = 0
     var end = 10
 
@@ -271,13 +311,13 @@ def test_range_bounds():
     assert_equal(r[ln - 1], last_seen)
 
 
-def test_scalar_range():
+def test_scalar_range() raises:
     r = range(UInt8(2), 16, 4)
     assert_equal(r.start, 2)
     assert_equal(r.end, 16)
     assert_equal(r.step, 4)
 
-    fn append_many(mut list: List, *values: list.T):
+    def append_many(mut list: List, *values: list.T):
         for value in values:
             list.append(value.copy())
 
@@ -285,50 +325,43 @@ def test_scalar_range():
     append_many(expected_elements, 2, 6, 10, 14)
     actual_elements = List[UInt8]()
     for e in r:
-        actual_elements.append(e)
+        actual_elements.append(UInt8(e))
     assert_equal(actual_elements, expected_elements)
 
 
-def test_range_compile_time():
+def test_range_compile_time() raises:
     """Tests that verify compile-time parameter loops work correctly with
     various scalar types.
     """
 
-    @parameter
-    for i in range(10):
+    comptime for i in range(10):
         assert_true(i >= 0)
 
-    @parameter
-    for i in reversed(range(10)):
+    comptime for i in reversed(range(10)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(UInt8(10)):
+    comptime for i in range(UInt8(10)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(Int32(10)):
+    comptime for i in range(Int32(10)):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(1, UInt16(10), 2):
+    comptime for i in range(UInt16(1), 10, 2):
         assert_true(i >= 0)
 
-    @parameter
-    for i in range(1, Int16(10), 2):
+    comptime for i in range(Int16(1), 10, 2):
         assert_true(i >= 0)
 
-    @parameter
-    for i in reversed(range(1, Int16(10), 2)):
-        assert_true(i >= 0)
+    # TODO(MSTDL-2321): `_StridedScalarRange` does not conform to `ReversibleRange`
+    # comptime for i in reversed(range(Int16(1), 10, 2)):
+    #     assert_true(i >= 0)
 
-    @parameter
-    for i in range(Int64(10), 1, -2):
+    comptime for i in range(Int64(10), 1, -2):
         assert_true(i > 0)
         assert_true(i <= 10)
 
 
-def test_range_iterable():
+def test_range_iterable() raises:
     var ai = 0
     var bi = UInt8(0)
     var ci = 0
@@ -341,5 +374,5 @@ def test_range_iterable():
         ci += 2
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

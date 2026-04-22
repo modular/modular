@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,59 +11,52 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import argv, size_of
+from std.math import ceildiv
+from std.memory import bitcast
+from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier
-from gpu import lane_id as get_lane_id
-from gpu.cluster import block_rank_in_cluster
-from gpu.host import DeviceContext, FuncAttribute
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, lane_id, thread_idx
-from gpu.memory import AddressSpace, external_memory, fence_async_view_proxy
-from gpu.mma import st_matrix
-from gpu.mma_sm100 import *
-from gpu.tcgen05 import *
+from std.gpu import WARP_SIZE, barrier
+from std.gpu import warp_id, block_idx, thread_idx
+from std.gpu.primitives.cluster import block_rank_in_cluster
+from std.gpu.host import DeviceContext, FuncAttribute
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.memory import external_memory, fence_async_view_proxy
+from std.gpu.compute.mma import st_matrix
+from std.gpu.compute.arch.mma_nvidia_sm100 import *
+from std.gpu.compute.arch.tcgen05 import *
 
 # Additional imports for testing
-from internal_utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    assert_almost_equal,
-    random,
-    zero,
-)
-from internal_utils._utils import ValOrDim, dynamic, static
+from internal_utils import assert_almost_equal
 from layout import (
-    UNKNOWN_VALUE,
+    IntTuple,
     Layout,
     LayoutTensor,
     RuntimeLayout,
     RuntimeTuple,
+    UNKNOWN_VALUE,
 )
-from layout._fillers import arange
-from layout._ndbuffer_stub import from_ndbuffer_row_major
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import IntTuple
-from layout.swizzle import make_ldmatrix_swizzle, make_swizzle
+from layout.swizzle import make_swizzle
 from layout.tensor_core_async import (
     st_matrix_n_layout,
     tile_layout_k_major,
     tile_layout_mn_major,
     tile_to_descriptor,
 )
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from stdlib.bit import log2_floor
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    create_tensor_tile,
+    create_tma_tile,
+)
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
@@ -74,16 +67,19 @@ fn is_benchmark() -> Bool:
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-fn kernel_4[
+def kernel_4[
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    a_layout: Layout,
-    b_layout: Layout,
-    c_layout: Layout,
-    a_desc_layout: Layout,
-    b_desc_layout: Layout,
-    c_desc_layout: Layout,
+    a_tma_rank: Int,
+    b_tma_rank: Int,
+    c_tma_rank: Int,
+    a_tile_shape: IndexList[a_tma_rank],
+    b_tile_shape: IndexList[b_tma_rank],
+    c_tile_shape: IndexList[c_tma_rank],
+    a_desc_shape: IndexList[a_tma_rank],
+    b_desc_shape: IndexList[b_tma_rank],
+    c_desc_shape: IndexList[c_tma_rank],
     block_tile_shape: IndexList[3],
     mma_shape: IndexList[3],
     transpose_b: Bool = True,
@@ -91,102 +87,106 @@ fn kernel_4[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
 ](
-    a_tma_op: TMATensorTile[a_type, a_layout, a_desc_layout],
-    b_tma_op: TMATensorTile[b_type, b_layout, b_desc_layout],
-    c_tma_op: TMATensorTile[c_type, c_layout, c_desc_layout],
-    num_iters: UInt,
+    a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
+    b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+    c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
+    num_iters: Int,
 ):
-    constrained[num_threads == 128 or num_threads == 256]()
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
-    alias MMA_M = mma_shape[0]
-    alias MMA_N = mma_shape[1]
-    alias MMA_K = mma_shape[2]
-    alias num_m_mmas = BM // MMA_M
-    alias num_n_mmas = BN // MMA_N
-    alias num_k_mmas = BK // MMA_K
+    comptime assert num_threads == 128 or num_threads == 256
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
+    comptime MMA_M = mma_shape[0]
+    comptime MMA_N = mma_shape[1]
+    comptime MMA_K = mma_shape[2]
+    comptime num_m_mmas = BM // MMA_M
+    comptime num_n_mmas = BN // MMA_N
+    comptime num_k_mmas = BK // MMA_K
 
-    alias TMA_BN = c_tma_op.layout.shape[1].value()
+    comptime TMA_BN = c_tile_shape[1]
 
-    alias a_smem_layout = tile_layout_k_major[
+    comptime a_smem_layout = tile_layout_k_major[
         a_type, BM, BK, swizzle_mode=a_swizzle
     ]()
-    alias b_smem_layout = tile_layout_k_major[
+    comptime b_smem_layout = tile_layout_k_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, BK, swizzle_mode=b_swizzle
     ]()
-    alias sub_a_smem_layout = tile_layout_k_major[
+    comptime sub_a_smem_layout = tile_layout_k_major[
         a_type, BM, 64, swizzle_mode=a_swizzle
     ]()
-    alias sub_b_smem_layout = tile_layout_k_major[
+    comptime sub_b_smem_layout = tile_layout_k_major[
         b_type, BN, 64, swizzle_mode=b_swizzle
     ]() if transpose_b else tile_layout_mn_major[
         b_type, BN, 64, swizzle_mode=b_swizzle
     ]()
-    alias c_smem_layout = Layout.row_major(BM, BN)
+    comptime c_smem_layout = Layout.row_major(BM, BN)
 
     a_smem = rebind[
-        UnsafePointer[Scalar[a_type], address_space = AddressSpace.SHARED]
+        UnsafePointer[
+            Scalar[a_type],
+            address_space=AddressSpace.SHARED,
+            ExternalOrigin[mut=True],
+        ]
     ](
         external_memory[
             Scalar[a_type],
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
             alignment=128,
             name="tmem_test_dynamic_shared_memory",
         ]()
     )
-    alias a_smem_tile_t = LayoutTensor[
+    comptime a_smem_tile_t = LayoutTensor[
         a_type,
         a_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
-    alias b_smem_tile_t = LayoutTensor[
+    comptime b_smem_tile_t = LayoutTensor[
         b_type,
         b_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
-    alias c_smem_tile_t = LayoutTensor[
+    comptime c_smem_tile_t = LayoutTensor[
         c_type,
         c_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
-    alias sub_a_smem_tile_t = LayoutTensor[
+    comptime sub_a_smem_tile_t = LayoutTensor[
         a_type,
         sub_a_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
-    alias sub_b_smem_tile_t = LayoutTensor[
+    comptime sub_b_smem_tile_t = LayoutTensor[
         b_type,
         sub_b_smem_layout,
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ]
-    alias a_size = a_smem_layout.size()
-    alias b_size = b_smem_layout.size()
-    alias c_size = c_smem_layout.size()
+    comptime a_size = a_smem_layout.size()
+    comptime b_size = b_smem_layout.size()
+    comptime c_size = c_smem_layout.size()
 
-    constrained[
-        ((a_size * size_of[a_type]()) % 128) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((b_size * size_of[b_type]()) % 16) == 0, "preserve alignment"
-    ]()
-    constrained[
-        ((c_size * size_of[c_type]()) % 128) == 0, "preserve alignment"
-    ]()
+    comptime assert (
+        (a_size * size_of[a_type]()) % 128
+    ) == 0, "preserve alignment"
+    comptime assert (
+        (b_size * size_of[b_type]()) % 16
+    ) == 0, "preserve alignment"
+    comptime assert (
+        (c_size * size_of[c_type]()) % 128
+    ) == 0, "preserve alignment"
 
     var b_smem = (a_smem + a_size).bitcast[Scalar[b_type]]()
     var c_smem = (b_smem + b_size).bitcast[Scalar[c_type]]()
@@ -195,14 +195,14 @@ fn kernel_4[
     var b_smem_tile = b_smem_tile_t(b_smem)
     var c_smem_tile = c_smem_tile_t(c_smem)
 
-    alias accum_type = get_accum_type[a_type]()
+    comptime accum_type = get_accum_type[a_type]()
 
-    alias c_frag_size = MMA_M * MMA_N // num_threads
-    var c_frag = SIMD[accum_type, c_frag_size]()
+    comptime c_frag_size = MMA_M * MMA_N // num_threads
+    var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
-    alias a_expected_bytes = a_size * size_of[a_type]()
-    alias b_expected_bytes = b_size * size_of[b_type]()
-    alias expected_bytes = a_expected_bytes + b_expected_bytes
+    comptime a_expected_bytes = a_size * size_of[a_type]()
+    comptime b_expected_bytes = b_size * size_of[b_type]()
+    comptime expected_bytes = a_expected_bytes + b_expected_bytes
 
     tma_mbar = (c_smem + c_size).bitcast[SharedMemBarrier]()
     mma_mbar = tma_mbar + 1
@@ -217,10 +217,10 @@ fn kernel_4[
     var tma_phase: UInt32 = 0
     var mma_phase: UInt32 = 0
 
-    var elect_one_warp = thread_idx.x // WARP_SIZE == 0
+    var elect_one_warp = warp_id() == 0
     var elect_one_thread = thread_idx.x == 0
     var elect_one_cta = block_rank_in_cluster() % 2 == 0
-    alias max_tmem_cols = 512
+    comptime max_tmem_cols = 512
 
     if elect_one_warp:
         tcgen05_alloc[1](ptr_tmem_addr, max_tmem_cols)
@@ -231,16 +231,20 @@ fn kernel_4[
 
     tmem_addr = ptr_tmem_addr[0]
 
-    alias a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
-    alias b_canonical_layout = tile_to_descriptor[
+    comptime a_canonical_layout = tile_to_descriptor[a_type, a_smem_layout]()
+    comptime b_canonical_layout = tile_to_descriptor[
         b_type, b_smem_layout, is_k_major=transpose_b
     ]()
-    alias aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
-    alias aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
-    alias b_stride01 = b_canonical_layout[0].stride[1].value()
-    alias b_stride11 = b_canonical_layout[1].stride[1].value()
-    alias bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[b_type]()
-    alias bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[b_type]()
+    comptime aSBO = a_canonical_layout[0].stride[1].value() * size_of[a_type]()
+    comptime aLBO = a_canonical_layout[1].stride[1].value() * size_of[a_type]()
+    comptime b_stride01 = b_canonical_layout[0].stride[1].value()
+    comptime b_stride11 = b_canonical_layout[1].stride[1].value()
+    comptime bSBO = (b_stride01 if transpose_b else b_stride11) * size_of[
+        b_type
+    ]()
+    comptime bLBO = (b_stride11 if transpose_b else b_stride01) * size_of[
+        b_type
+    ]()
 
     adesc = MMASmemDescriptor.create[aSBO, aLBO, a_swizzle](a_smem_tile.ptr)
     bdesc = MMASmemDescriptor.create[bSBO, bLBO, b_swizzle](b_smem_tile.ptr)
@@ -249,7 +253,7 @@ fn kernel_4[
         accum_type,
         a_type,
         b_type,
-        Index[dtype = DType.uint32](mma_shape[0], mma_shape[1]),
+        Index[dtype=DType.uint32](mma_shape[0], mma_shape[1]),
         transpose_b=transpose_b,
     ]()
 
@@ -257,31 +261,30 @@ fn kernel_4[
     for i in range(num_iters):
         # load A and B from global memory to shared memory
         if elect_one_thread:
-            tma_mbar[0].expect_bytes(expected_bytes)
+            tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
-            @parameter
-            for j in range(BK // 64):
-                alias k = 64 * j
-                alias a_offset = a_smem_layout(IntTuple(0, k))
-                alias b_offset = b_smem_layout(IntTuple(0, k))
-                constrained[((a_offset * size_of[a_type]()) % 128) == 0]()
-                constrained[((b_offset * size_of[b_type]()) % 128) == 0]()
+            comptime for j in range(BK // 64):
+                comptime k = 64 * j
+                comptime a_offset = a_smem_layout(IntTuple(0, k))
+                comptime b_offset = b_smem_layout(IntTuple(0, k))
+                comptime assert ((a_offset * size_of[a_type]()) % 128) == 0
+                comptime assert ((b_offset * size_of[b_type]()) % 128) == 0
                 sub_a_smem_tile = sub_a_smem_tile_t(a_smem + a_offset)
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (UInt(i * BK + k), UInt(block_idx.y * BM)),
+                    (i * BK + k, block_idx.y * BM),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
                     sub_b_smem_tile,
                     tma_mbar[0],
                     (
-                        UInt(i * BK + k),
-                        UInt(block_idx.x * BN),
+                        i * BK + k,
+                        block_idx.x * BN,
                     ) if transpose_b else (
-                        UInt(block_idx.x * BN),
-                        UInt(i * BK + k),
+                        block_idx.x * BN,
+                        i * BK + k,
                     ),
                 )
 
@@ -289,15 +292,15 @@ fn kernel_4[
         tma_phase ^= 1
 
         if elect_one_thread:
-
-            @parameter
-            for j in range(num_k_mmas):
-                alias idx = IntTuple(0, MMA_K * j)
-                alias a_offset = a_smem_layout(idx) * size_of[a_type]()
-                alias b_offset = b_smem_layout(idx) * size_of[b_type]()
+            comptime for j in range(num_k_mmas):
+                comptime idx = IntTuple(0, MMA_K * j)
+                comptime a_offset = a_smem_layout(idx) * size_of[a_type]()
+                comptime b_offset = b_smem_layout(idx) * size_of[b_type]()
 
                 # use c_scale=0 for the first mma only on the first iteration to initialize
-                var c_scale_value: UInt32 = 0 if (i == 0 and j == 0) else 1
+                var c_scale_value: UInt32 = UInt32(
+                    0 if (i == 0 and j == 0) else 1
+                )
                 mma(
                     adesc + a_offset,
                     bdesc + b_offset,
@@ -315,7 +318,7 @@ fn kernel_4[
     c_frag = tcgen05_ld[
         datapaths=16,
         bits=256,
-        repeat = BN // 8,
+        repeat=BN // 8,
         dtype=accum_type,
         pack=False,
         width=c_frag_size,
@@ -325,28 +328,30 @@ fn kernel_4[
 
     # store from tensor memory to smem using the swizzling pattern
 
-    alias num_warps = num_threads // WARP_SIZE
-    warp_id = thread_idx.x // WARP_SIZE
-
     var st_matrix_rt_layout = RuntimeLayout[
         st_matrix_n_layout[c_type, TMA_BN, num_m_mmas, 1](),
-        element_type = DType.int32,
-        linear_idx_type = DType.int32,
+        element_type=DType.int32,
+        linear_idx_type=DType.int32,
     ]()
 
-    alias st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
+    comptime st_matrix_swizzle = make_swizzle[c_type, c_swizzle]()
 
-    @parameter
-    for tma_n in range(BN // TMA_BN):
+    comptime for tma_n in range(BN // TMA_BN):
+        comptime for m_mma in range(num_m_mmas):
+            comptime for i in range(TMA_BN // 16):
+                var d_reg = SIMD[DType.bfloat16, 8]()
 
-        @parameter
-        for m_mma in range(num_m_mmas):
-
-            @parameter
-            for i in range(TMA_BN // 16):
-                var d_reg = c_frag.slice[
-                    8, offset = (i + tma_n * (TMA_BN // 16)) * 8
-                ]().cast[DType.bfloat16]()
+                comptime for _ei in range(4):
+                    comptime _src_offset = (
+                        i + tma_n * (TMA_BN // 16)
+                    ) * 8 + 2 * _ei
+                    var pair = SIMD[DType.float32, 2](
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset]),
+                        rebind[Scalar[DType.float32]](c_frag[_src_offset + 1]),
+                    )
+                    var casted = pair.cast[DType.bfloat16]()
+                    d_reg[2 * _ei] = casted[0]
+                    d_reg[2 * _ei + 1] = casted[1]
 
                 var st_matrix_args = RuntimeTuple[
                     IntTuple(
@@ -358,8 +363,9 @@ fn kernel_4[
                         ),
                     )
                 ](thread_idx.x, i, m_mma, 0)
-                var offset = c_smem_tile.ptr.offset(
-                    st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
+                var offset = (
+                    c_smem_tile.ptr
+                    + st_matrix_swizzle(st_matrix_rt_layout(st_matrix_args))
                     + BM * TMA_BN * tma_n
                 )
 
@@ -372,24 +378,24 @@ fn kernel_4[
     # UMMA (tensor memory) → registers → shared memory → global memory
     #           c_frag                   c_smem_tile      c_tma_op
 
-    if elect_one_warp and thread_idx.x < UInt(BN // TMA_BN):
+    if elect_one_warp and thread_idx.x < BN // TMA_BN:
         fence_async_view_proxy()
 
-        var smem_offset = c_smem_tile.ptr.offset(BM * TMA_BN * thread_idx.x)
+        var smem_offset = c_smem_tile.ptr + BM * TMA_BN * thread_idx.x
 
         c_tma_tile = LayoutTensor[
             c_type,
-            c_layout,
-            MutableAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            Layout.row_major(c_tile_shape[0], c_tile_shape[1]),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
             alignment=128,
         ](smem_offset)
 
         c_tma_op.async_store(
             c_tma_tile,
             (
-                UInt(block_idx.x * BN + thread_idx.x * TMA_BN),
-                UInt(block_idx.y * BM),
+                block_idx.x * BN + thread_idx.x * TMA_BN,
+                block_idx.y * BM,
             ),
         )
         c_tma_op.commit_group()
@@ -401,13 +407,13 @@ fn kernel_4[
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
 
-fn blackwell_kernel_4[
+def blackwell_kernel_4[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     *,
     transpose_b: Bool,
     umma_shape: IndexList[3],
@@ -416,54 +422,50 @@ fn blackwell_kernel_4[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
 ](
-    c_device: NDBuffer[c_type, 2, _, c_shape],
-    a_device: NDBuffer[a_type, 2, _, a_shape],
-    b_device: NDBuffer[b_type, 2, _, b_shape],
+    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
+    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
     ctx: DeviceContext,
 ) raises:
-    var a = from_ndbuffer_row_major(a_device)
-    var b = from_ndbuffer_row_major(b_device)
-    var c = from_ndbuffer_row_major(c_device)
     var M = c.dim[0]()
     var N = c.dim[1]()
     var K = a.dim[1]()
 
-    constrained[
-        transpose_b,
-        "Only support transposed B",
-    ]()
+    comptime assert transpose_b, "Only support transposed B"
 
-    alias BM = block_tile_shape[0]
-    alias BN = block_tile_shape[1]
-    alias BK = block_tile_shape[2]
+    comptime BM = block_tile_shape[0]
+    comptime BN = block_tile_shape[1]
+    comptime BK = block_tile_shape[2]
 
-    a_tma_op = create_tma_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
-    b_tma_op = create_tma_tile[
+    a_tma_op = create_tensor_tile[Index(BM, 64), swizzle_mode=a_swizzle](ctx, a)
+    b_tma_op = create_tensor_tile[
         Index(BN, 64) if transpose_b else Index(64, BN),
-        is_k_major=transpose_b,
         swizzle_mode=b_swizzle,
     ](ctx, b)
     c_tma_op = create_tma_tile[BM, 64, swizzle_mode=c_swizzle](ctx, c)
 
-    alias smem_use = (
+    comptime smem_use = (
         BM * BK * size_of[a_type]()
         + BN * BK * size_of[b_type]()
         + BM * BN * size_of[c_type]()
         + 24
     )
 
-    alias block_dim = 128
+    comptime block_dim = 128
 
-    alias kernel = kernel_4[
+    comptime kernel = kernel_4[
         a_type,
         b_type,
         c_type,
-        type_of(a_tma_op).layout,
-        type_of(b_tma_op).layout,
-        type_of(c_tma_op).layout,
-        type_of(a_tma_op).desc_layout,
-        type_of(b_tma_op).desc_layout,
-        type_of(c_tma_op).desc_layout,
+        type_of(a_tma_op).rank,
+        type_of(b_tma_op).rank,
+        type_of(c_tma_op).rank,
+        type_of(a_tma_op).tile_shape,
+        type_of(b_tma_op).tile_shape,
+        type_of(c_tma_op).tile_shape,
+        type_of(a_tma_op).desc_shape,
+        type_of(b_tma_op).desc_shape,
+        type_of(c_tma_op).desc_shape,
         block_tile_shape,
         umma_shape,
         transpose_b=True,
@@ -473,23 +475,25 @@ fn blackwell_kernel_4[
         num_threads=block_dim,
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, kernel](
         a_tma_op,
         b_tma_op,
         c_tma_op,
         K // BK,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
-        shared_mem_bytes=Int(smem_use),
-        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(smem_use),
+        shared_mem_bytes=smem_use,
+        func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+            UInt32(smem_use)
+        ),
     )
 
 
-alias WARP_GROUP_SIZE = 128
-alias NumWarpPerWarpGroup = 4
+comptime WARP_GROUP_SIZE = 128
+comptime NumWarpPerWarpGroup = 4
 
 
-fn get_dict_of_shapes(
+def get_dict_of_shapes(
     index: Int, dict: Dict[Int, Tuple[Int, Int, Int]]
 ) -> Tuple[Int, Int, Int]:
     try:
@@ -499,21 +503,21 @@ fn get_dict_of_shapes(
         return (128, 128, 128)
 
 
-fn make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
+def make_dict_of_shapes() -> Dict[Int, Tuple[Int, Int, Int]]:
     var dic = Dict[Int, Tuple[Int, Int, Int]]()
     dic[0] = (4096, 4096, 4096)
     return dic^
 
 
-fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
-    alias a_type = DType.bfloat16
-    alias b_type = DType.bfloat16
-    alias c_type = DType.bfloat16
-    alias umma_shape = Index(64, 256, 16)
-    alias transpose_b = True
-    alias BK = 64
+def benchmark_blackwell_matmul(ctx: DeviceContext) raises:
+    comptime a_type = DType.bfloat16
+    comptime b_type = DType.bfloat16
+    comptime c_type = DType.bfloat16
+    comptime umma_shape = Index(64, 256, 16)
+    comptime transpose_b = True
+    comptime BK = 64
 
-    alias dict_of_shapes = make_dict_of_shapes()
+    comptime dict_of_shapes = make_dict_of_shapes()
 
     print("Benchmarking kernel_4")
     print("============================================")
@@ -524,9 +528,8 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
     print("transpose_b:", transpose_b)
     print()
 
-    @parameter
-    for i in range(len(dict_of_shapes)):
-        alias shape = get_dict_of_shapes(i, dict_of_shapes)
+    comptime for i in range(len(dict_of_shapes)):
+        comptime shape = get_dict_of_shapes(i, dict_of_shapes)
         try:
             print(
                 "Benchmarking shape: [",
@@ -545,7 +548,10 @@ fn benchmark_blackwell_matmul(ctx: DeviceContext) raises:
                 transpose_b,
                 BK,
                 benchmark=True,
-            ](ctx, dynamic(shape[0]), static[shape[1]](), static[shape[2]]())
+                M=shape[0],
+                N=shape[1],
+                K=shape[2],
+            ](ctx)
         except e:
             print("Error: Failed to run benchmark for this shape")
 
@@ -561,73 +567,58 @@ def test_blackwell_kernel_4[
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     benchmark: Bool = False,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    var M = m.value
-    var N = n.value
-    var K = k.value
+    M: Int = 4096,
+    N: Int = 4096,
+    K: Int = 4096,
+](ctx: DeviceContext) raises:
+    print(M, "x", N, "x", K)
 
-    print(
-        M,
-        "x",
-        N,
-        "x",
-        K,
-    )
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(
+        N, K
+    ) if transpose_b else Layout.row_major(K, N)
+    comptime c_layout = Layout.row_major(M, N)
 
-    alias static_a_shape = DimList(m.dim, k.dim)
-    alias static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
-    )
-    alias static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
+    var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
+    var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
 
-    var a_host = HostNDBuffer[a_type, 2, static_a_shape](dynamic_a_shape)
-    var b_host = HostNDBuffer[b_type, 2, static_b_shape](dynamic_b_shape)
-    var c_host = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-    var c_host_ref = HostNDBuffer[c_type, 2, static_c_shape](dynamic_c_shape)
-
-    var a_device = DeviceNDBuffer[a_type, 2, static_a_shape](
-        dynamic_a_shape, ctx=ctx
-    )
-    var b_device = DeviceNDBuffer[b_type, 2, static_b_shape](
-        dynamic_b_shape, ctx=ctx
-    )
-    var c_device = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
-    )
-    var c_device_ref = DeviceNDBuffer[c_type, 2, static_c_shape](
-        dynamic_c_shape, ctx=ctx
+    var a_device = ctx.enqueue_create_buffer[a_type](M * K)
+    var a_device_lt = LayoutTensor[a_type, a_layout](a_device.unsafe_ptr())
+    var b_device = ctx.enqueue_create_buffer[b_type](N * K)
+    var b_device_lt = LayoutTensor[b_type, b_layout](b_device.unsafe_ptr())
+    var c_device = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_lt = LayoutTensor[c_type, c_layout](c_device.unsafe_ptr())
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_ref_lt = LayoutTensor[c_type, c_layout](
+        c_device_ref.unsafe_ptr()
     )
 
     # Initialize matmul operands
-    var at = a_host.tensor
-    var bt = b_host.tensor
-    for m in range(M):
-        for k in range(K):
-            at[m, k] = Float32(k).cast[a_type]()
-    for n in range(N):
-        for k in range(K):
-            bt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
-    zero(c_host.tensor)
-    zero(c_host_ref.tensor)
+    for m_idx in range(M):
+        for k_idx in range(K):
+            a_host[m_idx, k_idx] = Float32(k_idx).cast[a_type]()
+    for n_idx in range(N):
+        for k_idx in range(K):
+            b_host[n_idx, k_idx] = Float32(1 if n_idx == k_idx else 0).cast[
+                b_type
+            ]()
+    for i in range(M * N):
+        c_host.tensor[update=False]().ptr[i] = Scalar[c_type](0)
+        c_host_ref.tensor[update=False]().ptr[i] = Scalar[c_type](0)
 
     # Move operands to the Device
 
-    ctx.enqueue_copy(a_device.buffer, a_host.tensor.data)
-    ctx.enqueue_copy(b_device.buffer, b_host.tensor.data)
+    ctx.enqueue_copy(a_device, a_host_ptr)
+    ctx.enqueue_copy(b_device, b_host_ptr)
 
-    ctx.enqueue_copy(c_device.buffer, c_host.tensor.data)
-    ctx.enqueue_copy(c_device_ref.buffer, c_host_ref.tensor.data)
+    ctx.enqueue_copy(c_device, c_host.tensor[update=False]().ptr)
+    ctx.enqueue_copy(c_device_ref, c_host_ref.tensor[update=False]().ptr)
 
-    var a = from_ndbuffer_row_major(a_device.tensor)
-    var b = from_ndbuffer_row_major(b_device.tensor)
-    var c = from_ndbuffer_row_major(c_device.tensor)
-
-    alias block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
+    comptime block_tile_shape = Index(umma_shape[0], umma_shape[1], BK)
 
     blackwell_kernel_4[
         transpose_b=transpose_b,
@@ -637,20 +628,20 @@ def test_blackwell_kernel_4[
         b_swizzle=b_swizzle,
         c_swizzle=c_swizzle,
     ](
-        c_device.tensor,
-        a_device.tensor,
-        b_device.tensor,
+        c_device_lt,
+        a_device_lt,
+        b_device_lt,
         ctx,
     )
 
     ctx.synchronize()
     if benchmark:
-        alias num_runs = 100
-        alias num_warmup = 10
+        comptime num_runs = 100
+        comptime num_warmup = 10
 
         @always_inline
         @parameter
-        fn run_kernel(ctx: DeviceContext) raises:
+        def run_kernel(ctx: DeviceContext) raises:
             blackwell_kernel_4[
                 transpose_b=transpose_b,
                 umma_shape=umma_shape,  # 64, 128, 16
@@ -659,9 +650,9 @@ def test_blackwell_kernel_4[
                 b_swizzle=b_swizzle,
                 c_swizzle=c_swizzle,
             ](
-                c_device.tensor,
-                a_device.tensor,
-                b_device.tensor,
+                c_device_lt,
+                a_device_lt,
+                b_device_lt,
                 ctx,
             )
 
@@ -671,9 +662,11 @@ def test_blackwell_kernel_4[
         ctx.synchronize()
         print("finished warmup")
 
-        var nstime = ctx.execution_time[run_kernel](num_runs) / num_runs
+        var nstime = (
+            Float64(ctx.execution_time[run_kernel](num_runs)) / num_runs
+        )
         var sectime = nstime * 1e-9
-        var TFlop = 2.0 * M * N * K * 1e-12
+        var TFlop = 2.0 * Float64(M) * Float64(N) * Float64(K) * 1e-12
 
         print("  Average time: ", sectime * 1000, " ms")
         print("  Performance: ", TFlop / sectime, " TFLOPS")
@@ -681,42 +674,34 @@ def test_blackwell_kernel_4[
     else:
         vendor_blas.matmul(
             ctx,
-            c_device_ref.tensor,
-            a_device.tensor,
-            b_device.tensor,
+            c_device_ref_lt,
+            a_device_lt,
+            b_device_lt,
             c_row_major=True,
             transpose_b=transpose_b,
         )
 
         ctx.synchronize()
 
-        ctx.enqueue_copy(c_host.tensor.data, c_device.buffer)
-        ctx.enqueue_copy(c_host_ref.tensor.data, c_device_ref.buffer)
+        ctx.enqueue_copy(c_host.tensor[update=False]().ptr, c_device)
+        ctx.enqueue_copy(c_host_ref.tensor[update=False]().ptr, c_device_ref)
         ctx.synchronize()
-        alias rtol = 1e-2
+        comptime rtol = 1e-2
 
         assert_almost_equal(
-            c_host.tensor,
-            c_host_ref.tensor,
+            c_host.tensor[update=False]().ptr,
+            c_host_ref.tensor[update=False]().ptr,
+            M * N,
             atol=0.0001,
             rtol=rtol,
         )
 
-    _ = c_device
-    _ = c_device_ref
-    _ = a_host
-    _ = b_host
-    _ = c_host_ref
-    _ = c_host
-    _ = a_device
-    _ = b_device
-
-    _ = a
-    _ = b
-    _ = c
+    # Cleanup
+    a_host_ptr.free()
+    b_host_ptr.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         if is_benchmark():
             # Run the benchmark
@@ -728,10 +713,13 @@ def main():
             DType.bfloat16,
             DType.bfloat16,
             DType.bfloat16,
-            umma_shape = Index(64, 256, 16),
-            a_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            b_swizzle = TensorMapSwizzle.SWIZZLE_128B,
-            c_swizzle = TensorMapSwizzle.SWIZZLE_128B,
+            umma_shape=Index(64, 256, 16),
+            a_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            b_swizzle=TensorMapSwizzle.SWIZZLE_128B,
+            c_swizzle=TensorMapSwizzle.SWIZZLE_128B,
             transpose_b=True,
             BK=64,
-        ](ctx, dynamic(4096), static[4096](), static[4096]())
+            M=4096,
+            N=4096,
+            K=4096,
+        ](ctx)

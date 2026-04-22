@@ -1,33 +1,50 @@
-load("//bazel:api.bzl", "modular_py_binary", "modular_py_test", "pkg_files", "requirement")
+load("//bazel:api.bzl", "modular_py_binary", "modular_py_library", "modular_py_test", "pkg_files", "requirement")
+
+package(default_visibility = ["//max:consumers"])
 
 modular_py_binary(
     name = "kbench",
     srcs = [
         "__init__.py",
         "kbench.py",
+        "kbench_model.py",
+        "terminal_viz.py",
         "utils.py",
+    ],
+    data = [
+        "@nvshmem_prebuilt//:device",
+        "@nvshmem_prebuilt//:host",
     ],
     env = {
         "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
+        "BITCODE_LIBS_PATH": "$(rootpath @nvshmem_prebuilt//:device)",
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
     },
     imports = ["."],
     main = "kbench.py",
     mojo_deps = [
-        "@mojo//:_cublas",
-        "@mojo//:_cudnn",
-        "@mojo//:_cufft",
-        "@mojo//:_curand",
-        "@mojo//:_rocblas",
-        "@mojo//:comm",
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
-        "@mojo//:register",
-        "@mojo//:stdlib",
+        "//max:_cublas",
+        "//max:_cudnn",
+        "//max:_cufft",
+        "//max:_curand",
+        "//max:_rocblas",
+        "//max:comm",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "//max:shmem",
+        "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    target_compatible_with = select({
+        # FIXME: PAQ-2245
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         requirement("click"),
         requirement("numpy"),
@@ -38,7 +55,13 @@ modular_py_binary(
         requirement("scipy"),
         requirement("plotly"),
         requirement("tabulate"),
-    ],
+        requirement("torch"),
+        requirement("packaging"),
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+    ] + select({
+        "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
+        "//conditions:default": [],
+    }),
 )
 
 modular_py_binary(
@@ -49,15 +72,16 @@ modular_py_binary(
     imports = ["."],
     main = "kprofile.py",
     mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
-        "@mojo//:register",
-        "@mojo//:stdlib",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":kbench",
         requirement("rich"),
@@ -72,15 +96,16 @@ modular_py_binary(
     imports = ["."],
     main = "kplot.py",
     mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
-        "@mojo//:register",
-        "@mojo//:stdlib",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
     ],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":kbench",
         ":kprofile",
@@ -89,37 +114,82 @@ modular_py_binary(
     ],
 )
 
+modular_py_binary(
+    name = "kdiff",
+    srcs = [
+        "kdiff.py",
+    ],
+    imports = ["."],
+    main = "kdiff.py",
+    deps = [
+        requirement("click"),
+        requirement("pyyaml"),
+    ],
+)
+
+modular_py_library(
+    name = "bencher_utils",
+    srcs = [
+        "bencher_utils.py",
+    ],
+    imports = ["."],
+)
+
 modular_py_test(
     name = "autotune_tests",
+    # test_kbench compiles multiple Mojo binaries which can be slow on CI.
+    size = "large",
     srcs = glob(["tests/*.py"]),
+    args = [
+        "-n",
+        "auto",
+        "--dist",
+        "loadgroup",
+    ],
     data = glob(["tests/*.csv"]) + [
         "sample.mojo",
+        "sample.py",
         "test.yaml",
-        "//KGEN:CompilerRT",
-        "//KGEN/tools/mojo",
+        "test_python.yaml",
+        "tests/sample_failure.mojo",
+        "tests/test_crash.yaml",
+        "tests/test_timeout.yaml",
+    ],
+    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
+    ignore_extra_deps = [
+        # Used for `-n auto` above
+        requirement("pytest-xdist"),
     ],
     mojo_deps = [
-        "@mojo//:internal_utils",
-        "@mojo//:kv_cache",
-        "@mojo//:layout",
-        "@mojo//:linalg",
-        "@mojo//:nn",
-        "@mojo//:quantization",
-        "@mojo//:register",
-        "@mojo//:stdlib",
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:layout",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "//max:register",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//:ubsan": ["@platforms//:incompatible"],
+        # FIXME
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
         ":kbench",
         ":kplot",
         ":kprofile",
+        "//max/kernels/benchmarks/autotune:bencher_utils",
+        requirement("click"),
+        requirement("numpy"),
+        requirement("pandas"),
+        requirement("pytest-mock"),
+        requirement("pytest-xdist"),
+        requirement("rich"),
     ],
 )
 
+# TODO: this probably can be removed safely.
 pkg_files(
     name = "autotune_files",
     srcs = [
@@ -130,5 +200,4 @@ pkg_files(
         "utils.py",
     ],
     prefix = "kernel-benchmark/autotune",
-    visibility = ["//visibility:public"],
 )

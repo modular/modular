@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import isdir
-from pathlib import Path, cwd
+from std.os.path import isdir
+from std.pathlib import Path, cwd
 
-from builtin._location import __source_location
-from testing import TestSuite, assert_false, assert_true
+from std.reflection import source_location
+from std.testing import TestSuite, assert_false, assert_true
 
 
-def test_isdir():
+def test_isdir() raises:
     assert_true(isdir(Path()))
     assert_true(isdir(String(cwd())))
     assert_false(isdir(String(cwd() / "nonexistent")))
-    assert_false(isdir(__source_location().file_name))
+    assert_false(isdir(source_location().file_name()))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from itertools import product
-from nn.conv import (
+from std.itertools import product
+from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import lt_to_tt
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     Naive2dConvolution,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     get_direct_conv_micro_kernel_height,
     get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
+comptime simd_size: Int = simd_width_of[DType.float32]()
 
 
 # CHECK-LABEL: test_conv1d
-fn test[
+def test[
     dtype: DType, filter_packed: Bool
 ](
     N: Int,
@@ -53,9 +53,9 @@ fn test[
     print("== test_conv1d")
 
     var WO = (W + pad_w[0] + pad_w[1] - dilation * (S - 1) - 1) // stride + 1
-    alias HO = 1
-    alias H = 1
-    alias R = 1
+    comptime HO = 1
+    comptime H = 1
+    comptime R = 1
 
     var conv_shape = ConvShape[1](
         n=N,
@@ -64,8 +64,8 @@ fn test[
         filter_dims=Index(S),
         c=C,
         f=F,
-        stride=stride,
-        dilation=dilation,
+        stride=Index(stride),
+        dilation=Index(dilation),
         pad_d=Index(0, 0),
         pad_h=Index(0, 0),
         pad_w=pad_w,
@@ -74,38 +74,47 @@ fn test[
 
     var C_per_group = C // num_groups
 
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(N * W * C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(S * C_per_group * F)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(N * WO * F)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(N * WO * F)
+    var input_ptr = alloc[Scalar[dtype]](N * W * C)
+    var filter_ptr = alloc[Scalar[dtype]](S * C_per_group * F)
+    var output_ptr = alloc[Scalar[dtype]](N * WO * F)
+    var output_ref_ptr = alloc[Scalar[dtype]](N * WO * F)
 
     rand[dtype](input_ptr, N * W * C)
     rand[dtype](filter_ptr, S * C_per_group * F)
 
     # Find the tile size used in packing.
-    alias micro_kernel_height = get_direct_conv_micro_kernel_height()
-    alias micro_kernel_width = get_direct_conv_micro_kernel_width()
+    comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
+    comptime micro_kernel_width = get_direct_conv_micro_kernel_width()
 
     var micro_kernel_f_size = get_direct_conv_micro_kernel_width() * simd_size
     var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Buffers for direct conv.
-    var input = NDBuffer[dtype, 3](input_ptr, Index(N, W, C))
-    var filter = NDBuffer[dtype, 3](filter_ptr, Index(S, C_per_group, F))
-    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
+    comptime layout_3d = Layout.row_major[3]()
+    comptime layout_4d = Layout.row_major[4]()
+    var input = LayoutTensor[dtype, layout_3d](
+        input_ptr, RuntimeLayout[layout_3d].row_major(Index(N, W, C))
+    )
+    var filter = LayoutTensor[dtype, layout_3d](
+        filter_ptr, RuntimeLayout[layout_3d].row_major(Index(S, C_per_group, F))
+    )
+    var packed_filter_shape = pack_conv_filter_shape(
+        lt_to_tt(filter), num_groups
+    )
 
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, 4](
+    var packed_filter = LayoutTensor[dtype, layout_4d](
         packed_filter_ptr,
-        packed_filter_shape,
+        RuntimeLayout[layout_4d].row_major(packed_filter_shape),
     )
-    var output = NDBuffer[dtype, 3](output_ptr, Index(N, WO, F))
+    var output = LayoutTensor[dtype, layout_3d](
+        output_ptr, RuntimeLayout[layout_3d].row_major(Index(N, WO, F))
+    )
 
-    @parameter
-    if filter_packed:
-        pack_filter(filter, packed_filter, num_groups)
+    comptime if filter_packed:
+        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
 
     # Reference: naive conv
     Naive2dConvolution[
@@ -128,20 +137,13 @@ fn test[
     )
 
     # Test direct conv
-    alias conv_attr = ConvInfoStatic[1]()
+    comptime conv_attr = ConvInfoStatic[1]()
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
-            3,
-            4,
-            3,
-            _,
-            _,
-            _,
-            DimList.create_unknown[3](),
-            DimList.create_unknown[4](),
-            DimList.create_unknown[3](),
+            layout_3d,
+            layout_4d,
+            layout_3d,
             dtype,
             dtype,
             dtype,
@@ -150,15 +152,9 @@ fn test[
         ].run(output, input, packed_filter, conv_shape)
     else:
         ConvDirectNHWC[
-            3,
-            3,
-            3,
-            _,
-            _,
-            _,
-            DimList.create_unknown[3](),
-            DimList.create_unknown[3](),
-            DimList.create_unknown[3](),
+            layout_3d,
+            layout_3d,
+            layout_3d,
             dtype,
             dtype,
             dtype,
@@ -198,8 +194,8 @@ fn test[
     print("Succeed")
 
 
-def main():
-    alias dtype = DType.float32
+def main() raises:
+    comptime dtype = DType.float32
     # No packing or padding.
     test[dtype, False](1, 5, 1, 4, 4, 2, 1, Index(0, 0), 1)
     test[dtype, False](1, 12, 12, 3, 64, 1, 1, Index(0, 0), 1)

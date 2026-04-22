@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,4 +12,4 @@
 # ===----------------------------------------------------------------------=== #
 """Provides Nvidia Blackwell architecture specific utility functions."""
 
-from .mma import MmaOpSM100_SS
+from .mma import MmaOpSM100_SS, MmaOpSM100_BlockScaled_SS

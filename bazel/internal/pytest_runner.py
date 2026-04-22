@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,15 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 
 import argparse
+import faulthandler
 import importlib
 import os
 import platform
 import shlex
+import signal
 import sys
 import sysconfig
 from pathlib import Path
 
 import pytest
+
+# dumps stack traces when bazel kills a hung / slow test
+faulthandler.register(signal.SIGTERM)
 
 
 def __build_parser() -> argparse.ArgumentParser:
@@ -35,7 +40,7 @@ def __exclude_env(key: str) -> bool:
 
 
 def __set_torch_memory_limit() -> None:
-    if size := os.getenv("MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE"):
+    if size := os.getenv("MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE"):
         if size == "0":
             return
 
@@ -62,7 +67,7 @@ def __set_torch_memory_limit() -> None:
         torch.cuda.set_per_process_memory_fraction(torch_fraction)
 
         our_total_memory = int(float(size) * (1 - requested_torch_percent))
-        os.environ["MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE"] = str(
+        os.environ["MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE"] = str(
             our_total_memory
         )
 
@@ -105,9 +110,13 @@ fi
 
 if [[ "${{MODULAR_VSCODE_DEBUG:-}}" == "1" ]]; then
   env {pairs} MODULAR_HOME=$PWD/.derived bazel-bin/KGEN/tools/mojo/mojo debug --vscode -- {args}
-elif [[ "${{MODULAR_GDB:-}}" == "1" ]]; then
+elif [[ "${{MODULAR_GDB:-}}" == "1" || "${{MODULAR_ROCGDB:-}}" == "1" ]]; then
+  exe=/usr/bin/rocgdb
+  if [[ "${{MODULAR_GDB:-}}" == "1" ]]; then
+    exe=/usr/bin/gdb
+  fi
   env {pairs} \
-      /usr/bin/gdb \
+      "$exe" \
       --eval-command="set cwd {pwd}" \
       --args {args}
 elif [[ "${{MODULAR_XCTRACE:-}}" == "1" ]]; then
@@ -148,17 +157,33 @@ fi
     namespace, unknown_args = __build_parser().parse_known_args(args)
     pytest_args = [
         f"--junitxml={os.environ['XML_OUTPUT_FILE']}",
-        "--runxfail",  # Use pytest.mark.skip instead
         "-o",
         "xfail_strict=true",
         "-o",
+        "filterwarnings=error::pytest.PytestUnhandledCoroutineWarning",
+        "-o",
         f"junit_suite_name={os.environ['TEST_TARGET']}",
     ]
+
+    if importlib.util.find_spec("pytest_asyncio"):
+        pytest_args.append("--asyncio-mode=auto")
+
     if namespace.k:
         pytest_args.extend(["-k", namespace.k])
     elif namespace.n:  # Skip xdist when filtering
         pytest_args.extend(["-n", namespace.n])
-    return pytest.main(pytest_args + unknown_args)
+
+    exit_code = pytest.main(pytest_args + unknown_args)
+    # https://docs.pytest.org/en/6.2.x/usage.html#possible-exit-codes
+    if exit_code == 5:  # no tests were collected
+        # Print an error:
+        if namespace.k:
+            print(
+                f"\033[31mERROR\033[0m: No tests were run matching the filter: '{namespace.k}'"
+            )
+        else:
+            print("\033[31mERROR\033[0m: No tests were run.")
+    return exit_code
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,74 +11,75 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
-from random import randint
-from time import sleep
+import std.math
+from std.random import randint
+from std.time import sleep
 
-from benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
-from testing import TestSuite
+from std.benchmark import BenchId, BenchMetric, QuickBench, ThroughputMeasure
+from std.testing import TestSuite
 
 
-fn vec_reduce[
+def vec_reduce[
     N: Int, dtype: DType
-](x: UnsafePointer[Scalar[dtype]]) -> Scalar[dtype]:
+](x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin]) -> Scalar[dtype]:
     var total: Scalar[dtype] = 0
     for i in range(N):
         total += x[i]
     return total
 
 
-fn vec_add[
+def vec_add[
     N: Int, dtype: DType
 ](
-    x: UnsafePointer[Scalar[dtype]], y: UnsafePointer[Scalar[dtype]]
-) -> UnsafePointer[Scalar[dtype]]:
+    x: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    y: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+) -> UnsafePointer[Scalar[dtype], MutAnyOrigin]:
     for i in range(N):
         x[i] += y[i]
     return x
 
 
-fn dummy() -> None:
+def dummy() -> None:
     sleep(0.5)
 
 
-fn dummy(x0: Int) -> Float32:
-    return x0
+def dummy(x0: Int) -> Float32:
+    return Float32(x0)
 
 
-fn dummy(x0: Int, x1: Int) -> Float32:
-    return x0 + x1
+def dummy(x0: Int, x1: Int) -> Float32:
+    return Float32(x0 + x1)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int) -> Float32:
-    return x0 + x1 + x2
+def dummy(x0: Int, x1: Int, x2: Int) -> Float32:
+    return Float32(x0 + x1 + x2)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
-    return x0 + x1 + x2 + x3
+def dummy(x0: Int, x1: Int, x2: Int, x3: Int) -> Float32:
+    return Float32(x0 + x1 + x2 + x3)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
-    return x0 + x1 + x2 + x3 + x4
+def dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int) -> Float32:
+    return Float32(x0 + x1 + x2 + x3 + x4)
 
 
-fn dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5
+def dummy(x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int) -> Float32:
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5)
 
 
-fn dummy(
+def dummy(
     x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6)
 
 
-fn dummy(
+def dummy(
     x0: Int, x1: Int, x2: Int, x3: Int, x4: Int, x5: Int, x6: Int, x7: Int
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7)
 
 
-fn dummy(
+def dummy(
     x0: Int,
     x1: Int,
     x2: Int,
@@ -89,10 +90,10 @@ fn dummy(
     x7: Int,
     x8: Int,
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8)
 
 
-fn dummy(
+def dummy(
     x0: Int,
     x1: Int,
     x2: Int,
@@ -104,26 +105,26 @@ fn dummy(
     x8: Int,
     x9: Int,
 ) -> Float32:
-    return x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9
+    return Float32(x0 + x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9)
 
 
-def test_overloaded():
+def test_overloaded() raises:
     var qb = QuickBench()
 
-    qb.run[T_out = NoneType._mlir_type](
+    qb.run[T_out=NoneType._mlir_type](
         dummy,
         bench_id=BenchId("dummy_none"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
     qb.run[Int, T_out=Float32](
         dummy,
         1,
         bench_id=BenchId("dummy_1"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, T_out=Float32](
@@ -131,9 +132,9 @@ def test_overloaded():
         1,
         2,
         bench_id=BenchId("dummy_2"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, T_out=Float32](
@@ -142,9 +143,9 @@ def test_overloaded():
         2,
         3,
         bench_id=BenchId("dummy_3"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, T_out=Float32](
@@ -154,9 +155,9 @@ def test_overloaded():
         3,
         4,
         bench_id=BenchId("dummy_4"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, T_out=Float32](
@@ -167,9 +168,9 @@ def test_overloaded():
         4,
         5,
         bench_id=BenchId("dummy_5"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -181,9 +182,9 @@ def test_overloaded():
         5,
         6,
         bench_id=BenchId("dummy_6"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -196,9 +197,9 @@ def test_overloaded():
         6,
         7,
         bench_id=BenchId("dummy_7"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -212,9 +213,9 @@ def test_overloaded():
         7,
         8,
         bench_id=BenchId("dummy_8"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -229,9 +230,9 @@ def test_overloaded():
         8,
         9,
         bench_id=BenchId("dummy_9"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.run[Int, Int, Int, Int, Int, Int, Int, Int, Int, Int, T_out=Float32](
@@ -247,53 +248,49 @@ def test_overloaded():
         9,
         10,
         bench_id=BenchId("dummy_10"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, 1)  # N additions per call
-        ),
+        ],
     )
 
     qb.dump_report()
 
 
 @always_inline
-fn exp(x: SIMD[DType.float32, 4]) -> type_of(x):
-    return math.exp(x)
+def exp(x: SIMD[DType.float32, 4]) -> type_of(x):
+    return std.math.exp(x)
 
 
 @always_inline
-fn tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
-    return math.tanh(x)
+def tanh(x: SIMD[DType.float32, 4]) -> type_of(x):
+    return std.math.tanh(x)
 
 
-def test_mojo_math():
+def test_mojo_math() raises:
     var qb = QuickBench()
 
     qb.run(
         exp,
         1.0,
         bench_id=BenchId("exp"),
-        measures=List[ThroughputMeasure](
-            ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
-        ),
+        measures=[ThroughputMeasure(BenchMetric.bytes, 4)],  # 4 bytes per call
     )
 
     qb.run(
         tanh,
         1.0,
         bench_id=BenchId("tanh"),
-        measures=List[ThroughputMeasure](
-            ThroughputMeasure(BenchMetric.bytes, 4)  # 4 bytes per call
-        ),
+        measures=[ThroughputMeasure(BenchMetric.bytes, 4)],  # 4 bytes per call
     )
     qb.dump_report()
 
 
-def test_custom():
-    alias N = 1024
-    alias alignment = 64
-    alias dtype = DType.int32
-    var x = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
-    var y = UnsafePointer[Scalar[dtype],].alloc(N, alignment=alignment)
+def test_custom() raises:
+    comptime N = 1024
+    comptime alignment = 64
+    comptime dtype = DType.int32
+    var x = alloc[Scalar[dtype]](N, alignment=alignment)
+    var y = alloc[Scalar[dtype]](N, alignment=alignment)
     randint[dtype](x, N, 0, 255)
     randint[dtype](y, N, 0, 255)
 
@@ -303,9 +300,9 @@ def test_custom():
         vec_reduce[N, dtype],
         x,
         bench_id=BenchId("vec_reduce"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
-        ),
+        ],
     )
 
     qb.run(
@@ -313,9 +310,9 @@ def test_custom():
         x,
         y,
         bench_id=BenchId("vec_add"),
-        measures=List[ThroughputMeasure](
+        measures=[
             ThroughputMeasure(BenchMetric.flops, N)  # N additions per call
-        ),
+        ],
     )
 
     qb.dump_report()
@@ -323,7 +320,7 @@ def test_custom():
     y.free()
 
 
-def test_all():
+def test_all() raises:
     # Width of columns is dynamic based on the longest value as a string, so
     # only test the first column.
 
@@ -352,5 +349,9 @@ def test_all():
     test_overloaded()
 
 
-def main():
-    TestSuite.discover_tests[__functions_in_module()]().run()
+def main() raises:
+    # NOTE: we pass an empty list since the benchmark infra also tries to parse
+    # the arguments for its own purposes.
+    TestSuite.discover_tests[__functions_in_module()](
+        cli_args=List[StaticString]()
+    ).run()

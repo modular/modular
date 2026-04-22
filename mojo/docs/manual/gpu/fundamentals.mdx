@@ -12,48 +12,48 @@ different vendors.
 Key topics covered in this guide:
 
 - Understanding the CPU-GPU programming model.
-- Working with Mojo's GPU support through the Standard Library.
+- Working with Mojo's GPU support through the standard library.
 - Managing GPU devices and contexts using `DeviceContext`.
 - Writing and executing kernel functions for parallel computation.
 - Memory management and data transfer between CPU and GPU.
 - Organizing threads and thread blocks for optimal performance.
 
 Before diving into GPU programming, ensure you have a [compatible
-GPU](/max/faq#gpu-requirements) and the necessary development environment
-installed. And if you're new to GPU programming, we suggest you read the
-[Intro to GPU architectures](/mojo/manual/gpu/architecture).
+GPU](/mojo/requirements#gpu-compatibility) and the necessary development
+environment installed. And if you're new to GPU programming, we suggest you
+read the [Intro to GPU architectures](/mojo/manual/gpu/architecture).
 
-## Overview of GPU Programming in Mojo
+## Overview of GPU programming in Mojo
 
-The Mojo language, including its Standard Library and open source MAX kernels
-library, allow you to develop GPU-enabled applications. See the [What are the
-GPU requirements?](/max/faq#gpu-requirements) section of the documentation for a
-list of currently supported GPUs and additional software requirements.
+The Mojo language, including its standard library and open source MAX kernels
+library, allow you to develop GPU-enabled applications.
 
-### GPU support in the Mojo Standard Library
+### GPU support in the Mojo standard library
 
-The [`gpu`](/mojo/stdlib/gpu/) package of the Mojo Standard Library includes
+The [`gpu`](/mojo/std/gpu/) package of the Mojo standard library includes
 several subpackages for interacting with GPUs, with the
-[`gpu.host`](/mojo/stdlib/gpu/host/) package providing most of the commonly used
-APIs. However, the [`sys`](/mojo/stdlib/sys/info/) package contains a few basic
+[`gpu.host`](/mojo/std/gpu/host/) package providing most of the commonly used
+APIs. However, the [`sys`](/mojo/std/sys/info/) package contains a few basic
 introspection functions for determining whether a system has a supported GPU:
 
-- [`has_accelerator()`](/mojo/stdlib/sys/info/has_accelerator): Returns `True`
+- [`has_accelerator()`](/mojo/std/sys/info/has_accelerator): Returns `True`
   if the host system has an accelerator and `False` otherwise.
-- [`has_amd_gpu_accelerator()`](/mojo/stdlib/sys/info/has_amd_gpu_accelerator):
+- [`has_amd_gpu_accelerator()`](/mojo/std/sys/info/has_amd_gpu_accelerator):
   Returns `True` if the host system has an AMD GPU and `False` otherwise.
-- [`has_nvidia_gpu_accelerator()`](/mojo/stdlib/sys/info/has_nvidia_gpu_accelerator):
+- [`has_apple_gpu_accelerator()`](/mojo/std/sys/info/has_apple_gpu_accelerator):
+  Returns `True` if the host system has an Apple silicon GPU and `False`
+  otherwise.
+- [`has_nvidia_gpu_accelerator()`](/mojo/std/sys/info/has_nvidia_gpu_accelerator):
   Returns `True` if the host system has an NVIDIA GPU and `False` otherwise.
 
 These functions are useful for conditional compilation or execution depending on
 whether a supported GPU is available.
 
 ```mojo title="detect_gpu.mojo"
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 def main():
-    @parameter
-    if has_accelerator():
+    comptime if has_accelerator():
         print("GPU detected")
         # Enable GPU processing
     else:
@@ -63,14 +63,15 @@ def main():
 
 :::note
 
-Mojo requires a [compatible GPU development
-environment](/max/faq/#gpu-requirements) to compile kernel functions, otherwise
-it raises a compile-time error. In this example, we're using the
-[`@parameter`](/mojo/manual/decorators/parameter) decorator to evaluate the
-`has_accelerator()` function at compile time and compile only the corresponding
-branch of the `if` statement. As a result, if you don't have a compatible GPU
-development environment, you'll see the following message when you run the
-program:
+Mojo requires a
+[compatible GPU development environment](/mojo/requirements#gpu-compatibility)
+to compile kernel functions, otherwise it raises a compile-time error. In this
+example, we're using the
+[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+statement to evaluate the `has_accelerator()` function at compile time and
+compile only the corresponding branch of the `if` statement. As a result, if you
+don't have a compatible GPU development environment, you'll see the following
+message when you run the program:
 
 ```output
 No GPU detected
@@ -107,15 +108,19 @@ but all of the types, functions, and methods are discussed in more detail in
 later sections of this document.
 
 ```mojo title="scalar_add.mojo"
-from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, thread_idx
-from math import iota
-from sys import exit
-from sys.info import has_accelerator
+from std.math import iota
+from std.sys import exit, has_accelerator
 
-alias num_elements = 20
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, thread_idx
 
-fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
+comptime num_elements = 20
+
+def scalar_add(
+    vector: UnsafePointer[Float32, MutAnyOrigin],
+    size: Int,
+    scalar: Float32,
+):
     """
     Kernel function to add a scalar to all elements of a vector.
 
@@ -140,14 +145,14 @@ fn scalar_add(vector: UnsafePointer[Float32], size: Int, scalar: Float32):
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < UInt(size):
+    if idx < size:
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar
 
-def main():
-    @parameter
-    if not has_accelerator():
+
+def main() raises:
+    comptime if not has_accelerator():
         print("No GPUs detected")
         exit(0)
     else:
@@ -163,7 +168,7 @@ def main():
         ctx.synchronize()
 
         # Fill the host buffer with sequential numbers (0, 1, 2, ..., size-1).
-        iota(host_buffer.unsafe_ptr(), num_elements)
+        iota(host_buffer.as_span())
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.
@@ -173,7 +178,9 @@ def main():
         ctx.enqueue_copy(src_buf=host_buffer, dst_buf=device_buffer)
 
         # Compile the scalar_add kernel function for execution on the GPU.
-        scalar_add_kernel = ctx.compile_function[scalar_add]()
+        scalar_add_kernel = ctx.compile_function[
+            scalar_add, scalar_add
+        ]()
 
         # Launch the GPU kernel with the following arguments:
         #
@@ -211,8 +218,8 @@ Modified host buffer: HostBuffer([20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0
 
 ## Accessing and managing GPUs with `DeviceContext`
 
-The [`gpu.host`](/mojo/stdlib/gpu/host/) package includes the
-[`DeviceContext`](/mojo/stdlib/gpu/host/device_context/DeviceContext/) struct,
+The [`gpu.host`](/mojo/std/gpu/host/) package includes the
+[`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext/) struct,
 which represents a logical instance of a GPU device. It provides methods for
 allocating memory on the device, copying data between the host CPU and the GPU,
 and compiling and running functions (also known as *kernels*) on the device.
@@ -222,7 +229,7 @@ and compiling and running functions (also known as *kernels*) on the device.
 Mojo supports systems with multiple GPUs. GPUs are uniquely identified by
 integer indices starting with `0`, which is considered the "default" device. You
 can determine the number of GPUs available by invoking the
-[`DeviceContext.number_of_devices()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#number_of_devices)
+[`DeviceContext.number_of_devices()`](/mojo/std/gpu/host/device_context/DeviceContext#number_of_devices)
 static method.
 
 The `DeviceContext()` constructor returns an instance for interacting with a
@@ -230,11 +237,11 @@ specified GPU. It accepts two optional arguments:
 
 - `device_id`: An integer index of a specific GPU on the system. The default
   value of 0 refers to the "default" GPU for the system.
-- `api`: A `String` specifying a particular vendor's API. "cuda" (NVIDIA) and
-  "hip" (AMD) are currently supported.
+- `api`: A `String` specifying a particular vendor's API. "cuda" (NVIDIA), "hip"
+  (AMD), and "metal" (Apple) are currently supported.
 
-If your system doesn't have a supported GPU — or doesn't have a GPU matching the
-`device_id` or `api`, if provided — then the constructor raises an error.
+If your system doesn't have a supported GPU—or doesn't have a GPU matching the
+`device_id` or `api`, if provided—then the constructor raises an error.
 
 ### Asynchronous operation and synchronizing the CPU and GPU
 
@@ -244,7 +251,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are enqueued.
 
 The
-[`synchronize()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#synchronize)
+[`synchronize()`](/mojo/std/gpu/host/device_context/DeviceContext#synchronize)
 method blocks execution of the current CPU thread until all queued operations on
 the associated `DeviceContext` stream have completed. Most commonly, you use
 this to wait until the result of a kernel function is copied from device memory
@@ -272,19 +279,19 @@ dimensions.
 You specify the grid and thread block dimensions with the `grid_dim` and
 `block_dim` keyword arguments when you enqueue a kernel function to execute
 using the
-[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. For example:
 
 ```mojo
 # Enqueue the print_threads() kernel function
-ctx.enqueue_function[print_threads](
+ctx.enqueue_function[print_threads, print_threads](
     grid_dim=(2, 2, 1),   # 2x2x1 blocks per grid
     block_dim=(4, 4, 2),  # 4x4x2 threads per block
 )
 ```
 
 For both `grid_dim` and `block_dim`, you express the size in the `x`, `y`, and
-`z` dimensions as a [`Dim`](/mojo/stdlib/gpu/host/dim/Dim/) or a `Tuple`. The
+`z` dimensions as a [`Dim`](/mojo/std/gpu/host/dim/Dim/) or a `Tuple`. The
 `y` and `z` dimensions default to 1 if you don't explicitly provide them (that
 is, `(2, 2)` is treated as `(2, 2, 1)` and `(8,)` is treated as `(8, 1, 1)`).
 You can also provide just an `Int` value to specify only the `x` dimension (that
@@ -304,55 +311,60 @@ From within a kernel function, you can access the grid and thread block
 dimensions and the assigned thread block and thread indices of the individual
 threads executing the kernel using the following structures:
 
-| Struct alias | Description |
-| --- | --- |
-| [`grid_dim`](/mojo/stdlib/gpu/id/#grid_dim)  | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`). |
-| [`block_dim`](/mojo/stdlib/gpu/id/#block_dim)  | Dimensions of the thread block as `x`, `y`, and `z` values. |
-| [`block_idx`](/mojo/stdlib/gpu/id/#block_idx)  | Index of the block within the grid as `x`, `y`, and `z` values. |
-| [`thread_idx`](/mojo/stdlib/gpu/id/#thread_idx)  | Index of the thread within the block as `x`, `y`, and `z` values. |
-| [`global_idx`](/mojo/stdlib/gpu/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
+| Comptime value                                          | Description                                                                                                                                                                                                                                                |
+|---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| [`grid_dim`](/mojo/std/gpu/primitives/id/#grid_dim)     | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`).                                                                                                                                                                            |
+| [`block_dim`](/mojo/std/gpu/primitives/id/#block_dim)   | Dimensions of the thread block as `x`, `y`, and `z` values.                                                                                                                                                                                                |
+| [`block_idx`](/mojo/std/gpu/primitives/id/#block_idx)   | Index of the block within the grid as `x`, `y`, and `z` values.                                                                                                                                                                                            |
+| [`thread_idx`](/mojo/std/gpu/primitives/id/#thread_idx) | Index of the thread within the block as `x`, `y`, and `z` values.                                                                                                                                                                                          |
+| [`global_idx`](/mojo/std/gpu/primitives/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
 
-Here is a complete example showing a kernel function that simply prints the
-thread block index, thread index, and global index for each thread executed.
+:::note
+
+All of these dimensions and indices are
+[`Int`](/mojo/std/builtin/int/Int) values.
+
+:::
+
+The following example shows a kernel function that prints the
+thread block index, thread index, and global index for each thread.
 
 ```mojo title="print_threads.mojo"
-from gpu.host import DeviceContext
-from gpu.id import block_dim, block_idx, grid_dim, global_idx, thread_idx
-from sys import exit, has_accelerator
+from std.sys import has_accelerator
 
-fn print_threads():
+from std.gpu.host import DeviceContext
+from std.gpu import block_dim, block_idx, global_idx, thread_idx
+
+def print_threads():
     """Print thread block and thread indices."""
 
     print(
-        "block_idx: [",
-            block_idx.x,
-            block_idx.y,
-            block_idx.z,
-        "]\tthread_idx: [",
-            thread_idx.x,
-            thread_idx.y,
-            thread_idx.z,
-        "]\tglobal_idx: [",
-            global_idx.x,
-            global_idx.y,
-            global_idx.z,
-        "]\tcalculated global_idx: [",
-            block_dim.x * block_idx.x + thread_idx.x,
-            block_dim.y * block_idx.y + thread_idx.y,
-            block_dim.z * block_idx.z + thread_idx.z,
-        "]",
+        block_idx.x,
+        block_idx.y,
+        block_idx.z,
+        thread_idx.x,
+        thread_idx.y,
+        thread_idx.z,
+        global_idx.x,
+        global_idx.y,
+        global_idx.z,
+        block_dim.x * block_idx.x + thread_idx.x,
+        block_dim.y * block_idx.y + thread_idx.y,
+        block_dim.z * block_idx.z + thread_idx.z,
+        sep="\t",
     )
 
-def main():
-    @parameter
-    if not has_accelerator():
-        print("No GPU detected")
-        exit(0)
+def main() raises:
+    comptime if not has_accelerator():
+        print("No compatible GPU found")
     else:
         # Initialize GPU context for device 0 (default GPU device).
         ctx = DeviceContext()
 
-        ctx.enqueue_function[print_threads](
+        print("block_idx\t\tthread_idx\t\tglobal_idx\t\tcalculated global_idx")
+        print("x\ty\tz", "x\ty\tz", "x\ty\tz", "x\ty\tz", sep="\t")
+        print("-" * 20, "-" * 20, "-" * 20, "-" * 20, sep="\t")
+        ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1),  # 2x2x1 blocks per grid
             block_dim=(4, 4, 2),  # 4x4x2 threads per block
         )
@@ -361,29 +373,47 @@ def main():
         print("Done")
 ```
 
-This application produces output similar to this (with the output order
+This example produces output similar to the following (with the output order
 indeterminate because of the concurrent execution of multiple threads):
 
 ```output
-block_idx: [ 0 1 0 ]	thread_idx: [ 0 0 0 ]	global_idx: [ 0 4 0 ]	calculated global_idx: [ 0 4 0 ]
-block_idx: [ 0 1 0 ]	thread_idx: [ 1 0 0 ]	global_idx: [ 1 4 0 ]	calculated global_idx: [ 1 4 0 ]
+block_idx		thread_idx		global_idx		calculated global_idx
+x	y	z	x	y	z	x	y	z	x	y	z
+--------------------	--------------------	--------------------	--------------------
+0	1	0	0	0	0	0	4	0	0	4	0
+0	1	0	1	0	0	1	4	0	1	4	0
 ...
-block_idx: [ 1 1 0 ]	thread_idx: [ 2 3 1 ]	global_idx: [ 6 7 1 ]	calculated global_idx: [ 6 7 1 ]
-block_idx: [ 1 1 0 ]	thread_idx: [ 3 3 1 ]	global_idx: [ 7 7 1 ]	calculated global_idx: [ 7 7 1 ]
+1	1	0	2	3	1	6	7	1	6	7	1
+1	1	0	3	3	1	7	7	1	7	7	1
 Done
 ```
+
+:::note Known limitation
+
+On Apple silicon GPUs, each `print()` call inside a GPU kernel currently
+supports at most one string literal argument. To ensure readable output across
+all GPU platforms, the examples here print numeric values only, with the host
+printing column headers before launching the kernel. This restriction doesn't
+apply to NVIDIA or AMD GPUs.
+
+:::
 
 ### Writing a kernel function
 
 Kernel functions must be
 [non-raising](/mojo/manual/functions/#raising-and-non-raising-functions).
-This means that you must define them using the `fn` keyword and not use the
-`raises` keyword. (The Mojo compiler *always* treats a function declared with
-`def` as a raising function, even if the body of the function doesn't contain
-any code that could raise an error.)
+
+:::note
+
+For functions called from GPU kernels that need error handling, Mojo supports
+typed errors with types that don't allocate heap memory. See
+[Define a custom error type](/mojo/manual/errors#define-a-custom-error-type)
+for details.
+
+:::
 
 Argument values must be of types that conform to the
-[`DevicePassable`](/mojo/stdlib/builtin/device_passable/DevicePassable/) trait.
+[`DevicePassable`](/mojo/std/builtin/device_passable/DevicePassable/) trait.
 Additionally, a kernel function can't have a return value. Instead, you must
 write any result of a kernel function to a memory buffer passed in as an
 argument. The next two sections, [Passing data between CPU and
@@ -429,9 +459,9 @@ could perform a boundary check like this to ensure that it doesn't attempt to
 process out-of-bounds elements:
 
 ```mojo
-from gpu.id import global_idx
+from std.gpu import global_idx
 
-fn process_vector(vector: UnsafePointer[Float32], size: Int):
+def process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
     if global_idx.x < size:
         # Process vector[global_idx.x] in some way
 ```
@@ -439,39 +469,32 @@ fn process_vector(vector: UnsafePointer[Float32], size: Int):
 ### Passing data between CPU and GPU
 
 All values passed to a kernel function must be of types that conform to the
-[`DevicePassable`](/mojo/stdlib/builtin/device_passable/DevicePassable/) trait.
-The trait declares an [associated
-alias](/mojo/manual/traits/#associated-aliases-for-generics) named `device_type`
-that maps the type as used on the CPU host to a corresponding type used on the
-GPU device.
+[`DevicePassable`](/mojo/std/builtin/device_passable/DevicePassable/) trait.
+The trait declares a
+[`comptime` member](/mojo/manual/traits/#comptime-members-for-generics) named
+`device_type` that maps the type as used on the CPU host to a corresponding type
+used on the GPU device.
 
 As an example,
-[`DeviceBuffer`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer) is a
+[`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer) is a
 host-side representation of a buffer located in the GPU's global memory space.
-But it defines its `device_type` associated alias as `UnsafePointer`, so the
+But it defines its `device_type` member as `UnsafePointer`, so the
 data represented by a `DeviceBuffer` is actually passed to the kernel function
 as a value of type
-[`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer). The next
-section, [`DeviceBuffer` and `HostBuffer` ](#devicebuffer-and-hostbuffer),
+[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer). The next
+section, [`DeviceBuffer` and `HostBuffer`](#devicebuffer-and-hostbuffer),
 describes in more detail how to allocate memory buffers on the host and device
 and to exchange blocks of data between host and device.
 
-The following table lists the most commonly used types in the Mojo Standard
-Library that conform to the `DevicePassable` trait.
+The following table lists the most commonly used types in the Mojo libraries
+that conform to the `DevicePassable` trait.
 
-| Host type | Device Type | Description |
-| --- | --- | --- |
-| [`Int`](/mojo/stdlib/builtin/int/Int) | `Int` | Signed integer |
-| [`SIMD[dtype, width]`](/mojo/stdlib/builtin/simd/SIMD) | `SIMD[dtype, width]` | Small vector backed by a hardware vector element |
-| [`DeviceBuffer[dtype]`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer)  | [`UnsafePointer[SIMD[dtype, 1]]`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values |
-
-Additionally, you can take advantage of Mojo's support for [implicit
-conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion) to
-use types that can convert to those listed above. A common example of this is
-[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor/), which
-provides powerful abstractions for manipulating multi-dimensional data. For
-more information on `LayoutTensor`, see the
-[Using `LayoutTensor`](/mojo/manual/layout/tensors) section of the Mojo Manual.
+| Host type                                                               | Device Type                                                                       | Description                                                                                                                      |
+|-------------------------------------------------------------------------|-----------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------------------------|
+| [`Int`](/mojo/std/builtin/int/Int)                                      | `Int`                                                                             | Signed integer                                                                                                                   |
+| [`SIMD[dtype, width]`](/mojo/std/builtin/simd/SIMD)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                                 |
+| [`DeviceBuffer[dtype]`](/mojo/std/gpu/host/device_context/DeviceBuffer) | [`UnsafePointer[SIMD[dtype, 1]]`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                                  |
+| [`LayoutTensor`](/mojo/layout/layout_tensor/LayoutTensor/)              | `LayoutTensor`                                                                    | A powerful abstraction for multi-dimensional data. See [Using `LayoutTensor`](/mojo/manual/layout/tensors) for more information. |
 
 ### `DeviceBuffer` and `HostBuffer`
 
@@ -482,7 +505,7 @@ host memory.
 #### Creating a `DeviceBuffer`
 
 The
-[`DeviceBuffer`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer)
+[`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer)
 type represents a block of device memory associated with a particular
 `DeviceContext`. Specifically, the buffer is located in the device's *global
 memory* space. As such, the buffer is accessible by all threads of all kernel
@@ -496,15 +519,15 @@ by the function is of type `UnsafePointer`. Attempting to use the `DeviceBuffer`
 type directly from within a kernel function results in an error.
 
 The
-[`DeviceContext.enqueue_create_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
+[`DeviceContext.enqueue_create_buffer()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
 method creates a `DeviceBuffer` associated with that `DeviceContext`. It accepts
-the data type as a compile-time [`DType`](/mojo/stdlib/builtin/dtype/DType/)
+the data type as a compile-time [`DType`](/mojo/std/builtin/dtype/DType/)
 parameter and the size of the buffer as a run-time argument. So to create a
-buffer for 1,024 [`Float32`](/mojo/stdlib/builtin/simd/#float32) values, you
-would execute:
+buffer for 1,024 [`Float32`](/mojo/std/builtin/simd/#float32) values, you would
+execute:
 
 ```mojo
-device_buffer = ctx.enqueue_create_buffer[Float32](1024)
+device_buffer = ctx.enqueue_create_buffer[DType.float32](1024)
 ```
 
 As the method name implies, this method is asynchronous and enqueues the
@@ -513,25 +536,25 @@ operations](#asynchronous-operation-and-synchronizing-the-cpu-and-gpu).
 
 #### Creating a `HostBuffer`
 
-The [`HostBuffer`](/mojo/stdlib/gpu/host/device_context/HostBuffer) type is
+The [`HostBuffer`](/mojo/std/gpu/host/device_context/HostBuffer) type is
 analogous to `DeviceBuffer`, but represents a block of host memory associated
 with a particular `DeviceContext`. It supports methods for transferring data
 between host and device memory, as well as a basic set of methods for accessing
 data elements by index and for printing the buffer.
 
 The
-[`DeviceContext.enqueue_create_host_buffer()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
+[`DeviceContext.enqueue_create_host_buffer()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
 method accepts the data type as a compile-time
-[`DType`](/mojo/stdlib/builtin/dtype/DType/) parameter and the size of the
-buffer as a run-time argument and returns a `HostBuffer`. As with all
-`DeviceContext` methods whose name starts with `enqueue_`, the method is
-asynchronous and returns immediately, adding the operation to the queue to be
-executed by the `DeviceContext`. Therefore, you need to call the `synchronize()`
-method to ensure that the operation has completed before you write to or read
-from the `HostBuffer` object.
+[`DType`](/mojo/std/builtin/dtype/DType/) parameter and the size of the buffer
+as a run-time argument and returns a `HostBuffer`. As with all `DeviceContext`
+methods whose name starts with `enqueue_`, the method is asynchronous and
+returns immediately, adding the operation to the queue to be executed by the
+`DeviceContext`. Therefore, you need to call the `synchronize()` method to
+ensure that the operation has completed before you write to or read from the
+`HostBuffer` object.
 
 ```mojo
-device_buffer = ctx.enqueue_create_host_buffer[Float32](1024)
+device_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
 
 # Synchronize to wait until buffer is created before attempting to write to it
 ctx.synchronize()
@@ -544,7 +567,7 @@ for i in range(1024):
 #### Copying data between host and device memory
 
 The
-[`enqueue_copy()`](/mojo/stdlib/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. Typically, you'll use
 it to copy data that you've staged in a `HostBuffer` to a `DeviceBuffer` before
@@ -558,7 +581,7 @@ from the device. However, you can allocate a separate `DeviceBuffer` and
 original data.
 
 In addition to copying data between a `HostBuffer` to a `DeviceBuffer`, you can
-use an [`UnsafePointer`](/mojo/stdlib/memory/unsafe_pointer/UnsafePointer) as
+use an [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) as
 the source or destination of a copy. However, the `UnsafePointer` must reference
 host memory for this operation. Attempting to use an `UnsafePointer` referencing
 device memory results in an error. For example, this is useful if you have data
@@ -567,9 +590,9 @@ an `UnsafePointer`. In that case you would not need to copy the data from the
 data structure to a `HostBuffer` before copying it to the `DeviceBuffer`.
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
+[`enqueue_copy_to()`](/mojo/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
+[`enqueue_copy_from()`](/mojo/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. For example, the following two
 method calls are interchangeable:
@@ -582,13 +605,13 @@ host_buffer.enqueue_copy_to(dst=device_buffer)
 ```
 
 Finally, as a convenience for testing or prototyping, you can use the
-[`DeviceBuffer.map_to_host()`](/mojo/stdlib/gpu/host/device_context/DeviceBuffer#map_to_host)
+[`DeviceBuffer.map_to_host()`](/mojo/std/gpu/host/device_context/DeviceBuffer#map_to_host)
 method to create a host-accessible view of the device buffer's contents. This
-returns `HostBuffer` as a [context
-manager](/mojo/manual/errors#use-a-context-manager) that contains a copy of the
-data from the corresponding `DeviceBuffer`. Additionally, any modifications that
-you make to the `HostBuffer` are automatically copied back to the `DeviceBuffer`
-when the `with` statement exits. For example:
+returns `HostBuffer` as a
+[context manager](/mojo/manual/errors#use-a-context-manager) that contains a
+copy of the data from the corresponding `DeviceBuffer`. Additionally, any
+modifications that you make to the `HostBuffer` are automatically copied back to
+the `DeviceBuffer` when the `with` statement exits. For example:
 
 ```mojo
 ctx = DeviceContext()
@@ -639,18 +662,18 @@ explanation of object destruction.
 ### Compiling and enqueuing a kernel function for execution
 
 The
-[`compile_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function)
+[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
 method accepts a kernel function as a compile-time
 [parameter](/mojo/manual/parameters) and then compiles it for the associated
 `DeviceContext`. Then you can enqueue the compiled kernel for execution by
 passing it to the
-[`enqueue_function()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. The example in the [GPU programming model](#gpu-programming-model)
 demonstrated this pattern:
 
 ```mojo title="scalar_add.mojo"
 ...
-scalar_add_kernel = ctx.compile_function[scalar_add]()
+scalar_add_kernel = ctx.compile_function[scalar_add, scalar_add]()
 
 ctx.enqueue_function(
     scalar_add_kernel,
@@ -675,54 +698,35 @@ Refer to the [Multidimensional grids and thread
 organization](#multidimensional-grids-and-thread-organization) section for more
 information on grid and thread block dimensions.
 
-:::note
+:::note API variants
 
-The current implementation of `enqueue_function()` doesn't typecheck the
-arguments to the compiled kernel function, which can lead to obscure run-time
-errors if the argument ordering, types, or count doesn't match the kernel
-function's definition.
+The `compile_function_unchecked()` and `enqueue_function_unchecked()` methods
+are deprecated and will be removed in a future release because they don't
+perform compile-time type checking of the kernel function arguments. You'll
+encounter run-time errors if the values you pass don't conform to the expected
+argument types.
 
-For compile-time typechecking, you can use the
-[`compile_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#compile_function_checked)
-and
-[`enqueue_function_checked()`](/mojo/stdlib/gpu/host/device_context/DeviceContext/#enqueue_function_checked)
-methods.
-
-Here's the typechecked equivalent of the `scalar_add()` kernel compilation and
-enqueuing shown above:
-
-```mojo
-scalar_add_kernel = ctx.compile_function_checked[scalar_add, scalar_add]()
-
-ctx.enqueue_function_checked(
-    scalar_add_kernel,
-    device_buffer,
-    num_elements,
-    Float32(20.0),
-    grid_dim=1,
-    block_dim=num_elements,
-)
-```
-
-Note that `compile_function_checked()` currently requires the kernel function to
-be provided *twice* as parameters. This requirement will be removed in a future
-API update, when typechecking will become the default behavior for both
-`compile_function()` and `enqueue_function()`.
+The `compile_function_experimental()` and `enqueue_function_experimental()`
+methods perform compile-time type checking but require the kernel function as a
+parameter only once instead of twice. Once we verify these APIs work correctly,
+we'll rename them to `compile_function()` and `enqueue_function()` to make
+type-checking the default behavior.
 
 :::
 
-The advantage of compiling the kernel as a separate step is that that you can
+The advantage of compiling the kernel as a separate step is that you can
 execute the same compiled kernel on the same device multiple times. This avoids
 the overhead of compiling the kernel each time it's executed.
 
 If your application needs to execute a kernel function only once, you can use an
-overloaded version of `enqueue_function()` that compiles the kernel and enqueues
-it in a single step. Therefore, the following is equivalent to the separate
-calls to `compile_function()` and `enqueue_function()` shown above (note that
-the kernel function is provided as a compile-time parameter in this case):
+overloaded version of `enqueue_function()` that compiles the kernel and
+enqueues it in a single step. Therefore, the following is equivalent to the
+separate calls to `compile_function()` and `enqueue_function()`
+shown above (note that the kernel function is provided as a compile-time
+parameter in this case):
 
 ```mojo
-ctx.enqueue_function[scalar_add](
+ctx.enqueue_function[scalar_add, scalar_add](
     device_buffer,
     num_elements,
     Float32(20.0),

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm.functional import elementwise
-from gpu.random import Random
-from runtime.asyncrt import DeviceContextPtr
-from tensor_internal._indexing import _dot_prod, _row_major_strides
+from std.algorithm.functional import elementwise
+from std.random import Random
+from std.runtime.asyncrt import DeviceContextPtr
+from tensor._indexing import _dot_prod
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn random_uniform[
+def random_uniform[
     dtype: DType,
-    rank: Int, //,
-    output_fn: fn[width: Int, _rank: Int] (
+    rank: Int,
+    //,
+    output_fn: def[width: SIMDSize, _rank: Int](
         idx: IndexList[_rank], val: SIMD[dtype, width]
-    ) capturing [_],
+    ) capturing[_],
     target: StaticString,
 ](
     shape: IndexList[rank],
@@ -54,16 +55,16 @@ fn random_uniform[
     if lower_bound > upper_bound:
         raise Error("lower_bound must be less than upper_bound")
 
-    var strides = _row_major_strides(shape)
+    var strides = shape.get_row_major_strides()
     var delta = Float32(upper_bound - lower_bound)
 
     @parameter
     @always_inline
     @__copy_capture(strides, delta)
-    fn generate[
+    def generate[
         width: Int, _rank: Int, alignment: Int = 1
     ](idx: IndexList[_rank],):
-        constrained[width <= 4]()
+        comptime assert width <= 4
 
         var offset = _dot_prod(rebind[type_of(strides)](idx), strides)
 

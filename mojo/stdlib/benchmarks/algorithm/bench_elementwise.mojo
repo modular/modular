@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,45 +11,38 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm import elementwise
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from buffer import NDBuffer
+from std.algorithm import elementwise
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark elementwise
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_elementwise[n: Int](mut b: Bencher) raises:
-    var vector = NDBuffer[DType.int, 1, MutableAnyOrigin, n].stack_allocation()
-
-    for i in range(len(vector)):
-        vector[i] = -1
+def bench_elementwise[n: Int](mut b: Bencher) raises:
+    var vector = InlineArray[Scalar[DType.int], n](fill=-1)
 
     @always_inline
     @parameter
-    fn call_fn() raises:
+    def call_fn() raises:
         @always_inline
         @parameter
-        fn func[
+        def func[
             simd_width: Int, rank: Int, alignment: Int = 1
         ](idx: IndexList[rank]):
             vector[idx[0]] = 42
 
-        elementwise[func, 1](Index(n))
-        elementwise[func=func, simd_width = simd_width_of[DType.int]()](
-            Index(n)
-        )
+        elementwise[func=func, simd_width=simd_width_of[DType.int]()](Index(n))
 
     b.iter[call_fn]()
     _ = vector
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_elementwise[32]](BenchId("bench_elementwise_32"))
     m.bench_function[bench_elementwise[128]](BenchId("bench_elementwise_128"))

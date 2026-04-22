@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,80 +12,94 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
+
 from nn.argsort import argsort
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn linear_filler(i: Int, n: Int) -> Float32:
-    return i
+def linear_filler(i: Int, n: Int) -> Float32:
+    return Float32(i)
 
 
-fn reverse_filler(i: Int, n: Int) -> Float32:
-    return n - i
+def reverse_filler(i: Int, n: Int) -> Float32:
+    return Float32(n - i)
 
 
-fn test_argsort[
+def test_argsort[
     dtype: DType = DType.float32,
     *,
-    filler: fn (Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool = True,
 ](ctx: DeviceContext, N: Int) raises:
-    var input = HostNDBuffer[dtype, 1](N)
-
-    for i in range(N):
-        input.tensor[i] = filler(i, N).cast[dtype]()
-
-    var device_indices = DeviceNDBuffer[DType.int64, 1](N, ctx=ctx)
-
-    var device_input = input.copy_to_device(ctx)
-
-    argsort[ascending=ascending, target="gpu"](
-        device_indices.to_layout_tensor(), device_input.to_layout_tensor(), ctx
+    # Allocate host memory
+    var input_host_ptr = alloc[Scalar[dtype]](N)
+    var input_host = TileTensor(
+        input_host_ptr,
+        row_major(Idx(N)),
     )
 
-    var indices = device_indices.copy_from_device(ctx)
+    for i in range(N):
+        input_host_ptr[i] = filler(i, N).cast[dtype]()
+
+    # Allocate device buffers
+    var device_indices = ctx.enqueue_create_buffer[DType.int64](N)
+    var device_input = ctx.enqueue_create_buffer[dtype](N)
+    ctx.enqueue_copy(device_input, input_host_ptr)
+
+    # Create device LayoutTensors
+    var device_indices_tensor = TileTensor(
+        device_indices,
+        row_major(Idx(N)),
+    )
+    var device_input_tensor = TileTensor(
+        device_input,
+        row_major(Idx(N)),
+    )
+
+    argsort[ascending=ascending, target="gpu"](
+        device_indices_tensor, device_input_tensor, ctx
+    )
+
+    # Copy results back
+    var indices_host_ptr = alloc[Scalar[DType.int64]](N)
+    ctx.enqueue_copy(indices_host_ptr, device_indices)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var expected_indices = HostNDBuffer[DType.int64, 1](N)
-    argsort[ascending=ascending](
-        expected_indices.to_layout_tensor(), input.to_layout_tensor()
+    var expected_indices_ptr = alloc[Scalar[DType.int64]](N)
+    var expected_indices = TileTensor(
+        expected_indices_ptr,
+        row_major(Idx(N)),
     )
+    argsort[ascending=ascending](expected_indices, input_host)
 
     for i in range(N):
         assert_equal(
-            indices.tensor[i],
-            expected_indices.tensor[i],
+            indices_host_ptr[i],
+            expected_indices_ptr[i],
             msg=String(
-                "indices[",
-                i,
-                "] = ",
-                indices.tensor[i],
-                " expected_indices[",
-                i,
-                "] = ",
-                expected_indices.tensor[i],
-                " N = ",
-                N,
-                " ascending = ",
-                ascending,
-                " at position ",
-                i,
+                t"indices[{i}] = {indices_host_ptr[i]} expected_indices[{i}] ="
+                t" {expected_indices_ptr[i]} N = {N} ascending = {ascending} at"
+                t" position {i}"
             ),
         )
 
+    # Cleanup host memory
+    input_host_ptr.free()
+    indices_host_ptr.free()
+    expected_indices_ptr.free()
+
+    # Cleanup device buffers
     _ = device_indices^
     _ = device_input^
-    _ = indices^
-    _ = expected_indices^
 
 
-fn test_argsort_helper[
+def test_argsort_helper[
     *,
     dtype: DType,
-    filler: fn (Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
     ascending: Bool,
 ](ctx: DeviceContext) raises:
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=3731)
@@ -95,17 +109,17 @@ fn test_argsort_helper[
     test_argsort[dtype, filler=filler, ascending=ascending](ctx, N=1024)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:  # argmax tests
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=True
+            dtype=DType.float32, filler=linear_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=linear_filler, ascending=False
+            dtype=DType.float32, filler=linear_filler, ascending=False
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=True
+            dtype=DType.float32, filler=reverse_filler, ascending=True
         ](ctx)
         test_argsort_helper[
-            dtype = DType.float32, filler=reverse_filler, ascending=False
+            dtype=DType.float32, filler=reverse_filler, ascending=False
         ](ctx)

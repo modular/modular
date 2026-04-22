@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,27 +11,25 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import math
-from os import abort
+import std.math
+from std.os import abort
 
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module")
         m.def_function[factorial]("factorial", docstring="Compute n!")
         return m.finalize()
     except e:
-        return abort[PythonObject](
-            String("error creating Python Mojo module:", e)
-        )
+        abort(String("error creating Python Mojo module:", e))
 
 
-fn factorial(py_obj: PythonObject) raises -> PythonObject:
+def factorial(py_obj: PythonObject) raises -> PythonObject:
     # Raises an exception if `py_obj` is not convertible to a Mojo `Int`.
-    var n = Int(py_obj)
+    var n = Int(py=py_obj)
 
-    return math.factorial(n)
+    return std.math.factorial(n)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io import FileDescriptor
-from sys._io import stdin, stdout, stderr
+from std.io import FileDescriptor
+from std.sys._io import stdin, stdout, stderr
 
-from sys.intrinsics import _type_is_eq
-from testing import TestSuite, assert_false, assert_true
+from std.sys.intrinsics import _type_is_eq
+from std.testing import TestSuite, assert_false, assert_true
 
 
-def test_isatty_with_standard_descriptors():
+def test_isatty_with_standard_descriptors() raises:
     assert_true(_type_is_eq[type_of(stdin.isatty()), Bool]())
     assert_true(_type_is_eq[type_of(stdout.isatty()), Bool]())
     assert_true(_type_is_eq[type_of(stderr.isatty()), Bool]())
 
 
-def test_isatty_with_invalid_fd():
+def test_isatty_with_invalid_fd() raises:
     # Test with an invalid file descriptor
     # isatty should return False for invalid file descriptors
     assert_false(FileDescriptor(-1).isatty())
@@ -33,5 +33,5 @@ def test_isatty_with_invalid_fd():
     assert_false(FileDescriptor(9999).isatty())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

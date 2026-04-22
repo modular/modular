@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._fnv1a import Fnv1a
+from std.hashlib._fnv1a import Fnv1a
 
-from memory import memset_zero
+from std.memory import memset_zero
 from test_utils import (
     assert_dif_hashes,
     assert_fill_factor,
@@ -26,63 +26,63 @@ from test_utils import (
     words_pl,
     words_ru,
 )
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     assert_equal(
-        hash[HasherType=Fnv1a]("a"),
-        hash[HasherType=Fnv1a]("a"),
+        hash[Fnv1a]("a"),
+        hash[Fnv1a]("a"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a]("b"),
-        hash[HasherType=Fnv1a]("b"),
-    )
-
-    assert_equal(
-        hash[HasherType=Fnv1a]("c"),
-        hash[HasherType=Fnv1a]("c"),
+        hash[Fnv1a]("b"),
+        hash[Fnv1a]("b"),
     )
 
     assert_equal(
-        hash[HasherType=Fnv1a]("d"),
-        hash[HasherType=Fnv1a]("d"),
+        hash[Fnv1a]("c"),
+        hash[Fnv1a]("c"),
+    )
+
+    assert_equal(
+        hash[Fnv1a]("d"),
+        hash[Fnv1a]("d"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a]("d"),
-        hash[HasherType=Fnv1a]("d"),
+        hash[Fnv1a]("d"),
+        hash[Fnv1a]("d"),
     )
 
 
-def test_avalanche():
+def test_avalanche() raises:
     # test that values which differ just in one bit,
-    # produce significatly different hash values
+    # produce significantly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+    hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
-        buffer[i >> 3] = v
-        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+        buffer[i >> 3] = UInt8(v)
+        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     assert_dif_hashes(hashes, 15)
 
 
-def test_trailing_zeros():
+def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
     var buffer = InlineArray[UInt8, 8](fill=0)
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), i))
+        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), i))
 
     assert_dif_hashes(hashes, 21)
 
 
-def test_fill_factor():
+def test_fill_factor() raises:
     words = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", Fnv1a](words, len(words), 0.63)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 2, 0.86)
@@ -126,8 +126,8 @@ def test_fill_factor():
     assert_fill_factor["RU", Fnv1a](words, len(words) // 14, 1.0)
 
 
-def test_hash_simd_values():
-    fn hash(value: SIMD) -> UInt64:
+def test_hash_simd_values() raises:
+    def hash(value: SIMD) -> UInt64:
         hasher = Fnv1a()
         hasher._update_with_simd(value)
         return hasher^.finish()
@@ -175,10 +175,10 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int32, 64](0)), 13380826962402805797)
 
 
-def test_hash_at_compile_time():
-    alias h = hash[HasherType=Fnv1a]("hello")
+def test_hash_at_compile_time() raises:
+    comptime h = hash[Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

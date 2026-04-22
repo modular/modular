@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,9 +13,8 @@
 
 """The module contains implementations of activation functions."""
 
-import math
+import std.math
 
-from utils.numerics import get_accum_type
 
 # ===----------------------------------------------------------------------=== #
 # sign
@@ -23,8 +22,8 @@ from utils.numerics import get_accum_type
 
 
 @always_inline("nodebug")
-fn _is_neg[
-    dtype: DType, simd_width: Int
+def _is_neg[
+    dtype: DType, simd_width: SIMDSize
 ](val: SIMD[dtype, simd_width]) -> SIMD[DType.bool, simd_width]:
     """Returns True if the input value is negative.
 
@@ -43,15 +42,14 @@ fn _is_neg[
         negative at position `i` and False otherwise.
     """
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return SIMD[DType.bool, simd_width](fill=False)
     return val.lt(0)
 
 
 @always_inline
-fn sign[
-    dtype: DType, simd_width: Int
+def sign[
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the sign (0, 1) of the input value.
 
@@ -76,8 +74,8 @@ fn sign[
 
 
 @always_inline
-fn elu[
-    dtype: DType, simd_width: Int
+def elu[
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Elu Op using the equation $z if z >= 0 else alpha*(e^z -1)$.
 
@@ -91,7 +89,8 @@ fn elu[
     Returns:
         The result of the ELU operation.
     """
-    return x.ge(0).select(x, math.expm1(x))
+    comptime assert dtype.is_floating_point(), "dtype must be floating point"
+    return x.ge(0).select(x, std.math.expm1(x))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -100,10 +99,10 @@ fn elu[
 
 
 @always_inline
-fn relu[
-    dtype: DType, simd_width: Int
+def relu[
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    """Compute the Relu Op using the equation $max(0, x)$.
+    """Compute the Relu Op using the equation $max(x, 0)$.
 
     Parameters:
         dtype: DType used for the computation.
@@ -124,8 +123,8 @@ fn relu[
 
 
 @always_inline
-fn relu_n1[
-    dtype: DType, simd_width: Int
+def relu_n1[
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Compute the Relu N1 Op using the equation $max(min(x,1),-1)$.
 
@@ -143,102 +142,18 @@ fn relu_n1[
 
 
 # ===----------------------------------------------------------------------=== #
-# gelu
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn gelu[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    """Compute the GELU Op using the equation
-    $0.5 * x * (1 + erf(x / sqrt(2)))$.
-
-    Parameters:
-        dtype: DType used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x: The value to compute the GELU operation on.
-
-    Returns:
-        The result of the GELU operation.
-
-    Constraints:
-        Type must be a floating point dtype.
-    """
-    # Perform the intermediate computation in `accum_type` to match
-    # torch.nn.functional.gelu:
-    # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
-    alias accum_type = get_accum_type[dtype]()
-    alias inv_SQRT_2 = 0.70710678118654752440
-    constrained[
-        dtype.is_floating_point(),
-        "dtype must be a floating point dtype",
-    ]()
-
-    var val = x.cast[accum_type]()
-    var val_half = 0.5 * val
-    var erf_res = math.erf(val * inv_SQRT_2)
-    return val_half.fma(erf_res, val_half).cast[dtype]()
-
-
-# ===----------------------------------------------------------------------=== #
-# gelu_approximate
-# ===----------------------------------------------------------------------=== #
-
-
-@always_inline
-fn gelu_approximate[
-    dtype: DType, simd_width: Int
-](x: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
-    """Compute the approximate GELU Op using the equation
-    $0.5 * x * (1 + tanh(sqrt(2 / pi) * (x + 0.044715 * x^3)))$.
-
-    Parameters:
-        dtype: The `DType` used for the computation.
-        simd_width: SIMD width used for the computation.
-
-    Args:
-        x: The value to compute the GELU operation on.
-
-    Constraints:
-        Type must be a floating point dtype.
-
-    Returns:
-        The result of the approximate GELU operation.
-    """
-    # Perform the intermediate computation in `accum_type` to match
-    # torch.nn.functional.gelu:
-    # https://github.com/pytorch/pytorch/blob/3054aae493a5347cf8187b5ce611b9a38aace202/aten/src/ATen/native/cuda/ActivationGeluKernel.cu#L21-L42
-    alias accum_type = get_accum_type[dtype]()
-    alias SQRT_TWO_OVER_PI = 0.797884560802865
-    constrained[
-        dtype.is_floating_point(),
-        "dtype must be a floating point dtype",
-    ]()
-
-    var val = x.cast[accum_type]()
-
-    var val3 = val * val * val
-    return (
-        0.5 * val * (1 + math.tanh(SQRT_TWO_OVER_PI * (val + 0.044715 * val3)))
-    ).cast[dtype]()
-
-
-# ===----------------------------------------------------------------------=== #
 # leaky_relu
 # ===----------------------------------------------------------------------=== #
 
 
 @always_inline
-fn leaky_relu[
-    dtype: DType, simd_width: Int
+def leaky_relu[
+    dtype: DType, simd_width: SIMDSize
 ](x: SIMD[dtype, simd_width], negative_slope: Scalar[dtype]) -> SIMD[
     dtype, simd_width
 ]:
     """Compute the Leaky ReLU using the equation
-    $max(0, x) + negative_slope * min(0, x)$.
+    $max(x, 0) + negative_slope * min(x, 0)$.
 
     Parameters:
         dtype: DType used for the computation.
@@ -254,8 +169,7 @@ fn leaky_relu[
     Returns:
         The result of the Leaky ReLU operation.
     """
-    constrained[
-        dtype.is_floating_point(),
-        "dtype must be a floating point dtype",
-    ]()
+    comptime assert (
+        dtype.is_floating_point()
+    ), "dtype must be a floating point dtype"
     return x.ge(0).select(x, negative_slope * x)

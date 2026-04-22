@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string.string_slice import _memchr, _memmem
-from math import align_down
-from sys import simd_width_of
+from std.collections.string.string_slice import _memchr, _memmem
+from std.math import align_down
+from std.sys import simd_width_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
-from bit import count_trailing_zeros
-from memory import memcmp, pack_bits
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.bit import count_trailing_zeros
+from std.memory import memcmp, pack_bits
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
 
-alias haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
+comptime haystack = """Lorem ipsum dolor sit amet, consectetur adipiscing elit. Integer sed dictum est, et finibus ipsum. Orci varius natoque penatibus et magnis dis parturient montes, nascetur ridiculus mus. Nam tincidunt vel lacus vitae pulvinar. Donec ac ligula elementum, mollis purus a, lacinia quam. Maecenas vulputate mauris quis sem euismod sollicitudin. Proin accumsan nulla vel nisl congue varius. Morbi a erat dui. Aliquam maximus interdum orci, vitae pretium lorem bibendum non. Vestibulum eu lacus ullamcorper, egestas dui vel, pharetra ipsum. Pellentesque sagittis, urna a tincidunt sodales, leo sem placerat eros, vitae molestie felis diam at dolor.
 
 Donec viverra sem sit amet facilisis laoreet. Morbi semper convallis nisi, vitae congue velit tincidunt vel. Fusce ultrices, libero vel venenatis placerat, justo tellus porttitor massa, at volutpat tortor nunc id dui. Morbi eu ex quis odio porttitor ultricies vel eget massa. Aenean quis luctus nulla. Fusce sit amet leo at quam hendrerit mattis. Morbi sed quam nisl. Quisque purus enim, iaculis sed laoreet vel, pellentesque ut orci. Vivamus risus orci, varius eu pharetra quis, tincidunt non enim. Suspendisse bibendum lacus ex, quis blandit lectus malesuada a. Maecenas iaculis porta lacus, sit amet tristique ante scelerisque non. Proin auctor elit in lacus dictum egestas. Pellentesque tincidunt justo sed vehicula blandit. Pellentesque vehicula facilisis tellus in viverra.
 
@@ -137,88 +137,106 @@ Fusce sit amet suscipit justo. Nam placerat eu orci nec lacinia. Etiam sollicitu
 
 Curabitur auctor volutpat diam vitae vehicula. Vivamus est arcu, efficitur nec interdum et, sagittis quis sem. Nam sodales vitae velit id pharetra. Mauris malesuada est quis nisi mattis, in facilisis lacus tempor. Integer cursus, risus sed molestie sollicitudin, nisi purus mattis justo, eget egestas tellus nisi mollis elit. Aenean sollicitudin justo luctus."""
 
-alias needle = "school"  # a word intentionally not in the test data
+comptime needle = "school"  # a word intentionally not in the test data
+
+from std.benchmark import black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
 # Baseline `_memmem` implementation
 # ===-----------------------------------------------------------------------===#
 @always_inline
-fn _memmem_baseline[
+def _memmem_baseline[
     dtype: DType
 ](
-    haystack: UnsafePointer[Scalar[dtype]],
-    haystack_len: Int,
-    needle: UnsafePointer[Scalar[dtype]],
-    needle_len: Int,
-) -> UnsafePointer[Scalar[dtype]]:
-    if not needle_len:
-        return haystack
-    if needle_len > haystack_len:
-        return UnsafePointer[Scalar[dtype]]()
-    if needle_len == 1:
-        return _memchr(
-            Span[Scalar[dtype], ImmutableAnyOrigin](
-                ptr=haystack.as_immutable(), length=UInt(haystack_len)
-            ),
-            needle[0],
-        )
+    haystack: Span[mut=False, Scalar[dtype], _],
+    needle: Span[mut=False, Scalar[dtype], _],
+) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
+    if not needle:
+        return haystack.unsafe_ptr()
+    if len(needle) > len(haystack):
+        return {}
+    if len(needle) == 1:
+        return _memchr(haystack, needle[0])
 
-    alias bool_mask_width = simd_width_of[DType.bool]()
-    var first_needle = SIMD[dtype, bool_mask_width](needle[0])
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var first_needle = SIMD[dtype, bool_mask_width](needle.unsafe_get(0))
     var vectorized_end = align_down(
-        haystack_len - needle_len + 1, bool_mask_width
+        len(haystack) - len(needle) + 1, bool_mask_width
     )
     for i in range(0, vectorized_end, bool_mask_width):
-        var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
+        var bool_mask = (
+            haystack.unsafe_ptr()
+            .load[width=bool_mask_width](i)
+            .eq(first_needle)
+        )
         var mask = pack_bits(bool_mask)
         while mask:
-            var offset = Int(i + count_trailing_zeros(mask))
-            if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
-                return haystack + offset
+            var offset = Int(type_of(mask)(i) + count_trailing_zeros(mask))
+            if (
+                memcmp(
+                    haystack.unsafe_ptr() + offset + 1,
+                    needle.unsafe_ptr() + 1,
+                    len(needle) - 1,
+                )
+                == 0
+            ):
+                return haystack.unsafe_ptr() + offset
             mask = mask & (mask - 1)
 
-    for i in range(vectorized_end, haystack_len - needle_len + 1):
-        if haystack[i] != needle[0]:
+    for i in range(vectorized_end, len(haystack) - len(needle) + 1):
+        if haystack.unsafe_get(i) != needle.unsafe_get(0):
             continue
 
-        if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return haystack + i
-    return UnsafePointer[Scalar[dtype]]()
+        if (
+            memcmp(
+                haystack.unsafe_ptr() + i + 1,
+                needle.unsafe_ptr() + 1,
+                len(needle) - 1,
+            )
+            == 0
+        ):
+            return haystack.unsafe_ptr() + i
+    return {}
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_find_baseline(mut b: Bencher) raises:
+def bench_find_baseline(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
     @parameter
-    fn call_fn():
-        _ = _memmem_baseline(
-            local_haystack.unsafe_ptr(),
-            len(local_haystack),
-            local_needle.unsafe_ptr(),
-            len(local_needle),
+    def call_fn():
+        keep(
+            _memmem_baseline(
+                black_box(local_haystack.as_bytes()),
+                black_box(local_needle.as_bytes()),
+            )
         )
 
     b.iter[call_fn]()
 
 
 @parameter
-fn bench_find_optimized(mut b: Bencher) raises:
+def bench_find_optimized(mut b: Bencher) raises:
     # Make sure comptime materialization happens before the benchmark starts.
     var local_haystack = haystack
     var local_needle = needle
 
     @always_inline
     @parameter
-    fn call_fn():
-        _ = _memmem(local_haystack.as_bytes(), local_needle.as_bytes())
+    def call_fn():
+        keep(
+            _memmem(
+                black_box(local_haystack.as_bytes()),
+                black_box(local_needle.as_bytes()),
+            )
+        )
 
     b.iter[call_fn]()
 
@@ -226,7 +244,7 @@ fn bench_find_optimized(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_find_baseline](BenchId("find_baseline"))
     m.bench_function[bench_find_optimized](BenchId("find_optimized"))

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,5 +16,4 @@ This package includes functions for sending and receiving data between GPUs,
 as well as for synchronizing threads across GPUs.
 """
 
-from .allgather import allgather
-from .allreduce import allreduce
+from .sync import Signal, MAX_GPUS, group_start, group_end

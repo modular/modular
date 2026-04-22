@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,19 +19,16 @@ if running on a single node you can run the compiled binary directly without
 mpirun.
 """
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
+# REQUIRES: NVIDIA-GPU
 # RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
+# RUN: %mpirun-gpu-per-process %t
 
-from gpu.host import DeviceBuffer, DeviceContext
-from os.path import dirname
-from pathlib import Path
+from std.memory import alloc
 from shmem import *
-from sys.param_env import env_get_string
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-fn simple_shift_kernel(destination: UnsafePointer[Int32]):
+def simple_shift_kernel(destination: UnsafePointer[Int32, MutAnyOrigin]):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
     var peer = (mype + 1) % npes
@@ -41,12 +38,12 @@ fn simple_shift_kernel(destination: UnsafePointer[Int32]):
     shmem_p(destination, mype, peer)
 
 
-def main():
+def main() raises:
     # Initializes SHMEM/MPI and finalizes at the end of the scope
     with SHMEMContext() as ctx:
         # Set up buffers to test devices are communicating with the correct IDs
         var target_device = ctx.enqueue_create_buffer[DType.int32](1)
-        var target_host = ctx.enqueue_create_host_buffer[DType.int32](1)
+        var target_host = alloc[Int32](1)
 
         # SHMEMContext takes care of initializing device state into
         # `simple_shift_kernel` constant memory

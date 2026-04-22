@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import monotonic, perf_counter, perf_counter_ns, sleep, time_function
+from std.time import (
+    monotonic,
+    perf_counter,
+    perf_counter_ns,
+    sleep,
+    time_function,
+)
 
-from testing import assert_true, TestSuite
+from std.testing import assert_true, TestSuite
 
 
 @always_inline
-@parameter
-fn time_me():
+def time_me():
     sleep(1.0)
 
 
 @always_inline
-@parameter
-fn time_me_templated[
+def time_me_templated[
     dtype: DType,
 ]():
     time_me()
@@ -32,28 +36,27 @@ fn time_me_templated[
 
 
 # Check that time_function works on templated function
-fn time_templated_function[
+def time_templated_function[
     dtype: DType,
 ]() -> Int:
-    return time_function[time_me_templated[dtype]]()
+    return Int(time_function(time_me_templated[dtype]))
 
 
-fn time_capturing_function(iters: Int) -> Int:
-    @parameter
-    fn time_fn():
+def time_capturing_function(iters: Int) -> Int:
+    def time_fn() unified {}:
         sleep(1.0)
 
-    return time_function[time_fn]()
+    return Int(time_function(time_fn))
 
 
-def test_time():
-    alias ns_per_sec = 1_000_000_000
+def test_time() raises:
+    comptime ns_per_sec = 1_000_000_000
 
     assert_true(perf_counter() > 0)
     assert_true(perf_counter_ns() > 0)
     assert_true(monotonic() > 0)
 
-    var t1 = time_function[time_me]()
+    var t1 = time_function(time_me)
     assert_true(t1 > 1 * ns_per_sec)
     assert_true(t1 < 10 * ns_per_sec)
 
@@ -73,5 +76,5 @@ def test_time():
     assert_true((t5 - t4) < 10 * ns_per_sec)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

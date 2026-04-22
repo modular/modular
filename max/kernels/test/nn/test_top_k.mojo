@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,68 +11,79 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import iota
-from random import rand, seed
 
-from layout import (
-    UNKNOWN_VALUE,
-    IntTuple,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from std.math import iota
+from std.random import rand, seed
+
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
+
 from nn.topk import _top_k_cpu, _top_k_sampling
 
-from utils.index import IndexList, product
+from std.utils.index import IndexList, product
 
 
 struct TestTensor[rank: Int, dtype: DType](Movable):
-    var storage: List[Scalar[dtype]]
-    var shape: IndexList[rank]
+    var storage: List[Scalar[Self.dtype]]
+    var shape: IndexList[Self.rank]
 
-    fn __init__(out self, shape: IndexList[rank]):
-        self.storage = List[Scalar[dtype]](
-            length=UInt(shape.flattened_length()), fill=0
+    def __init__(out self, shape: IndexList[Self.rank]):
+        self.storage = List[Scalar[Self.dtype]](
+            length=shape.flattened_length(), fill=0
         )
         self.shape = shape
 
-    fn to_layout_tensor(
+    def to_tile_tensor(
         ref self,
-    ) -> LayoutTensor[dtype, Layout.row_major[rank](), origin_of(self.storage)]:
-        return {
-            Span[Scalar[dtype]](self.storage),
-            RuntimeLayout[Layout.row_major[rank]()].row_major(self.shape),
-        }
+    ) -> TileTensor[
+        Self.dtype,
+        Layout[
+            shape_types=DynamicCoord[DType.int64, Self.rank].element_types,
+            stride_types=DynamicCoord[DType.int64, Self.rank].element_types,
+        ],
+        origin_of(self.storage),
+    ]:
+        return rebind[
+            TileTensor[
+                Self.dtype,
+                Layout[
+                    shape_types=DynamicCoord[
+                        DType.int64, Self.rank
+                    ].element_types,
+                    stride_types=DynamicCoord[
+                        DType.int64, Self.rank
+                    ].element_types,
+                ],
+                origin_of(self.storage),
+            ]
+        ](
+            TileTensor(
+                Span[Scalar[Self.dtype]](self.storage),
+                row_major(Coord(self.shape)),
+            ).make_dynamic[DType.int64]()
+        )
 
 
-fn test_case_sampling[
+def test_case_sampling[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
 ](
     K: Int,
     axis: Int,
     input_shape: IndexList[rank],
     temperature: Scalar[dtype] = 1,
 ) raises:
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(product(input_shape))
-    )
-    alias layout = Layout.row_major[rank]()
-    var input = LayoutTensor[dtype, layout](
-        input_ptr, RuntimeLayout[layout].row_major(input_shape)
-    )
+    var input_ptr = alloc[Scalar[dtype]](product(input_shape))
+    var input = TileTensor(input_ptr, row_major(Coord(input_shape)))
 
     var output_shape: IndexList[rank]
     var output_idxs_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         output_shape = IndexList[rank](K)
         output_idxs_shape = IndexList[rank](1)
     elif rank == 2:
@@ -82,50 +93,40 @@ fn test_case_sampling[
         output_shape = IndexList[rank](input_shape[0], input_shape[1], K)
         output_idxs_shape = IndexList[rank](input_shape[0], input_shape[1], 1)
 
-    var output_vals_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        Int(product(output_shape))
-    )
-    var output_idxs_ptr = UnsafePointer[Int64].alloc(
-        Int(product(output_idxs_shape))
-    )
-    var out_vals = LayoutTensor[dtype, layout](
-        output_vals_ptr, RuntimeLayout[layout].row_major(output_shape)
-    )
-    var out_idxs = LayoutTensor[DType.int64, layout](
-        output_idxs_ptr, RuntimeLayout[layout].row_major(output_idxs_shape)
+    var output_vals_ptr = alloc[Scalar[dtype]](product(output_shape))
+    var output_idxs_ptr = alloc[Int64](product(output_idxs_shape))
+    var out_vals = TileTensor(output_vals_ptr, row_major(Coord(output_shape)))
+    var out_idxs = TileTensor(
+        output_idxs_ptr, row_major(Coord(output_idxs_shape))
     )
 
     fill_fn[rank, dtype](input)
 
     var max_k = K
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         batch_size = 1
     elif rank == 2:
         batch_size = input_shape[0]
     else:
         batch_size = input_shape[0] * input_shape[1]
-    var temperature_ptr = UnsafePointer[Float32].alloc(batch_size)
+    var temperature_ptr = alloc[Float32](batch_size)
     for i in range(batch_size):
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
-    alias layout_1d = Layout.row_major(UNKNOWN_VALUE)
-    var temperature_buf = OptionalReg(
-        LayoutTensor[DType.float32, layout_1d, MutableAnyOrigin](
-            temperature_ptr,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-        )
+    var temperature_buf = Optional(
+        TileTensor(temperature_ptr, row_major(Idx(Int64(batch_size))))
+        .as_any_origin()
+        .as_immut()
     )
 
-    var seed_ptr = UnsafePointer[UInt64].alloc(batch_size)
+    var seed_ptr = alloc[UInt64](batch_size)
     for i in range(batch_size):
         seed_ptr[i] = 12
-    var seed_buf = OptionalReg(
-        LayoutTensor[DType.uint64, layout_1d, MutableAnyOrigin](
-            seed_ptr,
-            RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-        )
+    var seed_buf = Optional(
+        TileTensor(seed_ptr, row_major(Idx(Int64(batch_size))))
+        .as_any_origin()
+        .as_immut()
     )
 
     _top_k_sampling(
@@ -141,8 +142,8 @@ fn test_case_sampling[
     var _xx_no_lifetimes = out_vals
     var _x_no_lifetimes = out_idxs
 
-    for i in range(out_idxs.size()):
-        print(out_idxs.ptr[i], end="")
+    for i in range(out_idxs.num_elements()):
+        print(out_idxs.raw_load(i), end="")
         print(",", end="")
     print("")
 
@@ -153,12 +154,12 @@ fn test_case_sampling[
     seed_ptr.free()
 
 
-fn test_case[
+def test_case[
     rank: Int,
     dtype: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        LayoutTensor[mut=True, dtype, **_]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
     largest: Bool = True,
 ](K: Int, axis: Int, input_shape: IndexList[rank], sorted: Bool = True):
     var input = TestTensor[rank, dtype](input_shape)
@@ -168,15 +169,15 @@ fn test_case[
     var out_vals = TestTensor[rank, dtype](output_shape)
     var out_idxs = TestTensor[rank, DType.int64](output_shape)
 
-    var input_buf = input.to_layout_tensor()
+    var input_buf = input.to_tile_tensor()
     fill_fn[rank, dtype](input_buf)
 
     _top_k_cpu[largest=largest](
-        input.to_layout_tensor(),
+        input.to_tile_tensor(),
         K,
         axis,
-        out_vals.to_layout_tensor(),
-        out_idxs.to_layout_tensor(),
+        out_vals.to_tile_tensor(),
+        out_idxs.to_tile_tensor(),
         1,  # force multithreading for small test cases,
         sorted,
     )
@@ -193,28 +194,28 @@ fn test_case[
     print("")
 
 
-def main():
+def main() raises:
     seed(1)
 
     @parameter
-    fn fill_iota[
+    def fill_iota[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: TileTensor[mut=True, dtype, ...]):
         iota(
             buf.ptr,
-            buf.runtime_layout.shape.value.canonicalize().flattened_length(),
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
     @parameter
-    fn fill_rand[
+    def fill_rand[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: TileTensor[mut=True, dtype, ...]):
         rand(
             buf.ptr,
-            buf.runtime_layout.shape.value.canonicalize().flattened_length(),
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length(),
         )
 
-    fn test_1d_sorted():
+    def test_1d_sorted():
         print("== test_1d_sorted")
         test_case[1, DType.float32, fill_iota](
             5, 0, IndexList[1](10), sorted=True
@@ -225,7 +226,7 @@ def main():
     # CHECK: 9,8,7,6,5,
     test_1d_sorted()
 
-    fn test_1d_notsorted():
+    def test_1d_notsorted():
         print("== test_1d_notsorted")
         test_case[1, DType.float32, fill_iota](
             5, 0, IndexList[1](10), sorted=False
@@ -236,7 +237,7 @@ def main():
     # CHECK: 8,7,6,9,5,
     test_1d_notsorted()
 
-    fn test_axis_1():
+    def test_axis_1():
         print("== test_axis_1")
         test_case[2, DType.float32, fill_iota](
             2, 1, IndexList[2](4, 4), sorted=True
@@ -247,7 +248,7 @@ def main():
     # CHECK-NEXT: 3,2,3,2,3,2,3,2,
     test_axis_1()
 
-    fn test_axis_1_notsorted():
+    def test_axis_1_notsorted():
         print("== test_axis_1_notsorted")
         test_case[2, DType.float32, fill_iota](
             2, 1, IndexList[2](4, 4), sorted=False
@@ -258,7 +259,7 @@ def main():
     # CHECK-NEXT: 3,2,3,2,3,2,3,2,
     test_axis_1_notsorted()
 
-    fn test_smallest():
+    def test_smallest():
         print("== test_smallest")
         test_case[2, DType.float32, fill_iota, largest=False](
             2, 1, IndexList[2](4, 4), False
@@ -269,7 +270,7 @@ def main():
     # CHECK-NEXT: 0,1,0,1,0,1,0,1,
     test_smallest()
 
-    fn test_axis_0():
+    def test_axis_0():
         print("== test_axis_0")
         test_case[2, DType.float32, fill_iota](2, 0, IndexList[2](4, 4))
 
@@ -279,12 +280,12 @@ def main():
     test_axis_0()
 
     @parameter
-    fn fill_identical[
+    def fill_identical[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
+    ](buf: TileTensor[mut=True, dtype, ...]):
         _ = buf.fill(1)
 
-    fn test_identical():
+    def test_identical():
         print("== test_identical")
         test_case[2, DType.float32, fill_identical](3, 0, IndexList[2](4, 4))
 
@@ -293,7 +294,7 @@ def main():
     # CHECK-NEXT: 0,0,0,0,1,1,1,1,2,2,2,2,
     test_identical()
 
-    fn test_identical_large():
+    def test_identical_large():
         print("== test_identical_large")
         test_case[2, DType.float32, fill_identical](3, 0, IndexList[2](33, 33))
 
@@ -302,7 +303,7 @@ def main():
     # CHECK: 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
     test_identical_large()
 
-    fn test_max_k():
+    def test_max_k():
         print("== test_max_k")
         test_case[2, DType.float32, fill_iota](3, 0, IndexList[2](3, 4))
 
@@ -312,28 +313,22 @@ def main():
     test_max_k()
 
     @parameter
-    fn fill_custom[
+    def fill_custom[
         rank: Int, dtype: DType
-    ](buf: LayoutTensor[mut=True, dtype, **_]):
-        var flat_buf = LayoutTensor[
-            dtype,
-            Layout.row_major(UNKNOWN_VALUE),
-            address_space = buf.address_space,
-        ](
+    ](buf: TileTensor[mut=True, dtype, ...]):
+        var flat_buf = TileTensor(
             buf.ptr,
-            RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                IndexList[1](buf.size())
-            ),
+            row_major(Idx(buf.num_elements())),
         )
 
-        for i in range(flat_buf.size()):
-            var idx = flat_buf.runtime_layout(
-                RuntimeTuple[IntTuple(UNKNOWN_VALUE)](i)
+        for i in range(flat_buf.num_elements()):
+            var idx = flat_buf.layout(Coord(Idx(i)))
+            flat_buf.raw_store(
+                idx, Scalar[dtype](flat_buf.num_elements() - i - 1)
             )
-            flat_buf.ptr[idx] = flat_buf.size() - i - 1
         flat_buf[0] = -1
 
-    fn test_5d():
+    def test_5d():
         print("== test_5d")
         test_case[5, DType.float32, fill_custom](
             1, 1, IndexList[5](1, 4, 3, 2, 1)
@@ -344,37 +339,40 @@ def main():
     # CHECK-NEXT: 1,0,0,0,0,0,
     test_5d()
 
-    fn test_1d_sorted_sampling() raises:
+    def test_1d_sorted_sampling() raises:
         print("== test_1d_sorted_sampling")
-        alias rank = 1
+        comptime rank = 1
         test_case_sampling[1, DType.float32, fill_iota](
             5,
             0,
             IndexList[1](10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling
     # CHECK: 9,
     test_1d_sorted_sampling()
 
-    fn test_2d_sorted_sampling() raises:
+    def test_2d_sorted_sampling() raises:
         print("== test_2d_sorted_sampling")
         test_case_sampling[2, DType.float32, fill_rand](
             5,
             1,
             IndexList[2](5, 10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling
-    # CHECK: 4,1,0,6,4,
+    # CHECK: 0,7,8,1,7,
     test_2d_sorted_sampling()
 
-    fn test_3d_sorted_sampling() raises:
+    def test_3d_sorted_sampling() raises:
         print("== test_3d_sorted_sampling")
         test_case_sampling[3, DType.float32, fill_rand](
             5,
             2,
             IndexList[3](3, 5, 10),
+            temperature=0,
         )
 
     # CHECK-LABEL: test_3d_sorted_sampling
@@ -382,24 +380,24 @@ def main():
     test_3d_sorted_sampling()
 
     @parameter
-    fn ones[rank: Int, dtype: DType](buf: LayoutTensor[mut=True, dtype, **_]):
+    def ones[rank: Int, dtype: DType](buf: TileTensor[mut=True, dtype, ...]):
         for i in range(
-            buf.runtime_layout.shape.value.canonicalize().flattened_length()
+            coord_to_index_list(buf.layout.shape_coord()).flattened_length()
         ):
-            buf.ptr[i] = 1
+            buf.raw_store(i, 1)
 
-    fn test_1d_sorted_sampling_temp() raises:
+    def test_1d_sorted_sampling_temp() raises:
         print("== test_1d_sorted_sampling_temp")
-        alias rank = 1
+        comptime rank = 1
         test_case_sampling[1, DType.float32, fill_rand](
             5, 0, IndexList[1](10), temperature=0.7
         )
 
     # CHECK-LABEL: test_1d_sorted_sampling_temp
-    # CHECK: 6,
+    # CHECK: 4,
     test_1d_sorted_sampling_temp()
 
-    fn test_2d_sorted_sampling_temp() raises:
+    def test_2d_sorted_sampling_temp() raises:
         print("== test_2d_sorted_sampling_temp")
         test_case_sampling[2, DType.float32, fill_rand](
             5,
@@ -409,10 +407,10 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp
-    # CHECK: 6,6,0,0,5,2,6,4,3,1,0,4,8,0,0,0,5,7,7,4,6,3,4,2,5,3,6,7,8,6,6,5,9,7,8,3,7,4,8,6,2,8,6,4,5,7,8,3,5,0,
+    # CHECK: 2,3,9,2,6,7,4,8,0,5,5,7,5,4,3,3,2,4,3,8,1,2,2,3,5,5,5,2,6,3,9,1,2,0,8,7,1,6,2,2,8,3,2,1,4,8,0,9,2,8,
     test_2d_sorted_sampling_temp()
 
-    fn test_2d_sorted_sampling_temp_zero() raises:
+    def test_2d_sorted_sampling_temp_zero() raises:
         print("== test_2d_sorted_sampling_temp_zero")
         test_case_sampling[2, DType.float32, fill_rand](
             5,
@@ -422,10 +420,10 @@ def main():
         )
 
     # CHECK-LABEL: test_2d_sorted_sampling_temp_zero
-    # CHECK: 7,7,2,9,8,4,3,2,4,0,8,0,5,5,4,6,0,3,0,6,2,5,8,3,4,0,7,4,1,3,1,6,7,2,8,8,3,4,1,0,9,8,2,6,2,3,2,8,2,3,
+    # CHECK: 2,6,3,2,0,8,0,1,7,8,1,6,2,1,6,3,6,9,6,9,1,3,4,6,0,1,2,6,1,5,5,7,1,7,0,8,6,0,3,5,6,9,0,7,0,8,1,2,4,8,
     test_2d_sorted_sampling_temp_zero()
 
-    fn test_deterministic_sampling() raises:
+    def test_deterministic_sampling() raises:
         print("== test_deterministic_sampling")
         test_case_sampling[2, DType.float32, ones](
             5,
@@ -434,5 +432,5 @@ def main():
         )
 
     # CHECK-LABEL: test_deterministic_sampling
-    # CHECK: 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
+    # CHECK: 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
     test_deterministic_sampling()

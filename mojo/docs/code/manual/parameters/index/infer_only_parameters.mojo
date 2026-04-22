@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,18 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn dependent_type[dtype: DType, //, value: Scalar[dtype]]():
+def dependent_type[dtype: DType, //, value: Scalar[dtype]]():
     print("Value: ", value)
     print("DType: ", dtype)
 
 
-def mutate_span(span: Span[mut=True, Byte]):
+def mutate_span(span: Span[mut=True, Byte, ...]) raises:
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
-            span.swap_elements(UInt(i), UInt(i + 1))
+            span.swap_elements(i, i + 1)
 
 
-def main():
+def main() raises:
     dependent_type[Float64(2.2)]()
     s = String("Robinson Crusoe surfed the interwebs.")
     span = s.as_bytes_mut()

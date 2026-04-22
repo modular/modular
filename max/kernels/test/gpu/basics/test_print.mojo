@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from builtin._location import __source_location
-from gpu.host import DeviceContext
+from std.reflection import source_location
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: == test_gpu_print_formattable
-fn test_gpu_print_formattable() raises:
+def test_gpu_print_formattable() raises:
     print("== test_gpu_print_formattable")
 
-    fn do_print(x: Int, y: Float64):
+    def do_print(x: Int, y: Float64):
         # ==============================
         # Test printing primitive types
         # ==============================
@@ -45,8 +45,8 @@ fn test_gpu_print_formattable() raises:
         # CHECK: SIMD values are: [0.0, -1.0, -inf, 1.7976931348623157e+308]
         print("SIMD values are:", simd)
 
-        # CHECK: test_print.mojo:49:32
-        print(__source_location())
+        # CHECK: test_print.mojo:49:30
+        print(source_location())
 
         # ------------------------------
         # Test printing bfloat16
@@ -57,7 +57,7 @@ fn test_gpu_print_formattable() raises:
         #   expected due to precision loss inherent in shrinking down to
         #   a 16 bit type.
 
-        fn print_casts(value: Float32):
+        def print_casts(value: Float32):
             var a = value.cast[DType.float64]()
             var b = value.cast[DType.bfloat16]()
             var c = value.cast[DType.bfloat16]().cast[DType.float64]()
@@ -84,13 +84,13 @@ fn test_gpu_print_formattable() raises:
         print_casts(Float32(0.501858))
 
     with DeviceContext() as ctx:
-        alias kernel = do_print
-        ctx.enqueue_function_checked[kernel, kernel](
+        comptime kernel = do_print
+        ctx.enqueue_function_experimental[kernel](
             Int(42), Float64(7.2), grid_dim=1, block_dim=1
         )
         # Ensure queued function finished before proceeding.
         ctx.synchronize()
 
 
-def main():
+def main() raises:
     test_gpu_print_formattable()

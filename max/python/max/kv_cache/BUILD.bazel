@@ -1,0 +1,29 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "kv_cache",
+    srcs = glob(["**/*.py"]),
+    ignore_unresolved_imports = [
+        # torch and lmcache are optional runtime deps for LMCacheConnector.
+        # They are intentionally excluded so the MAX package does not depend on them.
+        "lmcache",
+        "torch",
+    ],
+    deps = [
+        requirement("numpy"),
+        requirement("msgspec"),
+        "//max/python/max:_core",
+        "//max/python/max/_core_mojo",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/kv_cache/connectors/dkv",
+        "//max/python/max/nn",
+        "//max/python/max/profiler",
+        "//max/python/max/support",
+    ],
+)

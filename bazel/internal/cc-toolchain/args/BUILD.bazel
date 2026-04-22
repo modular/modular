@@ -3,6 +3,26 @@ load("@rules_cc//cc/toolchains:args.bzl", "cc_args")
 package(default_visibility = ["//visibility:public"])
 
 cc_args(
+    name = "resource_dir_args",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:compile_actions",
+        "@rules_cc//cc/toolchains/actions:link_actions",
+    ],
+    allowlist_include_directories = [
+        "//bazel/internal/cc-toolchain/tools:resource_directory",
+    ],
+    args = [
+        "-resource-dir={resource_dir}",
+    ],
+    data = [
+        "//bazel/internal/cc-toolchain/tools:resource_directory_filegroup",
+    ],
+    format = {
+        "resource_dir": "//bazel/internal/cc-toolchain/tools:resource_directory_filegroup",
+    },
+)
+
+cc_args(
     name = "compile_and_link_args",
     actions = [
         "@rules_cc//cc/toolchains/actions:compile_actions",
@@ -61,6 +81,7 @@ cc_args(
         "-Wsuggest-override",
         "-Wthread-safety",
         "-Wwrite-strings",
+        "-Wundef",
     ],
 )
 
@@ -70,6 +91,9 @@ cc_args(
     args = [
         # If this error hits it's a misconfiguration of clang
         "-Werror=debug-compression-unavailable",
+
+        # Bazel misconfiguration
+        "-Werror=unused-command-line-argument",
 
         # Forbid return C++ types from exposed C functions
         "-Werror=return-type-c-linkage",
@@ -161,7 +185,6 @@ cc_args(
             "-headerpad_max_install_names",
             "-lc++",
             "-Wl,-framework,Foundation",
-            "-Wl,-framework,Metal",
             "-Wl,-no_warn_duplicate_libraries",
             "-Wl,-oso_prefix,.",  # Strip absolute paths from debug info file references
         ],
@@ -184,7 +207,29 @@ cc_args(
     actions = ["@rules_cc//cc/toolchains/actions:link_executable_actions"],
     args = [
         "-Wl,-pie",
-    ],
+    ] + select({
+        "@platforms//os:macos": [
+            "-Wl,-rpath,@loader_path/../lib",
+        ],
+        "@platforms//os:linux": [
+            "-Wl,-rpath,$ORIGIN/../lib",
+        ],
+    }),
+)
+
+cc_args(
+    name = "link_shared_library_args",
+    actions = ["@rules_cc//cc/toolchains/actions:dynamic_library_link_actions"],
+    args = select({
+        "@platforms//os:macos": [
+            "-Wl,-rpath,@loader_path",
+            "-Wl,-rpath,@loader_path/../lib",
+        ],
+        "@platforms//os:linux": [
+            "-Wl,-rpath,$ORIGIN",
+            "-Wl,-rpath,$ORIGIN/../lib",
+        ],
+    }),
 )
 
 cc_args(
@@ -279,4 +324,80 @@ cc_args(
         "output_execpath": "@rules_cc//cc/toolchains/variables:output_execpath",
     },
     requires_not_none = "@rules_cc//cc/toolchains/variables:dsym_path",
+)
+
+# TODO: Try to replace with https://github.com/bazelbuild/rules_cc/pull/529
+cc_args(
+    name = "layering_check_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = [
+        "-fmodules-strict-decluse",
+        "-Wprivate-header",
+    ],
+)
+
+cc_args(
+    name = "module_name_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "@platforms//os:macos": ["-Xclang"],
+        "//conditions:default": [],
+    }) + ["-fmodule-name={module_name}"],
+    format = {
+        "module_name": "@rules_cc//cc/toolchains/variables:module_name",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:module_name",
+)
+
+cc_args(
+    name = "module_map_file_args",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "@platforms//os:macos": ["-Xclang"],
+        "//conditions:default": [],
+    }) + ["-fmodule-map-file={module_map_file}"],
+    format = {
+        "module_map_file": "@rules_cc//cc/toolchains/variables:module_map_file",
+    },
+    requires_not_none = "@rules_cc//cc/toolchains/variables:module_map_file",
+)
+
+cc_args(
+    name = "dependent_module_map_files",
+    actions = ["@rules_cc//cc/toolchains/actions:compile_actions"],
+    args = select({
+        "@platforms//os:macos": ["-Xclang"],
+        "//conditions:default": [],
+    }) + [
+        "-fmodule-map-file={dependent_module_map_files}",
+    ],
+    format = {
+        "dependent_module_map_files": "@rules_cc//cc/toolchains/variables:dependent_module_map_files",
+    },
+    iterate_over = "@rules_cc//cc/toolchains/variables:dependent_module_map_files",
+    requires_not_none = "@rules_cc//cc/toolchains/variables:dependent_module_map_files",
+)
+
+cc_args(
+    name = "parse_headers_args",
+    actions = ["@rules_cc//cc/toolchains/actions:cpp_header_parsing"],
+    args = [
+        "-xc++-header",  # TODO: This is wrong for C only headers https://github.com/bazelbuild/bazel/pull/22971
+        "-fsyntax-only",
+    ],
+    env = {
+        "PARSE_HEADER": "{output_file}",
+    },
+    format = {"output_file": "@rules_cc//cc/toolchains/variables:output_file"},
+    requires_not_none = "@rules_cc//cc/toolchains/variables:output_file",
+)
+
+# TODO: Ideally these would be fixed in rules_cc
+cc_args(
+    name = "ignore_unused_command_line_argument",
+    actions = [
+        "@rules_cc//cc/toolchains/actions:lto_backend",
+        "@rules_cc//cc/toolchains/actions:cpp_header_parsing",
+    ],
+    args = ["-Wno-unused-command-line-argument"],
 )

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import erf, exp, tanh
-from sys.info import simd_width_of
+from std.math import erf, exp, tanh
+from std.sys.info import simd_width_of
 
-from algorithm import elementwise
-from buffer import NDBuffer
-from testing import assert_almost_equal
-from testing import TestSuite
+from std.algorithm import elementwise
+from std.testing import assert_almost_equal
+from std.testing import TestSuite
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-def test_elementwise_1d():
-    alias num_elements = 64
-    var ptr = UnsafePointer[Float32].alloc(num_elements)
+def test_elementwise_1d() raises:
+    comptime num_elements = 64
+    var ptr = alloc[Float32](num_elements)
 
-    var vector = NDBuffer[DType.float32, 1, _, num_elements](ptr)
+    var vector = Span(ptr=ptr, length=num_elements)
 
     for i in range(len(vector)):
-        vector[i] = i
+        vector[i] = Float32(i)
 
     @always_inline
     @__copy_capture(vector)
     @parameter
-    fn func[
+    def func[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
-        var elem = vector.load[width=simd_width](idx[0])
+        var elem = vector.unsafe_ptr().load[width=simd_width](idx[0])
         var val = exp(erf(tanh(elem + 1)))
-        vector.store[width=simd_width](idx[0], val)
+        vector.unsafe_ptr().store[width=simd_width](idx[0], val)
 
     elementwise[func, simd_width_of[DType.float32]()](
         IndexList[1](num_elements)
@@ -50,5 +49,5 @@ def test_elementwise_1d():
     ptr.free()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

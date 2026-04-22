@@ -1,12 +1,28 @@
 """A helper macro for running python tests with pytest"""
 
 load("@rules_python//python:defs.bzl", "py_test")
-load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
+load("//bazel:config.bzl", "ALLOW_UNUSED_TAG")
+load("//bazel/internal:config.bzl", "GPU_TEST_ENV", "RUNTIME_SANITIZER_DATA", "env_for_available_tools", "get_default_exec_properties", "get_default_test_env", "runtime_sanitizer_env", "validate_gpu_tags")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", requirement = "pip_requirement")
+load("//bazel/pip/pydeps:pydeps_test.bzl", "pydeps_test")
+load(":modular_py_library.bzl", "modular_py_library")
 load(":modular_py_venv.bzl", "modular_py_venv")
 load(":mojo_collect_deps_aspect.bzl", "collect_transitive_mojoinfo")
 load(":mojo_test_environment.bzl", "mojo_test_environment")
 load(":py_repl.bzl", "py_repl")
+load(":test_resources.bzl", "TEST_RESOURCES")
+
+def _get_resource_tags(use_resource_tags, name):
+    if not use_resource_tags:
+        return []
+    resources = TEST_RESOURCES.get("//" + native.package_name() + ":" + name)
+    tags = []
+    if resources:
+        if "cpu" in resources:
+            tags.append("resources:cpu:{}".format(resources["cpu"]))
+        if "memory" in resources:
+            tags.append("resources:memory:{}".format(resources["memory"]))
+    return tags
 
 def modular_py_test(
         name,
@@ -15,12 +31,17 @@ def modular_py_test(
         env = {},
         args = [],
         data = [],
+        ignore_extra_deps = [],
+        ignore_unresolved_imports = [],
         mojo_deps = [],
         tags = [],
         exec_properties = {},
         target_compatible_with = [],
         gpu_constraints = [],
         main = None,
+        imports = [],
+        use_resource_tags = False,
+        per_test_tags = {},
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -31,19 +52,29 @@ def modular_py_test(
         env: Any environment variables that should be set during the test runtime
         args: Arguments passed to the test execution
         data: Runtime deps of the test target
+        ignore_extra_deps: Forwarded to pydeps_test
+        ignore_unresolved_imports: Forwarded to pydeps_test
         mojo_deps: mojo_library targets the test depends on at runtime
         tags: Tags added to the py_test target
         exec_properties: https://bazel.build/reference/be/common-definitions#common-attributes
         target_compatible_with: https://bazel.build/extending/platforms#skipping-incompatible-targets
         gpu_constraints: GPU requirements for the tests
         main: If provided, this is the main entry point for the test. If not provided, pytest is used.
+        imports: Additional python import paths
+        use_resource_tags: If true, use pregenerated resource tags for the test.
+        per_test_tags: A mapping of source files to extra tags to apply to that test file.
         **kwargs: Extra arguments passed through to py_test
     """
 
-    validate_gpu_tags(tags, gpu_constraints)
+    if len(imports) > 1:
+        fail("modular_py_test only supports a single import path.")
+
+    if len(set(per_test_tags.keys()) - set(srcs)) != 0:
+        fail("keys specified in per_test_tags that are not source files: {}".format(set(per_test_tags.keys()) - set(srcs)))
+
+    validate_gpu_tags(tags, target_compatible_with + gpu_constraints)
     toolchains = [
         "//bazel/internal:current_gpu_toolchain",
-        "//bazel/internal:lib_toolchain",
     ]
 
     has_test = False
@@ -56,13 +87,10 @@ def modular_py_test(
     if not main and not has_test:
         fail("At least 1 file in modular_py_test must start with 'test_' for pytest to discover them")
 
-    extra_env = {
+    extra_env = runtime_sanitizer_env() | {
         "PYTHONUNBUFFERED": "set",
     }
-    extra_data = [
-        "//bazel/internal:lsan-suppressions.txt",
-    ]
-
+    extra_data = RUNTIME_SANITIZER_DATA
     transitive_mojo_deps = name + ".mojo_deps"
     collect_transitive_mojoinfo(
         name = transitive_mojo_deps,
@@ -73,7 +101,7 @@ def modular_py_test(
 
     env_name = name + ".mojo_test_env"
     toolchains.append(env_name)
-    extra_data.append(env_name)
+    extra_data += [env_name]  # buildifier: disable=list-append
     extra_env |= {
         "MODULAR_MOJO_MAX_COMPILERRT_PATH": "$(COMPILER_RT_PATH)",
         "MODULAR_MOJO_MAX_DRIVER_PATH": "$(MOJO_BINARY_PATH)",
@@ -103,30 +131,29 @@ def modular_py_test(
     modular_py_venv(
         name = name + ".venv",
         data = data + extra_data,
+        target_compatible_with = gpu_constraints + target_compatible_with,
         deps = deps + [
             requirement("pytest"),
         ],
     )
 
-    for target in [".debug", ".shell"]:
-        py_repl(
-            name = name + target,
-            data = data + extra_data,
-            deps = deps + [
-                requirement("pytest"),
-                "@rules_python//python/runfiles",
-            ],
-            direct = False,
-            env = extra_env | env_for_available_tools() | env | {
-                "DEBUG_SRCS": ":".join(["$(location {})".format(src) for src in srcs]),
-                # TODO: This should be PYTHONINSPECT but that doesn't work. We're avoiding args so lldb works without --
-                "PYTHONSTARTUP": "$(location //bazel/internal:test_debug_shim.py)",
-                "REPL_TARGET": target,
-            },
-            srcs = srcs + ["//bazel/internal:test_debug_shim.py"],
-            toolchains = toolchains,
-            target_compatible_with = gpu_constraints + target_compatible_with,
-        )
+    py_repl(
+        name = name + ".debug",
+        data = data + extra_data,
+        deps = deps + [
+            requirement("pytest"),
+            "@rules_python//python/runfiles",
+        ],
+        direct = False,
+        env = env_for_available_tools() | extra_env | env | {
+            "DEBUG_SRCS": ":".join(["$(location {})".format(src) for src in srcs]),
+            # TODO: This should be PYTHONINSPECT but that doesn't work. We're avoiding args so lldb works without --
+            "PYTHONSTARTUP": "$(location //bazel/internal:test_debug_shim.py)",
+        },
+        srcs = srcs + ["//bazel/internal:test_debug_shim.py"],
+        toolchains = toolchains,
+        target_compatible_with = gpu_constraints + target_compatible_with,
+    )
 
     if main:
         kwargs |= {
@@ -139,6 +166,25 @@ def modular_py_test(
             "main": "pytest_runner.py",
         }
 
+    if "manual" in tags:
+        # TODO: Remove once we run mypy-style lints in a separate test target
+        modular_py_library(
+            name = name + ".mypy_library",
+            data = data + extra_data,
+            toolchains = toolchains,
+            # Pydeps test is added below
+            tags = [ALLOW_UNUSED_TAG, "no-pydeps"],
+            deps = deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
+            testonly = True,
+            srcs = srcs + ["//bazel/internal:pytest_runner"],
+            visibility = ["//visibility:private"],
+            imports = imports,
+            # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
+        )
+
     if len(test_srcs) > 1:
         test_names = []
         for src in test_srcs:
@@ -148,7 +194,7 @@ def modular_py_test(
                 name = test_name,
                 data = data + extra_data,
                 toolchains = toolchains,
-                env = extra_env | env_for_available_tools() | env,
+                env = env_for_available_tools() | extra_env | env,
                 deps = deps + [
                     requirement("pytest"),
                     "@rules_python//python/runfiles",
@@ -156,7 +202,8 @@ def modular_py_test(
                 srcs = [src] + non_test_srcs + ["//bazel/internal:pytest_runner"],
                 exec_properties = default_exec_properties | exec_properties,
                 target_compatible_with = gpu_constraints + target_compatible_with,
-                tags = tags,
+                tags = tags + _get_resource_tags(use_resource_tags, test_name) + per_test_tags.get(src, []),
+                imports = imports,
                 **kwargs
             )
 
@@ -166,11 +213,14 @@ def modular_py_test(
             tags = ["manual"],
         )
     else:
+        if per_test_tags:
+            fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
+
         py_test(
             name = name,
             data = data + extra_data,
             toolchains = toolchains,
-            env = extra_env | env_for_available_tools() | env,
+            env = env_for_available_tools() | extra_env | env,
             deps = deps + [
                 requirement("pytest"),
                 "@rules_python//python/runfiles",
@@ -178,6 +228,26 @@ def modular_py_test(
             srcs = srcs + ["//bazel/internal:pytest_runner"],
             exec_properties = default_exec_properties | exec_properties,
             target_compatible_with = gpu_constraints + target_compatible_with,
-            tags = tags + (["manual"] if len(test_srcs) > 1 else []),
+            tags = tags + _get_resource_tags(use_resource_tags, name),
+            imports = imports,
             **kwargs
+        )
+
+    if "no-pydeps" not in tags:
+        pydeps_test(
+            name = name + ".pydeps_test",
+            data = data,
+            srcs = srcs,
+            # We provide these as a convenience, okay if not used.
+            ignore_extra_deps = ignore_extra_deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
+            ignore_unresolved_imports = ignore_unresolved_imports,
+            imports = imports,
+            deps = deps + [
+                requirement("pytest"),
+                "@rules_python//python/runfiles",
+            ],
+            tags = ["pydeps"],
         )

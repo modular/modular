@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from asyncrt_test_utils import create_test_device_context, expect_eq
-from gpu.host import DeviceContext
-from testing import TestSuite
+from asyncrt_test_utils import create_test_device_context
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
-fn _run_memset[
+def _run_memset[
     dtype: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
@@ -28,8 +28,8 @@ fn _run_memset[
 
     # Initialize the input and outputs with known values.
     for i in range(length):
-        in_host[i] = i
-        out_host[i] = length + i
+        in_host[i] = Scalar[dtype](i)
+        out_host[i] = Scalar[dtype](length + i)
 
     # Copy to and from device buffers.
     in_host.enqueue_copy_to(on_dev)
@@ -42,33 +42,38 @@ fn _run_memset[
     for i in range(length):
         if i < 10:
             print("at index", i, "the value is", out_host[i])
-        expect_eq(
-            out_host[i], val, "at index ", i, " the value is ", out_host[i]
+        assert_equal(
+            out_host[i],
+            val,
+            String("at index ", i, " the value is ", out_host[i]),
         )
 
 
-fn _run_memset_cascade[
+def _run_memset_cascade[
     dtype: DType
 ](ctx: DeviceContext, length: Int, val: Scalar[dtype]) raises:
     print("-")
     print("_run_memset_cascade(", length, ", ", val, ")")
 
-    var buf = ctx.enqueue_create_buffer[dtype](length).enqueue_fill(val)
+    var buf = ctx.enqueue_create_buffer[dtype](length)
+    buf.enqueue_fill(val)
 
     with buf.map_to_host() as buf:
         for i in range(length):
             if i < 10:
                 print("buf[", i, "] = ", buf[i])
-            expect_eq(buf[i], val, "at index ", i, " the value is ", buf[i])
+            assert_equal(
+                buf[i], val, String("at index ", i, " the value is ", buf[i])
+            )
 
 
-def test_memset():
+def test_memset() raises:
     var ctx = create_test_device_context()
 
     print("-------")
     print("Running test_memset(" + ctx.name() + "):")
 
-    alias one_mb = 1024 * 1024
+    comptime one_mb = 1024 * 1024
 
     _run_memset[DType.uint8](ctx, 64, 12)
     _run_memset[DType.uint8](ctx, one_mb, 13)
@@ -87,5 +92,5 @@ def test_memset():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

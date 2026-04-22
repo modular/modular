@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,28 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile import compile_info
-from gpu import *
-from gpu.host import *
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from testing import *
-from testing import TestSuite
-from sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
+from std.compile import compile_info
+from std.gpu import barrier, thread_idx
+from std.gpu.host import get_gpu_target
+from std.memory import stack_allocation
+from std.testing import *
+from std.testing import TestSuite
+from std.sys.info import _cdna_4_or_newer, _is_amd_cdna, CompilationTarget
+from std.sys.compile import SanitizeAddress
 
 
-def test_compile_llvm():
+def test_compile_llvm() raises:
     @parameter
-    fn my_add_function[
+    def my_add_function[
         dtype: DType, size: Int
     ](x: SIMD[dtype, size], y: SIMD[dtype, size]) -> SIMD[dtype, size]:
         return x + y
 
-    alias func = my_add_function[DType.float32, 4]
+    comptime func = my_add_function[DType.float32, 4]
     assert_true("fadd" in compile_info[func, emission_kind="llvm"]())
 
 
-alias target_short_ptr = __mlir_attr[
+comptime target_short_ptr = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
     `features = "+ptx81", `,
@@ -42,7 +42,7 @@ alias target_short_ptr = __mlir_attr[
     `> : !kgen.target`,
 ]
 
-alias target_regular = __mlir_attr[
+comptime target_regular = __mlir_attr[
     `#kgen.target<triple = "nvptx64-nvidia-cuda", `,
     `arch = "sm_80", `,
     `features = "+ptx81", `,
@@ -53,8 +53,8 @@ alias target_regular = __mlir_attr[
 ]
 
 
-def test_data_layout_llvm[emission_kind: StaticString]():
-    fn my_func(src: UnsafePointer[Int32]):
+def _test_data_layout_llvm[emission_kind: StaticString]() raises:
+    def my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         return
 
     var target_short_llvm = compile_info[
@@ -75,11 +75,14 @@ def test_data_layout_llvm[emission_kind: StaticString]():
     )
 
 
-def test_data_layout_asm():
-    fn my_func(src: UnsafePointer[Int32]):
-        var a = stack_allocation[
-            20, Int32, address_space = AddressSpace.SHARED
-        ]()
+def test_data_layout_llvm() raises:
+    _test_data_layout_llvm["llvm"]()
+    _test_data_layout_llvm["llvm-opt"]()
+
+
+def test_data_layout_asm() raises:
+    def my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
+        var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
         a[thread_idx.x] = src[0]
         barrier()
 
@@ -94,18 +97,21 @@ def test_data_layout_asm():
     assert_false("mov.u64" in target_short_asm)
 
 
-# TODO: KERN-2106, this test is causing timeouts in CI.
-# def test_cross_compile():
-#     alias MI355X_TARGET = get_gpu_target["mi355x"]()
+def test_cross_compile() raises:
+    comptime if SanitizeAddress:
+        # TODO: MOCO-2593, this test deadlocks in mojo build in ASAN
+        return
 
-#     fn test_kernel():
-#         constrained[
-#             _cdna_4_or_newer(), "test_kernel is only supported on CDNA4+"
-#         ]()
+    comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
-#     var asm = compile_info[test_kernel, target=MI355X_TARGET]()
-#     assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
+    def test_kernel():
+        comptime assert (
+            _cdna_4_or_newer()
+        ), "test_kernel is only supported on CDNA4+"
+
+    var asm = compile_info[test_kernel, target=MI355X_TARGET]()
+    assert_true("amdgcn-amd-amdhsa--gfx950" in asm)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

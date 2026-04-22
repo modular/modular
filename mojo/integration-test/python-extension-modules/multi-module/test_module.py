@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # Imports from 'mojo_module.mojo'
-import mojo_module_a  # type: ignore
-import mojo_module_b  # type: ignore
+import mojo_module_a  # type: ignore[import-not-found]
+import mojo_module_b  # type: ignore[import-not-found]
 
 """
 This test suite validates the multi-module Python extension functionality in Mojo.

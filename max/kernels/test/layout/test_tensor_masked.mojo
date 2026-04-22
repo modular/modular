@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,12 +14,12 @@
 
 from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
-from utils import Index
+from std.utils import Index
 
 
-fn test_tile_masked():
+def test_tile_masked():
     print("== test_tile_masked")
-    alias layout = Layout.row_major(11, 7)
+    comptime layout = Layout.row_major(11, 7)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_11x7 = LayoutTensor[DType.float32, layout](stack)
     arange(tensor_11x7)
@@ -35,9 +35,9 @@ fn test_tile_masked():
             print(tensor_4x4_masked)
 
 
-fn test_subtile_masked():
+def test_subtile_masked():
     print("== test_subtile_masked")
-    alias layout = Layout.row_major(15, 9)
+    comptime layout = Layout.row_major(15, 9)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_15x9 = LayoutTensor[DType.float32, layout](stack)
     arange(tensor_15x9)
@@ -64,9 +64,9 @@ fn test_subtile_masked():
                     print(subtile_4x4_masked)
 
 
-fn test_tile_dynamic_no_bounds():
+def test_tile_dynamic_no_bounds():
     print("== test_tile_dynamic_no_bounds")
-    alias layout = Layout.row_major(4, 4)
+    comptime layout = Layout.row_major(4, 4)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(4, 4))
@@ -84,9 +84,9 @@ fn test_tile_dynamic_no_bounds():
             print(tensor_2x2_masked)
 
 
-fn test_tile_dynamic_with_bounds():
+def test_tile_dynamic_with_bounds():
     print("== test_tile_dynamic_with_bounds")
-    alias layout = Layout.row_major(5, 3)
+    comptime layout = Layout.row_major(5, 3)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
@@ -104,9 +104,9 @@ fn test_tile_dynamic_with_bounds():
             print(tensor_2x2_masked)
 
 
-fn test_tile_and_distribute():
+def test_tile_and_distribute():
     print("== test_tile_and_distribute")
-    alias layout = Layout.row_major(5, 3)
+    comptime layout = Layout.row_major(5, 3)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
@@ -126,13 +126,13 @@ fn test_tile_and_distribute():
                 print("----thread[", thread_id, "]----")
                 var distributed_masked_tensor = tensor_2x2_masked.distribute[
                     Layout.row_major(2, 2)
-                ](UInt(thread_id))
+                ](thread_id)
                 print(distributed_masked_tensor)
 
 
-fn test_tile_iterator_masked():
+def test_tile_iterator_masked():
     print("== test_tile_iterator_masked")
-    alias layout = Layout.row_major(5, 3)
+    comptime layout = Layout.row_major(5, 3)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
@@ -148,9 +148,9 @@ fn test_tile_iterator_masked():
             tensor_iter_2x2_masked += 1
 
 
-fn test_tile_and_vectorize():
+def test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
-    alias layout = Layout.row_major(3, 4)
+    comptime layout = Layout.row_major(3, 4)
     var stack = InlineArray[Float32, layout.size()](uninitialized=True)
     tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
         stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(3, 4))
@@ -163,7 +163,7 @@ fn test_tile_and_vectorize():
             print(tensor_UxU.tile[2, 2](tile_i, tile_j).vectorize[1, 2]())
 
 
-fn main():
+def main():
     # CHECK-LABEL: test_tile_masked
     # CHECK: --tile[ 0 ,  0 ]--
     # CHECK: ((4, 4):(7, 1)) True False

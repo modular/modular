@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,38 +12,29 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from algorithm import elementwise
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from layout.int_tuple import fill_like
+from std.algorithm import elementwise
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.slice import slice_as_copy, slice_as_view
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-def print_elements[dtype: DType](tensor: LayoutTensor[dtype, **_]):
-    print("New shape:", tensor.runtime_layout.shape.value.canonicalize())
-    print("New strides:", tensor.runtime_layout.stride.value.canonicalize())
+def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
+    var shape = coord_to_index_list(tensor.layout.shape_coord())
+    var stride = coord_to_index_list(tensor.layout.stride_coord())
+    print("New shape:", shape)
+    print("New strides:", stride)
 
     @always_inline
     @parameter
-    fn print_elements_lambda[
+    def print_elements_lambda[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
-        var idx = tensor.runtime_layout(
-            RuntimeTuple[fill_like(tensor.layout.shape, UNKNOWN_VALUE)](index)
-        )
-        print(tensor.ptr[idx])
+        var idx = tensor.layout(Coord(index))
+        print(tensor.raw_load(idx))
 
-    elementwise[print_elements_lambda, 1](
-        tensor.runtime_layout.shape.value.canonicalize()
-    )
+    elementwise[print_elements_lambda, 1](shape)
 
 
 # slice_dim
@@ -58,56 +49,52 @@ def test_slice[
     stops: IndexList[outer_rank],
     steps: IndexList[outer_rank],
     use_copy: Bool,
-):
+) raises:
     # Isn't always used but is used for the output buffer if we copy.
     var output_mem = InlineArray[Scalar[dtype], numelems](uninitialized=True)
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
-    var in_tensor = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
+    var in_tensor = TileTensor(
         memory1,
-        RuntimeLayout[Layout.row_major[outer_rank]()].row_major(dims),
+        row_major(Coord(dims)),
     )
 
-    print("In shape:", in_tensor.runtime_layout.shape.value.canonicalize())
-    print("In strides:", in_tensor.runtime_layout.stride.value.canonicalize())
+    var shape = coord_to_index_list(in_tensor.layout.shape_coord())
+    var stride = coord_to_index_list(in_tensor.layout.stride_coord())
+    print("In shape:", shape)
+    print("In strides:", stride)
 
     var start_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var start_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
+    var start_tensor = TileTensor(
         start_tensor_mem,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](outer_rank)
-        ),
+        row_major(Coord(IndexList[1](outer_rank))),
     )
 
     var end_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var end_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
+    var end_tensor = TileTensor(
         end_tensor_mem,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](outer_rank)
-        ),
+        row_major(Coord(IndexList[1](outer_rank))),
     )
 
     var step_tensor_mem = InlineArray[Scalar[DType.int], outer_rank](
         uninitialized=True
     )
-    var step_tensor = LayoutTensor[DType.int, Layout.row_major[1]()](
+    var step_tensor = TileTensor(
         step_tensor_mem,
-        RuntimeLayout[Layout.row_major[1]()].row_major(
-            IndexList[1](outer_rank)
-        ),
+        row_major(Coord(IndexList[1](outer_rank))),
     )
 
     for dim in range(outer_rank):
-        start_tensor[dim] = starts[dim]
-        end_tensor[dim] = stops[dim]
-        step_tensor[dim] = steps[dim]
+        start_tensor[dim] = Scalar[DType.int](starts[dim])
+        end_tensor[dim] = Scalar[DType.int](stops[dim])
+        step_tensor[dim] = Scalar[DType.int](steps[dim])
 
     for i in range(numelems):
-        in_tensor.ptr[i] = i
+        in_tensor.raw_store(i, Scalar[dtype](i))
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(
@@ -122,11 +109,10 @@ def test_slice[
     else:
         print("As copy")
 
-        var output_buffer = LayoutTensor[dtype, Layout.row_major[outer_rank]()](
+        var sliced_shape = coord_to_index_list(sliced.layout.shape_coord())
+        var output_buffer = TileTensor(
             output_mem,
-            RuntimeLayout[Layout.row_major[outer_rank]()].row_major(
-                sliced.runtime_layout.shape.value.canonicalize()
-            ),
+            row_major(Coord(sliced_shape)),
         )
 
         slice_as_copy(
@@ -141,7 +127,7 @@ def test_slice[
 
 
 # CHECK-LABEL: == test_slice_basic
-def test_slice_basic():
+def test_slice_basic() raises:
     print("== test_slice_basic")
 
     # CHECK-NEXT: In shape: (4, 4, 4)
@@ -188,7 +174,7 @@ def test_slice_basic():
 
 
 # CHECK-LABEL: == test_slice_identity
-def test_slice_identity():
+def test_slice_identity() raises:
     print("== test_slice_identity")
 
     # CHECK-NEXT: In shape: (2, 2, 4)
@@ -225,7 +211,7 @@ def test_slice_identity():
 
 
 # CHECK-LABEL: == test_slice_steps
-def test_slice_steps():
+def test_slice_steps() raises:
     print("== test_slice_steps")
 
     # CHECK-NEXT: In shape: (2, 4, 8)
@@ -252,7 +238,7 @@ def test_slice_steps():
 
 
 # CHECK-LABEL: == test_slice_1D
-def test_slice_1D():
+def test_slice_1D() raises:
     print("== test_slice_1D")
 
     # CHECK-NEXT: In shape: (64,)
@@ -271,7 +257,7 @@ def test_slice_1D():
 
 
 # CHECK-LABEL: == test_slice_empty
-def test_slice_empty():
+def test_slice_empty() raises:
     print("== test_slice_empty")
 
     # CHECK-NEXT: In shape: (64,)
@@ -286,7 +272,7 @@ def test_slice_empty():
 
 
 # CHECK-LABEL: == test_slice_4D
-def test_slice_4D():
+def test_slice_4D() raises:
     print("== test_slice_4D")
 
     # CHECK-NEXT: In shape: (2, 4, 4, 2)
@@ -309,7 +295,7 @@ def test_slice_4D():
 
 
 # CHECK-LABEL: == test_slice_copy
-def test_slice_copy():
+def test_slice_copy() raises:
     print("== test_slice_copy")
 
     # CHECK-NEXT: In shape: (2, 4, 4, 2)
@@ -335,7 +321,7 @@ def test_slice_copy():
 
 
 # CHECK-LABEL: == test_slice_negative
-def test_slice_negative():
+def test_slice_negative() raises:
     print("== test_slice_negative")
 
     # CHECK-NEXT: In shape: (2, 4, 4, 2)
@@ -364,7 +350,7 @@ def test_slice_negative():
 
 
 # CHECK-LABEL: == test_slice_negative_step_1D
-def test_slice_negative_step_1D():
+def test_slice_negative_step_1D() raises:
     print("== test_slice_negative_step_1D")
 
     # CHECK: In shape: (15,)
@@ -396,7 +382,7 @@ def test_slice_negative_step_1D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_2D
-def test_slice_negative_step_2D():
+def test_slice_negative_step_2D() raises:
     print("== test_slice_negative_step_2D")
 
     # CHECK: In shape: (16, 4)
@@ -424,7 +410,7 @@ def test_slice_negative_step_2D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_3D
-def test_slice_negative_step_3D():
+def test_slice_negative_step_3D() raises:
     print("== test_slice_negative_step_3D")
 
     # CHECK: In shape: (8, 2, 4)
@@ -452,7 +438,7 @@ def test_slice_negative_step_3D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_4D
-def test_slice_negative_step_4D():
+def test_slice_negative_step_4D() raises:
     print("== test_slice_negative_step_4D")
 
     # CHECK: In shape: (2, 4, 2, 4)
@@ -478,7 +464,7 @@ def test_slice_negative_step_4D():
 
 
 # CHECK-LABEL: == test_slice_negative_step_2
-def test_slice_negative_step_2():
+def test_slice_negative_step_2() raises:
     print("== test_slice_negative_step_2")
 
     # CHECK: In shape: (3, 3)
@@ -499,7 +485,7 @@ def test_slice_negative_step_2():
 
 
 # CHECK-LABEL: == test_slice_negative_step_3
-def test_slice_negative_step_3():
+def test_slice_negative_step_3() raises:
     print("== test_slice_negative_step_3")
 
     # CHECK: In shape: (3, 3)
@@ -523,7 +509,7 @@ def test_slice_negative_step_3():
 
 
 # CHECK-LABEL: == test_slice_negative_step_4
-def test_slice_negative_step_4():
+def test_slice_negative_step_4() raises:
     print("== test_slice_negative_step_4")
 
     # CHECK: In shape: (3, 3)
@@ -552,7 +538,7 @@ def test_slice_negative_step_4():
 
 
 # CHECK-LABEL: == test_truncated_last_dim
-def test_truncated_last_dim():
+def test_truncated_last_dim() raises:
     print("== test_truncated_last_dim")
 
     # CHECK: In shape: (3, 3)
@@ -576,7 +562,7 @@ def test_truncated_last_dim():
 
 
 # CHECK-LABEL: == test_truncated_first_and_last_dim
-def test_truncated_first_and_last_dim():
+def test_truncated_first_and_last_dim() raises:
     print("== test_truncated_first_and_last_dim")
 
     # CHECK: In shape: (3, 3)
@@ -595,7 +581,7 @@ def test_truncated_first_and_last_dim():
 
 
 # CHECK-LABEL: == test_truncated_last_dim_reverse
-def test_truncated_last_dim_reverse():
+def test_truncated_last_dim_reverse() raises:
     print("== test_truncated_last_dim_reverse")
 
     # CHECK: In shape: (3, 3)
@@ -621,7 +607,7 @@ def test_truncated_last_dim_reverse():
 
 
 # CHECK-LABEL: == test_truncated_first_and_last_dim_reverse
-def test_truncated_first_and_last_dim_reverse():
+def test_truncated_first_and_last_dim_reverse() raises:
     print("== test_truncated_first_and_last_dim_reverse")
 
     # CHECK: In shape: (3, 3)
@@ -640,7 +626,7 @@ def test_truncated_first_and_last_dim_reverse():
 
 
 # CHECK-LABEL: == test_last_dim_edge
-def test_last_dim_edge():
+def test_last_dim_edge() raises:
     print("== test_last_dim_edge")
 
     # CHECK: In shape: (3, 3)
@@ -664,7 +650,7 @@ def test_last_dim_edge():
 
 
 # CHECK-LABEL: == test_last_dim_edge_2
-def test_last_dim_edge_2():
+def test_last_dim_edge_2() raises:
     print("== test_last_dim_edge_2")
 
     # CHECK: In shape: (3, 3)
@@ -688,7 +674,7 @@ def test_last_dim_edge_2():
 
 
 # CHECK-LABEL: == test_last_dim_edge_3
-def test_last_dim_edge_3():
+def test_last_dim_edge_3() raises:
     print("== test_last_dim_edge_3")
 
     # CHECK: In shape: (3, 3)
@@ -712,7 +698,7 @@ def test_last_dim_edge_3():
 
 
 # CHECK-LABEL: == test_last_dim_edge_4
-def test_last_dim_edge_4():
+def test_last_dim_edge_4() raises:
     print("== test_last_dim_edge_4")
 
     # CHECK: In shape: (3, 3)
@@ -741,7 +727,7 @@ def test_last_dim_edge_4():
 
 
 # CHECK-LABEL: == test_out_of_bounds
-def test_out_of_bounds():
+def test_out_of_bounds() raises:
     print("== test_out_of_bounds")
 
     # CHECK: In shape: (3, 3)
@@ -764,7 +750,7 @@ def test_out_of_bounds():
     )
 
 
-def main():
+def main() raises:
     test_slice_basic()
     test_slice_identity()
     test_slice_steps()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import PathLike, remove, unlink
-from os.path import exists
-from pathlib import Path
+from std.os import PathLike, remove, unlink
+from std.os.path import exists
+from std.pathlib import Path
 
-from testing import TestSuite, assert_false, assert_raises, assert_true
+from std.testing import TestSuite, assert_false, assert_raises, assert_true
 
 
-fn create_file_and_test_delete_path[
-    func: fn[PathLike: PathLike] (PathLike) raises -> None,
+def create_file_and_test_delete_path[
+    func: def[PathLike: PathLike](PathLike) thin raises -> None,
     name: StaticString,
 ](filepath: Path) raises:
     try:
@@ -33,7 +33,7 @@ fn create_file_and_test_delete_path[
     assert_false(exists(filepath), "test with '" + name + "' failed")
 
 
-def test_remove():
+def test_remove() raises:
     var cwd_path = Path()
     var my_file_path = cwd_path / "my_file.test"
     var my_file_name = String(my_file_path)
@@ -60,5 +60,5 @@ def test_remove():
     create_file_and_test_delete_path[remove, "remove"](my_file_name)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

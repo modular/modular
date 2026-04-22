@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from layout import LayoutTensor, RuntimeTuple
+from layout import Coord, Idx, TileTensor
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @fieldwise_init
-struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
+struct BoundingBox[dtype: DType](ImplicitlyCopyable):
     """Represents a 2D bounding box for object detection.
 
     The box is stored using two corner points: `nw` and `se`.
@@ -36,15 +36,15 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
         se: Corner storing the minimum coordinates (min y, min x).
     """
 
-    var nw: SIMD[dtype, 2]
-    var se: SIMD[dtype, 2]
+    var nw: SIMD[Self.dtype, 2]
+    var se: SIMD[Self.dtype, 2]
 
-    fn __init__(
+    def __init__(
         out self,
-        y1: Scalar[dtype],
-        x1: Scalar[dtype],
-        y2: Scalar[dtype],
-        x2: Scalar[dtype],
+        y1: Scalar[Self.dtype],
+        x1: Scalar[Self.dtype],
+        y2: Scalar[Self.dtype],
+        x2: Scalar[Self.dtype],
     ):
         """Initialize a bounding box from two diagonal corner coordinates.
 
@@ -58,10 +58,10 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
             The corners are automatically ordered to ensure nw contains the
             maximum coordinates and se contains the minimum coordinates.
         """
-        self.nw = SIMD[dtype, 2](max(y1, y2), max(x1, x2))
-        self.se = SIMD[dtype, 2](min(y1, y2), min(x1, x2))
+        self.nw = SIMD[Self.dtype, 2](max(y1, y2), max(x1, x2))
+        self.se = SIMD[Self.dtype, 2](min(y1, y2), min(x1, x2))
 
-    fn iou(self, other: BoundingBox[dtype]) -> Scalar[dtype]:
+    def iou(self, other: BoundingBox[Self.dtype]) -> Scalar[Self.dtype]:
         """Calculate Intersection over Union (IoU) with another bounding box.
 
         Args:
@@ -76,7 +76,9 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
         var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
-    fn intersection_area(self, other: BoundingBox[dtype]) -> Scalar[dtype]:
+    def intersection_area(
+        self, other: BoundingBox[Self.dtype]
+    ) -> Scalar[Self.dtype]:
         """Calculate the area of intersection with another bounding box.
 
         Args:
@@ -94,7 +96,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
 
         return Self(nw, se).area()
 
-    fn area(self) -> Scalar[dtype]:
+    def area(self) -> Scalar[Self.dtype]:
         """Calculate the area of this bounding box.
 
         Returns:
@@ -104,13 +106,15 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable, Movable):
 
 
 @always_inline
-fn _get_bounding_box[
+def _get_bounding_box[
     dtype: DType
 ](
     batch_size: Int,
     box_idx: Int,
-    boxes: LayoutTensor[dtype, **_],
-) -> BoundingBox[dtype]:
+    boxes: TileTensor[dtype, ...],
+) -> BoundingBox[
+    dtype
+]:
     """Extract a bounding box from a tensor of boxes.
 
     Args:
@@ -122,7 +126,9 @@ fn _get_bounding_box[
     Returns:
         A BoundingBox instance constructed from the extracted coordinates.
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert boxes.element_size == 1
+
     var y1 = boxes[batch_size, box_idx, 0][0]
     var x1 = boxes[batch_size, box_idx, 1][0]
     var y2 = boxes[batch_size, box_idx, 2][0]
@@ -130,12 +136,12 @@ fn _get_bounding_box[
     return BoundingBox(y1, x1, y2, x2)
 
 
-fn non_max_suppression[
+def non_max_suppression[
     dtype: DType
 ](
-    boxes: LayoutTensor[dtype, **_],
-    scores: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, DType.int64, **_],
+    boxes: TileTensor[dtype, ...],
+    scores: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, DType.int64, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -161,15 +167,15 @@ fn non_max_suppression[
         score_threshold: Minimum score threshold. Boxes with score < threshold
                         are filtered out.
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
-    constrained[scores.rank == 3, "scores must be of rank 3"]()
-    constrained[output.rank == 2, "output must be of rank 2"]()
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert scores.flat_rank == 3, "scores must be of rank 3"
+    comptime assert output.flat_rank == 2, "output must be of rank 2"
 
     var pred_count = 0
 
     @parameter
     @always_inline
-    fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         """Store selected box indices to output tensor."""
         output[pred_count, 0] = batch_idx
         output[pred_count, 1] = class_idx
@@ -185,11 +191,11 @@ fn non_max_suppression[
     )
 
 
-fn non_max_suppression_shape_func[
+def non_max_suppression_shape_func[
     dtype: DType
 ](
-    boxes: LayoutTensor[dtype, **_],
-    scores: LayoutTensor[dtype, **_],
+    boxes: TileTensor[dtype, ...],
+    scores: TileTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
@@ -210,14 +216,14 @@ fn non_max_suppression_shape_func[
     Returns:
         A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
-    constrained[scores.rank == 3, "scores must be of rank 3"]()
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert scores.flat_rank == 3, "scores must be of rank 3"
 
     var box_pred_count: Int64 = 0
 
     @parameter
     @always_inline
-    fn incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         """Count selected boxes without storing them."""
         box_pred_count += 1
 
@@ -232,42 +238,35 @@ fn non_max_suppression_shape_func[
     return IndexList[2](Int(box_pred_count), 3)
 
 
-fn non_max_suppression[
+def non_max_suppression[
     dtype: DType,
-    func: fn (Int64, Int64, Int64) capturing [_] -> None,
+    func: def(Int64, Int64, Int64) capturing[_] -> None,
 ](
-    boxes: LayoutTensor[dtype, **_],
-    scores: LayoutTensor[dtype, **_],
+    boxes: TileTensor[dtype, ...],
+    scores: TileTensor[dtype, ...],
     max_output_boxes_per_class: Int,
     iou_threshold: Float32,
     score_threshold: Float32,
 ):
     """Implements the NonMaxSuppression operator from the ONNX spec https://github.com/onnx/onnx/blob/main/docs/Operators.md#nonmaxsuppression.
     """
-    constrained[boxes.rank == 3, "boxes must be of rank 3"]()
-    constrained[scores.rank == 3, "scores must be of rank 3"]()
+    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = Int(boxes.runtime_layout.shape[0])
-    var num_boxes = Int(boxes.runtime_layout.shape[1])
-    var num_classes = Int(scores.runtime_layout.shape[1])
+    var batch_size = boxes.layout.shape[0]().value()
+    var num_boxes = boxes.layout.shape[1]().value()
+    var num_classes = scores.layout.shape[1]().value()
 
-    debug_assert(
-        Int(boxes.runtime_layout.shape[2]) == 4,
-        (
-            "boxes must be specified with the 2D coords representing the"
-            " diagonal corners"
-        ),
+    assert boxes.layout.shape[2]().value() == 4, (
+        "boxes must be specified with the 2D coords representing the"
+        " diagonal corners"
     )
-    debug_assert(
-        Int(boxes.runtime_layout.shape[0])
-        == Int(scores.runtime_layout.shape[0]),
-        "dim 0 of boxes and scores must be equal",
-    )
-    debug_assert(
-        Int(boxes.runtime_layout.shape[1])
-        == Int(scores.runtime_layout.shape[2]),
-        "boxes and scores must contain the same number of boxes",
-    )
+    assert (
+        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value()
+    ), "dim 0 of boxes and scores must be equal"
+    assert (
+        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value()
+    ), "boxes and scores must contain the same number of boxes"
 
     if max_output_boxes_per_class == 0:
         return
@@ -283,10 +282,8 @@ fn non_max_suppression[
             # this happens when:
             #   1. Score does not meet score threshold (filtered out initially)
             #   2. IoU with an already-selected boc is above IOU threshold (suppressed)
-            var offset = scores.runtime_layout(
-                RuntimeTuple[scores.layout.shape](b, c, 0)
-            )
-            var per_class_scores_ptr = scores.ptr.offset(offset)
+            var offset = scores.layout(Coord(Idx(b), Idx(c), Idx[0]()))
+            var per_class_scores_ptr = scores.ptr + offset
 
             # Filter boxes by score threshold
             # This reduces the number of boxes to sort and process
@@ -304,7 +301,7 @@ fn non_max_suppression[
 
             @parameter
             @always_inline
-            fn _greater_than(lhs: Int64, rhs: Int64) -> Bool:
+            def _greater_than(lhs: Int64, rhs: Int64) -> Bool:
                 """Compare boxes by their scores in descending order."""
                 return per_class_scores[Int(lhs)] > per_class_scores[Int(rhs)]
 
@@ -322,7 +319,7 @@ fn non_max_suppression[
                 num_boxes_remaining -= 1
 
                 # Each output prediction contains 3 values: [batch_index, class_index, box_index]
-                func(b, c, box_idxs[pred_idx])
+                func(Int64(b), Int64(c), box_idxs[pred_idx])
 
                 # At the beginning of this loop box_idxs are sorted such that scores[box_idxs] looks like this:
                 # [1st best score, 2nd best score, ..., num_boxes_remaining'th best score, -inf, ..., -inf]
@@ -350,13 +347,13 @@ fn non_max_suppression[
                 sort[_greater_than](
                     Span[box_idxs.T, origin_of(box_idxs)](
                         ptr=box_idxs.unsafe_ptr() + pred_idx,
-                        length=UInt(num_boxes_curr_pred),
+                        length=num_boxes_curr_pred,
                     )
                 )
 
             @always_inline
             @parameter
-            fn sorted() -> Bool:
+            def sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (
                         per_class_scores[Int(box_idxs[i])]
@@ -365,6 +362,4 @@ fn non_max_suppression[
                         return False
                 return True
 
-            debug_assert(
-                sorted(), "NonMaxSuppression boxes not sorted correctly"
-            )
+            assert sorted(), "NonMaxSuppression boxes not sorted correctly"

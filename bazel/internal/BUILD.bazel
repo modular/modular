@@ -1,31 +1,41 @@
+load("@rules_mojo//mojo:toolchain.bzl", "mojo_copts_toolchain")
+load("@rules_mypy//mypy:mypy.bzl", "mypy_cli")
 load("//bazel:api.bzl", "modular_cc_binary", "modular_cc_library", "modular_py_binary", "modular_py_library", "requirement")
+load("//bazel:config.bzl", "TOP_LEVEL_TAG")
 load(":gpu_toolchain_alias.bzl", "gpu_toolchain_alias")
-load(":lib_toolchain.bzl", "lib_toolchain")
+
+package(default_visibility = ["//visibility:public"])
 
 exports_files([
     "load_bazel_tools.py",
     "lsan-suppressions.txt",
 ])
 
+mypy_cli(
+    name = "mypy_cli",
+    mypy_requirement = requirement("mypy"),
+    tags = ["no-mypy"],
+    deps = [
+        requirement("pydantic"),
+    ],
+)
+
 filegroup(
     name = "mojo-filecheck-test",
     testonly = True,
     srcs = ["mojo-filecheck-test.sh"],
-    visibility = ["//visibility:public"],
 )
 
 filegroup(
     name = "create_venv",
     testonly = True,
     srcs = ["create_venv.py"],
-    visibility = ["//visibility:public"],
 )
 
 filegroup(
     name = "pytest_runner",
     testonly = True,
     srcs = ["pytest_runner.py"],
-    visibility = ["//visibility:public"],
 )
 
 alias(
@@ -35,22 +45,15 @@ alias(
         "//:linux_x86_64": "@uv_linux_x86_64//:uv",
         "@platforms//os:macos": "@uv_darwin_aarch64//:uv",
     }),
-    visibility = ["//visibility:public"],
 )
 
 modular_py_binary(
     name = "mojodoc_json_to_markdown",
     srcs = ["mojodoc_json_to_markdown.py"],
     data = glob(["mojodoc-templates/**"]),
-    visibility = ["//visibility:public"],
     deps = [
         requirement("jinja2"),
     ],
-)
-
-lib_toolchain(
-    name = "lib_toolchain",
-    visibility = ["//visibility:public"],
 )
 
 modular_py_library(
@@ -59,13 +62,22 @@ modular_py_library(
         "sitecustomize.py",
     ],
     imports = ["."],
-    visibility = ["//visibility:public"],
 )
 
 gpu_toolchain_alias(
     name = "current_gpu_toolchain",
+)
+
+modular_cc_library(
+    name = "gtest_main_objc_pool_check",
     testonly = True,
-    visibility = ["//visibility:public"],
+    srcs = ["GTestMainObjcPoolCheck.cpp"],
+    target_compatible_with = ["@platforms//os:macos"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//third-party/unittest:gmock",
+        "@llvm-project//third-party/unittest:gtest",
+    ],
 )
 
 modular_cc_library(
@@ -81,4 +93,76 @@ modular_cc_binary(
     srcs = ["debugging_test_bin.cpp"],
     tags = ["manual"],
     deps = [":debugging_test_lib"],
+)
+
+modular_py_binary(
+    name = "sphinx",
+    srcs = ["sphinx.py"],
+    # .pyi stubs for the _core C extension so that linkcode_resolve() in
+    # conf.py can map nanobind symbols to their stub definitions on GitHub.
+    data = ["//max/python/max:_core_pyi_stubs"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        # Each invocation has different deps depending on what you are doing.
+        # TODO: Handle this at each call site instead of here.
+        "@breathe",
+        "@sphinx-click",
+        "@sphinx-markdown-builder",
+        requirement("pyyaml"),
+        requirement("sphinx"),
+        requirement("munch"),
+        requirement("torch"),
+        "//max/python/max",
+    ],
+)
+
+modular_py_binary(
+    name = "apply_mojo_fixits",
+    srcs = ["apply_mojo_fixits.py"],
+    data = [
+        "@llvm-project//clang-tools-extra/clang-apply-replacements:clang-apply-replacements",
+    ],
+    env = {
+        "TOOL_RLOCATION": "$(rlocationpath @llvm-project//clang-tools-extra/clang-apply-replacements:clang-apply-replacements)",
+    },
+    deps = [
+        "@rules_python//python/runfiles",
+        requirement("pyyaml"),
+    ],
+)
+
+mojo_copts_toolchain(
+    name = "_mojo_copts_toolchain",
+    copts = select({
+        "//:linux_x86_64": [
+            "-target-triple=x86_64-unknown-linux-gnu",
+            "--target-cpu=x86-64-v3",
+        ],
+        "//:linux_aarch64": [
+            "-target-triple=aarch64-unknown-linux-gnu",
+            "--target-cpu=neoverse-n1",
+        ],
+        "@platforms//os:macos": [
+            "--target-cpu=apple-m1",
+        ],
+    }) + select({
+        "//:asan": ["--sanitize=address"],
+        "//:tsan": ["--sanitize=thread"],
+        "//conditions:default": [],
+    }) + select({
+        "//:modular_config_ci_build": ["-Werror"],
+        "//conditions:default": [],
+    }),
+    package_copts = select({
+        "//:modular_config_ci_build": ["-Werror"],
+        "//conditions:default": [],
+    }),
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+)
+
+toolchain(
+    name = "mojo_copts_toolchain",
+    tags = [TOP_LEVEL_TAG],  # Used in MODULE.bazel
+    toolchain = ":_mojo_copts_toolchain",
+    toolchain_type = "@rules_mojo//:copts_toolchain_type",
 )

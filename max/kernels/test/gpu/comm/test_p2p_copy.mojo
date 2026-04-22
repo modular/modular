@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys import env_get_int
+from std.math import ceildiv
+from std.sys import get_defined_int
 
-from gpu import block_dim, global_idx, grid_dim
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import assert_almost_equal, assert_true
+from comm.sync import enable_p2p
+from std.gpu import global_idx
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import assert_almost_equal, assert_true
 
 
-fn p2p_copy_kernel(
-    dst: UnsafePointer[Float32],
-    src: UnsafePointer[Float32],
+def p2p_copy_kernel(
+    dst: UnsafePointer[Float32, MutAnyOrigin],
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
     num_elements: Int,
 ):
     var tid = global_idx.x
-    if tid < UInt(num_elements):
+    if tid < num_elements:
         dst[tid] = src[tid]
 
 
-fn launch_p2p_copy_kernel(
+def launch_p2p_copy_kernel(
     ctx1: DeviceContext,
     dst_buf: DeviceBuffer[DType.float32],
     src_buf: DeviceBuffer[DType.float32],
     num_elements: Int,
 ) raises:
-    alias BLOCK_SIZE = 256
+    comptime BLOCK_SIZE = 256
     var grid_size = ceildiv(num_elements, BLOCK_SIZE)
 
     # Launch the kernel on both devices
-    ctx1.enqueue_function_checked[p2p_copy_kernel, p2p_copy_kernel](
+    ctx1.enqueue_function_experimental[p2p_copy_kernel](
         dst_buf,
         src_buf,
         num_elements,
@@ -51,14 +52,15 @@ fn launch_p2p_copy_kernel(
     ctx1.synchronize()
 
 
-def main():
-    alias log2_length = env_get_int["log2_length", 20]()
-    constrained[log2_length > 0]()
+def main() raises:
+    comptime log2_length = get_defined_int["log2_length", 20]()
+    comptime assert log2_length > 0
     var length = 1 << log2_length
 
     assert_true(
         DeviceContext.number_of_devices() > 1, "must have multiple GPUs"
     )
+    assert_true(enable_p2p(), "failed to enable P2P access between GPUs")
 
     # Create contexts for both devices
     var ctx1 = DeviceContext(device_id=0)
@@ -72,15 +74,14 @@ def main():
     print("Checkpoint - successfully enabled peer access")
 
     # Create and initialize device buffers
-    var dst_buf = ctx1.create_buffer_sync[DType.float32](length).enqueue_fill(
-        1.0
-    )
+    var dst_buf = ctx1.create_buffer_sync[DType.float32](length)
+    dst_buf.enqueue_fill(1.0)
     var src_buf = ctx2.create_buffer_sync[DType.float32](length)
 
     # Initialize source data
     with src_buf.map_to_host() as host_data:
         for i in range(length):
-            host_data[i] = Float32(i * 0.5)
+            host_data[i] = Float32(Float64(i) * 0.5)
 
     # Launch the P2P copy kernel
     launch_p2p_copy_kernel(ctx1, dst_buf, src_buf, length)
@@ -91,6 +92,6 @@ def main():
     # Verify the data was copied correctly
     with dst_buf.map_to_host() as host_data:
         for i in range(length):
-            assert_almost_equal(host_data[i], Float32(i * 0.5))
+            assert_almost_equal(host_data[i], Float32(Float64(i) * 0.5))
 
     print("P2P Direct Addressing Copy Test Passed")

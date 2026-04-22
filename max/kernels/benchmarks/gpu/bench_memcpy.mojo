@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,75 +11,51 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import floor, iota
-from os import abort
-from sys import size_of
+from std.math import iota
+from std.os import abort
+from std.sys import size_of
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext, HostBuffer
-from internal_utils import arg_parse
-from testing import assert_almost_equal, assert_true
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext, HostBuffer
+from internal_utils import arg_parse, human_readable_size
+from std.testing import assert_almost_equal, assert_true
 
-from utils import IndexList
-
-
-fn _pretty_print_float(val: Float64) -> String:
-    """This converts the float value to a string, but omits the fractional part
-    if not needed (e.g. prints 2 instead of 2.0).
-    """
-    if Float64(floor(val)) == val:
-        return String(Int(val))
-    return String(val)
-
-
-fn _human_memory(size: Int) -> String:
-    alias KB = 1024
-    alias MB = KB * KB
-    alias GB = MB * KB
-
-    if size >= GB:
-        return _pretty_print_float(Float64(size) / GB) + "GiB"
-
-    if size >= MB:
-        return _pretty_print_float(Float64(size) / MB) + "MiB"
-
-    if size >= KB:
-        return _pretty_print_float(Float64(size) / KB) + "KiB"
-
-    return String(size) + "B"
+from std.utils import IndexList
 
 
 @fieldwise_init
-struct Config(ImplicitlyCopyable, Movable, Writable):
+struct Config(ImplicitlyCopyable, Writable):
     var direction: Int
     var pinned_memory: Bool
     # Definitions for direction field.
-    alias DToH = 0
-    alias HToD = 1
-    alias DToD = 2
-    alias P2P = 3
+    comptime DToH = 0
+    comptime HToD = 1
+    comptime DToD = 2
+    comptime P2P = 3
     # Different possible configurations.
-    alias DEVICE_TO_HOST = Self(Self.DToH, False)
-    alias DEVICE_TO_HOST_PINNED = Self(Self.DToH, True)
-    alias HOST_TO_DEVICE = Self(Self.HToD, False)
-    alias HOST_PINNED_TO_DEVICE = Self(Self.HToD, True)
-    alias DEVICE_TO_DEVICE = Self(Self.DToD, False)
-    alias PEER_TO_PEER = Self(Self.P2P, False)
-    alias UNDEFINED = Self(-1, False)
+    comptime DEVICE_TO_HOST = Self(Self.DToH, False)
+    comptime DEVICE_TO_HOST_PINNED = Self(Self.DToH, True)
+    comptime HOST_TO_DEVICE = Self(Self.HToD, False)
+    comptime HOST_PINNED_TO_DEVICE = Self(Self.HToD, True)
+    comptime DEVICE_TO_DEVICE = Self(Self.DToD, False)
+    comptime PEER_TO_PEER = Self(Self.P2P, False)
+    comptime UNDEFINED = Self(-1, False)
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return (
             self.direction == other.direction
             and self.pinned_memory == other.pinned_memory
         )
 
     @staticmethod
-    fn get(handle: String) -> Self:
+    def get(handle: String) -> Self:
         if handle == "host_to_device":
             return Self.HOST_TO_DEVICE
         elif handle == "host_pinned_to_device":
@@ -101,7 +77,7 @@ struct Config(ImplicitlyCopyable, Movable, Writable):
             )
             return Self.UNDEFINED
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:
             writer.write("device_to_device")
             return
@@ -119,14 +95,14 @@ struct Config(ImplicitlyCopyable, Movable, Writable):
 
 
 @no_inline
-fn bench_memcpy(
+def bench_memcpy(
     mut b: Bench,
     length_in_bytes: Int,
     *,
     config: Config,
     context: DeviceContext,
 ) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     length_in_elements = length_in_bytes // size_of[dtype]()
     var mem_host: HostBuffer[dtype] = context.enqueue_create_host_buffer[dtype](
         length_in_elements
@@ -150,10 +126,10 @@ fn bench_memcpy(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             if config.direction == Config.DToH:
                 context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
@@ -175,10 +151,10 @@ fn bench_memcpy(
 
     b.bench_function[bench_func](
         BenchId(
-            String("memcpy_", config),
-            input_id="length=" + _human_memory(length_in_bytes),
+            String(t"memcpy_{config}"),
+            input_id="length=" + human_readable_size(length_in_bytes),
         ),
-        ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes),
+        [ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes)],
     )
     context.synchronize()
 
@@ -189,18 +165,18 @@ fn bench_memcpy(
 
 
 @no_inline
-fn bench_p2p(
+def bench_p2p(
     mut b: Bench,
     length_in_bytes: Int,
     *,
     ctx1: DeviceContext,
     ctx2: DeviceContext,
 ) raises:
-    alias dtype = DType.float32
+    comptime dtype = DType.float32
     length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length_in_elements)
+    var host_ptr = alloc[Scalar[dtype]](length_in_elements)
 
     # Initialize source data with known pattern
     iota(host_ptr, length_in_elements)
@@ -215,24 +191,24 @@ fn bench_p2p(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
         b.iter_custom[kernel_launch](ctx1)
 
     # Create list of throughput measures
-    var measures = List[ThroughputMeasure](
+    var measures = [
         # Raw bandwidth (considering only one transfer)
         ThroughputMeasure(BenchMetric.bytes, length_in_bytes),
-    )
+    ]
 
     b.bench_function[bench_func](
         BenchId(
             "memcpy_p2p",
-            input_id="length=" + _human_memory(length_in_bytes),
+            input_id="length=" + human_readable_size(length_in_bytes),
         ),
         measures=measures,
     )
@@ -243,10 +219,10 @@ fn bench_p2p(
 
     # Parallel verification
     @parameter
-    fn verify_chunk(start: Int, end: Int):
+    def verify_chunk(start: Int, end: Int):
         for i in range(start, end):
             try:
-                assert_almost_equal(host_ptr[i], i)
+                assert_almost_equal(host_ptr[i], Float32(i))
             except e:
                 print("Verification failed at index", i)
                 print("Expected:", i, "Got:", host_ptr[i])
@@ -264,7 +240,7 @@ fn bench_p2p(
     _ = dst_buf
 
 
-def main():
+def main() raises:
     var m = Bench()
 
     var log2_length = arg_parse("log2_length", 20)

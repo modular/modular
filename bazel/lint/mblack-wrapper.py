@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -30,7 +30,8 @@ def get_changed_files() -> list[str]:
     merge_base = merge_base_result.stdout.decode().rstrip("\n")
 
     changed_files_result = subprocess.run(
-        ["git", "diff", "--name-only"] + ([merge_base] if merge_base else []),
+        ["git", "diff", "--diff-filter=d", "--name-only"]
+        + ([merge_base] if merge_base else []),
         capture_output=True,
     )
     changed_files_out = (
@@ -39,11 +40,7 @@ def get_changed_files() -> list[str]:
     changed_files = [
         line.lstrip('"').rstrip('"') for line in changed_files_out.splitlines()
     ]
-    return [
-        file
-        for file in changed_files
-        if file.endswith(".mojo") or file.endswith(".🔥")
-    ]
+    return [file for file in changed_files if file.endswith(".mojo")]
 
 
 if __name__ == "__main__":

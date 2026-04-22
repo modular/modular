@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
-from collections import Set
-from pathlib import Path
-from subprocess import run
+import std.sys
+from std.collections import Set
+from std.pathlib import Path
+from std.subprocess import run
 
 # We can't check much more than this at the moment, because the license year
 # changes and the language is not mature enough to do regex yet.
-alias LICENSE = """# ===----------------------------------------------------------------------=== #
+comptime LICENSE = """# ===----------------------------------------------------------------------=== #
 # Copyright (c)"""
 
 # NOTE: This copyright year needs to be updated (m)annually
-alias LICENSE_TO_ADD = """# ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+comptime LICENSE_TO_ADD = """# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -38,31 +38,27 @@ alias LICENSE_TO_ADD = """# ===-------------------------------------------------
 """
 
 
-fn is_ignored_file(filename: StringSlice) -> Bool:
-    if not (
-        filename.endswith(".py")
-        or filename.endswith(".mojo")
-        or filename.endswith(".🔥")
-    ):
+def is_ignored_file(filename: StringSlice) -> Bool:
+    if not (filename.endswith(".py") or filename.endswith(".mojo")):
         return True
 
     # Generated files
     if (
-        filename == "max/serve/schemas/kserve.py"
-        or filename == "max/serve/schemas/openai.py"
+        filename == "max/python/max/serve/schemas/kserve.py"
+        or filename == "max/python/max/serve/schemas/openai.py"
     ):
         return True
 
     return False
 
 
-fn get_git_files() raises -> Set[String]:
+def get_git_files() raises -> Set[String]:
     # Need to get tracked, untracked, and deleted files separately
     tracked = run("git ls-files")
     untracked = run("git ls-files --exclude-standard --others")
     deleted = run("git ls-files --deleted")
 
-    fn _get_files(stdout: String) -> Set[String]:
+    def _get_files(stdout: String) -> Set[String]:
         result = Set[String]()
         for file in stdout.split("\n"):
             # Manually replace escaped 🔥 with a literal 🔥
@@ -75,12 +71,14 @@ fn get_git_files() raises -> Set[String]:
     return (_get_files(tracked) | _get_files(untracked)) - _get_files(deleted)
 
 
-fn check_path(path: Path, mut files_without_license: List[Path]) raises:
+def check_path(path: Path, mut files_without_license: List[Path]) raises:
     file_text = path.read_text()
 
     # Ignore #! in scripts
     if file_text.startswith("#!"):
-        has_license = "\n".join(file_text.splitlines()[1:]).startswith(LICENSE)
+        has_license = "\n".join(List(file_text.splitlines()[1:])).startswith(
+            LICENSE
+        )
     else:
         has_license = file_text.startswith(LICENSE)
 
@@ -88,8 +86,8 @@ fn check_path(path: Path, mut files_without_license: List[Path]) raises:
         files_without_license.append(path)
 
 
-def main():
-    target_paths = sys.argv()
+def main() raises:
+    target_paths = std.sys.argv()
 
     fix = False
     for arg in target_paths:
@@ -128,4 +126,4 @@ def main():
                 print(file)
             print("Please add the license to each file before committing.")
             print("You can run `./bazelw run format` to do this automatically.")
-            sys.exit(1)
+            std.sys.exit(1)
