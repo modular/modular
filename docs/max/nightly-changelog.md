@@ -180,6 +180,11 @@ This version is still a work in progress.
   experimental eager interpreter. These complement the existing
   `mo.mutable.load` handler and enable eager execution of in-place buffer
   writes (full-tensor stores and slice-indexed stores).
+- Rewrote the eager-interpreter `mo.mutable.store.slice` handler to write
+  slices via a device-side Mojo kernel instead of a host numpy round-trip.
+  GPU buffers no longer full-buffer D→H→D on every call, and `bfloat16`
+  and `float8_*` dtypes are now supported. `float4_e2m1fn` remains
+  unsupported.
 - Added defensive `mo.gather_sum` handler to the experimental eager
   interpreter. This fused composite op (gather axis 0 + sum axis 1) is
   used by DLRM-style multi-hot embeddings; the handler prevents crashes
