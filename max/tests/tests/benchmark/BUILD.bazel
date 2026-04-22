@@ -23,6 +23,7 @@ modular_py_test(
         "//max/python/max/diagnostics",
         requirement("numpy"),
         requirement("pillow"),
+        requirement("pydantic"),
         requirement("pytest-asyncio"),
         requirement("pytest-mock"),
         requirement("pyyaml"),

@@ -21,7 +21,12 @@ from typing import Any
 import pytest
 import yaml
 from max.benchmark.benchmark_serving import main_with_parsed_args
-from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
+from max.benchmark.benchmark_shared.config import (
+    BaseBenchmarkConfig,
+    ServingBenchmarkConfig,
+    TTSServingBenchmarkConfig,
+)
+from pydantic import ValidationError
 
 
 class TestServingSweepFields:
@@ -304,3 +309,32 @@ class TestWorkloadMaxConcurrency:
         results = list(main_with_parsed_args(config))
         assert len(results) == 1
         assert results[0].max_concurrency == 4
+
+
+def test_tts_serving_config_defaults() -> None:
+    """TTSServingBenchmarkConfig can be instantiated with just required fields."""
+    config = TTSServingBenchmarkConfig(workload_config="workload.yaml")
+    assert config.api == "python"
+    assert config.speech_lm_model == "meta-llama/Llama-3.2-1B-Instruct"
+    assert config.request_rate == float("inf")
+    assert config.quantization_encoding == "bfloat16"
+    assert config.top_k == 75
+    assert config.temperature == 1.1
+    assert config.workload_config == "workload.yaml"
+    assert config.seed == 0
+
+
+def test_tts_serving_config_requires_workload_config() -> None:
+    """workload_config is required; cyclopts enforces it at the CLI."""
+    with pytest.raises(ValidationError):
+        TTSServingBenchmarkConfig.model_validate({})
+
+
+def test_tts_serving_config_inherits_base() -> None:
+    """TTSServingBenchmarkConfig inherits fields from BaseBenchmarkConfig."""
+    assert issubclass(TTSServingBenchmarkConfig, BaseBenchmarkConfig)
+    config = TTSServingBenchmarkConfig(
+        workload_config="workload.yaml", num_prompts=42, seed=7
+    )
+    assert config.num_prompts == 42
+    assert config.seed == 7
