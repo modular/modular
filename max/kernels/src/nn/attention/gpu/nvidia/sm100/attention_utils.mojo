@@ -544,7 +544,7 @@ struct TMemTile[
 
                     comptime if u32_per_cast >= 1:
                         comptime for _i in range(num_casts):
-                            var src_vec = src.ptr.load[width=cast_width](
+                            var src_vec = src.raw_load[width=cast_width](
                                 offset + _i * cast_width
                             )
                             var dst_vec = src_vec.cast[Self.dtype]()
@@ -555,7 +555,7 @@ struct TMemTile[
                                 frag[_i * u32_per_cast + _j] = packed_chunk[_j]
                     else:
                         var packed = bitcast[DType.uint32, frag_width](
-                            src.ptr.load[width=pow_two](offset).cast[
+                            src.raw_load[width=pow_two](offset).cast[
                                 Self.dtype
                             ]()
                         )

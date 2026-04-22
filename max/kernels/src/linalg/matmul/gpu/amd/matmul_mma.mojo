@@ -530,7 +530,7 @@ struct QuadrantMmaOp[
             Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
         )
         comptime for i in range(num_c_elems):
-            self._c_reg.ptr[i] = Scalar[Self.out_type](0)
+            self._c_reg.raw_store(i, Scalar[Self.out_type](0))
 
     # === Quadrant methods for ping-pong schedule ===
     # The schedule calls load_a_quadrant/load_b_quadrant to fill one half
@@ -783,7 +783,7 @@ struct MmaOp[
             Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
         )
         comptime for i in range(num_c_elems):
-            self._c_reg.ptr[i] = Scalar[Self.out_type](0)
+            self._c_reg.raw_store(i, Scalar[Self.out_type](0))
 
     @always_inline
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):

@@ -20,6 +20,7 @@ package(default_visibility = [
             "//max/python/max/graph",
             "//max/python/max/nn",
             "//max/python/max/pipelines/architectures",
+            "//max/python/max/pipelines/lib",
         ],
     )
     for file in glob(["*.py"])
