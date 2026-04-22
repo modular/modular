@@ -982,7 +982,7 @@ def fence_mbarrier_init():
 
 
 @always_inline("nodebug")
-def cp_async_bulk_shared_cta_global[
+def cp_async_bulk_shared_cluster_global[
     dst_type: AnyType,
     src_type: AnyType,
     mbr_type: AnyType,
@@ -1007,7 +1007,7 @@ def cp_async_bulk_shared_cta_global[
     via the mbarrier specified by `mem_bar`.
 
     Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
-    multiple of 16. Requires sm_90 or higher.
+    multiple of 16. Requires sm_100 or higher.
 
     Parameters:
         dst_type: The element type of the destination shared memory.
@@ -1076,7 +1076,7 @@ def cp_async_bulk_global_shared_cta[
     `cp_async_bulk_wait_group` from `std.gpu.sync` to synchronize.
 
     Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
-    multiple of 16. Requires sm_90 or higher.
+    multiple of 16. Requires sm_100 or higher.
 
     Parameters:
         dst_type: The element type of the destination global memory.
@@ -1134,7 +1134,7 @@ def cp_async_bulk_prefetch[
     guarantee the data will be in cache when accessed.
 
     `src_mem` must be 16-byte aligned and `size` must be a multiple of 16.
-    Requires sm_90 or higher.
+    Requires sm_100 or higher.
 
     Parameters:
         src_type: The element type of the source global memory.

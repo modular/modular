@@ -33,8 +33,8 @@ import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental import distributed_functional as F
-from max.experimental.distributed_functional import transfer_to
+from max.experimental import functional as F
+from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
     DeviceMesh,
     Partial,

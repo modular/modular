@@ -164,9 +164,7 @@ def _build_mojo_source_package(path: Path) -> Path:
     ]
 
     try:
-        package_result = subprocess_run_mojo(
-            args, capture_output=True, check=True
-        )
+        subprocess_run_mojo(args, capture_output=True, check=True)
     except subprocess.CalledProcessError as e:
         error = MojoCompilationError.from_subprocess_error(path, args, e)
         logging.error(str(error))
