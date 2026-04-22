@@ -113,6 +113,9 @@ This version is still a work in progress.
 
 ## Library changes
 
+- `Set.difference_update()` now uses `discard()` instead of a try/except
+  `remove()` pattern, avoiding exception overhead for missing elements.
+
 - Atomic operations have moved to a dedicated `std.atomic` module. The
   `Consistency` type has been renamed to `Ordering` and its `MONOTONIC`
   member has been renamed to `RELAXED` to align with conventions used by
