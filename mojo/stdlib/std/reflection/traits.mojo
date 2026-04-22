@@ -13,6 +13,7 @@
 """Compile-time meta functions for checking trait conformance across variadic type lists.
 """
 
+comptime _IsWritablePredicate[T: AnyType]: Bool = conforms_to(T, Writable)
 comptime AllWritable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsWritablePredicate,
 ]()
@@ -22,7 +23,7 @@ Parameters:
     Ts: The types to check for conformance to `Writable`.
 """
 
-comptime _IsWritablePredicate[T: AnyType]: Bool = conforms_to(T, Writable)
+comptime _IsMovablePredicate[T: AnyType]: Bool = conforms_to(T, Movable)
 
 comptime AllMovable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsMovablePredicate,
@@ -33,7 +34,7 @@ Parameters:
     Ts: The types to check for conformance to `Movable`.
 """
 
-comptime _IsMovablePredicate[T: AnyType]: Bool = conforms_to(T, Movable)
+comptime _IsCopyablePredicate[T: AnyType]: Bool = conforms_to(T, Copyable)
 
 comptime AllCopyable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsCopyablePredicate,
@@ -44,7 +45,9 @@ Parameters:
     Ts: The types to check for conformance to `Copyable`.
 """
 
-comptime _IsCopyablePredicate[T: AnyType]: Bool = conforms_to(T, Copyable)
+comptime _IsImplicitlyCopyablePredicate[T: AnyType]: Bool = conforms_to(
+    T, ImplicitlyCopyable
+)
 
 comptime AllImplicitlyCopyable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsImplicitlyCopyablePredicate,
@@ -55,9 +58,7 @@ Parameters:
     Ts: The types to check for conformance to `ImplicitlyCopyable`.
 """
 
-comptime _IsImplicitlyCopyablePredicate[T: AnyType]: Bool = conforms_to(
-    T, ImplicitlyCopyable
-)
+comptime _IsDefaultablePredicate[T: AnyType]: Bool = conforms_to(T, Defaultable)
 
 comptime AllDefaultable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsDefaultablePredicate,
@@ -68,7 +69,7 @@ Parameters:
     Ts: The types to check for conformance to `Defaultable`.
 """
 
-comptime _IsDefaultablePredicate[T: AnyType]: Bool = conforms_to(T, Defaultable)
+comptime _IsEquatablePredicate[T: AnyType]: Bool = conforms_to(T, Equatable)
 
 comptime AllEquatable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsEquatablePredicate,
@@ -79,7 +80,18 @@ Parameters:
     Ts: The types to check for conformance to `Equatable`.
 """
 
-comptime _IsEquatablePredicate[T: AnyType]: Bool = conforms_to(T, Equatable)
+comptime _IsComparablePredicate[T: AnyType]: Bool = conforms_to(T, Comparable)
+
+comptime AllComparable[*Ts: AnyType]: Bool = Ts.all_satisfies[
+    _IsComparablePredicate,
+]()
+"""Evaluates to `True` if all types in `Ts` conform to `Comparable`, `False` otherwise.
+
+Parameters:
+    Ts: The types to check for conformance to `Comparable`.
+"""
+
+comptime _IsHashablePredicate[T: AnyType]: Bool = conforms_to(T, Hashable)
 
 comptime AllHashable[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsHashablePredicate,
@@ -90,7 +102,9 @@ Parameters:
     Ts: The types to check for conformance to `Hashable`.
 """
 
-comptime _IsHashablePredicate[T: AnyType]: Bool = conforms_to(T, Hashable)
+comptime _IsImplicitlyDestructiblePredicate[T: AnyType]: Bool = conforms_to(
+    T, ImplicitlyDestructible
+)
 
 comptime AllImplicitlyDestructible[*Ts: AnyType]: Bool = Ts.all_satisfies[
     _IsImplicitlyDestructiblePredicate,
@@ -101,8 +115,8 @@ Parameters:
     Ts: The types to check for conformance to `ImplicitlyDestructible`.
 """
 
-comptime _IsImplicitlyDestructiblePredicate[T: AnyType]: Bool = conforms_to(
-    T, ImplicitlyDestructible
+comptime _IsRegisterPassablePredicate[T: AnyType]: Bool = conforms_to(
+    T, RegisterPassable
 )
 
 comptime AllRegisterPassable[*Ts: AnyType]: Bool = Ts.all_satisfies[
@@ -113,7 +127,3 @@ comptime AllRegisterPassable[*Ts: AnyType]: Bool = Ts.all_satisfies[
 Parameters:
     Ts: The types to check for conformance to `RegisterPassable`.
 """
-
-comptime _IsRegisterPassablePredicate[T: AnyType]: Bool = conforms_to(
-    T, RegisterPassable
-)

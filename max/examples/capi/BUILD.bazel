@@ -34,7 +34,12 @@ modular_py_test(
         "GRAPH_EXECUTOR": "$(location :example)",
     },
     tags = ["gpu"],
-    target_compatible_with = ["//:has_gpu"],
+    # TODO(GEX-3548): vector-add MEF produces zeros instead of expected sums
+    # on Apple GPU (Metal) workers.
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",

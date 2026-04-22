@@ -765,6 +765,31 @@ class GetWitnessAttr(max._core.Attribute):
     @property
     def type(self) -> max._core.Type | None: ...
 
+class IsRefinedTypeAttr(max._core.Attribute):
+    """
+    This represents a flag to indicate the type, specified by `sourceType`,
+    is a more refined type of the other target type, specified by `targetType`.
+
+    It requires both `sourceType` and `targetType` to be at the same type depth.
+    """
+
+    @overload
+    def __init__(
+        self,
+        source_type: max._core.dialects.builtin.TypedAttr,
+        target_type: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @overload
+    def __init__(
+        self,
+        source_type: max._core.dialects.builtin.TypedAttr,
+        target_type: max._core.dialects.builtin.TypedAttr,
+    ) -> None: ...
+    @property
+    def source_type(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def target_type(self) -> max._core.dialects.builtin.TypedAttr: ...
+
 class IsStructTypeAttr(max._core.Attribute):
     """
     The `#kgen.is_struct_type` attribute returns true if the given type value
@@ -1283,40 +1308,6 @@ class ParamListTabulateAttr(max._core.Attribute):
     def count(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def generator(self) -> max._core.dialects.builtin.TypedAttr: ...
-
-class ParamListZipAttr(max._core.Attribute):
-    """
-    The `#kgen.param_list.zip` attribute is used to zip a param_list of
-    param_list values.
-
-    Example:
-    ```mlir
-    #kgen.param_list.zip<[[Int, Int], [Float, Float]]> : !param_list<!param_list<!AnyType>>
-    // ->
-    #kgen.param_list<[[Int, Float], [Int, Float]]> : !param_list<!param_list<!AnyType>>
-    ```
-
-    At the moment, when the provided param_list are of different lengths, we zip
-    until the shortest list are consumed. In the future, we might want to
-    extend the attribute to accept an "default" value for "zip_longest".
-    """
-
-    @overload
-    def __init__(
-        self,
-        type: ParamListType,
-        param_lists: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        type: ParamListType,
-        param_lists: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def type(self) -> ParamListType: ...
-    @property
-    def param_lists(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class ParamOperatorAttr(max._core.Attribute):
     @overload
@@ -2380,6 +2371,7 @@ class ClosureInitOp(max._core.Operation):
         nested_fn_scope: max._core.Attribute,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
+        hoisted_captures: ParamDeclArrayAttr,
     ) -> None: ...
     @overload
     def __init__(
@@ -2442,6 +2434,10 @@ class ClosureInitOp(max._core.Operation):
     def _llvm_arg_metadata_array(
         self, arg: max._core.dialects.builtin.ArrayAttr, /
     ) -> None: ...
+    @property
+    def hoisted_captures(self) -> Sequence[ParamDeclAttr] | None: ...
+    @hoisted_captures.setter
+    def hoisted_captures(self, arg: ParamDeclArrayAttr, /) -> None: ...
 
 class CodegenReachableOp(max._core.Operation):
     """
