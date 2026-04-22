@@ -331,7 +331,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     @__copy_capture(c_device_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -408,7 +408,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # When epilogue multiplies by 2, scale reference to match.
     comptime if normal_epilogue:
         for i in range(c_host_ref.num_elements()):
-            c_host_ref.ptr[i] = c_host_ref.ptr[i] * Scalar[c_type](2)
+            c_host_ref.raw_store(i, c_host_ref.raw_load(i) * Scalar[c_type](2))
 
     assert_almost_equal(
         c_host.ptr,

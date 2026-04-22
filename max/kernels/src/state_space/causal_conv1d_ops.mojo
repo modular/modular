@@ -128,6 +128,7 @@ struct CausalConv1D[activation: StaticString]:
                 out_l_stride,
                 bias_stride,
                 silu_activation,
+                ctx.get_optional_device_context(),
             )
         elif is_gpu[target]():
             var gpu_ctx: DeviceContext = ctx.get_device_context()

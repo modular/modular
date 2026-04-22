@@ -10,6 +10,19 @@ also add your own. The MAX Python API provides a familiar interface that
 simplifies converting your pretrained model from Hugging Face or PyTorch into an
 end-to-end inference pipeline.
 
+You'll see two sets of Python imports in this guide.
+
+The fundamentals pages use [`max.experimental`](/max/api/python/experimental),
+an eager, PyTorch-like API that's easy to explore interactively. The
+`max.experimental` name is temporary: these APIs are being validated and will
+move to new namespaces when they graduate.
+
+The model development pages (modules, architectures, pipelines) use
+[`max.graph`](/max/api/python/graph) and [`max.nn`](/max/api/python/nn), the
+stable APIs that all MAX production architectures use today. For more
+information on both programming styles and when to use each, see
+[Eager execution](/max/develop/eager-execution/).
+
 ## What you use vs. what you write
 
 MAX provides significant infrastructure that you don't need to build:
