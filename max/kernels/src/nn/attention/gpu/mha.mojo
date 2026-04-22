@@ -83,8 +83,7 @@ from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from std.memory import stack_allocation
 
-from .amd.mha_gfx942 import MHAAttentionConfig
-from .amd.mha_gfx950 import Attention
+from .amd.mha import Attention, MHAAttentionConfig
 from .amd.mha_structured import Attention
 from .amd_rdna.mha_rdna import MHAAttentionConfigRDNA
 from .amd_rdna.attention_rdna import AttentionRDNA
@@ -743,18 +742,28 @@ def flash_attention_dispatch[
                 )
         # FA3 decoding impl only support half precision, while fp32 is supported
         # for fp32 as well.
-        elif q_half_float_or_fp32 and is_token_generation:
-            comptime if depth <= 512:
-                comptime BM = 16
-                # RDNA at depth=512 needs BN=128 to satisfy the softmax
-                # constraint num_output_replications % num_warps_n == 0.
-                comptime amd_bn_cap = 128 if (
-                    has_amd_rdna_gpu_accelerator() and depth == 512
-                ) else 256
-                comptime BN = depth if has_nvidia_gpu_accelerator() else min(
-                    depth, amd_bn_cap
+        elif (
+            q_half_float_or_fp32
+            or (dtype.is_float8() and has_amd_gpu_accelerator())
+        ) and is_token_generation:
+            comptime if depth <= 576:
+                # AMD bf16: 4 warps (256 threads) with 16x16 MMA.
+                # BN=128 WN=32: each warp owns a full [16,32] P block.
+                # AMD fp8: 16x16x128 MMA when depth%128==0, else 32x32x64.
+                comptime _fp8_small_mma = (
+                    dtype.is_float8() and depth % 128 == 0
                 )
-                comptime BK = 32 if has_amd_gpu_accelerator() else (
+                comptime BM = (
+                    (16 if _fp8_small_mma else 32) if (
+                        dtype.is_float8() and has_amd_gpu_accelerator()
+                    ) else 16
+                )
+                comptime BN = 128 if has_amd_gpu_accelerator() else (
+                    depth if has_nvidia_gpu_accelerator() else 128
+                )
+                comptime BK = (
+                    (128 if _fp8_small_mma else 64) if dtype.is_float8() else 32
+                ) if has_amd_gpu_accelerator() else (
                     16 if q.dtype == DType.float32 else 32
                 )
                 comptime WM = BM
@@ -1537,7 +1546,7 @@ def get_waves_per_eu(depth: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=get_waves_per_eu(config.depth))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(config.depth)))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
@@ -1734,24 +1743,7 @@ def mha[
             Int(start_pos),
         )
 
-        comptime if attention_config.use_gfx950_mha_kernel:
-            # The structured kernel assumes contiguous non-masked tile
-            # ranges (no FULL_MASK gaps in the middle).  This holds for
-            # CausalMask but NOT for OrMask-based masks like
-            # ChunkedCausalMask, which can have interior FULL_MASK tiles.
-            # FP8 does not yet support the structured path.
-            comptime use_structured = (
-                config.depth <= 256
-                and not config.dtype.is_float8()
-                and not get_defined_bool["MHA_NO_STRUCTURED", False]()
-                and _type_is_eq[mask_t, CausalMask]()
-            )
-            comptime if use_structured:
-                attention.mha_prefill_structured()
-            else:
-                attention.mha_prefill_gfx950()
-        else:
-            attention.mha_prefill_gfx942()
+        attention.mha_prefill()
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -3161,7 +3153,7 @@ def mha_single_batch_pipelined[
 
 
 # Entry point for mha_decoding with batch_size > 1.
-@__llvm_metadata(`rocdl.waves_per_eu`=Int(4))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(depth)))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )

@@ -16,6 +16,8 @@ from std.math import ceildiv, clamp
 
 from std.utils.index import IndexList
 
+from std.gpu.host import DeviceContext
+
 from .map import map
 from .parallelize import _get_num_workers, sync_parallelize
 from ..vectorize import vectorize
@@ -38,7 +40,12 @@ def _elementwise_impl_cpu[
     *,
     use_blocking_impl: Bool = False,
     trace_description: StaticString = "",
-](func: FuncType, *, shape: IndexList[rank, ...]):
+](
+    func: FuncType,
+    *,
+    shape: IndexList[rank, ...],
+    ctx: Optional[DeviceContext] = None,
+):
     """Dispatches elementwise execution on CPU to the 1D or ND implementation
     based on the rank of the input shape.
 
@@ -52,10 +59,11 @@ def _elementwise_impl_cpu[
     Args:
         func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
+        ctx: Optional CPU DeviceContext to execute the tasks on.
     """
 
     comptime impl = _elementwise_impl_cpu_1d if rank == 1 else _elementwise_impl_cpu_nd
-    impl[simd_width, use_blocking_impl=use_blocking_impl](func, shape)
+    impl[simd_width, use_blocking_impl=use_blocking_impl](func, shape, ctx)
 
 
 @always_inline
@@ -68,7 +76,11 @@ def _elementwise_impl_cpu_1d[
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) unified register_passable -> None,
-](func: FuncType, shape: IndexList[rank, ...]):
+](
+    func: FuncType,
+    shape: IndexList[rank, ...],
+    ctx: Optional[DeviceContext] = None,
+):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns when
     all sub-tasks have completed.
@@ -82,6 +94,7 @@ def _elementwise_impl_cpu_1d[
     Args:
         func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
+        ctx: Optional CPU DeviceContext to execute the tasks on.
     """
     comptime assert rank == 1, "Specialization for 1D"
 
@@ -121,7 +134,7 @@ def _elementwise_impl_cpu_1d[
 
         vectorize[simd_width, unroll_factor=unroll_factor](len, func_wrapper)
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 @always_inline
@@ -134,7 +147,11 @@ def _elementwise_impl_cpu_nd[
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
     ) unified register_passable -> None,
-](func: FuncType, shape: IndexList[rank, ...]):
+](
+    func: FuncType,
+    shape: IndexList[rank, ...],
+    ctx: Optional[DeviceContext] = None,
+):
     """Executes `func[width, rank](indices)`, possibly using sub-tasks, for a
     suitable combination of width and indices so as to cover shape. Returns
     when all sub-tasks have completed.
@@ -148,6 +165,7 @@ def _elementwise_impl_cpu_nd[
     Args:
         func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
+        ctx: Optional CPU DeviceContext to execute the tasks on.
     """
     comptime assert rank > 1, "Specialization for ND where N > 1"
 
@@ -221,4 +239,4 @@ def _elementwise_impl_cpu_nd[
                 shape[rank - 1], func_wrapper
             )
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)

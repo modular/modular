@@ -232,9 +232,13 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
     """alloc with num_speculative_steps reserves blocks for spec tokens."""
     page_size = 4
     kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
+    kv_manager_spec = _make_kv_manager(
+        page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
+    )
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     kv_manager.claim(ctx.request_id, replica_idx=0)
+    kv_manager_spec.claim(ctx.request_id, replica_idx=0)
 
     # Without speculative steps: 3 tokens + 1 step - 1 = 3 → 1 block
     kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
@@ -246,10 +250,10 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
 
     # With speculative steps: 3 + 0 draft + 4 spec + 1 - 1 = 7 → 2 blocks
     ctx2 = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    kv_manager.claim(ctx2.request_id, replica_idx=0)
-    kv_manager.alloc(ctx2, replica_idx=0, num_steps=1, num_speculative_steps=4)
+    kv_manager_spec.claim(ctx2.request_id, replica_idx=0)
+    kv_manager_spec.alloc(ctx2, replica_idx=0, num_steps=1)
     blocks_spec = len(
-        kv_manager._replica[0].block_manager.req_to_blocks[ctx2.request_id]
+        kv_manager_spec._replica[0].block_manager.req_to_blocks[ctx2.request_id]
     )
 
     assert blocks_spec > blocks_base
@@ -259,13 +263,15 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
 async def test_alloc_with_draft_tokens_to_verify_reserves_more_blocks() -> None:
     """alloc accounts for draft_tokens_to_verify in the context."""
     page_size = 4
-    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
+    kv_manager = _make_kv_manager(
+        page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
+    )
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     ctx.spec_decoding_state.draft_tokens_to_verify = [10, 20, 30]
     kv_manager.claim(ctx.request_id, replica_idx=0)
     # seq_len = 3 tokens + 3 draft + 4 spec + 1 - 1 = 10 → 3 blocks
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=4)
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
     blocks = len(
         kv_manager._replica[0].block_manager.req_to_blocks[ctx.request_id]
     )
@@ -276,32 +282,16 @@ async def test_alloc_with_draft_tokens_to_verify_reserves_more_blocks() -> None:
 async def test_runtime_inputs_with_num_speculative_steps() -> None:
     """runtime_inputs passes through num_speculative_steps without error."""
     page_size = 4
-    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
-
-    ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
-    kv_manager.claim(ctx.request_id, replica_idx=0)
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=4)
-
-    inputs = kv_manager.runtime_inputs(
-        [[ctx]], num_steps=1, num_speculative_steps=4
+    kv_manager = _make_kv_manager(
+        page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
     )
-    assert len(inputs.inputs) == 1
-
-
-@pytest.mark.asyncio
-async def test_runtime_inputs_raises_when_spec_blocks_missing() -> None:
-    """runtime_inputs raises if alloc was called without enough spec space."""
-    page_size = 4
-    kv_manager = _make_kv_manager(page_size=page_size, total_num_pages=16)
 
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    # Allocate without speculative steps
-    kv_manager.alloc(ctx, replica_idx=0, num_steps=1, num_speculative_steps=0)
+    kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
 
-    # Request runtime_inputs with speculative steps → should fail
-    with pytest.raises(ValueError, match="does not have sufficient blocks"):
-        kv_manager.runtime_inputs([[ctx]], num_steps=1, num_speculative_steps=4)
+    inputs = kv_manager.runtime_inputs([[ctx]], num_steps=1)
+    assert len(inputs.inputs) == 1
 
 
 def _make_multi_kv_manager(

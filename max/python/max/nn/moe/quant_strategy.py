@@ -24,8 +24,10 @@ from ..comm.ep.ep_kernels import fused_silu_quantized
 from ..kernels import (
     block_scales_interleave,
     grouped_dynamic_scaled_fp8_matmul,
+    grouped_dynamic_scaled_mxfp4_matmul,
     grouped_matmul_block_scaled,
     quantize_dynamic_block_scaled_fp4,
+    quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
 )
 from ..quant_config import QuantConfig
@@ -250,6 +252,80 @@ class Nvfp4Strategy:
             self.dtype,
             input_scales,
             scales_offsets,
+        )
+
+
+class Mxfp4Strategy:
+    """MXFP4 quantization for MoE."""
+
+    def __init__(self, config: QuantConfig, dtype: DType):
+        self.config = config
+        self.dtype = dtype
+
+    def quantize(
+        self,
+        tensor: TensorValue,
+        group_size: int,
+        input_scale: TensorValue | None = None,
+    ) -> tuple[TensorValue, TensorValue]:
+        """Quantizes activations to MXFP4 and returns (quantized, scales)."""
+        return quantize_dynamic_block_scaled_mxfp4(
+            tensor,
+            scales_type=self.config.weight_scale.dtype,
+            out_type=DType.uint8,
+        )
+
+    def grouped_matmul(
+        self,
+        weight: TensorValue,
+        weight_scales: TensorValue,
+        expert_scales: TensorValue | None = None,
+        tokens_padded_per_expert: bool = False,
+        expert_inputs: tuple[TensorValue, ...] = (),
+        estimated_total_m: TensorValue | None = None,
+    ) -> TensorValue:
+        """Runs grouped MXFP4 matmul with per-expert scales."""
+        (
+            hidden,
+            hidden_scales,
+            expert_start,
+            expert_ids,
+            usage_stats,
+        ) = expert_inputs
+
+        return grouped_dynamic_scaled_mxfp4_matmul(
+            hidden,
+            weight,
+            hidden_scales,
+            weight_scales,
+            expert_start,
+            expert_ids,
+            usage_stats,
+            estimated_total_m=estimated_total_m,
+        )
+
+    def prepare_weight_scales(
+        self,
+        gate_up: TensorValue,
+        down: TensorValue,
+        device: DeviceRef,
+    ) -> tuple[TensorValue, TensorValue]:
+        return gate_up, down
+
+    def fused_silu_quantize(
+        self,
+        gate_up_projs: TensorValue,
+        input_scales: TensorValue | None = None,
+        expert_inputs: tuple[TensorValue, ...] = (),
+    ) -> tuple[TensorValue, TensorValue]:
+        """Applies SiLU gate then MXFP4 quantizes the result."""
+        _, _, expert_start_indices, _, _ = expert_inputs
+        return fused_silu_quantized(
+            gate_up_projs,
+            expert_start_indices,
+            self.config,
+            self.dtype,
+            input_scales,
         )
 
 

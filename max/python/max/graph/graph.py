@@ -39,6 +39,7 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
+from max._core.engine import InferenceSession as _InferenceSession
 from max._mlir_context import default_mlir_context
 from max.mlir.dialects import mo
 from mojo.paths import (
@@ -339,6 +340,25 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
 Module = mlir.Module
 
 
+class GraphDebugConfig:
+    """Narrow view of :class:`max.engine.DebugConfig` exposed through :attr:`Graph.debug`.
+
+    The attribute :attr:`source_tracebacks` lives on ``Graph.debug`` because it is
+    consumed during graph construction, before an ``InferenceSession`` exists.
+    All other debug options are available on ``InferenceSession.debug`` and
+    share the same global state.
+    """
+
+    @property
+    def source_tracebacks(self) -> bool:
+        """See :attr:`max.engine.DebugConfig.source_tracebacks`."""
+        return _InferenceSession.debug.source_tracebacks
+
+    @source_tracebacks.setter
+    def source_tracebacks(self, value: bool) -> None:
+        _InferenceSession.debug.source_tracebacks = value
+
+
 class Graph:
     """Represents a single MAX graph.
 
@@ -403,7 +423,7 @@ class Graph:
     These examples only use the :obj:`max.graph` package, but most models also
     use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
     To learn more, see `Build a model graph with Module
-    </max/develop/get-started-with-max-graph-in-python>_`.
+    </max/develop/modules>`_.
 
     Args:
         name: A name for the graph.
@@ -421,6 +441,8 @@ class Graph:
         module: Optional existing MLIR module (internal use only). Defaults to
             ``None``.
     """
+
+    debug = GraphDebugConfig()
 
     # Use a dict rather than a set to keep params ordered.
     # This is to make IR generation deterministic for model IR cache hits.

@@ -16,52 +16,15 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
+from max import mlir
+from max._core import Value as _CValue
 from max.mlir.dialects import mo
 
-from ..graph import Graph
+from ..graph import Graph, _location
 from ..value import BufferValue, BufferValueLike, TensorValue, TensorValueLike
-from .parallel import parallel
+from ..value import Value as _GValue
+from .parallel import _graph_type_to_mlir, _graph_val_to_mlir, parallel
 from .utils import _buffer_values, _tensor_values
-
-
-def sum_body(tensor: TensorValue, signal_buffer: BufferValue) -> TensorValue:
-    """Per-device bundled allreduce sum, for use inside an ``ops.parallel`` body.
-
-    This emits a single ``mo.bundled.allreduce.sum`` op using the body
-    block arguments and the graph's current chain for ordering. It is
-    designed to be composed with other ops in the ``body_fn`` passed to
-    :func:`~max.graph.ops.parallel`.
-
-    The caller must ensure ``graph._current_chain`` is set to the merged
-    chain (including all device-chain dependencies) before entering the
-    parallel region. The :func:`sum` wrapper handles this automatically.
-
-    Example:
-
-    .. code-block:: python
-
-        results, out_chain = ops.parallel(
-            tensors,
-            lambda t, sig: ops.relu(ops.bundled_allreduce.sum_body(t, sig)),
-            extra_inputs=signal_buffers,
-            chain=in_chain,
-        )
-
-    Args:
-        tensor: The per-device tensor block argument.
-        signal_buffer: The per-device signal buffer block argument.
-
-    Returns:
-        The reduced tensor.
-    """
-    graph = Graph.current
-    ar_out, _chain = graph._add_op(
-        mo.bundled_allreduce_sum,
-        tensor,
-        signal_buffer,
-        graph._current_chain,
-    )
-    return ar_out.tensor
 
 
 def sum(
@@ -69,9 +32,9 @@ def sum(
 ) -> list[TensorValue]:
     """Bundled allreduce sum using mo.parallel with per-device dispatch.
 
-    Unlike :func:`max.graph.ops.allreduce.sum`, this stages a single
-    ``mo.parallel`` region containing ``mo.bundled.allreduce.sum``, so the
-    compiler can lower each device launch independently (async dispatch).
+    Stages an ``mo.parallel`` region containing ``mo.bundled.expand`` and
+    ``mo.bundled.allreduce.sum``, so the compiler can lower each device
+    launch independently (async dispatch).
 
     Args:
         inputs: The input tensors to reduce, one per device.
@@ -96,12 +59,33 @@ def sum(
         [graph._current_chain, *(graph.device_chains[d] for d in devices)]
     )
 
-    # Set the current chain so that sum_body (and any composed ops) emit IR
-    # referencing the merged chain rather than a stale pre-merge chain.
     graph._current_chain = in_chain
 
+    input_types = [_graph_type_to_mlir(inp) for inp in inputs]
+    sig_mlir_vals = [_graph_val_to_mlir(sb) for sb in signal_buffers]
+
+    def body_fn(tensor: TensorValue, signal_buffer: BufferValue) -> TensorValue:
+        tensor_mlir = _graph_val_to_mlir(tensor)
+        chain_mlir = _graph_val_to_mlir(graph._current_chain)
+        ip = mlir.InsertionPoint(graph._current_block)
+        with ip, _location():
+            expand_op = mo.BundledExpandOp(
+                results_=input_types, input=tensor_mlir
+            )
+            peers = list(expand_op.results)
+            chain_type = mlir.Type.parse("!mo.chain")
+            ar_op = mlir.Operation.create(
+                "mo.bundled.allreduce.sum",
+                results=[input_types[0], chain_type],
+                operands=[*peers, *sig_mlir_vals, chain_mlir],
+            )
+        graph._current_chain = _GValue.from_mlir(
+            _CValue._from_cmlir(ar_op.results[1])
+        )
+        return _GValue.from_mlir(_CValue._from_cmlir(ar_op.results[0])).tensor
+
     result = parallel(
-        inputs, sum_body, extra_inputs=signal_buffers, chain=in_chain
+        inputs, body_fn, extra_inputs=signal_buffers, chain=in_chain
     )
     assert isinstance(result, tuple)
     results, out_chain = result

@@ -21,7 +21,14 @@ import numpy as np
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Dim, Graph, TensorType, ops
+from max.graph import (
+    BufferType,
+    DeviceRef,
+    Dim,
+    Graph,
+    TensorType,
+    ops,
+)
 from max.nn.kernels import (
     apply_penalties_to_logits,
     scatter_set_constant,
@@ -31,8 +38,10 @@ from max.nn.kernels import (
 from max.nn.sampling import (
     RejectionSampler,
     RejectionSamplerWithResiduals,
+    compute_synthetic_acceptance_base_rate,
     greedy_acceptance_sampler,
     stochastic_acceptance_sampler,
+    synthetic_acceptance_sampler,
 )
 from max.pipelines.core import TextContext
 
@@ -79,6 +88,9 @@ def _sampling_input_types(
 
     min_p_type = TensorType(DType.float32, [], device=DeviceRef.CPU())
     inputs["min_top_p"] = min_p_type
+
+    min_p_threshold_type = TensorType(DType.float32, ["batch"], device=device)
+    inputs["min_p"] = min_p_threshold_type
 
     seed_type = TensorType(DType.uint64, ["batch"], device=device)
     inputs["seed"] = seed_type
@@ -258,6 +270,7 @@ def token_sampler(
         max_k = graph.inputs[list(_input_dict).index("max_k")].tensor
         top_p = graph.inputs[list(_input_dict).index("top_p")].tensor
         min_top_p = graph.inputs[list(_input_dict).index("min_top_p")].tensor
+        min_p = graph.inputs[list(_input_dict).index("min_p")].tensor
         seed = graph.inputs[list(_input_dict).index("seed")].tensor
 
         tokens = topk_fused_sampling(
@@ -267,6 +280,7 @@ def token_sampler(
             temperature=temperature,
             top_p=top_p,
             min_top_p=min_top_p,
+            min_p=min_p,
             seed=seed,
         )
 
@@ -560,6 +574,48 @@ def build_greedy_acceptance_sampler_graph(
         return graph
 
 
+def build_synthetic_acceptance_sampler_graph(
+    device: DeviceRef,
+    base_acceptance_rate: float,
+    num_draft_steps: int,
+) -> Graph:
+    """Builds a graph that implements synthetic acceptance sampling.
+
+    The seed is a graph input so callers can bind a fresh int64 value
+    per execution; without that, static-seed RNG would produce the same
+    random draws every call.
+
+    Args:
+        device: Device for the graph.
+        base_acceptance_rate: Per-position acceptance probability.
+        num_draft_steps: Number of draft tokens per step.
+    """
+    graph_inputs = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device),
+        TensorType(
+            DType.float32, ["total_output_len", "vocab_size"], device=device
+        ),
+        ops.random.SeedType,
+    ]
+    with Graph(
+        "synthetic_acceptance_sampler", input_types=graph_inputs
+    ) as graph:
+        draft_tokens, target_logits, seed = graph.inputs
+
+        first_rejected_idx, target_tokens, bonus_tokens = (
+            synthetic_acceptance_sampler(
+                draft_tokens=draft_tokens.tensor,
+                target_logits=target_logits.tensor,
+                base_acceptance_rate=base_acceptance_rate,
+                num_draft_steps=num_draft_steps,
+                seed=seed.tensor,
+            )
+        )
+        graph.output(first_rejected_idx, target_tokens, bonus_tokens)
+
+        return graph
+
+
 def build_stochastic_acceptance_sampler_graph(
     device: DeviceRef,
     *,
@@ -781,6 +837,71 @@ class _ResidualRunner(RejectionRunner):
             target_logits,
             target_logit_offsets,
             all_draft_logits,
+        )
+        assert isinstance(a, Buffer)
+        assert isinstance(b, Buffer)
+        assert isinstance(c, Buffer)
+        return a, b, c
+
+
+class SyntheticRunner(RejectionRunner):
+    """Synthetic acceptance sampler for benchmarking.
+
+    Replaces model-driven acceptance with per-position independent
+    Bernoulli draws calibrated so the mean joint acceptance across
+    ``num_speculative_tokens`` positions matches
+    ``synthetic_acceptance_rate``. Actual draft/target logits are
+    ignored; real model quality is not measured.
+
+    A fresh seed is bound per call so RNG varies across executions;
+    otherwise a single deterministic realization would dominate.
+    """
+
+    def __init__(
+        self,
+        session: InferenceSession,
+        device_ref: DeviceRef,
+        synthetic_acceptance_rate: float,
+        num_speculative_tokens: int,
+    ) -> None:
+        base_rate = compute_synthetic_acceptance_base_rate(
+            synthetic_acceptance_rate,
+            num_speculative_tokens,
+        )
+        self._model = session.load(
+            build_synthetic_acceptance_sampler_graph(
+                device=device_ref,
+                base_acceptance_rate=base_rate,
+                num_draft_steps=num_speculative_tokens,
+            )
+        )
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        self._seed_counter += 1
+        seed_np = np.array(self._seed_counter, dtype=np.int64)
+        return Buffer.from_numpy(seed_np)
+
+    def run(
+        self,
+        draft_tokens: Buffer,
+        draft_logits: Buffer | None,
+        target_logits: Buffer,
+        target_logit_offsets: Buffer,
+        all_draft_logits: Buffer | None,
+        context_batch: list[TextContext],
+    ) -> tuple[Buffer, Buffer, Buffer]:
+        """Runs the synthetic acceptance graph with a fresh per-call seed.
+
+        ``draft_logits``, ``target_logit_offsets``, ``all_draft_logits``,
+        and ``context_batch`` are ignored; synthetic acceptance uses only
+        ``draft_tokens`` and ``target_logits`` (for the recovered/bonus
+        argmax).
+        """
+        a, b, c = self._model(
+            draft_tokens,
+            target_logits,
+            self._next_seed(),
         )
         assert isinstance(a, Buffer)
         assert isinstance(b, Buffer)

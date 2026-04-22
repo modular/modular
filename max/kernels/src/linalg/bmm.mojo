@@ -85,7 +85,7 @@ comptime logger = Logger()
 
 comptime elementwise_epilogue_type = def[
     c_type: DType,
-    width: Int,
+    width: SIMDSize,
     rank: Int,
     *,
     alignment: Int = 1,
@@ -111,49 +111,35 @@ def _get_batch_dims[
         curr_index //= shape[i]
 
 
-@always_inline
-def _slice_types[
+comptime _slice_types[
     stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
-]() -> Variadic.TypesOfTrait[CoordLike]:
-    """
-    Slice the last n_dims dimensions of the Coord element types.
-    """
-    comptime rank = stride_types.size
-    comptime assert 0 <= rank - n_dims <= stride_types.size
-    comptime assert rank <= stride_types.size
-
-    return Variadic.slice_types[stride_types.values, rank - n_dims]().values
+] = stride_types.slice[stride_types.size - n_dims]
 
 
-@always_inline
-def _slice_types_tl[
-    stride_types: TypeList[Trait=CoordLike, ...], n_dims: Int
-]() -> TypeList[Trait=CoordLike, _slice_types[stride_types, n_dims]()]:
-    return {}
+comptime _shape_types_to_3d_get_first_dim[
+    dtype: DType, *coords: CoordLike
+]: CoordLike = ComptimeInt[Coord[*coords].static_product] if Coord[
+    *coords
+].all_dims_known else RuntimeInt[
+    dtype
+]
 
-
-@always_inline
-def _shape_types_to_3d[
+comptime _shape_types_to_3d[
     shape_types: TypeList[Trait=CoordLike, ...]
-]() -> Variadic.TypesOfTrait[CoordLike]:
-    """
-    Reshape the shape types to 3D. The last two dimensions stay the same. The
-    first dimension will be the product of the batch dimensions if all the batch
-    dimensions are static, otherwise it's a runtime dimension.
-    """
-    comptime rank = shape_types.size
-    comptime last_two_dims = _slice_types[shape_types, 2]()
-    comptime batch_dims = _slice_types[shape_types.reverse(), rank - 2]()
-
-    comptime _get_first_dim[dtype: DType, *coords: CoordLike] = Variadic.types[
-        T=CoordLike, ComptimeInt[Coord[*coords].static_product]
-    ] if Coord[*coords].all_dims_known else Variadic.types[
-        T=CoordLike, RuntimeInt[dtype]
-    ]
-
-    return Variadic.concat_types[
-        _get_first_dim[DType.int64, *TypeList[batch_dims]()], last_two_dims
-    ]
+] = TypeList._concat[
+    TypeList.of[
+        _shape_types_to_3d_get_first_dim[
+            DType.int64,
+            *_slice_types[shape_types.reverse(), shape_types.size - 2](),
+        ]
+    ].values,
+    _slice_types[shape_types, 2]().values,
+]
+"""
+Reshape the shape types to 3D. The last two dimensions stay the same. The
+first dimension will be the product of the batch dimensions if all the batch
+dimensions are static, otherwise it's a runtime dimension.
+"""
 
 
 @always_inline
@@ -162,8 +148,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     out result: TileTensor[
         mut=tensor.mut,
         LayoutType=TileLayout[
-            TypeList[_shape_types_to_3d[tensor.LayoutType._shape_types]()](),
-            _slice_types_tl[tensor.LayoutType._stride_types, 3](),
+            _shape_types_to_3d[tensor.LayoutType._shape_types](),
+            _slice_types[tensor.LayoutType._stride_types, 3](),
         ],
         dtype=tensor.dtype,
         origin=tensor.origin,
@@ -180,8 +166,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     comptime out_stride_types = type_of(result).LayoutType._stride_types
     comptime rank = tensor.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
-    var shape = Tuple[*out_shape_types.upcast[Movable]()]()
-    var strides = Tuple[*out_stride_types.upcast[Movable]()]()
+    var shape = Tuple[*out_shape_types]()
+    var strides = Tuple[*out_stride_types]()
 
     comptime for i in range(3):
         comptime idx = rank - 3 + i
@@ -251,6 +237,7 @@ def _batched_matmul_cpu[
     ],
     a_tile: TileTensor[a_type, address_space=AddressSpace.GENERIC, ...],
     b_tile: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert rank < 5, "max rank for batched matmul is currently 4"
 
@@ -405,7 +392,7 @@ def _batched_matmul_cpu[
 
             @parameter
             def elementwise_lambda_2d[
-                c_type: DType, width: Int, *, alignment: Int = 1
+                c_type: DType, width: SIMDSize, *, alignment: Int = 1
             ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
@@ -474,7 +461,7 @@ def _batched_matmul_cpu[
                 )
             _ = batch_coords
 
-    sync_parallelize[task_func](num_tasks)
+    sync_parallelize[task_func](num_tasks, ctx)
 
 
 @__name(
@@ -571,27 +558,27 @@ def batched_matmul_kernel_gpu[
         a_ptr,
         TileLayout(
             (Idx(m), Idx[a_tensor.static_shape[2]]()),
-            Coord[*_slice_types_tl[ATensorType._stride_types, 2]()](),
+            Coord[*_slice_types[ATensorType._stride_types, 2]()](),
         ),
     )
     var b = TileTensor(
         b_ptr,
         TileLayout(
-            Coord[*_slice_types_tl[BTensorType._shape_types, 2]()](),
-            Coord[*_slice_types_tl[BTensorType._stride_types, 2]()](),
+            Coord[*_slice_types[BTensorType._shape_types, 2]()](),
+            Coord[*_slice_types[BTensorType._stride_types, 2]()](),
         ),
     )
     var c = TileTensor(
         c_ptr,
         TileLayout(
             (Idx(m), Idx[c_tensor.static_shape[2]]()),
-            Coord[*_slice_types_tl[CTensorType._stride_types, 2]()](),
+            Coord[*_slice_types[CTensorType._stride_types, 2]()](),
         ),
     )
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
@@ -695,7 +682,7 @@ def _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_buf)
                 def elementwise_epilogue_fn_wrapper[
-                    dtype: DType, width: Int, *, alignment: Int = 1
+                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
                 ](
                     out_coords: IndexList[2], val: SIMD[dtype, width]
                 ) capturing -> None:
@@ -972,7 +959,7 @@ def batched_matmul[
                 transpose_b=transpose_b,
                 elementwise_epilogue_fn=elementwise_epilogue_fn,
                 saturated_vnni=saturated_vnni,
-            ](c_buf, a_buf, b_buf)
+            ](c_buf, a_buf, b_buf, ctx=context.get_optional_device_context())
         else:
             comptime assert (
                 saturated_vnni == False
@@ -1115,7 +1102,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
