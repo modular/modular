@@ -384,31 +384,26 @@ struct Softmax[
         var output_reg_tile = output.to_layout_tensor().vectorize[
             1, Self.frag_size
         ]()
-        comptime num_output_replications = output_reg_tile.layout.shape[
-            0
-        ].value() // (Self.num_colwise_tiles * Self.num_rowwise_tiles)
+        comptime num_output_tiles = output_reg_tile.layout.shape[0].value()
 
-        # if num_output_replications
-        comptime for k in range(num_output_replications):
-            # Correct previous result
-            comptime for col_tile in range(Self.num_colwise_tiles):
-                comptime for row_tile in range(Self.num_rowwise_tiles):
-                    comptime tile_id = col_tile + row_tile * Self.num_colwise_tiles + k * Self.num_colwise_tiles * Self.num_rowwise_tiles
+        # Apply per-row correction to all output tiles. The correction
+        # is indexed by col_tile (the m_mma dimension), which cycles
+        # with period num_colwise_tiles across tile_id.
+        comptime for tile_id in range(num_output_tiles):
+            comptime col_tile = tile_id % Self.num_colwise_tiles
 
-                    comptime output_frag_type = type_of(
-                        output_reg_tile
-                    ).element_type
+            comptime output_frag_type = type_of(output_reg_tile).element_type
 
-                    comptime if Self.frag_is_row_vector:
-                        output_reg_tile[tile_id, 0] = output_reg_tile[
-                            tile_id, 0
-                        ] * output_frag_type(self.correction[col_tile, 0][0])
-                    else:
-                        comptime for row in range(Self.frag_num_rows):
-                            output_reg_tile[tile_id, 0][row] = (
-                                output_reg_tile[tile_id, 0][row]
-                                * self.correction[col_tile, row][0]
-                            )
+            comptime if Self.frag_is_row_vector:
+                output_reg_tile[tile_id, 0] = output_reg_tile[
+                    tile_id, 0
+                ] * output_frag_type(self.correction[col_tile, 0][0])
+            else:
+                comptime for row in range(Self.frag_num_rows):
+                    output_reg_tile[tile_id, 0][row] = (
+                        output_reg_tile[tile_id, 0][row]
+                        * self.correction[col_tile, row][0]
+                    )
 
     @always_inline
     def update_sum(self):

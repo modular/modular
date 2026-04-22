@@ -246,12 +246,12 @@ def _filler_impl[
 
         comptime for i in range(num_elements):
             var val = filler(i)
-            tensor.ptr[i] = val.cast[tensor.dtype]()
+            tensor.raw_store(i, val.cast[tensor.dtype]())
     else:
         var num_elements = tensor.layout.product() * tensor.element_size
         for i in range(num_elements):
             var val = filler(i)
-            tensor.ptr[i] = val.cast[tensor.dtype]()
+            tensor.raw_store(i, val.cast[tensor.dtype]())
 
 
 def arange[

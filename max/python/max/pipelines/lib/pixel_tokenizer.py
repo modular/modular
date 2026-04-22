@@ -1075,13 +1075,20 @@ class PixelGenerationTokenizer(
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
         if input_image is not None:
+            _preserve_aspect = (
+                self._pipeline_class_name != PipelineClassName.ZIMAGE
+            )
             preprocessed_image = self._preprocess_input_image(
                 input_image,
-                target_height=image_options.height,
-                target_width=image_options.width,
-                preserve_aspect_ratio=(
-                    self._pipeline_class_name != PipelineClassName.ZIMAGE
-                ),
+                # Only pass the user's output dims as preprocessing targets
+                # when the pipeline opts out of aspect preservation. For
+                # aspect-preserving pipelines, passing them would force-resize the
+                # input image to the output shape and defeat aspect preservation.
+                target_height=None
+                if _preserve_aspect
+                else image_options.height,
+                target_width=None if _preserve_aspect else image_options.width,
+                preserve_aspect_ratio=_preserve_aspect,
             )
             height = image_options.height or preprocessed_image.height
             width = image_options.width or preprocessed_image.width

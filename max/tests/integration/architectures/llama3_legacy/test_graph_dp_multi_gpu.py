@@ -43,23 +43,13 @@ def weights_from_hf_config_dp(hf_config: LlamaConfig) -> SafetensorWeights:
     set would otherwise be empty).  Values are stored as MAX Buffers so that
     dtype comparisons in ``load_state_dict(strict=True)`` succeed.
     """
-    # Remap HuggingFace weight names to MAX StackedLinear names.
-    _HF_TO_MAX = {
-        "q_proj.": "qkv_proj.q.",
-        "k_proj.": "qkv_proj.k.",
-        "v_proj.": "qkv_proj.v.",
-    }
     hf_model = LlamaForCausalLM(hf_config)
-    weight_map = {}
-    for name, param in hf_model.named_parameters():
-        key = name.removeprefix("model.")
-        for hf, mx in _HF_TO_MAX.items():
-            if hf in key:
-                key = key.replace(hf, mx, 1)
-                break
-        weight_map[key] = Buffer.from_dlpack(
+    weight_map = {
+        name.removeprefix("model."): Buffer.from_dlpack(
             param.detach().zero_().to(torch.bfloat16)
         )
+        for name, param in hf_model.named_parameters()
+    }
     return SafetensorWeights(
         [],
         tensors=set(weight_map.keys()),

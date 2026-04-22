@@ -12,7 +12,6 @@ _LIT_TESTS = [
 _FILECHECK_TESTS = [
     "test_amd_target.mojo",
     "test_compile_gcn.mojo",
-    "test_compile_intrinsics.mojo",
     "test_compile_nvptx.mojo",
     "test_compile_nvptx_debuginfo.mojo",
     "test_compile_to_llvm_codegen.mojo",

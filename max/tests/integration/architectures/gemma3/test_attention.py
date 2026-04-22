@@ -155,20 +155,10 @@ def generate_max_outputs(
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
-    # Remap HuggingFace weight names to MAX StackedLinear names.
-    _HF_TO_MAX = {
-        "q_proj.": "qkv_proj.q.",
-        "k_proj.": "qkv_proj.k.",
-        "v_proj.": "qkv_proj.v.",
+    state_dict = {
+        weight_name: value.cpu()
+        for weight_name, value in attention_weights.items()
     }
-    state_dict = {}
-    for weight_name, value in attention_weights.items():
-        max_name = weight_name
-        for hf, mx in _HF_TO_MAX.items():
-            if max_name.startswith(hf):
-                max_name = mx + max_name[len(hf) :]
-                break
-        state_dict[max_name] = value.cpu()
 
     kv_params = KVCacheParams(
         dtype=dtype,
