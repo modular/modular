@@ -313,7 +313,6 @@ def rope_split_store_ragged(
 
     head_dim = kv_params.head_dim
     q_dim = n_heads * head_dim
-    kv_dim = kv_params.n_kv_heads * head_dim
 
     if not fuse:
         return _rope_split_store_ragged_unfused(
