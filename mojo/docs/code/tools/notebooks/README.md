@@ -1,3 +1,5 @@
+# Code examples and tests for Notebooks
+
 This directory contains code examples for the
 [Notebooks](../../tools/notebooks)
 section of the Mojo Manual.

@@ -19,7 +19,7 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheInputs, KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import KVCacheInputs, KVCacheInputsPerDevice, KVCacheParams
 from test_common.context_utils import create_text_context
 
 
@@ -34,7 +34,6 @@ async def _test_kv_cache_gpu() -> None:
         head_dim=128,
         dtype=DType.bfloat16,
         num_layers=32,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[DeviceRef.GPU()],
     )
@@ -42,12 +41,15 @@ async def _test_kv_cache_gpu() -> None:
         params=kv_params,
         session=InferenceSession(devices=[device]),
         total_num_pages=8,
+        max_batch_size=128,
     )
     context = create_text_context(np.empty(1))
     kv_manager.claim(context.request_id, replica_idx=0)
     kv_manager.alloc(context, replica_idx=0, num_steps=1)
     batch = [context]
-    # suffixed [0] because we only have one device
-    kv_tuple = kv_manager.get_runtime_inputs([batch])[0]
-    assert isinstance(kv_tuple, KVCacheInputs)
-    assert len(kv_tuple) == 5
+    kv_inputs = kv_manager.runtime_inputs([batch])
+    assert isinstance(kv_inputs, KVCacheInputs)
+    first_device_inputs = kv_inputs.inputs[0]
+    assert isinstance(first_device_inputs, KVCacheInputsPerDevice)
+    assert len(first_device_inputs.flatten()) == 5
+    assert first_device_inputs.attention_dispatch_metadata is not None

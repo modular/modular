@@ -11,42 +11,41 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib.hasher import Hasher
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.hashlib.hasher import Hasher
+from std.math import ceildiv
+from std.math.uutils import uceildiv
+from std.sys import (
+    get_defined_int,
+    get_defined_bool,
+    has_nvidia_gpu_accelerator,
+    size_of,
+)
+from std.ffi import external_call, _get_global_or_null
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-comptime OpaquePointer = LegacyUnsafePointer[
-    mut=True, NoneType, origin=MutAnyOrigin
-]
-
-from sys import env_get_int, env_get_bool, has_nvidia_gpu_accelerator, size_of
-from ffi import external_call
-
-from gpu import WARP_SIZE
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext
-from gpu.host.device_context import DeviceBuffer
-from gpu.host.info import A100
+from std.gpu import WARP_SIZE
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext
+from std.gpu.host.device_context import DeviceBuffer
+from std.gpu.host.info import A100
 from layout.tensor_core import get_mma_shape
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
 
 # ===------------------------------------------------------------------===#
 # GPU Matmul Block Swizzling
 # ===------------------------------------------------------------------===#
 
 
-fn block_swizzle(
+def block_swizzle(
     block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)
 ) -> type_of(block_idx):
     return _block_swizzle_by_scale[3](block_idx, grid_dim)
 
 
 @always_inline
-fn _block_swizzle_by_scale[
-    scale0: UInt
+def _block_swizzle_by_scale[
+    scale0: Int
 ](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
@@ -102,7 +101,7 @@ struct MatmulConfig[
     b_type: DType,
     c_type: DType,
     transpose_b: Bool = False,
-](Stringable, TrivialRegisterType, Writable):
+](TrivialRegisterPassable, Writable):
     """Static configuration of GPU matmul."""
 
     var block_tile_shape: IndexList[3]
@@ -111,17 +110,17 @@ struct MatmulConfig[
 
     var mma_shape: IndexList[3]
 
-    var num_pipeline_stages: UInt
+    var num_pipeline_stages: Int
 
-    var num_k_partitions: UInt
+    var num_k_partitions: Int
 
-    var k_group_size: UInt
+    var k_group_size: Int
 
-    var num_warp_k_partitions: UInt
+    var num_warp_k_partitions: Int
 
     var cluster_shape: IndexList[3]
 
-    var num_consumer: UInt
+    var num_consumer: Int
 
     var partitioned_multicast: Bool
 
@@ -135,7 +134,7 @@ struct MatmulConfig[
     # We see some discrepancy between BF16 and FP32 in KERN-933 and use FP32
     # by default to be safe. TODO: set via env var KERN-1002.
 
-    comptime split_k_reduction_scheme = env_get_int[
+    comptime split_k_reduction_scheme = get_defined_int[
         "SPLITK_REDUCTION_SCHEME", 2
     ]()
 
@@ -146,18 +145,18 @@ struct MatmulConfig[
     # TODO: output precision will break the integration test.
     comptime split_k_reduction_type = Self.c_type if Self.OUTPUT_PRECISION == Self.split_k_reduction_scheme else Self.accum_type
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         block_tile_shape: IndexList[3] = Index(128, 128, 32),
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
         mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(1, 1, 1),
-        num_pipeline_stages: UInt = 4,
-        num_k_partitions: UInt = 1,
-        k_group_size: UInt = 1,
-        num_warp_k_partitions: UInt = 1,
-        num_consumer: UInt = 1,
+        num_pipeline_stages: Int = 4,
+        num_k_partitions: Int = 1,
+        k_group_size: Int = 1,
+        num_warp_k_partitions: Int = 1,
+        num_consumer: Int = 1,
         partitioned_multicast: Bool = False,
         pdl_level: PDLLevel = PDLLevel(),
     ):
@@ -173,7 +172,7 @@ struct MatmulConfig[
         self.partitioned_multicast = partitioned_multicast
         self._pdl_level = pdl_level
 
-    fn copy_field(mut self, other: MatmulConfig):
+    def copy_field(mut self, other: MatmulConfig):
         self.block_tile_shape = other.block_tile_shape
         self.warp_tile_shape = other.warp_tile_shape
         self.mma_shape = other.mma_shape
@@ -186,7 +185,7 @@ struct MatmulConfig[
         self.partitioned_multicast = other.partitioned_multicast
         self._pdl_level = other._pdl_level
 
-    fn swapAB(
+    def swapAB(
         self,
     ) -> MatmulConfig[Self.b_type, Self.a_type, Self.c_type, Self.transpose_b]:
         var new_config = MatmulConfig[
@@ -195,50 +194,47 @@ struct MatmulConfig[
         new_config.copy_field(self)
         return new_config
 
-    fn num_warps_m(self) -> UInt:
-        return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
+    def num_warps_m(self) -> Int:
+        return self.block_tile_shape[0] // self.warp_tile_shape[0]
 
-    fn num_warps_n(self) -> UInt:
-        return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
+    def num_warps_n(self) -> Int:
+        return self.block_tile_shape[1] // self.warp_tile_shape[1]
 
-    fn num_threads(self) -> UInt:
+    def num_threads(self) -> Int:
         return (
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
-            * UInt(WARP_SIZE)
+            * WARP_SIZE
         )
 
-    fn shared_mem_usage(self) -> Int:
-        return Int(
-            _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
-                self.block_tile_shape,
-                Int(self.num_pipeline_stages),
-                Int(self.num_warp_k_partitions),
-            )
+    def shared_mem_usage(self) -> Int:
+        return _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
+            self.block_tile_shape,
+            self.num_pipeline_stages,
+            self.num_warp_k_partitions,
         )
 
-    fn grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
+    def grid_dim(self, m: Int, n: Int) -> IndexList[3]:
         return Index(
-            Int(ceildiv(n, UInt(self.block_tile_shape[1]))),
-            Int(ceildiv(m, UInt(self.block_tile_shape[0]))),
-            Int(self.num_k_partitions),
+            uceildiv(n, self.block_tile_shape[1]),
+            uceildiv(m, self.block_tile_shape[0]),
+            self.num_k_partitions,
         )
 
-    fn block_dim(self) -> IndexList[3]:
-        return Index(Int(self.num_threads()), 1, 1)
+    def block_dim(self) -> IndexList[3]:
+        return Index(self.num_threads(), 1, 1)
 
-    fn work_space_size(self, M: UInt, N: UInt) -> UInt:
+    def work_space_size(self, M: Int, N: Int) -> Int:
         return M * N * (self.num_k_partitions - 1)
 
-    fn pdl_level(self) -> PDLLevel:
+    def pdl_level(self) -> PDLLevel:
         return self._pdl_level
 
-    fn __eq__(self, rhs: MatmulConfig) -> Bool:
+    def __eq__(self, rhs: MatmulConfig) -> Bool:
         comptime static_info_match = Self.a_type == rhs.a_type and Self.b_type == rhs.b_type and Self.c_type == rhs.c_type and Self.transpose_b == rhs.transpose_b
 
-        @parameter
-        if static_info_match:
+        comptime if static_info_match:
             return (
                 self.block_tile_shape == rhs.block_tile_shape
                 and self.num_pipeline_stages == rhs.num_pipeline_stages
@@ -246,10 +242,7 @@ struct MatmulConfig[
         else:
             return False
 
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write("kernel_")
         writer.write(Self.a_type, "_")
         writer.write(Self.c_type, "_")
@@ -267,10 +260,10 @@ struct MatmulConfig[
         # transpose B
         writer.write("T" if Self.transpose_b else "N")
 
-    fn __repr__(self) -> String:
-        return String.write(self)
+    def write_repr_to(self, mut writer: Some[Writer]):
+        self.write_to(writer)
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with the underlying bytes.
 
         Parameters:
@@ -297,18 +290,14 @@ struct MatmulConfig[
 
 # Helper for choosing the base of BK based on type.
 # Actual BK should be multiple of BK_base.
-fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
+def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
     if type.is_float8():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 128
         else:
             return 64
     elif type.is_half_float():
-
-        @parameter
-        if amd_kernel:
+        comptime if amd_kernel:
             return 64
         else:
             return 32
@@ -317,9 +306,9 @@ fn _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
 
 
 @always_inline
-fn _shared_memory_usage[
+def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
-](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> UInt:
+](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> Int:
     # fmt: off
     var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[a_type]()
     var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[b_type]()
@@ -328,13 +317,13 @@ fn _shared_memory_usage[
     var c_usage = block_mnk[0] * block_mnk[1] * \
                   size_of[c_type]() if c_type.is_half_float() else 0
     # fmt: on
-    return UInt(max(max(a_usage + b_usage, c_usage), slice_k_reduction))
+    return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 
 
 @fieldwise_init
 struct MatmulKernels[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     """Supported matmul kernels.
 
     The configurations are named as: <arch>_<BNxBM>_<stages>.
@@ -377,24 +366,24 @@ struct MatmulKernels[
         Self.a_type, Self.b_type, Self.c_type, Self.transpose_b
     ](
         block_tile_shape=Index(
-            env_get_int["TUNE_BM", 128](),
-            env_get_int["TUNE_BN", 128](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_BM", 128](),
+            get_defined_int["TUNE_BN", 128](),
+            get_defined_int["TUNE_BK", 32](),
         ),
         warp_tile_shape=Index(
-            env_get_int["TUNE_WM", 64](),
-            env_get_int["TUNE_WN", 64](),
-            env_get_int["TUNE_BK", 32](),
+            get_defined_int["TUNE_WM", 64](),
+            get_defined_int["TUNE_WN", 64](),
+            get_defined_int["TUNE_BK", 32](),
         ),
-        num_pipeline_stages=UInt(env_get_int["TUNE_NUM_STAGES", 4]()),
-        num_k_partitions=UInt(env_get_int["TUNE_NUM_K_PARTITIONS", 1]()),
-        num_warp_k_partitions=UInt(
-            env_get_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
-        ),
+        num_pipeline_stages=get_defined_int["TUNE_NUM_STAGES", 4](),
+        num_k_partitions=get_defined_int["TUNE_NUM_K_PARTITIONS", 1](),
+        num_warp_k_partitions=get_defined_int[
+            "TUNE_NUM_WARP_K_PARTITIONS", 1
+        ](),
     )
 
 
-fn select_config[
+def select_config[
     a_type: DType, b_type: DType, c_type: DType, transpose_b: Bool = False
 ](M: Int, N: Int, K: Int, ctx: DeviceContext) -> MatmulConfig[
     a_type, b_type, c_type, transpose_b
@@ -446,9 +435,12 @@ fn select_config[
         var num_waves_base = ceildiv(num_blocks, A100.sm_count)
 
         # Skip if it requires more shared memory than the GPU supports.
-        if _shared_memory_usage[a_type, b_type, c_type](
-            Index(bm, bn, bk), num_stages
-        ) > UInt(gpu_info.shared_memory_per_multiprocessor):
+        if (
+            _shared_memory_usage[a_type, b_type, c_type](
+                Index(bm, bn, bk), num_stages
+            )
+            > gpu_info.shared_memory_per_multiprocessor
+        ):
             continue
 
         var allowed_num_k_partitions = (
@@ -496,12 +488,12 @@ fn select_config[
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=best_bmnk,
         warp_tile_shape=Index(64, 64, best_bmnk[2]),
-        num_pipeline_stages=UInt(best_num_stages),
-        num_k_partitions=UInt(best_num_k_partitions),
+        num_pipeline_stages=best_num_stages,
+        num_k_partitions=best_num_k_partitions,
     )
 
 
-fn _vendor_blas_fallback_disabled() -> Bool:
+def _vendor_blas_fallback_disabled() -> Bool:
     """Determine if fallback to vendor blas is disabled
 
     Returns True if:
@@ -509,14 +501,14 @@ fn _vendor_blas_fallback_disabled() -> Bool:
         - benchmark has specifically requested mojo kernel
     else returns False.
     """
-    comptime globally_disabled = env_get_bool[
+    comptime globally_disabled = get_defined_bool[
         "MODULAR_DISABLE_VENDOR_FALLBACK", False
     ]()
-    comptime bench_disabled = not env_get_bool["use_vendor_blas", True]()
+    comptime bench_disabled = not get_defined_bool["use_vendor_blas", True]()
     return globally_disabled or bench_disabled
 
 
-fn create_hilbert_lut(
+def create_hilbert_lut(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Precompute Hilbert-curve block swizzle lookup-table for a rectangular grid.
@@ -528,7 +520,7 @@ fn create_hilbert_lut(
     """
     var num_blocks = grid_x * grid_y
     # Allocate temporary host buffer.
-    var host_ptr = UnsafePointer[UInt32].alloc(num_blocks)
+    var host_ptr = alloc[UInt32](num_blocks)
 
     # Next power-of-two square dimension enclosing the rectangle.
     var dim_pow2 = 1
@@ -571,19 +563,17 @@ fn create_hilbert_lut(
     return device_buf
 
 
-fn get_hilbert_lut_with_cache(
+def get_hilbert_lut_with_cache(
     ctx: DeviceContext, grid_x: Int, grid_y: Int
 ) raises -> DeviceBuffer[DType.uint32]:
     """Get Hilbert lookup table using global cache (no struct needed)."""
     var key_str = String("hilbert_lut_", grid_x, "_", grid_y)
 
     # use runtime lookup since key is computed at runtime
-    var cached_ptr = external_call[
-        "KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer
-    ](StringSlice(key_str).unsafe_ptr(), key_str.byte_length())
+    var cached_ptr = _get_global_or_null(key_str)
 
     if cached_ptr:
-        var device_ptr = cached_ptr.bitcast[UInt32]()
+        var device_ptr = cached_ptr.unsafe_value().bitcast[UInt32]()
         var num_blocks = grid_x * grid_y
         # the cached buffer stays alive as long as the program runs
         return DeviceBuffer[DType.uint32](

@@ -1,16 +1,17 @@
 ---
 title: Jupyter Notebooks
-sidebar_position: 6
+sidebar_position: 5
 description: Using Mojo in local and Colab Jupyter Notebooks
 ---
+
 [Jupyter notebooks](https://jupyter.org) provide a web-based environment for
 creating and sharing Mojo computational documents. They combine code, results,
 and explanation so readers explore what you built, how you built it, and why it
 matters.
 
-You can run Mojo language notebooks locally or in GPU-backed Google Colab environments
-to accelerate workloads. For teaching, learning, and exploration, notebooks provide
-a hands-on, iterative workflow.
+You can run Mojo language notebooks locally or in GPU-backed Google Colab
+environments to accelerate workloads. For teaching, learning, and exploration,
+notebooks provide a hands-on, iterative workflow.
 
 This page assumes you'll work with Mojo notebooks in one of two ways:
 
@@ -31,19 +32,19 @@ Both options use the same notebook model and the same Mojo cell magic.
 
 2. Install Mojo:
 
-    For the nightly release:
+   For the nightly release:
 
     ```python
     !pip install mojo --extra-index-url https://whl.modular.com/nightly/simple/ --prerelease allow
     ```
 
-    For the stable release:
+   For the stable release:
 
     ```python
     !pip install mojo
     ```
 
-    Wait for the "Successfully installed" message.
+   Wait for the "Successfully installed" message.
 
 3. Enable Mojo:
 
@@ -82,9 +83,9 @@ Jupyter and Mojo.
     ```
 
     This installs:
-    - Mojo
-    - JupyterLab
-    - The Python kernel required for notebook execution
+   - Mojo
+   - JupyterLab
+   - The Python kernel required for notebook execution
 
 3. Start JupyterLab:
 
@@ -98,8 +99,8 @@ Jupyter and Mojo.
 
     In your web browser:
 
-    - Select _File > New > Notebook_.
-    - Choose the _Python_ kernel.
+   - Select _File > New > Notebook_.
+   - Choose the _Python_ kernel.
 
 5. Enable Mojo support:
 
@@ -138,13 +139,12 @@ Hello Mojo
 %%mojo
 
 # Compiler-parameterized function
-fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+def repeat[count: Int](msg: String):
+    comptime for i in range(count):
         print(msg)
 
 # Compiler-argumented function
-fn threehello():
+def threehello():
     repeat[3]("Hello 🔥!")
 
 # Run
@@ -172,12 +172,12 @@ select _Runtime > Change runtime type > [GPU]_.
 ```mojo
 %%mojo
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-fn kernel():
+def kernel():
     print("Hello from the GPU")
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
         ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)
@@ -190,6 +190,42 @@ Output:
 Hello from the GPU
 ```
 
+### Example: Hello writing
+
+This example writes a value to device memory and reads it back on the host:
+
+```mojo
+%%mojo
+from std.memory import UnsafePointer
+from std.gpu.host import DeviceContext
+
+comptime `✅`: Int32 = 1
+comptime `❌`: Int32 = 0
+
+def kernel(value: UnsafePointer[Scalar[DType.int32], MutAnyOrigin]):
+    value[0] = `✅`
+
+def main() raises:
+    with DeviceContext() as ctx:
+        # Build it
+        var out = ctx.enqueue_create_buffer[DType.int32](1)
+        out.enqueue_fill(`❌`)
+
+        # Run it
+        ctx.enqueue_function[kernel, kernel](out, grid_dim=1, block_dim=1)
+
+        # Report the result
+        with out.map_to_host() as out_host:
+            print("GPU responded:", \
+                "👋, 🔥" if out_host[0] == `✅` else "😢")
+```
+
+Output:
+
+```output
+👋, 🔥
+```
+
 ### Example: GPU vector addition
 
 This example runs elementwise vector addition on the GPU.
@@ -198,10 +234,10 @@ Each GPU thread updates one element.
 ```mojo
 %%mojo
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
-from sys import has_accelerator
+from std.sys import has_accelerator
 
 comptime VECTOR_WIDTH = 10
 comptime layout = Layout.row_major(VECTOR_WIDTH)
@@ -210,17 +246,14 @@ comptime Tensor = LayoutTensor[active_dtype, layout, MutAnyOrigin]
 
 
 # Elementwise vector addition on GPU threads
-fn vector_addition(left: Tensor, right: Tensor, output: Tensor):
+def vector_addition(left: Tensor, right: Tensor, output: Tensor):
     var idx = thread_idx.x
     output[idx] = left[idx] + right[idx]
 
 
-def main():
+def main() raises:
     # Ensure a supported GPU (NVIDIA or AMD) is available
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     # Create GPU device context
     var ctx = DeviceContext()

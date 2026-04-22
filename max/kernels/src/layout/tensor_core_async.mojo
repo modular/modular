@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tensor Core Async Module
+"""Tensor Core Async Module.
 
 This module provides high-performance abstractions for utilizing NVIDIA's Tensor Cores
 to perform asynchronous matrix multiplication operations. It implements optimized memory
@@ -34,11 +34,11 @@ Performance features:
 
 This implementation is specifically optimized for NVIDIA GPUs with Tensor Core support.
 """
-from sys import size_of, bit_width_of
-from sys._assembly import inlined_assembly
+from std.sys import size_of, bit_width_of
+from std.sys._assembly import inlined_assembly
 
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.compute.mma import (
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.compute.mma import (
     WGMMADescriptor,
     wgmma_async,
     wgmma_commit_group_sync,
@@ -46,6 +46,7 @@ from gpu.compute.mma import (
     wgmma_wait_group_sync,
 )
 from layout import IntTuple, Layout, LayoutTensor
+from layout.coord import Coord, Idx
 from layout.layout import (
     MakeLayoutList,
     composition,
@@ -57,8 +58,9 @@ from layout.layout import (
     tile_to_shape,
     upcast,
 )
+from layout.tile_layout import Layout as TileLayout
 
-from utils import IndexList, StaticTuple
+from std.utils import IndexList, StaticTuple
 
 # ===-----------------------------------------------------------------------===#
 # WGMMA shared memory layout                                                   #
@@ -153,7 +155,7 @@ from utils import IndexList, StaticTuple
 
 
 @always_inline
-fn _supported_mma_shape[
+def _supported_mma_shape[
     mma_shape: IndexList[3],
 ]() -> Bool:
     """Checks if a given MMA shape is supported for tensor core operations.
@@ -171,8 +173,7 @@ fn _supported_mma_shape[
 
     # Ideally this check should be input/output type dependent as mma_shape depends on input/output types
     # (https://mlir.llvm.org/docs/Dialects/NVVMDialect/#nvvmwgmmamma_async-nvvmwgmmammaasyncop).
-    @parameter
-    if mma_shape[0] == 64 and mma_shape[2] == 8:
+    comptime if mma_shape[0] == 64 and mma_shape[2] == 8:
         return (
             mma_shape[1] % 8 == 0 and mma_shape[1] >= 8 and mma_shape[1] <= 256
         )
@@ -205,13 +206,13 @@ comptime _CM_TILE_STRIDE = IntTuple(1, _CM_ROW_BITS)
 
 
 @always_inline
-fn warpgroup_fence[
+def warpgroup_fence[
     accum_type: DType,
     accum_layout: Layout,
     //,
 ](
     accum: LayoutTensor[
-        accum_type, accum_layout, address_space = AddressSpace.LOCAL, ...
+        accum_type, accum_layout, address_space=AddressSpace.LOCAL, ...
     ]
 ):
     """Code motion fence to ensure the registers of the WGMMA instruction do not get touched by anything.
@@ -233,25 +234,24 @@ fn warpgroup_fence[
     ), "Only float32 is supported for warpgroup fence"
 
     @always_inline
-    fn _warpgroup_fence_operand(reg: Scalar[accum_type]):
+    def _warpgroup_fence_operand(reg: Scalar[accum_type]):
         inlined_assembly["", NoneType, constraints="+f", has_side_effect=True](
             reg
         )
 
-    @parameter
-    for i in range(accum_layout.size()):
+    comptime for i in range(accum_layout.size()):
         _warpgroup_fence_operand(accum.ptr[i])
 
 
 # constructs core matrix or "minimal dense" layout in bytes as described in file
 # header.
-fn _select_k_atom_bits[
+def _select_k_atom_bits[
     swizzle_mode: TensorMapSwizzle,
 ]() -> Layout:
     return Layout.row_major(_CM_NUM_ROWS, swizzle_mode.bytes() * 8)
 
 
-fn select_k_atom[
+def select_k_atom[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
 ]() -> Layout:
@@ -272,14 +272,13 @@ fn select_k_atom[
     return upcast(materialize[a](), bit_width_of[dtype]())
 
 
-fn _checked_tile_shape[
+def _checked_tile_shape[
     dtype: DType,
     swizzle_mode: TensorMapSwizzle,
     BM: Int,
     BK: Int,
 ]() -> IntTuple:
-    @parameter
-    if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
+    comptime if swizzle_mode != TensorMapSwizzle.SWIZZLE_NONE:
         comptime k_bytes = BK * size_of[dtype]()
         comptime assert (k_bytes % swizzle_mode.bytes()) == 0, (
             "K dim "
@@ -292,7 +291,79 @@ fn _checked_tile_shape[
     return [BM, BK]
 
 
-fn tile_layout_k_major[
+# Helper: swizzle width in elements for a given dtype and swizzle mode.
+comptime _sw_K[
+    dtype: DType, swizzle_mode: TensorMapSwizzle
+] = swizzle_mode.bytes() // size_of[dtype]()
+
+# Outer stride for the K dimension in tile_layout_k_major_typed.
+# When BK == sw_K (outer K dim has shape 1), the stride is 0 to match
+# the compact layout produced by tile_to_shape / tile_layout_k_major().
+comptime _outer_k_stride[
+    dtype: DType, BM: Int, BK: Int, swizzle_mode: TensorMapSwizzle
+] = 0 if BK == _sw_K[dtype, swizzle_mode] else BM * _sw_K[dtype, swizzle_mode]
+
+
+comptime tile_layout_k_major_typed[
+    dtype: DType,
+    BM: Int,
+    BK: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+] = TileLayout(
+    Coord(
+        Coord(
+            Idx[_CM_NUM_ROWS](),
+            Idx[BM // _CM_NUM_ROWS](),
+        ),
+        Coord(
+            Idx[_sw_K[dtype, swizzle_mode]](),
+            Idx[BK // _sw_K[dtype, swizzle_mode]](),
+        ),
+    ),
+    Coord(
+        Coord(
+            Idx[_sw_K[dtype, swizzle_mode]](),
+            Idx[_CM_NUM_ROWS * _sw_K[dtype, swizzle_mode]](),
+        ),
+        Coord(
+            Idx[1](),
+            Idx[_outer_k_stride[dtype, BM, BK, swizzle_mode]](),
+        ),
+    ),
+)
+"""K-major typed Layout for tensor core operations.
+
+Shape ``((CM, BM/CM), (sw_K, BK/sw_K))``, stride ``((sw_K, CM*sw_K), (1, BM*sw_K))``
+where CM=8 and sw_K = swizzle_mode.bytes() / sizeof(dtype).
+When BK/sw_K == 1, the outer K stride is 0 (compact).
+
+Parameters:
+    dtype: Element data type of the tensor.
+    BM: Size of the M dimension in the tile.
+    BK: Size of the K dimension in the tile.
+    swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+"""
+
+
+comptime tile_layout_mn_major_typed[
+    dtype: DType,
+    mn_dim: Int,
+    k_dim: Int,
+    swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+] = tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()
+"""MN-major typed Layout for tensor core operations.
+
+Equivalent to ``tile_layout_k_major_typed[dtype, k_dim, mn_dim, swizzle_mode].transpose()``.
+
+Parameters:
+    dtype: Element data type of the tensor.
+    mn_dim: Size of the MN dimension.
+    k_dim: Size of the K dimension.
+    swizzle_mode: Memory access pattern swizzling mode (default: SWIZZLE_NONE).
+"""
+
+
+def tile_layout_k_major[
     dtype: DType,
     BM: Int,
     BK: Int,
@@ -317,7 +388,7 @@ fn tile_layout_k_major[
     return tile_to_shape(materialize[atom](), new_shape)
 
 
-fn tile_sf_layout_k_major[
+def tile_sf_layout_k_major[
     BM: Int,
     BK: Int,
     SF_SCALE_SIZE: Int,
@@ -354,7 +425,7 @@ fn tile_sf_layout_k_major[
     return materialize[sf_layout]()
 
 
-fn tile_to_descriptor[
+def tile_to_descriptor[
     dtype: DType,
     layout: Layout,
     is_k_major: Bool = True,
@@ -373,8 +444,7 @@ fn tile_to_descriptor[
         `Layout - A transformed layout compatible with WGMMA descriptors.
     """
 
-    @parameter
-    if is_k_major:
+    comptime if is_k_major:
         # Tile a layout to ((8,m),(T,2)) shape to match the K-major wgmma descriptor
         comptime T = _CM_ROW_BYTES // size_of[dtype]()
         comptime tiler = MakeLayoutList(Layout(_CM_NUM_ROWS), Layout(T))
@@ -384,7 +454,7 @@ fn tile_to_descriptor[
         return materialize[layout]()
 
 
-fn tile_layout_mn_major[
+def tile_layout_mn_major[
     dtype: DType,
     mn_dim: Int,
     k_dim: Int,
@@ -411,7 +481,7 @@ fn tile_layout_mn_major[
     return tile_layout_k_major[dtype, k_dim, mn_dim, swizzle_mode]().transpose()
 
 
-fn wgmma_c_thread_layout[C: Layout]() -> Layout:
+def wgmma_c_thread_layout[C: Layout]() -> Layout:
     """Returns the thread layout component for WGMMA C matrix.
 
     Generates the first mode of the WGMMA C layout, which maps thread coordinates
@@ -429,7 +499,7 @@ fn wgmma_c_thread_layout[C: Layout]() -> Layout:
     )
 
 
-fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
+def wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
     """Returns the output layout component for WGMMA C matrix.
 
     Generates the second mode of the WGMMA C layout, which maps output vector
@@ -448,7 +518,7 @@ fn wgmma_output_layout[mma_n: Int, C: Layout]() -> Layout:
     )
 
 
-fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
+def wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     """Generates three layouts for mapping WGMMA C matrix coordinates.
 
     This function creates three layout mappings that are essential for working with WGMMA
@@ -509,7 +579,7 @@ fn wgmma_c_layout[mma_m: Int, mma_n: Int, C: Layout]() -> List[Layout]:
     ]
 
 
-fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
+def st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
     """Creates a layout for N-major `st_matrix` atom in the context of WGMMA C
     matrix.
 
@@ -532,7 +602,7 @@ fn st_matrix_n_atom[num_stmatrix: Int]() -> Layout:
     )
 
 
-fn st_matrix_m_atom[num_stmatrix: Int, num_consumer: Int]() -> Layout:
+def st_matrix_m_atom[num_stmatrix: Int, num_consumer: Int]() -> Layout:
     """Creates a layout for M-major `st_matrix` atom in the context of WGMMA C
     matrix.
 
@@ -580,7 +650,7 @@ fn st_matrix_m_atom[num_stmatrix: Int, num_consumer: Int]() -> Layout:
     )
 
 
-fn st_matrix_n_layout[
+def st_matrix_n_layout[
     c_type: DType, WG_BN: Int, num_m_mmas: Int, num_consumer: Int
 ]() -> Layout:
     """Creates a layout for N-major `st_matrix` in the context of WGMMA C
@@ -609,13 +679,13 @@ fn st_matrix_n_layout[
     return downcast(materialize[b128_layout](), 128 // (8 * size_of[c_type]()))
 
 
-fn st_matrix_m_layout[
+def st_matrix_m_layout[
     c_type: DType, WG_BM: Int, num_m_mmas: Int, num_consumer: Int
 ]() -> Layout:
     """Creates a layout for M-major `st_matrix` in the context of WGMMA C
     matrix. This meant to be used with swapAB, since the C
     matrix must be transposed during the write phase. This must also be used
-    in conjuction with st_matrix transposed modifier.
+    in conjunction with st_matrix transposed modifier.
 
     The M-dimension tiling size `WG_BM // 16`, the number of MMA tiles `num_m_mmas`
     in the N-dimension, and the number of consumers `num_consumer`. The output is an
@@ -640,14 +710,14 @@ fn st_matrix_m_layout[
     return downcast(materialize[b128_layout](), 128 // (8 * size_of[c_type]()))
 
 
-fn _wgmma_descriptor[
+def _wgmma_descriptor[
     dtype: DType,
     //,
     layout: Layout,
     is_k_major: Bool = True,
     swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    addr: UnsafePointer[Scalar[dtype], address_space = AddressSpace.SHARED, ...]
+    addr: UnsafePointer[Scalar[dtype], address_space=AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[dtype]:
     # Conform to canonical layout.
     comptime assert (
@@ -659,8 +729,7 @@ fn _wgmma_descriptor[
     comptime stride01 = layout[0].stride[1].value()
     comptime stride11 = layout[1].stride[1].value()
 
-    @parameter
-    if is_k_major:
+    comptime if is_k_major:
         comptime assert (
             shape00 == 8 and shape11 % 2 == 0
         ), "Tile shape must be ((8, _), (_, multiple of 2)), get " + String(
@@ -687,15 +756,13 @@ fn _wgmma_descriptor[
     return WGMMADescriptor.create[SBO, LBO, swizzle](addr)
 
 
-fn _lhs_descriptor[
+def _lhs_descriptor[
     dtype: DType,
     layout: Layout,
     //,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[
-        dtype, layout, address_space = AddressSpace.SHARED, ...
-    ]
+    tensor: LayoutTensor[dtype, layout, address_space=AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[tensor.dtype]:
     comptime BM = layout[0].size()
     comptime BK = layout[1].size()
@@ -713,16 +780,14 @@ fn _lhs_descriptor[
     ](tensor.ptr)
 
 
-fn _rhs_descriptor[
+def _rhs_descriptor[
     dtype: DType,
     layout: Layout,
     //,
     transposed: Bool = False,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](
-    tensor: LayoutTensor[
-        dtype, layout, address_space = AddressSpace.SHARED, ...
-    ]
+    tensor: LayoutTensor[dtype, layout, address_space=AddressSpace.SHARED, ...]
 ) -> WGMMADescriptor[tensor.dtype]:
     comptime BN = layout[0].size()
     comptime BK = layout[1].size()
@@ -741,7 +806,7 @@ fn _rhs_descriptor[
 
 
 # TODO(KERN-1301): Layouts are calculated for 64x8x8 instruction
-fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
+def _output_register_size[mma_shape: IndexList[3]]() -> Int:
     comptime assert _supported_mma_shape[mma_shape](), (
         "WGMMA operation of shape '" + String(mma_shape) + "' is not supported"
     )
@@ -749,31 +814,29 @@ fn _output_register_size[mma_shape: IndexList[3]]() -> Int:
 
 
 @always_inline
-fn _convert_cfrags_to_tuple[
+def _convert_cfrags_to_tuple[
     c_type: DType, c_frag_size: Int
 ](
-    c_frags: LayoutTensor[c_type, _, address_space = AddressSpace.LOCAL, ...],
+    c_frags: LayoutTensor[c_type, _, address_space=AddressSpace.LOCAL, ...],
 ) -> StaticTuple[Scalar[c_type], c_frag_size]:
     var c_frags_in_tuple = StaticTuple[Scalar[c_type], c_frag_size]()
 
-    @parameter
-    for i in range(c_frag_size):
+    comptime for i in range(c_frag_size):
         c_frags_in_tuple[i] = rebind[Scalar[c_type]](c_frags[0, i])
 
     return c_frags_in_tuple
 
 
 @always_inline
-fn _convert_cfrags_to_simd[
+def _convert_cfrags_to_simd[
     c_type: DType, c_frag_size: Int
 ](
     c_frags_in_tuple: StaticTuple[Scalar[c_type], c_frag_size],
     c_frags: LayoutTensor[
-        mut=True, c_type, _, address_space = AddressSpace.LOCAL, ...
+        mut=True, c_type, _, address_space=AddressSpace.LOCAL, ...
     ],
 ):
-    @parameter
-    for i in range(c_frag_size):
+    comptime for i in range(c_frag_size):
         c_frags[0, i] = c_frags_in_tuple[i]
 
 
@@ -804,7 +867,7 @@ struct TensorCoreAsync[
     """
 
     @always_inline
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the `TensorCoreAsync` instance.
 
         Ensures that the provided MMA shape is supported.
@@ -820,7 +883,7 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn wgmma[
+    def wgmma[
         num_warp_groups: Int = 1,
         scale_c: Int = 1,
         scale_a: Int = 1,
@@ -828,17 +891,17 @@ struct TensorCoreAsync[
         num_k_iters: Optional[Int] = None,
     ](
         a_smem_tile: LayoutTensor[
-            Self.a_type, _, _, address_space = AddressSpace.SHARED, ...
+            Self.a_type, _, _, address_space=AddressSpace.SHARED, ...
         ],
         b_smem_tile: LayoutTensor[
-            Self.b_type, _, _, address_space = AddressSpace.SHARED, ...
+            Self.b_type, _, _, address_space=AddressSpace.SHARED, ...
         ],
         c_reg_tile: LayoutTensor[
             mut=True,
             Self.c_type,
             _,
             _,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             ...,
         ],
         wg_idx: Int = 0,
@@ -929,15 +992,13 @@ struct TensorCoreAsync[
             b_canonical_layout, Self.transpose_b, Self.b_swizzle
         ](b_smem_tile.ptr)
 
-        @parameter
-        if num_warp_groups > 1:
+        comptime if num_warp_groups > 1:
             a_desc += a_m_stride * num_m_mmas * wg_idx
 
         comptime layout_b = "col" if Self.transpose_b else "row"
         comptime c_frag_size = Self.mma_shape[0] * Self.mma_shape[1] // 128
 
-        @parameter
-        for k_mma in range(num_k_mmas):
+        comptime for k_mma in range(num_k_mmas):
             comptime scale_d = scale_c if k_mma == 0 else 1
 
             # Offsets when K is multiple of canonical layouts.
@@ -957,13 +1018,11 @@ struct TensorCoreAsync[
                 k_mma % b_num_k_mmas_per_tile
             ) * b_k_stride
 
-            @parameter
-            for m_mma in range(num_m_mmas):
+            comptime for m_mma in range(num_m_mmas):
                 comptime a_offset = m_mma * a_m_stride + a_k_mma_offset + a_offset_bytes
                 a_desc_m = a_desc + a_offset
 
-                @parameter
-                for n_mma in range(num_n_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     comptime b_offset = n_mma * b_n_stride + b_k_mma_offset + b_offset_bytes
@@ -979,8 +1038,8 @@ struct TensorCoreAsync[
                         Self.mma_shape[0],
                         Self.mma_shape[1],
                         Self.mma_shape[2],
-                        a_type = Self.a_type,
-                        b_type = Self.b_type,
+                        a_type=Self.a_type,
+                        b_type=Self.b_type,
                         layout_b=layout_b,
                         scale_d=scale_d,
                         scale_a=scale_a,
@@ -993,18 +1052,18 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn wgmma(
+    def wgmma(
         a_frag_tile: LayoutTensor[
-            Self.a_type, _, address_space = AddressSpace.LOCAL, ...
+            Self.a_type, _, address_space=AddressSpace.LOCAL, ...
         ],
         b_smem_tile: LayoutTensor[
-            Self.b_type, _, address_space = AddressSpace.SHARED, ...
+            Self.b_type, _, address_space=AddressSpace.SHARED, ...
         ],
         c_reg_tile: LayoutTensor[
             mut=True,
             Self.c_type,
             _,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
             ...,
         ],
     ):
@@ -1089,8 +1148,7 @@ struct TensorCoreAsync[
         ](b_smem_tile.ptr)
         comptime layout_b = "col" if Self.transpose_b else "row"
 
-        @parameter
-        for k_mma in range(num_k_mmas):
+        comptime for k_mma in range(num_k_mmas):
             comptime b_offset_bytes = (
                 k_mma // b_num_k_mmas_per_tile
             ) * b_canonical_layout.size() * size_of[
@@ -1100,12 +1158,10 @@ struct TensorCoreAsync[
                 k_mma % b_num_k_mmas_per_tile
             ) * b_k_stride
 
-            @parameter
-            for m_mma in range(num_m_mmas):
+            comptime for m_mma in range(num_m_mmas):
                 a_frag = a_frags[m_mma + k_mma * num_m_mmas, 0]
 
-                @parameter
-                for n_mma in range(num_n_mmas):
+                comptime for n_mma in range(num_n_mmas):
                     comptime mma_id = n_mma * num_m_mmas + m_mma
 
                     # a_desc_m = a_desc + m_mma * a_m_stride + k_mma * a_k_stride
@@ -1116,8 +1172,8 @@ struct TensorCoreAsync[
                         Self.mma_shape[0],
                         Self.mma_shape[1],
                         Self.mma_shape[2],
-                        a_type = Self.a_type,
-                        b_type = Self.b_type,
+                        a_type=Self.a_type,
+                        b_type=Self.b_type,
                         layout_b=layout_b,
                     ](
                         a_frag,
@@ -1127,7 +1183,7 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn arrive():
+    def arrive():
         """Ensures memory consistency by creating a fence for WGMMA operations.
 
         This method should be called before committing a group to ensure all
@@ -1137,7 +1193,7 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn commit_group():
+    def commit_group():
         """Commits the current warp group for execution.
 
         This synchronizes the warp group and commits all pending WGMMA operations
@@ -1147,7 +1203,7 @@ struct TensorCoreAsync[
 
     @staticmethod
     @always_inline
-    fn wait_group[group: Int = 0]():
+    def wait_group[group: Int = 0]():
         """Waits for the completion of a specific warp group's operations.
 
         This method blocks until all WGMMA operations from the specified group are complete.

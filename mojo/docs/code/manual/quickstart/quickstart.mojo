@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python, PythonObject
+from std.python import Python, PythonObject
 
 
-fn calculate_average(temps: List[Float64]) raises -> Float64:
+def calculate_average(temps: List[Float64]) raises -> Float64:
     if len(temps) == 0:
         raise Error("No temperature data")
 
@@ -24,7 +24,7 @@ fn calculate_average(temps: List[Float64]) raises -> Float64:
     return total / Float64(len(temps))
 
 
-fn main():
+def main():
     print("Temperature Analyzer")
     var temps: List[Float64] = [20.5, 22.3, 19.8, 25.1]
     print("Recorded", len(temps), "temperatures")

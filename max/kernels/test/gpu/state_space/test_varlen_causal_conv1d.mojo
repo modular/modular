@@ -11,30 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp
-from sys.info import simd_width_of
+from std.math import ceildiv, exp
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
 )
-from random import rand
-from memory import alloc
+from std.random import rand
+from std.memory import alloc
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
     causal_conv1d_varlen_update_cpu,
-    causal_conv1d_varlen_states_cpu,
     causal_conv1d_varlen_fwd_gpu,
     causal_conv1d_varlen_update_gpu,
-    causal_conv1d_varlen_states_gpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # Constants
@@ -42,7 +41,7 @@ comptime PAD_SLOT_ID: Int32 = -1
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -52,7 +51,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_varlen_causal_conv1d_fwd_gpu[
+def run_varlen_causal_conv1d_fwd_gpu[
     dtype: DType,
     activation: StaticString,
 ](
@@ -157,14 +156,14 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     var output_cpu_buf = output_cpu_h
 
     # Strides for row-major layout
-    var x_dim_stride: UInt32 = total_seqlen
+    var x_dim_stride: UInt32 = UInt32(total_seqlen)
     var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = width
+    var weight_dim_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var out_dim_stride: UInt32 = total_seqlen
+    var out_dim_stride: UInt32 = UInt32(total_seqlen)
     var out_seqlen_stride: UInt32 = 1
-    var conv_states_batch_stride: UInt32 = dim * state_len
-    var conv_states_dim_stride: UInt32 = state_len
+    var conv_states_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_states_dim_stride: UInt32 = UInt32(state_len)
     var conv_states_width_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
@@ -236,6 +235,48 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         RuntimeLayout[layout_2d].row_major(Index(dim, total_seqlen)),
     )
 
+    # Create TileTensors for GPU kernel
+    var x_device_tt = TileTensor(
+        x_device,
+        row_major(Idx(dim), Idx(total_seqlen)),
+    )
+    var weight_device_tt = TileTensor(
+        weight_device,
+        row_major(Idx(dim), Idx(width)),
+    )
+    var bias_device_tt = TileTensor(
+        bias_device,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var query_start_loc_device_tt = TileTensor(
+        query_start_loc_device,
+        row_major(
+            Idx(batch + 1),
+        ),
+    )
+    var cache_indices_device_tt = TileTensor(
+        cache_indices_device,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var has_initial_state_device_tt = TileTensor(
+        has_initial_state_device,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var conv_states_device_tt = TileTensor(
+        conv_states_device,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var output_device_tt = TileTensor(
+        output_device,
+        row_major(Idx(dim), Idx(total_seqlen)),
+    )
+
     # Run GPU kernel
     comptime BLOCK_DIM = 128
     comptime BLOCK_SEQ = 1
@@ -244,46 +285,46 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         comptime kWidth = 1
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -292,14 +333,14 @@ fn run_varlen_causal_conv1d_fwd_gpu[
                 dim,
                 total_seqlen,
                 batch,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                query_start_loc_device_tensor,
-                cache_indices_device_tensor,
-                has_initial_state_device_tensor,
-                conv_states_device_tensor,
-                output_device_tensor,
+                x_device_tt,
+                weight_device_tt,
+                bias_device_tt,
+                query_start_loc_device_tt,
+                cache_indices_device_tt,
+                has_initial_state_device_tt,
+                conv_states_device_tt,
+                output_device_tt,
                 x_dim_stride,
                 x_seqlen_stride,
                 weight_dim_stride,
@@ -322,46 +363,46 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         comptime kWidth = 2
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -370,14 +411,14 @@ fn run_varlen_causal_conv1d_fwd_gpu[
                 dim,
                 total_seqlen,
                 batch,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                query_start_loc_device_tensor,
-                cache_indices_device_tensor,
-                has_initial_state_device_tensor,
-                conv_states_device_tensor,
-                output_device_tensor,
+                x_device_tt,
+                weight_device_tt,
+                bias_device_tt,
+                query_start_loc_device_tt,
+                cache_indices_device_tt,
+                has_initial_state_device_tt,
+                conv_states_device_tt,
+                output_device_tt,
                 x_dim_stride,
                 x_seqlen_stride,
                 weight_dim_stride,
@@ -400,46 +441,46 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         comptime kWidth = 3
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -448,14 +489,14 @@ fn run_varlen_causal_conv1d_fwd_gpu[
                 dim,
                 total_seqlen,
                 batch,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                query_start_loc_device_tensor,
-                cache_indices_device_tensor,
-                has_initial_state_device_tensor,
-                conv_states_device_tensor,
-                output_device_tensor,
+                x_device_tt,
+                weight_device_tt,
+                bias_device_tt,
+                query_start_loc_device_tt,
+                cache_indices_device_tt,
+                has_initial_state_device_tt,
+                conv_states_device_tt,
+                output_device_tt,
                 x_dim_stride,
                 x_seqlen_stride,
                 weight_dim_stride,
@@ -478,46 +519,46 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         comptime kWidth = 4
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_fwd_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                query_start_loc_device_tensor.dtype,
-                query_start_loc_device_tensor.layout,
-                cache_indices_device_tensor.dtype,
-                cache_indices_device_tensor.layout,
-                has_initial_state_device_tensor.dtype,
-                has_initial_state_device_tensor.layout,
-                conv_states_device_tensor.dtype,
-                conv_states_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
+                DType.bool,
+                dtype,
                 kWidth,
                 BLOCK_DIM,
                 BLOCK_SEQ,
+                x_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
+                query_start_loc_device_tt.LayoutType,
+                cache_indices_device_tt.LayoutType,
+                has_initial_state_device_tt.LayoutType,
+                conv_states_device_tt.LayoutType,
+                output_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -526,14 +567,14 @@ fn run_varlen_causal_conv1d_fwd_gpu[
                 dim,
                 total_seqlen,
                 batch,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                query_start_loc_device_tensor,
-                cache_indices_device_tensor,
-                has_initial_state_device_tensor,
-                conv_states_device_tensor,
-                output_device_tensor,
+                x_device_tt,
+                weight_device_tt,
+                bias_device_tt,
+                query_start_loc_device_tt,
+                cache_indices_device_tt,
+                has_initial_state_device_tt,
+                conv_states_device_tt,
+                output_device_tt,
                 x_dim_stride,
                 x_seqlen_stride,
                 weight_dim_stride,
@@ -562,37 +603,66 @@ fn run_varlen_causal_conv1d_fwd_gpu[
         ctx.enqueue_copy(output_gpu_buf.ptr, output_device)
     ctx.synchronize()
 
+    # Create TileTensors for CPU reference
+    var x_cpu_tt = TileTensor(x_buf.ptr, row_major(Idx(dim), Idx(total_seqlen)))
+    var weight_cpu_tt = TileTensor(
+        weight_buf.ptr, row_major(Idx(dim), Idx(width))
+    )
+    var bias_cpu_tt = TileTensor(
+        bias_buf.ptr,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var query_start_loc_cpu_tt = TileTensor(
+        query_start_loc_buf.ptr,
+        row_major(
+            Idx(batch + 1),
+        ),
+    )
+    var cache_indices_cpu_tt = TileTensor(
+        cache_indices_buf.ptr,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var has_initial_state_cpu_tt = TileTensor(
+        has_initial_state_buf.ptr,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var conv_states_cpu_tt = TileTensor(
+        conv_states_buf.ptr,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var output_cpu_tt = TileTensor(
+        output_cpu_buf.ptr, row_major(Idx(dim), Idx(total_seqlen))
+    )
+
     # Run CPU reference
     causal_conv1d_varlen_fwd_cpu[
-        x_buf.dtype,
-        x_buf.layout,
-        weight_buf.dtype,
-        weight_buf.layout,
-        bias_buf.dtype,
-        bias_buf.layout,
-        output_cpu_buf.dtype,
-        output_cpu_buf.layout,
-        query_start_loc_buf.dtype,
-        query_start_loc_buf.layout,
-        cache_indices_buf.dtype,
-        cache_indices_buf.layout,
-        has_initial_state_buf.dtype,
-        has_initial_state_buf.layout,
-        conv_states_buf.dtype,
-        conv_states_buf.layout,
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        DType.int32,
+        DType.int32,
+        DType.bool,
+        dtype,
     ](
         dim,
         total_seqlen,
         width,
         batch,
-        x_buf,
-        weight_buf,
-        bias_buf,
-        query_start_loc_buf,
-        cache_indices_buf,
-        has_initial_state_buf,
-        conv_states_buf,
-        output_cpu_buf,
+        x_cpu_tt,
+        weight_cpu_tt,
+        bias_cpu_tt,
+        query_start_loc_cpu_tt,
+        cache_indices_cpu_tt,
+        has_initial_state_cpu_tt,
+        conv_states_cpu_tt,
+        output_cpu_tt,
         x_dim_stride,
         x_seqlen_stride,
         weight_dim_stride,
@@ -631,7 +701,7 @@ fn run_varlen_causal_conv1d_fwd_gpu[
     output_cpu_heap.free()
 
 
-fn run_varlen_causal_conv1d_update_gpu[
+def run_varlen_causal_conv1d_update_gpu[
     dtype: DType,
     activation: StaticString,
 ](
@@ -738,16 +808,16 @@ fn run_varlen_causal_conv1d_update_gpu[
     var output_cpu_buf = output_cpu_h
 
     # Strides for row-major layout
-    var x_batch_stride: UInt32 = dim * seqlen
-    var x_dim_stride: UInt32 = seqlen
+    var x_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var x_dim_stride: UInt32 = UInt32(seqlen)
     var x_seqlen_stride: UInt32 = 1
-    var weight_dim_stride: UInt32 = width
+    var weight_dim_stride: UInt32 = UInt32(width)
     var weight_width_stride: UInt32 = 1
-    var conv_state_batch_stride: UInt32 = dim * state_len
-    var conv_state_dim_stride: UInt32 = state_len
+    var conv_state_batch_stride: UInt32 = UInt32(dim * state_len)
+    var conv_state_dim_stride: UInt32 = UInt32(state_len)
     var conv_state_seqlen_stride: UInt32 = 1
-    var out_batch_stride: UInt32 = dim * seqlen
-    var out_dim_stride: UInt32 = seqlen
+    var out_batch_stride: UInt32 = UInt32(dim * seqlen)
+    var out_dim_stride: UInt32 = UInt32(seqlen)
     var out_seqlen_stride: UInt32 = 1
 
     var silu_activation = activation == "silu"
@@ -809,6 +879,42 @@ fn run_varlen_causal_conv1d_update_gpu[
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
+    # Create TileTensors for GPU kernel
+    var x_upd_device_tt = TileTensor(
+        x_device,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+    var weight_upd_device_tt = TileTensor(
+        weight_device,
+        row_major(Idx(dim), Idx(width)),
+    )
+    var bias_upd_device_tt = TileTensor(
+        bias_device,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var conv_state_upd_device_tt = TileTensor(
+        conv_state_device,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var cache_seqlens_device_tt = TileTensor(
+        cache_seqlens_device,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var conv_state_indices_device_tt = TileTensor(
+        conv_state_indices_device,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var output_upd_device_tt = TileTensor(
+        output_device,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+
     # Run GPU kernel
     comptime BLOCK_DIM = 128
 
@@ -816,40 +922,40 @@ fn run_varlen_causal_conv1d_update_gpu[
         comptime kWidth = 1
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -859,13 +965,13 @@ fn run_varlen_causal_conv1d_update_gpu[
                 dim,
                 seqlen,
                 state_len,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                conv_state_device_tensor,
-                cache_seqlens_device_tensor,
-                conv_state_indices_device_tensor,
-                output_device_tensor,
+                x_upd_device_tt,
+                weight_upd_device_tt,
+                bias_upd_device_tt,
+                conv_state_upd_device_tt,
+                cache_seqlens_device_tt,
+                conv_state_indices_device_tt,
+                output_upd_device_tt,
                 x_batch_stride,
                 x_dim_stride,
                 x_seqlen_stride,
@@ -889,40 +995,40 @@ fn run_varlen_causal_conv1d_update_gpu[
         comptime kWidth = 2
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -932,13 +1038,13 @@ fn run_varlen_causal_conv1d_update_gpu[
                 dim,
                 seqlen,
                 state_len,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                conv_state_device_tensor,
-                cache_seqlens_device_tensor,
-                conv_state_indices_device_tensor,
-                output_device_tensor,
+                x_upd_device_tt,
+                weight_upd_device_tt,
+                bias_upd_device_tt,
+                conv_state_upd_device_tt,
+                cache_seqlens_device_tt,
+                conv_state_indices_device_tt,
+                output_upd_device_tt,
                 x_batch_stride,
                 x_dim_stride,
                 x_seqlen_stride,
@@ -962,40 +1068,40 @@ fn run_varlen_causal_conv1d_update_gpu[
         comptime kWidth = 3
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -1005,13 +1111,13 @@ fn run_varlen_causal_conv1d_update_gpu[
                 dim,
                 seqlen,
                 state_len,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                conv_state_device_tensor,
-                cache_seqlens_device_tensor,
-                conv_state_indices_device_tensor,
-                output_device_tensor,
+                x_upd_device_tt,
+                weight_upd_device_tt,
+                bias_upd_device_tt,
+                conv_state_upd_device_tt,
+                cache_seqlens_device_tt,
+                conv_state_indices_device_tt,
+                output_upd_device_tt,
                 x_batch_stride,
                 x_dim_stride,
                 x_seqlen_stride,
@@ -1035,40 +1141,40 @@ fn run_varlen_causal_conv1d_update_gpu[
         comptime kWidth = 4
         var compiled_func = ctx.compile_function[
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
             causal_conv1d_varlen_update_gpu[
-                x_device_tensor.dtype,
-                x_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
-                conv_state_device_tensor.dtype,
-                conv_state_device_tensor.layout,
-                cache_seqlens_device_tensor.dtype,
-                cache_seqlens_device_tensor.layout,
-                conv_state_indices_device_tensor.dtype,
-                conv_state_indices_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                dtype,
+                DType.int32,
+                DType.int32,
                 kWidth,
                 BLOCK_DIM,
+                x_upd_device_tt.LayoutType,
+                weight_upd_device_tt.LayoutType,
+                bias_upd_device_tt.LayoutType,
+                conv_state_upd_device_tt.LayoutType,
+                cache_seqlens_device_tt.LayoutType,
+                conv_state_indices_device_tt.LayoutType,
+                output_upd_device_tt.LayoutType,
             ],
         ]()
         with ctx.push_context():
@@ -1078,13 +1184,13 @@ fn run_varlen_causal_conv1d_update_gpu[
                 dim,
                 seqlen,
                 state_len,
-                x_device_tensor,
-                weight_device_tensor,
-                bias_device_tensor,
-                conv_state_device_tensor,
-                cache_seqlens_device_tensor,
-                conv_state_indices_device_tensor,
-                output_device_tensor,
+                x_upd_device_tt,
+                weight_upd_device_tt,
+                bias_upd_device_tt,
+                conv_state_upd_device_tt,
+                cache_seqlens_device_tt,
+                conv_state_indices_device_tt,
+                output_upd_device_tt,
                 x_batch_stride,
                 x_dim_stride,
                 x_seqlen_stride,
@@ -1115,35 +1221,61 @@ fn run_varlen_causal_conv1d_update_gpu[
         ctx.enqueue_copy(conv_state_gpu_buf.ptr, conv_state_device)
     ctx.synchronize()
 
+    # Create TileTensors for CPU reference
+    var x_upd_cpu_tt = TileTensor(
+        x_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var weight_upd_cpu_tt = TileTensor(
+        weight_buf.ptr, row_major(Idx(dim), Idx(width))
+    )
+    var bias_upd_cpu_tt = TileTensor(
+        bias_buf.ptr,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var conv_state_upd_cpu_tt = TileTensor(
+        conv_state_cpu_buf.ptr,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var cache_seqlens_cpu_tt = TileTensor(
+        cache_seqlens_buf.ptr,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var conv_state_indices_cpu_tt = TileTensor(
+        conv_state_indices_buf.ptr,
+        row_major(
+            Idx(batch),
+        ),
+    )
+    var output_upd_cpu_tt = TileTensor(
+        output_cpu_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+
     # Run CPU reference
     causal_conv1d_varlen_update_cpu[
-        x_buf.dtype,
-        x_buf.layout,
-        weight_buf.dtype,
-        weight_buf.layout,
-        bias_buf.dtype,
-        bias_buf.layout,
-        output_cpu_buf.dtype,
-        output_cpu_buf.layout,
-        conv_state_cpu_buf.dtype,
-        conv_state_cpu_buf.layout,
-        cache_seqlens_buf.dtype,
-        cache_seqlens_buf.layout,
-        conv_state_indices_buf.dtype,
-        conv_state_indices_buf.layout,
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        dtype,
+        DType.int32,
+        DType.int32,
     ](
         batch,
         dim,
         seqlen,
         width,
         state_len,
-        x_buf,
-        weight_buf,
-        bias_buf,
-        conv_state_cpu_buf,
-        cache_seqlens_buf,
-        conv_state_indices_buf,
-        output_cpu_buf,
+        x_upd_cpu_tt,
+        weight_upd_cpu_tt,
+        bias_upd_cpu_tt,
+        conv_state_upd_cpu_tt,
+        cache_seqlens_cpu_tt,
+        conv_state_indices_cpu_tt,
+        output_upd_cpu_tt,
         x_batch_stride,
         x_dim_stride,
         x_seqlen_stride,
@@ -1198,7 +1330,7 @@ fn run_varlen_causal_conv1d_update_gpu[
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
+def test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
     """Test varlen causal conv1d forward GPU with equal-length sequences."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1208,7 +1340,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_equal_lengths() raises:
     )
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
+def test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
     """Test varlen causal conv1d forward GPU with variable-length sequences."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1218,7 +1350,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_variable_lengths() raises:
     )
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
+def test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
     """Test varlen causal conv1d forward GPU with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1228,7 +1360,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_with_silu() raises:
     )
 
 
-fn test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
+def test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
     """Test varlen causal conv1d forward GPU with various kernel widths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1246,7 +1378,7 @@ fn test_varlen_causal_conv1d_fwd_gpu_various_widths() raises:
 # =============================================================================
 
 
-fn test_varlen_causal_conv1d_update_gpu_basic() raises:
+def test_varlen_causal_conv1d_update_gpu_basic() raises:
     """Test basic varlen causal conv1d update on GPU."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1256,7 +1388,7 @@ fn test_varlen_causal_conv1d_update_gpu_basic() raises:
     )
 
 
-fn test_varlen_causal_conv1d_update_gpu_with_silu() raises:
+def test_varlen_causal_conv1d_update_gpu_with_silu() raises:
     """Test varlen causal conv1d update GPU with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1266,7 +1398,7 @@ fn test_varlen_causal_conv1d_update_gpu_with_silu() raises:
     )
 
 
-fn test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
+def test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
     """Test varlen causal conv1d update GPU with seqlen > 1."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1276,7 +1408,7 @@ fn test_varlen_causal_conv1d_update_gpu_seqlen_gt_1() raises:
     )
 
 
-fn test_varlen_causal_conv1d_update_gpu_various_widths() raises:
+def test_varlen_causal_conv1d_update_gpu_various_widths() raises:
     """Test varlen causal conv1d update GPU with various kernel widths."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -1289,5 +1421,5 @@ fn test_varlen_causal_conv1d_update_gpu_various_widths() raises:
     )
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

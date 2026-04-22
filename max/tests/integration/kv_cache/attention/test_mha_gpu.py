@@ -20,7 +20,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
-from max.nn.legacy.attention.multihead_attention import MultiheadAttention
+from max.nn.attention.multihead_attention import MultiheadAttention
 from torch.utils.dlpack import from_dlpack
 
 
@@ -48,7 +48,6 @@ def create_attention_weights(
                 3 * hidden_size, dtype=dtype, device=device
             )
     else:
-        # Create separate Q, K, V weights
         for proj in ["q", "k", "v"]:
             weights[f"{proj}_proj.weight"] = std * torch.randn(
                 hidden_size, hidden_size, dtype=dtype, device=device

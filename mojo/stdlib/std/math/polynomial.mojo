@@ -15,7 +15,7 @@
 You can import these APIs from the `math` package. For example:
 
 ```mojo
-from math.polynomial import polynomial_evaluate
+from std.math.polynomial import polynomial_evaluate
 ```
 """
 
@@ -26,9 +26,9 @@ from math.polynomial import polynomial_evaluate
 
 
 @always_inline
-fn polynomial_evaluate[
+def polynomial_evaluate[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     coefficients: Span[Scalar[dtype], ...],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -55,9 +55,9 @@ fn polynomial_evaluate[
 
 
 @always_inline
-fn _horner_evaluate[
+def _horner_evaluate[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     coefficients: Span[Scalar[dtype], ...],
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
@@ -90,19 +90,17 @@ fn _horner_evaluate[
 
     comptime c_last = coefficients[num_coefficients - 1]
 
-    @parameter
-    if num_coefficients == 1:
+    comptime if num_coefficients == 1:
         # The degenerate case is when the number of coefficients is 1. In those
         # cases we need to return c0.
         return c_last
+    else:
+        comptime c_second_from_last = coefficients[num_coefficients - 2]
 
-    comptime c_second_from_last = coefficients[num_coefficients - 2]
+        var result = x.fma(c_last, c_second_from_last)
 
-    var result = x.fma(c_last, c_second_from_last)
+        comptime for i in reversed(range(num_coefficients - 2)):
+            comptime c = coefficients[i]
+            result = result.fma(x, c)
 
-    @parameter
-    for i in reversed(range(num_coefficients - 2)):
-        comptime c = coefficients[i]
-        result = result.fma(x, c)
-
-    return result
+        return result

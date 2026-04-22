@@ -39,7 +39,7 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = "{!r}".format(myComplicatedObject)
+var s = "{!r}".format("test")
 ```
 
 Note that the following features from Python's `str.format()` are
@@ -70,11 +70,11 @@ methods.
 """
 
 
-from builtin.globals import global_constant
-from builtin.variadics import Variadic
-from collections.string.string_slice import get_static_string
-from compile import get_type_name
-from utils import Variant
+from std.builtin.globals import global_constant
+from std.builtin.variadics import Variadic
+from std.collections.string.string_slice import get_static_string
+from std.compile import get_type_name
+from std.utils import Variant
 
 # ===-----------------------------------------------------------------------===#
 # Formatter
@@ -131,16 +131,15 @@ struct _PrecompiledEntriesRuntime[
 
 
 @always_inline
-fn _comptime_list_to_span[
+def _comptime_list_to_span[
     T: ImplicitlyDestructible & Copyable, //, list: List[T]
 ]() -> Span[T, StaticConstantOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
-    fn list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
+    def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
-        @parameter
-        for i in range(len(list)):
+        comptime for i in range(len(list)):
             UnsafePointer(to=array[i]).init_pointee_copy(materialize[list]()[i])
         return array^
 
@@ -148,58 +147,59 @@ fn _comptime_list_to_span[
     return Span(global_constant[array]())
 
 
-comptime _FormatArgs = VariadicPack[element_trait=Writable, ...]
-
-
 struct _FormatUtils:
     # TODO: Allow a way to provide a `comptime _PrecompiledEntries` to avoid
     # allocations in the `_PrecompiledEntries` struct.
     @staticmethod
-    fn format_precompiled[
+    def format_precompiled[
         *Ts: Writable,
     ](
         mut writer: Some[Writer],
         compiled: _PrecompiledEntries[*Ts],
-        args: VariadicPack[_, Writable, *Ts],
+        *args: *Ts,
     ):
         """Format the arguments using the given format string and precompiled entries.
         """
-        comptime len_pos_args = type_of(args).__len__()
         var offset = 0
         var ptr = compiled.format.unsafe_ptr()
         var fmt_len = compiled.format.byte_length()
 
         @always_inline
-        fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+        def _build_slice(
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
         var auto_arg_index = 0
         for e in compiled.entries:
             # offset can equal fmt_len when format ends with a replacement field
-            debug_assert(offset <= fmt_len, "offset > format.byte_length()")
+            assert offset <= fmt_len, "offset > format.byte_length()"
             writer.write(_build_slice(ptr, offset, e.first_curly))
-            e._format_entry[len_pos_args](writer, args, auto_arg_index)
+            e._format_entry[*Ts](writer, *args, auto_idx=auto_arg_index)
             offset = e.last_curly + 1
 
         writer.write(_build_slice(ptr, offset, fmt_len))
 
     @staticmethod
-    fn format(
-        format: StringSlice, args: VariadicPack[element_trait=Writable, ...]
-    ) raises -> String:
-        """Format the arguments using the given format string."""
+    def format[*Ts: Writable](format: StringSlice, *args: *Ts) raises -> String:
+        """Format the arguments using the given format string.
+
+        Parameters:
+            Ts: The types of the format substitution values; each must be
+                `Writable`.
+
+        Args:
+            format: The format string.
+            args: Values substituted into the format string.
+        """
         var buffer = String()
-        Self.format_to_runtime(buffer, format, args)
+        Self.format_to_runtime(buffer, format, *args)
         return buffer^
 
     @staticmethod
-    fn format_to_runtime(
-        mut writer: Some[Writer],
-        format: StringSlice,
-        args: VariadicPack[_, Writable, ...],
-    ) raises:
+    def format_to_runtime[
+        *Ts: Writable,
+    ](mut writer: Some[Writer], format: StringSlice, *args: *Ts,) raises:
         """Format arguments into a writer using a runtime format string.
 
         This function parses and compiles the format string at runtime, then
@@ -210,6 +210,10 @@ struct _FormatUtils:
         parses the format string at compile time and can catch format errors
         during compilation.
 
+        Parameters:
+            Ts: The types of the format substitution values; each must be
+                `Writable`.
+
         Args:
             writer: The writer to write the formatted output to.
             format: The format string to parse.
@@ -219,20 +223,20 @@ struct _FormatUtils:
             An error if the format string is invalid or if replacement fields
             don't match the provided arguments.
         """
-        comptime Ts = type_of(args).element_types
         var compiled = Self.compile_entries_runtime[*Ts](format)
         Self.format_precompiled(
-            writer=writer,
-            compiled=_PrecompiledEntries[*Ts](
+            writer,
+            _PrecompiledEntries[*Ts](
                 Span(compiled.entries), compiled.size_hint, compiled.format
             ),
-            args=args,
+            *args,
         )
 
     @staticmethod
-    fn format_to_comptime[
-        format: StaticString
-    ](mut writer: Some[Writer], args: VariadicPack[_, Writable, ...]):
+    def format_to_comptime[
+        format: StaticString,
+        *Ts: Writable,
+    ](mut writer: Some[Writer], *args: *Ts):
         """Format arguments into a writer using a compile-time format string.
 
         This function parses and compiles the format string at compile time,
@@ -248,19 +252,18 @@ struct _FormatUtils:
         Parameters:
             format: The format string to parse at compile time. Must be a
                 string literal or StaticString.
+            Ts: The types of the format substitution values; each must be
+                `Writable`.
 
         Args:
             writer: The writer to write the formatted output to.
             args: The arguments to format into the replacement fields.
         """
-        comptime Ts = type_of(args).element_types
-
         comptime result = _FormatUtils.compile_entries_runtime_no_raises[*Ts](
             format
         )
 
-        @parameter
-        if result.isa[Error]():
+        comptime if result.isa[Error]():
             comptime assert not result.isa[Error](), String(result[Error])
         else:
             comptime entries = result[type_of(result).Ts[0]]
@@ -271,17 +274,17 @@ struct _FormatUtils:
                     entries.size_hint,
                     get_static_string[format](),
                 ),
-                args,
+                *args,
             )
 
     @staticmethod
-    fn compile_entries_runtime_no_raises[
+    def compile_entries_runtime_no_raises[
         *Ts: Writable
     ](
         format: StringSlice,
     ) -> Variant[
         _PrecompiledEntriesRuntime[
-            format_origin = ImmutOrigin(format.origin), *Ts
+            format_origin=ImmutOrigin(format.origin), *Ts
         ],
         Error,
     ]:
@@ -297,12 +300,12 @@ struct _FormatUtils:
             return e^
 
     @staticmethod
-    fn compile_entries_runtime[
+    def compile_entries_runtime[
         *Ts: Writable
     ](
         format: StringSlice,
     ) raises -> _PrecompiledEntriesRuntime[
-        format_origin = ImmutOrigin(format.origin), *Ts
+        format_origin=ImmutOrigin(format.origin), *Ts
     ]:
         """Parses and compiles a format string at runtime.
 
@@ -333,7 +336,7 @@ struct _FormatUtils:
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
-        comptime n_args = Variadic.size(Ts)
+        comptime n_args = Ts.size
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -451,7 +454,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
     """Store the substitution field. See `Self._FieldVariantType` docstrings for
     more details."""
 
-    fn __init__(
+    def __init__(
         out self,
         first_curly: Int,
         last_curly: Int,
@@ -474,7 +477,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         self.conversion_flag = conversion_flag
 
     @always_inline
-    fn is_escaped_brace(ref self) -> Bool:
+    def is_escaped_brace(ref self) -> Bool:
         """Whether the field is escaped_brace.
 
         Returns:
@@ -483,7 +486,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return self.field.isa[Bool]()
 
     @always_inline
-    fn is_kwargs_field(ref self) -> Bool:
+    def is_kwargs_field(ref self) -> Bool:
         """Whether the field is kwargs_field.
 
         Returns:
@@ -492,7 +495,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return self.field.isa[String]()
 
     @always_inline
-    fn is_automatic_indexing(ref self) -> Bool:
+    def is_automatic_indexing(ref self) -> Bool:
         """Whether the field is automatic_indexing.
 
         Returns:
@@ -501,7 +504,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         return self.field.isa[NoneType]()
 
     @always_inline
-    fn is_manual_indexing(ref self) -> Bool:
+    def is_manual_indexing(ref self) -> Bool:
         """Whether the field is manual_indexing.
 
         Returns:
@@ -509,7 +512,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         """
         return self.field.isa[Int]()
 
-    fn _handle_field_and_break(
+    def _handle_field_and_break(
         mut self,
         fmt_src: StringSlice[Self.origin],
         len_pos_args: Int,
@@ -523,8 +526,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         mut total_estimated_entry_byte_width: Int,
     ) raises -> Bool:
         @always_inline("nodebug")
-        fn _build_slice(
-            p: UnsafePointer[mut=False, UInt8], start: Int, end: Int
+        def _build_slice(
+            p: UnsafePointer[mut=False, UInt8, _], start: Int, end: Int
         ) -> StringSlice[p.origin]:
             return StringSlice(ptr=p + start, length=end - start)
 
@@ -575,7 +578,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
             except e:
 
                 @parameter
-                fn check_string() -> Bool:
+                def check_string() -> Bool:
                     return "not convertible to integer" in String(e)
 
                 debug_assert[check_string]("Not the expected error from atol")
@@ -588,9 +591,9 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
                 return True
         return False
 
-    fn _format_entry[
-        len_pos_args: Int
-    ](self, mut writer: Some[Writer], args: _FormatArgs, mut auto_idx: Int):
+    def _format_entry[
+        *Ts: Writable,
+    ](self, mut writer: Some[Writer], *args: *Ts, mut auto_idx: Int):
         # TODO(#3403 and/or #3252): this function should be able to use
         # Writer syntax when the type implements it, since it will give great
         # performance benefits. This also needs to be able to check if the given
@@ -600,9 +603,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        fn _format(idx: Int) unified {read self, read args, mut writer}:
-            @parameter
-            for i in range(len_pos_args):
+        def _format(idx: Int) unified {read self, read args, mut writer}:
+            comptime for i in range(Ts.size):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

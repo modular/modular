@@ -11,23 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.host.func_attribute import Attribute
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.host.func_attribute import Attribute
+from std.testing import assert_equal
 
 
-def test_function_attributes():
-    fn kernel(x: UnsafePointer[Int]):
-        x[0] = Int(thread_idx.x)
+def test_function_attributes() raises:
+    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
+        x[0] = thread_idx.x
 
     with DeviceContext() as ctx:
         var func = ctx.compile_function_experimental[kernel]()
         assert_equal(func.get_attribute(Attribute.LOCAL_SIZE_BYTES), 0)
 
 
-def main():
+def main() raises:
     test_function_attributes()

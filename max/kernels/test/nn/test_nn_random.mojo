@@ -11,14 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import seed
+from std.random import seed
 
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.randn import random_normal
 
 
-fn test_random_normal():
+def test_random_normal():
     seed(0)
 
     comptime out_shape = row_major[2, 2]()
@@ -30,5 +29,5 @@ fn test_random_normal():
     print("== test_random_normal")
 
 
-fn main():
+def main():
     test_random_normal()

@@ -25,10 +25,10 @@ directly to hardware instructions and require understanding of the
 underlying GPU architecture.
 """
 
-from collections.string.string_slice import get_static_string
-from os.atomic import Consistency
-from ffi import external_call
-from sys import (
+from std.collections.string.string_slice import get_static_string
+from std.atomic import Ordering
+from std.ffi import external_call
+from std.sys import (
     is_amd_gpu,
     is_gpu,
     is_nvidia_gpu,
@@ -36,22 +36,25 @@ from sys import (
     size_of,
     _RegisterPackType,
 )
-from sys._assembly import inlined_assembly
-from sys.info import (
+from std.sys._assembly import inlined_assembly
+from std.sys.info import (
     CompilationTarget,
     _is_sm_9x_or_newer,
     align_of,
     bit_width_of,
-    _cdna_3_or_newer,
+    _is_amd_cdna,
     _cdna_4_or_newer,
     _is_amd_rdna1,
     _is_amd_rdna2,
     _is_amd_rdna3,
     _is_amd_rdna4,
 )
-from sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.sys.intrinsics import llvm_intrinsic, readfirstlane
+from std.gpu import lane_id
+from std.math.uutils import ufloordiv, umod
 
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
+from std.memory._poison import _check_not_poison
 
 from .memory.memory import CacheOperation, _int_to_str
 
@@ -61,13 +64,15 @@ from .memory.memory import CacheOperation, _int_to_str
 
 
 @always_inline
-fn ldg[
+def ldg[
     dtype: DType,
     //,
     width: Int = 1,
     *,
     alignment: Int = align_of[SIMD[dtype, width]](),
-](x: UnsafePointer[mut=False, Scalar[dtype]]) -> SIMD[dtype, width]:
+](x: UnsafePointer[mut=False, Scalar[dtype], _]) -> SIMD[
+    dtype, width
+] where dtype.is_numeric():
     """Load data from global memory through the non-coherent cache.
 
     This function provides a hardware-accelerated global memory load operation
@@ -91,7 +96,6 @@ fn ldg[
         - Particularly beneficial for read-only texture-like access patterns.
         - May improve performance on memory-bound kernels.
     """
-    comptime assert dtype.is_numeric(), "the dtype must be numeric"
     return x.load[width=width, alignment=alignment, invariant=True]()
 
 
@@ -100,7 +104,7 @@ fn ldg[
 # ===-----------------------------------------------------------------------===#
 
 
-fn warpgroup_reg_alloc[count: Int]():
+def warpgroup_reg_alloc[count: Int]():
     """Allocates additional registers for the executing warp group.
 
     Hints to the system to increase per-thread registers owned by the
@@ -128,8 +132,7 @@ fn warpgroup_reg_alloc[count: Int]():
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
-    @parameter
-    if _is_sm_9x_or_newer():
+    comptime if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.inc.sync.aligned.u32 $0;",
             NoneType,
@@ -137,7 +140,7 @@ fn warpgroup_reg_alloc[count: Int]():
         ](Int32(count))
 
 
-fn warpgroup_reg_dealloc[count: Int]():
+def warpgroup_reg_dealloc[count: Int]():
     """Deallocates additional registers for the executing warp group.
 
     Hints to the system to decrease per-thread registers owned by the
@@ -163,8 +166,7 @@ fn warpgroup_reg_dealloc[count: Int]():
         24 <= count <= 256
     ), "count argument must be within 24 and 256"
 
-    @parameter
-    if _is_sm_9x_or_newer():
+    comptime if _is_sm_9x_or_newer():
         inlined_assembly[
             "setmaxnreg.dec.sync.aligned.u32 $0;",
             NoneType,
@@ -178,7 +180,7 @@ fn warpgroup_reg_dealloc[count: Int]():
 
 
 @always_inline
-fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
+def lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
     """Performs an arbitrary logical operation on 3 inputs using a lookup table.
 
     Implements a 3-input lookup table (LUT) operation. The result is
@@ -201,8 +203,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
         - Lookup table value determines output for each possible input combo.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "lop3.b32 $0, $1, $2, $3, $4;",
             Int32,
@@ -210,9 +211,8 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
             has_side_effect=False,
         ](a, b, c, lut)
     else:
-        return CompilationTarget.unsupported_target_error[
-            Int32,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="lop() is only supported when targeting NVIDIA GPUs.",
         ]()
 
@@ -223,7 +223,7 @@ fn lop[lut: Int32](a: Int32, b: Int32, c: Int32) -> Int32:
 
 
 @always_inline
-fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
+def byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     """Permutes bytes from two 32-bit integers based on a control mask.
 
     Selects and rearranges bytes from two source integers based on a control
@@ -249,16 +249,14 @@ fn byte_permute(a: UInt32, b: UInt32, c: UInt32) -> UInt32:
     return llvm_intrinsic[asm, UInt32, has_side_effect=False](a, b, c)
 
 
-fn _byte_permute_inst() -> StaticString:
-    @parameter
-    if is_nvidia_gpu():
+def _byte_permute_inst() -> StaticString:
+    comptime if is_nvidia_gpu():
         return "llvm.nvvm.prmt"
     elif is_amd_gpu():
         return "llvm.amdgcn.perm"
     else:
-        return CompilationTarget.unsupported_target_error[
-            StaticString,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
         ]()
 
 
@@ -268,7 +266,7 @@ fn _byte_permute_inst() -> StaticString:
 
 
 @always_inline
-fn mulhi(a: UInt16, b: UInt16) -> UInt32:
+def mulhi(a: UInt16, b: UInt16) -> UInt32:
     """Calculates the most significant 32 bits of the product of two 16-bit
     unsigned integers.
 
@@ -288,8 +286,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
         On others, it performs multiplication using 32-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.us", UInt32, has_side_effect=False
         ](a, b)
@@ -300,7 +297,7 @@ fn mulhi(a: UInt16, b: UInt16) -> UInt32:
 
 
 @always_inline
-fn mulhi(a: Int16, b: Int16) -> Int32:
+def mulhi(a: Int16, b: Int16) -> Int32:
     """Calculates the most significant 32 bits of the product of two 16-bit
     signed integers.
 
@@ -319,8 +316,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
         On others, it performs multiplication using 32-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.s", Int32, has_side_effect=False
         ](a, b)
@@ -331,7 +327,7 @@ fn mulhi(a: Int16, b: Int16) -> Int32:
 
 
 @always_inline
-fn mulhi(a: UInt32, b: UInt32) -> UInt32:
+def mulhi(a: UInt32, b: UInt32) -> UInt32:
     """Calculates the most significant 32 bits of the product of two 32-bit
     unsigned integers.
 
@@ -350,8 +346,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
         On others, it performs multiplication using 64-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.ui", UInt32, has_side_effect=False
         ](a, b)
@@ -362,7 +357,7 @@ fn mulhi(a: UInt32, b: UInt32) -> UInt32:
 
 
 @always_inline
-fn mulhi(a: Int32, b: Int32) -> Int32:
+def mulhi(a: Int32, b: Int32) -> Int32:
     """Calculates the most significant 32 bits of the product of two 32-bit
     signed integers.
 
@@ -381,8 +376,7 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
         On others, it performs multiplication using 64-bit arithmetic.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic[
             "llvm.nvvm.mulhi.i", Int32, has_side_effect=False
         ](a, b)
@@ -392,13 +386,73 @@ fn mulhi(a: Int32, b: Int32) -> Int32:
     return ((ai64 * bi64) >> 32).cast[DType.int32]()
 
 
+@always_inline
+def mulhi(a: UInt64, b: UInt64) -> UInt64:
+    """Calculates the most significant 64 bits of the product of two 64-bit
+    unsigned integers.
+
+    Multiplies two 64-bit unsigned integers and returns the high 64 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
+
+    Args:
+        a: First 64-bit unsigned integer operand.
+        b: Second 64-bit unsigned integer operand.
+
+    Returns:
+        The high 64 bits of the product a * b.
+
+    Note:
+        On NVIDIA GPUs, this maps directly to the MULHI.U64 PTX instruction.
+        On others, it performs multiplication using 128-bit arithmetic.
+    """
+
+    comptime if is_nvidia_gpu():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.ull", UInt64, has_side_effect=False
+        ](a, b)
+
+    var au128 = a.cast[DType.uint128]()
+    var bu128 = b.cast[DType.uint128]()
+    return ((au128 * bu128) >> 64).cast[DType.uint64]()
+
+
+@always_inline
+def mulhi(a: Int64, b: Int64) -> Int64:
+    """Calculates the most significant 64 bits of the product of two 64-bit
+    signed integers.
+
+    Multiplies two 64-bit signed integers and returns the high 64 bits
+    of their product. Useful for fixed-point arithmetic and overflow detection.
+
+    Args:
+        a: First 64-bit signed integer operand.
+        b: Second 64-bit signed integer operand.
+
+    Returns:
+        The high 64 bits of the product a * b.
+
+    Note:
+        On NVIDIA GPUs, this maps directly to the MULHI.S64 PTX instruction.
+        On others, it performs multiplication using 128-bit arithmetic.
+    """
+
+    comptime if is_nvidia_gpu():
+        return llvm_intrinsic[
+            "llvm.nvvm.mulhi.ll", Int64, has_side_effect=False
+        ](a, b)
+
+    var ai128 = a.cast[DType.int128]()
+    var bi128 = b.cast[DType.int128]()
+    return ((ai128 * bi128) >> 64).cast[DType.int64]()
+
+
 # ===-----------------------------------------------------------------------===#
 # mulwide
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-fn mulwide(a: UInt32, b: UInt32) -> UInt64:
+def mulwide(a: UInt32, b: UInt32) -> UInt64:
     """Performs a wide multiplication of two 32-bit unsigned integers.
 
     Multiplies two 32-bit unsigned integers and returns the full 64-bit result.
@@ -416,8 +470,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
         On others, it performs multiplication using 64-bit casts.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.u32 $0, $1, $2;",
             UInt64,
@@ -431,7 +484,7 @@ fn mulwide(a: UInt32, b: UInt32) -> UInt64:
 
 
 @always_inline
-fn mulwide(a: Int32, b: Int32) -> Int64:
+def mulwide(a: Int32, b: Int32) -> Int64:
     """Performs a wide multiplication of two 32-bit signed integers.
 
     Multiplies two 32-bit signed integers and returns the full 64-bit result.
@@ -449,8 +502,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
         On others, it performs multiplication using 64-bit casts.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return inlined_assembly[
             "mul.wide.s32 $0, $1, $2;",
             Int64,
@@ -464,7 +516,7 @@ fn mulwide(a: Int32, b: Int32) -> Int64:
 
 
 @always_inline
-fn get_ib_sts() -> Int32:
+def get_ib_sts() -> Int32:
     """Returns the IB status of the current thread.
 
     Returns:
@@ -521,7 +573,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
     comptime SYSTEM = Self(6)
     """System-wide scope. Memory operations ordered across the entire system."""
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `Scope` instances are equal.
 
         Uses pointer comparison for efficiency.
@@ -535,7 +587,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
         return self._value == other._value
 
     @no_inline
-    fn write_to(self, mut w: Some[Writer]):
+    def write_to(self, mut w: Some[Writer]):
         """Writes the string representation of the scope to a writer.
 
         Args:
@@ -558,26 +610,16 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
         return w.write("<<unknown scope>>")
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns the string representation of the memory scope.
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Writes the string representation of the scope to a writer.
 
-        Returns:
-            A string representation of the memory scope.
+        Args:
+            writer: The writer to write to.
         """
-        return String.write(self)
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns the string representation of the memory scope.
-
-        Returns:
-            A string representation of the memory scope.
-        """
-        return String("Scope(", self, ")")
+        t"Scope({self})".write_to(writer)
 
     @always_inline("nodebug")
-    fn mnemonic(self) -> StaticString:
+    def mnemonic(self) -> StaticString:
         """Returns the mnemonic string representation of the memory scope.
 
         Converts the memory scope level into a string mnemonic used by LLVM/NVVM
@@ -600,7 +642,7 @@ struct Scope(Equatable, ImplicitlyCopyable, Writable):
 
 
 @always_inline
-fn threadfence[scope: Scope = Scope.GPU]():
+def threadfence[scope: Scope = Scope.GPU]():
     """Enforces ordering of memory operations across threads.
 
     Acts as a memory fence/barrier that ensures all memory operations (both
@@ -637,25 +679,14 @@ fn threadfence[scope: Scope = Scope.GPU]():
 # ===-----------------------------------------------------------------------===#
 
 
-fn _get_type_suffix[dtype: DType]() -> StaticString:
+def _get_type_suffix[dtype: DType]() -> StaticString:
     comptime str = get_static_string[
         "u", _int_to_str[bit_width_of[dtype]()]()
     ]()
     return str
 
 
-fn _get_air_atomic_suffix[dtype: DType]() -> StaticString:
-    @parameter
-    if dtype == DType.float32:
-        return "f32"
-    elif dtype in (DType.int32, DType.uint32):
-        return "i32"
-    else:
-        constrained[False, "unsupported dtype for air atomic intrinsics"]()
-        return ""
-
-
-fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
+def _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_register_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
@@ -680,7 +711,7 @@ fn _get_nvtx_register_constraint[dtype: DType]() -> StaticString:
     return "<<unknown_register_constraint>>"
 
 
-fn _get_nvtx_pointer_constraint() -> StaticString:
+def _get_nvtx_pointer_constraint() -> StaticString:
     comptime assert is_nvidia_gpu(), (
         "the _get_nvtx_pointer_constraint function is currently restricted"
         " to only be defined on NVIDIA GPUs"
@@ -688,304 +719,8 @@ fn _get_nvtx_pointer_constraint() -> StaticString:
     return _get_nvtx_register_constraint[DType.int]()
 
 
-struct _AirMemFlags:
-    """AIR memory domain flags used by Apple/Metal intrinsics.
-    These values select **which address space's visibility** a fence operates on.
-    """
-
-    comptime Device = Int32(1)
-    comptime ThreadGroup = Int32(2)
-
-
-struct _AirScope:
-    """AIR synchronization scope for ordering and visibility.
-    The scope determines **which set of threads** participates in the ordering
-    established by a fence or an atomic op with scope.
-    """
-
-    comptime Workgroup = Int32(1)
-    comptime Device = Int32(2)
-    comptime SIMDGroup = Int32(4)
-
-
-struct _AirMemOrder:
-    """AIR memory ordering semantics for atomic operations and fences."""
-
-    comptime Relaxed = Int32(0)
-    comptime SeqCst = Int32(5)
-
-
 @always_inline
-fn store_release[
-    dtype: DType,
-    //,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs an atomic store with release memory ordering semantics.
-
-    This function provides a memory barrier that ensures all previous memory operations
-    from the calling thread are visible to other threads before this store is performed.
-
-    Parameters:
-        dtype: The data type to store.
-        scope: Memory scope for the operation (default: Scope.SYSTEM).
-        memory: Whether to include memory side effects in constraints (default: True).
-        alignment: The alignment of the data.
-
-    Args:
-        ptr: Pointer to the memory location to store to.
-        value: Value to store.
-
-    Note:
-        - Only supported on GPUs.
-        - Maps directly to PTX st.release instruction on NVIDIA, LLVM atomic
-          store on AMDGPU.
-        - Ensures all previous memory operations complete before this store.
-        - Critical for implementing synchronization primitives.
-    """
-    comptime assert is_gpu(), "atomic store only supported on GPU"
-
-    @parameter
-    if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        inlined_assembly[
-            "st.release."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " [$1], $0;",
-            NoneType,
-            constraints=constraints,
-        ](value, ptr)
-    elif is_amd_gpu():
-        __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.RELEASE.__mlir_attr(),
-        ](value, ptr.address)
-    elif is_apple_gpu():
-        comptime mem_flags = _AirMemFlags.ThreadGroup if ptr.address_space == AddressSpace.SHARED else _AirMemFlags.Device
-        comptime air_scope = _AirScope.Workgroup if scope == Scope.BLOCK else _AirScope.Device
-        external_call["air.atomic.fence", NoneType](
-            mem_flags,
-            _AirMemOrder.SeqCst,
-            air_scope,
-        )
-        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
-        comptime store_intrin_base = "air.atomic.local.store" if addr_space == AddressSpace.SHARED else "air.atomic.global.store"
-        comptime store_intrin = store_intrin_base + "." + _get_air_atomic_suffix[
-            dtype
-        ]()
-        external_call[store_intrin, NoneType](
-            ptr.address_space_cast[addr_space](),
-            value,
-            _AirMemOrder.Relaxed,
-            air_scope,
-            True,
-        )
-    else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
-        ]()
-
-
-@always_inline
-fn store_relaxed[
-    dtype: DType,
-    //,
-    *,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
-    """Performs an atomic store with relaxed memory ordering semantics.
-
-    On NVIDIA, maps to PTX st.relaxed; on AMD, maps to POP atomic store with MONOTONIC ordering.
-
-    Parameters:
-        dtype: Data type of the value to store.
-        scope: Memory scope for the atomic operation.
-        memory: Whether to add memory clobber constraint.
-        alignment: Alignment requirement for the pointer.
-
-    Args:
-        ptr: Pointer to the memory location.
-        value: Value to store.
-    """
-    comptime assert is_gpu(), "atomic store only supported on GPU"
-
-    @parameter
-    if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        inlined_assembly[
-            "st.relaxed."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " [$1], $0;",
-            NoneType,
-            constraints=constraints,
-        ](value, ptr)
-    elif is_amd_gpu():
-        __mlir_op.`pop.store`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.MONOTONIC.__mlir_attr(),
-        ](value, ptr.address)
-    else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
-        ]()
-
-
-@always_inline
-fn load_acquire[
-    dtype: DType,
-    //,
-    *,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs an atomic load operation with acquire memory ordering semantics.
-
-    This function provides a memory barrier that ensures no subsequent memory operations
-    from the calling thread are executed until after this load completes.
-
-    Parameters:
-        dtype: The data type to load.
-        scope: Memory scope for the operation (default: Scope.SYSTEM).
-        memory: Whether to include memory side effects in constraints (default: True).
-        alignment: The alignment of the pointer.
-
-    Args:
-        ptr: Pointer to the memory location to load from.
-
-    Returns:
-        The loaded value.
-
-    Note:
-        - Only supported on GPUs.
-        - Maps directly to PTX ld.acquire instruction on NVIDIA, LLVM atomic
-          load on AMDGPU.
-        - Ensures subsequent memory operations don't execute until after load.
-        - Critical for implementing synchronization primitives.
-    """
-    comptime assert is_gpu(), "atomic load only supported on GPU"
-
-    @parameter
-    if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = "=" + _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        return inlined_assembly[
-            "ld.acquire."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " $0, [$1];",
-            Scalar[dtype],
-            constraints=constraints,
-        ](ptr.address_space_cast[AddressSpace.GENERIC]())
-    elif is_amd_gpu():
-        return __mlir_op.`pop.load`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.ACQUIRE.__mlir_attr(),
-        ](ptr.address)
-    elif is_apple_gpu():
-        comptime addr_space = AddressSpace.GLOBAL if ptr.address_space == AddressSpace.GENERIC else ptr.address_space
-        comptime mem_flags = _AirMemFlags.ThreadGroup if addr_space == AddressSpace.SHARED else _AirMemFlags.Device
-        comptime air_scope = _AirScope.Workgroup if scope == Scope.BLOCK else _AirScope.Device
-        comptime load_intrin_base = "air.atomic.local.load" if addr_space == AddressSpace.SHARED else "air.atomic.global.load"
-        comptime load_intrin = load_intrin_base + "." + _get_air_atomic_suffix[
-            dtype
-        ]()
-        var value = external_call[load_intrin, Scalar[dtype]](
-            ptr.address_space_cast[addr_space](),
-            _AirMemOrder.Relaxed,
-            air_scope,
-            True,
-        )
-        external_call["air.atomic.fence", NoneType](
-            mem_flags,
-            _AirMemOrder.SeqCst,
-            air_scope,
-        )
-        return value
-    else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype],
-            operation = __get_current_function_name(),
-        ]()
-
-
-@always_inline
-fn load_relaxed[
-    dtype: DType,
-    //,
-    *,
-    scope: Scope = Scope.SYSTEM,
-    memory: Bool = True,
-    alignment: Int = align_of[Scalar[dtype]](),
-](ptr: UnsafePointer[mut=True, Scalar[dtype], ...]) -> Scalar[dtype]:
-    """Performs an atomic load with relaxed memory ordering semantics.
-
-    On NVIDIA, maps to PTX ld.relaxed; on AMD, maps to POP atomic load with MONOTONIC ordering.
-
-    Parameters:
-        dtype: Data type of the value to load.
-        scope: Memory scope for the atomic operation.
-        memory: Whether to add memory clobber constraint.
-        alignment: Alignment requirement for the pointer.
-
-    Args:
-        ptr: Pointer to the memory location.
-
-    Returns:
-        The loaded value.
-    """
-    comptime assert is_gpu(), "atomic load only supported on GPU"
-
-    @parameter
-    if is_nvidia_gpu():
-        comptime mem_constraint = StaticString(",~{memory}") if memory else ""
-        comptime constraints = "=" + _get_nvtx_register_constraint[
-            dtype
-        ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-        comptime scope_str = scope.mnemonic()
-        return inlined_assembly[
-            "ld.relaxed."
-            + ((scope_str + ".") if scope_str else "")
-            + "global."
-            + _get_type_suffix[dtype]()
-            + " $0, [$1];",
-            Scalar[dtype],
-            constraints=constraints,
-        ](ptr.address_space_cast[AddressSpace.GENERIC]())
-    elif is_amd_gpu():
-        return __mlir_op.`pop.load`[
-            alignment = alignment._mlir_value,
-            ordering = Consistency.MONOTONIC.__mlir_attr(),
-        ](ptr.address)
-    else:
-        return CompilationTarget.unsupported_target_error[
-            Scalar[dtype],
-            operation = __get_current_function_name(),
-        ]()
-
-
-@always_inline
-fn store_volatile[
+def store_volatile[
     dtype: DType, //, memory: Bool = True
 ](ptr: UnsafePointer[mut=True, Scalar[dtype], ...], value: Scalar[dtype]):
     """Performs a volatile store operation that cannot be optimized away.
@@ -1023,7 +758,7 @@ fn store_volatile[
 
 
 @always_inline
-fn load_volatile[
+def load_volatile[
     dtype: DType, //, memory: Bool = True
 ](ptr: UnsafePointer[mut=False, Scalar[dtype], ...]) -> Scalar[dtype]:
     """Performs a volatile load operation that cannot be optimized away.
@@ -1055,14 +790,17 @@ fn load_volatile[
     comptime constraints = "=" + _get_nvtx_register_constraint[
         dtype
     ]() + "," + _get_nvtx_pointer_constraint() + mem_constraint
-    return inlined_assembly[
+    var result = inlined_assembly[
         "ld.volatile.global." + _get_type_suffix[dtype]() + " $0, [$1];",
         Scalar[dtype],
         constraints=constraints,
     ](ptr.address_space_cast[AddressSpace.GENERIC]())
+    comptime if dtype.is_floating_point():
+        _check_not_poison[dtype, 1](result)
+    return result
 
 
-struct AMDBufferResource(TrivialRegisterType):
+struct AMDBufferResource(TrivialRegisterPassable):
     """128-bit descriptor for a buffer resource on AMD GPUs.
 
     Used for buffer_load/buffer_store instructions.
@@ -1072,7 +810,7 @@ struct AMDBufferResource(TrivialRegisterType):
     """The 128-bit buffer descriptor encoded as four 32-bit values."""
 
     @always_inline("nodebug")
-    fn __init__[
+    def __init__[
         dtype: DType
     ](
         out self,
@@ -1103,23 +841,22 @@ struct AMDBufferResource(TrivialRegisterType):
 
         # Architecture-specific word 3 value for buffer resource.
         # https://github.com/ROCm/composable_kernel/blob/3b2302081eab4975370e29752343058392578bcb/include/ck/ck.hpp#L84
-        @parameter
-        if _is_amd_rdna3() or _is_amd_rdna4():
+        comptime if _is_amd_rdna3() or _is_amd_rdna4():
             # GFX11/GFX12 (RDNA3/RDNA4)
             self.desc[3] = 0x31004000
         elif _is_amd_rdna1() or _is_amd_rdna2():
             # GFX10.x (RDNA1/RDNA2)
             self.desc[3] = 0x31014000
         else:
-            comptime assert _cdna_3_or_newer(), (
-                "The AMDBufferResource struct is only defined for CDNA 3+"
+            comptime assert _is_amd_cdna(), (
+                "The AMDBufferResource struct is only defined for CDNA"
                 " and RDNA 1-4 GPUs."
             )
             # GFX9 (CDNA/GCN)
             self.desc[3] = 0x00020000
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs a zeroed AMD buffer resource descriptor."""
         comptime assert (
             is_amd_gpu()
@@ -1127,7 +864,7 @@ struct AMDBufferResource(TrivialRegisterType):
         self.desc = 0
 
     @always_inline("nodebug")
-    fn get_base_ptr(self) -> Int:
+    def get_base_ptr(self) -> Int:
         """Gets the base pointer address from the buffer resource descriptor.
 
         Returns:
@@ -1140,7 +877,7 @@ struct AMDBufferResource(TrivialRegisterType):
         )
 
     @always_inline("nodebug")
-    fn load[
+    def load[
         dtype: DType,
         width: Int,
         *,
@@ -1189,7 +926,7 @@ struct AMDBufferResource(TrivialRegisterType):
         return bitcast[dtype, width](load_val)
 
     @always_inline("nodebug")
-    fn load_to_lds[
+    def load_to_lds[
         dtype: DType,
         *,
         width: Int = 1,
@@ -1198,7 +935,7 @@ struct AMDBufferResource(TrivialRegisterType):
         self,
         vector_offset: Int32,
         shared_ptr: UnsafePointer[
-            mut=True, Scalar[dtype], address_space = AddressSpace.SHARED
+            mut=True, Scalar[dtype], _, address_space=AddressSpace.SHARED
         ],
         *,
         scalar_offset: Int32 = 0,
@@ -1241,9 +978,9 @@ struct AMDBufferResource(TrivialRegisterType):
         )
 
     @always_inline("nodebug")
-    fn store[
+    def store[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
     ](
@@ -1302,7 +1039,7 @@ struct AMDBufferResource(TrivialRegisterType):
 
 
 @parameter
-fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
+def _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     """Converts CacheOperation to AMD auxiliary parameter at compile time.
 
     Parameters:
@@ -1313,8 +1050,7 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
         Format: bit 0 = SC0, bit 1 = NT, bit 4 = SC1
     """
 
-    @parameter
-    if cache_policy == CacheOperation.ALWAYS:
+    comptime if cache_policy == CacheOperation.ALWAYS:
         return 0x00  # SC=00, NT=0
     elif cache_policy == CacheOperation.STREAMING:
         return 0x02  # SC=00, NT=1
@@ -1336,9 +1072,8 @@ fn _cache_operation_to_amd_aux[cache_policy: CacheOperation]() -> Int32:
     # CacheOperation.VOLATILE_STREAMING -> 0x13 (SC=11, NT=1) - Volatile + streaming
 
 
-fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
-    @parameter
-    if bytes == 1:
+def _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
+    comptime if bytes == 1:
         return DType.uint8
     elif bytes == 2:
         return DType.uint16
@@ -1348,7 +1083,7 @@ fn _get_buffer_intrinsic_simd_dtype[bytes: Int]() -> DType:
 
 
 @parameter
-fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
+def _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
     return bytes // size_of[DType.uint32]() if bytes >= 4 else 1
 
 
@@ -1358,12 +1093,12 @@ fn _get_buffer_intrinsic_simd_width[bytes: Int]() -> Int:
 
 
 @always_inline
-fn ds_read_tr16_b64[
+def ds_read_tr16_b64[
     dtype: DType,
     //,
 ](
     shared_ptr: UnsafePointer[
-        mut=False, Scalar[dtype], address_space = AddressSpace.SHARED
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
     ]
 ) -> SIMD[dtype, 4]:
     """Reads a 64-bit LDS transpose block using TR16 layout and returns SIMD[dtype, 4] of 16-bit types.
@@ -1400,13 +1135,63 @@ fn ds_read_tr16_b64[
     ](shared_ptr)
 
 
+@always_inline
+def ds_read_tr8_b64[
+    dtype: DType,
+    //,
+](
+    shared_ptr: UnsafePointer[
+        mut=False, Scalar[dtype], _, address_space=AddressSpace.SHARED
+    ]
+) -> SIMD[dtype, 8]:
+    """Reads a 64-bit LDS transpose block using TR8 layout and returns SIMD[dtype, 8] of 8-bit types.
+
+    Each 16-lane row reads 16x8 bytes from LDS and performs two interleaved
+    8x8 byte transposes, producing 8 transposed bytes per lane.
+
+    Parameters:
+        dtype: Data type of the elements (must be 8-bit type).
+
+    Args:
+        shared_ptr: Pointer to the LDS transpose block.
+
+    Returns:
+        SIMD[dtype, 8] of 8-bit types.
+
+    Notes:
+        - Only supported on AMD GPUs (CDNA4+).
+        - Maps directly to llvm.amdgcn.ds.read.tr8.b64 intrinsic.
+        - Return type must use v2i32 intermediate to avoid LLVM type legalizer crash.
+    """
+
+    comptime assert (
+        is_amd_gpu()
+    ), "The ds_read_tr8_b64 function is only applicable on AMDGPU hardware."
+
+    comptime assert (
+        size_of[dtype]() == 1
+    ), "ds_read_tr8_b64 supports 8-bit dtypes."
+
+    comptime assert (
+        _cdna_4_or_newer()
+    ), "ds_read_tr8_b64 is only supported on CDNA4+"
+
+    # Must use v2i32 return type; v8i8 crashes LLVM type legalizer.
+    var raw = llvm_intrinsic[
+        "llvm.amdgcn.ds.read.tr8.b64",
+        SIMD[DType.uint32, 2],
+        has_side_effect=True,
+    ](shared_ptr)
+    return bitcast[dtype, 8](raw)
+
+
 # ===-----------------------------------------------------------------------===#
 # AMD permlane shuffle
 # ===-----------------------------------------------------------------------===#
 
 
 @always_inline
-fn permlane_swap[
+def permlane_swap[
     dtype: DType, //, stride: Int
 ](val1: Scalar[dtype], val2: Scalar[dtype]) -> SIMD[dtype, 2]:
     """Swaps values between lanes using AMD permlane swap instruction.
@@ -1447,8 +1232,8 @@ fn permlane_swap[
     )
 
 
-fn permlane_shuffle[
-    dtype: DType, simd_width: Int, //, stride: Int
+def permlane_shuffle[
+    dtype: DType, simd_width: SIMDSize, //, stride: Int
 ](val: SIMD[dtype, simd_width], out res: type_of(val)):
     """Shuffles SIMD values across lanes using AMD permlane operations.
 
@@ -1463,13 +1248,10 @@ fn permlane_shuffle[
     Returns:
         Shuffled SIMD vector in the `res` output parameter.
     """
-    var lane_group = lane_id() // UInt(stride)
+    var lane_group = ufloordiv(lane_id(), stride)
 
     var out = type_of(res)()
 
-    @parameter
-    for i in range(simd_width):
-        out[i] = permlane_swap[stride](val[i], val[i])[
-            Int((lane_group + 1) % 2)
-        ]
+    comptime for i in range(simd_width):
+        out[i] = permlane_swap[stride](val[i], val[i])[umod(lane_group + 1, 2)]
     return out

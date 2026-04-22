@@ -15,17 +15,18 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
-from collections.string.string_slice import _unsafe_strlen
-from format._utils import FormatStruct
-from memory import (
+from std.collections.string.string_slice import _unsafe_strlen
+from std.format._utils import FormatStruct
+from std.memory import (
     ArcPointer,
     OwnedPointer,
     alloc,
     memcpy,
 )
-from ffi import external_call
-from sys import is_gpu
-from sys.info import size_of, align_of
+from std.ffi import external_call
+import std.format._utils as fmt
+from std.sys import is_gpu
+from std.sys.info import size_of, align_of
 
 
 # ===-----------------------------------------------------------------------===#
@@ -33,7 +34,7 @@ from sys.info import size_of, align_of
 # ===-----------------------------------------------------------------------===#
 
 
-struct StackTrace(Copyable, Movable, Stringable, Writable):
+struct StackTrace(Copyable, Movable, Writable):
     """Holds a stack trace captured at a specific location.
 
     A `StackTrace` instance always contains a valid stack trace. Use the
@@ -45,7 +46,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
     var _data: OwnedPointer[UInt8]
     """An owned pointer to a null-terminated C string containing the stack trace."""
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         unsafe_from_raw_pointer: UnsafePointer[UInt8, MutExternalOrigin],
@@ -64,30 +65,30 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             unsafe_from_raw_pointer=unsafe_from_raw_pointer
         )
 
-    fn __copyinit__(out self, existing: Self):
+    def __init__(out self, *, copy: Self):
         """Copy constructor - copies the stack trace string.
 
         Args:
-            existing: The existing StackTrace to copy from.
+            copy: The existing StackTrace to copy from.
         """
         # Copy the null-terminated string
-        var src_ptr = existing._data.unsafe_ptr()
+        var src_ptr = copy._data.unsafe_ptr()
         var str_len = Int(_unsafe_strlen(src_ptr))
         var new_ptr = alloc[UInt8](str_len + 1)
         memcpy(dest=new_ptr, src=src_ptr, count=str_len + 1)
         self._data = OwnedPointer(unsafe_from_raw_pointer=new_ptr)
 
-    fn __moveinit__(out self, deinit existing: Self):
+    def __init__(out self, *, deinit take: Self):
         """Move constructor.
 
         Args:
-            existing: The existing StackTrace to move from.
+            take: The existing StackTrace to move from.
         """
-        self._data = existing._data^
+        self._data = take._data^
 
     @staticmethod
     @no_inline
-    fn collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
+    def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
         """Collect a stack trace if enabled by environment variable.
 
         This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
@@ -104,32 +105,24 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             succeeded, or `None` if disabled or unavailable.
         """
 
-        @parameter
-        if is_gpu():
+        comptime if is_gpu():
             return None
 
         if depth < 0:
             return None
 
-        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
-        var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
-            UnsafePointer(to=buffer), depth
-        )
+        var buffer = Optional[UnsafePointer[UInt8, MutExternalOrigin]]()
+        var num_bytes = external_call[
+            "KGEN_CompilerRT_GetStackTrace", SIMDSize
+        ](UnsafePointer(to=buffer), depth)
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
             return None
 
-        return StackTrace(unsafe_from_raw_pointer=buffer)
+        # If num_bytes > 0, `buffer` will not be left null.
+        return StackTrace(unsafe_from_raw_pointer=buffer.unsafe_value())
 
-    fn __str__(self) -> String:
-        """Converts the StackTrace to string representation.
-
-        Returns:
-            A String of the stack trace.
-        """
-        return String(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
-
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes the StackTrace to the provided Writer.
 
         Args:
@@ -139,7 +132,7 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
             StringSlice(unsafe_from_utf8_ptr=self._data.unsafe_ptr())
         )
 
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(self, mut writer: Some[Writer]):
         """Writes the StackTrace to the provided Writer in repr format.
 
         Args:
@@ -155,8 +148,6 @@ struct StackTrace(Copyable, Movable, Stringable, Writable):
 
 struct Error(
     Copyable,
-    Representable,
-    Stringable,
     Writable,
 ):
     """This type represents an Error."""
@@ -182,7 +173,7 @@ struct Error(
 
     @always_inline
     @implicit
-    fn __init__(out self, var value: String, *, depth: Int = -1):
+    def __init__(out self, var value: String, *, depth: Int = -1):
         """Construct an Error object with a given String.
 
         Args:
@@ -195,7 +186,7 @@ struct Error(
 
     @always_inline
     @implicit
-    fn __init__(out self, value: StringLiteral):
+    def __init__(out self, value: StringLiteral):
         """Construct an Error object with a given string literal.
 
         Args:
@@ -206,7 +197,7 @@ struct Error(
 
     @no_inline
     @implicit
-    fn __init__(out self, value: Some[Writable]):
+    def __init__(out self, value: Some[Writable]):
         """Construct an Error object from a Writable argument.
 
         Args:
@@ -216,7 +207,7 @@ struct Error(
         self._stack_trace = StackTrace.collect_if_enabled(0)
 
     @no_inline
-    fn __init__[*Ts: Writable](out self, *args: *Ts):
+    def __init__[*Ts: Writable](out self, *args: *Ts):
         """Construct an Error by concatenating a sequence of Writable arguments.
 
         Args:
@@ -226,23 +217,14 @@ struct Error(
             Ts: The types of the arguments to format. Each type must be satisfy
                 `Writable`.
         """
-        self = Error(String(args), depth=0)
+        self = Error(String(*args), depth=0)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
 
     @no_inline
-    fn __str__(self) -> String:
-        """Converts the Error to string representation.
-
-        Returns:
-            A String of the error message.
-        """
-        return String(self._error)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this error to the provided Writer.
 
@@ -252,19 +234,20 @@ struct Error(
         self._error.write_to(writer)
 
     @no_inline
-    fn __repr__(self) -> String:
-        """Converts the Error to printable representation.
-
-        Returns:
-            A printable representation of the error message.
+    def write_repr_to(self, mut writer: Some[Writer]):
         """
-        return String("Error('", self._error, "')")
+        Formats this error to the provided Writer.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Error").fields(fmt.Repr(self._error))
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn get_stack_trace(self) -> Optional[String]:
+    def get_stack_trace(self) -> Optional[String]:
         """Returns the stack trace of the error, if available.
 
         Returns:
@@ -277,7 +260,7 @@ struct Error(
         return None
 
 
-@doc_private
-fn __mojo_debugger_raise_hook():
+@doc_hidden
+def __mojo_debugger_raise_hook():
     """This function is used internally by the Mojo Debugger."""
     pass

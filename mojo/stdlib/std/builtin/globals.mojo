@@ -17,7 +17,7 @@ compile-time constants without materializing entire data structures in memory.
 """
 
 
-fn global_constant[
+def global_constant[
     T: Copyable & ImplicitlyDestructible, //, value: T
 ]() -> ref[StaticConstantOrigin] T:
     """Creates a reference to a compile-time constant value stored in static memory.
@@ -36,7 +36,7 @@ fn global_constant[
 
     Parameters:
         T: The type of the constant value. Must have trivial copy and destroy
-            semantics (`__copyinit__is_trivial` and `__del__is_trivial` must be
+            semantics (`__copy_ctor_is_trivial` and `__del__is_trivial` must be
             `True`).
         value: The compile-time constant value.
 
@@ -45,7 +45,7 @@ fn global_constant[
 
     Examples:
     ```mojo
-    from builtin.globals import global_constant
+    from std.builtin.globals import global_constant
 
     # Create a reference to a constant array and access elements
     comptime lookup_table: InlineArray[Int, 4] = [1, 2, 3, 4]
@@ -53,7 +53,7 @@ fn global_constant[
     print(element)  # Prints: 3
 
     # Use with more complex compile-time values
-    fn compute(x: Int) -> Int:
+    def compute(x: Int) -> Int:
         return x * 2 + 1
 
     comptime data: InlineArray[Int, 3] = [1, compute(5), 100]
@@ -61,7 +61,7 @@ fn global_constant[
     print(data_ref[0], data_ref[1], data_ref[2])  # Prints: 1 11 100
     ```
     """
-    comptime assert T.__copyinit__is_trivial and T.__del__is_trivial, (
+    comptime assert T.__copy_ctor_is_trivial and T.__del__is_trivial, (
         "global_constant requires a type with trivial copy and destroy"
         " semantics. Types with heap allocations like Dict, List, or String"
         " are not supported because their internal pointers would be"

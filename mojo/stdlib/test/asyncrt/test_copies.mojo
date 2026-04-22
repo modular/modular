@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceBuffer, DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceBuffer, DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
-fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
+def _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
     print("-")
     print("_run_memcpy(", length, ")")
 
@@ -52,7 +52,7 @@ fn _run_memcpy(ctx: DeviceContext, length: Int, use_context: Bool) raises:
         )
 
 
-fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
+def _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
     print("-")
     print("_run_sub_memcpy(", length, ")")
 
@@ -82,7 +82,7 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr() + half_length)
+    first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -102,7 +102,9 @@ fn _run_sub_memcpy(ctx: DeviceContext, length: Int) raises:
         )
 
 
-fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
+def _run_fake_memcpy(
+    ctx: DeviceContext, length: Int, use_take_ptr: Bool
+) raises:
     print("-")
     print("_run_fake_memcpy(", length, ", take_ptr = ", use_take_ptr, ")")
 
@@ -142,7 +144,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         out_host.create_sub_buffer[DType.int64](0, half_length)
     )
     # Using host pointer math
-    first_out_dev.enqueue_copy_to(out_host.unsafe_ptr() + half_length)
+    first_out_dev.enqueue_copy_to(out_host.as_span()[half_length:])
 
     # Wait for the copies to be completed.
     ctx.synchronize()
@@ -162,7 +164,7 @@ fn _run_fake_memcpy(ctx: DeviceContext, length: Int, use_take_ptr: Bool) raises:
         )
 
 
-fn _run_cpu_ctx_memcpy_async(
+def _run_cpu_ctx_memcpy_async(
     ctx: DeviceContext, cpu_ctx: DeviceContext, length: Int
 ) raises:
     print("-")
@@ -183,12 +185,13 @@ fn _run_cpu_ctx_memcpy_async(
 
     host_buf.enqueue_fill(12)
     cpu_ctx.enqueue_copy(host_buf, dev_buf)
+    cpu_ctx.synchronize()
 
     for i in range(length):
         assert_equal(host_buf[i], Int64(2 * i))
 
 
-def test_copies():
+def test_copies() raises:
     var ctx = create_test_device_context()
 
     print("-------")
@@ -213,5 +216,5 @@ def test_copies():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

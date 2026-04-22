@@ -11,20 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp, exp2, log, rsqrt
-from sys.info import simd_width_of
+from std.math import exp, exp2, log
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
-    UNKNOWN_VALUE,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
-from memory import alloc
+from std.memory import alloc
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_update_cpu,
@@ -33,9 +32,9 @@ from state_space.selective_scan import (
     Strides3D,
     Strides4D,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index
 
 
 # LOG2E constant for converting exp to exp2
@@ -44,7 +43,7 @@ comptime MAX_DSTATE = 16
 
 
 @always_inline
-fn softplus_ref(val: Float32) -> Float32:
+def softplus_ref(val: Float32) -> Float32:
     """Reference softplus implementation: log(1 + exp(x))."""
     if val > 20.0:
         return val
@@ -54,7 +53,7 @@ fn softplus_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn sigmoid_ref(val: Float32) -> Float32:
+def sigmoid_ref(val: Float32) -> Float32:
     """Reference sigmoid implementation."""
     if val < -20.0:
         return 0.0
@@ -63,7 +62,7 @@ fn sigmoid_ref(val: Float32) -> Float32:
 
 
 @always_inline
-fn silu_ref(val: Float32) -> Float32:
+def silu_ref(val: Float32) -> Float32:
     """Reference SiLU implementation."""
     if val < -20.0:
         return 0.0
@@ -71,7 +70,7 @@ fn silu_ref(val: Float32) -> Float32:
     return val / (1.0 + exp_neg)
 
 
-fn run_selective_scan_fwd[
+def run_selective_scan_fwd[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -86,7 +85,7 @@ fn run_selective_scan_fwd[
     rtol: Float64 = 0.01,
 ) raises:
     """Test selective scan forward kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -218,6 +217,53 @@ fn run_selective_scan_fwd[
         var val = delta_h.ptr.load(i)
         delta_h.ptr.store(i, Scalar[dtype](abs(Float32(val)) * 0.5))
 
+    # Create TileTensor versions for kernel call
+    var output_tt = TileTensor(
+        output_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var x_tt = TileTensor(
+        x_heap,
+        row_major(Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate)),
+    )
+    var out_z_tt = TileTensor(
+        out_z_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var u_tt = TileTensor(u_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen)))
+    var delta_tt = TileTensor(
+        delta_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var A_tt = TileTensor(A_heap, row_major(Idx(dim), Idx(dstate)))
+    var B_tt = TileTensor(
+        B_heap,
+        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
+    )
+    var C_tt = TileTensor(
+        C_heap,
+        row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
+    )
+    var D_tt = TileTensor(
+        D_heap,
+        row_major(
+            Idx(D_size),
+        ),
+    )
+    var z_tt = TileTensor(
+        z_heap,
+        row_major(
+            (
+                Idx(batch if has_z else 0),
+                Idx(dim if has_z else 0),
+                Idx(seqlen if has_z else 0),
+            )
+        ),
+    )
+    var delta_bias_tt = TileTensor(
+        delta_bias_heap,
+        row_major(
+            Idx(delta_bias_size),
+        ),
+    )
+
     var output_buf = output_h
     var x_buf = x_h
     var out_z_buf = out_z_h
@@ -254,34 +300,23 @@ fn run_selective_scan_fwd[
     selective_scan_fwd_cpu[
         dtype,
         DSTATE,
-        output_buf.layout,
-        x_buf.layout,
-        out_z_buf.layout,
-        u_buf.layout,
-        delta_buf.layout,
-        A_buf.layout,
-        B_buf.layout,
-        C_buf.layout,
-        D_buf.layout,
-        z_buf.layout,
-        delta_bias_buf.layout,
     ](
         batch,
         dim,
         seqlen,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
-        output_buf,
-        x_buf,
-        out_z_buf,
-        u_buf,
-        delta_buf,
-        A_buf,
-        B_buf,
-        C_buf,
-        D_buf,
-        z_buf,
-        delta_bias_buf,
+        output_tt,
+        x_tt,
+        out_z_tt,
+        u_tt,
+        delta_tt,
+        A_tt,
+        B_tt,
+        C_tt,
+        D_tt,
+        z_tt,
+        delta_bias_tt,
         output_strides,
         x_strides,
         out_z_strides,
@@ -327,7 +362,7 @@ fn run_selective_scan_fwd[
     output_ref_heap.free()
 
 
-fn run_selective_scan_update[
+def run_selective_scan_update[
     dtype: DType,
     DSTATE: Int,
     has_D: Bool = True,
@@ -336,7 +371,7 @@ fn run_selective_scan_update[
     delta_softplus: Bool = False,
 ](batch: Int, dim: Int, n_groups: Int, rtol: Float64 = 0.01,) raises:
     """Test selective scan update kernel against reference implementation."""
-    constrained[DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"]()
+    comptime assert DSTATE <= MAX_DSTATE, "DSTATE exceeds kernel limit"
     comptime dstate = DSTATE
 
     var group_size = dim // n_groups
@@ -457,6 +492,40 @@ fn run_selective_scan_update[
     for i in range(batch * dim * dstate):
         state_out_ref_h.ptr[i] = state_in_h.ptr[i]
 
+    # Create TileTensor versions for kernel call
+    var state_in_tt = TileTensor(
+        state_in_heap, row_major(Idx(batch), Idx(dim), Idx(dstate))
+    )
+    var state_out_tt = TileTensor(
+        state_out_heap, row_major(Idx(batch), Idx(dim), Idx(dstate))
+    )
+    var output_tt2 = TileTensor(output_heap, row_major(Idx(batch), Idx(dim)))
+    var x_tt2 = TileTensor(x_heap, row_major(Idx(batch), Idx(dim)))
+    var dt_tt = TileTensor(dt_heap, row_major(Idx(batch), Idx(dim)))
+    var A_tt2 = TileTensor(A_heap, row_major(Idx(dim), Idx(dstate)))
+    var B_tt2 = TileTensor(
+        B_heap, row_major(Idx(batch), Idx(n_groups), Idx(dstate))
+    )
+    var C_tt2 = TileTensor(
+        C_heap, row_major(Idx(batch), Idx(n_groups), Idx(dstate))
+    )
+    var D_tt2 = TileTensor(
+        D_heap,
+        row_major(
+            Idx(D_size),
+        ),
+    )
+    var z_tt2 = TileTensor(
+        z_heap,
+        row_major(Idx(batch if has_z else 0), Idx(dim if has_z else 0)),
+    )
+    var dt_bias_tt = TileTensor(
+        dt_bias_heap,
+        row_major(
+            Idx(dt_bias_size),
+        ),
+    )
+
     var state_in_buf = state_in_h
     var state_out_buf = state_out_h
     var output_buf = output_h
@@ -486,33 +555,22 @@ fn run_selective_scan_update[
     selective_scan_update_cpu[
         dtype,
         DSTATE,
-        state_out_buf.layout,
-        output_buf.layout,
-        state_in_buf.layout,
-        x_buf.layout,
-        dt_buf.layout,
-        A_buf.layout,
-        B_buf.layout,
-        C_buf.layout,
-        D_buf.layout,
-        z_buf.layout,
-        dt_bias_buf.layout,
     ](
         batch,
         dim,
         group_size,
         Int8(1) if delta_softplus else Int8(0),
-        state_out_buf,
-        output_buf,
-        state_in_buf,
-        x_buf,
-        dt_buf,
-        A_buf,
-        B_buf,
-        C_buf,
-        D_buf,
-        z_buf,
-        dt_bias_buf,
+        state_out_tt,
+        output_tt2,
+        state_in_tt,
+        x_tt2,
+        dt_tt,
+        A_tt2,
+        B_tt2,
+        C_tt2,
+        D_tt2,
+        z_tt2,
+        dt_bias_tt,
         state_out_strides,
         output_strides,
         state_in_strides,
@@ -638,7 +696,7 @@ fn run_selective_scan_update[
 # =============================================================================
 
 
-fn test_selective_scan_fwd_basic() raises:
+def test_selective_scan_fwd_basic() raises:
     """Test basic selective scan forward."""
     run_selective_scan_fwd[
         DType.float32,
@@ -650,7 +708,7 @@ fn test_selective_scan_fwd_basic() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_without_D() raises:
+def test_selective_scan_fwd_without_D() raises:
     """Test selective scan forward without D tensor."""
     run_selective_scan_fwd[
         DType.float32,
@@ -662,7 +720,7 @@ fn test_selective_scan_fwd_without_D() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_without_z() raises:
+def test_selective_scan_fwd_without_z() raises:
     """Test selective scan forward without z tensor."""
     run_selective_scan_fwd[
         DType.float32,
@@ -674,7 +732,7 @@ fn test_selective_scan_fwd_without_z() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_with_delta_softplus() raises:
+def test_selective_scan_fwd_with_delta_softplus() raises:
     """Test selective scan forward with delta softplus activation."""
     run_selective_scan_fwd[
         DType.float32,
@@ -686,7 +744,7 @@ fn test_selective_scan_fwd_with_delta_softplus() raises:
     ](batch=1, dim=2, seqlen=4, n_groups=1)
 
 
-fn test_selective_scan_fwd_longer_sequence() raises:
+def test_selective_scan_fwd_longer_sequence() raises:
     """Test selective scan forward with longer sequence."""
     run_selective_scan_fwd[
         DType.float32,
@@ -703,7 +761,7 @@ fn test_selective_scan_fwd_longer_sequence() raises:
 # =============================================================================
 
 
-fn test_selective_scan_update_basic() raises:
+def test_selective_scan_update_basic() raises:
     """Test basic selective scan update."""
     run_selective_scan_update[
         DType.float32,
@@ -715,7 +773,7 @@ fn test_selective_scan_update_basic() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_without_D() raises:
+def test_selective_scan_update_without_D() raises:
     """Test selective scan update without D tensor."""
     run_selective_scan_update[
         DType.float32,
@@ -727,7 +785,7 @@ fn test_selective_scan_update_without_D() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_without_z() raises:
+def test_selective_scan_update_without_z() raises:
     """Test selective scan update without z tensor."""
     run_selective_scan_update[
         DType.float32,
@@ -739,7 +797,7 @@ fn test_selective_scan_update_without_z() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_with_delta_softplus() raises:
+def test_selective_scan_update_with_delta_softplus() raises:
     """Test selective scan update with delta softplus activation."""
     run_selective_scan_update[
         DType.float32,
@@ -751,7 +809,7 @@ fn test_selective_scan_update_with_delta_softplus() raises:
     ](batch=1, dim=2, n_groups=1)
 
 
-fn test_selective_scan_update_larger_dimensions() raises:
+def test_selective_scan_update_larger_dimensions() raises:
     """Test selective scan update with larger dimensions."""
     run_selective_scan_update[
         DType.float32,
@@ -763,5 +821,5 @@ fn test_selective_scan_update_larger_dimensions() raises:
     ](batch=2, dim=4, n_groups=1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

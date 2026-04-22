@@ -11,45 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from gpu import global_idx
-from gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import (
-    assert_equal,
-    assert_false,
-    assert_not_equal,
-    assert_raises,
-    assert_true,
-)
+from std.math import ceildiv
+from std.gpu import global_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceEvent, DeviceStream
+from std.testing import assert_equal
 
 
 # Simple kernel for testing event synchronization
-fn simple_kernel(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def simple_kernel(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     multiplier: Float32,
 ):
     """Simple kernel that multiplies input by a multiplier."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
     output[tid] = input[tid] * multiplier
 
 
 # Kernel that does more work to test timing
-fn heavy_kernel(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def heavy_kernel(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     iterations: Int,
 ):
     """Kernel that does multiple iterations of work."""
     var tid = global_idx.x
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
     var value = input[tid]
@@ -58,7 +49,7 @@ fn heavy_kernel(
     output[tid] = value
 
 
-def test_event_record_and_synchronize(ctx: DeviceContext):
+def test_event_record_and_synchronize(ctx: DeviceContext) raises:
     print("Test event recording and synchronization.")
 
     comptime length = 256
@@ -110,7 +101,7 @@ def test_event_record_and_synchronize(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def test_stream_enqueue_wait_for(ctx: DeviceContext):
+def test_stream_enqueue_wait_for(ctx: DeviceContext) raises:
     print("Test stream waiting for events from other streams.")
 
     comptime length = 512
@@ -181,7 +172,7 @@ def test_stream_enqueue_wait_for(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def test_multiple_events_synchronization(ctx: DeviceContext):
+def test_multiple_events_synchronization(ctx: DeviceContext) raises:
     print("Test complex synchronization with multiple events.")
 
     comptime length = 256
@@ -240,7 +231,7 @@ def test_multiple_events_synchronization(ctx: DeviceContext):
             assert_equal(output_host[i], expected)
 
 
-def test_event_dependency_chain(ctx: DeviceContext):
+def test_event_dependency_chain(ctx: DeviceContext) raises:
     print("Test creating a dependency chain using events.")
 
     comptime length = 128
@@ -322,7 +313,7 @@ def test_event_dependency_chain(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def test_event_across_context_streams(ctx: DeviceContext):
+def test_event_across_context_streams(ctx: DeviceContext) raises:
     print(
         "Test event synchronization between default stream and created streams."
     )
@@ -376,7 +367,7 @@ def test_event_across_context_streams(ctx: DeviceContext):
         assert_equal(output_host[i], expected)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_event_record_and_synchronize(ctx)
         test_stream_enqueue_wait_for(ctx)

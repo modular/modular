@@ -22,12 +22,12 @@ The reference implementation used was the one in C# and can be found here:
 - https://github.com/CarlVerret/csFastFloat
 """
 
-from collections import InlineArray
+from std.collections import InlineArray
 
-import bit
-import memory
+import std.bit
+import std.memory
 
-from builtin.globals import global_constant
+from std.builtin.globals import global_constant
 
 from .constants import (
     CONTAINER_SIZE,
@@ -40,20 +40,20 @@ from .parsing_integers import to_integer
 
 
 @fieldwise_init
-struct UInt128Decomposed(ImplicitlyCopyable, RegisterType):
+struct UInt128Decomposed(ImplicitlyCopyable, RegisterPassable):
     var high: UInt64
     var low: UInt64
 
-    fn __init__(out self, value: UInt128):
+    def __init__(out self, value: UInt128):
         self.high = UInt64(value >> 64)
         self.low = UInt64(value & 0xFFFFFFFFFFFFFFFF)
 
-    fn most_significant_bit(self) -> UInt64:
+    def most_significant_bit(self) -> UInt64:
         return self.high >> 63
 
 
-fn _get_w_and_q_from_float_string(
-    input_string: StringSlice[mut=False],
+def _get_w_and_q_from_float_string(
+    input_string: StringSlice[mut=False, _],
 ) raises -> Tuple[UInt64, Int64]:
     """We suppose the number is in the form '123.2481' or '123' or '123e-2' or '12.3e2'.
 
@@ -155,30 +155,30 @@ fn _get_w_and_q_from_float_string(
     return (significand_as_integer, Int64(exponent_as_integer))
 
 
-fn strip_unused_characters(x: StringSlice[mut=False]) -> type_of(x):
+def strip_unused_characters(x: StringSlice[mut=False, _]) -> type_of(x):
     return x.strip().removeprefix("+").removesuffix("f").removesuffix("F")
 
 
-fn get_sign(x: StringSlice[mut=False]) -> Tuple[Float64, type_of(x)]:
+def get_sign(x: StringSlice[mut=False, _]) -> Tuple[Float64, type_of(x)]:
     if x.startswith("-"):
-        return (-1.0, x[1:])
+        return (-1.0, x[byte=1:])
     return (1.0, x)
 
 
 # Powers of 10 and integers below 2**53 are exactly representable as Float64.
 # Thus any operation done on them must be exact.
-fn can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
+def can_use_clinger_fast_path(w: UInt64, q: Int64) -> Bool:
     return w <= UInt64(2**53) and (Int64(-22) <= q <= Int64(22))
 
 
-fn clinger_fast_path(w: UInt64, q: Int64) -> Float64:
+def clinger_fast_path(w: UInt64, q: Int64) -> Float64:
     if q >= 0:
         return Float64(w) * global_constant[POWERS_OF_10]()[q]
     else:
         return Float64(w) / global_constant[POWERS_OF_10]()[-q]
 
 
-fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
+def full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     # Note that there are assembly instructions to
     # do all that on some architectures.
     # That should speed things up.
@@ -186,12 +186,12 @@ fn full_multiplication(x: UInt64, y: UInt64) -> UInt128Decomposed:
     return UInt128Decomposed(result)
 
 
-fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
+def get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     comptime bit_precision = MANTISSA_EXPLICIT_BITS + 3
     index = 2 * (q - SMALLEST_POWER_OF_5)
     first_product = full_multiplication(w, get_power_of_5(Int(index)))
 
-    precision_mask = UInt64(0xFFFFFFFFFFFFFFFF) >> bit_precision
+    precision_mask = (UInt64(1) << bit_precision) - 1
     if (first_product.high & precision_mask) == precision_mask:
         second_product = full_multiplication(w, get_power_of_5(Int(index + 1)))
         first_product.low = first_product.low + second_product.high
@@ -201,18 +201,18 @@ fn get_128_bit_truncated_product(w: UInt64, q: Int64) -> UInt128Decomposed:
     return first_product
 
 
-fn create_subnormal_float64(m: UInt64) -> Float64:
+def create_subnormal_float64(m: UInt64) -> Float64:
     return create_float64(m, -1023)
 
 
-fn create_float64(m: UInt64, p: Int64) -> Float64:
+def create_float64(m: UInt64, p: Int64) -> Float64:
     m_mask = UInt64(2**MANTISSA_EXPLICIT_BITS - 1)
     p_shifted = UInt64(p + 1023) << MANTISSA_EXPLICIT_BITS
     representation_as_int = (m & m_mask) | p_shifted
-    return memory.bitcast[DType.float64](representation_as_int)
+    return std.memory.bitcast[DType.float64](representation_as_int)
 
 
-fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
+def lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
     # This algorithm has 22 steps described
     # in https://arxiv.org/pdf/2101.11408 (algorithm 1)
     # Step 1
@@ -224,7 +224,7 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
         return FloatLiteral.infinity
 
     # Step 3
-    l = bit.count_leading_zeros(w)
+    l = std.bit.count_leading_zeros(w)
 
     # Step 4
     w <<= l
@@ -255,18 +255,20 @@ fn lemire_algorithm(var w: UInt64, var q: Int64) -> Float64:
 
     # Step 11-15
     # Subnormal case
-    if p <= -1022:
+    if p < -1022:
         s = -1022 - p
         m = m // (2 ** UInt64(s))
         if m % 2 == 1:
             m += 1
         m >>= 1
+        if m >= UInt64(2**MANTISSA_EXPLICIT_BITS):
+            return create_float64(m, -1022)
         return create_subnormal_float64(m)
 
     # Step 16-18
     # Round ties to even
     if product.low <= 1 and (m & 3 == 1) and (Int64(-4) <= q <= Int64(23)):
-        if bit.pop_count(product.high // m) == 1:
+        if std.bit.pop_count(product.high // m) == 1:
             m -= 2
 
     # step 19
@@ -291,7 +293,7 @@ comptime _ascii_lower: Byte = Byte(ord("A") ^ ord("a"))
 
 
 @always_inline
-fn _is_nan(stripped: StringSlice) -> Bool:
+def _is_nan(stripped: StringSlice) -> Bool:
     comptime `n` = Byte(ord("n"))
     comptime `a` = Byte(ord("a"))
     var ptr = stripped.unsafe_ptr()
@@ -303,7 +305,7 @@ fn _is_nan(stripped: StringSlice) -> Bool:
 
 
 @always_inline
-fn _is_inf(stripped: StringSlice) -> Bool:
+def _is_inf(stripped: StringSlice) -> Bool:
     comptime `i` = Byte(ord("i"))
     comptime `n` = Byte(ord("n"))
     comptime `f` = Byte(ord("f"))
@@ -329,7 +331,7 @@ fn _is_inf(stripped: StringSlice) -> Bool:
     )
 
 
-fn _atof(x: StringSlice) raises -> Float64:
+def _atof(x: StringSlice) raises -> Float64:
     """Parses the given string as a floating point and returns that value.
 
     For example, `atof("2.25")` returns `2.25`.

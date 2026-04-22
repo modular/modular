@@ -11,131 +11,136 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import global_perf_counter_ns, perf_counter_ns, sleep, time_function
+from std.time import (
+    global_perf_counter_ns,
+    perf_counter_ns,
+    sleep,
+    time_function,
+)
 
-from gpu.host import get_gpu_target
-from gpu.host.compile import _compile_code
-from gpu.intrinsics import *
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.intrinsics import *
+from std.testing import *
 
 
-fn clock_functions():
+def clock_functions():
     _ = perf_counter_ns()
 
 
 @always_inline
-fn _verify_clock_functions_nvidia(asm: StringSlice) raises -> None:
-    assert_false("mov.u32" in asm)
-    assert_true("mov.u64" in asm)
+def _verify_clock_functions_nvidia(asm: StringSlice) raises -> None:
+    # NVIDIA uses globaltimer for perf_counter_ns (nanosecond resolution).
+    assert_true("globaltimer" in asm)
 
 
 @always_inline
-fn _verify_clock_functions_amd(asm: StringSlice) raises -> None:
-    # AMD uses s_memtime for perf_counter_ns cycle counter.
-    assert_true("s_memtime" in asm)
+def _verify_clock_functions_amd(asm: StringSlice) raises -> None:
+    # AMD uses s_memrealtime for perf_counter_ns (constant-speed clock).
+    assert_true("s_memrealtime" in asm)
 
 
-def test_clock_functions_sm80():
+def test_clock_functions_sm80() raises:
     var asm = _compile_code[
-        clock_functions, target = get_gpu_target["sm_80"]()
+        clock_functions, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_clock_functions_nvidia(asm)
 
 
-def test_clock_functions_sm90():
+def test_clock_functions_sm90() raises:
     var asm = _compile_code[
-        clock_functions, target = get_gpu_target["sm_90"]()
+        clock_functions, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_clock_functions_nvidia(asm)
 
 
-def test_clock_functions_gfx942():
+def test_clock_functions_gfx942() raises:
     var asm = _compile_code[
-        clock_functions, target = get_gpu_target["gfx942"]()
+        clock_functions, target=get_gpu_target["gfx942"]()
     ]().asm
     _verify_clock_functions_amd(asm)
 
 
-def test_clock_functions_gfx950():
+def test_clock_functions_gfx950() raises:
     var asm = _compile_code[
-        clock_functions, target = get_gpu_target["gfx950"]()
+        clock_functions, target=get_gpu_target["gfx950"]()
     ]().asm
     _verify_clock_functions_amd(asm)
 
 
-fn global_clock_functions():
+def global_clock_functions():
     _ = global_perf_counter_ns()
 
 
 @always_inline
-fn _verify_global_clock_functions_nvidia(asm: StringSlice) raises -> None:
+def _verify_global_clock_functions_nvidia(asm: StringSlice) raises -> None:
     # NVIDIA uses globaltimer for global_perf_counter_ns.
     assert_true("globaltimer" in asm)
 
 
 @always_inline
-fn _verify_global_clock_functions_amd(asm: StringSlice) raises -> None:
+def _verify_global_clock_functions_amd(asm: StringSlice) raises -> None:
     # AMD uses s_memrealtime for global_perf_counter_ns (constant-speed clock).
     assert_true("s_memrealtime" in asm)
 
 
-def test_global_clock_functions_sm80():
+def test_global_clock_functions_sm80() raises:
     var asm = _compile_code[
-        global_clock_functions, target = get_gpu_target["sm_80"]()
+        global_clock_functions, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_global_clock_functions_nvidia(asm)
 
 
-def test_global_clock_functions_sm90():
+def test_global_clock_functions_sm90() raises:
     var asm = _compile_code[
-        global_clock_functions, target = get_gpu_target["sm_90"]()
+        global_clock_functions, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_global_clock_functions_nvidia(asm)
 
 
-def test_global_clock_functions_gfx942():
+def test_global_clock_functions_gfx942() raises:
     var asm = _compile_code[
-        global_clock_functions, target = get_gpu_target["gfx942"]()
+        global_clock_functions, target=get_gpu_target["gfx942"]()
     ]().asm
     _verify_global_clock_functions_amd(asm)
 
 
-def test_global_clock_functions_gfx950():
+def test_global_clock_functions_gfx950() raises:
     var asm = _compile_code[
-        global_clock_functions, target = get_gpu_target["gfx950"]()
+        global_clock_functions, target=get_gpu_target["gfx950"]()
     ]().asm
     _verify_global_clock_functions_amd(asm)
 
 
-fn time_functions(some_value: Int) -> Int:
+def time_functions(some_value: Int) -> Int:
     var tmp = some_value
 
     @always_inline
-    @parameter
-    fn something():
+    def something() unified {mut tmp}:
         tmp += 1
 
-    _ = time_function[something]()
+    _ = time_function(something)
 
     return tmp
 
 
 @always_inline
-fn _verify_time_functions(asm: StringSlice) raises -> None:
-    assert_true("mov.u64" in asm)
+def _verify_time_functions(asm: StringSlice) raises -> None:
+    # time_function uses perf_counter_ns which reads globaltimer on NVIDIA.
+    assert_true("globaltimer" in asm)
     assert_true("add.s64" in asm)
 
 
-def test_time_functions_sm80():
+def test_time_functions_sm80() raises:
     var asm = _compile_code[
-        time_functions, target = get_gpu_target["sm_80"]()
+        time_functions, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_time_functions(asm)
 
 
-def test_time_functions_sm90():
+def test_time_functions_sm90() raises:
     var asm = _compile_code[
-        time_functions, target = get_gpu_target["sm_90"]()
+        time_functions, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_time_functions(asm)
 
@@ -146,14 +151,14 @@ def test_time_functions_sm90():
 # verified through the clock_functions and sleep_function tests.
 
 
-fn sleep_function():
+def sleep_function():
     # Sleep for 1 second - this should generate a loop with nanosleep
     # since NVIDIA's nanosleep has a max duration of 1ms.
     sleep(1.0)
 
 
 @always_inline
-fn _verify_sleep_function_nvidia(asm: StringSlice) raises -> None:
+def _verify_sleep_function_nvidia(asm: StringSlice) raises -> None:
     # Verify the nanosleep instruction is present.
     assert_true("nanosleep" in asm, "Expected nanosleep instruction in PTX")
     # Verify globaltimer read is present (used to track elapsed time).
@@ -163,40 +168,40 @@ fn _verify_sleep_function_nvidia(asm: StringSlice) raises -> None:
 
 
 @always_inline
-fn _verify_sleep_function_amd(asm: StringSlice) raises -> None:
+def _verify_sleep_function_amd(asm: StringSlice) raises -> None:
     # Verify s_memrealtime is used for timing (constant-speed clock).
     assert_true("s_memrealtime" in asm, "Expected s_memrealtime for timing")
     # Verify s_sleep instruction is present.
     assert_true("s_sleep" in asm, "Expected s_sleep instruction")
 
 
-def test_sleep_function_sm80():
+def test_sleep_function_sm80() raises:
     var asm = _compile_code[
-        sleep_function, target = get_gpu_target["sm_80"]()
+        sleep_function, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_sleep_function_nvidia(asm)
 
 
-def test_sleep_function_sm90():
+def test_sleep_function_sm90() raises:
     var asm = _compile_code[
-        sleep_function, target = get_gpu_target["sm_90"]()
+        sleep_function, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_sleep_function_nvidia(asm)
 
 
-def test_sleep_function_gfx942():
+def test_sleep_function_gfx942() raises:
     var asm = _compile_code[
-        sleep_function, target = get_gpu_target["gfx942"]()
+        sleep_function, target=get_gpu_target["gfx942"]()
     ]().asm
     _verify_sleep_function_amd(asm)
 
 
-def test_sleep_function_gfx950():
+def test_sleep_function_gfx950() raises:
     var asm = _compile_code[
-        sleep_function, target = get_gpu_target["gfx950"]()
+        sleep_function, target=get_gpu_target["gfx950"]()
     ]().asm
     _verify_sleep_function_amd(asm)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

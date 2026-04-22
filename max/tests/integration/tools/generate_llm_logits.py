@@ -13,20 +13,19 @@
 
 from __future__ import annotations
 
+import copy
 import os
 import sys
 import tempfile
-
-# Standard library
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, get_args
 
-# 3rd-party
 import click
 import torch
+import transformers
 from create_pipelines import PIPELINE_ORACLES, GenericOracle
-from max import driver
+from max import driver, pipelines
 from max.entrypoints.cli import DevicesOptionType
 from max.entrypoints.cli.entrypoint import configure_cli_logging
 from max.pipelines.lib.device_specs import (
@@ -43,8 +42,6 @@ from run_models import (
     run_torch_model,
     run_vllm_model,
 )
-
-# Tests
 from test_common import (
     numpy_encoder,
 )
@@ -85,6 +82,7 @@ EX_TEMPFAIL = 75
 @click.option(
     "--encoding",
     "encoding_name",
+    type=click.Choice(get_args(pipelines.SupportedEncoding)),
     required=False,
     help="Quantization encoding to run pipeline with.",
 )
@@ -143,7 +141,7 @@ def main(
     device_type: str | list[int],
     framework_name: str,
     pipeline_name: str,
-    encoding_name: str | None,
+    encoding_name: pipelines.SupportedEncoding | None,
     output_path: str | None,
     reference_path: Path | None,
     print_output: bool,
@@ -152,6 +150,15 @@ def main(
     mini: bool,
     generate_logprobs: bool,
 ) -> None:
+    # This version is detached from the one pulled from rules_pycross,
+    # assert that the override is working. Checked here rather than at
+    # module level so that transitive importers (e.g. precompile_all_pipelines)
+    # that never use transformers don't fail.
+    assert transformers.__version__ == "4.57.6", (
+        f"Expected transformers 4.57.6 but got {transformers.__version__}."
+        " The v4 wheel override may not be wired into this target's deps."
+    )
+
     if "gemma3" in pipeline_name:
         # Running into dynamo error:
         # https://huggingface.co/google/gemma-3-4b-it/discussions/51
@@ -206,12 +213,13 @@ def generate_llm_logits(
     pipeline_name: str,
     output_path: Path,
     print_output: bool,
-    encoding_name: str | None = None,
+    encoding_name: pipelines.SupportedEncoding | None = None,
     max_batch_size: int | None = None,
     reference: list[ModelOutput] | None = None,
     log_hf_downloads: bool = False,
     mini: bool = False,
     generate_logprobs: bool = False,
+    config_params_override: dict[str, Any] | None = None,
 ) -> None:
     """Output logits to a file for a model based on a fixed set of prompts.
 
@@ -231,12 +239,21 @@ def generate_llm_logits(
             model_path=pipeline_name,
         )
 
+    if config_params_override is not None and hasattr(
+        pipeline_oracle, "config_params"
+    ):
+        pipeline_oracle = copy.copy(pipeline_oracle)
+        pipeline_oracle.config_params = {
+            **pipeline_oracle.config_params,
+            **config_params_override,
+        }
+
     if mini:
         inputs = pipeline_oracle.inputs[:1]
         num_steps = 1
     else:
         inputs = pipeline_oracle.inputs
-        num_steps = NUM_STEPS
+        num_steps = getattr(pipeline_oracle, "num_steps", NUM_STEPS)
 
     evaluation_batch_size: int | list[int]
     if max_batch_size is None:

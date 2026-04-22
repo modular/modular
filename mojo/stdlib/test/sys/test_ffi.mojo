@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import realpath
-from ffi import ErrNo, get_errno, set_errno
-from sys.info import CompilationTarget
+from std.os.path import realpath
+from std.ffi import ErrNo, RTLD, get_errno, set_errno
+from std.sys.info import CompilationTarget
 
-from testing import assert_equal, assert_raises
-from testing import TestSuite
+from std.testing import assert_equal, assert_raises
+from std.testing import TestSuite
 
 comptime error_message_linux: List[Tuple[ErrNo, String]] = [
     (ErrNo.SUCCESS, "Success"),
@@ -266,9 +266,8 @@ comptime error_message_macos: List[Tuple[ErrNo, String]] = [
 ]
 
 
-def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
-    @parameter
-    for i in range(len(error_message)):
+def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]() raises:
+    comptime for i in range(len(error_message)):
         errno, msg = materialize[error_message[i]]()
         set_errno(errno)
         assert_equal(get_errno(), errno)
@@ -276,17 +275,16 @@ def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
     set_errno(ErrNo.SUCCESS)
 
 
-def test_errno_message():
-    @parameter
-    if CompilationTarget.is_linux():
+def test_errno_message() raises:
+    comptime if CompilationTarget.is_linux():
         _test_errno_message[error_message_linux]()
     elif CompilationTarget.is_macos():
         _test_errno_message[error_message_macos]()
     else:
-        constrained[False, "test not implemented for the platform"]()
+        comptime assert False, "test not implemented for the platform"
 
 
-def test_errno():
+def test_errno() raises:
     # test it raises the correct libc error
     with assert_raises(contains=String(ErrNo.ENOENT)):
         _ = realpath("does/not/exist")
@@ -305,5 +303,18 @@ def test_errno():
         raise Error("Failed to set errno to EPERM")
 
 
-def main():
+def test_rtld_flags() raises:
+    assert_equal(RTLD.LAZY, 1)
+    assert_equal(RTLD.NOW, 2)
+    comptime if CompilationTarget.is_linux():
+        assert_equal(RTLD.LOCAL, 0)
+        assert_equal(RTLD.GLOBAL, 256)
+        assert_equal(RTLD.NODELETE, 4096)
+    elif CompilationTarget.is_macos():
+        assert_equal(RTLD.LOCAL, 4)
+        assert_equal(RTLD.GLOBAL, 8)
+        assert_equal(RTLD.NODELETE, 128)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -19,7 +19,7 @@ from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
-from max.nn.legacy import Signals
+from max.nn import Signals
 from max.pipelines.architectures.gemma3.layers.scaled_word_embedding import (
     ScaledWordEmbedding,
 )
@@ -119,7 +119,7 @@ def test_scaled_word_embedding(
     # Clear CUDA cache before test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()
 
     torch_output = generate_torch_outputs(
@@ -139,7 +139,7 @@ def test_scaled_word_embedding(
     # Clear CUDA cache after test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()
 
 
@@ -155,7 +155,7 @@ def test_scaled_word_embedding_with_scale(
     # Clear CUDA cache before test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()
 
     embed_scale = 0.5
@@ -176,5 +176,5 @@ def test_scaled_word_embedding_with_scale(
     # Clear CUDA cache after test
     torch.cuda.empty_cache()
 
-    # Garbage collection to migitate MODELS-958
+    # Garbage collection to mitigate MODELS-958
     gc.collect()

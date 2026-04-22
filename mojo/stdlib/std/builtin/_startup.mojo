@@ -12,35 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 """Implements functionality to start a mojo execution."""
 
-from ffi import external_call
-from ffi import _get_global
-from sys.compile import SanitizeAddress
+from std.ffi import external_call, _CPointer, _get_global
+from std.sys.compile import SanitizeAddress
 
 
-fn _init_global_runtime() -> OpaquePointer[MutExternalOrigin]:
+def _init_global_runtime() -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     return external_call[
-        "KGEN_CompilerRT_AsyncRT_CreateRuntime",
-        OpaquePointer[MutExternalOrigin],
-    ](0)
+        "KGEN_CompilerRT_AsyncRT_GetOrCreateRuntime",
+        _CPointer[NoneType, ExternalOrigin[mut=True]],
+    ]()
 
 
-fn _destroy_global_runtime(ptr: OpaquePointer[MutExternalOrigin]):
+def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
     """Destroy the global runtime if ever used."""
-    external_call["KGEN_CompilerRT_AsyncRT_DestroyRuntime", NoneType](ptr)
+    external_call["KGEN_CompilerRT_AsyncRT_ReleaseRuntime", NoneType](ptr)
 
 
 @always_inline
-fn _ensure_current_or_global_runtime_init():
+def _ensure_runtime_init():
     var current_runtime = external_call[
-        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime", OpaquePointer[MutAnyOrigin]
+        "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
+        _CPointer[NoneType, ExternalOrigin[mut=True]],
     ]()
     if current_runtime:
         return
     _ = _get_global["Runtime", _init_global_runtime, _destroy_global_runtime]()
 
 
-fn __wrap_and_execute_main[
-    main_func: fn() -> None
+def __wrap_and_execute_main[
+    main_func: def() thin -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -48,10 +48,9 @@ fn __wrap_and_execute_main[
     """Define a C-ABI compatible entry point for non-raising main function."""
 
     # Initialize the global runtime.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
 
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.
@@ -74,8 +73,8 @@ fn __wrap_and_execute_main[
     return 0
 
 
-fn __wrap_and_execute_raising_main[
-    main_func: fn() raises -> None
+def __wrap_and_execute_raising_main[
+    main_func: def() thin raises -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -83,10 +82,9 @@ fn __wrap_and_execute_raising_main[
     """Define a C-ABI compatible entry point for a raising main function."""
 
     # Initialize the global runtime.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
 
-    @parameter
-    if SanitizeAddress:
+    comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
 
     # Initialize the mojo argv with those provided.
@@ -118,7 +116,7 @@ fn __wrap_and_execute_raising_main[
 
 # A prototype of the main entry point, used by the compiled when synthesizing
 # main.
-fn __mojo_main_prototype(
+def __mojo_main_prototype(
     argc: Int32, argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`]
 ) -> Int32:
     return 0

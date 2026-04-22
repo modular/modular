@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.resize import (
     CoordinateTransformationMode,
     RoundMode,
     resize_linear,
     resize_nearest_neighbor,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
-def main():
-    fn test_upsample_sizes_nearest_1() raises:
+def main() raises:
+    def test_upsample_sizes_nearest_1() raises:
         print("== test_upsample_sizes_nearest_1")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -43,7 +42,7 @@ def main():
     # CHECK: 1.0,1.0,1.0,2.0,2.0,2.0,1.0,1.0,1.0,2.0,2.0,2.0,3.0,3.0,3.0,4.0,4.0,4.0,3.0,3.0,3.0,4.0,4.0,4.0,
     test_upsample_sizes_nearest_1()
 
-    fn test_downsample_sizes_nearest() raises:
+    def test_downsample_sizes_nearest() raises:
         print("== test_downsample_sizes_nearest")
         var input_stack: InlineArray[Float32, 8] = [
             Float32(1),
@@ -72,7 +71,7 @@ def main():
     # CHECK: 1.0,3.0,
     test_downsample_sizes_nearest()
 
-    fn test_downsample_sizes_nearest_half_pixel_1D() raises:
+    def test_downsample_sizes_nearest_half_pixel_1D() raises:
         print("== test_downsample_sizes_nearest_half_pixel_1D")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
@@ -109,7 +108,7 @@ def main():
     # CHECK: 0.0,2.0,
     test_downsample_sizes_nearest_half_pixel_1D()
 
-    fn test_upsample_sizes_nearest_2() raises:
+    def test_upsample_sizes_nearest_2() raises:
         print("== test_upsample_sizes_nearest_2")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -129,7 +128,7 @@ def main():
     # CHECK: 1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,1.0,1.0,1.0,1.0,2.0,2.0,2.0,2.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,3.0,3.0,3.0,3.0,4.0,4.0,4.0,4.0,
     test_upsample_sizes_nearest_2()
 
-    fn test_upsample_sizes_nearest_floor_align_corners() raises:
+    def test_upsample_sizes_nearest_floor_align_corners() raises:
         print("== test_upsample_sizes_nearest_floor_align_corners")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
@@ -166,7 +165,7 @@ def main():
     # CHECK: 1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,1.0,1.0,1.0,2.0,2.0,3.0,3.0,4.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,5.0,5.0,5.0,6.0,6.0,7.0,7.0,8.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,9.0,9.0,9.0,10.0,10.0,11.0,11.0,12.0,13.0,13.0,13.0,14.0,14.0,15.0,15.0,16.0,
     test_upsample_sizes_nearest_floor_align_corners()
 
-    fn test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
+    def test_upsample_sizes_nearest_round_half_up_asymmetric() raises:
         print("== test_upsample_sizes_nearest_round_half_up_asymmetric")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
@@ -203,7 +202,7 @@ def main():
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
     test_upsample_sizes_nearest_round_half_up_asymmetric()
 
-    fn test_upsample_sizes_nearest_ceil_half_pixel() raises:
+    def test_upsample_sizes_nearest_ceil_half_pixel() raises:
         print("== test_upsample_sizes_nearest_ceil_half_pixel")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(1),
@@ -240,7 +239,7 @@ def main():
     # CHECK: 1.0,2.0,2.0,3.0,3.0,4.0,4.0,4.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,5.0,6.0,6.0,7.0,7.0,8.0,8.0,8.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,9.0,10.0,10.0,11.0,11.0,12.0,12.0,12.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,13.0,14.0,14.0,15.0,15.0,16.0,16.0,16.0,
     test_upsample_sizes_nearest_ceil_half_pixel()
 
-    fn test_upsample_sizes_linear() raises:
+    def test_upsample_sizes_linear() raises:
         print("== test_upsample_sizes_linear")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -285,7 +284,7 @@ def main():
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_linear()
 
-    fn test_upsample_sizes_linear_align_corners() raises:
+    def test_upsample_sizes_linear_align_corners() raises:
         print("== test_upsample_sizes_linear_align_corners")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 2, 3, 4]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())
@@ -330,7 +329,7 @@ def main():
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_linear_align_corners()
 
-    fn test_downsample_sizes_linear() raises:
+    def test_downsample_sizes_linear() raises:
         print("== test_downsample_sizes_linear")
         var input_stack: InlineArray[Float32, 8] = [
             Float32(1),
@@ -368,7 +367,7 @@ def main():
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear()
 
-    fn test_downsample_sizes_linear_align_corners() raises:
+    def test_downsample_sizes_linear_align_corners() raises:
         print("== test_downsample_sizes_linear_align_corners")
         var input_stack: InlineArray[Float32, 8] = [
             Float32(1),
@@ -405,7 +404,7 @@ def main():
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear_align_corners()
 
-    fn test_upsample_sizes_trilinear() raises:
+    def test_upsample_sizes_trilinear() raises:
         print("== test_upsample_sizes_trilinear")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
@@ -468,7 +467,7 @@ def main():
     # CHECK-NOT: ASSERT ERROR
     test_upsample_sizes_trilinear()
 
-    fn test_downsample_sizes_linear_antialias() raises:
+    def test_downsample_sizes_linear_antialias() raises:
         print("== test_downsample_sizes_linear_antialias")
         var input_stack: InlineArray[Float32, 16] = [
             Float32(0),
@@ -519,7 +518,7 @@ def main():
     # CHECK-NOT: ASSERT ERROR
     test_downsample_sizes_linear_antialias()
 
-    fn test_no_resize() raises:
+    def test_no_resize() raises:
         print("== test_no_resize")
         var input_stack: InlineArray[Float32, 4] = [Float32(1), 1, 1, 1]
         var input = TileTensor(input_stack, row_major[1, 1, 2, 2]())

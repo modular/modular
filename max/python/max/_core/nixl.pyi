@@ -13,6 +13,10 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""
+nanobind NIXL plugin: Implements NIXL descriptors and lists, as well as bindings of NIXL CPP APIs.
+"""
+
 import enum
 from collections.abc import Mapping, Sequence
 from typing import overload
@@ -91,6 +95,24 @@ class NotSupportedError(Exception):
 class RemoteDisconnectError(Exception):
     pass
 
+class CanceledError(Exception):
+    pass
+
+class NoTelemetryError(Exception):
+    pass
+
+class TransferTelemetry:
+    @property
+    def startTime(self) -> int: ...
+    @property
+    def postDuration(self) -> int: ...
+    @property
+    def xferDuration(self) -> int: ...
+    @property
+    def totalBytes(self) -> int: ...
+    @property
+    def descCount(self) -> int: ...
+
 class TransferDescriptorList:
     @overload
     def __init__(self, type: MemoryType, init_size: int = 0) -> None:
@@ -98,8 +120,8 @@ class TransferDescriptorList:
         Constructs an empty descriptor list.
 
         Args:
-          type: The type of memory each element describes
-          init_size: Initial capacity of the list
+          type: The type of memory each element describes.
+          init_size: Initial capacity of the list.
         """
 
     @overload
@@ -110,7 +132,7 @@ class TransferDescriptorList:
         Constructs a descriptor list with given values.
 
         Args:
-          type: The type of memory each element describes
+          type: The type of memory each element describes.
           descs: A list of descriptors, each describing a section of memory.
                  Each element is either a tuple or a dlpack object.
         """
@@ -144,8 +166,8 @@ class RegistrationDescriptorList:
         Constructs an empty descriptor list.
 
         Args:
-          type: The type of memory each element describes
-          init_size: Initial capacity of the list
+          type: The type of memory each element describes.
+          init_size: Initial capacity of the list.
         """
 
     @overload
@@ -158,7 +180,7 @@ class RegistrationDescriptorList:
         Constructs a descriptor list with given values.
 
         Args:
-          type: The type of memory each element describes
+          type: The type of memory each element describes.
           descs: A list of descriptors, each describing a section of memory.
                  Each element is either a tuple or a dlpack object.
         """
@@ -195,6 +217,8 @@ class AgentConfig:
         use_listen_thread: bool = False,
         listen_port: int = 0,
         sync_mode: ThreadSyncMode = ThreadSyncMode.NONE,
+        pthr_delay_us: int = 0,
+        lthr_delay_us: int = 100000,
     ) -> None: ...
 
 class Agent:
@@ -215,6 +239,20 @@ class Agent:
     def deregister_memory(
         self, descs: RegistrationDescriptorList, backends: Sequence[int] = []
     ) -> Status: ...
+    def query_memory(
+        self, descs: RegistrationDescriptorList, backend: int
+    ) -> list[dict[str, str] | None]:
+        """
+        Queries a registered descriptor list against a backend.
+
+        Args:
+            descs: The registered descriptors to query.
+            backend: The backend handle to query against.
+
+        Returns:
+            A list of backend-specific responses for the descriptors.
+        """
+
     def make_connection(
         self, remote_agent: str, backends: Sequence[int]
     ) -> Status: ...
@@ -248,6 +286,9 @@ class Agent:
         self, request_handle: int, notif_msg: str = ""
     ) -> Status: ...
     def get_transfer_status(self, request_handle: int) -> Status: ...
+    def get_transfer_telemetry(
+        self, request_handle: int
+    ) -> TransferTelemetry: ...
     def query_transfer_backend(self, request_handle: int) -> int: ...
     def release_transfer_request(self, request_handle: int) -> Status: ...
     def release_descriptor_list_handle(self, handle: int) -> Status: ...
@@ -256,6 +297,7 @@ class Agent:
     ) -> dict[str, list[bytes]]:
         """
         Returns a map from agent name to a list of notifications received from that agent.
+
         Optionally, a list of backends can be mentioned to only get those backends' notifications.
         """
 

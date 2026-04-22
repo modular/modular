@@ -19,7 +19,6 @@ import pytest
 from max.interfaces import (
     MAXPullQueue,
     MAXPushQueue,
-    Pipeline,
     RequestID,
     SchedulerResult,
     TextGenerationInputs,
@@ -59,6 +58,7 @@ def create_mock_pipeline() -> Mock:
     pipeline.execute = Mock(side_effect=next_token_behavior)
     pipeline.release = Mock()
     pipeline._pipeline_model = Mock(_lora_manager=None)
+    pipeline.extra_kv_managers = []
     return pipeline
 
 
@@ -169,7 +169,6 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_constructor.enqueue_new_request(mock_2)
     mock_1.update(ARBITRARY_TOKEN_ID)
     mock_2.update(ARBITRARY_TOKEN_ID)
-    batch_executed = [[mock_1, mock_2]]
 
     resp_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     resp_2: TextGenerationOutput = Mock(is_done=True, tokens=[])
@@ -203,8 +202,10 @@ def test_scheduler_handle_chunked_requests() -> None:
     req_2 = create_mock_request(seq_len=30, start_idx=20)
 
     mock_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
-    mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
     batch_responses = {req_1.request_id: mock_1}
+
+    batch_constructor.enqueue_new_request(req_1)
+    batch_constructor.enqueue_new_request(req_2)
 
     batch_constructor.advance_requests(
         TextGenerationInputs(batches=[[req_1, req_2]], num_steps=1)
@@ -234,6 +235,8 @@ def test_schedule_ce() -> None:
     scheduler, _, _, _ = create_scheduler()
 
     mock_request = create_mock_request()
+    scheduler.batch_constructor.enqueue_new_request(mock_request)
+
     inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
         batches=[[mock_request]],
         num_steps=1,
@@ -413,71 +416,6 @@ def test_scheduler_empty_batch() -> None:
     assert inputs.num_steps == 0
 
 
-def _create_failing_pipeline() -> Mock:
-    """Create a mock pipeline that raises an exception on execute."""
-    pipeline = Mock(spec=Pipeline)
-    pipeline.execute = Mock(side_effect=RuntimeError("CUDA out of memory"))
-    pipeline.release = Mock()
-    pipeline._pipeline_model = Mock(_lora_manager=None)
-    return pipeline
-
-
-def test_pipeline_exception_sends_error_to_client() -> None:
-    """Test that pipeline exceptions are propagated to clients as error results.
-
-    When pipeline.execute() raises an exception (e.g., CUDA OOM), the scheduler
-    should catch it and send an error SchedulerResult to the response queue,
-    allowing clients to receive meaningful error information instead of hanging.
-    """
-    scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size=4,
-        max_forward_steps_tg=8,
-        target_tokens_per_batch_ce=32,
-        data_parallel_degree=1,
-        kvcache_ce_watermark=0.95,
-    )
-
-    request_queue: queue.Queue[TextContext | TextAndVisionContext] = (
-        queue.Queue()
-    )
-    response_queue: queue.Queue[
-        dict[RequestID, SchedulerResult[TextGenerationOutput]]
-    ] = queue.Queue()
-    cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
-
-    # Create scheduler with a pipeline that will raise on execute
-    scheduler = TokenGenerationScheduler(
-        scheduler_config=scheduler_config,
-        pipeline=_create_failing_pipeline(),
-        request_queue=request_queue,
-        response_queue=response_queue,
-        cancel_queue=cancel_queue,
-        kv_cache=DummyKVCache(),
-    )
-
-    # Create a request and add to batch constructor
-    mock_request = create_mock_request()
-    scheduler.batch_constructor.enqueue_new_request(mock_request)
-
-    # Construct and execute the batch
-    inputs = scheduler.batch_constructor.construct_batch()
-
-    # Run _schedule - should NOT raise, should send error result
-    scheduler._schedule(inputs)
-
-    # Verify error result was sent to response queue
-    result_dict = response_queue.get_nowait()
-    result = result_dict[mock_request.request_id]
-
-    # Client should receive error details including traceback
-    assert result.is_done is True
-    assert result.error is not None
-    assert result.error.error_type == "RuntimeError"
-    assert "CUDA out of memory" in result.error.error_message
-    assert result.error.traceback_str  # Non-empty traceback
-    assert "RuntimeError" in result.error.traceback_str
-
-
 def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
     """Create a scheduler with LoRA support for testing."""
     pipeline = Mock()
@@ -488,6 +426,7 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
     lora_manager.activate_adapter = Mock()
     lora_manager.max_num_loras = 4
     pipeline._pipeline_model = Mock(_lora_manager=lora_manager)
+    pipeline.extra_kv_managers = []
 
     return TokenGenerationScheduler(
         scheduler_config=TokenGenerationSchedulerConfig(

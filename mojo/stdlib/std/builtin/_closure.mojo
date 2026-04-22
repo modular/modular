@@ -12,43 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct __ParameterClosureCaptureList[
-    fn_type: __TypeOfAllTypes, fn_ref: fn_type
-](ImplicitlyCopyable, RegisterType):
-    var value: __mlir_type.`!kgen.pointer<none>`
-
-    # Parameter closure invariant requires this function be marked 'capturing'.
-    @parameter
-    @always_inline
-    fn __init__(out self):
-        self.value = __mlir_op.`kgen.capture_list.create`[
-            callee = Self.fn_ref
-        ]()
-
-    @always_inline
-    fn __copyinit__(out self, existing: Self):
-        self.value = __mlir_op.`kgen.capture_list.copy`[callee = Self.fn_ref](
-            existing.value
-        )
-
-    @always_inline
-    fn __del__(deinit self):
-        __mlir_op.`pop.aligned_free`(self.value)
-
-    @always_inline("nodebug")
-    fn expand(self):
-        __mlir_op.`kgen.capture_list.expand`(self.value)
-
-
-fn __closure_wrapper_noop_dtor(self: __mlir_type.`!kgen.pointer<none>`, /):
+def __closure_wrapper_noop_dtor(self: __mlir_type.`!kgen.pointer<none>`, /):
     pass
 
 
-fn __closure_wrapper_noop_copy(
-    other: __mlir_type.`!kgen.pointer<none>`, /
+def __closure_wrapper_noop_copy(
+    *, copy: __mlir_type.`!kgen.pointer<none>`
 ) -> __mlir_type.`!kgen.pointer<none>`:
-    return other
+    return copy
 
 
-fn __ownership_keepalive[*Ts: AnyType](*args: *Ts):
+def __ownership_keepalive[*Ts: AnyType](*args: *Ts):
     pass

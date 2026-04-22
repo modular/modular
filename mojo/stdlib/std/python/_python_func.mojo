@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OwnedKwargsDict
-from os import abort
-from sys.intrinsics import _type_is_eq
+from std.collections import OwnedKwargsDict
+from std.os import abort
+from std.sys.intrinsics import _type_is_eq
 
-from python import PythonObject as PO  # for brevity of signatures below
-from python.bindings import check_arguments_arity
+from std.python import PythonObject as PO  # for brevity of signatures below
+from std.python.bindings import check_arguments_arity
 
 
 struct PyObjectFunction[
-    func_type: __TypeOfAllTypes,
+    func_type: TrivialRegisterPassable,
     self_type: ImplicitlyDestructible = NoneType,
     has_kwargs: Bool = False,
 ](ImplicitlyCopyable):
@@ -52,63 +52,63 @@ struct PyObjectFunction[
     # 0 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _0er = fn() raises -> PO
-    comptime _0r = fn() -> PO
-    comptime _0e = fn() raises
-    comptime _0 = fn()
+    comptime _0er = def() thin raises -> PO
+    comptime _0r = def() thin -> PO
+    comptime _0e = def() thin raises
+    comptime _0 = def() thin
 
-    comptime _0er_kwargs = fn(OwnedKwargsDict[PO]) raises -> PO
-    comptime _0r_kwargs = fn(OwnedKwargsDict[PO]) -> PO
-    comptime _0e_kwargs = fn(OwnedKwargsDict[PO]) raises
-    comptime _0_kwargs = fn(OwnedKwargsDict[PO])
+    comptime _0er_kwargs = def(OwnedKwargsDict[PO]) thin raises -> PO
+    comptime _0r_kwargs = def(OwnedKwargsDict[PO]) thin -> PO
+    comptime _0e_kwargs = def(OwnedKwargsDict[PO]) thin raises
+    comptime _0_kwargs = def(OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0er], f: Self._0er):
+    def __init__(out self: PyObjectFunction[Self._0er], f: Self._0er):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0r], f: Self._0r):
+    def __init__(out self: PyObjectFunction[Self._0r], f: Self._0r):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0e], f: Self._0e):
+    def __init__(out self: PyObjectFunction[Self._0e], f: Self._0e):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(out self: PyObjectFunction[Self._0], f: Self._0):
+    def __init__(out self: PyObjectFunction[Self._0], f: Self._0):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._0er_kwargs, has_kwargs=True],
         f: Self._0er_kwargs,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._0r_kwargs, has_kwargs=True],
         f: Self._0r_kwargs,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._0e_kwargs, has_kwargs=True],
         f: Self._0e_kwargs,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._0_kwargs, has_kwargs=True],
         f: Self._0_kwargs,
     ):
@@ -118,47 +118,47 @@ struct PyObjectFunction[
     # 1 argument
     # ===-------------------------------------------------------------------===#
 
-    comptime _1er = fn(PO) raises -> PO
-    comptime _1r = fn(PO) -> PO
-    comptime _1e = fn(PO) raises
-    comptime _1 = fn(PO)
+    comptime _1er = def(PO) thin raises -> PO
+    comptime _1r = def(PO) thin -> PO
+    comptime _1e = def(PO) thin raises
+    comptime _1 = def(PO) thin
 
-    comptime _1er_kwargs = fn(PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _1r_kwargs = fn(PO, OwnedKwargsDict[PO]) -> PO
-    comptime _1e_kwargs = fn(PO, OwnedKwargsDict[PO]) raises
-    comptime _1_kwargs = fn(PO, OwnedKwargsDict[PO])
+    comptime _1er_kwargs = def(PO, OwnedKwargsDict[PO]) thin raises -> PO
+    comptime _1r_kwargs = def(PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _1e_kwargs = def(PO, OwnedKwargsDict[PO]) thin raises
+    comptime _1_kwargs = def(PO, OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1er, Self.self_type], f: Self._1er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1r, Self.self_type], f: Self._1r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1e, Self.self_type], f: Self._1e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1, Self.self_type], f: Self._1
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1er_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -166,9 +166,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1r_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -176,9 +176,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1e_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -186,9 +186,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -200,61 +200,65 @@ struct PyObjectFunction[
     # 1 argument (typed self methods - 0 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _1er_self = fn(
+    comptime _1er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin]
-    ) raises -> PO
-    comptime _1r_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin]) -> PO
-    comptime _1e_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin]) raises
-    comptime _1_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin])
+    ) thin raises -> PO
+    comptime _1r_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin]
+    ) thin -> PO
+    comptime _1e_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin]
+    ) thin raises
+    comptime _1_self = def(UnsafePointer[Self.self_type, MutAnyOrigin]) thin
 
-    comptime _1er_self_kwargs = fn(
+    comptime _1er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _1r_self_kwargs = fn(
+    ) thin raises -> PO
+    comptime _1r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    ) -> PO
-    comptime _1e_self_kwargs = fn(
+    ) thin -> PO
+    comptime _1e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    ) raises
-    comptime _1_self_kwargs = fn(
+    ) thin raises
+    comptime _1_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], OwnedKwargsDict[PO]
-    )
+    ) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1er_self, Self.self_type],
         f: Self._1er_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1r_self, Self.self_type],
         f: Self._1r_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1e_self, Self.self_type],
         f: Self._1e_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._1_self, Self.self_type],
         f: Self._1_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1er_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -262,9 +266,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1r_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -272,9 +276,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1e_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -282,9 +286,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._1_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -296,65 +300,65 @@ struct PyObjectFunction[
     # 2 arguments (typed self methods - 1 additional argument)
     # ===-------------------------------------------------------------------===#
 
-    comptime _2er_self = fn(
+    comptime _2er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
-    ) raises -> PO
-    comptime _2r_self = fn(
+    ) thin raises -> PO
+    comptime _2r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
-    ) -> PO
-    comptime _2e_self = fn(
+    ) thin -> PO
+    comptime _2e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO
-    ) raises
-    comptime _2_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin], PO)
+    ) thin raises
+    comptime _2_self = def(UnsafePointer[Self.self_type, MutAnyOrigin], PO) thin
 
-    comptime _2er_self_kwargs = fn(
+    comptime _2er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _2r_self_kwargs = fn(
+    ) thin raises -> PO
+    comptime _2r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    ) -> PO
-    comptime _2e_self_kwargs = fn(
+    ) thin -> PO
+    comptime _2e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    ) raises
-    comptime _2_self_kwargs = fn(
+    ) thin raises
+    comptime _2_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, OwnedKwargsDict[PO]
-    )
+    ) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2er_self, Self.self_type],
         f: Self._2er_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2r_self, Self.self_type],
         f: Self._2r_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2e_self, Self.self_type],
         f: Self._2e_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2_self, Self.self_type],
         f: Self._2_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2er_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -362,9 +366,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2r_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -372,9 +376,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2e_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -382,9 +386,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -396,65 +400,67 @@ struct PyObjectFunction[
     # 3 arguments (typed self methods - 2 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _3er_self = fn(
+    comptime _3er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) raises -> PO
-    comptime _3r_self = fn(
+    ) thin raises -> PO
+    comptime _3r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) -> PO
-    comptime _3e_self = fn(
+    ) thin -> PO
+    comptime _3e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
-    ) raises
-    comptime _3_self = fn(UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO)
+    ) thin raises
+    comptime _3_self = def(
+        UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO
+    ) thin
 
-    comptime _3er_self_kwargs = fn(
+    comptime _3er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _3r_self_kwargs = fn(
+    ) thin raises -> PO
+    comptime _3r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    ) -> PO
-    comptime _3e_self_kwargs = fn(
+    ) thin -> PO
+    comptime _3e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    ) raises
-    comptime _3_self_kwargs = fn(
+    ) thin raises
+    comptime _3_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, OwnedKwargsDict[PO]
-    )
+    ) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3er_self, Self.self_type],
         f: Self._3er_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3r_self, Self.self_type],
         f: Self._3r_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3e_self, Self.self_type],
         f: Self._3e_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3_self, Self.self_type],
         f: Self._3_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3er_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -462,9 +468,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3r_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -472,9 +478,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3e_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -482,9 +488,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -496,83 +502,83 @@ struct PyObjectFunction[
     # 4 arguments (typed self methods - 3 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _4er_self = fn(
+    comptime _4er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    ) raises -> PO
-    comptime _4r_self = fn(
+    ) thin raises -> PO
+    comptime _4r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    ) -> PO
-    comptime _4e_self = fn(
+    ) thin -> PO
+    comptime _4e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    ) raises
-    comptime _4_self = fn(
+    ) thin raises
+    comptime _4_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO
-    )
+    ) thin
 
-    comptime _4er_self_kwargs = fn(
+    comptime _4er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises -> PO
-    comptime _4r_self_kwargs = fn(
+    ) thin raises -> PO
+    comptime _4r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) -> PO
-    comptime _4e_self_kwargs = fn(
+    ) thin -> PO
+    comptime _4e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises
-    comptime _4_self_kwargs = fn(
+    ) thin raises
+    comptime _4_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    )
+    ) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4er_self, Self.self_type],
         f: Self._4er_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4r_self, Self.self_type],
         f: Self._4r_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4e_self, Self.self_type],
         f: Self._4e_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4_self, Self.self_type],
         f: Self._4_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4er_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -580,9 +586,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4r_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -590,9 +596,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4e_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -600,9 +606,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -614,47 +620,47 @@ struct PyObjectFunction[
     # 2 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _2er = fn(PO, PO) raises -> PO
-    comptime _2r = fn(PO, PO) -> PO
-    comptime _2e = fn(PO, PO) raises
-    comptime _2 = fn(PO, PO)
+    comptime _2er = def(PO, PO) thin raises -> PO
+    comptime _2r = def(PO, PO) thin -> PO
+    comptime _2e = def(PO, PO) thin raises
+    comptime _2 = def(PO, PO) thin
 
-    comptime _2er_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _2r_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _2e_kwargs = fn(PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _2_kwargs = fn(PO, PO, OwnedKwargsDict[PO])
+    comptime _2er_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin raises -> PO
+    comptime _2r_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _2e_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin raises
+    comptime _2_kwargs = def(PO, PO, OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2er, Self.self_type], f: Self._2er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2r, Self.self_type], f: Self._2r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2e, Self.self_type], f: Self._2e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._2, Self.self_type], f: Self._2
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2er_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -662,9 +668,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2r_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -672,9 +678,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2e_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -682,9 +688,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._2_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -696,47 +702,49 @@ struct PyObjectFunction[
     # 3 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _3er = fn(PO, PO, PO) raises -> PO
-    comptime _3r = fn(PO, PO, PO) -> PO
-    comptime _3e = fn(PO, PO, PO) raises
-    comptime _3 = fn(PO, PO, PO)
+    comptime _3er = def(PO, PO, PO) thin raises -> PO
+    comptime _3r = def(PO, PO, PO) thin -> PO
+    comptime _3e = def(PO, PO, PO) thin raises
+    comptime _3 = def(PO, PO, PO) thin
 
-    comptime _3er_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _3r_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _3e_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _3_kwargs = fn(PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _3er_kwargs = def(
+        PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises -> PO
+    comptime _3r_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _3e_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin raises
+    comptime _3_kwargs = def(PO, PO, PO, OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3er, Self.self_type], f: Self._3er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3r, Self.self_type], f: Self._3r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3e, Self.self_type], f: Self._3e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._3, Self.self_type], f: Self._3
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3er_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -744,9 +752,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3r_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -754,9 +762,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3e_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -764,9 +772,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._3_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -778,47 +786,49 @@ struct PyObjectFunction[
     # 4 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _4er = fn(PO, PO, PO, PO) raises -> PO
-    comptime _4r = fn(PO, PO, PO, PO) -> PO
-    comptime _4e = fn(PO, PO, PO, PO) raises
-    comptime _4 = fn(PO, PO, PO, PO)
+    comptime _4er = def(PO, PO, PO, PO) thin raises -> PO
+    comptime _4r = def(PO, PO, PO, PO) thin -> PO
+    comptime _4e = def(PO, PO, PO, PO) thin raises
+    comptime _4 = def(PO, PO, PO, PO) thin
 
-    comptime _4er_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises -> PO
-    comptime _4r_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _4e_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _4_kwargs = fn(PO, PO, PO, PO, OwnedKwargsDict[PO])
+    comptime _4er_kwargs = def(
+        PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises -> PO
+    comptime _4r_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin -> PO
+    comptime _4e_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin raises
+    comptime _4_kwargs = def(PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4er, Self.self_type], f: Self._4er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4r, Self.self_type], f: Self._4r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4e, Self.self_type], f: Self._4e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._4, Self.self_type], f: Self._4
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4er_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -826,9 +836,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4r_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -836,9 +846,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4e_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -846,9 +856,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._4_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -860,87 +870,87 @@ struct PyObjectFunction[
     # 5 arguments (typed self methods - 4 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _5er_self = fn(
+    comptime _5er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    ) raises -> PO
-    comptime _5r_self = fn(
+    ) thin raises -> PO
+    comptime _5r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    ) -> PO
-    comptime _5e_self = fn(
+    ) thin -> PO
+    comptime _5e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    ) raises
-    comptime _5_self = fn(
+    ) thin raises
+    comptime _5_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO
-    )
+    ) thin
 
-    comptime _5er_self_kwargs = fn(
+    comptime _5er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises -> PO
-    comptime _5r_self_kwargs = fn(
+    ) thin raises -> PO
+    comptime _5r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) -> PO
-    comptime _5e_self_kwargs = fn(
+    ) thin -> PO
+    comptime _5e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises
-    comptime _5_self_kwargs = fn(
+    ) thin raises
+    comptime _5_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
         PO,
         PO,
         OwnedKwargsDict[PO],
-    )
+    ) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5er_self, Self.self_type],
         f: Self._5er_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5r_self, Self.self_type],
         f: Self._5r_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5e_self, Self.self_type],
         f: Self._5e_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5_self, Self.self_type],
         f: Self._5_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5er_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -948,9 +958,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5r_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -958,9 +968,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5e_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -968,9 +978,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -982,49 +992,53 @@ struct PyObjectFunction[
     # 5 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _5er = fn(PO, PO, PO, PO, PO) raises -> PO
-    comptime _5r = fn(PO, PO, PO, PO, PO) -> PO
-    comptime _5e = fn(PO, PO, PO, PO, PO) raises
-    comptime _5 = fn(PO, PO, PO, PO, PO)
+    comptime _5er = def(PO, PO, PO, PO, PO) thin raises -> PO
+    comptime _5r = def(PO, PO, PO, PO, PO) thin -> PO
+    comptime _5e = def(PO, PO, PO, PO, PO) thin raises
+    comptime _5 = def(PO, PO, PO, PO, PO) thin
 
-    comptime _5er_kwargs = fn(
+    comptime _5er_kwargs = def(
         PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _5r_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _5e_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _5_kwargs = fn(PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
+    ) thin raises -> PO
+    comptime _5r_kwargs = def(
+        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin -> PO
+    comptime _5e_kwargs = def(
+        PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises
+    comptime _5_kwargs = def(PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5er, Self.self_type], f: Self._5er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5r, Self.self_type], f: Self._5r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5e, Self.self_type], f: Self._5e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._5, Self.self_type], f: Self._5
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5er_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1032,9 +1046,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5r_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1042,9 +1056,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5e_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1052,9 +1066,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._5_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1066,20 +1080,20 @@ struct PyObjectFunction[
     # 6 arguments (typed self methods - 5 additional arguments)
     # ===-------------------------------------------------------------------===#
 
-    comptime _6er_self = fn(
+    comptime _6er_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    ) raises -> PO
-    comptime _6r_self = fn(
+    ) thin raises -> PO
+    comptime _6r_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    ) -> PO
-    comptime _6e_self = fn(
+    ) thin -> PO
+    comptime _6e_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    ) raises
-    comptime _6_self = fn(
+    ) thin raises
+    comptime _6_self = def(
         UnsafePointer[Self.self_type, MutAnyOrigin], PO, PO, PO, PO, PO
-    )
+    ) thin
 
-    comptime _6er_self_kwargs = fn(
+    comptime _6er_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1087,8 +1101,8 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises -> PO
-    comptime _6r_self_kwargs = fn(
+    ) thin raises -> PO
+    comptime _6r_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1096,8 +1110,8 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) -> PO
-    comptime _6e_self_kwargs = fn(
+    ) thin -> PO
+    comptime _6e_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1105,8 +1119,8 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    ) raises
-    comptime _6_self_kwargs = fn(
+    ) thin raises
+    comptime _6_self_kwargs = def(
         UnsafePointer[Self.self_type, MutAnyOrigin],
         PO,
         PO,
@@ -1114,43 +1128,43 @@ struct PyObjectFunction[
         PO,
         PO,
         OwnedKwargsDict[PO],
-    )
+    ) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6er_self, Self.self_type],
         f: Self._6er_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6r_self, Self.self_type],
         f: Self._6r_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6e_self, Self.self_type],
         f: Self._6e_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6_self, Self.self_type],
         f: Self._6_self,
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6er_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1158,9 +1172,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6r_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1168,9 +1182,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6e_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1178,9 +1192,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6_self_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1192,49 +1206,53 @@ struct PyObjectFunction[
     # 6 arguments
     # ===-------------------------------------------------------------------===#
 
-    comptime _6er = fn(PO, PO, PO, PO, PO, PO) raises -> PO
-    comptime _6r = fn(PO, PO, PO, PO, PO, PO) -> PO
-    comptime _6e = fn(PO, PO, PO, PO, PO, PO) raises
-    comptime _6 = fn(PO, PO, PO, PO, PO, PO)
+    comptime _6er = def(PO, PO, PO, PO, PO, PO) thin raises -> PO
+    comptime _6r = def(PO, PO, PO, PO, PO, PO) thin -> PO
+    comptime _6e = def(PO, PO, PO, PO, PO, PO) thin raises
+    comptime _6 = def(PO, PO, PO, PO, PO, PO) thin
 
-    comptime _6er_kwargs = fn(
+    comptime _6er_kwargs = def(
         PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
-    ) raises -> PO
-    comptime _6r_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) -> PO
-    comptime _6e_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) raises
-    comptime _6_kwargs = fn(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO])
+    ) thin raises -> PO
+    comptime _6r_kwargs = def(
+        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin -> PO
+    comptime _6e_kwargs = def(
+        PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]
+    ) thin raises
+    comptime _6_kwargs = def(PO, PO, PO, PO, PO, PO, OwnedKwargsDict[PO]) thin
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6er, Self.self_type], f: Self._6er
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6r, Self.self_type], f: Self._6r
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6e, Self.self_type], f: Self._6e
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[Self._6, Self.self_type], f: Self._6
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6er_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1242,9 +1260,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6r_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1252,9 +1270,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6e_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1262,9 +1280,9 @@ struct PyObjectFunction[
     ):
         self._func = f
 
-    @doc_private
+    @doc_hidden
     @implicit
-    fn __init__(
+    def __init__(
         out self: PyObjectFunction[
             Self._6_kwargs, Self.self_type, has_kwargs=True
         ],
@@ -1278,7 +1296,7 @@ struct PyObjectFunction[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _get_self_arg(
+    def _get_self_arg(
         py_self: PythonObject,
     ) -> UnsafePointer[Self.self_type, MutAnyOrigin]:
         """Get the appropriate self argument for method calls with automatic downcasting.
@@ -1293,27 +1311,24 @@ struct PyObjectFunction[
             This function will abort if downcasting fails for non-PythonObject types.
         """
 
-        @parameter
-        if _type_is_eq[Self.self_type, NoneType]():
-            constrained[False, "Cannot get self arg for NoneType"]()
-            # This line should never be reached due to the constraint
-            abort("Unreachable code")
-        else:
-            try:
-                return py_self.downcast_value_ptr[Self.self_type]()
-            except e:
-                abort(
-                    String(
-                        (
-                            "Python method receiver object did not have the"
-                            " expected type: "
-                        ),
-                        e,
-                    )
+        comptime assert not _type_is_eq[
+            Self.self_type, NoneType
+        ](), "Cannot get self arg for NoneType"
+        try:
+            return py_self.downcast_value_ptr[Self.self_type]()
+        except e:
+            abort(
+                String(
+                    (
+                        "Python method receiver object did not have the"
+                        " expected type: "
+                    ),
+                    e,
                 )
+            )
 
     @staticmethod
-    fn _convert_kwargs(
+    def _convert_kwargs(
         py_kwargs: PythonObject,
     ) raises -> OwnedKwargsDict[PythonObject]:
         """Convert a Python dictionary to an OwnedKwargsDict.
@@ -1346,14 +1361,13 @@ struct PyObjectFunction[
 
     @staticmethod
     @always_inline("nodebug")
-    fn _has_type[other_func_type: __TypeOfAllTypes]() -> Bool:
+    def _has_type[other_func_type: TrivialRegisterPassable]() -> Bool:
         return _type_is_eq[Self.func_type, other_func_type]()
 
     @staticmethod
     @always_inline("nodebug")
-    fn _has_arity(arity: Int) -> Bool:
-        @parameter
-        if (
+    def _has_arity(arity: Int) -> Bool:
+        comptime if (
             Self._has_type[Self._0er]()
             or Self._has_type[Self._0r]()
             or Self._has_type[Self._0e]()
@@ -1482,910 +1496,673 @@ struct PyObjectFunction[
             return False
 
     # ===-------------------------------------------------------------------===#
-    # Call wrappers
+    # Compile-time dispatch
     # ===-------------------------------------------------------------------===#
 
+    @staticmethod
     @always_inline("nodebug")
-    fn _call_func(self, py_args: PO) raises -> PO:
-        @parameter
-        if Self._has_arity(0):
-            check_arguments_arity(0, py_args)
+    def _dispatch[
+        is_method: Bool,
+    ](func: Self.func_type, py_self: PO, py_args: PO) raises -> PO:
+        """Compile-time dispatch for non-kwargs function/method calls."""
 
-            @parameter
-            if self._has_type[Self._0er]():
-                return rebind[Self._0er](self._func)()
-            elif self._has_type[Self._0r]():
-                return rebind[Self._0r](self._func)()
-            elif self._has_type[Self._0e]():
-                return PO(rebind[Self._0e](self._func)())
-            elif self._has_type[Self._0]():
-                return PO(rebind[Self._0](self._func)())
+        comptime if Self._has_arity(0):
+            comptime assert not is_method, "arity-0 methods not supported"
+            check_arguments_arity(0, py_args)
+            comptime if Self._has_type[Self._0er]():
+                return rebind[Self._0er](func)()
+            elif Self._has_type[Self._0r]():
+                return rebind[Self._0r](func)()
+            elif Self._has_type[Self._0e]():
+                rebind[Self._0e](func)()
+                return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                rebind[Self._0](func)()
+                return PO(None)
         elif Self._has_arity(1):
-            check_arguments_arity(1, py_args)
-            var arg0 = py_args[0]
-
-            @parameter
-            if self._has_type[Self._1er]():
-                return rebind[Self._1er](self._func)(arg0)
-            elif self._has_type[Self._1r]():
-                return rebind[Self._1r](self._func)(arg0)
-            elif self._has_type[Self._1e]():
-                return PO(rebind[Self._1e](self._func)(arg0))
-            elif self._has_type[Self._1]():
-                return PO(rebind[Self._1](self._func)(arg0))
+            comptime if not is_method:
+                check_arguments_arity(1, py_args)
+                var a0 = py_args[0]
+                comptime if Self._has_type[Self._1er]():
+                    return rebind[Self._1er](func)(a0)
+                elif Self._has_type[Self._1r]():
+                    return rebind[Self._1r](func)(a0)
+                elif Self._has_type[Self._1e]():
+                    rebind[Self._1e](func)(a0)
+                    return PO(None)
+                else:
+                    rebind[Self._1](func)(a0)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(0, py_args)
+                comptime if Self._has_type[Self._1er]():
+                    return rebind[Self._1er](func)(py_self)
+                elif Self._has_type[Self._1r]():
+                    return rebind[Self._1r](func)(py_self)
+                elif Self._has_type[Self._1e]():
+                    rebind[Self._1e](func)(py_self)
+                    return PO(None)
+                elif Self._has_type[Self._1]():
+                    rebind[Self._1](func)(py_self)
+                    return PO(None)
+                elif Self._has_type[Self._1er_self]():
+                    return rebind[Self._1er_self](func)(
+                        Self._get_self_arg(py_self)
+                    )
+                elif Self._has_type[Self._1r_self]():
+                    return rebind[Self._1r_self](func)(
+                        Self._get_self_arg(py_self)
+                    )
+                elif Self._has_type[Self._1e_self]():
+                    rebind[Self._1e_self](func)(Self._get_self_arg(py_self))
+                    return PO(None)
+                else:
+                    rebind[Self._1_self](func)(Self._get_self_arg(py_self))
+                    return PO(None)
         elif Self._has_arity(2):
-            check_arguments_arity(2, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-
-            @parameter
-            if self._has_type[Self._2er]():
-                return rebind[Self._2er](self._func)(arg0, arg1)
-            elif self._has_type[Self._2r]():
-                return rebind[Self._2r](self._func)(arg0, arg1)
-            elif self._has_type[Self._2e]():
-                return PO(rebind[Self._2e](self._func)(arg0, arg1))
-            elif self._has_type[Self._2]():
-                return PO(rebind[Self._2](self._func)(arg0, arg1))
+            comptime if not is_method:
+                check_arguments_arity(2, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                comptime if Self._has_type[Self._2er]():
+                    return rebind[Self._2er](func)(a0, a1)
+                elif Self._has_type[Self._2r]():
+                    return rebind[Self._2r](func)(a0, a1)
+                elif Self._has_type[Self._2e]():
+                    rebind[Self._2e](func)(a0, a1)
+                    return PO(None)
+                else:
+                    rebind[Self._2](func)(a0, a1)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(1, py_args)
+                var a0 = py_args[0]
+                comptime if Self._has_type[Self._2er]():
+                    return rebind[Self._2er](func)(py_self, a0)
+                elif Self._has_type[Self._2r]():
+                    return rebind[Self._2r](func)(py_self, a0)
+                elif Self._has_type[Self._2e]():
+                    rebind[Self._2e](func)(py_self, a0)
+                    return PO(None)
+                elif Self._has_type[Self._2]():
+                    rebind[Self._2](func)(py_self, a0)
+                    return PO(None)
+                elif Self._has_type[Self._2er_self]():
+                    return rebind[Self._2er_self](func)(
+                        Self._get_self_arg(py_self), a0
+                    )
+                elif Self._has_type[Self._2r_self]():
+                    return rebind[Self._2r_self](func)(
+                        Self._get_self_arg(py_self), a0
+                    )
+                elif Self._has_type[Self._2e_self]():
+                    rebind[Self._2e_self](func)(Self._get_self_arg(py_self), a0)
+                    return PO(None)
+                else:
+                    rebind[Self._2_self](func)(Self._get_self_arg(py_self), a0)
+                    return PO(None)
         elif Self._has_arity(3):
-            check_arguments_arity(3, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-
-            @parameter
-            if self._has_type[Self._3er]():
-                return rebind[Self._3er](self._func)(arg0, arg1, arg2)
-            elif self._has_type[Self._3r]():
-                return rebind[Self._3r](self._func)(arg0, arg1, arg2)
-            elif self._has_type[Self._3e]():
-                return PO(rebind[Self._3e](self._func)(arg0, arg1, arg2))
-            elif self._has_type[Self._3]():
-                return PO(rebind[Self._3](self._func)(arg0, arg1, arg2))
+            comptime if not is_method:
+                check_arguments_arity(3, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                comptime if Self._has_type[Self._3er]():
+                    return rebind[Self._3er](func)(a0, a1, a2)
+                elif Self._has_type[Self._3r]():
+                    return rebind[Self._3r](func)(a0, a1, a2)
+                elif Self._has_type[Self._3e]():
+                    rebind[Self._3e](func)(a0, a1, a2)
+                    return PO(None)
+                else:
+                    rebind[Self._3](func)(a0, a1, a2)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(2, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                comptime if Self._has_type[Self._3er]():
+                    return rebind[Self._3er](func)(py_self, a0, a1)
+                elif Self._has_type[Self._3r]():
+                    return rebind[Self._3r](func)(py_self, a0, a1)
+                elif Self._has_type[Self._3e]():
+                    rebind[Self._3e](func)(py_self, a0, a1)
+                    return PO(None)
+                elif Self._has_type[Self._3]():
+                    rebind[Self._3](func)(py_self, a0, a1)
+                    return PO(None)
+                elif Self._has_type[Self._3er_self]():
+                    return rebind[Self._3er_self](func)(
+                        Self._get_self_arg(py_self), a0, a1
+                    )
+                elif Self._has_type[Self._3r_self]():
+                    return rebind[Self._3r_self](func)(
+                        Self._get_self_arg(py_self), a0, a1
+                    )
+                elif Self._has_type[Self._3e_self]():
+                    rebind[Self._3e_self](func)(
+                        Self._get_self_arg(py_self), a0, a1
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._3_self](func)(
+                        Self._get_self_arg(py_self), a0, a1
+                    )
+                    return PO(None)
         elif Self._has_arity(4):
-            check_arguments_arity(4, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-
-            @parameter
-            if self._has_type[Self._4er]():
-                return rebind[Self._4er](self._func)(arg0, arg1, arg2, arg3)
-            elif self._has_type[Self._4r]():
-                return rebind[Self._4r](self._func)(arg0, arg1, arg2, arg3)
-            elif self._has_type[Self._4e]():
-                return PO(rebind[Self._4e](self._func)(arg0, arg1, arg2, arg3))
-            elif self._has_type[Self._4]():
-                return PO(rebind[Self._4](self._func)(arg0, arg1, arg2, arg3))
+            comptime if not is_method:
+                check_arguments_arity(4, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                comptime if Self._has_type[Self._4er]():
+                    return rebind[Self._4er](func)(a0, a1, a2, a3)
+                elif Self._has_type[Self._4r]():
+                    return rebind[Self._4r](func)(a0, a1, a2, a3)
+                elif Self._has_type[Self._4e]():
+                    rebind[Self._4e](func)(a0, a1, a2, a3)
+                    return PO(None)
+                else:
+                    rebind[Self._4](func)(a0, a1, a2, a3)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(3, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                comptime if Self._has_type[Self._4er]():
+                    return rebind[Self._4er](func)(py_self, a0, a1, a2)
+                elif Self._has_type[Self._4r]():
+                    return rebind[Self._4r](func)(py_self, a0, a1, a2)
+                elif Self._has_type[Self._4e]():
+                    rebind[Self._4e](func)(py_self, a0, a1, a2)
+                    return PO(None)
+                elif Self._has_type[Self._4]():
+                    rebind[Self._4](func)(py_self, a0, a1, a2)
+                    return PO(None)
+                elif Self._has_type[Self._4er_self]():
+                    return rebind[Self._4er_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2
+                    )
+                elif Self._has_type[Self._4r_self]():
+                    return rebind[Self._4r_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2
+                    )
+                elif Self._has_type[Self._4e_self]():
+                    rebind[Self._4e_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._4_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2
+                    )
+                    return PO(None)
         elif Self._has_arity(5):
-            check_arguments_arity(5, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-            var arg4 = py_args[4]
-
-            @parameter
-            if self._has_type[Self._5er]():
-                return rebind[Self._5er](self._func)(
-                    arg0, arg1, arg2, arg3, arg4
-                )
-            elif self._has_type[Self._5r]():
-                return rebind[Self._5r](self._func)(
-                    arg0, arg1, arg2, arg3, arg4
-                )
-            elif self._has_type[Self._5e]():
-                return PO(
-                    rebind[Self._5e](self._func)(arg0, arg1, arg2, arg3, arg4)
-                )
-            elif self._has_type[Self._5]():
-                return PO(
-                    rebind[Self._5](self._func)(arg0, arg1, arg2, arg3, arg4)
-                )
+            comptime if not is_method:
+                check_arguments_arity(5, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                comptime if Self._has_type[Self._5er]():
+                    return rebind[Self._5er](func)(a0, a1, a2, a3, a4)
+                elif Self._has_type[Self._5r]():
+                    return rebind[Self._5r](func)(a0, a1, a2, a3, a4)
+                elif Self._has_type[Self._5e]():
+                    rebind[Self._5e](func)(a0, a1, a2, a3, a4)
+                    return PO(None)
+                else:
+                    rebind[Self._5](func)(a0, a1, a2, a3, a4)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(4, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                comptime if Self._has_type[Self._5er]():
+                    return rebind[Self._5er](func)(py_self, a0, a1, a2, a3)
+                elif Self._has_type[Self._5r]():
+                    return rebind[Self._5r](func)(py_self, a0, a1, a2, a3)
+                elif Self._has_type[Self._5e]():
+                    rebind[Self._5e](func)(py_self, a0, a1, a2, a3)
+                    return PO(None)
+                elif Self._has_type[Self._5]():
+                    rebind[Self._5](func)(py_self, a0, a1, a2, a3)
+                    return PO(None)
+                elif Self._has_type[Self._5er_self]():
+                    return rebind[Self._5er_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3
+                    )
+                elif Self._has_type[Self._5r_self]():
+                    return rebind[Self._5r_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3
+                    )
+                elif Self._has_type[Self._5e_self]():
+                    rebind[Self._5e_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._5_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3
+                    )
+                    return PO(None)
         elif Self._has_arity(6):
-            check_arguments_arity(6, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-            var arg4 = py_args[4]
-            var arg5 = py_args[5]
-
-            @parameter
-            if self._has_type[Self._6er]():
-                return rebind[Self._6er](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5
-                )
-            elif self._has_type[Self._6r]():
-                return rebind[Self._6r](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5
-                )
-            elif self._has_type[Self._6e]():
-                return PO(
-                    rebind[Self._6e](self._func)(
-                        arg0, arg1, arg2, arg3, arg4, arg5
-                    )
-                )
-            elif self._has_type[Self._6]():
-                return PO(
-                    rebind[Self._6](self._func)(
-                        arg0, arg1, arg2, arg3, arg4, arg5
-                    )
-                )
+            comptime if not is_method:
+                check_arguments_arity(6, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                var a5 = py_args[5]
+                comptime if Self._has_type[Self._6er]():
+                    return rebind[Self._6er](func)(a0, a1, a2, a3, a4, a5)
+                elif Self._has_type[Self._6r]():
+                    return rebind[Self._6r](func)(a0, a1, a2, a3, a4, a5)
+                elif Self._has_type[Self._6e]():
+                    rebind[Self._6e](func)(a0, a1, a2, a3, a4, a5)
+                    return PO(None)
+                else:
+                    rebind[Self._6](func)(a0, a1, a2, a3, a4, a5)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(5, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                comptime if Self._has_type[Self._6er]():
+                    return rebind[Self._6er](func)(py_self, a0, a1, a2, a3, a4)
+                elif Self._has_type[Self._6r]():
+                    return rebind[Self._6r](func)(py_self, a0, a1, a2, a3, a4)
+                elif Self._has_type[Self._6e]():
+                    rebind[Self._6e](func)(py_self, a0, a1, a2, a3, a4)
+                    return PO(None)
+                elif Self._has_type[Self._6]():
+                    rebind[Self._6](func)(py_self, a0, a1, a2, a3, a4)
+                    return PO(None)
+                elif Self._has_type[Self._6er_self]():
+                    return rebind[Self._6er_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4
+                    )
+                elif Self._has_type[Self._6r_self]():
+                    return rebind[Self._6r_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4
+                    )
+                elif Self._has_type[Self._6e_self]():
+                    rebind[Self._6e_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._6_self](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4
+                    )
+                    return PO(None)
         else:
-            constrained[False, "unsupported arity"]()
-            return PO()
+            comptime assert False, "unsupported arity"
 
+    @staticmethod
     @always_inline("nodebug")
-    fn _call_func(self, py_args: PO, py_kwargs: PO) raises -> PO:
-        comptime assert (
-            Self.has_kwargs
-        ), "should only be used for functions that accept kwargs"
-        var kwargs = Self._convert_kwargs(py_kwargs)
+    def _dispatch_kwargs[
+        is_method: Bool,
+    ](
+        func: Self.func_type,
+        py_self: PO,
+        py_args: PO,
+        kwargs: OwnedKwargsDict[PO],
+    ) raises -> PO:
+        """Compile-time dispatch for kwargs function/method calls."""
+        comptime assert Self.has_kwargs, "only for kwargs functions"
 
-        @parameter
-        if Self._has_arity(0):
+        comptime if Self._has_arity(0):
+            comptime assert not is_method, "arity-0 methods not supported"
             check_arguments_arity(0, py_args)
-
-            @parameter
-            if self._has_type[Self._0er_kwargs]():
-                return rebind[Self._0er_kwargs](self._func)(kwargs)
-            elif self._has_type[Self._0r_kwargs]():
-                return rebind[Self._0r_kwargs](self._func)(kwargs)
-            elif self._has_type[Self._0e_kwargs]():
-                return PO(rebind[Self._0e_kwargs](self._func)(kwargs))
-            elif self._has_type[Self._0_kwargs]():
-                return PO(rebind[Self._0_kwargs](self._func)(kwargs))
+            comptime if Self._has_type[Self._0er_kwargs]():
+                return rebind[Self._0er_kwargs](func)(kwargs)
+            elif Self._has_type[Self._0r_kwargs]():
+                return rebind[Self._0r_kwargs](func)(kwargs)
+            elif Self._has_type[Self._0e_kwargs]():
+                rebind[Self._0e_kwargs](func)(kwargs)
+                return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                rebind[Self._0_kwargs](func)(kwargs)
+                return PO(None)
         elif Self._has_arity(1):
-            check_arguments_arity(1, py_args)
-            var arg0 = py_args[0]
-
-            @parameter
-            if self._has_type[Self._1er_kwargs]():
-                return rebind[Self._1er_kwargs](self._func)(arg0, kwargs)
-            elif self._has_type[Self._1r_kwargs]():
-                return rebind[Self._1r_kwargs](self._func)(arg0, kwargs)
-            elif self._has_type[Self._1e_kwargs]():
-                return PO(rebind[Self._1e_kwargs](self._func)(arg0, kwargs))
-            elif self._has_type[Self._1_kwargs]():
-                return PO(rebind[Self._1_kwargs](self._func)(arg0, kwargs))
+            comptime if not is_method:
+                check_arguments_arity(1, py_args)
+                var a0 = py_args[0]
+                comptime if Self._has_type[Self._1er_kwargs]():
+                    return rebind[Self._1er_kwargs](func)(a0, kwargs)
+                elif Self._has_type[Self._1r_kwargs]():
+                    return rebind[Self._1r_kwargs](func)(a0, kwargs)
+                elif Self._has_type[Self._1e_kwargs]():
+                    rebind[Self._1e_kwargs](func)(a0, kwargs)
+                    return PO(None)
+                else:
+                    rebind[Self._1_kwargs](func)(a0, kwargs)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(0, py_args)
+                comptime if Self._has_type[Self._1er_kwargs]():
+                    return rebind[Self._1er_kwargs](func)(py_self, kwargs)
+                elif Self._has_type[Self._1r_kwargs]():
+                    return rebind[Self._1r_kwargs](func)(py_self, kwargs)
+                elif Self._has_type[Self._1e_kwargs]():
+                    rebind[Self._1e_kwargs](func)(py_self, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._1_kwargs]():
+                    rebind[Self._1_kwargs](func)(py_self, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._1er_self_kwargs]():
+                    return rebind[Self._1er_self_kwargs](func)(
+                        Self._get_self_arg(py_self), kwargs
+                    )
+                elif Self._has_type[Self._1r_self_kwargs]():
+                    return rebind[Self._1r_self_kwargs](func)(
+                        Self._get_self_arg(py_self), kwargs
+                    )
+                elif Self._has_type[Self._1e_self_kwargs]():
+                    rebind[Self._1e_self_kwargs](func)(
+                        Self._get_self_arg(py_self), kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._1_self_kwargs](func)(
+                        Self._get_self_arg(py_self), kwargs
+                    )
+                    return PO(None)
         elif Self._has_arity(2):
-            check_arguments_arity(2, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-
-            @parameter
-            if self._has_type[Self._2er_kwargs]():
-                return rebind[Self._2er_kwargs](self._func)(arg0, arg1, kwargs)
-            elif self._has_type[Self._2r_kwargs]():
-                return rebind[Self._2r_kwargs](self._func)(arg0, arg1, kwargs)
-            elif self._has_type[Self._2e_kwargs]():
-                return PO(
-                    rebind[Self._2e_kwargs](self._func)(arg0, arg1, kwargs)
-                )
-            elif self._has_type[Self._2_kwargs]():
-                return PO(
-                    rebind[Self._2_kwargs](self._func)(arg0, arg1, kwargs)
-                )
+            comptime if not is_method:
+                check_arguments_arity(2, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                comptime if Self._has_type[Self._2er_kwargs]():
+                    return rebind[Self._2er_kwargs](func)(a0, a1, kwargs)
+                elif Self._has_type[Self._2r_kwargs]():
+                    return rebind[Self._2r_kwargs](func)(a0, a1, kwargs)
+                elif Self._has_type[Self._2e_kwargs]():
+                    rebind[Self._2e_kwargs](func)(a0, a1, kwargs)
+                    return PO(None)
+                else:
+                    rebind[Self._2_kwargs](func)(a0, a1, kwargs)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(1, py_args)
+                var a0 = py_args[0]
+                comptime if Self._has_type[Self._2er_kwargs]():
+                    return rebind[Self._2er_kwargs](func)(py_self, a0, kwargs)
+                elif Self._has_type[Self._2r_kwargs]():
+                    return rebind[Self._2r_kwargs](func)(py_self, a0, kwargs)
+                elif Self._has_type[Self._2e_kwargs]():
+                    rebind[Self._2e_kwargs](func)(py_self, a0, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._2_kwargs]():
+                    rebind[Self._2_kwargs](func)(py_self, a0, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._2er_self_kwargs]():
+                    return rebind[Self._2er_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, kwargs
+                    )
+                elif Self._has_type[Self._2r_self_kwargs]():
+                    return rebind[Self._2r_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, kwargs
+                    )
+                elif Self._has_type[Self._2e_self_kwargs]():
+                    rebind[Self._2e_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._2_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, kwargs
+                    )
+                    return PO(None)
         elif Self._has_arity(3):
-            check_arguments_arity(3, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-
-            @parameter
-            if self._has_type[Self._3er_kwargs]():
-                return rebind[Self._3er_kwargs](self._func)(
-                    arg0, arg1, arg2, kwargs
-                )
-            elif self._has_type[Self._3r_kwargs]():
-                return rebind[Self._3r_kwargs](self._func)(
-                    arg0, arg1, arg2, kwargs
-                )
-            elif self._has_type[Self._3e_kwargs]():
-                return PO(
-                    rebind[Self._3e_kwargs](self._func)(
-                        arg0, arg1, arg2, kwargs
-                    )
-                )
-            elif self._has_type[Self._3_kwargs]():
-                return PO(
-                    rebind[Self._3_kwargs](self._func)(arg0, arg1, arg2, kwargs)
-                )
+            comptime if not is_method:
+                check_arguments_arity(3, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                comptime if Self._has_type[Self._3er_kwargs]():
+                    return rebind[Self._3er_kwargs](func)(a0, a1, a2, kwargs)
+                elif Self._has_type[Self._3r_kwargs]():
+                    return rebind[Self._3r_kwargs](func)(a0, a1, a2, kwargs)
+                elif Self._has_type[Self._3e_kwargs]():
+                    rebind[Self._3e_kwargs](func)(a0, a1, a2, kwargs)
+                    return PO(None)
+                else:
+                    rebind[Self._3_kwargs](func)(a0, a1, a2, kwargs)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(2, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                comptime if Self._has_type[Self._3er_kwargs]():
+                    return rebind[Self._3er_kwargs](func)(
+                        py_self, a0, a1, kwargs
+                    )
+                elif Self._has_type[Self._3r_kwargs]():
+                    return rebind[Self._3r_kwargs](func)(
+                        py_self, a0, a1, kwargs
+                    )
+                elif Self._has_type[Self._3e_kwargs]():
+                    rebind[Self._3e_kwargs](func)(py_self, a0, a1, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._3_kwargs]():
+                    rebind[Self._3_kwargs](func)(py_self, a0, a1, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._3er_self_kwargs]():
+                    return rebind[Self._3er_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, kwargs
+                    )
+                elif Self._has_type[Self._3r_self_kwargs]():
+                    return rebind[Self._3r_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, kwargs
+                    )
+                elif Self._has_type[Self._3e_self_kwargs]():
+                    rebind[Self._3e_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._3_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, kwargs
+                    )
+                    return PO(None)
         elif Self._has_arity(4):
-            check_arguments_arity(4, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-
-            @parameter
-            if self._has_type[Self._4er_kwargs]():
-                return rebind[Self._4er_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, kwargs
-                )
-            elif self._has_type[Self._4r_kwargs]():
-                return rebind[Self._4r_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, kwargs
-                )
-            elif self._has_type[Self._4e_kwargs]():
-                return PO(
-                    rebind[Self._4e_kwargs](self._func)(
-                        arg0, arg1, arg2, arg3, kwargs
+            comptime if not is_method:
+                check_arguments_arity(4, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                comptime if Self._has_type[Self._4er_kwargs]():
+                    return rebind[Self._4er_kwargs](func)(
+                        a0, a1, a2, a3, kwargs
                     )
-                )
-            elif self._has_type[Self._4_kwargs]():
-                return PO(
-                    rebind[Self._4_kwargs](self._func)(
-                        arg0, arg1, arg2, arg3, kwargs
-                    )
-                )
+                elif Self._has_type[Self._4r_kwargs]():
+                    return rebind[Self._4r_kwargs](func)(a0, a1, a2, a3, kwargs)
+                elif Self._has_type[Self._4e_kwargs]():
+                    rebind[Self._4e_kwargs](func)(a0, a1, a2, a3, kwargs)
+                    return PO(None)
+                else:
+                    rebind[Self._4_kwargs](func)(a0, a1, a2, a3, kwargs)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(3, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                comptime if Self._has_type[Self._4er_kwargs]():
+                    return rebind[Self._4er_kwargs](func)(
+                        py_self, a0, a1, a2, kwargs
+                    )
+                elif Self._has_type[Self._4r_kwargs]():
+                    return rebind[Self._4r_kwargs](func)(
+                        py_self, a0, a1, a2, kwargs
+                    )
+                elif Self._has_type[Self._4e_kwargs]():
+                    rebind[Self._4e_kwargs](func)(py_self, a0, a1, a2, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._4_kwargs]():
+                    rebind[Self._4_kwargs](func)(py_self, a0, a1, a2, kwargs)
+                    return PO(None)
+                elif Self._has_type[Self._4er_self_kwargs]():
+                    return rebind[Self._4er_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                    )
+                elif Self._has_type[Self._4r_self_kwargs]():
+                    return rebind[Self._4r_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                    )
+                elif Self._has_type[Self._4e_self_kwargs]():
+                    rebind[Self._4e_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._4_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, kwargs
+                    )
+                    return PO(None)
         elif Self._has_arity(5):
-            check_arguments_arity(5, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-            var arg4 = py_args[4]
-
-            @parameter
-            if self._has_type[Self._5er_kwargs]():
-                return rebind[Self._5er_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, kwargs
-                )
-            elif self._has_type[Self._5r_kwargs]():
-                return rebind[Self._5r_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, kwargs
-                )
-            elif self._has_type[Self._5e_kwargs]():
-                return PO(
-                    rebind[Self._5e_kwargs](self._func)(
-                        arg0, arg1, arg2, arg3, arg4, kwargs
+            comptime if not is_method:
+                check_arguments_arity(5, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                comptime if Self._has_type[Self._5er_kwargs]():
+                    return rebind[Self._5er_kwargs](func)(
+                        a0, a1, a2, a3, a4, kwargs
                     )
-                )
-            elif self._has_type[Self._5_kwargs]():
-                return PO(
-                    rebind[Self._5_kwargs](self._func)(
-                        arg0, arg1, arg2, arg3, arg4, kwargs
+                elif Self._has_type[Self._5r_kwargs]():
+                    return rebind[Self._5r_kwargs](func)(
+                        a0, a1, a2, a3, a4, kwargs
                     )
-                )
+                elif Self._has_type[Self._5e_kwargs]():
+                    rebind[Self._5e_kwargs](func)(a0, a1, a2, a3, a4, kwargs)
+                    return PO(None)
+                else:
+                    rebind[Self._5_kwargs](func)(a0, a1, a2, a3, a4, kwargs)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(4, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                comptime if Self._has_type[Self._5er_kwargs]():
+                    return rebind[Self._5er_kwargs](func)(
+                        py_self, a0, a1, a2, a3, kwargs
+                    )
+                elif Self._has_type[Self._5r_kwargs]():
+                    return rebind[Self._5r_kwargs](func)(
+                        py_self, a0, a1, a2, a3, kwargs
+                    )
+                elif Self._has_type[Self._5e_kwargs]():
+                    rebind[Self._5e_kwargs](func)(
+                        py_self, a0, a1, a2, a3, kwargs
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._5_kwargs]():
+                    rebind[Self._5_kwargs](func)(
+                        py_self, a0, a1, a2, a3, kwargs
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._5er_self_kwargs]():
+                    return rebind[Self._5er_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                    )
+                elif Self._has_type[Self._5r_self_kwargs]():
+                    return rebind[Self._5r_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                    )
+                elif Self._has_type[Self._5e_self_kwargs]():
+                    rebind[Self._5e_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._5_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, kwargs
+                    )
+                    return PO(None)
         elif Self._has_arity(6):
-            check_arguments_arity(6, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-            var arg4 = py_args[4]
-            var arg5 = py_args[5]
-
-            @parameter
-            if self._has_type[Self._6er_kwargs]():
-                return rebind[Self._6er_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
-                )
-            elif self._has_type[Self._6r_kwargs]():
-                return rebind[Self._6r_kwargs](self._func)(
-                    arg0, arg1, arg2, arg3, arg4, arg5, kwargs
-                )
-            elif self._has_type[Self._6e_kwargs]():
-                return PO(
-                    rebind[Self._6e_kwargs](self._func)(
-                        arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+            comptime if not is_method:
+                check_arguments_arity(6, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                var a5 = py_args[5]
+                comptime if Self._has_type[Self._6er_kwargs]():
+                    return rebind[Self._6er_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, kwargs
                     )
-                )
-            elif self._has_type[Self._6_kwargs]():
-                return PO(
-                    rebind[Self._6_kwargs](self._func)(
-                        arg0, arg1, arg2, arg3, arg4, arg5, kwargs
+                elif Self._has_type[Self._6r_kwargs]():
+                    return rebind[Self._6r_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, kwargs
                     )
-                )
+                elif Self._has_type[Self._6e_kwargs]():
+                    rebind[Self._6e_kwargs](func)(
+                        a0, a1, a2, a3, a4, a5, kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._6_kwargs](func)(a0, a1, a2, a3, a4, a5, kwargs)
+                    return PO(None)
             else:
-                constrained[False, "unsupported signature"]()
-                return PO()
+                check_arguments_arity(5, py_args)
+                var a0 = py_args[0]
+                var a1 = py_args[1]
+                var a2 = py_args[2]
+                var a3 = py_args[3]
+                var a4 = py_args[4]
+                comptime if Self._has_type[Self._6er_kwargs]():
+                    return rebind[Self._6er_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, kwargs
+                    )
+                elif Self._has_type[Self._6r_kwargs]():
+                    return rebind[Self._6r_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, kwargs
+                    )
+                elif Self._has_type[Self._6e_kwargs]():
+                    rebind[Self._6e_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, kwargs
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._6_kwargs]():
+                    rebind[Self._6_kwargs](func)(
+                        py_self, a0, a1, a2, a3, a4, kwargs
+                    )
+                    return PO(None)
+                elif Self._has_type[Self._6er_self_kwargs]():
+                    return rebind[Self._6er_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                    )
+                elif Self._has_type[Self._6r_self_kwargs]():
+                    return rebind[Self._6r_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                    )
+                elif Self._has_type[Self._6e_self_kwargs]():
+                    rebind[Self._6e_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                    )
+                    return PO(None)
+                else:
+                    rebind[Self._6_self_kwargs](func)(
+                        Self._get_self_arg(py_self), a0, a1, a2, a3, a4, kwargs
+                    )
+                    return PO(None)
         else:
-            constrained[False, "unsupported arity"]()
-            return PO()
-
-    @always_inline("nodebug")
-    fn _call_method(self, py_self: PO, py_args: PO) raises -> PO:
-        comptime assert not Self._has_arity(0), "method arity must not be 0"
-
-        @parameter
-        if Self._has_arity(1):
-            check_arguments_arity(0, py_args)
-
-            @parameter
-            if self._has_type[Self._1er]():
-                return rebind[Self._1er](self._func)(py_self)
-            elif self._has_type[Self._1r]():
-                return rebind[Self._1r](self._func)(py_self)
-            elif self._has_type[Self._1e]():
-                return PO(rebind[Self._1e](self._func)(py_self))
-            elif self._has_type[Self._1]():
-                return PO(rebind[Self._1](self._func)(py_self))
-            elif self._has_type[Self._1er_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1er_self](self._func)(self_arg)
-            elif self._has_type[Self._1r_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1r_self](self._func)(self_arg)
-            elif self._has_type[Self._1e_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(rebind[Self._1e_self](self._func)(self_arg))
-            elif self._has_type[Self._1_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(rebind[Self._1_self](self._func)(self_arg))
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(2):
-            check_arguments_arity(1, py_args)
-            var arg0 = py_args[0]
-
-            @parameter
-            if self._has_type[Self._2er]():
-                return rebind[Self._2er](self._func)(py_self, arg0)
-            elif self._has_type[Self._2r]():
-                return rebind[Self._2r](self._func)(py_self, arg0)
-            elif self._has_type[Self._2e]():
-                return PO(rebind[Self._2e](self._func)(py_self, arg0))
-            elif self._has_type[Self._2]():
-                return PO(rebind[Self._2](self._func)(py_self, arg0))
-            elif self._has_type[Self._2er_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2er_self](self._func)(self_arg, arg0)
-            elif self._has_type[Self._2r_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2r_self](self._func)(self_arg, arg0)
-            elif self._has_type[Self._2e_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(rebind[Self._2e_self](self._func)(self_arg, arg0))
-            elif self._has_type[Self._2_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(rebind[Self._2_self](self._func)(self_arg, arg0))
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(3):
-            check_arguments_arity(2, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-
-            @parameter
-            if self._has_type[Self._3er]():
-                return rebind[Self._3er](self._func)(py_self, arg0, arg1)
-            elif self._has_type[Self._3r]():
-                return rebind[Self._3r](self._func)(py_self, arg0, arg1)
-            elif self._has_type[Self._3e]():
-                return PO(rebind[Self._3e](self._func)(py_self, arg0, arg1))
-            elif self._has_type[Self._3]():
-                return PO(rebind[Self._3](self._func)(py_self, arg0, arg1))
-            elif self._has_type[Self._3er_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3er_self](self._func)(self_arg, arg0, arg1)
-            elif self._has_type[Self._3r_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3r_self](self._func)(self_arg, arg0, arg1)
-            elif self._has_type[Self._3e_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._3e_self](self._func)(self_arg, arg0, arg1)
-                )
-            elif self._has_type[Self._3_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._3_self](self._func)(self_arg, arg0, arg1)
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(4):
-            check_arguments_arity(3, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-
-            @parameter
-            if self._has_type[Self._4er]():
-                return rebind[Self._4er](self._func)(py_self, arg0, arg1, arg2)
-            elif self._has_type[Self._4r]():
-                return rebind[Self._4r](self._func)(py_self, arg0, arg1, arg2)
-            elif self._has_type[Self._4e]():
-                return PO(
-                    rebind[Self._4e](self._func)(py_self, arg0, arg1, arg2)
-                )
-            elif self._has_type[Self._4]():
-                return PO(
-                    rebind[Self._4](self._func)(py_self, arg0, arg1, arg2)
-                )
-            elif self._has_type[Self._4er_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4er_self](self._func)(
-                    self_arg, arg0, arg1, arg2
-                )
-            elif self._has_type[Self._4r_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4r_self](self._func)(
-                    self_arg, arg0, arg1, arg2
-                )
-            elif self._has_type[Self._4e_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._4e_self](self._func)(
-                        self_arg, arg0, arg1, arg2
-                    )
-                )
-            elif self._has_type[Self._4_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._4_self](self._func)(self_arg, arg0, arg1, arg2)
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(5):
-            check_arguments_arity(4, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-
-            @parameter
-            if self._has_type[Self._5er]():
-                return rebind[Self._5er](self._func)(
-                    py_self, arg0, arg1, arg2, arg3
-                )
-            elif self._has_type[Self._5r]():
-                return rebind[Self._5r](self._func)(
-                    py_self, arg0, arg1, arg2, arg3
-                )
-            elif self._has_type[Self._5e]():
-                return PO(
-                    rebind[Self._5e](self._func)(
-                        py_self, arg0, arg1, arg2, arg3
-                    )
-                )
-            elif self._has_type[Self._5]():
-                return PO(
-                    rebind[Self._5](self._func)(py_self, arg0, arg1, arg2, arg3)
-                )
-            elif self._has_type[Self._5er_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5er_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3
-                )
-            elif self._has_type[Self._5r_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5r_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3
-                )
-            elif self._has_type[Self._5e_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._5e_self](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3
-                    )
-                )
-            elif self._has_type[Self._5_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._5_self](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(6):
-            check_arguments_arity(5, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-            var arg4 = py_args[4]
-
-            @parameter
-            if self._has_type[Self._6er]():
-                return rebind[Self._6er](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4
-                )
-            elif self._has_type[Self._6r]():
-                return rebind[Self._6r](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4
-                )
-            elif self._has_type[Self._6e]():
-                return PO(
-                    rebind[Self._6e](self._func)(
-                        py_self, arg0, arg1, arg2, arg3, arg4
-                    )
-                )
-            elif self._has_type[Self._6]():
-                return PO(
-                    rebind[Self._6](self._func)(
-                        py_self, arg0, arg1, arg2, arg3, arg4
-                    )
-                )
-            elif self._has_type[Self._6er_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6er_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4
-                )
-            elif self._has_type[Self._6r_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6r_self](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4
-                )
-            elif self._has_type[Self._6e_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._6e_self](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3, arg4
-                    )
-                )
-            elif self._has_type[Self._6_self]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._6_self](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3, arg4
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        else:
-            constrained[False, "unsupported arity"]()
-            return PO()
-
-    @always_inline("nodebug")
-    fn _call_method(self, py_self: PO, py_args: PO, py_kwargs: PO) raises -> PO:
-        comptime assert not Self._has_arity(0), "method arity must not be 0"
-        comptime assert (
-            Self.has_kwargs
-        ), "should only be used for methods that accept kwargs"
-        var kwargs = Self._convert_kwargs(py_kwargs)
-
-        @parameter
-        if Self._has_arity(1):
-            check_arguments_arity(0, py_args)
-
-            @parameter
-            if self._has_type[Self._1er_kwargs]():
-                return rebind[Self._1er_kwargs](self._func)(py_self, kwargs)
-            elif self._has_type[Self._1r_kwargs]():
-                return rebind[Self._1r_kwargs](self._func)(py_self, kwargs)
-            elif self._has_type[Self._1e_kwargs]():
-                return PO(rebind[Self._1e_kwargs](self._func)(py_self, kwargs))
-            elif self._has_type[Self._1_kwargs]():
-                return PO(rebind[Self._1_kwargs](self._func)(py_self, kwargs))
-            elif self._has_type[Self._1er_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1er_self_kwargs](self._func)(
-                    self_arg, kwargs
-                )
-            elif self._has_type[Self._1r_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._1r_self_kwargs](self._func)(
-                    self_arg, kwargs
-                )
-            elif self._has_type[Self._1e_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._1e_self_kwargs](self._func)(self_arg, kwargs)
-                )
-            elif self._has_type[Self._1_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._1_self_kwargs](self._func)(self_arg, kwargs)
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(2):
-            check_arguments_arity(1, py_args)
-            var arg0 = py_args[0]
-
-            @parameter
-            if self._has_type[Self._2er_kwargs]():
-                return rebind[Self._2er_kwargs](self._func)(
-                    py_self, arg0, kwargs
-                )
-            elif self._has_type[Self._2r_kwargs]():
-                return rebind[Self._2r_kwargs](self._func)(
-                    py_self, arg0, kwargs
-                )
-            elif self._has_type[Self._2e_kwargs]():
-                return PO(
-                    rebind[Self._2e_kwargs](self._func)(py_self, arg0, kwargs)
-                )
-            elif self._has_type[Self._2_kwargs]():
-                return PO(
-                    rebind[Self._2_kwargs](self._func)(py_self, arg0, kwargs)
-                )
-            elif self._has_type[Self._2er_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2er_self_kwargs](self._func)(
-                    self_arg, arg0, kwargs
-                )
-            elif self._has_type[Self._2r_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._2r_self_kwargs](self._func)(
-                    self_arg, arg0, kwargs
-                )
-            elif self._has_type[Self._2e_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._2e_self_kwargs](self._func)(
-                        self_arg, arg0, kwargs
-                    )
-                )
-            elif self._has_type[Self._2_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._2_self_kwargs](self._func)(
-                        self_arg, arg0, kwargs
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(3):
-            check_arguments_arity(2, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-
-            @parameter
-            if self._has_type[Self._3er_kwargs]():
-                return rebind[Self._3er_kwargs](self._func)(
-                    py_self, arg0, arg1, kwargs
-                )
-            elif self._has_type[Self._3r_kwargs]():
-                return rebind[Self._3r_kwargs](self._func)(
-                    py_self, arg0, arg1, kwargs
-                )
-            elif self._has_type[Self._3e_kwargs]():
-                return PO(
-                    rebind[Self._3e_kwargs](self._func)(
-                        py_self, arg0, arg1, kwargs
-                    )
-                )
-            elif self._has_type[Self._3_kwargs]():
-                return PO(
-                    rebind[Self._3_kwargs](self._func)(
-                        py_self, arg0, arg1, kwargs
-                    )
-                )
-            elif self._has_type[Self._3er_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3er_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, kwargs
-                )
-            elif self._has_type[Self._3r_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._3r_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, kwargs
-                )
-            elif self._has_type[Self._3e_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._3e_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, kwargs
-                    )
-                )
-            elif self._has_type[Self._3_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._3_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, kwargs
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(4):
-            check_arguments_arity(3, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-
-            @parameter
-            if self._has_type[Self._4er_kwargs]():
-                return rebind[Self._4er_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, kwargs
-                )
-            elif self._has_type[Self._4r_kwargs]():
-                return rebind[Self._4r_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, kwargs
-                )
-            elif self._has_type[Self._4e_kwargs]():
-                return PO(
-                    rebind[Self._4e_kwargs](self._func)(
-                        py_self, arg0, arg1, arg2, kwargs
-                    )
-                )
-            elif self._has_type[Self._4_kwargs]():
-                return PO(
-                    rebind[Self._4_kwargs](self._func)(
-                        py_self, arg0, arg1, arg2, kwargs
-                    )
-                )
-            elif self._has_type[Self._4er_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4er_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, kwargs
-                )
-            elif self._has_type[Self._4r_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._4r_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, kwargs
-                )
-            elif self._has_type[Self._4e_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._4e_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, arg2, kwargs
-                    )
-                )
-            elif self._has_type[Self._4_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._4_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, arg2, kwargs
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(5):
-            check_arguments_arity(4, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-
-            @parameter
-            if self._has_type[Self._5er_kwargs]():
-                return rebind[Self._5er_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, kwargs
-                )
-            elif self._has_type[Self._5r_kwargs]():
-                return rebind[Self._5r_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, kwargs
-                )
-            elif self._has_type[Self._5e_kwargs]():
-                return PO(
-                    rebind[Self._5e_kwargs](self._func)(
-                        py_self, arg0, arg1, arg2, arg3, kwargs
-                    )
-                )
-            elif self._has_type[Self._5_kwargs]():
-                return PO(
-                    rebind[Self._5_kwargs](self._func)(
-                        py_self, arg0, arg1, arg2, arg3, kwargs
-                    )
-                )
-            elif self._has_type[Self._5er_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5er_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, kwargs
-                )
-            elif self._has_type[Self._5r_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._5r_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, kwargs
-                )
-            elif self._has_type[Self._5e_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._5e_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3, kwargs
-                    )
-                )
-            elif self._has_type[Self._5_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._5_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3, kwargs
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        elif Self._has_arity(6):
-            check_arguments_arity(5, py_args)
-            var arg0 = py_args[0]
-            var arg1 = py_args[1]
-            var arg2 = py_args[2]
-            var arg3 = py_args[3]
-            var arg4 = py_args[4]
-
-            @parameter
-            if self._has_type[Self._6er_kwargs]():
-                return rebind[Self._6er_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
-                )
-            elif self._has_type[Self._6r_kwargs]():
-                return rebind[Self._6r_kwargs](self._func)(
-                    py_self, arg0, arg1, arg2, arg3, arg4, kwargs
-                )
-            elif self._has_type[Self._6e_kwargs]():
-                return PO(
-                    rebind[Self._6e_kwargs](self._func)(
-                        py_self, arg0, arg1, arg2, arg3, arg4, kwargs
-                    )
-                )
-            elif self._has_type[Self._6_kwargs]():
-                return PO(
-                    rebind[Self._6_kwargs](self._func)(
-                        py_self, arg0, arg1, arg2, arg3, arg4, kwargs
-                    )
-                )
-            elif self._has_type[Self._6er_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6er_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
-                )
-            elif self._has_type[Self._6r_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return rebind[Self._6r_self_kwargs](self._func)(
-                    self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
-                )
-            elif self._has_type[Self._6e_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._6e_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
-                    )
-                )
-            elif self._has_type[Self._6_self_kwargs]():
-                var self_arg = Self._get_self_arg(py_self)
-                return PO(
-                    rebind[Self._6_self_kwargs](self._func)(
-                        self_arg, arg0, arg1, arg2, arg3, arg4, kwargs
-                    )
-                )
-            else:
-                constrained[False, "unsupported signature"]()
-                return PO()
-        else:
-            constrained[False, "unsupported arity"]()
-            return PO()
+            comptime assert False, "unsupported arity"

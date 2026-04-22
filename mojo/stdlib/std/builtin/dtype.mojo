@@ -16,10 +16,10 @@ These are Mojo built-ins, so you don't need to import them.
 """
 
 
-from hashlib.hasher import Hasher
-from os import abort
-from sys import CompilationTarget, bit_width_of, size_of
-from sys.intrinsics import _type_is_eq
+from std.hashlib.hasher import Hasher
+from std.os import abort
+from std.sys import CompilationTarget, bit_width_of, size_of
+from std.sys.intrinsics import _type_is_eq
 
 comptime _mIsSigned = __mlir_attr.`#pop.simd<1> : !pop.scalar<ui8>`
 comptime _mIsInteger = __mlir_attr.`#pop.simd<128> : !pop.scalar<ui8>`
@@ -32,9 +32,7 @@ struct DType(
     Hashable,
     ImplicitlyCopyable,
     KeyElement,
-    Representable,
-    Stringable,
-    TrivialRegisterType,
+    TrivialRegisterPassable,
     Writable,
 ):
     """Represents a data type specification and provides methods for working
@@ -307,7 +305,7 @@ struct DType(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("builtin")
-    fn __init__(out self, *, mlir_value: Self._mlir_type):
+    def __init__(out self, *, mlir_value: Self._mlir_type):
         """Construct a DType from MLIR dtype.
 
         Args:
@@ -316,7 +314,7 @@ struct DType(
         self._mlir_value = mlir_value
 
     @staticmethod
-    fn _from_str(str: StringSlice) -> DType:
+    def _from_str(str: StringSlice) -> DType:
         """Construct a DType from a string.
 
         Args:
@@ -387,17 +385,7 @@ struct DType(
             return DType.invalid
 
     @no_inline
-    fn __str__(self) -> String:
-        """Gets the name of the DType.
-
-        Returns:
-            The name of the dtype.
-        """
-
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """
         Formats this dtype to the provided Writer.
 
@@ -470,8 +458,8 @@ struct DType(
         return writer.write("<<unknown>>")
 
     @always_inline("nodebug")
-    fn write_repr_to(self, mut writer: Some[Writer]):
-        """Write the string representation of the DType".
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the DType.
 
         Args:
             writer: The value to write to.
@@ -479,18 +467,7 @@ struct DType(
         writer.write("DType.", self)
 
     @always_inline("nodebug")
-    fn __repr__(self) -> String:
-        """Gets the representation of the DType e.g. `"DType.float32"`.
-
-        Returns:
-            The representation of the dtype.
-        """
-        var string = String()
-        self.write_repr_to(string)
-        return string^
-
-    @always_inline("nodebug")
-    fn get_value(self) -> __mlir_type.`!kgen.dtype`:
+    def get_value(self) -> __mlir_type.`!kgen.dtype`:
         """Gets the associated internal kgen.dtype value.
 
         Returns:
@@ -498,34 +475,34 @@ struct DType(
         """
         return self._mlir_value
 
-    @doc_private
+    @doc_hidden
     @staticmethod
     @always_inline("builtin")
-    fn _from_ui8(ui8: UInt8._mlir_type) -> DType:
+    def _from_ui8(ui8: UInt8._mlir_type) -> DType:
         return DType(
             mlir_value=__mlir_op.`pop.dtype.from_ui8`(
-                __mlir_op.`pop.cast_to_builtin`[_type = __mlir_type.ui8](ui8)
+                __mlir_op.`pop.cast_to_builtin`[_type=__mlir_type.ui8](ui8)
             )
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
-    fn _as_ui8(self) -> UInt8._mlir_type:
-        return __mlir_op.`pop.cast_from_builtin`[_type = UInt8._mlir_type](
+    def _as_ui8(self) -> UInt8._mlir_type:
+        return __mlir_op.`pop.cast_from_builtin`[_type=UInt8._mlir_type](
             __mlir_op.`pop.dtype.to_ui8`(self._mlir_value)
         )
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
-    fn _match(self, mask: UInt8) -> Bool:
+    def _match(self, mask: UInt8) -> Bool:
         return self._match(mask._mlir_value)
 
-    @doc_private
+    @doc_hidden
     @always_inline("builtin")
-    fn _match(self, mask: UInt8._mlir_type) -> Bool:
+    def _match(self, mask: UInt8._mlir_type) -> Bool:
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred ne>`
+                pred=__mlir_attr.`#pop<cmp_pred ne>`
             ](
                 __mlir_op.`pop.simd.and`(self._as_ui8(), mask),
                 __mlir_attr.`#pop.simd<0> : !pop.scalar<ui8>`,
@@ -533,7 +510,7 @@ struct DType(
         )
 
     @always_inline("builtin")
-    fn __eq__(self, rhs: DType) -> Bool:
+    def __eq__(self, rhs: DType) -> Bool:
         """Compares one DType to another for equality.
 
         Args:
@@ -544,12 +521,12 @@ struct DType(
         """
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred eq>`
+                pred=__mlir_attr.`#pop<cmp_pred eq>`
             ](self._as_ui8(), rhs._as_ui8())
         )
 
     @always_inline("builtin")
-    fn __ne__(self, rhs: DType) -> Bool:
+    def __ne__(self, rhs: DType) -> Bool:
         """Compares one DType to another for inequality.
 
         Args:
@@ -560,11 +537,11 @@ struct DType(
         """
         return Bool(
             mlir_value=__mlir_op.`pop.cmp`[
-                pred = __mlir_attr.`#pop<cmp_pred ne>`
+                pred=__mlir_attr.`#pop<cmp_pred ne>`
             ](self._as_ui8(), rhs._as_ui8())
         )
 
-    fn __hash__[H: Hasher](self, mut hasher: H):
+    def __hash__[H: Hasher](self, mut hasher: H):
         """Updates hasher with this `DType` value.
 
         Parameters:
@@ -576,7 +553,7 @@ struct DType(
         hasher._update_with_simd(UInt8(mlir_value=self._as_ui8()))
 
     @always_inline("builtin")
-    fn is_unsigned(self) -> Bool:
+    def is_unsigned(self) -> Bool:
         """Returns True if the type parameter is unsigned and False otherwise.
 
         Returns:
@@ -589,7 +566,7 @@ struct DType(
         )
 
     @always_inline("builtin")
-    fn is_signed(self) -> Bool:
+    def is_signed(self) -> Bool:
         """Returns True if the type parameter is signed and False otherwise.
 
         Returns:
@@ -600,7 +577,7 @@ struct DType(
         )
 
     @always_inline("builtin")
-    fn _is_non_index_integral(self) -> Bool:
+    def _is_non_index_integral(self) -> Bool:
         """Returns True if the type parameter is a non-index integer value and False otherwise.
 
         Returns:
@@ -609,7 +586,7 @@ struct DType(
         return self._match(_mIsInteger)
 
     @always_inline("builtin")
-    fn is_integral(self) -> Bool:
+    def is_integral(self) -> Bool:
         """Returns True if the type parameter is an integer and False otherwise.
 
         Returns:
@@ -622,7 +599,7 @@ struct DType(
         )
 
     @always_inline("builtin")
-    fn is_floating_point(self) -> Bool:
+    def is_floating_point(self) -> Bool:
         """Returns True if the type parameter is a floating-point and False
         otherwise.
 
@@ -632,7 +609,7 @@ struct DType(
         return self._match(_mIsFloat)
 
     @always_inline("builtin")
-    fn is_float8(self) -> Bool:
+    def is_float8(self) -> Bool:
         """Returns True if the dtype is a 8bit-precision floating point type,
         e.g. float8_e5m2, float8_e5m2fnuz, float8_e4m3fn and float8_e4m3fnuz.
 
@@ -650,7 +627,7 @@ struct DType(
         )
 
     @always_inline("builtin")
-    fn is_half_float(self) -> Bool:
+    def is_half_float(self) -> Bool:
         """Returns True if the dtype is a half-precision floating point type,
         e.g. either fp16 or bf16.
 
@@ -661,7 +638,7 @@ struct DType(
         return self == DType.bfloat16 or self == DType.float16
 
     @always_inline("builtin")
-    fn is_numeric(self) -> Bool:
+    def is_numeric(self) -> Bool:
         """Returns True if the type parameter is numeric (i.e. you can perform
         arithmetic operations on).
 
@@ -680,7 +657,7 @@ struct DType(
 
     @staticmethod
     @always_inline("nodebug")
-    fn mantissa_width[dtype: DType]() -> Int:
+    def mantissa_width[dtype: DType]() -> Int:
         """Returns the mantissa width of a floating point type.
 
         Parameters:
@@ -696,7 +673,7 @@ struct DType(
 
     @staticmethod
     @always_inline("nodebug")
-    fn max_exponent[dtype: DType]() -> Int:
+    def max_exponent[dtype: DType]() -> Int:
         """Returns the max exponent of a floating point dtype without accounting
         for inf representations. This is not the maximum representable exponent,
         which is generally equal to the exponent_bias.
@@ -711,8 +688,7 @@ struct DType(
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @parameter
-        if dtype == DType.float4_e2m1fn:
+        comptime if dtype == DType.float4_e2m1fn:
             return 2
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 8
@@ -723,12 +699,11 @@ struct DType(
         elif dtype == DType.float64:
             return 1024
         else:
-            constrained[False, "unsupported float type"]()
-            return {}
+            comptime assert False, "unsupported float type"
 
     @staticmethod
     @always_inline("nodebug")
-    fn exponent_width[dtype: DType]() -> Int:
+    def exponent_width[dtype: DType]() -> Int:
         """Returns the exponent width of a floating point type.
 
         Parameters:
@@ -741,8 +716,7 @@ struct DType(
             dtype.is_floating_point()
         ), "dtype must be floating point"
 
-        @parameter
-        if dtype == DType.float4_e2m1fn:
+        comptime if dtype == DType.float4_e2m1fn:
             return 2
         elif dtype in (DType.float8_e4m3fn, DType.float8_e4m3fnuz):
             return 4
@@ -753,12 +727,11 @@ struct DType(
         elif dtype == DType.float64:
             return 11
         else:
-            constrained[False, "unsupported float type"]()
-            return {}
+            comptime assert False, "unsupported float type"
 
     @staticmethod
     @always_inline
-    fn exponent_bias[dtype: DType]() -> Int:
+    def exponent_bias[dtype: DType]() -> Int:
         """Returns the exponent bias of a floating point type.
 
         Parameters:
@@ -768,8 +741,7 @@ struct DType(
             The exponent bias.
         """
 
-        @parameter
-        if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
+        comptime if dtype in (DType.float8_e4m3fnuz, DType.float8_e5m2fnuz):
             return DType.max_exponent[dtype]()
         else:
             return DType.max_exponent[dtype]() - 1
@@ -779,7 +751,7 @@ struct DType(
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
-    fn __mlir_type(self) -> __mlir_type.`!kgen.deferred`:
+    def __mlir_type(self) -> __mlir_type.`!kgen.deferred`:
         """Returns the MLIR type of the current DType as an MLIR type.
 
         Returns:
@@ -846,97 +818,6 @@ struct DType(
 
         abort("invalid dtype")
 
-    # ===----------------------------------------------------------------------===#
-    # utils
-    # ===----------------------------------------------------------------------===#
-
-    @staticmethod
-    fn get_dtype[T: AnyType, size: Int = 1]() -> DType:
-        """Get the `DType` if the given Type is a `SIMD[_, size]` of a `DType`.
-
-        Parameters:
-            T: AnyType.
-            size: The SIMD size to compare against.
-
-        Returns:
-            The `DType` if matched, otherwise `DType.invalid`.
-        """
-
-        @parameter
-        if _type_is_eq[T, SIMD[DType.bool, size]]():
-            return DType.bool
-        elif _type_is_eq[T, SIMD[DType.int, size]]():
-            return DType.int
-        elif _type_is_eq[T, SIMD[DType.uint, size]]():
-            return DType.uint
-
-        elif _type_is_eq[T, SIMD[DType.uint8, size]]():
-            return DType.uint8
-        elif _type_is_eq[T, SIMD[DType.int8, size]]():
-            return DType.int8
-        elif _type_is_eq[T, SIMD[DType.uint16, size]]():
-            return DType.uint16
-        elif _type_is_eq[T, SIMD[DType.int16, size]]():
-            return DType.int16
-        elif _type_is_eq[T, SIMD[DType.uint32, size]]():
-            return DType.uint32
-        elif _type_is_eq[T, SIMD[DType.int32, size]]():
-            return DType.int32
-        elif _type_is_eq[T, SIMD[DType.uint64, size]]():
-            return DType.uint64
-        elif _type_is_eq[T, SIMD[DType.int64, size]]():
-            return DType.int64
-        elif _type_is_eq[T, SIMD[DType.uint128, size]]():
-            return DType.uint128
-        elif _type_is_eq[T, SIMD[DType.int128, size]]():
-            return DType.int128
-        elif _type_is_eq[T, SIMD[DType.uint256, size]]():
-            return DType.uint256
-        elif _type_is_eq[T, SIMD[DType.int256, size]]():
-            return DType.int256
-
-        elif _type_is_eq[T, SIMD[DType.float4_e2m1fn, size]]():
-            return DType.float4_e2m1fn
-
-        elif _type_is_eq[T, SIMD[DType.float8_e8m0fnu, size]]():
-            return DType.float8_e8m0fnu
-        elif _type_is_eq[T, SIMD[DType.float8_e3m4, size]]():
-            return DType.float8_e3m4
-        elif _type_is_eq[T, SIMD[DType.float8_e4m3fn, size]]():
-            return DType.float8_e4m3fn
-        elif _type_is_eq[T, SIMD[DType.float8_e4m3fnuz, size]]():
-            return DType.float8_e4m3fnuz
-        elif _type_is_eq[T, SIMD[DType.float8_e5m2, size]]():
-            return DType.float8_e5m2
-        elif _type_is_eq[T, SIMD[DType.float8_e5m2fnuz, size]]():
-            return DType.float8_e5m2fnuz
-
-        elif _type_is_eq[T, SIMD[DType.bfloat16, size]]():
-            return DType.bfloat16
-        elif _type_is_eq[T, SIMD[DType.float16, size]]():
-            return DType.float16
-
-        elif _type_is_eq[T, SIMD[DType.float32, size]]():
-            return DType.float32
-
-        elif _type_is_eq[T, SIMD[DType.float64, size]]():
-            return DType.float64
-
-        else:
-            return DType.invalid
-
-    @staticmethod
-    fn is_scalar[T: AnyType]() -> Bool:
-        """Whether the given Type is a Scalar of a DType.
-
-        Parameters:
-            T: AnyType.
-
-        Returns:
-            The result.
-        """
-        return Self.get_dtype[T]() != DType.invalid
-
 
 # ===-------------------------------------------------------------------===#
 # integral_type_of
@@ -944,13 +825,11 @@ struct DType(
 
 
 @always_inline("nodebug")
-fn _integral_type_of[dtype: DType]() -> DType:
+def _integral_type_of[dtype: DType]() -> DType:
     """Gets the integral type which has the same bitwidth as the input type."""
 
-    @parameter
-    if dtype.is_integral():
+    comptime if dtype.is_integral():
         return dtype
-
     elif dtype.is_float8():
         return DType.int8
     elif dtype.is_half_float():
@@ -959,8 +838,8 @@ fn _integral_type_of[dtype: DType]() -> DType:
         return DType.int32
     elif dtype == DType.float64:
         return DType.int64
-
-    return dtype.invalid
+    else:
+        comptime assert False, "unexpected dtype in _integral_type_of"
 
 
 # ===-------------------------------------------------------------------===#
@@ -969,16 +848,14 @@ fn _integral_type_of[dtype: DType]() -> DType:
 
 
 @always_inline("nodebug")
-fn _unsigned_integral_type_of[dtype: DType]() -> DType:
+def _unsigned_integral_type_of[dtype: DType]() -> DType:
     """Gets the unsigned integral type which has the same bitwidth as
     the input type."""
 
-    @parameter
-    if dtype.is_unsigned():
+    comptime if dtype.is_unsigned():
         return dtype
     elif dtype.is_integral():
         return _uint_type_of_width[bit_width_of[dtype]()]()
-
     elif dtype.is_float8():
         return DType.uint8
     elif dtype.is_half_float():
@@ -987,8 +864,8 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
         return DType.uint32
     elif dtype == DType.float64:
         return DType.uint64
-
-    return dtype.invalid
+    else:
+        comptime assert False, "unexpected dtype in _unsigned_integral_type_of"
 
 
 # ===-------------------------------------------------------------------===#
@@ -996,15 +873,14 @@ fn _unsigned_integral_type_of[dtype: DType]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-fn _scientific_notation_digits[
+def _scientific_notation_digits[
     dtype: DType
 ]() -> StaticString where dtype.is_floating_point():
     """Get the number of digits as a StaticString for the scientific notation
     representation of a float.
     """
 
-    @parameter
-    if dtype.is_float8():
+    comptime if dtype.is_float8():
         return "2"
     elif dtype.is_half_float():
         return "4"
@@ -1020,7 +896,7 @@ fn _scientific_notation_digits[
 
 
 @always_inline
-fn _int_type_of_width[width: Int]() -> DType:
+def _int_type_of_width[width: Int]() -> DType:
     comptime assert width in (
         8,
         16,
@@ -1030,8 +906,7 @@ fn _int_type_of_width[width: Int]() -> DType:
         256,
     ), "width must be either 8, 16, 32, 64, 128, or 256"
 
-    @parameter
-    if width == 8:
+    comptime if width == 8:
         return DType.int8
     elif width == 16:
         return DType.int16
@@ -1050,30 +925,24 @@ fn _int_type_of_width[width: Int]() -> DType:
 # ===-------------------------------------------------------------------===#
 
 
-@always_inline
-fn _uint_type_of_width[width: Int]() -> DType:
+@always_inline("builtin")
+def _uint_type_of_width[width: Int]() -> DType:
+    # fmt: off
     comptime assert width in (
-        8,
-        16,
-        32,
-        64,
-        128,
-        256,
-    ), "width must be either 8, 16, 32, 64, 128, or 256"
-
-    @parameter
-    if width == 8:
-        return DType.uint8
-    elif width == 16:
-        return DType.uint16
-    elif width == 32:
-        return DType.uint32
-    elif width == 64:
-        return DType.uint64
-    elif width == 128:
-        return DType.uint128
-    else:
-        return DType.uint256
+        1, 2, 4, 8, 16, 32, 64, 128, 256,
+    ), "width must be 1, 2, 4, 8, 16, 32, 64, 128, or 256"
+    return (
+        DType._uint1 if width == 1 else
+        DType._uint2 if width == 2 else
+        DType._uint4 if width == 4 else
+        DType.uint8 if width == 8 else
+        DType.uint16 if width == 16 else
+        DType.uint32 if width == 32 else
+        DType.uint64 if width == 64 else
+        DType.uint128 if width == 128 else
+        DType.uint256
+    )
+    # fmt: on
 
 
 # ===-------------------------------------------------------------------===#
@@ -1082,18 +951,16 @@ fn _uint_type_of_width[width: Int]() -> DType:
 
 
 @always_inline
-fn _index_printf_format() -> StaticString:
-    @parameter
-    if bit_width_of[Int]() == 32:
+def _index_printf_format() -> StaticString:
+    comptime if bit_width_of[Int]() == 32:
         return "%d"
     else:
         return "%ld"
 
 
 @always_inline
-fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
-    @parameter
-    if dtype in (DType.bool, DType.int, DType.uint):
+def _get_dtype_printf_format[dtype: DType]() -> StaticString:
+    comptime if dtype in (DType.bool, DType.int, DType.uint):
         return _index_printf_format()
 
     elif dtype == DType.uint8:
@@ -1117,6 +984,6 @@ fn _get_dtype_printf_format[dtype: DType]() -> StaticString:
         return "%.17g"
 
     else:
-        constrained[False, "invalid dtype"]()
+        comptime assert False, "invalid dtype"
 
     return ""

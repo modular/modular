@@ -13,36 +13,36 @@
 
 
 trait Animal:
-    fn make_sound(self):
+    def make_sound(self):
         ...
 
 
 # Bird inherits from Animal
 trait Bird(Animal):
-    fn fly(self):
+    def fly(self):
         ...
 
 
 trait Named:
-    fn get_name(self) -> String:
+    def get_name(self) -> String:
         ...
 
 
 trait NamedAnimal(Animal, Named):
-    fn emit_name_and_sound(self):
+    def emit_name_and_sound(self):
         print("The", self.get_name(), "says ", end="")
         self.make_sound()
 
 
 @fieldwise_init
 struct Parrot(Bird, Copyable, NamedAnimal):
-    fn make_sound(self):
+    def make_sound(self):
         print("Squawk!")
 
-    fn fly(self):
+    def fly(self):
         print("Flap flap!")
 
-    fn get_name(self) -> String:
+    def get_name(self) -> String:
         return "Parrot"
 
 

@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
-from testing import TestSuite
+from std.python import Python
+from std.testing import TestSuite
 
 
-def test_create_module():
+def test_create_module() raises:
     var module = Python.create_module("test_module")
 
     # TODO: inspect properties about the module
@@ -25,5 +25,5 @@ def test_create_module():
     # _ = module_name
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

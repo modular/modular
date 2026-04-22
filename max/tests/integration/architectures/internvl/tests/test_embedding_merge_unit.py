@@ -17,9 +17,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 
 def test_merge_multimodal_embeddings_graph_construction() -> None:
@@ -30,7 +28,7 @@ def test_merge_multimodal_embeddings_graph_construction() -> None:
     num_image_tokens = 4
     device = DeviceRef.GPU()
 
-    graph = Graph(
+    Graph(
         "test_merge",
         forward=merge_multimodal_embeddings,
         input_types=[

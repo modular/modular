@@ -12,19 +12,17 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn concat[
+def concat[
     dtype: DType, ls_size: Int, rh_size: Int, //
 ](lhs: SIMD[dtype, ls_size], rhs: SIMD[dtype, rh_size]) -> SIMD[
     dtype, ls_size + rh_size
 ]:
     var result = SIMD[dtype, ls_size + rh_size]()
 
-    @parameter
-    for i in range(ls_size):
+    comptime for i in range(ls_size):
         result[i] = lhs[i]
 
-    @parameter
-    for j in range(rh_size):
+    comptime for j in range(rh_size):
         result[ls_size + j] = rhs[j]
     return result
 

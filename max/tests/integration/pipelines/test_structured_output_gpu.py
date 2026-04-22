@@ -17,6 +17,7 @@ import json
 from typing import cast
 
 import hf_repo_lock
+import numpy as np
 from max.driver import DeviceSpec
 from max.interfaces import (
     RequestID,
@@ -26,12 +27,11 @@ from max.interfaces import (
     TextGenerationRequestMessage,
     TextGenerationResponseFormat,
 )
-from max.pipelines import (
-    PipelineConfig,
-    SupportedEncoding,
-    TextGenerationPipeline,
-)
+from max.pipelines import PipelineConfig, TextGenerationPipeline
 from max.pipelines.core import TextContext
+from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
 
 pytest_plugins = "test_common.registry"
@@ -40,21 +40,30 @@ pytest_plugins = "test_common.registry"
 def test_smollm_with_structured_output_gpu(
     pipeline_registry: PipelineRegistry,
 ) -> None:
+    revision = hf_repo_lock.revision_for_hf_repo(
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+    )
+    assert revision is not None
     pipeline_config = PipelineConfig(
-        model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
-        enable_structured_output=True,
-        quantization_encoding=SupportedEncoding.bfloat16,
-        device_specs=[DeviceSpec.accelerator()],
-        huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-            "HuggingFaceTB/SmolLM2-135M-Instruct",
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=revision,
+                    max_length=8192,
+                )
+            }
         ),
-        max_length=8192,
-        max_batch_size=1,
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
         pipeline_config
     )
+    assert isinstance(tokenizer, TextTokenizer)
 
     prompt = """
     Please provide a json response, with the person's name and age extracted from the excerpt.
@@ -105,17 +114,15 @@ def test_smollm_with_structured_output_gpu(
     # union without some force.  So we cast it off.  This is bad, ideally we
     # wouldn't have to do this, but we boxed ourselves in here.
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
-    kv_managers = pipeline.kv_managers
-    for kv_manager in kv_managers:
-        kv_manager.claim(context.request_id, replica_idx=0)
+    kv_manager = pipeline.kv_manager
+    kv_manager.claim(context.request_id, replica_idx=0)
 
     tokens = []
     while True:
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]], num_steps=1
         )
-        for kv_manager in kv_managers:
-            kv_manager.alloc(context, replica_idx=0, num_steps=1)
+        kv_manager.alloc(context, replica_idx=0, num_steps=1)
         response = pipeline.execute(inputs)
 
         for token in response[request_id].tokens:
@@ -125,10 +132,176 @@ def test_smollm_with_structured_output_gpu(
             break
 
     response_content = asyncio.run(
-        tokenizer.decode(tokens, skip_special_tokens=True)
+        tokenizer.decode(np.array(tokens), skip_special_tokens=True)
     )
 
     result = json.loads(response_content)
 
     assert result["name"] == "John Mayer"
     assert result["age"] == 47
+
+
+def test_multistep_structured_output_gpu(
+    pipeline_registry: PipelineRegistry,
+) -> None:
+    """Test that multi-step execution (num_steps > 1) produces valid JSON."""
+    revision = hf_repo_lock.revision_for_hf_repo(
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+    )
+    assert revision is not None
+    pipeline_config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=revision,
+                    max_length=8192,
+                )
+            }
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    )
+
+    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+        pipeline_config
+    )
+    assert isinstance(tokenizer, TextTokenizer)
+
+    prompt = """Extract the person's name and age from: 'Alice Smith is 30 years old.'"""
+
+    request_id = RequestID("multistep_request")
+    sampling_params = SamplingParams(max_new_tokens=50, top_k=1)
+    request = TextGenerationRequest(
+        model_name=pipeline_config.model.model_path,
+        request_id=request_id,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content=prompt,
+            )
+        ],
+        sampling_params=sampling_params,
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            },
+        ),
+    )
+
+    context: TextContext = asyncio.run(tokenizer.new_context(request))
+
+    pipeline = pipeline_factory()
+    assert isinstance(pipeline, TextGenerationPipeline)
+    pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
+    kv_manager = pipeline.kv_manager
+    kv_manager.claim(context.request_id, replica_idx=0)
+
+    tokens = []
+    num_steps = 4  # Use multi-step execution
+    while True:
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[context]], num_steps=num_steps
+        )
+        kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
+        response = pipeline.execute(inputs)
+
+        for token in response[request_id].tokens:
+            tokens.append(token)
+
+        if response[request_id].is_done:
+            break
+
+    response_content = asyncio.run(
+        tokenizer.decode(np.array(tokens), skip_special_tokens=True)
+    )
+
+    # Verify we got valid JSON matching the schema
+    result = json.loads(response_content)
+    assert "name" in result
+    assert "age" in result
+    assert isinstance(result["name"], str)
+    assert isinstance(result["age"], int)
+
+
+def test_multi_step_guided_decoding_gpu(
+    pipeline_registry: PipelineRegistry,
+) -> None:
+    """Test that multi-step execution works correctly with guided decoding."""
+    revision = hf_repo_lock.revision_for_hf_repo(
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+    )
+    assert revision is not None
+    pipeline_config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=revision,
+                    max_length=8192,
+                )
+            }
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(max_batch_size=1),
+    )
+
+    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+        pipeline_config
+    )
+    assert isinstance(tokenizer, TextTokenizer)
+
+    prompt = """Return JSON: 'Bob Jones is 25.'"""
+
+    request_id = RequestID("multi_step_guided_test")
+    request = TextGenerationRequest(
+        model_name=pipeline_config.model.model_path,
+        request_id=request_id,
+        messages=[TextGenerationRequestMessage(role="user", content=prompt)],
+        sampling_params=SamplingParams(max_new_tokens=30, top_k=1),
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            },
+        ),
+    )
+
+    context: TextContext = asyncio.run(tokenizer.new_context(request))
+
+    pipeline = pipeline_factory()
+    assert isinstance(pipeline, TextGenerationPipeline)
+    pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
+    kv_manager = pipeline.kv_manager
+    kv_manager.claim(context.request_id, replica_idx=0)
+
+    # Use multi-step execution (num_steps > 1) with guided decoding
+    num_steps = 3
+    max_iterations = 20
+
+    for _ in range(max_iterations):
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[context]], num_steps=num_steps
+        )
+        kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
+        response = pipeline.execute(inputs)
+
+        if response[request_id].is_done:
+            break

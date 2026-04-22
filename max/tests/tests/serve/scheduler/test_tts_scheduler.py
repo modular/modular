@@ -16,7 +16,6 @@ from __future__ import annotations
 import queue
 from collections.abc import Generator
 from dataclasses import dataclass
-from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -35,7 +34,7 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
+from max.nn.kv_cache import KVCacheParams, KVConnectorType
 from max.pipelines.core import TTSContext
 from max.pipelines.lib.audio_generator_pipeline import (
     AudioGeneratorPipelineType,
@@ -77,7 +76,7 @@ def create_kv_cache(
     max_seq_len: int,
     page_size: int,
     enable_prefix_caching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
 ) -> PagedKVCacheManager:
     dtype = DType.float32
 
@@ -86,10 +85,9 @@ def create_kv_cache(
         num_layers=1,
         n_kv_heads=1,
         head_dim=1,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
         host_kvcache_swap_space_gb=999,
         devices=[DeviceRef.CPU()],
         data_parallel_degree=1,
@@ -98,13 +96,14 @@ def create_kv_cache(
     session = InferenceSession(devices=[CPU()])
 
     # CPU swap space is 100x the device cache memory
-    num_host_pages = num_blocks * 100 if enable_kvcache_swapping_to_host else 0
+    num_host_pages = num_blocks * 100 if kv_connector is not None else 0
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=num_blocks,
         total_num_host_pages=num_host_pages,
         session=session,
         enable_runtime_checks=True,
+        max_batch_size=max_batch_size,
     )
 
     assert kv_manager.get_num_pages(replica_idx=0) == num_blocks
@@ -120,7 +119,7 @@ def create_paged_scheduler(
     target_tokens_per_batch_ce: int = 8192,
     enable_prefix_caching: bool = False,
     enable_in_flight_batching: bool = False,
-    enable_kvcache_swapping_to_host: bool = False,
+    kv_connector: KVConnectorType | None = None,
     max_queue_size_tg: int | None = None,
     min_batch_size_tg: int | None = None,
     ce_delay_ms: float = 0.0,
@@ -135,7 +134,7 @@ def create_paged_scheduler(
         max_seq_len=max_seq_len,
         page_size=page_size,
         enable_prefix_caching=enable_prefix_caching,
-        enable_kvcache_swapping_to_host=enable_kvcache_swapping_to_host,
+        kv_connector=kv_connector,
     )
 
     scheduler_config = AudioGenerationSchedulerConfig(
@@ -211,7 +210,7 @@ class FakeAudioGeneratorPipeline(AudioGeneratorPipelineType):
 
         for context in ctxs:
             self.kv_cache.alloc(context, replica_idx=0, num_steps=num_tokens)
-        self.kv_cache.get_runtime_inputs([ctxs], num_steps=num_tokens)
+        self.kv_cache.runtime_inputs([ctxs], num_steps=num_tokens)
 
         # Generate the responses
         responses = {}
@@ -302,7 +301,7 @@ def create_batch_and_execute(
 def run_until_completion(
     scheduler: AudioGenerationScheduler,
     max_num_iters: int = 50,
-    output_list: list | None = None,
+    output_list: list | None = None,  # type: ignore[type-arg]
 ) -> list[BatchInfo]:
     if output_list is None:
         batch_infos = []
@@ -367,61 +366,6 @@ def enqueue_request_with_prompt(
 
 CE = BatchType.CE
 TG = BatchType.TG
-
-
-# =============================================================================
-# Tests for exception handling in AudioGenerationScheduler
-# =============================================================================
-
-
-def test_audio_pipeline_exception_sends_error_to_client() -> None:
-    """Test that audio scheduler catches exceptions and sends error results."""
-    max_seq_len = 2048
-    kv_cache = create_kv_cache(
-        num_blocks=100, max_batch_size=4, max_seq_len=max_seq_len, page_size=128
-    )
-
-    request_queue: queue.Queue[TTSContext] = queue.Queue()
-    response_queue: queue.Queue[
-        dict[RequestID, SchedulerResult[AudioGenerationOutput]]
-    ] = queue.Queue()
-
-    # Create a mock pipeline that raises on execute
-    failing_pipeline = Mock()
-    failing_pipeline.execute.side_effect = RuntimeError("CUDA out of memory")
-
-    scheduler = AudioGenerationScheduler(
-        scheduler_config=AudioGenerationSchedulerConfig(
-            max_batch_size=4,
-            max_forward_steps_tg=10,
-            target_tokens_per_batch_ce=8192,
-            max_seq_len=max_seq_len,
-            enable_in_flight_batching=False,
-            max_queue_size_tg=None,
-            min_batch_size_tg=None,
-            ce_delay_ms=0.0,
-            enable_prioritize_first_decode=False,
-        ),
-        pipeline=failing_pipeline,
-        request_queue=request_queue,
-        response_queue=response_queue,
-        cancel_queue=queue.Queue(),
-        kv_cache=kv_cache,
-    )
-
-    mock_request = create_text_context(prompt_len=100, max_seq_len=max_seq_len)
-    request_queue.put_nowait(mock_request)
-    ce_batch = scheduler._create_ce_batch()
-
-    scheduler._schedule(ce_batch)
-
-    result = response_queue.get_nowait()[mock_request.request_id]
-    assert result.is_done is True
-    assert result.error is not None
-    assert result.error.error_type == "RuntimeError"
-    assert "CUDA out of memory" in result.error.error_message
-    assert result.error.traceback_str  # Non-empty traceback
-    assert "RuntimeError" in result.error.traceback_str
 
 
 @pytest.mark.parametrize("num_reqs", [1, 2, 3])

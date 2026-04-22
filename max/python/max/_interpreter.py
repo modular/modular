@@ -31,13 +31,15 @@ Example usage:
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Sequence
+from collections.abc import Iterator, Mapping, Sequence
 from typing import Any
 
 from max import _core
 from max._core.dialects import builtin, kgen, mo, mosh
 from max.driver import Buffer
 from max.graph import Graph
+
+from ._interpreter_ops import handlers as _handlers_module
 
 # Import handlers to register them (side effect import)
 from ._interpreter_ops import lookup_handler
@@ -74,16 +76,59 @@ class MOInterpreter:
         # shape_attr but extracting static shapes requires handling
         # symbolic dimensions.
 
+    # Op names that always require the compiled execution path.
+    # Name-based matching is used (like _is_dispatchable and the handler
+    # name-fallback) because nanobind may create different class objects
+    # for the same MLIR op.
+    _COMPILATION_REQUIRED_OP_NAMES: tuple[str, ...] = ("CustomOp",)
+
+    def can_execute(self, graph: Graph, max_ops: int | None = None) -> bool:
+        """Check whether the interpreter can handle this graph.
+
+        Scans the graph for ops that require compilation (e.g. ``CustomOp``)
+        and for ops without a registered handler.  Optionally enforces a
+        maximum dispatchable-op count so that large graphs still go through
+        the graph compiler where fusion is beneficial.
+
+        Args:
+            graph: The graph to check.
+            max_ops: If set, the maximum number of dispatchable ops the
+                interpreter will accept.  Graphs exceeding this threshold
+                return ``False`` so the graph compiler can apply fusion
+                optimizations.  ``None`` means no limit.
+
+        Returns:
+            True if the interpreter can handle the graph, False otherwise.
+        """
+        module: builtin.ModuleOp = _core.Operation._from_cmlir(
+            graph._module.operation
+        )  # type: ignore[assignment]
+        dispatchable_count = 0
+        for op in self._walk_ops(module):
+            if isinstance(op, mo.OutputOp):
+                continue
+            if type(op).__name__ in self._COMPILATION_REQUIRED_OP_NAMES:
+                return False
+            if lookup_handler(op) is None:
+                return False
+            dispatchable_count += 1
+            if max_ops is not None and dispatchable_count > max_ops:
+                return False
+        return True
+
     def execute(
         self,
         graph: Graph,
         inputs: Sequence[Buffer],
+        weights: Mapping[str, Buffer] | None = None,
     ) -> Sequence[Buffer | None]:
         """Execute an MO graph and return output buffers.
 
         Args:
             graph: The finalized MO graph to execute.
             inputs: Input buffers corresponding to graph.inputs.
+            weights: Optional mapping of weight names to buffers for
+                resolving ``mo.constant.external`` ops.
 
         Returns:
             List of output buffers.
@@ -103,32 +148,35 @@ class MOInterpreter:
         for graph_input, buffer in zip(graph.inputs, inputs, strict=True):
             slots[graph_input._mlir_value] = buffer
 
-        # Walk ops in the graph body and dispatch
-        # use _core bindings for type-safe access
-        module: builtin.ModuleOp = _core.Operation._from_cmlir(
-            graph._module.operation
-        )  # type: ignore[assignment]
-        output_op = None
-        for op in self._walk_ops(module):
-            if isinstance(op, mo.OutputOp):
-                # Store the output op but don't dispatch it
-                output_op = op
-            else:
-                self._dispatch_op(op, slots)
+        # Stash the weights registry for ConstantExternalOp handlers
+        prev_registry = _handlers_module._weights_registry
+        _handlers_module._weights_registry = weights
+        try:
+            # Walk ops in the graph body and dispatch
+            module: builtin.ModuleOp = _core.Operation._from_cmlir(
+                graph._module.operation
+            )  # type: ignore[assignment]
+            output_op = None
+            for op in self._walk_ops(module):
+                if isinstance(op, mo.OutputOp):
+                    output_op = op
+                else:
+                    self._dispatch_op(op, slots)
 
-        # Collect outputs from the mo.output terminator
-        if output_op is None:
-            raise RuntimeError("Graph has no output terminator")
-        outputs = []
-        # mo.OutputOp.operands returns Value directly (not OpOperand)
-        for operand in output_op.operands:
-            try:
-                outputs.append(slots[operand])
-            except RuntimeError as e:
-                raise RuntimeError(
-                    f"Output value not computed: {operand}"
-                ) from e
-        return outputs
+            # Collect outputs from the mo.output terminator
+            if output_op is None:
+                raise RuntimeError("Graph has no output terminator")
+            outputs = []
+            for operand in output_op.operands:
+                try:
+                    outputs.append(slots[operand])
+                except RuntimeError as e:
+                    raise RuntimeError(
+                        f"Output value not computed: {operand}"
+                    ) from e
+            return outputs
+        finally:
+            _handlers_module._weights_registry = prev_registry
 
     def _walk_ops(self, module: builtin.ModuleOp) -> Iterator[_core.Operation]:
         """Walk operations in a valid execution order.

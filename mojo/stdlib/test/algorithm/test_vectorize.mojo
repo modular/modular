@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import vectorize
-from memory import memcmp
-from testing import assert_equal
-from testing import TestSuite
-from math import iota
-from sys.intrinsics import masked_load, masked_store
+from std.algorithm import vectorize
+from std.memory import memcmp
+from std.testing import assert_equal
+from std.testing import TestSuite
+from std.math import iota
+from std.sys.intrinsics import masked_load, masked_store
 
 
-def test_vectorize():
+def test_vectorize() raises:
     # Create a mem of size 5
     var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @always_inline
-    fn add_two[width: Int](idx: Int) unified {var vector}:
+    def add_two[width: Int](idx: Int) unified {var vector}:
         vector.unsafe_ptr().store[width=width](
             idx, vector.unsafe_ptr().load[width=width](idx) + 2
         )
@@ -39,7 +39,7 @@ def test_vectorize():
     assert_equal(vector[4], 7.0)
 
     @always_inline
-    fn add[width: Int](idx: Int) unified {var vector}:
+    def add[width: Int](idx: Int) unified {var vector}:
         vector.unsafe_ptr().store[width=width](
             idx,
             vector.unsafe_ptr().load[width=width](idx)
@@ -55,13 +55,13 @@ def test_vectorize():
     assert_equal(vector[4], 14.0)
 
 
-def test_vectorize_evl():
+def test_vectorize_evl() raises:
     # Create a mem of size 5
     var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
     var vector = Span(vector_stack)
 
     @always_inline
-    fn add_two[width: Int](idx: Int, evl: Int) unified {var vector}:
+    def add_two[width: Int](idx: Int, evl: Int) unified {var vector}:
         if evl == width:
             vector.unsafe_ptr().store[width=width](
                 idx, vector.unsafe_ptr().load[width=width](idx) + 2
@@ -79,7 +79,7 @@ def test_vectorize_evl():
     assert_equal(vector[4], 7.0)
 
     @always_inline
-    fn add[width: Int](idx: Int, evl: Int) unified {var vector}:
+    def add[width: Int](idx: Int, evl: Int) unified {var vector}:
         if evl == width:
             vector.unsafe_ptr().store[width=width](
                 idx,
@@ -105,7 +105,7 @@ def test_vectorize_evl():
     assert_equal(vector[4], 14.0)
 
 
-def test_vectorize_unroll():
+def test_vectorize_unroll() raises:
     comptime buf_len = 23
 
     var vec_stack = InlineArray[Float32, buf_len](uninitialized=True)
@@ -118,7 +118,7 @@ def test_vectorize_unroll():
         buf[i] = Float32(i)
 
     @always_inline
-    fn double_buf[simd_width: Int](idx: Int) unified {var buf}:
+    def double_buf[simd_width: Int](idx: Int) unified {var buf}:
         buf.unsafe_ptr().store[width=simd_width](
             idx,
             buf.unsafe_ptr().load[width=simd_width](idx)
@@ -126,7 +126,7 @@ def test_vectorize_unroll():
         )
 
     @always_inline
-    fn double_vec[simd_width: Int](idx: Int) unified {var vec}:
+    def double_vec[simd_width: Int](idx: Int) unified {var vec}:
         vec.unsafe_ptr().store[width=simd_width](
             idx,
             vec.unsafe_ptr().load[width=simd_width](idx)
@@ -143,12 +143,12 @@ def test_vectorize_unroll():
     assert_equal(err, 0)
 
 
-def test_vectorize_size_param():
+def test_vectorize_size_param() raises:
     var output = String()
 
     # remainder elements are correctly printed
     @parameter
-    fn printer[els: Int](n: Int) unified {mut output}:
+    def printer[els: Int](n: Int) unified {mut output}:
         output.write(els, " ", n, "\n")
 
     vectorize[16, size=40](printer)
@@ -158,5 +158,5 @@ def test_vectorize_size_param():
     assert_equal(output, "16 0\n16 16\n8 32\n8 0\n")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

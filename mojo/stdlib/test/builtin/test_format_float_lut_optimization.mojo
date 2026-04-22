@@ -37,10 +37,10 @@
 # Verify that cache_f64 is NOT allocated on the stack
 # NO-STACK-ALLOC-NOT: alloca {{.*}}[619 x i128]
 
-from builtin._format_float import _write_float
+from std.builtin._format_float import _write_float
 
 
-fn test_float32_formatting() -> String:
+def test_float32_formatting() -> String:
     """Test Float32 formatting that will use cache_f32 lookup table."""
     var result = String()
 
@@ -59,7 +59,7 @@ fn test_float32_formatting() -> String:
     return result
 
 
-fn test_float64_formatting() -> String:
+def test_float64_formatting() -> String:
     """Test Float64 formatting that will use cache_f64 lookup table."""
     var result = String()
 
@@ -78,11 +78,11 @@ fn test_float64_formatting() -> String:
     return result
 
 
-fn main():
+def main():
     var f32_results = test_float32_formatting()
     var f64_results = test_float64_formatting()
 
     # We don't actually need to print the results for the test,
     # but we need to use them so they don't get optimized away
-    if len(f32_results) > 0 and len(f64_results) > 0:
+    if f32_results.byte_length() > 0 and f64_results.byte_length() > 0:
         pass

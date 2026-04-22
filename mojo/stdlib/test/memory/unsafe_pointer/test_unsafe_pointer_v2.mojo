@@ -11,9 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from compile import compile_info
-from memory import UnsafePointer, alloc
-from sys import size_of
+from std.compile import compile_info
+from std.ffi import external_call
+from std.memory import UnsafeMaybeUninit
+from std.sys import align_of, size_of
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -22,7 +23,7 @@ from test_utils import (
     ObservableMoveOnly,
     check_write_to,
 )
-from testing import (
+from std.testing import (
     assert_equal,
     assert_false,
     assert_not_equal,
@@ -35,39 +36,39 @@ from testing import (
 # ---------------------------------------------------------------------------- #
 
 
-def _mutable_pointer(p: MutUnsafePointer[Int, ...]):
+def _mutable_pointer(p: MutUnsafePointer[Int, ...]) raises:
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]):
+def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]):
+def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]):
+def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def _parameterized_pointer(p: UnsafePointer[Int, ...]):
+def _parameterized_pointer(p: UnsafePointer[Int, ...]) raises:
     assert_true(p)
     assert_equal(p[], 42)
 
 
 def _named_origin[
     mut: Bool, //, origin: Origin[mut=mut]
-](p: UnsafePointer[Int, origin, ...]):
+](p: UnsafePointer[Int, origin, ...]) raises:
     assert_true(p)
     assert_equal(p[], 42)
 
 
-def test_mutable_conversions():
+def test_mutable_conversions() raises:
     var x = 42
     var p = UnsafePointer(to=x)
     _named_origin[origin_of(x)](p)
@@ -78,7 +79,7 @@ def test_mutable_conversions():
     _parameterized_pointer(p)
 
 
-def test_immutable_conversions():
+def test_immutable_conversions() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable()
     _named_origin[mut=False, origin_of(x)](p)
@@ -87,7 +88,7 @@ def test_immutable_conversions():
     _parameterized_pointer(p)
 
 
-def test_mutable_any_conversions():
+def test_mutable_any_conversions() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_any_origin()
     _mutable_pointer(p)
@@ -97,7 +98,7 @@ def test_mutable_any_conversions():
     _parameterized_pointer(p)
 
 
-def test_immutable_any_conversions():
+def test_immutable_any_conversions() raises:
     var x = 42
     var p = UnsafePointer(to=x).as_immutable().as_any_origin()
     _immutable_pointer(p)
@@ -110,7 +111,7 @@ def test_immutable_any_conversions():
 # ---------------------------------------------------------------------------- #
 
 
-def test_unsafepointer_of_move_only_type():
+def test_unsafepointer_of_move_only_type() raises:
     var actions = List[String]()
     var actions_ptr = UnsafePointer(to=actions).as_immutable()
 
@@ -120,7 +121,7 @@ def test_unsafepointer_of_move_only_type():
     ptr.init_pointee_move(ObserveType(42, actions_ptr))
     assert_equal(len(actions_ptr[0]), 2)
     assert_equal(actions_ptr[0][0], "__init__")
-    assert_equal(actions_ptr[0][1], "__moveinit__", msg="emplace_value")
+    assert_equal(actions_ptr[0][1], "move ctor", msg="emplace_value")
     assert_equal(ptr[0].value, 42)
 
     # Stop compiler warnings
@@ -129,7 +130,7 @@ def test_unsafepointer_of_move_only_type():
     if true:  # scope value
         var value = ptr.take_pointee()
         assert_equal(len(actions_ptr[0]), 3)
-        assert_equal(actions_ptr[0][2], "__moveinit__")
+        assert_equal(actions_ptr[0][2], "move ctor")
         assert_equal(value.value, 42)
 
     ptr.free()
@@ -137,7 +138,7 @@ def test_unsafepointer_of_move_only_type():
     assert_equal(actions_ptr[0][3], "__del__")
 
 
-def test_unsafepointer_move_pointee_move_count():
+def test_unsafepointer_move_pointee_move_count() raises:
     var ptr = alloc[MoveCounter[Int]](1)
 
     var value = MoveCounter(5)
@@ -156,7 +157,7 @@ def test_unsafepointer_move_pointee_move_count():
     assert_equal(2, ptr_2[].move_count)
 
 
-def test_unsafepointer_init_pointee_copy():
+def test_unsafepointer_init_pointee_copy() raises:
     var ptr = alloc[ExplicitCopyOnly](1)
 
     var orig = ExplicitCopyOnly(5)
@@ -169,7 +170,7 @@ def test_unsafepointer_init_pointee_copy():
     assert_equal(ptr[].copy_count, 1)
 
 
-def test_refitem():
+def test_refitem() raises:
     var ptr = alloc[Int](1)
     ptr[0] = 0
     ptr[] += 1
@@ -177,7 +178,7 @@ def test_refitem():
     ptr.free()
 
 
-def test_refitem_offset():
+def test_refitem_offset() raises:
     var ptr = alloc[Int](5)
     for i in range(5):
         ptr[i] = i
@@ -186,18 +187,18 @@ def test_refitem_offset():
     ptr.free()
 
 
-def test_address_of():
+def test_address_of() raises:
     var local = 1
     assert_not_equal(0, Int(UnsafePointer[Int](to=local)))
     _ = local
 
 
-def test_pointer_to():
+def test_pointer_to() raises:
     var local = 1
     assert_not_equal(0, UnsafePointer(to=local)[])
 
 
-def test_explicit_copy_of_pointer_address():
+def test_explicit_copy_of_pointer_address() raises:
     var local = 1
     var ptr = UnsafePointer[Int](to=local)
     var copy = UnsafePointer.copy(ptr)
@@ -205,7 +206,7 @@ def test_explicit_copy_of_pointer_address():
     _ = local
 
 
-def test_bitcast():
+def test_bitcast() raises:
     var local = 1
     var ptr = UnsafePointer[Int](to=local)
     var aliased_ptr = ptr.bitcast[SIMD[DType.uint8, 4]]()
@@ -217,7 +218,7 @@ def test_bitcast():
     _ = local
 
 
-def test_unsafepointer_string():
+def test_unsafepointer_string() raises:
     var nullptr = UnsafePointer[Int, MutExternalOrigin]()
     assert_equal(String(nullptr), "0x0")
 
@@ -227,7 +228,7 @@ def test_unsafepointer_string():
     ptr.free()
 
 
-def test_eq():
+def test_eq() raises:
     var local = 1
     # FIXME(#5133): should just be UnsafePointer[mut=False](to=local)
     var p1 = UnsafePointer(to=local).as_immutable()
@@ -244,7 +245,7 @@ def test_eq():
     _ = other_local
 
 
-def test_comparisons():
+def test_comparisons() raises:
     var p1 = alloc[Int](1)
 
     assert_true((p1 - 1) < p1)
@@ -257,7 +258,7 @@ def test_comparisons():
     p1.free()
 
 
-def test_unsafepointer_address_space():
+def test_unsafepointer_address_space() raises:
     var p1 = alloc[Int](1).address_space_cast[AddressSpace(0)]()
     p1.free()
 
@@ -265,7 +266,7 @@ def test_unsafepointer_address_space():
     p2.free()
 
 
-def test_unsafepointer_aligned_alloc():
+def test_unsafepointer_aligned_alloc() raises:
     comptime alignment_1 = 32
     var ptr = alloc[UInt8](1, alignment=alignment_1)
     var ptr_uint64 = UInt64(Int(ptr))
@@ -287,7 +288,7 @@ def test_unsafepointer_aligned_alloc():
 
 # Test that `alloc` no longer artificially extends the lifetime
 # of every local variable in methods where its used.
-def test_unsafepointer_alloc_origin():
+def test_unsafepointer_alloc_origin() raises:
     # -----------------------------------------
     # Test with MutAnyOrigin alloc() origin
     # -----------------------------------------
@@ -339,7 +340,7 @@ def test_unsafepointer_alloc_origin():
 #     assert_true(start_ptr != dest_ptr)
 
 
-def test_indexing():
+def test_indexing() raises:
     var ptr = alloc[Int](4)
     for i in range(4):
         ptr[i] = i
@@ -350,7 +351,7 @@ def test_indexing():
     ptr.free()
 
 
-def test_indexing_simd():
+def test_indexing_simd() raises:
     var ptr = alloc[Int](4)
     for i in range(4):
         ptr[UInt8(i)] = i
@@ -375,7 +376,7 @@ def test_indexing_simd():
     ptr.free()
 
 
-def test_bool():
+def test_bool() raises:
     var nullptr = UnsafePointer[Int, MutExternalOrigin]()
     var ptr = alloc[Int](1)
 
@@ -385,7 +386,7 @@ def test_bool():
     ptr.free()
 
 
-def test_alignment():
+def test_alignment() raises:
     var ptr = alloc[Int64](8, alignment=64)
     assert_equal(Int(ptr) % 64, 0)
     ptr.free()
@@ -395,7 +396,7 @@ def test_alignment():
     ptr_2.free()
 
 
-def test_offset():
+def test_offset() raises:
     var ptr = alloc[Int](5)
     for i in range(5):
         ptr[i] = i
@@ -417,7 +418,7 @@ def test_offset():
     ptr2.free()
 
 
-def test_load_and_store_simd():
+def test_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
         ptr[i] = Int8(i)
@@ -437,7 +438,7 @@ def test_load_and_store_simd():
     ptr2.free()
 
 
-def test_load_and_store_simd_bool():
+def test_load_and_store_simd_bool() raises:
     # Regression test: storing SIMD[DType.bool, N] with width > 1 then
     # loading element-wise should give correct results (github.com/modular/modular/issues/5875).
     var p = alloc[Scalar[DType.bool]](4)
@@ -459,7 +460,7 @@ def test_load_and_store_simd_bool():
     p.free()
 
 
-def test_volatile_load_and_store_simd():
+def test_volatile_load_and_store_simd() raises:
     var ptr = alloc[Int8](16)
     for i in range(16):
         ptr[i] = Int8(i)
@@ -480,11 +481,11 @@ def test_volatile_load_and_store_simd():
 
 
 # Test pointer merging with ternary operation.
-def test_merge():
+def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
-    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+    def inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = UnsafePointer(to=a) if cond else UnsafePointer(to=b)
         either[].append(x)
 
@@ -495,7 +496,7 @@ def test_merge():
     assert_equal(b, [4, 5, 6, 8])
 
 
-def test_swap_pointees_trivial_move():
+def test_swap_pointees_trivial_move() raises:
     var a = 42
     UnsafePointer(to=a).as_any_origin().swap_pointees(
         UnsafePointer(to=a).as_any_origin()
@@ -509,7 +510,7 @@ def test_swap_pointees_trivial_move():
     assert_equal(y, 1)
 
 
-def test_swap_pointees_non_trivial_move():
+def test_swap_pointees_non_trivial_move() raises:
     var counter = MoveCounter[Int](42)
     UnsafePointer(to=counter).as_any_origin().swap_pointees(
         UnsafePointer(to=counter).as_any_origin()
@@ -529,7 +530,7 @@ def test_swap_pointees_non_trivial_move():
     assert_equal(counterB.move_count, 2)
 
 
-def test_as_any_origin_mutable():
+def test_as_any_origin_mutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
@@ -542,7 +543,7 @@ def test_as_any_origin_mutable():
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_any_origin_immutable():
+def test_as_any_origin_immutable() raises:
     var deleted = False
     var observer = ObservableDel[origin_of(deleted)](UnsafePointer(to=deleted))
     var x = 42
@@ -555,14 +556,14 @@ def test_as_any_origin_immutable():
     assert_true(deleted)  # AnyOrigin extends all lifetimes
 
 
-def test_as_immutable():
+def test_as_immutable() raises:
     var x = 42
     var mutable = UnsafePointer(to=x)
     assert_true(mutable.mut)
     assert_false(mutable.as_immutable().mut)
 
 
-def test_unsafe_mut_cast():
+def test_unsafe_mut_cast() raises:
     var x = 42
     var ptr = UnsafePointer(to=x)
     var immutable = ptr.unsafe_mut_cast[False]()
@@ -571,11 +572,11 @@ def test_unsafe_mut_cast():
     assert_true(_mutable.mut)
 
 
-fn _ref_to[origin: ImmutOrigin](ref[origin] to: String):
+def _ref_to[origin: ImmutOrigin](ref[origin] to: String):
     pass
 
 
-def test_unsafe_origin_cast():
+def test_unsafe_origin_cast() raises:
     var x = "hello"
     var y = "world"
 
@@ -584,11 +585,11 @@ def test_unsafe_origin_cast():
     _ref_to[origin_of(y)](ptr.unsafe_origin_cast[origin_of(y)]()[])
 
 
-fn _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
+def _ptr_to_int(ptr: UnsafePointer[Int, MutExternalOrigin]) -> Int:
     return Int(ptr)
 
 
-def test_ptr_to_int_llvm_lowering():
+def test_ptr_to_int_llvm_lowering() raises:
     var info = compile_info[_ptr_to_int, emission_kind="llvm-opt"]()
     # https://llvm.org/docs/LangRef.html#ptrtoint-to-instruction
     # We need to check `ptrtoint` is used instead of `ptrtoaddr` to ensure
@@ -597,16 +598,16 @@ def test_ptr_to_int_llvm_lowering():
     assert_false("ptrtoaddr" in info.asm)
 
 
-fn _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
+def _from_address(x: Int, out result: UnsafePointer[Int, MutExternalOrigin]):
     result = type_of(result)(unsafe_from_address=x)
 
 
-def test_unsafe_from_address_llvm_lowering():
+def test_unsafe_from_address_llvm_lowering() raises:
     var info = compile_info[_from_address, emission_kind="llvm-opt"]()
     assert_true("inttoptr" in info.asm)
 
 
-def test_unsafe_from_address():
+def test_unsafe_from_address() raises:
     var x = 42
     var ptr = UnsafePointer(to=x)
     var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
@@ -616,7 +617,7 @@ def test_unsafe_from_address():
     assert_true(ptr3)
 
 
-def test_write_to():
+def test_write_to() raises:
     check_write_to(
         UnsafePointer[Int, MutAnyOrigin](), expected="0x0", is_repr=False
     )
@@ -628,7 +629,7 @@ def test_write_to():
     check_write_to(UnsafePointer(to=s), contains="0x", is_repr=False)
 
 
-def test_write_repr_to():
+def test_write_repr_to() raises:
     check_write_to(
         UnsafePointer[Int, MutAnyOrigin](),
         expected=(
@@ -674,5 +675,60 @@ def test_write_repr_to():
     )
 
 
-def main():
+def test_unsafe_pointer_niche() raises:
+    var x = 42
+    comptime UP = UnsafePointer[Int, ImmutOrigin(origin_of(x))]
+    assert_equal(size_of[UP](), size_of[Optional[UP]]())
+
+    var storage = UnsafeMaybeUninit[UP]()
+    UP.write_niche(UnsafePointer(to=storage))
+    assert_true(UP.isa_niche(UnsafePointer(to=storage)))
+
+    storage.init_from(UP(to=x))
+    assert_false(UP.isa_niche(UnsafePointer(to=storage)))
+
+
+def test_unsafe_pointer_dangling() raises:
+    var int_ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+    assert_equal(Int(int_ptr) % align_of[Int](), 0)
+
+    var str_ptr = UnsafePointer[String, MutExternalOrigin].unsafe_dangling()
+    assert_equal(Int(str_ptr) % align_of[String](), 0)
+
+
+def test_optional_unsafe_pointer_across_c_ffi() raises:
+    var string = "abc"
+    comptime Result = Optional[UnsafePointer[Int8, origin_of(string)]]
+
+    var not_found = external_call[
+        "strchr",
+        Result,
+    ](string.as_c_string_slice(), Int8(ord("z")))
+    assert_false(not_found)
+
+    var found = external_call[
+        "strchr",
+        Result,
+    ](string.as_c_string_slice(), Int8(ord("a")))
+    assert_true(found)
+    assert_equal(Int(found[]), Int(string.unsafe_ptr()))
+
+
+def _test_lower(pointer: Optional[UnsafePointer[Int32, MutAnyOrigin]]) -> Bool:
+    return Bool(pointer)
+
+
+def test_optional_unsafe_pointer_llvm_lowering() raises:
+    var info = String(compile_info[_test_lower, emission_kind="llvm-opt"]())
+
+    for line in info.splitlines():
+        if "define" in line and "::_test_lower" in line:
+            assert_true("ptr" in line, info)
+            assert_false("[1 x ptr]" in line)
+            return
+
+    raise Error("did not find _test_lower function")
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

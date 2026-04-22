@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, FuncAttribute
-from layout import Layout
+from std.gpu.host import DeviceContext, FuncAttribute
+from layout import Layout, LTToTTLayout
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_gemm_kernel
 from linalg.utils_gpu import MatmulKernels
 
 
-fn multistage_gemm_simple[
+def multistage_gemm_simple[
     M: Int,
     N: Int,
     K: Int,
@@ -38,18 +38,15 @@ fn multistage_gemm_simple[
     # Dispatch w/o split K
     comptime gemm_kernel_type = multistage_gemm_kernel[
         c_type,
-        c_layout,
+        LTToTTLayout[c_layout],
         a_type,
-        a_layout,
+        LTToTTLayout[a_layout],
         b_type,
-        b_layout,
+        LTToTTLayout[b_layout],
         transpose_b,
-        c_layout_int_type = DType.int64,
-        c_linear_idx_type = DType.int64,
-        a_layout_int_type = DType.int64,
-        a_linear_idx_type = DType.int64,
-        b_layout_int_type = DType.int64,
-        b_linear_idx_type = DType.int64,
+        c_linear_idx_type=DType.int64,
+        a_linear_idx_type=DType.int64,
+        b_linear_idx_type=DType.int64,
         config=config,
     ]
 
@@ -60,7 +57,7 @@ fn multistage_gemm_simple[
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         multistage_gemm_simple[
             1024,

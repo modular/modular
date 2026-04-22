@@ -11,35 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from sys import argv, simd_width_of
-from sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
+from std.math import ceildiv, isclose
+from std.math.uutils import udivmod
+from std.sys import argv, simd_width_of
+from std.sys.info import has_nvidia_gpu_accelerator, is_nvidia_gpu
 
-from buffer.dimlist import DimList
-from gpu import WARP_SIZE, barrier, block_idx, lane_id, thread_idx
-from gpu.host import DeviceContext
-from gpu.memory import async_copy_wait_all
-from layout.int_tuple import IntTuple
+from std.gpu import WARP_SIZE, barrier, block_idx, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.memory import async_copy_wait_all
+from layout import Coord, Idx, IntTuple, LayoutTensor, TileTensor, row_major
 from layout.layout import *
 from layout.layout_tensor import (
-    LayoutTensor,
     copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_sram_to_local,
 )
 from layout.math import outer_product_acc
 from linalg.matmul.gpu import matmul_kernel_naive
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn sgemm_double_buffer[
+def sgemm_double_buffer[
     c_type: DType,
     c_layout: Layout,
     a_type: DType,
@@ -72,12 +71,10 @@ fn sgemm_double_buffer[
     comptime num_warps_n = (BN // WN)
 
     var tid = thread_idx.x
-    var warp_id = tid // UInt(WARP_SIZE)
-    var lane_id = tid % UInt(WARP_SIZE)
+    var warp_id, lane_id = udivmod(tid, WARP_SIZE)
 
     # Coordinates of the current warp.
-    var warp_x = warp_id % UInt(num_warps_n)
-    var warp_y = warp_id // UInt(num_warps_n)
+    var warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Warp shape in 2D.
     comptime warp_dim_x = WN // TN
@@ -97,7 +94,7 @@ fn sgemm_double_buffer[
             a_type,
             Layout.row_major(2 * BK, BM_padded),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .slice[:, :BM]()
@@ -111,15 +108,15 @@ fn sgemm_double_buffer[
             b_type,
             Layout.row_major(2 * BK, BN),
             MutAnyOrigin,
-            address_space = AddressSpace.SHARED,
+            address_space=AddressSpace.SHARED,
         ]
         .stack_allocation()
         .split[2]()
     )
 
     # Global memory tile.
-    var a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), 0)
-    var b_gmem_tile = b.tile[BK, BN](0, Int(block_idx.x))
+    var a_gmem_tile = a.tile[BM, BK](block_idx.y, 0)
+    var b_gmem_tile = b.tile[BK, BN](0, block_idx.x)
 
     # Load A tile from global memory to shared.
     # Row major thread layout for coalesced access.
@@ -147,8 +144,8 @@ fn sgemm_double_buffer[
     barrier()
 
     # Advance A and B to next k tile.
-    a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), 1)
-    b_gmem_tile = b.tile[BK, BN](1, Int(block_idx.x))
+    a_gmem_tile = a.tile[BM, BK](block_idx.y, 1)
+    b_gmem_tile = b.tile[BK, BN](1, block_idx.x)
 
     # Double buffer in registers (fragments in nvidia terms).
     comptime layout_a = Layout.row_major(TM)
@@ -157,7 +154,7 @@ fn sgemm_double_buffer[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
         2,
     ] = [
@@ -165,13 +162,13 @@ fn sgemm_double_buffer[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             a_type,
             layout_a,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
     ]
     comptime layout_b = Layout.row_major(TN)
@@ -180,7 +177,7 @@ fn sgemm_double_buffer[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ],
         2,
     ] = [
@@ -188,13 +185,13 @@ fn sgemm_double_buffer[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
         LayoutTensor[
             b_type,
             layout_b,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ].stack_allocation(),
     ]
     comptime layout_c = Layout.row_major(TM, TN)
@@ -203,7 +200,7 @@ fn sgemm_double_buffer[
             c_type,
             layout_c,
             MutAnyOrigin,
-            address_space = AddressSpace.LOCAL,
+            address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
         .fill(0)
@@ -223,14 +220,14 @@ fn sgemm_double_buffer[
     )
 
     # Load A fragments to the first buffer.
-    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, Int(warp_y))
+    var a_smem_warp_tile = a_smem_tile[0].tile[BK, WM](0, warp_y)
     var a_smem_warp_row = a_smem_warp_tile.tile[1, WM](0, 0).coalesce()
     copy_sram_to_local[src_warp_layout=thread_layout, axis=0](
         a_reg[0].vectorize[simd_size](), a_smem_warp_row.vectorize[simd_size]()
     )
 
     # Load B fragments to the first buffer.
-    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, Int(warp_x))
+    var b_smem_warp_tile = b_smem_tile[0].tile[BK, WN](0, warp_x)
     var b_smem_warp_row = b_smem_warp_tile.tile[1, WN](0, 0).coalesce()
     copy_sram_to_local[src_warp_layout=thread_layout, axis=1](
         b_reg[0].vectorize[simd_size](), b_smem_warp_row.vectorize[simd_size]()
@@ -244,8 +241,7 @@ fn sgemm_double_buffer[
         # The shared memory buffer to be prefetched
         var prefetch_id = 1 if k_tile_id % 2 == 0 else 0
 
-        @parameter
-        for k in range(BK):
+        comptime for k in range(BK):
             var next_k = (k + 1) % BK
 
             # Buffer id for the double register buffers. They alternate.
@@ -257,10 +253,10 @@ fn sgemm_double_buffer[
                 barrier()
 
                 a_smem_warp_tile = a_smem_tile[prefetch_id].tile[BK, WM](
-                    0, Int(warp_y)
+                    0, warp_y
                 )
                 b_smem_warp_tile = b_smem_tile[prefetch_id].tile[BK, WN](
-                    0, Int(warp_x)
+                    0, warp_x
                 )
 
             # Fill the other A fragments buffer using the next row in A.
@@ -282,13 +278,13 @@ fn sgemm_double_buffer[
 
             # Load next k tile from global memory to shared memory.
             if k == 0 and k_tile_id < num_k_tiles - 1:
-                a_gmem_tile = a.tile[BM, BK](Int(block_idx.y), k_tile_id + 1)
+                a_gmem_tile = a.tile[BM, BK](block_idx.y, k_tile_id + 1)
                 copy_dram_to_sram_async[
                     src_thread_layout=thread_loada_gmem_layout,
                     dst_thread_layout=thread_storea_smem_layout,
                 ](a_smem_tile[prefetch_id], a_gmem_tile)
 
-                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, Int(block_idx.x))
+                b_gmem_tile = b.tile[BK, BN](k_tile_id + 1, block_idx.x)
                 copy_dram_to_sram_async[
                     src_thread_layout=thread_layout_loadb,
                     dst_thread_layout=thread_layout_loadb,
@@ -300,8 +296,8 @@ fn sgemm_double_buffer[
             outer_product_acc(c_reg, a_reg[buffer_id], b_reg[buffer_id])
 
     # Map global memory tile down to thread.
-    var c_gmem_tile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var c_gmem_tile = c.tile[BM, BN](block_idx.y, block_idx.x)
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
     # Copy results to global memory.
     # Vectorize by [simd_size, simd_size] because the outer product results are
     # implicitly organized by simd_size x simd_size tiles.
@@ -311,7 +307,7 @@ fn sgemm_double_buffer[
     )
 
 
-fn test(ctx: DeviceContext) raises:
+def test(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime M = 8192
     comptime N = 8192
@@ -374,7 +370,7 @@ fn test(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[gemm](
                 c_tensor,
                 a_tensor,
@@ -402,23 +398,43 @@ fn test(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = LayoutTensor[DType.float32, c_layout](c_device_ref)
-
     # Naive gemm.
     comptime BLOCK_DIM = 16
+
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    var c_ref_tt = TileTensor(
+        c_device_ref,
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(N))),
+    )
+
     comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
     ctx.enqueue_function_experimental[gemm_naive](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,
@@ -446,6 +462,6 @@ fn test(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test(ctx)

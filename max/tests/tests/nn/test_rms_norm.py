@@ -18,7 +18,7 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.legacy.norm import RMSNorm
+from max.nn.norm import RMSNorm
 
 from .norm_test_utils import (
     COMMON_NORM_TEST_SHAPES,
@@ -51,8 +51,8 @@ def test_rms_norm_basic() -> None:
         input_types=[TensorType(DType.float32, (2, 10, 64), DeviceRef.CPU())],
     )
 
-    # Find the rms_norm custom op in the IR.
-    rms_norm_op = assert_single_op(g, "mo.custom", "rms_norm")
+    # Find the rms_norm op in the IR.
+    rms_norm_op = assert_single_op(g, "mo.reduce.rms_norm")
 
     # Check the output type matches input shape.
     assert_op_output_shape(rms_norm_op, "[2, 10, 64]")
@@ -68,7 +68,7 @@ def test_rms_norm_shapes(shape, dim) -> None:  # noqa: ANN001
     )
 
     # Verify the graph contains an rms_norm op.
-    assert_single_op(g, "mo.custom", "rms_norm")
+    assert_single_op(g, "mo.reduce.rms_norm")
 
 
 def test_rms_norm_device_transfer() -> None:
@@ -104,7 +104,7 @@ def test_distributed_rms_norm() -> None:
     )
 
     # Should have one rms_norm op
-    rms_norm_ops = find_ops_in_graph(g, "mo.custom", "rms_norm")
+    rms_norm_ops = find_ops_in_graph(g, "mo.reduce.rms_norm")
     assert len(rms_norm_ops) == 1
 
 

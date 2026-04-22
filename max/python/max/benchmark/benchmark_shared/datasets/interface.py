@@ -20,7 +20,7 @@ from collections.abc import Sequence
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
 from .registry import DATASET_REGISTRY
-from .types import SampledRequest
+from .types import RequestSamples
 
 
 class BenchmarkDataset(ABC):
@@ -226,7 +226,7 @@ class BenchmarkDataset(ABC):
         output_lengths: Sequence[int] | None = None,
         shuffle: bool = True,
         **kwargs,
-    ) -> Sequence[SampledRequest]:
+    ) -> RequestSamples:
         """Sample requests from the dataset.
 
         This is the standardized interface that all dataset implementations must follow.

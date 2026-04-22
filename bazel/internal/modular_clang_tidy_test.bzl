@@ -48,6 +48,8 @@ def modular_clang_tidy_test(
     clang_tidy_tags = []
     if "manual" in tags:
         clang_tidy_tags.append("manual")
+    if "clang-tidy-is-c-tu" in tags:
+        clang_tidy_tags.append("clang-tidy-is-c-tu")
 
     tests = []
     for src in srcs + hdrs:

@@ -44,12 +44,12 @@ async def test_openai_extract_image_from_requests() -> None:
             {"type": "text", "text": "What'''s in this image?"},
         ],
     }
-    request = CreateChatCompletionRequest(
-        model="test", messages=[system_message, user_message_no_images]
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [system_message, user_message_no_images]}
     )
 
     settings = Settings()
-    messages, images = await openai_parse_chat_completion_request(
+    messages, images, _videos = await openai_parse_chat_completion_request(
         request, False, settings
     )
     assert len(messages) == 2
@@ -58,7 +58,7 @@ async def test_openai_extract_image_from_requests() -> None:
     assert isinstance(messages[1].content, list)
     assert hasattr(messages[1].content[0], "text")
 
-    messages, images = await openai_parse_chat_completion_request(
+    messages, images, _videos = await openai_parse_chat_completion_request(
         request, True, settings
     )
     assert len(messages) == 2
@@ -77,10 +77,10 @@ async def test_openai_extract_image_from_requests() -> None:
             },
         ],
     }
-    request = CreateChatCompletionRequest(
-        model="test", messages=[user_message_image_with_url]
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [user_message_image_with_url]}
     )
-    messages, images = await openai_parse_chat_completion_request(
+    messages, images, _videos = await openai_parse_chat_completion_request(
         request,
         False,
         settings,

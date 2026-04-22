@@ -18,7 +18,15 @@ import functools
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.linear import Linear
+from max.nn import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
+)
+from max.nn.linear import Linear
 from max.pipelines.architectures.deepseekV3_2.layers import (
     DeepseekV3_2MLP,
     DeepseekV3_2MoE,
@@ -28,11 +36,28 @@ from max.pipelines.architectures.deepseekV3_2.layers import (
 
 def test_moe_with_shared_experts() -> None:
     """Tests MoE with shared experts."""
-    hidden_dim = 64
+    hidden_dim = 256
     num_experts = 8
     num_experts_per_token = 2
     moe_dim = 128
     shared_experts_dim = 256
+
+    quant_config = QuantConfig(
+        format=QuantFormat.BLOCKSCALED_FP8,
+        weight_scale=WeightScaleSpec(
+            dtype=DType.float32,
+            granularity=ScaleGranularity.BLOCK,
+            block_size=(128, 128),
+        ),
+        input_scale=InputScaleSpec(
+            dtype=DType.float32,
+            granularity=ScaleGranularity.BLOCK,
+            origin=ScaleOrigin.DYNAMIC,
+            block_size=(1, 128),
+        ),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
+    )
 
     moe = DeepseekV3_2MoE(
         devices=[DeviceRef.CPU()],
@@ -55,8 +80,9 @@ def test_moe_with_shared_experts() -> None:
         mlp_cls=DeepseekV3_2MLP,
         has_shared_experts=True,
         shared_experts_dim=shared_experts_dim,
-        dtype=DType.bfloat16,
+        dtype=DType.float8_e4m3fn,
         apply_router_weight_first=False,
+        quant_config=quant_config,
     )
 
     # Initialize weight names to avoid collisions.

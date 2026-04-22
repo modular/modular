@@ -17,8 +17,9 @@ import pytest
 import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
-from max.engine.api import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
     Qwen3VLMoE,
     Qwen3VLMoEGate,
@@ -44,7 +45,7 @@ MOE_ATOL = 3e-2
 def generate_torch_moe_outputs(
     hidden_states: torch.Tensor,
     moe_weights: dict[str, torch.Tensor],
-    text_config: dict,
+    text_config: dict,  # type: ignore[type-arg]
     device: torch.device,
 ) -> torch.Tensor:
     """Generate reference outputs using HF Qwen3VL-MoE MoE implementation."""
@@ -77,7 +78,7 @@ def generate_torch_moe_outputs(
 def generate_max_moe_outputs(
     hidden_states: torch.Tensor,
     moe_weights: dict[str, torch.Tensor],
-    text_config: dict,
+    text_config: dict,  # type: ignore[type-arg]
     dtype: DType,
     device: Device,
 ) -> torch.Tensor:
@@ -89,14 +90,14 @@ def generate_max_moe_outputs(
     torch_device = torch.device("cuda")
     hidden_states = hidden_states.to(torch_device)
 
-    seq_len, hidden_size = hidden_states.shape
+    _seq_len, hidden_size = hidden_states.shape
     num_experts = text_config["num_experts"]
     num_experts_per_token = text_config["num_experts_per_tok"]
     moe_intermediate_size = text_config["moe_intermediate_size"]
 
     # Convert weights to MAX format
     state_dict = {
-        weight_name: value.to(dtype.to_torch()).cpu()
+        weight_name: value.to(max_dtype_to_torch(dtype)).cpu()
         for weight_name, value in moe_weights.items()
     }
 
@@ -115,7 +116,9 @@ def generate_max_moe_outputs(
 
     session = InferenceSession(devices=[device])
 
-    input_type = TensorType(dtype, [seq_len, hidden_size], device=device_ref)
+    input_type = TensorType(
+        dtype, [Dim("seq_len"), hidden_size], device=device_ref
+    )
 
     with Graph("Qwen3VLMoE", input_types=(input_type,)) as graph:
         x = graph.inputs[0]

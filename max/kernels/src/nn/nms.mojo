@@ -11,12 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
+from std.math import iota
 
-from layout._coord import Coord, Idx
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 @fieldwise_init
@@ -40,7 +39,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
     var nw: SIMD[Self.dtype, 2]
     var se: SIMD[Self.dtype, 2]
 
-    fn __init__(
+    def __init__(
         out self,
         y1: Scalar[Self.dtype],
         x1: Scalar[Self.dtype],
@@ -62,7 +61,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
         self.nw = SIMD[Self.dtype, 2](max(y1, y2), max(x1, x2))
         self.se = SIMD[Self.dtype, 2](min(y1, y2), min(x1, x2))
 
-    fn iou(self, other: BoundingBox[Self.dtype]) -> Scalar[Self.dtype]:
+    def iou(self, other: BoundingBox[Self.dtype]) -> Scalar[Self.dtype]:
         """Calculate Intersection over Union (IoU) with another bounding box.
 
         Args:
@@ -77,7 +76,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
         var iou_val = abs(intersection_area) / abs(union_area)
         return iou_val
 
-    fn intersection_area(
+    def intersection_area(
         self, other: BoundingBox[Self.dtype]
     ) -> Scalar[Self.dtype]:
         """Calculate the area of intersection with another bounding box.
@@ -97,7 +96,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
 
         return Self(nw, se).area()
 
-    fn area(self) -> Scalar[Self.dtype]:
+    def area(self) -> Scalar[Self.dtype]:
         """Calculate the area of this bounding box.
 
         Returns:
@@ -107,7 +106,7 @@ struct BoundingBox[dtype: DType](ImplicitlyCopyable):
 
 
 @always_inline
-fn _get_bounding_box[
+def _get_bounding_box[
     dtype: DType
 ](
     batch_size: Int,
@@ -127,7 +126,7 @@ fn _get_bounding_box[
     Returns:
         A BoundingBox instance constructed from the extracted coordinates.
     """
-    comptime assert boxes.rank == 3, "boxes must be of rank 3"
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
     comptime assert boxes.element_size == 1
 
     var y1 = boxes[batch_size, box_idx, 0][0]
@@ -137,7 +136,7 @@ fn _get_bounding_box[
     return BoundingBox(y1, x1, y2, x2)
 
 
-fn non_max_suppression[
+def non_max_suppression[
     dtype: DType
 ](
     boxes: TileTensor[dtype, ...],
@@ -168,15 +167,15 @@ fn non_max_suppression[
         score_threshold: Minimum score threshold. Boxes with score < threshold
                         are filtered out.
     """
-    comptime assert boxes.rank == 3, "boxes must be of rank 3"
-    comptime assert scores.rank == 3, "scores must be of rank 3"
-    comptime assert output.rank == 2, "output must be of rank 2"
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert scores.flat_rank == 3, "scores must be of rank 3"
+    comptime assert output.flat_rank == 2, "output must be of rank 2"
 
     var pred_count = 0
 
     @parameter
     @always_inline
-    fn store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def store_to_outputs(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         """Store selected box indices to output tensor."""
         output[pred_count, 0] = batch_idx
         output[pred_count, 1] = class_idx
@@ -192,7 +191,7 @@ fn non_max_suppression[
     )
 
 
-fn non_max_suppression_shape_func[
+def non_max_suppression_shape_func[
     dtype: DType
 ](
     boxes: TileTensor[dtype, ...],
@@ -217,14 +216,14 @@ fn non_max_suppression_shape_func[
     Returns:
         A 2-element IndexList specifying the output shape (num_selected_boxes, 3).
     """
-    comptime assert boxes.rank == 3, "boxes must be of rank 3"
-    comptime assert scores.rank == 3, "scores must be of rank 3"
+    comptime assert boxes.flat_rank == 3, "boxes must be of rank 3"
+    comptime assert scores.flat_rank == 3, "scores must be of rank 3"
 
     var box_pred_count: Int64 = 0
 
     @parameter
     @always_inline
-    fn incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
+    def incr_pred_count(batch_idx: Int64, class_idx: Int64, box_idx: Int64):
         """Count selected boxes without storing them."""
         box_pred_count += 1
 
@@ -239,9 +238,9 @@ fn non_max_suppression_shape_func[
     return IndexList[2](Int(box_pred_count), 3)
 
 
-fn non_max_suppression[
+def non_max_suppression[
     dtype: DType,
-    func: fn(Int64, Int64, Int64) capturing[_] -> None,
+    func: def(Int64, Int64, Int64) capturing[_] -> None,
 ](
     boxes: TileTensor[dtype, ...],
     scores: TileTensor[dtype, ...],
@@ -258,21 +257,16 @@ fn non_max_suppression[
     var num_boxes = boxes.layout.shape[1]().value()
     var num_classes = scores.layout.shape[1]().value()
 
-    debug_assert(
-        boxes.layout.shape[2]().value() == 4,
-        (
-            "boxes must be specified with the 2D coords representing the"
-            " diagonal corners"
-        ),
+    assert boxes.layout.shape[2]().value() == 4, (
+        "boxes must be specified with the 2D coords representing the"
+        " diagonal corners"
     )
-    debug_assert(
-        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value(),
-        "dim 0 of boxes and scores must be equal",
-    )
-    debug_assert(
-        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value(),
-        "boxes and scores must contain the same number of boxes",
-    )
+    assert (
+        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value()
+    ), "dim 0 of boxes and scores must be equal"
+    assert (
+        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value()
+    ), "boxes and scores must contain the same number of boxes"
 
     if max_output_boxes_per_class == 0:
         return
@@ -307,7 +301,7 @@ fn non_max_suppression[
 
             @parameter
             @always_inline
-            fn _greater_than(lhs: Int64, rhs: Int64) -> Bool:
+            def _greater_than(lhs: Int64, rhs: Int64) -> Bool:
                 """Compare boxes by their scores in descending order."""
                 return per_class_scores[Int(lhs)] > per_class_scores[Int(rhs)]
 
@@ -359,7 +353,7 @@ fn non_max_suppression[
 
             @always_inline
             @parameter
-            fn sorted() -> Bool:
+            def sorted() -> Bool:
                 for i in range(len(box_idxs) - 1):
                     if (
                         per_class_scores[Int(box_idxs[i])]
@@ -368,6 +362,4 @@ fn non_max_suppression[
                         return False
                 return True
 
-            debug_assert(
-                sorted(), "NonMaxSuppression boxes not sorted correctly"
-            )
+            assert sorted(), "NonMaxSuppression boxes not sorted correctly"

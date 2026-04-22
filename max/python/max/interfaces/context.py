@@ -10,6 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Defines sampling parameters, generation configuration defaults, and base context protocols for MAX pipeline requests."""
+
 from __future__ import annotations
 
 import logging
@@ -30,26 +33,55 @@ logger = logging.getLogger("max.pipelines")
 class SamplingParamsInput:
     """Input dataclass for creating SamplingParams instances.
 
-    All fields are optional, allowing partial specification with None values
+    All fields are optional, allowing partial specification with ``None`` values
     indicating "use default". This enables static type checking while maintaining
     the flexibility to specify only the parameters you want to override.
     """
 
     top_k: int | None = None
+    """The number of most probable tokens to keep when sampling. Defaults to ``None`` (use class default)."""
+
     top_p: float | None = None
+    """The cumulative probability threshold for nucleus sampling. Defaults to ``None`` (use class default)."""
+
     min_p: float | None = None
+    """The minimum probability threshold for a token relative to the most likely token. Defaults to ``None`` (use class default)."""
+
     temperature: float | None = None
+    """The temperature for controlling output randomness. Defaults to ``None`` (use class default)."""
+
     frequency_penalty: float | None = None
+    """The penalty applied proportionally to token frequency in the generated text. Defaults to ``None`` (use class default)."""
+
     presence_penalty: float | None = None
+    """The flat penalty applied to tokens that have appeared at least once. Defaults to ``None`` (use class default)."""
+
     repetition_penalty: float | None = None
+    """The factor by which logits of repeated tokens are divided. Defaults to ``None`` (use class default)."""
+
     max_new_tokens: int | None = None
+    """The maximum number of tokens to generate. Defaults to ``None`` (use class default)."""
+
     min_new_tokens: int | None = None
+    """The minimum number of tokens to generate before stopping. Defaults to ``None`` (use class default)."""
+
     ignore_eos: bool | None = None
+    """Whether to continue generating past end-of-sequence tokens. Defaults to ``None`` (use class default)."""
+
     stop: list[str] | None = None
+    """A list of strings that, when generated, will stop the generation. Defaults to ``None`` (use class default)."""
+
     stop_token_ids: list[int] | None = None
+    """A list of token IDs that, when generated, will stop the generation. Defaults to ``None`` (use class default)."""
+
     detokenize: bool | None = None
+    """Whether to convert output token IDs back to text. Defaults to ``None`` (use class default)."""
+
     seed: int | None = None
+    """The random seed for reproducible sampling. Defaults to ``None`` (use class default)."""
+
     logits_processors: Sequence[LogitsProcessor] | None = None
+    """Callables applied to model logits before sampling. Defaults to ``None`` (use class default)."""
 
 
 @dataclass(frozen=True)
@@ -69,19 +101,17 @@ class SamplingParamsGenerationConfigDefaults:
     explicitly set that parameter. When None, SamplingParams will fall back to its
     own class defaults.
 
-    Example:
-        >>> # Extract from model config
-        >>> gen_config = model_config.generation_config
-        >>> defaults = SamplingParamsGenerationConfigDefaults(
-        ...     temperature=0.7,
-        ...     top_k=50,
-        ...     max_new_tokens=512
-        ... )
-        >>> # Use with SamplingParams
-        >>> params = SamplingParams.from_input_and_generation_config(
-        ...     SamplingParamsInput(),
-        ...     sampling_params_defaults=defaults
-        ... )
+    .. code-block:: python
+
+        defaults = SamplingParamsGenerationConfigDefaults(
+            temperature=0.7,
+            top_k=50,
+            max_new_tokens=512,
+        )
+        params = SamplingParams.from_input_and_generation_config(
+            SamplingParamsInput(),
+            sampling_params_defaults=defaults,
+        )
     """
 
     temperature: float | None = None
@@ -103,32 +133,46 @@ class SamplingParamsGenerationConfigDefaults:
     """Minimum number of new tokens from the model's GenerationConfig, if explicitly set."""
 
     do_sample: bool | None = None
-    """If False, use greedy sampling."""
+    """If ``False``, uses greedy sampling."""
+
+    eos_token_id: int | list[int] | None = None
+    """EOS token ID from the model's GenerationConfig, if explicitly set."""
 
     @cached_property
-    def values_to_update(self) -> dict[str, float | int]:
-        """Extract non-None field values as a dictionary.
-
-        Returns:
-            A dictionary mapping field names to their values, excluding any fields
-            that are None. This dictionary can be used to update SamplingParams
-            default values.
-
-        Example:
-            >>> defaults = SamplingParamsGenerationConfigDefaults(
-            ...     temperature=0.7,
-            ...     top_k=50
-            ... )
-            >>> defaults.values_to_update
-            {'temperature': 0.7, 'top_k': 50}
-        """
-        values = {}
+    def _values_to_update(self) -> dict[str, float | int | list[int]]:
+        values: dict[str, float | int | list[int]] = {}
         for _field in fields(self):
             field_value = getattr(self, _field.name)
             if field_value is not None:
-                values[_field.name] = field_value
-
+                if _field.name == "eos_token_id":
+                    if isinstance(field_value, int):
+                        values["stop_token_ids"] = [field_value]
+                    elif isinstance(field_value, list):
+                        values["stop_token_ids"] = field_value
+                else:
+                    values[_field.name] = field_value
         return values
+
+    @property
+    def values_to_update(self) -> dict[str, float | int | list[int]]:
+        """Non-``None`` field values as a dictionary.
+
+        Returns:
+            A dictionary mapping field names to their values, excluding any fields
+            that are ``None``. This dictionary can be used to update
+            :class:`SamplingParams` default values.
+
+        .. code-block:: python
+
+            defaults = SamplingParamsGenerationConfigDefaults(
+                temperature=0.7,
+                top_k=50,
+            )
+            defaults.values_to_update
+            # {'temperature': 0.7, 'top_k': 50}
+        """
+        # Return a copy of the values, because the caller mutates the returned dict.
+        return self._values_to_update.copy()
 
 
 @dataclass(frozen=False)
@@ -166,7 +210,7 @@ class SamplingParams:
     """The maximum number of new tokens to generate in the response.
 
     When set to an integer value, generation will stop after this many tokens.
-    When None (default), the model may generate tokens until it reaches its
+    When ``None`` (default), the model may generate tokens until it reaches its
     internal limits or other stopping criteria are met.
     """
 
@@ -174,7 +218,7 @@ class SamplingParams:
     """The minimum number of tokens to generate in the response."""
 
     ignore_eos: bool = False
-    """If True, the response will ignore the EOS token, and continue to
+    """If ``True``, the response will ignore the EOS token, and continue to
     generate until the max tokens or a stop string is hit."""
 
     stop: list[str] | None = None
@@ -199,29 +243,30 @@ class SamplingParams:
         input_params: SamplingParamsInput,
         sampling_params_defaults: SamplingParamsGenerationConfigDefaults,
     ) -> SamplingParams:
-        """Create SamplingParams with defaults from HuggingFace's GenerationConfig.
+        """Creates a :class:`SamplingParams` instance with defaults from a HuggingFace GenerationConfig.
 
-        This method creates a SamplingParams instance by combining three sources of values,
-        in priority order (highest to lowest):
-        1. User-provided values in input_params (non-None)
+        Combines three sources of values in priority order (highest to lowest):
+
+        1. User-provided values in ``input_params`` (non-``None``)
         2. Model's GenerationConfig values (only if explicitly set in the model's config)
-        3. SamplingParams class defaults
+        3. :class:`SamplingParams` class defaults
 
         Args:
             input_params: Dataclass containing user-specified parameter values.
-                Values of None will be replaced with model defaults or class defaults.
-            sampling_params_defaults: SamplingParamsGenerationConfigDefaults containing
-                default sampling parameters extracted from the model's GenerationConfig.
+                Values of ``None`` will be replaced with model defaults or class defaults.
+            sampling_params_defaults: :class:`SamplingParamsGenerationConfigDefaults`
+                containing default sampling parameters extracted from the model's
+                GenerationConfig.
 
         Returns:
-            A new SamplingParams instance with model-aware defaults.
+            A new :class:`SamplingParams` instance with model-aware defaults.
 
-        Example:
-            >>> sampling_defaults = model_config.sampling_params_defaults
-            >>> params = SamplingParams.from_input_and_generation_config(
-            ...     SamplingParamsInput(temperature=0.7),  # User override
-            ...     sampling_params_defaults=sampling_defaults
-            ... )
+        .. code-block:: python
+
+            params = SamplingParams.from_input_and_generation_config(
+                SamplingParamsInput(temperature=0.7),
+                sampling_params_defaults=model_config.sampling_params_defaults,
+            )
         """
         # Start with model's generation config values (only if explicitly set)
         defaults: dict[str, Any] = sampling_params_defaults.values_to_update
@@ -233,7 +278,7 @@ class SamplingParams:
                 defaults["temperature"] = 0
                 defaults["top_k"] = 1
 
-            # This isnt included in SamplingParams, therefore we should remove it.
+            # This isn't included in SamplingParams, therefore we should remove it.
             del defaults["do_sample"]
 
         # Overlay user-provided values (highest priority)
@@ -245,7 +290,7 @@ class SamplingParams:
         return cls(**defaults)
 
     def log_sampling_info(self) -> None:
-        """Log comprehensive sampling parameters information.
+        """Logs comprehensive sampling parameters information.
 
         Displays all sampling parameters in a consistent visual format similar to
         pipeline configuration logging.
@@ -285,13 +330,19 @@ class SamplingParams:
         logger.info("")
 
     def __post_init__(self):
+        # Normalize None values to field defaults. These can arrive when a
+        # user explicitly sends top_p=null or top_k=null in a request.
+        # Treating None as "use the default" keeps the fast gumbel-sampling
+        # path reachable and avoids NaN propagation through numpy.
+        _defaults = self.__dataclass_fields__
+        if self.top_k is None:
+            self.top_k = _defaults["top_k"].default
+        if self.top_p is None:
+            self.top_p = _defaults["top_p"].default
+
         if self.min_p < 0.0 or self.min_p > 1.0:
             raise ValueError("min_p must be in [0.0, 1.0]")
 
-        if self.min_p != 0.0 and self.top_k != 1:
-            raise ValueError(
-                "We currently do not handle explicit min_p and top_k at the same time."
-            )
         if self.repetition_penalty <= 0:
             raise ValueError("repetition_penalty must be greater than 0.")
 
@@ -302,10 +353,22 @@ class SamplingParams:
                 f"top_k must be -1 or greater than 0 and less than or equal to 255, was {self.top_k}."
             )
 
+        if self.top_p < 0.0 or self.top_p > 1.0:
+            raise ValueError(f"top_p must be in [0.0, 1.0], was {self.top_p}.")
+
         # If temperature is 0, set top_k to 1.
         if self.temperature == 0:
             logger.debug("Temperature is 0, overriding top_k to 1.")
             self.top_k = 1
+
+    @property
+    def needs_penalties(self) -> bool:
+        """Whether penalties are needed for the set of sampling parameters."""
+        return (
+            self.frequency_penalty != 0.0
+            or self.presence_penalty != 0.0
+            or self.repetition_penalty != 1.0
+        )
 
 
 @runtime_checkable
@@ -313,7 +376,7 @@ class BaseContext(Protocol):
     """Core interface for request lifecycle management across all of MAX, including serving, scheduling, and pipelines.
 
     This protocol is intended to provide a unified, minimal contract for request state and status handling throughout the MAX stack.
-    Each pipeline variant (e.g., text generation, embeddings, image generation) is expected to extend this interface by creating
+    Each pipeline variant (for example, text generation, embeddings, image generation) is expected to extend this interface by creating
     their own modality-specific context classes that implement this protocol and add additional functionality relevant to their
     particular use case.
 
@@ -333,7 +396,7 @@ class BaseContext(Protocol):
 
     @status.setter
     def status(self, status: GenerationStatus) -> None:
-        """Update the generation status of the request."""
+        """Updates the generation status of the request."""
         ...
 
     @property
@@ -344,14 +407,15 @@ class BaseContext(Protocol):
 
 BaseContextType = TypeVar("BaseContextType", bound=BaseContext)
 """
-Type variable for generic programming with BaseContext implementations.
+Type variable for generic programming with :class:`BaseContext` implementations.
 
-This TypeVar is bound to BaseContext, meaning it can represent any type that implements
-the BaseContext protocol. It enables type-safe generic functions and classes that work
-with any BaseContext subtype while preserving the specific type information through
-the type system.
+This TypeVar is bound to :class:`BaseContext`, meaning it can represent any type that
+implements the :class:`BaseContext` protocol. It enables type-safe generic functions
+and classes that work with any :class:`BaseContext` subtype while preserving the
+specific type information through the type system.
 
-Example usage:
+.. code-block:: python
+
     def process_context(context: BaseContextType) -> BaseContextType:
         # Function that accepts any BaseContext implementation
         # and returns the same type

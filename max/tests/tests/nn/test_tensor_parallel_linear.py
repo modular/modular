@@ -19,8 +19,8 @@ from typing import Any, cast
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, Type, Weight
-from max.nn.legacy import Signals
-from max.nn.legacy.linear import ColumnParallelLinear
+from max.nn import Signals
+from max.nn.linear import ColumnParallelLinear
 
 
 def test_column_parallel_linear_empty_devices() -> None:
@@ -111,7 +111,7 @@ def test_column_parallel_linear_tied_weight_valid() -> None:
 
 
 def test_column_parallel_linear_tied_weight_with_float8() -> None:
-    """Tests ColumnParallelLinear with tied_weight and float8_config."""
+    """Tests ColumnParallelLinear with tied_weight and quant_config."""
     gpu0 = DeviceRef.GPU(id=0)
     tied_weight = Weight(
         name="tied_weight",
@@ -132,8 +132,8 @@ def test_column_parallel_linear_tied_weight_with_float8() -> None:
             dtype=DType.float32,
             devices=[gpu0],
             tied_weight=tied_weight,
-            # Dummy float8_config.
-            float8_config={},
+            # Dummy quant_config.
+            quant_config={},
         )
 
 

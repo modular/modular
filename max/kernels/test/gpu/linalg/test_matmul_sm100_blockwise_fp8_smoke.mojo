@@ -19,35 +19,40 @@ Covers:
 Target: < 1 minute compile + run for debugging purposes.
 """
 
-from math import align_up, ceildiv
-from sys import size_of
-from linalg.matmul.gpu.sm100.config import MatmulConfig
-from buffer.buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.math import ceildiv
+from std.sys import size_of
+from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc
 from internal_utils import (
     assert_almost_equal,
     assert_with_measure,
 )
-from random import rand
+from std.random import rand
 from internal_utils._measure import relative_difference
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from layout import (
+    TileTensor,
+    Coord,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.fp8_quantization import naive_blockwise_scaled_fp8_matmul
 from linalg.matmul.gpu.sm100_structured.blockwise_fp8.blockwise_fp8_matmul import (
     blockwise_fp8_matmul,
 )
 
-from utils.index import Index, IndexList
-from utils.numerics import get_accum_type
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.numerics import get_accum_type
+from std.utils.static_tuple import StaticTuple
 
 
-fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -60,13 +65,13 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     c_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime BLOCK_SCALE_K = 128
     comptime accum_type = get_accum_type[c_type]()
+
+    var M = m.value()
+    var N = n.value()
+    var K = k.value()
 
     if M * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
@@ -101,87 +106,72 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         ")",
     )
 
-    # Allocate host memory
-    a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(M * K)
-    b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(N * K)
-    c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-    c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(M * N)
-
-    a_host = NDBuffer[a_type, 2](a_host_ptr, DimList(M, K))
-    b_host = NDBuffer[b_type, 2](b_host_ptr, DimList(N, K))
-    c_host = NDBuffer[c_type, 2](c_host_ptr, DimList(M, N))
-    c_host_ref = NDBuffer[c_type, 2](c_host_ref_ptr, DimList(M, N))
+    # Shapes
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var b_shape = row_major(
+        Coord(Idx[NType.static_value](), Idx[KType.static_value]())
+    )
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
     # Calculate scales dimensions
     var a_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
     var b_scales_shape_n = ceildiv(N, BLOCK_SCALE_K)
     var b_scales_shape_k = ceildiv(K, BLOCK_SCALE_K)
 
-    a_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
-        a_scales_shape_k * M
+    var a_scales_shape = row_major(Coord(Idx(a_scales_shape_k), m))
+    var b_scales_shape = row_major(
+        Coord(Idx(b_scales_shape_n), Idx(b_scales_shape_k))
     )
-    b_scales_host_ptr = UnsafePointer[Scalar[scales_type]].alloc(
+
+    # Allocate host memory
+    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var c_host_ptr = alloc[Scalar[c_type]](M * N)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](M * N)
+
+    var a_host = TileTensor(a_host_ptr, a_shape)
+    var b_host = TileTensor(b_host_ptr, b_shape)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
+
+    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_shape_k * M)
+    var b_scales_host_ptr = alloc[Scalar[scales_type]](
         b_scales_shape_n * b_scales_shape_k
     )
 
-    a_scales_host = NDBuffer[scales_type, 2](
-        a_scales_host_ptr, DimList(a_scales_shape_k, M)
-    )
-    b_scales_host = NDBuffer[scales_type, 2](
-        b_scales_host_ptr, DimList(b_scales_shape_n, b_scales_shape_k)
-    )
+    var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
+    var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     # Allocate device memory
-    a_device = ctx.enqueue_create_buffer[a_type](M * K)
-    b_device = ctx.enqueue_create_buffer[b_type](N * K)
-    c_device = ctx.enqueue_create_buffer[c_type](M * N)
-    c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
-    a_scales_device = ctx.enqueue_create_buffer[scales_type](
+    var a_device = ctx.enqueue_create_buffer[a_type](M * K)
+    var b_device = ctx.enqueue_create_buffer[b_type](N * K)
+    var c_device = ctx.enqueue_create_buffer[c_type](M * N)
+    var c_device_ref = ctx.enqueue_create_buffer[c_type](M * N)
+    var a_scales_device = ctx.enqueue_create_buffer[scales_type](
         a_scales_shape_k * M
     )
-    b_scales_device = ctx.enqueue_create_buffer[scales_type](
+    var b_scales_device = ctx.enqueue_create_buffer[scales_type](
         b_scales_shape_n * b_scales_shape_k
     )
 
-    dynamic_a_shape = DimList(M, K)
-    dynamic_b_shape = DimList(N, K)
-    dynamic_c_shape = DimList(M, N)
-    dynamic_a_scales_shape = DimList(a_scales_shape_k, M)
-    dynamic_b_scales_shape = DimList(b_scales_shape_n, b_scales_shape_k)
-
-    a_device_nd = NDBuffer[a_type, 2](a_device.unsafe_ptr(), dynamic_a_shape)
-    b_device_nd = NDBuffer[b_type, 2](b_device.unsafe_ptr(), dynamic_b_shape)
-    c_device_nd = NDBuffer[c_type, 2](c_device.unsafe_ptr(), dynamic_c_shape)
-    c_device_ref_nd = NDBuffer[c_type, 2](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
-    a_scales_device_nd = NDBuffer[scales_type, 2](
-        a_scales_device.unsafe_ptr(), dynamic_a_scales_shape
-    )
-    b_scales_device_nd = NDBuffer[scales_type, 2](
-        b_scales_device.unsafe_ptr(), dynamic_b_scales_shape
-    )
-
-    c_host.zero()
-    c_host_ref.zero()
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
-    rand(a_scales_host.data, a_scales_host.num_elements())
-    rand(b_scales_host.data, b_scales_host.num_elements())
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
+    rand(a_scales_host.ptr, a_scales_host.num_elements())
+    rand(b_scales_host.ptr, b_scales_host.num_elements())
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
-
-    var a = from_ndbuffer_row_major(a_device_nd)
-    var b = from_ndbuffer_row_major(b_device_nd)
-    var c = from_ndbuffer_row_major(c_device_nd)
-    var a_scales = from_ndbuffer_row_major(a_scales_device_nd)
-    var b_scales = from_ndbuffer_row_major(b_scales_device_nd)
 
     comptime matmul_config = MatmulConfig[a_type, b_type, c_type, transpose_b](
         cluster_shape=Index(
@@ -190,17 +180,20 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     blockwise_fp8_matmul[
         transpose_b=transpose_b,
+        a_scales_type=scales_type,
+        b_scales_type=scales_type,
         config=matmul_config,
     ](
-        c,
-        a,
-        b,
-        a_scales,
-        b_scales,
+        c_tensor,
+        a_tensor,
+        b_tensor,
+        a_scales_tensor,
+        b_scales_tensor,
         ctx,
     )
 
@@ -208,13 +201,13 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     naive_blockwise_scaled_fp8_matmul[
         BLOCK_DIM=16,
         transpose_b=transpose_b,
-        scales_granularity_mnk = Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
+        scales_granularity_mnk=Index(1, BLOCK_SCALE_K, BLOCK_SCALE_K),
     ](
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
-        a_scales_device_nd,
-        b_scales_device_nd,
+        c_ref_tensor.to_layout_tensor(),
+        a_tensor.to_layout_tensor(),
+        b_tensor.to_layout_tensor(),
+        a_scales_tensor.to_layout_tensor(),
+        b_scales_tensor.to_layout_tensor(),
         ctx,
     )
 
@@ -225,12 +218,12 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     ctx.synchronize()
 
     assert_with_measure[relative_difference](
-        c_host.data, c_host_ref.data, c_host.num_elements(), threshold=0.001
+        c_host.ptr, c_host_ref.ptr, c_host.num_elements(), threshold=0.001
     )
 
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=1e-2,
         rtol=1e-2,
@@ -253,7 +246,7 @@ fn test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     print("PASSED")
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         comptime swizzle = TensorMapSwizzle.SWIZZLE_128B
         comptime in_dtype = DType.float8_e4m3fn
@@ -283,15 +276,15 @@ def main():
             out_dtype,
             block_tile_1sm,
             umma_shape_1sm,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=1,
         ](
             ctx,
-            dynamic(512),
-            static[576](),
-            static[512](),
+            Idx(Int(512)),
+            Idx(576),
+            Idx(512),
         )
 
         # ============================================================
@@ -314,15 +307,15 @@ def main():
             out_dtype,
             block_tile_2sm,
             umma_shape_2sm,
-            cluster_shape = StaticTuple[Int32, 3](2, 1, 1),
+            cluster_shape=StaticTuple[Int32, 3](2, 1, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
         ](
             ctx,
-            dynamic(512),
-            static[576](),
-            static[512](),
+            Idx(Int(512)),
+            Idx(576),
+            Idx(512),
         )
 
         # Additional 2SM test with larger cluster (4,4,1) from original tests
@@ -332,15 +325,15 @@ def main():
             out_dtype,
             block_tile_2sm,
             umma_shape_2sm,
-            cluster_shape = StaticTuple[Int32, 3](4, 4, 1),
+            cluster_shape=StaticTuple[Int32, 3](4, 4, 1),
             a_swizzle=swizzle,
             b_swizzle=swizzle,
             cta_group=2,
         ](
             ctx,
-            dynamic(512),
-            static[4096](),
-            static[1024](),
+            Idx(Int(512)),
+            Idx(4096),
+            Idx(1024),
         )
 
         print("\n=== ALL SMOKE TESTS PASSED ===")

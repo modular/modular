@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Configuration for Mistral3 text encoder."""
+"""Configuration for the Mistral3 Module V2 text encoder."""
 
 from __future__ import annotations
 
@@ -22,16 +22,17 @@ from max.driver import Device
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
+from typing_extensions import Self
 
-# Mapping from HuggingFace config keys to our config keys
 _HF_KEY_MAP = {
     "max_position_embeddings": "max_seq_len",
 }
 
 
-class Mistral3TextEncoderConfigBase(MAXModelConfigBase):
-    """Base configuration for Mistral3 text encoder."""
+class Mistral3TextEncoderConfig(MAXModelConfigBase):
+    """Configuration for the Mistral3 text encoder."""
 
     hidden_size: int = 5120
     num_attention_heads: int = 32
@@ -45,39 +46,38 @@ class Mistral3TextEncoderConfigBase(MAXModelConfigBase):
     rms_norm_eps: float = 1e-5
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
+    hidden_state_layers: list[int] = Field(default_factory=lambda: [10, 20, 30])
 
     @property
     def attention_multiplier(self) -> float:
         """Compute attention scale factor."""
         return math.sqrt(1.0 / self.head_dim)
 
-
-class Mistral3TextEncoderConfig(Mistral3TextEncoderConfigBase):
-    @staticmethod
-    def generate(
+    @classmethod
+    def initialize_from_config(
+        cls,
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
-    ) -> Mistral3TextEncoderConfigBase:
-        """Generate configuration from a dictionary.
+    ) -> Self:
+        """Initialize configuration from a dictionary.
 
         Args:
-            config_dict: Configuration dictionary (may contain text_config nested).
+            config_dict: Configuration dictionary (may contain ``text_config``).
             encoding: Encoding configuration for dtype.
             devices: List of devices.
 
         Returns:
-            Mistral3TextEncoderConfigBase instance.
+            Initialized Mistral3 text encoder configuration.
         """
         text_config = config_dict.get("text_config", config_dict)
 
         init_dict = {}
         for key, value in text_config.items():
             mapped_key = _HF_KEY_MAP.get(key, key)
-            if mapped_key in Mistral3TextEncoderConfigBase.__annotations__:
+            if mapped_key in cls.model_fields:
                 init_dict[mapped_key] = value
 
-        # Compute head_dim if not provided
         if "head_dim" not in init_dict:
             hidden_size = init_dict.get("hidden_size", 5120)
             num_attention_heads = init_dict.get("num_attention_heads", 32)
@@ -85,9 +85,8 @@ class Mistral3TextEncoderConfig(Mistral3TextEncoderConfigBase):
 
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
-
-        return Mistral3TextEncoderConfigBase(**init_dict)
+        return cls(**init_dict)

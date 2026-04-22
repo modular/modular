@@ -13,84 +13,75 @@
 
 """Benchmark configuration classes with inheritance structure for MAX benchmarks."""
 
-import argparse
-import enum
-import logging
-import tempfile
-from collections.abc import Sequence
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any
+from collections.abc import Mapping
+from typing import Literal
 
-import yaml
+from max.config import ConfigFileModel
 from pydantic import Field
 
-from .datasets import DATASET_REGISTRY, DatasetMode
+from .datasets import DatasetMode, DistributionParameter
 
-logger = logging.getLogger(__name__)
+BaseBackend = Literal[
+    "modular",
+    "sglang",
+    "trtllm",
+    "vllm",
+]
 
-from max.config import ConfigFileModel, MAXConfig, deep_merge_max_configs
+Backend = Literal[
+    "modular",
+    "modular-chat",
+    "sglang",
+    "sglang-chat",
+    "trtllm",
+    "trtllm-chat",
+    "vllm",
+    "vllm-chat",
+]
 
+Endpoint = Literal[
+    "/v1/completions",
+    "/v1/chat/completions",
+    "/v2/models/ensemble/generate_stream",
+    "/v1/responses",
+    "/v1/images/generations",
+]
 
-class Backend(str, enum.Enum):
-    vllm = "vllm"
-    vllm_chat = "vllm-chat"
-    modular = "modular"
-    modular_chat = "modular-chat"
-    sglang = "sglang"
-    sglang_chat = "sglang-chat"
-    trtllm = "trtllm"
-    trtllm_chat = "trtllm-chat"
+CACHE_RESET_ENDPOINT_MAP: Mapping[Backend, str] = {
+    "modular": "/reset_prefix_cache",
+    "modular-chat": "/reset_prefix_cache",
+    "vllm": "/reset_prefix_cache",
+    "vllm-chat": "/reset_prefix_cache",
+    "sglang": "/flush_cache",
+    "sglang-chat": "/flush_cache",
+}
 
+BenchmarkTask = Literal[
+    "text-generation",
+    "text-to-image",
+    "image-to-image",
+]
 
-class Endpoint(str, enum.Enum):
-    completions = "/v1/completions"
-    chat_completions = "/v1/chat/completions"
-    ensemble_generate_stream = "/v2/models/ensemble/generate_stream"
+PIXEL_GENERATION_TASKS: tuple[BenchmarkTask, ...] = (
+    "text-to-image",
+    "image-to-image",
+)
 
+# Default endpoint per backend for pixel generation tasks.
+# Backends not listed here do not support pixel generation.
+# NOTE: Each endpoint value here is coupled to a specific request driver in
+# get_request_driver_class() in request.py. Adding a new backend that reuses
+# an existing endpoint will route to that endpoint's existing driver.
+PIXEL_GEN_DEFAULT_ENDPOINT: Mapping[str, Endpoint] = {
+    "modular": "/v1/responses",
+    "sglang": "/v1/images/generations",
+    "vllm": "/v1/chat/completions",
+}
 
-def _add_config_file_arg_to_parser(
-    parser: argparse.ArgumentParser,
-) -> argparse.ArgumentParser:
-    """Add the --config-file argument to a parser.
-
-    Args:
-        parser: The parser to add the argument to.
-    """
-    parser.add_argument(
-        "--config-file",
-        type=Path,
-        help="Path to configuration file. If provided, this config will inherit from the default config and override its values.",
-    )
-    return parser
-
-
-def _resolve_user_provided_config_file_cli_arg(
-    args: Sequence[str] | None = None,
-) -> tuple[Path | None, list[str]]:
-    """Resolve the user-provided --config-file argument from command line arguments.
-
-    This utility function extracts the config file path from command line arguments
-    before the main argument parsing, allowing the config file to be loaded and used
-    as defaults for the main parser.
-
-    Args:
-        args: Command line arguments to parse. If None, parse from sys.argv.
-
-    Returns:
-        Tuple of (config_file_path, remaining_args) where:
-        - config_file_path: Path to the config file if provided, None otherwise
-        - remaining_args: List of remaining arguments after removing --config-file
-    """
-    # Create a preliminary parser to get the config file path
-    preliminary_parser = argparse.ArgumentParser(add_help=False)
-    preliminary_parser = _add_config_file_arg_to_parser(preliminary_parser)
-
-    # Parse preliminary args to get config file path
-    preliminary_args, remaining_args = preliminary_parser.parse_known_args(
-        args=args
-    )
-    return preliminary_args.config_file, remaining_args
+# Valid endpoints for pixel generation tasks (union of all backend defaults).
+PIXEL_GENERATION_ENDPOINTS: frozenset[Endpoint] = frozenset(
+    PIXEL_GEN_DEFAULT_ENDPOINT.values()
+)
 
 
 class HardwareConfig(ConfigFileModel):
@@ -124,7 +115,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     dataset_path: str | None = None
     """Path to the dataset."""
 
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
+    dataset_mode: DatasetMode = "huggingface"
     """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
 
     # Basic workload parameters
@@ -142,13 +133,7 @@ class BenchmarkCommonConfig(ConfigFileModel):
     """Print all input and outputs to console."""
 
 
-# TODO: This whole class should be converted to a pydantic model.
-# As of this writing, the current plan is to migrate these fields over to
-# individual pydantic BaseModel classes such as the ones above, then delete this
-# BaseBenchmarkConfig class as soon as we're done migrating the last script that
-# uses it.
-@dataclass
-class BaseBenchmarkConfig(MAXConfig):
+class BaseBenchmarkConfig(ConfigFileModel):
     """Base configuration class containing parameters common to all benchmark types.
 
     This class contains the core parameters that are shared across all benchmark types:
@@ -160,95 +145,72 @@ class BaseBenchmarkConfig(MAXConfig):
     - Common control flags
     """
 
-    # Config file section name for MAXConfig interface
-    _config_file_section_name: str = "benchmark_config"
-    """The section name to use when loading this config from a MAXConfig file."""
+    section_name: str | None = Field(default="benchmark_config", exclude=True)
+    """Default section name for benchmark config files.
+
+    Overrides ConfigFileModel's default to automatically extract the
+    ``benchmark_config`` section when loading YAML config files."""
 
     # Model and tokenizer configuration (common to all benchmarks)
-    model: str | None = None
-    """Name of the model. Required when running benchmark."""
-
-    tokenizer: str | None = None
-    """Name or path of the tokenizer, if not using the default tokenizer."""
-
-    model_max_length: int | None = None
-    """Override for tokenizer max length. Needed if server has a lower max length than the tokenizer."""
-
-    trust_remote_code: bool = False
-    """Trust remote code from huggingface."""
-
-    # Dataset configuration (common across all benchmark types)
-    dataset_name: str = "sharegpt"
-    """Name of the dataset to benchmark on."""
-
-    dataset_path: str | None = None
-    """Path to the dataset."""
-
-    dataset_mode: DatasetMode = DatasetMode.HUGGINGFACE
-    """Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub)."""
-
-    # Basic workload parameters
-    num_prompts: int | None = None
-    """Number of prompts to process."""
-
-    seed: int = 0
-    """Random seed for reproducibility."""
-
-    # Control flags
-    disable_tqdm: bool = False
-    """Specify to disable tqdm progress bar."""
-
-    print_inputs_and_outputs: bool = False
-    """Print all input and outputs to console."""
-
-    # Unknown fields storage (not a dataclass field)
-    _unknown_fields: dict[str, Any] = field(
-        default_factory=dict, init=False, repr=False
+    model: str | None = Field(
+        default=None,
+        description="Name of the model. Required when running benchmark.",
     )
 
-    @staticmethod
-    def help() -> dict[str, str]:
-        """Documentation for base benchmark config parameters.
+    tokenizer: str | None = Field(
+        default=None,
+        description="Name or path of the tokenizer, if not using the default tokenizer.",
+    )
 
-        Returns:
-            Dictionary of config options and their descriptions.
-        """
-        return {
-            "model": "Name of the model. Required when running benchmark.",
-            "tokenizer": "Name or path of the tokenizer, if not using the default tokenizer.",
-            "trust_remote_code": "Trust remote code from huggingface.",
-            "dataset_name": "Name of the dataset to benchmark on.",
-            "dataset_path": "Path to the dataset.",
-            "dataset_mode": "Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub).",
-            "num_prompts": "Number of prompts to process.",
-            "seed": "Random seed for reproducibility.",
-            "disable_tqdm": "Specify to disable tqdm progress bar.",
-            "print_inputs_and_outputs": "Print all input and outputs to console.",
-        }
+    model_max_length: int | None = Field(
+        default=None,
+        description="Override for tokenizer max length. Needed if server has a lower max length than the tokenizer.",
+    )
 
-    @staticmethod
-    def get_default_field_choices() -> dict[str, list[str]]:
-        """Get valid choices for fields that have constrained values.
+    trust_remote_code: bool = Field(
+        default=False,
+        description="Trust remote code from huggingface.",
+    )
 
-        Returns:
-            Dictionary mapping field names to their valid choices.
-        """
-        return {
-            # TODO: Propagate proper enum choices here than just the string values
-            "backend": [backend.value for backend in Backend],
-            "endpoint": [endpoint.value for endpoint in Endpoint],
-            "dataset_name": list(DATASET_REGISTRY.keys()),
-            "dataset_mode": [mode.value for mode in DatasetMode],
-            "random_distribution_type": ["uniform", "normal", "gamma"],
-        }
+    # Dataset configuration (common across all benchmark types)
+    dataset_name: str = Field(
+        default="sharegpt",
+        description="Name of the dataset to benchmark on.",
+    )
 
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the benchmark config."""
-        return super().get_default_required_fields().union({"model"})
+    dataset_path: str | None = Field(
+        default=None,
+        description="Path to the dataset.",
+    )
+
+    dataset_mode: DatasetMode = Field(
+        default="huggingface",
+        description="Mode for loading the dataset: LOCAL (from local path/env var) or HUGGINGFACE (HuggingFace Hub).",
+    )
+
+    # Basic workload parameters
+    num_prompts: int | None = Field(
+        default=None,
+        description="Number of prompts to process.",
+    )
+
+    seed: int = Field(
+        default=0,
+        description="Random seed for reproducibility.",
+    )
+
+    # Control flags
+    disable_tqdm: bool = Field(
+        default=False,
+        description="Specify to disable tqdm progress bar.",
+    )
+
+    print_inputs_and_outputs: bool = Field(
+        default=False,
+        description="Print all input and outputs to console.",
+    )
 
 
-@dataclass
 class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """Configuration class for serving benchmarks (benchmark_serving.py).
 
@@ -262,586 +224,533 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     """
 
     # Backend and API configuration (serving-specific)
-    # TODO: Propagate proper enum choices here than just the string values
-    backend: str = field(
-        default=Backend.modular.value,
-        metadata={
+    backend: Backend = Field(
+        default="modular",
+        description="Backend to use for benchmarking. Choices: modular, modular-chat, sglang, sglang-chat, trtllm, trtllm-chat, vllm, vllm-chat",
+        json_schema_extra={
             "group": "Backend and API Configuration",
             "group_description": "Configuration for backend selection and API endpoints",
         },
     )
-    """Backend to use for benchmarking. Choices: vllm, vllm-chat, modular, modular-chat, sglang, sglang-chat"""
 
-    base_url: str | None = field(
-        default=None, metadata={"group": "Backend and API Configuration"}
+    base_url: str | None = Field(
+        default=None,
+        description="Server or API base url if not using http host and port.",
+        json_schema_extra={"group": "Backend and API Configuration"},
     )
-    """Server or API base url if not using http host and port."""
 
-    host: str = field(
-        default="localhost", metadata={"group": "Backend and API Configuration"}
+    host: str = Field(
+        default="localhost",
+        description="Server host.",
+        json_schema_extra={"group": "Backend and API Configuration"},
     )
-    """Server host."""
 
-    port: int = field(
-        default=8000, metadata={"group": "Backend and API Configuration"}
+    port: int = Field(
+        default=8000,
+        description="Server port.",
+        json_schema_extra={"group": "Backend and API Configuration"},
     )
-    """Server port."""
 
-    endpoint: str = field(
-        default=Endpoint.chat_completions.value,
-        metadata={"group": "Backend and API Configuration"},
+    endpoint: Endpoint = Field(
+        default="/v1/chat/completions",
+        description="API endpoint. Choices: /v1/completions, /v1/chat/completions, /v1/responses, /v1/images/generations, /v2/models/ensemble/generate_stream. For pixel generation tasks, auto-selected from backend if not specified.",
+        json_schema_extra={"group": "Backend and API Configuration"},
     )
-    """API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream"""
+
+    benchmark_task: BenchmarkTask = Field(
+        default="text-generation",
+        description="Benchmark task type. Choices: text-generation, text-to-image, image-to-image",
+        json_schema_extra={"group": "Backend and API Configuration"},
+    )
 
     # Request configuration (serving-specific)
-    max_concurrency: str | None = field(
+    max_concurrency: str | None = Field(
         default=None,
-        metadata={
+        description="Maximum concurrent requests (optimized for serving benchmarks). Can be a single integer, 'None', or comma-separated string for sweep configs.",
+        json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
-            "sweepable_type": int,
         },
     )
-    """Maximum concurrent requests (optimized for serving benchmarks).
-    Can be a single integer, "None", or comma-separated string for sweep configs."""
 
-    lora: str | None = field(
-        default=None, metadata={"group": "Request Configuration"}
+    lora: str | None = Field(
+        default=None,
+        description="Optional LoRA name.",
+        json_schema_extra={"group": "Request Configuration"},
     )
-    """Optional LoRA name."""
+
+    max_concurrent_conversations: int | None = Field(
+        default=None,
+        description=(
+            "Maximum conversation workers active at once for KV-cache stress "
+            "benchmarking. When set, runs run_kv_cache_stress_benchmark "
+            "instead of run_multiturn_benchmark: each worker drives one chat "
+            "session to completion before picking up the next, keeping all "
+            "session KV caches resident simultaneously. "
+            "--max-concurrency caps in-flight turn requests and must be <= "
+            "--max-concurrent-conversations to stress the server's KV-cache: "
+            "more open sessions than active turns grows the footprint and "
+            "increases the likelihood of offloading or dropping pre-computed "
+            "historical KV data."
+        ),
+        json_schema_extra={"group": "Request Configuration"},
+    )
 
     # Workload configuration (serving-specific)
-    max_benchmark_duration_s: int | None = field(
+    max_benchmark_duration_s: int | None = Field(
         default=None,
-        metadata={
+        description="Maximum benchmark duration in seconds.",
+        json_schema_extra={
             "group": "Workload Configuration",
             "group_description": "Parameters controlling benchmark duration and workload characteristics",
         },
     )
-    """Maximum benchmark duration in seconds."""
 
-    num_chat_sessions: int | None = field(
-        default=None, metadata={"group": "Workload Configuration"}
+    num_chat_sessions: int | None = Field(
+        default=None,
+        description="Number of multiturn chat sessions.",
+        json_schema_extra={"group": "Workload Configuration"},
     )
-    """Number of multiturn chat sessions."""
 
-    delay_between_chat_turns: int | None = field(
-        default=None, metadata={"group": "Workload Configuration"}
+    delay_between_chat_turns: DistributionParameter | None = Field(
+        default=None,
+        description=(
+            "Delay between chat turns in milliseconds. Accepts a float or int for a constant delay, "
+            "or a distribution string: 'N(mean,std)' for normal, 'U(lower,upper)' for continuous uniform, "
+            "'DU(lower,upper)' for discrete uniform, 'G(shape,scale)' for gamma, or 'LN(mean,std)' for log-normal."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
     )
-    """Delay between chat turns in ms."""
+
+    force_unique_runs: bool = Field(
+        default=False,
+        description=(
+            "Prepend a single run-level UUID prefix to every prompt in this run. "
+            "All requests in the same run share the same prefix, preserving "
+            "within-run system-prompt prefix caching while preventing KV-cache "
+            "reuse across benchmark runs."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
+    )
 
     # Output control (serving-specific extensions)
-    output_lengths: str | None = field(
+    output_lengths: str | None = Field(
         default=None,
-        metadata={
+        description="Path to YAML file with output lengths or int.",
+        json_schema_extra={
             "group": "Output Control",
             "group_description": "Parameters controlling output generation and sampling",
         },
     )
-    """Path to YAML file with output lengths or int."""
 
-    max_output_len: int | None = field(
-        default=None, metadata={"group": "Output Control"}
+    max_output_len: int | None = Field(
+        default=None,
+        description="Maximum output length per request.",
+        json_schema_extra={"group": "Output Control"},
     )
-    """Maximum output length per request."""
 
-    temperature: float = field(
-        default=0.0, metadata={"group": "Output Control"}
+    temperature: float | None = Field(
+        default=None,
+        description="Temperature for sampling.",
+        json_schema_extra={"group": "Output Control"},
     )
-    """Temperature for sampling."""
 
-    top_p: float = field(default=1.0, metadata={"group": "Output Control"})
-    """Top-p for sampling."""
-
-    top_k: int | None = field(
-        default=None, metadata={"group": "Output Control"}
+    top_p: float | None = Field(
+        default=None,
+        description="Top-p for sampling.",
+        json_schema_extra={"group": "Output Control"},
     )
-    """Top-k for sampling."""
+
+    top_k: int | None = Field(
+        default=None,
+        description="Top-k for sampling.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    response_format: str | None = Field(
+        default=None,
+        description=(
+            "JSON response format for structured output. Can be a JSON string "
+            "or '@path/to/schema.json' to load from file. "
+            'Example: \'{"type": "json_schema", "json_schema": {...}}\''
+        ),
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    # Image generation options (serving-specific)
+    image_width: int | None = Field(
+        default=None,
+        description="Output image width in pixels for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    image_height: int | None = Field(
+        default=None,
+        description="Output image height in pixels for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    image_steps: int | None = Field(
+        default=None,
+        description="Number of denoising steps for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    image_guidance_scale: float | None = Field(
+        default=None,
+        description="Guidance scale for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    image_negative_prompt: str | None = Field(
+        default=None,
+        description="Negative prompt for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
+
+    image_seed: int | None = Field(
+        default=None,
+        description="Deterministic seed for pixel generation.",
+        json_schema_extra={"group": "Output Control"},
+    )
 
     # Traffic control (serving-specific)
-    request_rate: str | None = field(
+    request_rate: str = Field(
         default="inf",
-        metadata={
+        description="Requests per second (finite rate for realistic benchmarking). Can be a single float value or comma-separated string for sweep configs.",
+        json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
-            "sweepable_type": float,
         },
     )
-    """Requests per second (finite rate for realistic benchmarking).
-    Can be a single float value or comma-separated string for sweep configs."""
 
-    burstiness: float = field(
-        default=1.0, metadata={"group": "Traffic Control"}
+    burstiness: float = Field(
+        default=1.0,
+        description="Burstiness factor (1.0 = Poisson process).",
+        json_schema_extra={"group": "Traffic Control"},
     )
-    """Burstiness factor (1.0 = Poisson process)."""
 
-    skip_first_n_requests: int = field(
-        default=0, metadata={"group": "Traffic Control"}
+    skip_first_n_requests: int | None = Field(
+        default=None,
+        description="Skip first N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
+        json_schema_extra={"group": "Traffic Control"},
     )
-    """Skip first N requests for measurements."""
 
-    chat_warmup_delay_ms: float = field(
-        default=0.0, metadata={"group": "Traffic Control"}
+    skip_last_n_requests: int | None = Field(
+        default=None,
+        description="Skip last N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
+        json_schema_extra={"group": "Traffic Control"},
     )
-    """Delay between starting chat sessions."""
 
-    ignore_first_turn_stats: bool = field(
-        default=False, metadata={"group": "Traffic Control"}
+    chat_warmup_delay_ms: float = Field(
+        default=0.0,
+        description="Delay between starting chat sessions.",
+        json_schema_extra={"group": "Traffic Control"},
     )
-    """Ignore the first turn statistics in multiturn chat sessions."""
+
+    ignore_first_turn_stats: bool = Field(
+        default=False,
+        description="Ignore the first turn statistics in multiturn chat sessions.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    randomize_starting_turn: bool = Field(
+        default=True,
+        description="Start each multi-turn session at a random turn offset. Prefix turns run densely (no inter-turn delay) to build KV cache context and are excluded from benchmark results.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    randomize_session_start: bool = Field(
+        default=True,
+        description="Add a random sleep (0 to inter-turn delay) before each session's first measured query to spread out the initial wave of requests.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
 
     # Dataset-specific parameters (serving workloads)
-    arxiv_summarization_input_len: int = field(
+    arxiv_summarization_input_len: int = Field(
         default=15000,
-        metadata={
+        description="Number of input tokens per request, used only for arxiv-summarization dataset.",
+        json_schema_extra={
             "group": "Dataset-Specific Parameters",
             "group_description": "Parameters specific to different dataset types and workloads",
         },
     )
-    batch_job_image_dir: str | None = field(
-        default=None, metadata={"group": "Dataset-Specific Parameters"}
+    batch_job_image_dir: str | None = Field(
+        default=None,
+        description="Directory where server can access images for batch-job dataset (file reference mode). If not specified, uses embedded base64 mode.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    obfuscated_conversations_average_output_len: int = field(
-        default=175, metadata={"group": "Dataset-Specific Parameters"}
+    obfuscated_conversations_average_output_len: int = Field(
+        default=175,
+        description="Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    obfuscated_conversations_coefficient_of_variation: float = field(
-        default=0.1, metadata={"group": "Dataset-Specific Parameters"}
+    obfuscated_conversations_coefficient_of_variation: float = Field(
+        default=0.1,
+        description="Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    obfuscated_conversations_shuffle: bool = field(
-        default=False, metadata={"group": "Dataset-Specific Parameters"}
+    obfuscated_conversations_shuffle: bool = Field(
+        default=False,
+        description="Shuffle the obfuscated-conversations dataset.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_coefficient_of_variation: str = field(
-        default="0.3,0.7", metadata={"group": "Dataset-Specific Parameters"}
+    tool_calls: bool = Field(
+        default=True,
+        description="Include turns with tool calls for datasets that support it. When disabled, only system+user turns are used.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_distribution_type: str = field(
-        default="normal",  # choices: uniform, normal
-        metadata={"group": "Dataset-Specific Parameters"},
+    random_image_count: int = Field(
+        default=0,
+        description="Number of random images to generate.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_first_turn_ratio: float = field(
-        default=1.0, metadata={"group": "Dataset-Specific Parameters"}
+    random_image_size: str = Field(
+        default="",
+        description="Size of random images to generate.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_image_count: int = field(
-        default=0, metadata={"group": "Dataset-Specific Parameters"}
+    random_input_len: DistributionParameter = Field(
+        default=1024,
+        description="Number of input tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_image_size: str = field(
-        default="", metadata={"group": "Dataset-Specific Parameters"}
+    random_max_num_unique_sys_prompt: int = Field(
+        default=1,
+        description="Maximum number of unique system prompts, used only for random sampling.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_input_len: int = field(
-        default=1024, metadata={"group": "Dataset-Specific Parameters"}
+    random_num_turns: DistributionParameter = Field(
+        default=1,
+        description="Number of turns per session, used only for random sampling and --num-chat-sessions.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_max_num_unique_sys_prompt: int = field(
-        default=1, metadata={"group": "Dataset-Specific Parameters"}
+    random_output_len: DistributionParameter = Field(
+        default=128,
+        description="Number of output tokens per request, used only for random sampling. Use ';' to separate first-turn and remaining-turn distributions for multiturn.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_num_turns: int = field(
-        default=1, metadata={"group": "Dataset-Specific Parameters"}
+    random_sys_prompt_ratio: float = Field(
+        default=0.0,
+        description="Ratio to determine the system prompt length, used only for random sampling.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    random_output_len: int = field(
-        default=128, metadata={"group": "Dataset-Specific Parameters"}
+    fit_distributions: bool = Field(
+        default=False,
+        description=(
+            "With --num-chat-sessions on instruct-coder or agentic-code, reshape "
+            "workloads to match random_* and delay_between_chat_turns (same "
+            "semantics as random multiturn). Unsupported for code-debug multiturn. "
+            "Random/synthetic datasets already follow these distributions."
+        ),
+        json_schema_extra={"group": "Workload Configuration"},
     )
-    random_sys_prompt_ratio: float = field(
-        default=0.0, metadata={"group": "Dataset-Specific Parameters"}
+    sonnet_input_len: int = Field(
+        default=550,
+        description="Number of input tokens per request, used only for sonnet dataset.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
-    sonnet_input_len: int = field(
-        default=550, metadata={"group": "Dataset-Specific Parameters"}
-    )
-    sonnet_prefix_len: int = field(
-        default=200, metadata={"group": "Dataset-Specific Parameters"}
+    sonnet_prefix_len: int = Field(
+        default=200,
+        description="Number of prefix tokens per request, used only for sonnet dataset.",
+        json_schema_extra={"group": "Dataset-Specific Parameters"},
     )
 
     # Control flags (serving-specific)
-    skip_test_prompt: bool = field(
+    warm_shared_prefix: bool = Field(
         default=False,
-        metadata={
+        description=(
+            "Send each unique shared prefix once (max_tokens=1) before the"
+            " benchmark run to prime prefix-cache KV entries. Only supported for"
+            " random/synthetic datasets with --random-sys-prompt-ratio > 0."
+        ),
+        json_schema_extra={
             "group": "Control Flags",
             "group_description": "Boolean flags controlling benchmark behavior",
         },
     )
-    collect_gpu_stats: bool = field(
-        default=False, metadata={"group": "Control Flags"}
+    skip_test_prompt: bool = Field(
+        default=False,
+        description="Skip the test prompt. Useful when doing external profiling.",
+        json_schema_extra={
+            "group": "Control Flags",
+            "group_description": "Boolean flags controlling benchmark behavior",
+        },
     )
-    """Enable GPU stats collection for serving benchmarks."""
-
-    collect_cpu_stats: bool = field(
-        default=True, metadata={"group": "Control Flags"}
+    collect_gpu_stats: bool = Field(
+        default=True,
+        description="Enable GPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
     )
-    """Enable CPU stats collection for serving benchmarks."""
 
-    collect_server_stats: bool = field(
-        default=True, metadata={"group": "Control Flags"}
+    collect_cpu_stats: bool = Field(
+        default=True,
+        description="Enable CPU stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
     )
-    """Enable server stats collection for serving benchmarks."""
 
-    trace: bool = field(default=False, metadata={"group": "Control Flags"})
-    """Enable nsys tracing of the benchmark run. Requires the server to be run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs."""
-
-    trace_file: str | None = field(
-        default=None, metadata={"group": "Control Flags"}
+    collect_server_stats: bool = Field(
+        default=True,
+        description="Enable server stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
     )
-    """Path to save nsys trace file. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep."""
 
-    trace_session: str | None = field(
-        default=None, metadata={"group": "Control Flags"}
+    # `dict[str, str]` (not `Mapping`) so cyclopts 3.24 accepts the
+    # `--metrics-urls.<label>=<url>` syntax for nested keys.
+    metrics_urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit Prometheus metrics endpoint URLs, keyed by label "
+            "(e.g. '--metrics-urls.orchestrator=http://host:8001/metrics "
+            "--metrics-urls.engine-0=http://host2:8001/metrics'). "
+            "When empty, a single endpoint is auto-derived from --host/--port."
+        ),
+        json_schema_extra={"group": "Control Flags"},
     )
-    """Optional session name to trace. If not specified, nsys traces the default session."""
+
+    print_workload_stats: bool = Field(
+        default=False,
+        description="Print workload distribution statistics (input/output lengths, num turns, delays).",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    dry_run: bool = Field(
+        default=False,
+        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    trace: bool = Field(
+        default=False,
+        description="Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    trace_file: str | None = Field(
+        default=None,
+        description="Path to save nsys trace. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    trace_session: str | None = Field(
+        default=None,
+        description="Optional session name to trace. If not specified, nsys traces the default session.",
+        json_schema_extra={"group": "Control Flags"},
+    )
 
     # Result saving (serving-specific extensions)
-    record_output_lengths: str | None = field(
-        default=None, metadata={"group": "Result Saving"}
-    )
-    """Path to save output lengths in YAML format."""
-
-    result_filename: str | None = field(
-        default=None, metadata={"group": "Result Saving"}
-    )
-    """JSON filename for results. If None, no results are saved. Can include directory path."""
-
-    metadata: list[str] = field(
-        default_factory=list, metadata={"group": "Result Saving"}
-    )
-    """Key-value pairs for metadata (format: ["key=value", ...])."""
-
-    lora_paths: list[str] = field(
-        default_factory=list, metadata={"group": "LoRA Configuration"}
-    )
-    """Paths to existing LoRA adapters. Format: 'path' or 'name=path'."""
-
-    lora_uniform_traffic_ratio: float = field(
-        default=0.0, metadata={"group": "LoRA Configuration"}
-    )
-    """Probability of selecting any LoRA uniformly at random (vs base model).
-    Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."""
-
-    per_lora_traffic_ratio: list[float] = field(
-        default_factory=list, metadata={"group": "LoRA Configuration"}
-    )
-    """Traffic percentages for each LoRA adapter in the benchmark.
-    Must have same length as lora_paths. Sum must not exceed 1.0.
-    Remainder goes to base model requests.
-    ***If specified, this overrides lora_request_ratio.***"""
-
-    max_concurrent_lora_ops: int = field(
-        default=1, metadata={"group": "LoRA Configuration"}
-    )
-    """Maximum concurrent LoRA loading/unloading operations."""
-
-    @staticmethod
-    def help() -> dict[str, str]:
-        """Documentation for serving benchmark config parameters.
-
-        Returns:
-            Dictionary of config options and their descriptions.
-        """
-        # Get base help and extend with serving-specific parameters
-        base_help = BaseBenchmarkConfig.help()
-        serving_help = {
-            "backend": "Backend to use for benchmarking. Choices: vllm, vllm-chat, modular, modular-chat, sglang, sglang-chat",
-            "base_url": "Server or API base url if not using http host and port.",
-            "host": "Server host.",
-            "port": "Server port.",
-            "endpoint": "API endpoint. Choices: /v1/completions, /v1/chat/completions, /v2/models/ensemble/generate_stream",
-            "max_concurrency": "Maximum concurrent requests (optimized for serving benchmarks).",
-            "lora": "Optional LoRA name.",
-            "max_benchmark_duration_s": "Maximum benchmark duration in seconds.",
-            "num_chat_sessions": "Number of multiturn chat sessions.",
-            "delay_between_chat_turns": "Delay between chat turns in ms.",
-            "output_lengths": "Path to YAML file with output lengths or int.",
-            "max_output_len": "Maximum output length per request.",
-            "temperature": "Temperature for sampling.",
-            "top_p": "Top-p for sampling.",
-            "request_rate": "Requests per second (finite rate for realistic benchmarking).",
-            "burstiness": "Burstiness factor (1.0 = Poisson process).",
-            "skip_first_n_requests": "Skip first N requests for measurements.",
-            "chat_warmup_delay_ms": "Delay between starting chat sessions.",
-            "sonnet_input_len": "Number of input tokens per request, used only for sonnet dataset.",
-            "sonnet_prefix_len": "Number of prefix tokens per request, used only for sonnet dataset.",
-            "arxiv_summarization_input_len": "Number of input tokens per request, used only for arxiv-summarization dataset.",
-            "batch_job_image_dir": "Directory where server can access images for batch-job dataset (file reference mode). If not specified, uses embedded base64 mode.",
-            "obfuscated_conversations_average_output_len": "Average output length for obfuscated-conversations dataset when output_lengths is not provided.",
-            "obfuscated_conversations_coefficient_of_variation": "Coefficient of variation for output length for obfuscated-conversations dataset when output_lengths is not provided.",
-            "obfuscated_conversations_shuffle": "Shuffle the obfuscated-conversations dataset.",
-            "random_coefficient_of_variation": "Coefficient of variation for input/output length, used only for random sampling.",
-            "random_distribution_type": "Type of probability distribution for sampled input/output length. Choices: uniform, normal, gamma",
-            "random_first_turn_ratio": "Ratio of the length of the first turn to the length of subsequent turns.",
-            "random_image_size": "Size of random images to generate.",
-            "random_input_len": "Number of input tokens per request, used only for random sampling.",
-            "random_max_num_unique_sys_prompt": "Maximum number of unique system prompts, used only for random sampling.",
-            "random_num_turns": "Number of turns per session, used only for random sampling and --num-chat-sessions.",
-            "random_output_len": "Number of output tokens per request, used only for random sampling.",
-            "random_sys_prompt_ratio": "Ratio to determine the system prompt length, used only for random sampling.",
-            "skip_test_prompt": "Skip the test prompt. Useful when doing external profiling.",
-            "collect_gpu_stats": "Enable GPU stats collection for serving benchmarks.",
-            "collect_cpu_stats": "Enable CPU stats collection for serving benchmarks.",
-            "collect_server_stats": "Enable server stats collection for serving benchmarks.",
-            "trace": "Enable nsys tracing. Requires server run under 'nsys launch'. Using '--gpu-profiling detailed' is recommended. Currently only supported on NVIDIA GPUs.",
-            "trace_file": "Path to save nsys trace. Default: $MODULAR_PATH/profile.nsys-rep or ./profile.nsys-rep.",
-            "trace_session": "Optional session name to trace. If not specified, nsys traces the default session.",
-            "result_filename": "JSON filename for results. If None, no results are saved. Can include directory path.",
-            "record_output_lengths": "Path to save output lengths in YAML format.",
-            "metadata": 'Key-value pairs for metadata (format: ["key=value", ...]).',
-            "lora_paths": "Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
-            "lora_request_ratio": "Probability of selecting any LoRA uniformly at random (vs base model). Only used when lora_traffic_ratio is not specified. Range: 0.0-1.0.",
-            "lora_traffic_ratio": "Traffic percentages for each LoRA adapter. Must have same length as lora_paths. Sum must not exceed 1.0. Remainder goes to base model. If specified, overrides lora_request_ratio.",
-            "max_concurrent_lora_ops": "Maximum concurrent LoRA loading/unloading operations.",
-        }
-        return {**base_help, **serving_help}
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the benchmark config."""
-        return super().get_default_required_fields().union({"dataset_name"})
-
-
-@dataclass
-class SweepServingBenchmarkConfig(ServingBenchmarkConfig):
-    """Configuration class for sweep serving benchmarks (sweep-benchmark-serving.py).
-
-    Inherits from ServingBenchmarkConfig and adds sweep-specific parameters:
-    - Workload configuration
-    - Logging and debugging options
-    - Result upload configuration
-    - Sweep-specific concurrency and duration parameters
-    - Metadata and result tracking
-    """
-
-    # Workload configuration (sweep-specific)
-    workload_config: str = field(
-        default="",
-        metadata={
-            "group": "Workload Configuration",
-            "group_description": "Parameters controlling workload and dataset configuration",
-        },
-    )
-    """YAML file specifying the workload to benchmark."""
-
-    # Logging and debugging (sweep-specific)
-    log_dir: str | None = field(
+    record_output_lengths: str | None = Field(
         default=None,
-        metadata={
-            "group": "Logging and Debugging",
-            "group_description": "Parameters controlling logging and debugging behavior",
-        },
+        description="Path to save output lengths in YAML format.",
+        json_schema_extra={"group": "Result Saving"},
     )
-    """Path to save logs (in event of command failure only). Default: <backend>-latency-Y.m.d-H.M.S"""
 
-    dry_run: bool = field(
-        default=False,
-        metadata={"group": "Logging and Debugging"},
-    )
-    """Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed."""
-
-    # Result upload configuration (sweep-specific)
-    upload_results: bool = field(
-        default=False,
-        metadata={
-            "group": "Result Upload Configuration",
-            "group_description": "Parameters controlling result upload to BigQuery",
-        },
-    )
-    """Upload results to BigQuery."""
-
-    benchmark_sha: str | None = field(
+    result_filename: str | None = Field(
         default=None,
-        metadata={"group": "Result Upload Configuration"},
+        description="JSON filename for results. If None, no results are saved. Can include directory path.",
+        json_schema_extra={"group": "Result Saving"},
     )
-    """Commit hash of the docker image used for load generation."""
 
-    cluster_information_path: str | None = field(
-        default=None,
-        metadata={"group": "Result Upload Configuration"},
-    )
-    """Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node."""
-
-    benchmark_config_name: str | None = field(
-        default=None,
-        metadata={"group": "Result Upload Configuration"},
-    )
-    """(For serving benchmarks) config name for tracking."""
-
-    # Metadata and result tracking (sweep-specific)
-    metadata: list[str] = field(
+    metadata: list[str] = Field(
         default_factory=list,
-        metadata={
-            "group": "Metadata and Result Tracking",
-            "group_description": "Parameters for metadata and result tracking",
-        },
+        description="Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes.",
+        json_schema_extra={"group": "Result Saving"},
     )
-    """Key-value pairs (e.g, --metadata version=0.3.3 tp=1) for metadata of this run to be saved in the result JSON file for record keeping purposes."""
 
-    latency_percentiles: str = field(
+    log_dir: str | None = Field(
+        default=None,
+        description="Path to save logs. Default: <backend>-latency-Y.m.d-H.M.S",
+        json_schema_extra={"group": "Result Saving"},
+    )
+
+    latency_percentiles: str = Field(
         default="50,90,95,99",
-        metadata={"group": "Metadata and Result Tracking"},
+        description="Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported.",
+        json_schema_extra={"group": "Result Saving"},
     )
-    """Comma separated list of latency percentiles to include in CSV output. Only P50, P90, P95, and P99 are supported (default: 50,90,95,99)."""
 
-    # Sweep-specific concurrency and duration parameters
-    num_iters: int = field(
+    # Workload config file
+    workload_config: str | None = Field(
+        default=None,
+        description="YAML file specifying the workload to benchmark.",
+        json_schema_extra={"group": "Workload Configuration"},
+    )
+
+    # Result upload configuration
+    upload_results: bool = Field(
+        default=False,
+        description="Upload results to BigQuery.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    benchmark_sha: str | None = Field(
+        default=None,
+        description="Commit hash of the docker image used for load generation.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    cluster_information_path: str | None = Field(
+        default=None,
+        description="Path to the cluster information file. Usually a json file with metadata about the cluster setup if you're benchmarking more than a single node.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    benchmark_config_name: str | None = Field(
+        default=None,
+        description="(For serving benchmarks) config name for tracking.",
+        json_schema_extra={"group": "Result Upload Configuration"},
+    )
+
+    # Sweep configuration
+    num_iters: int = Field(
         default=1,
-        metadata={
-            "group": "Sweep Configuration",
-            "group_description": "Parameters controlling sweep behavior and iteration",
-        },
-    )
-    """Number of iterations to run per configuration."""
-
-    @classmethod
-    def get_default_required_fields(cls) -> set[str]:
-        """Get required fields for the sweep benchmark config."""
-
-        # TODO: This is really lame. dataset_name is a required flag in benchmark_serving.py,
-        # so you'd think it would also be required here, but it's not. This is
-        # because we only parse dataset_name from the workload config file and not
-        # through the command line in sweep-benchmark-serving.py. Turns out we
-        # also can't quite easily pull that apart trivially when we roll this
-        # part. Will circle back in a follow up PR. the --dataset-name flag
-        # is set to optional here and is a no-op.
-        parent_required_fields = super().get_default_required_fields()
-        parent_required_fields.remove("dataset_name")
-        return parent_required_fields.union({"workload_config"})
-
-
-def _load_user_provided_config(
-    user_config_path: Path,
-    default_config_path: Path,
-    config_class: type[BaseBenchmarkConfig],
-) -> BaseBenchmarkConfig:
-    """Load user-provided config file with inheritance from default config file.
-
-    This function ensures that a user-provided config file inherits from a default
-    config file, allowing users to override only the parameters they need
-    while keeping all the default values from the base configuration.
-
-    Args:
-        user_config_path: Path to the user-provided configuration file
-        default_config_path: Path to the default configuration file
-        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
-
-    Returns:
-        Config instance with inherited and overridden values
-    """
-    # Load the user config file
-    with open(user_config_path, encoding="utf-8") as f:
-        user_config_dict = yaml.safe_load(f)
-
-    if not isinstance(user_config_dict, dict):
-        raise ValueError(
-            f"User configuration file {user_config_path} must contain a dictionary at the top level"
-        )
-    elif config_class._config_file_section_name not in user_config_dict:
-        logger.warning(
-            f"Cannot find {config_class._config_file_section_name} section in user configuration file {user_config_path}"
-            f"Will not override benchmark config values from default config"
-        )
-
-    # Load the default config file
-    with open(default_config_path, encoding="utf-8") as f:
-        default_config_dict = yaml.safe_load(f)
-
-    if not isinstance(default_config_dict, dict):
-        raise ValueError(
-            f"Default configuration file {default_config_path} must contain a dictionary at the top level"
-        )
-
-    # Merge the configs: user config overrides default config
-    merged_config_dict = deep_merge_max_configs(
-        default_config_dict, user_config_dict
+        description="Number of iterations to run per configuration.",
+        json_schema_extra={"group": "Sweep Configuration"},
     )
 
-    # Resolve any depends_on paths relative to the default config file location
-    # This is necessary because user provided configs may not have context on where
-    # the "base" configs are located. This reference is only held in the default config file.
-    if "depends_on" in merged_config_dict:
-        depends_on_path = Path(merged_config_dict["depends_on"])
-        if not depends_on_path.is_absolute():
-            # Resolve relative to the default config file location
-            merged_config_dict["depends_on"] = str(
-                default_config_path.parent / depends_on_path
-            )
-
-    # Create a temporary config file with the merged content
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".yaml", delete=False
-    ) as temp_file:
-        yaml.dump(merged_config_dict, temp_file)
-        temp_config_path = temp_file.name
-
-    try:
-        # Load the merged config using the standard MAXConfig mechanism
-        config = config_class.from_config_file(temp_config_path)
-        return config
-    finally:
-        # Clean up the temporary file
-        Path(temp_config_path).unlink(missing_ok=True)
-
-
-def parse_benchmark_args(
-    config_class: type[BaseBenchmarkConfig],
-    default_config_path: Path,
-    description: str,
-    args: Sequence[str] | None = None,
-) -> argparse.Namespace:
-    """Parse command line arguments for benchmark entrypoints with config file inheritance.
-
-    This function first parses a preliminary argument to get the config file path,
-    then loads the appropriate configuration and re-parses with the loaded config as defaults.
-
-    Its main purpose is to handle user provided config files which override params
-    of a particular benchmark entrypoint.
-
-    Args:
-        config_class: The benchmark config class to instantiate (e.g., ServingBenchmarkConfig)
-        default_config_path: Path to the default configuration file. For benchmark_serving.py,
-        this should be the path to the serving_config.yaml file.
-        description: Description for the argument parser
-        args: Command line arguments to parse. If None, parse from sys.argv.
-
-    Returns:
-        Parsed arguments namespace with config file values as defaults
-    """
-
-    # Parse the config file argument first
-    config_file_path, remaining_args = (
-        _resolve_user_provided_config_file_cli_arg(args=args)
+    flush_prefix_cache: bool = Field(
+        default=True,
+        description="Flush the prefix cache between iterations.",
+        json_schema_extra={"group": "Sweep Configuration"},
     )
 
-    if config_file_path is None:
-        logger.info(
-            f"No configuration file path provided, using default {default_config_path} file"
-        )
-        benchmark_config = config_class.from_config_file(default_config_path)
-    else:
-        # Check if user provided the same file as default
-        if config_file_path.resolve() == default_config_path.resolve():
-            logger.info(f"Using default configuration file: {config_file_path}")
-            benchmark_config = config_class.from_config_file(config_file_path)
-        else:
-            logger.info(
-                f"Using user-provided configuration file: {config_file_path} (will inherit from {default_config_path})"
-            )
-            # Load the user config file and ensure it inherits from default config
-            benchmark_config = _load_user_provided_config(
-                config_file_path, default_config_path, config_class
-            )
-
-    # Create parser using the enhanced MAXConfig functionality
-    # When a config file is loaded, only require parameters that are not provided in the config
-    required_fields = config_class.get_default_required_fields()
-    provided_required_fields = set()
-
-    for field_name in required_fields:
-        if hasattr(benchmark_config, field_name):
-            field_value = getattr(benchmark_config, field_name)
-            # Consider a field as "provided" if it has a non-None, non-empty value
-            if field_value is not None and field_value != "":
-                provided_required_fields.add(field_name)
-
-    # Only require fields that are not provided in the config
-    still_required_fields = required_fields - provided_required_fields
-
-    parser = benchmark_config.cli_arg_parsers(
-        description=description, required_params=still_required_fields
+    num_prompts_multiplier: int | None = Field(
+        default=None,
+        description=(
+            "When set, num_prompts is computed as num_prompts_multiplier * max_concurrency "
+            "for each concurrency level, replacing the default 300s duration timeout."
+        ),
+        json_schema_extra={"group": "Sweep Configuration"},
     )
-    # This is added only for its help message. It's a no-op and not actually used for parsing
-    # since it's done in the section above.
-    parser = _add_config_file_arg_to_parser(parser)
-    # Parse the remaining arguments with the loaded config as defaults
-    return parser.parse_args(args=remaining_args)
+
+    lora_paths: list[str] = Field(
+        default_factory=list,
+        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    lora_uniform_traffic_ratio: float = Field(
+        default=0.0,
+        description=(
+            "Probability of selecting any LoRA uniformly at random (vs base model). "
+            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    per_lora_traffic_ratio: list[float] = Field(
+        default_factory=list,
+        description=(
+            "Traffic percentages for each LoRA adapter in the benchmark. "
+            "Must have same length as lora_paths. Sum must not exceed 1.0. "
+            "Remainder goes to base model requests. "
+            "If specified, overrides lora_uniform_traffic_ratio."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    max_concurrent_lora_ops: int = Field(
+        default=1,
+        description="Maximum concurrent LoRA loading/unloading operations.",
+        json_schema_extra={"group": "LoRA Configuration"},
+    )

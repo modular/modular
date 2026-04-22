@@ -11,81 +11,54 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils import StaticTuple
-from sys import size_of
-from ffi import _Global, external_call
+from std.utils import StaticTuple
+from std.math.uutils import umod
+from std.sys import size_of
 
-from gpu.host import DeviceContext
-from gpu import (
-    barrier,
-    block_idx,
-    thread_idx,
-)
-from gpu.intrinsics import (
-    load_acquire,
-    store_release,
-)
+from std.atomic import Atomic, Ordering
+from std.gpu.host import DeviceContext
+from std.gpu import barrier, block_idx, thread_idx
 
 
 # No-op (currently) group operation functions (enables vendor_ccl drop in replacement)
-fn group_start():
+def group_start():
     return
 
 
-fn group_end():
+def group_end():
     return
 
 
-fn _p2p_cache_destroy_wrapper(
-    ptr: MutOpaquePointer[MutExternalOrigin],
-) -> None:
-    # No resources to free for tagged-pointer encoding.
-    pass
+def enable_p2p() -> Bool:
+    """Enable peer-to-peer memory access between all GPU pairs if supported.
 
-
-fn _p2p_cache_init_wrapper() -> MutOpaquePointer[MutExternalOrigin]:
-    """Initializer for the indexed global caching P2P availability.
-
-    Returns an OpaquePointer encoding a small integer tag:
-      1 => p2p_not_available
-      2 => p2p_available
-    """
-    comptime p2p_not_available = 1
-    comptime p2p_available = 2
-
-    try:
-        DeviceContext.enable_all_peer_access()
-        return UnsafePointer[NoneType, MutExternalOrigin](
-            unsafe_from_address=p2p_available
-        )
-    except:
-        return UnsafePointer[NoneType, MutExternalOrigin](
-            unsafe_from_address=p2p_not_available
-        )
-
-
-fn can_enable_p2p() raises -> Bool:
-    """
-    If peer-to-peer access is supported, enables it between all GPU pairs.
+    Attempts to enable P2P access between all device pairs. Returns False
+    if P2P is not supported by the hardware rather than raising.
 
     Returns:
-        True if P2P access is possible between all GPU pairs, False otherwise.
+        True if P2P access is enabled between all GPU pairs, False otherwise.
     """
-    comptime p2p_not_available = Scalar[DType.int](1)
-    comptime p2p_available = Scalar[DType.int](2)
+    try:
+        DeviceContext.enable_all_peer_access()
+        return DeviceContext.all_peer_access_enabled()
+    except:
+        return False
 
-    # Initialize once per process via indexed global, then reuse the tag.
-    var cached = external_call[
-        "KGEN_CompilerRT_GetOrCreateGlobalIndexed",
-        MutOpaquePointer[MutExternalOrigin],
-    ](
-        _Global._gpu_comm_p2p_idx,
-        _p2p_cache_init_wrapper,
-        _p2p_cache_destroy_wrapper,
-    )
 
-    var tag = Scalar[DType.int](Int(cached))
-    return tag == p2p_available
+def is_p2p_enabled() raises -> Bool:
+    """Checks whether P2P access is available between GPUs.
+
+    This is a read-only status check. Callers must ensure `enable_p2p()`
+    has been called during initialization (e.g., during model setup or
+    via `Signals.buffers()`) before relying on this function.
+
+    Returns:
+        True if P2P access is available between all GPU pairs, False otherwise.
+
+    Raises:
+        If the P2P access check fails.
+    """
+    return DeviceContext.all_peer_access_enabled()
 
 
 # NOTE: the above result was true on A100, but on H100 we need more SMs to
@@ -99,6 +72,23 @@ This value has been empirically optimized through grid search across different G
 While this value is optimal for A100 GPUs, H100 GPUs may benefit from more blocks to fully
 saturate NVLink bandwidth.
 """
+
+
+@always_inline
+def circular_add[n: Int](x: Int, y: Int) -> Int:
+    """Addition modulo n, assuming 0 <= x < n and 0 <= y < n.
+
+    Equivalent to (x + y) % n. When n is a power of 2, uses unsigned
+    modulo which compiles to a single `and` instruction. Otherwise uses
+    a conditional subtract to avoid expensive integer division on GPU.
+    """
+
+    comptime if n.is_power_of_two():
+        return umod(x + y, n)
+    else:
+        var z = x + y
+        return z - n if z >= n else z
+
 
 comptime MAX_GPUS = 8
 """Maximum number of GPUs supported in the allreduce implementation.
@@ -152,7 +142,7 @@ struct Signal:
 
 
 @always_inline
-fn _multi_gpu_barrier[
+def _multi_gpu_barrier[
     ngpus: Int,
     is_start: Bool,
     need_fence: Bool = False,
@@ -184,8 +174,7 @@ fn _multi_gpu_barrier[
         ngpus <= MAX_GPUS
     ), "too many GPUs for barrier implementation"
 
-    @parameter
-    if not is_start:
+    comptime if not is_start:
         barrier()
 
     comptime assert not (
@@ -194,7 +183,7 @@ fn _multi_gpu_barrier[
     comptime flag_t = Signal.flag_t
     var bid = block_idx.x
 
-    if thread_idx.x < UInt(ngpus):
+    if thread_idx.x < ngpus:
         # NOTE: (MOCO-1431) the use of pointer arithmetic here is a temporary workaround
         # to avoid functional issues that arise with increased register pressure when
         # dealing with static tuples
@@ -235,17 +224,20 @@ fn _multi_gpu_barrier[
 
         # Write the expected counter value to peer and wait for correct value from
         # peer.
-        @parameter
-        if need_fence:
+        comptime if need_fence:
             # broadcast the value to all peers that I reached the barrier
-            store_release(peer_counter_ptr, val)
-            while load_acquire(self_counter_ptr) != val:
+            Atomic[flag_t].store[ordering=Ordering.RELEASE](
+                peer_counter_ptr, val
+            )
+            while (
+                Atomic[flag_t].load[ordering=Ordering.ACQUIRE](self_counter_ptr)
+                != val
+            ):
                 pass
         else:
             peer_counter_ptr.store[volatile=True](val)
             while self_counter_ptr.load[volatile=True]() != val:
                 pass
 
-    @parameter
-    if is_start or need_fence:
+    comptime if is_start or need_fence:
         barrier()

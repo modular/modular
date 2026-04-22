@@ -214,9 +214,9 @@ The following rules govern constraint satisfiability:
   register passability constraints from its members:
 
   ```mojo
-  trait T1(RegisterType): ...
+  trait T1(RegisterPassable): ...
 
-  trait T2(TrivialRegisterType): ...
+  trait T2(TrivialRegisterPassable): ...
 
   T1 & T2  # struct must be register-passable-trivial.
   ```
@@ -236,7 +236,8 @@ declarations.
 A declaration can inherit from other declarations according to the following
 rules:
 
-- **[Inheritance]** A declaration T1 inherits from another declaration R1 if either:
+- **[Inheritance]** A declaration T1 inherits from another declaration R1 if
+  either:
   - T1 is explicitly declared (and verified) to inherit from R1, or
   - There exists an intermediate declaration M1 where T1 inherits from M1, and
     M1 inherits from R1:

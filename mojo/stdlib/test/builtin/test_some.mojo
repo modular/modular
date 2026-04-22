@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, TestSuite
+from std.testing import assert_equal, TestSuite
 
 
 @fieldwise_init
@@ -23,47 +23,47 @@ struct Foo[z: Int]:
 struct Bar[x: Int, //, y: Int, *, foo: Foo[x], bar: Foo[y] = Foo[y]()](
     ImplicitlyCopyable, Intable
 ):
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return self.x + self.y + self.foo.z + self.bar.z
 
 
-fn takes_some_arg(x: Some[Intable]) -> Int:
+def takes_some_arg(x: Some[Intable]) -> Int:
     return x.__int__()
 
 
-def test_some_arg():
-    assert_equal(takes_some_arg(Bar[2, foo = Foo[4]()]()), 12)
-    assert_equal(takes_some_arg(Bar[foo = Foo[5](), y=6]()), 22)
-    assert_equal(takes_some_arg(Bar[foo = Foo[5](), bar = Foo[7]()]()), 24)
+def test_some_arg() raises:
+    assert_equal(takes_some_arg(Bar[2, foo=Foo[4]()]()), 12)
+    assert_equal(takes_some_arg(Bar[foo=Foo[5](), y=6]()), 22)
+    assert_equal(takes_some_arg(Bar[foo=Foo[5](), bar=Foo[7]()]()), 24)
 
 
-fn takes_some_param[x: Some[Intable]]() -> Int:
+def takes_some_param[x: Some[Intable]]() -> Int:
     return materialize[x]().__int__()
 
 
-def test_some_param():
-    assert_equal(takes_some_param[Bar[2, foo = Foo[4]()]()](), 12)
-    assert_equal(takes_some_param[Bar[foo = Foo[5](), y=6]()](), 22)
-    assert_equal(takes_some_param[Bar[foo = Foo[5](), bar = Foo[7]()]()](), 24)
+def test_some_param() raises:
+    assert_equal(takes_some_param[Bar[2, foo=Foo[4]()]()](), 12)
+    assert_equal(takes_some_param[Bar[foo=Foo[5](), y=6]()](), 22)
+    assert_equal(takes_some_param[Bar[foo=Foo[5](), bar=Foo[7]()]()](), 24)
 
 
-fn takes_multiple_traits(x: Some[Intable & Copyable]) -> type_of(x):
+def takes_multiple_traits(x: Some[Intable & Copyable]) -> type_of(x):
     return x.copy()
 
 
-def test_some_return():
-    assert_equal(takes_multiple_traits(Bar[2, foo = Foo[4]()]()).__int__(), 12)
+def test_some_return() raises:
+    assert_equal(takes_multiple_traits(Bar[2, foo=Foo[4]()]()).__int__(), 12)
 
 
-def test_closure():
-    fn some_closure(x: Some[Intable]) -> Int:
+def test_closure() raises:
+    def some_closure(x: Some[Intable]) -> Int:
         return x.__int__() * 2
 
-    fn takes_some_closure[func: fn(Some[Intable]) -> Int]() raises:
+    def takes_some_closure[func: def(Some[Intable]) thin -> Int]() raises:
         assert_equal(func(Int(4)), 8)
 
     takes_some_closure[some_closure]()
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

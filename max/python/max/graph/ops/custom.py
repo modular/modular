@@ -136,6 +136,7 @@ def inplace_custom(
         device: Device that the op is assigned to.
             This becomes a `target` parameter to the kernel.
         values: The op function's arguments.
+        out_types: Optional sequence of output types for the op.
         parameters: Dictionary of extra parameters expected by the kernel.
     """
     # Unfortunately there's no existing way to mark a particular NDBuffer input

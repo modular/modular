@@ -20,23 +20,22 @@ These are Mojo built-ins, so you don't need to import them.
 trait Movable:
     """The Movable trait denotes a type whose value can be moved.
 
-    Implement the `Movable` trait on `Foo` which requires the `__moveinit__`
-    method:
+    Implement the `Movable` trait on `Foo` which requires the
+    `def __init__(out self, *, deinit take: Self)` method:
 
     ```mojo
     struct Foo(Movable):
-        fn __init__(out self):
+        def __init__(out self):
             pass
 
-        fn __moveinit__(out self, deinit existing: Self):
+        def __init__(out self, *, deinit take: Self):
             print("moving")
     ```
 
-    You can now use the ^ suffix to move the object instead of copying
-    it inside generic functions:
+    You can now use the ^ suffix to transfer owned values instead of copying:
 
     ```mojo
-    fn return_foo[T: Movable](var foo: T) -> T:
+    def return_foo[T: Movable](var foo: T) -> T:
         return foo^
 
     var foo = Foo()
@@ -48,21 +47,21 @@ trait Movable:
     ```
     """
 
-    fn __moveinit__(out self, deinit existing: Self, /):
+    def __init__(out self, *, deinit take: Self):
         """Create a new instance of the value by moving the value of another.
 
         Args:
-            existing: The value to move.
+            take: The value to move.
         """
         ...
 
-    comptime __moveinit__is_trivial: Bool
+    comptime __move_ctor_is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
-    of `__moveinit__` is trivial.
+    of move constructor is trivial.
 
-    The implementation of `__moveinit__` is considered to be trivial if:
-    - The struct has a compiler-generated `__moveinit__` and all its fields
-      have a trivial `__moveinit__` method.
+    The implementation of a move constructor is considered to be trivial if:
+    - The struct has a compiler-generated trivial move constructor because all
+      its fields have trivial move constructors.
 
     In practice, it means the value can be moved by moving the bits from
     one location to another without side effects.
@@ -74,24 +73,24 @@ trait Copyable(Movable):
     """The Copyable trait denotes a type whose value can be explicitly copied.
 
     Example implementing the `Copyable` trait on `Foo`, which requires the
-    `__copyinit__` method:
+    `def __init__(out self,*, copy: Self)` method:
 
     ```mojo
     struct Foo(Copyable):
         var s: String
 
-        fn __init__(out self, s: String):
+        def __init__(out self, s: String):
             self.s = s
 
-        fn __copyinit__(out self, other: Self):
+        def __init__(out self, *, copy: Self):
             print("copying value")
-            self.s = other.s
+            self.s = copy.s
     ```
 
     You can now copy objects inside a generic function:
 
     ```mojo
-    fn copy_return[T: Copyable](foo: T) -> T:
+    def copy_return[T: Copyable](foo: T) -> T:
         var copy = foo.copy()
         return copy^
 
@@ -104,29 +103,31 @@ trait Copyable(Movable):
     ```
     """
 
-    fn __copyinit__(out self, existing: Self, /):
+    def __init__(out self, *, copy: Self):
         """Create a new instance of the value by copying an existing one.
 
         Args:
-            existing: The value to copy.
+            copy: The value to copy.
         """
         ...
 
-    fn copy(self) -> Self:
-        """Explicitly construct a copy of self.
+    @always_inline
+    def copy(self) -> Self:
+        """Explicitly construct a copy of self, a convenience method for
+        `Self(copy=self)` when the type is inconvenient to write out.
 
         Returns:
             A copy of this value.
         """
-        return Self.__copyinit__(self)
+        return Self(copy=self)
 
-    comptime __copyinit__is_trivial: Bool
+    comptime __copy_ctor_is_trivial: Bool
     """A flag (often compiler generated) to indicate whether the implementation
-    of `__copyinit__` is trivial.
+    of the copy constructor is trivial.
 
-    The implementation of `__copyinit__` is considered to be trivial if:
-    - The struct has a compiler-generated trivial `__copyinit__` and all its fields
-      have a trivial `__copyinit__` method.
+    A copy constructor is considered to be trivial if:
+    - The struct has a compiler-generated trivial copy constructor because all
+      its fields have trivial copy constructors.
 
     In practice, it means the value can be copied by copying the bits from
     one location to another without side effects.
@@ -134,8 +135,8 @@ trait Copyable(Movable):
 
 
 trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
-    """A marker trait to permit compiler to insert implicit calls to `__copyinit__`
-    in order to make a copy of the object when needed.
+    """A marker trait to permit compiler to insert implicit calls to the copy
+    constructor in order to make a copy of the object when needed.
 
     Conforming a type to `ImplicitlyCopyable` gives the Mojo language permission
     to implicitly insert a call to that types copy constructor whenever a borrowed
@@ -162,7 +163,7 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
 
     A type can opt-in to implicit copying by conforming to `ImplicitlyCopyable`
     (in the example below, the compiler also synthesizes a default field-wise
-    `__copyinit__()` implementation, as the user didn't provide a definition):
+    copy constructor, as the user didn't provide a definition):
 
     ```
     @fieldwise_init
@@ -170,7 +171,7 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
         var x: Int
         var y: Int
 
-    fn main():
+    def main():
         var p = Point(5, 10)
 
         # Perform an implicit copy of `p
@@ -181,15 +182,7 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
     pass
 
 
-@deprecated(
-    "Use `Copyable` or `ImplicitlyCopyable` instead. `Copyable` on its own no"
-    " longer implies implicit copyability."
-)
-comptime ExplicitlyCopyable = Copyable
-"""Deprecated alias for `Copyable`."""
-
-
-fn materialize[T: AnyType, //, value: T](out result: T):
+def materialize[T: AnyType, //, value: T](out result: T):
     """Explicitly materialize a compile-time parameter into a run-time value.
 
     Parameters:
@@ -214,14 +207,14 @@ trait Defaultable(ImplicitlyDestructible):
     struct Foo(Defaultable):
         var s: String
 
-        fn __init__(out self):
+        def __init__(out self):
             self.s = "default"
     ```
 
     You can now construct a generic `Defaultable` type:
 
     ```mojo
-    fn default_init[T: Defaultable]() -> T:
+    def default_init[T: Defaultable]() -> T:
         return T()
 
     var foo = default_init[Foo]()
@@ -233,13 +226,13 @@ trait Defaultable(ImplicitlyDestructible):
     ```
     """
 
-    fn __init__(out self):
+    def __init__(out self):
         """Create a default instance of the value."""
         ...
 
 
-trait TrivialRegisterType(
-    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterType
+trait TrivialRegisterPassable(
+    ImplicitlyCopyable, ImplicitlyDestructible, Movable, RegisterPassable
 ):
     """A marker trait to denote the type to be register passable trivial.
 
@@ -247,17 +240,17 @@ trait TrivialRegisterType(
      following constraints:
 
      - The type implicitly conforms to Copyable and the compiler synthesizes
-     `__copyinit__` that does a memcpy.
+       copy ctor that does a memcpy.
      - A trivial `__del__` member is synthesized by the compiler too,
-     so the type can’t be a linear type.
+       so the type can’t be a linear type.
      - All declared members are required to also conforms to this trait,
-     since you can’t memcpy or trivially destroy a container if one
-     of its stored members has a non-trivial copy constructor.
-     - You are not allowed to define a custom `__copyinit__` or `__del__`.
+       since you can’t memcpy or trivially destroy a container if one
+       of its stored members has a non-trivial copy constructor.
+     - You are not allowed to define a custom copy ctor or `__del__`.
 
 
      ```mojo
-    struct Foo(TrivialRegisterType):
+    struct Foo(TrivialRegisterPassable):
         ...
      ```
 
@@ -266,7 +259,7 @@ trait TrivialRegisterType(
     pass
 
 
-trait RegisterType(Movable):
+trait RegisterPassable(Movable):
     """A marker trait to denote the type to be register passable.
 
      The compiler treats the type that conforms to this trait with the
@@ -278,8 +271,8 @@ trait RegisterType(Movable):
 
      - The type implicitly conforms to Movable and the compiler synthesizes
        a trivial move constructor. The compiler needs to be able to move around
-       values of the type by loading and storing them. A custom defined
-       __moveinit__ is not allowed.
+       values of the type by loading and storing them. A custom
+       move constructor is not allowed.
 
      - Compiler checks that any stored member (`var`s) also conforms to this
        trait. It wouldn’t be possible to provide identity for a contained
@@ -289,7 +282,7 @@ trait RegisterType(Movable):
 
 
      ```mojo
-    struct Foo(RegisterType):
+    struct Foo(RegisterPassable):
         ...
      ```
 

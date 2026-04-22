@@ -9,6 +9,7 @@ modular_py_library(
         exclude = [
             "serve_replay.py",
             "benchmark_throughput.py",
+            "sweep_benchmark_serving.py",
         ],
     ),
     data = [
@@ -17,33 +18,30 @@ modular_py_library(
     # Transformers secretly depends on jinja2
     ignore_extra_deps = [
         requirement("jinja2"),
+        requirement("tiktoken"),
     ],
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
+        requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
         requirement("pyyaml"),
         requirement("tqdm"),
+        requirement("tiktoken"),
         requirement("transformers"),
+        requirement("taskgroup"),
+        requirement("requests"),
+        requirement("typing-extensions"),
     ],
 )
 
 modular_py_binary(
-    name = "benchmark_serving",
-    srcs = ["benchmark_serving.py"],
-    # Transformers secretly depends on jinja2
-    ignore_extra_deps = [
-        requirement("jinja2"),
-    ],
-    imports = ["../.."],
+    name = "sweep_benchmark_serving",
+    srcs = ["sweep_benchmark_serving.py"],
     deps = [
+        ":benchmark_serving_lib",
         "//max/python/max/benchmark/benchmark_shared",
-        "//max/python/max/diagnostics",
-        requirement("jinja2"),
-        requirement("numpy"),
-        requirement("tqdm"),
-        requirement("transformers"),
         requirement("pyyaml"),
     ],
 )
@@ -59,7 +57,6 @@ modular_py_binary(
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/config",
         "//max/python/max/interfaces",
-        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve:config",

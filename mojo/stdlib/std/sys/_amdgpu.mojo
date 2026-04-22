@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import InlineArray
-from os import Atomic
-from sys.intrinsics import (
+from std.collections import InlineArray
+from std.atomic import Atomic, Ordering
+from std.sys.intrinsics import (
     ballot,
     implicitarg_ptr,
     llvm_intrinsic,
@@ -21,8 +21,9 @@ from sys.intrinsics import (
     sendmsg,
 )
 
-from gpu.primitives.id import lane_id
-from memory import Span
+from std.gpu.primitives.id import lane_id
+from std.memory import Span
+from std.memory.unsafe_pointer import _Null
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -54,28 +55,29 @@ struct amd_signal_t(Copyable):
 
 
 @always_inline
-fn update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
-    var mb = UnsafePointer(to=sig[].event_mailbox_ptr).bitcast[
-        UnsafePointer[
-            UInt64, MutExternalOrigin, address_space = AddressSpace.GLOBAL
-        ]
-    ]()[]
-    if mb:
+def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
+    var mb = sig[].event_mailbox_ptr
+    if Int(mb) != Int(_Null[address_space=AddressSpace.GLOBAL]()):
+        var mb_ptr = UnsafePointer[
+            UInt64, ExternalOrigin[mut=True], address_space=AddressSpace.GLOBAL
+        ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[DType.uint64]()
-        Atomic.store(mb, id)
+        Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
         sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
 
 
 @always_inline
-fn hsa_signal_add(sig: UInt64, value: UInt64):
+def hsa_signal_add(sig: UInt64, value: UInt64):
     var s = UnsafePointer(to=sig).bitcast[
         UnsafePointer[
             amd_signal_t,
             MutExternalOrigin,
-            address_space = AddressSpace.GLOBAL,
+            address_space=AddressSpace.GLOBAL,
         ]
     ]()[]
-    _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
+    _ = Atomic.fetch_add[ordering=Ordering.RELEASE](
+        UnsafePointer(to=s[].value), value
+    )
     update_mbox(s)
 
 
@@ -116,7 +118,7 @@ struct DescriptorWidth:
 
 
 @always_inline
-fn msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
+def msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
     var reset_mask = ~(
         ((UInt64(1) << DescriptorWidth.len) - 1) << DescriptorOffset.len
     )
@@ -126,40 +128,40 @@ fn msg_set_len(pd: UInt64, len: UInt32) -> UInt64:
 
 
 @always_inline
-fn msg_set_begin_flag(pd: UInt64) -> UInt64:
+def msg_set_begin_flag(pd: UInt64) -> UInt64:
     return pd | (UInt64(1) << DescriptorOffset.flag_begin)
 
 
 @always_inline
-fn msg_reset_begin_flag(pd: UInt64) -> UInt64:
+def msg_reset_begin_flag(pd: UInt64) -> UInt64:
     return pd & (~(UInt64(1) << DescriptorOffset.flag_begin))
 
 
 @always_inline
-fn msg_get_end_flag(pd: UInt64) -> UInt64:
+def msg_get_end_flag(pd: UInt64) -> UInt64:
     return pd & (UInt64(1) << DescriptorOffset.flag_end)
 
 
 @always_inline
-fn msg_reset_end_flag(pd: UInt64) -> UInt64:
+def msg_reset_end_flag(pd: UInt64) -> UInt64:
     return pd & (~(UInt64(1) << DescriptorOffset.flag_end))
 
 
 @always_inline
-fn msg_set_end_flag(pd: UInt64) -> UInt64:
+def msg_set_end_flag(pd: UInt64) -> UInt64:
     return pd | (UInt64(1) << DescriptorOffset.flag_end)
 
 
-fn append_bytes(
+def append_bytes(
     service_id: UInt32,
     msg_desc: UInt64,
-    mut data: Span[UInt8],
+    mut data: Span[UInt8, _],
 ) -> Tuple[UInt64, UInt64]:
     var msg_desc_ = msg_set_len(msg_desc, UInt32((len(data) + 7) // 8))
 
     @parameter
     @always_inline
-    fn pack_uint64() -> UInt64:
+    def pack_uint64() -> UInt64:
         var arg = UInt64(0)
         if len(data) >= 8:
             arg = data.unsafe_ptr().bitcast[UInt64]()[]
@@ -193,8 +195,8 @@ fn append_bytes(
 
 
 @no_inline
-fn message_append_bytes(
-    service_id: UInt32, msg_desc: UInt64, data: Span[UInt8]
+def message_append_bytes(
+    service_id: UInt32, msg_desc: UInt64, data: Span[UInt8, _]
 ) -> Tuple[UInt64, UInt64]:
     """
     Append an array of bytes to a message.
@@ -243,7 +245,7 @@ fn message_append_bytes(
 
 
 @always_inline
-fn message_append_args(
+def message_append_args(
     service_id: UInt32,
     msg_desc: UInt64,
     num_args: UInt32,
@@ -310,7 +312,7 @@ struct FprintfCtrl:
 
 
 @always_inline
-fn begin_fprintf(flags: UInt32) -> UInt64:
+def begin_fprintf(flags: UInt32) -> UInt64:
     # The two standard output streams stderr and stdout are indicated
     # using the lowest bits in the control qword. For now, all other
     # bits are required to be zero.
@@ -333,7 +335,7 @@ fn begin_fprintf(flags: UInt32) -> UInt64:
 
 
 @always_inline
-fn fprintf_stdout_begin() -> UInt64:
+def fprintf_stdout_begin() -> UInt64:
     """
     Begin a new fprintf message for stdout.
     Returns:
@@ -343,7 +345,7 @@ fn fprintf_stdout_begin() -> UInt64:
 
 
 @always_inline
-fn fprintf_stderr_begin() -> UInt64:
+def fprintf_stderr_begin() -> UInt64:
     """
     Begin a new fprintf message for stderr.
 
@@ -354,7 +356,7 @@ fn fprintf_stderr_begin() -> UInt64:
 
 
 @always_inline
-fn fprintf_append_args(
+def fprintf_append_args(
     msg_desc: UInt64,
     num_args: UInt32,
     value0: UInt64,
@@ -415,8 +417,8 @@ fn fprintf_append_args(
 
 
 @always_inline
-fn fprintf_append_string_n(
-    msg_desc: UInt64, data: Span[UInt8], is_last: Bool
+def fprintf_append_string_n(
+    msg_desc: UInt64, data: Span[UInt8, _], is_last: Bool
 ) -> UInt64:
     """
     Append a null-terminated string to the fprintf message.
@@ -476,12 +478,12 @@ fn fprintf_append_string_n(
 
 
 @always_inline
-fn printf_begin() -> UInt64:
+def printf_begin() -> UInt64:
     return fprintf_stdout_begin()
 
 
 @always_inline
-fn printf_append_args(
+def printf_append_args(
     msg_desc: UInt64,
     num_args: UInt32,
     value0: UInt64 = 0,
@@ -508,8 +510,8 @@ fn printf_append_args(
 
 
 @always_inline
-fn printf_append_string_n(
-    msg_desc: UInt64, data: Span[UInt8], is_last: Bool
+def printf_append_string_n(
+    msg_desc: UInt64, data: Span[UInt8, _], is_last: Bool
 ) -> UInt64:
     return fprintf_append_string_n(msg_desc, data, is_last)
 
@@ -520,12 +522,12 @@ fn printf_append_string_n(
 
 
 @fieldwise_init
-struct Header(TrivialRegisterType):
+struct Header(TrivialRegisterPassable):
     var _handle: UnsafePointer[
-        header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+        header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
 
-    fn fill_packet(
+    def fill_packet(
         mut self,
         mut payload: Payload,
         service_id: UInt32,
@@ -556,7 +558,7 @@ struct Header(TrivialRegisterType):
         payload[Int(me), 6] = arg6
         payload[Int(me), 7] = arg7
 
-    fn get_return_value(
+    def get_return_value(
         mut self, payload: Payload, me: UInt32, low: UInt32
     ) -> Tuple[UInt64, UInt64]:
         """
@@ -585,12 +587,10 @@ struct Header(TrivialRegisterType):
             var ready_flag = UInt32(1)
             if me == low:
                 var ptr = UnsafePointer(to=self._handle[].control)
-                var control = Atomic.fetch_add(ptr, 0)
+                var control = Atomic.load[ordering=Ordering.ACQUIRE](ptr)
                 ready_flag = get_ready_flag(control)
 
-            ready_flag = readfirstlane(ready_flag.cast[DType.int32]()).cast[
-                DType.uint32
-            ]()
+            ready_flag = readfirstlane(ready_flag)
 
             if ready_flag == 0:
                 break
@@ -608,7 +608,7 @@ struct Header(TrivialRegisterType):
 # but this is actually just conforming to the ABI of:
 # https://github.com/ROCm/clr/blob/f5b2516f5d8a44b06ad1907594db1be25a9fe57b/rocclr/device/devhostcall.hpp#L104
 @fieldwise_init
-struct header_t(TrivialRegisterType):
+struct header_t(TrivialRegisterPassable):
     var next: UInt64
     var activemask: UInt64
     var service: UInt32
@@ -616,11 +616,11 @@ struct header_t(TrivialRegisterType):
 
 
 @fieldwise_init
-struct Payload(TrivialRegisterType):
+struct Payload(TrivialRegisterPassable):
     var _handle: UnsafePointer[payload_t, MutExternalOrigin]
 
     @always_inline
-    fn __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
+    def __setitem__(mut self, idx0: Int, idx1: Int, value: UInt64):
         self._handle[].slots[idx0][idx1] = value
 
 
@@ -634,40 +634,42 @@ struct payload_t(Copyable):
 
 
 @fieldwise_init
-struct Buffer(TrivialRegisterType):
+struct Buffer(TrivialRegisterPassable):
     var _handle: UnsafePointer[
-        buffer_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+        buffer_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
 
     @always_inline
-    fn get_header(self, ptr: UInt64) -> Header:
+    def get_header(self, ptr: UInt64) -> Header:
         return Header(
             self._handle[].headers + (ptr & self._handle[].index_mask)
         )
 
     @always_inline
-    fn get_payload(self, ptr: UInt64) -> Payload:
+    def get_payload(self, ptr: UInt64) -> Payload:
         return Payload(
             self._handle[].payloads + (ptr & self._handle[].index_mask)
         )
 
-    fn pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
-        var f = Atomic.fetch_add(top, 0)
+    def pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
+        var f = Atomic.load[ordering=Ordering.ACQUIRE](top)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
         # one packet.
         while True:
             var p = self.get_header(f)
-            var n = Atomic.fetch_add(
-                UnsafePointer(to=p._handle[].next),
-                0,
+            var n = Atomic.load[ordering=Ordering.RELAXED](
+                UnsafePointer(to=p._handle[].next)
             )
-            if Atomic.compare_exchange(top, f, n):
+            if Atomic.compare_exchange[
+                success_ordering=Ordering.ACQUIRE,
+                failure_ordering=Ordering.RELAXED,
+            ](top, f, n):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
         return f
 
-    fn pop_free_stack(mut self, me: UInt32, low: UInt32) -> UInt64:
+    def pop_free_stack(mut self, me: UInt32, low: UInt32) -> UInt64:
         """
         Use the first active lane to get a free packet and
         broadcast to the whole wave.
@@ -679,26 +681,21 @@ struct Buffer(TrivialRegisterType):
                 UnsafePointer(to=self._handle[].free_stack),
             )
 
-        var ptr_lo = packet_ptr
-        var ptr_hi = packet_ptr >> 32
-        var ptr_lo_32 = readfirstlane(ptr_lo.cast[DType.int32]())
-        var ptr_hi_32 = readfirstlane(ptr_hi.cast[DType.int32]())
+        return readfirstlane(packet_ptr)
 
-        return (
-            ptr_hi_32.cast[DType.uint64]() << 32
-            | ptr_lo_32.cast[DType.uint64]()
-        )
-
-    fn push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
-        var f = Atomic.fetch_add(top, 0)
+    def push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
+        var f = Atomic.load[ordering=Ordering.RELAXED](top)
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
-            if Atomic.compare_exchange(top, f, ptr):
+            if Atomic.compare_exchange[
+                success_ordering=Ordering.RELEASE,
+                failure_ordering=Ordering.RELAXED,
+            ](top, f, ptr):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
-    fn push_ready_stack(mut self, ptr: UInt64, me: UInt32, low: UInt32):
+    def push_ready_stack(mut self, ptr: UInt64, me: UInt32, low: UInt32):
         """
         Use the first active lane in a wave to submit a ready
         packet and signal the host.
@@ -707,7 +704,7 @@ struct Buffer(TrivialRegisterType):
             self.push(UnsafePointer(to=self._handle[].ready_stack), ptr)
             send_signal(self._handle[].doorbell)
 
-    fn return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
+    def return_free_packet(mut self, ptr: UInt64, me: UInt32, low: UInt32):
         """
         Return the packet after incrementing the ABA tag.
         """
@@ -725,9 +722,9 @@ struct Buffer(TrivialRegisterType):
 # match of runtime buffer layout but matches its prefix that
 # this code tries to access.
 @fieldwise_init
-struct buffer_t(Copyable, TrivialRegisterType):
+struct buffer_t(Copyable, TrivialRegisterPassable):
     var headers: UnsafePointer[
-        header_t, MutExternalOrigin, address_space = AddressSpace.GLOBAL
+        header_t, MutExternalOrigin, address_space=AddressSpace.GLOBAL
     ]
     var payloads: UnsafePointer[payload_t, MutExternalOrigin]
     var doorbell: UInt64
@@ -737,43 +734,43 @@ struct buffer_t(Copyable, TrivialRegisterType):
 
 
 @fieldwise_init
-struct ControlOffset(TrivialRegisterType):
+struct ControlOffset(TrivialRegisterPassable):
     var value: UInt32
     comptime ready_flag = Self(0)
     comptime reserved0 = Self(1)
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
+    def __ne__(self, rhs: Self) -> Bool:
         return self.value != rhs.value
 
     @always_inline
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
 
 
 @fieldwise_init
-struct ControlWidth(TrivialRegisterType):
+struct ControlWidth(TrivialRegisterPassable):
     var value: UInt32
     comptime ready_flag = Self(1)
     comptime reserved0 = Self(31)
 
     @always_inline
-    fn __ne__(self, rhs: Self) -> Bool:
+    def __ne__(self, rhs: Self) -> Bool:
         return self.value != rhs.value
 
     @always_inline
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.value == rhs.value
 
 
 @always_inline
-fn get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
+def get_control_mask(control: UInt32, offset: UInt32, width: UInt32) -> UInt32:
     var value: UInt32 = (control >> offset) & ((1 << width) - 1)
     return value
 
 
 @always_inline
-fn get_control_field(
+def get_control_field(
     control: UInt32, offset: ControlOffset, width: ControlWidth
 ) -> UInt32:
     var value: UInt32 = (control >> offset.value) & (
@@ -783,7 +780,7 @@ fn get_control_field(
 
 
 @always_inline
-fn set_control_field(
+def set_control_field(
     control: UInt32, offset: ControlOffset, width: ControlWidth, value: UInt32
 ) -> UInt32:
     var mask: UInt32 = ~(((UInt32(1) << width.value) - 1) << offset.value)
@@ -791,21 +788,21 @@ fn set_control_field(
 
 
 @always_inline
-fn get_ready_flag(control: UInt32) -> UInt32:
+def get_ready_flag(control: UInt32) -> UInt32:
     return get_control_field(
         control, ControlOffset.ready_flag, ControlWidth.ready_flag
     )
 
 
 @always_inline
-fn set_ready_flag(control: UInt32) -> UInt32:
+def set_ready_flag(control: UInt32) -> UInt32:
     return set_control_field(
         control, ControlOffset.ready_flag, ControlWidth.ready_flag, 1
     )
 
 
 @always_inline
-fn inc_ptr_tag(ptr: UInt64, index_mask: UInt64) -> UInt64:
+def inc_ptr_tag(ptr: UInt64, index_mask: UInt64) -> UInt64:
     var inc = index_mask + 1
     var ptr_ = ptr + inc
     # Unit step for the tag.
@@ -816,12 +813,12 @@ fn inc_ptr_tag(ptr: UInt64, index_mask: UInt64) -> UInt64:
 
 
 @always_inline
-fn send_signal(signal: UInt64):
+def send_signal(signal: UInt64):
     hsa_signal_add(signal, 1)
 
 
 @no_inline
-fn hostcall(
+def hostcall(
     service_id: UInt32,
     arg0: UInt64,
     arg1: UInt64,
@@ -869,13 +866,13 @@ fn hostcall(
             UnsafePointer[
                 buffer_t,
                 MutExternalOrigin,
-                address_space = AddressSpace.GLOBAL,
+                address_space=AddressSpace.GLOBAL,
             ]
         ]()[10]
     )
 
     var me = UInt32(lane_id())
-    var low = readfirstlane(Int32(me)).cast[DType.uint32]()
+    var low = readfirstlane(me)
 
     var packet_ptr = buffer.pop_free_stack(me, low)
 

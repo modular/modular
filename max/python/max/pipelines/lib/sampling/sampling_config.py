@@ -14,25 +14,46 @@
 
 from __future__ import annotations
 
-import enum
 import logging
-from collections.abc import Mapping
+from typing import Annotated, Any
 
 from max.config import ConfigFileModel
 from max.dtype import DType
 from max.interfaces import SamplingParamsGenerationConfigDefaults
-from pydantic import Field, PrivateAttr
+from pydantic import BeforeValidator, Field, PrivateAttr
 
 logger = logging.getLogger("max.pipelines")
 
 
+def _coerce_dtype(value: Any) -> DType | Any:
+    """Coerce string values to DType enum members.
+
+    DType is a C++ enum with integer values, so Pydantic cannot natively
+    coerce YAML/CLI strings like ``"float32"`` into :class:`DType` members.
+    This validator handles case-insensitive name matching.
+    """
+    if isinstance(value, DType):
+        return value
+    if isinstance(value, str):
+        value_cf = value.casefold()
+        for member in DType:
+            if member.name.casefold() == value_cf:
+                return member
+    return value
+
+
+CoercedDType = Annotated[DType, BeforeValidator(_coerce_dtype)]
+
+
 class SamplingConfig(ConfigFileModel):
-    in_dtype: DType = Field(
+    """Configuration for the sampling stage of token generation."""
+
+    in_dtype: CoercedDType = Field(
         default=DType.float32,
         description="The data type of the input tokens.",
     )
 
-    out_dtype: DType = Field(
+    out_dtype: CoercedDType = Field(
         default=DType.float32,
         description="The data type of the output logits.",
     )
@@ -83,21 +104,21 @@ class SamplingConfig(ConfigFileModel):
         sampling_params_defaults: SamplingParamsGenerationConfigDefaults,
         **kwargs,
     ) -> SamplingConfig:
-        """
-        Create a SamplingConfig instance from SamplingParamsGenerationConfigDefaults and additional keyword arguments.
+        """Creates a SamplingConfig from generation config defaults and kwargs.
 
-        This method inspects the provided SamplingParamsGenerationConfigDefaults to determine if penalty-related
-        or min-tokens-related fields are set to non-default values. If so, it enables the corresponding flags
-        ('enable_penalties' and 'enable_min_tokens') in the resulting SamplingConfig unless they are already set
-        in kwargs.
+        Inspects the provided defaults to determine if penalty-related or
+        min-tokens-related fields are set to non-default values; if so,
+        enables the corresponding flags in the result unless already set in
+        kwargs.
 
         Args:
-            sampling_params_defaults (SamplingParamsGenerationConfigDefaults): The generation config defaults
+            sampling_params_defaults: The generation config defaults
                 containing explicit values for sampling parameters.
-            **kwargs: Additional keyword arguments to override or supplement the config.
+            **kwargs: Additional keyword arguments to override or supplement
+                the config.
 
         Returns:
-            SamplingConfig: A new SamplingConfig instance with the appropriate fields set.
+            A new SamplingConfig instance with the appropriate fields set.
         """
         config_kwargs = kwargs.copy()
 
@@ -125,10 +146,3 @@ class SamplingConfig(ConfigFileModel):
                 config_kwargs["enable_min_tokens"] = True
 
         return cls(**config_kwargs)
-
-    @classmethod
-    def _get_enum_mapping_impl(cls) -> Mapping[str, type[enum.Enum]]:
-        """Get the enum mapping for SamplingConfig."""
-        return {
-            "DType": DType,
-        }

@@ -18,15 +18,16 @@ values in the ranges `0` to `0xD7FF` and `0xE000` to `0x10FFFF` inclusive.
 """
 
 
-from sys.intrinsics import likely
+from std.sys.intrinsics import likely
 
-from bit import count_leading_zeros
-from bit._mask import splat
-from os import abort
+from std.bit import count_leading_zeros
+from std.bit.mask import splat
+import std.format._utils as fmt
+from std.os import abort
 
 
 @always_inline
-fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
+def _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     """Returns True if `codepoint` is a valid Unicode scalar value.
 
     Args:
@@ -40,9 +41,7 @@ fn _is_unicode_scalar_value(codepoint: UInt32) -> Bool:
     )
 
 
-struct Codepoint(
-    Comparable, ImplicitlyCopyable, Intable, Movable, Stringable, Writable
-):
+struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     """A Unicode codepoint, typically a single user-recognizable character;
     restricted to valid Unicode scalar values.
 
@@ -62,8 +61,8 @@ struct Codepoint(
     Example:
 
     ```mojo
-    from collections.string import Codepoint
-    from testing import assert_true
+    from std.collections.string import Codepoint
+    from std.testing import assert_true
 
     # Create a codepoint from a character
     var c = Codepoint.ord('A')
@@ -106,7 +105,7 @@ struct Codepoint(
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
+    def __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
         """Construct a `Codepoint` from a code point value without checking that it
         falls in the valid range.
 
@@ -119,15 +118,14 @@ struct Codepoint(
         Args:
             unsafe_unchecked_codepoint: A valid Unicode scalar value code point.
         """
-        debug_assert(
-            _is_unicode_scalar_value(unsafe_unchecked_codepoint),
-            "codepoint is not a valid Unicode scalar value",
-        )
+        assert _is_unicode_scalar_value(
+            unsafe_unchecked_codepoint
+        ), "codepoint is not a valid Unicode scalar value"
 
         self._scalar_value = unsafe_unchecked_codepoint
 
     @always_inline
-    fn __init__(out self, codepoint: UInt8):
+    def __init__(out self, codepoint: UInt8):
         """Construct a `Codepoint` from a single byte value.
 
         This constructor cannot fail because non-negative 8-bit integers are
@@ -143,7 +141,7 @@ struct Codepoint(
     # ===-------------------------------------------------------------------===#
 
     @staticmethod
-    fn from_u32(codepoint: UInt32) -> Optional[Self]:
+    def from_u32(codepoint: UInt32) -> Optional[Self]:
         """Construct a `Codepoint` from a code point value. Returns None if the
         provided `codepoint` is not in the valid range.
 
@@ -161,7 +159,7 @@ struct Codepoint(
             return None
 
     @staticmethod
-    fn ord(string: StringSlice[mut=False]) -> Codepoint:
+    def ord(string: StringSlice[mut=False, _]) -> Codepoint:
         """Returns the `Codepoint` that represents the given single-character
         string.
 
@@ -189,16 +187,15 @@ struct Codepoint(
             string.as_bytes()
         )
 
-        debug_assert(
-            string.byte_length() == num_bytes,
-            "input string must be one character",
-        )
+        assert (
+            string.byte_length() == num_bytes
+        ), "input string must be one character"
 
         return char
 
     # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
     @staticmethod
-    fn unsafe_decode_utf8_codepoint(
+    def unsafe_decode_utf8_codepoint(
         s: Span[mut=False, UInt8, ...],
     ) -> Tuple[Codepoint, Int]:
         """Decodes a single `Codepoint` and number of bytes read from a given
@@ -223,7 +220,7 @@ struct Codepoint(
         # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
         # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
         # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
-        debug_assert(len(s) > 0, "input Span must be non-empty")
+        assert len(s) > 0, "input Span must be non-empty"
 
         var ptr = s.unsafe_ptr()
         var b1 = ptr[]
@@ -240,7 +237,7 @@ struct Codepoint(
         var shift = Int((6 * (num_bytes - 1)))
         var b1_mask = 0b11111111 >> (num_bytes + 1)
         var result = Int(b1 & b1_mask) << shift
-        for i in range(1, num_bytes):
+        for i in range(1, Int(num_bytes)):
             ptr += 1
             # Assert that this is a continuation byte
             debug_assert(
@@ -267,7 +264,7 @@ struct Codepoint(
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         """Return True if this character is less than a different codepoint value from
         `other`.
 
@@ -285,7 +282,7 @@ struct Codepoint(
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Returns the numeric value of this scalar value as an integer.
 
         Returns:
@@ -293,33 +290,36 @@ struct Codepoint(
         """
         return Int(self._scalar_value)
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Formats this `Codepoint` as a single-character string.
-
-        Returns:
-            A string containing this single character.
-        """
-        var char_len = self.utf8_byte_length()
-        var result = String(unsafe_uninit_length=char_len)
-        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
-        return result
-
-    fn write_to(self, mut w: Some[Writer]):
+    def write_to(self, mut w: Some[Writer]):
         """
         Write a string representation of this `Codepoint` to the given writer.
 
         Args:
             w: The object to write to.
         """
-        w.write(self.__str__())
+        var char_len = self.utf8_byte_length()
+        var result = String(unsafe_uninit_length=char_len)
+        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
+        w.write_string(result)
+
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the repr of this `Codepoint` to a writer.
+
+        Writes the codepoint in the format `Codepoint(N)` where N is the
+        Unicode scalar value.
+
+        Args:
+            writer: The object to write to.
+        """
+        fmt.FormatStruct(writer, "Codepoint").fields(self._scalar_value)
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn is_ascii(self) -> Bool:
+    def is_ascii(self) -> Bool:
         """Returns True if this `Codepoint` is an ASCII character.
 
         All ASCII characters are less than or equal to codepoint value 127, and
@@ -330,7 +330,7 @@ struct Codepoint(
         """
         return self._scalar_value <= 0b0111_1111
 
-    fn is_ascii_digit(self) -> Bool:
+    def is_ascii_digit(self) -> Bool:
         """Determines whether the given character is a digit [0-9].
 
         Returns:
@@ -340,7 +340,7 @@ struct Codepoint(
         comptime ord_9 = UInt32(ord("9"))
         return ord_0 <= self.to_u32() <= ord_9
 
-    fn is_ascii_upper(self) -> Bool:
+    def is_ascii_upper(self) -> Bool:
         """Determines whether the given character is an uppercase character.
 
         This currently only respects the default "C" locale, i.e. returns True
@@ -353,7 +353,7 @@ struct Codepoint(
         comptime ord_z = UInt32(ord("Z"))
         return ord_a <= self.to_u32() <= ord_z
 
-    fn is_ascii_lower(self) -> Bool:
+    def is_ascii_lower(self) -> Bool:
         """Determines whether the given character is an lowercase character.
 
         This currently only respects the default "C" locale, i.e. returns True
@@ -368,7 +368,7 @@ struct Codepoint(
 
     @staticmethod
     @always_inline
-    fn _is_ascii_printable(codepoint: Scalar) -> Bool:
+    def _is_ascii_printable(codepoint: Scalar) -> Bool:
         """Determines whether the given character is a printable character.
 
         Args:
@@ -385,7 +385,7 @@ struct Codepoint(
         return ` ` <= codepoint <= `~`
 
     @always_inline
-    fn is_ascii_printable(self) -> Bool:
+    def is_ascii_printable(self) -> Bool:
         """Determines whether the given character is a printable character.
 
         Returns:
@@ -394,7 +394,7 @@ struct Codepoint(
         return Self._is_ascii_printable(self.to_u32())
 
     @always_inline
-    fn is_python_space(self) -> Bool:
+    def is_python_space(self) -> Bool:
         """Determines whether this character is a Python whitespace string.
 
         This corresponds to Python's [universal separators](
@@ -408,7 +408,7 @@ struct Codepoint(
         For example, check if a string contains only whitespace:
 
         ```mojo
-        from testing import assert_true, assert_false
+        from std.testing import assert_true, assert_false
 
         # ASCII space characters
         assert_true(Codepoint.ord(" ").is_python_space())
@@ -432,7 +432,7 @@ struct Codepoint(
             unicode_paragraph_sep,
         )
 
-    fn is_posix_space(self) -> Bool:
+    def is_posix_space(self) -> Bool:
         """Returns True if this `Codepoint` is a **space** character according to the
         [POSIX locale][1].
 
@@ -479,7 +479,7 @@ struct Codepoint(
         )
 
     @always_inline
-    fn to_u32(self) -> UInt32:
+    def to_u32(self) -> UInt32:
         """Returns the numeric value of this scalar value as an unsigned 32-bit
         integer.
 
@@ -490,7 +490,7 @@ struct Codepoint(
         return self._scalar_value
 
     @always_inline
-    fn unsafe_write_utf8[
+    def unsafe_write_utf8[
         optimize_ascii: Bool = True, branchless: Bool = False
     ](self, ptr: UnsafePointer[mut=True, Byte, ...]) -> Int:
         """Shift unicode to utf8 representation.
@@ -529,12 +529,10 @@ struct Codepoint(
 
         var num_bytes = self.utf8_byte_length()
 
-        @parameter
-        if not branchless:
+        comptime if not branchless:
             var is_ascii: Bool
 
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 is_ascii = likely(num_bytes == 1)
             else:
                 is_ascii = num_bytes == 1
@@ -563,9 +561,7 @@ struct Codepoint(
                 ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
                 ptr[3] = Byte((c & cont_mask) | cont_marker)
         else:
-
-            @parameter
-            if optimize_ascii:
+            comptime if optimize_ascii:
                 if likely(num_bytes == 1):
                     ptr[0] = UInt8(c)
                     return 1
@@ -590,7 +586,7 @@ struct Codepoint(
         return num_bytes
 
     @always_inline
-    fn utf8_byte_length(self) -> Int:
+    def utf8_byte_length(self) -> Int:
         """Returns the number of UTF-8 bytes required to encode this character.
 
         Returns:

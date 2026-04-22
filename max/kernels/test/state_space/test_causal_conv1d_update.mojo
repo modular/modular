@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,34 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import exp
-from sys.info import simd_width_of
+from std.math import exp
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
 from layout import (
-    UNKNOWN_VALUE,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
 )
 from layout._fillers import random
-from layout.int_tuple import fill_like
-from memory import alloc
+from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
     causal_conv1d_update_cpu_no_bias,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -49,7 +48,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_causal_conv1d_update[
+def run_causal_conv1d_update[
     dtype: DType,
     has_bias: Bool,
     activation: StaticString,
@@ -123,6 +122,26 @@ fn run_causal_conv1d_update[
     for i in range(batch * dim * state_len):
         conv_state_ref_h.ptr[i] = conv_state_h.ptr[i]
 
+    # Create TileTensor versions for kernel call
+    var input_tt = TileTensor(
+        input_heap, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var conv_state_tt = TileTensor(
+        conv_state_heap,
+        row_major(Idx(batch), Idx(dim), Idx(state_len)),
+    )
+    var weight_tt = TileTensor(weight_heap, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_heap,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var result_fused_tt = TileTensor(
+        result_fused_heap,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+
     var input_buf = input_h
     var conv_state_buf = conv_state_h
     var weight_buf = weight_h
@@ -152,27 +171,22 @@ fn run_causal_conv1d_update[
     # Test fused kernel
     if has_bias:
         causal_conv1d_update_cpu[
-            input_buf.dtype,
-            input_buf.layout,
-            conv_state_buf.dtype,
-            conv_state_buf.layout,
-            weight_buf.dtype,
-            weight_buf.layout,
-            result_fused_buf.dtype,
-            result_fused_buf.layout,
-            bias_buf.dtype,
-            bias_buf.layout,
+            dtype,
+            dtype,
+            dtype,
+            dtype,
+            dtype,
         ](
             batch,
             dim,
             seqlen,
             width,
             state_len,
-            input_buf,
-            conv_state_buf,
-            weight_buf,
-            result_fused_buf,
-            bias_buf,
+            input_tt,
+            conv_state_tt,
+            weight_tt,
+            result_fused_tt,
+            bias_tt,
             x_batch_stride,
             x_c_stride,
             x_l_stride,
@@ -188,24 +202,20 @@ fn run_causal_conv1d_update[
         )
     else:
         causal_conv1d_update_cpu_no_bias[
-            input_buf.dtype,
-            input_buf.layout,
-            conv_state_buf.dtype,
-            conv_state_buf.layout,
-            weight_buf.dtype,
-            weight_buf.layout,
-            result_fused_buf.dtype,
-            result_fused_buf.layout,
+            dtype,
+            dtype,
+            dtype,
+            dtype,
         ](
             batch,
             dim,
             seqlen,
             width,
             state_len,
-            input_buf,
-            conv_state_buf,
-            weight_buf,
-            result_fused_buf,
+            input_tt,
+            conv_state_tt,
+            weight_tt,
+            result_fused_tt,
             x_batch_stride,
             x_c_stride,
             x_l_stride,
@@ -353,39 +363,39 @@ fn run_causal_conv1d_update[
     result_unfused_heap.free()
 
 
-fn test_basic_causal_conv1d_update() raises:
+def test_basic_causal_conv1d_update() raises:
     """Test basic causal conv1d update with bias."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
 
 
-fn test_causal_conv1d_update_with_silu() raises:
+def test_causal_conv1d_update_with_silu() raises:
     """Test causal conv1d update with SiLU activation."""
     run_causal_conv1d_update[DType.float32, True, "silu"](2, 4, 1, 3, 4)
 
 
-fn test_causal_conv1d_update_without_bias() raises:
+def test_causal_conv1d_update_without_bias() raises:
     """Test causal conv1d update without bias."""
     run_causal_conv1d_update[DType.float32, False, "none"](2, 4, 1, 3, 4)
 
 
-fn test_causal_conv1d_update_seqlen_greater_than_one() raises:
+def test_causal_conv1d_update_seqlen_greater_than_one() raises:
     """Test causal conv1d update with seqlen > 1."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 4, 3, 4)
 
 
-fn test_causal_conv1d_update_various_widths() raises:
+def test_causal_conv1d_update_various_widths() raises:
     """Test causal conv1d update with various kernel widths."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 2, 3)
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 3, 4)
     run_causal_conv1d_update[DType.float32, True, "none"](2, 4, 1, 4, 5)
 
 
-fn test_causal_conv1d_update_larger_state() raises:
+def test_causal_conv1d_update_larger_state() raises:
     """Test causal conv1d update with larger state length."""
     run_causal_conv1d_update[DType.float32, True, "none"](2, 8, 1, 3, 8)
 
 
-fn test_causal_conv1d_update_combinations() raises:
+def test_causal_conv1d_update_combinations() raises:
     """Test causal conv1d update with various bias and activation combinations.
     """
     run_causal_conv1d_update[DType.float32, False, "none"](2, 4, 1, 3, 4)

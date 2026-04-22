@@ -11,20 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import MAX_THREADS_PER_BLOCK_METADATA
-from gpu.globals import WARPGROUP_SIZE
-from gpu import thread_idx
-from gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from layout import Layout, LayoutTensor
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
+from std.gpu.globals import WARPGROUP_SIZE
+from std.gpu import thread_idx
+from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
+from layout import LayoutTensor
 from layout.tma_async import TMATensorTile
+from std.gpu.memory import external_memory, AddressSpace
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from linalg.matmul.gpu.tile_scheduler import MatmulSchedule, TileScheduler
 from .matmul_kernels import find_K_alignment_upto_16B, HopperMatmulSM90Kernel
+from .tile_loader import CPAsyncBarrierHandler
 
 
 __extension HopperMatmulSM90Kernel:
@@ -38,19 +40,22 @@ __extension HopperMatmulSM90Kernel:
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_persistent[
-        a_tile_layout: Layout,
-        b_tile_layout: Layout,
-        c_tma_layout: Layout,
-        a_desc_layout: Layout,
-        b_desc_layout: Layout,
-        c_desc_layout: Layout,
+    def run_persistent[
+        a_tma_rank: Int,
+        b_tma_rank: Int,
+        c_tma_rank: Int,
+        a_tile_shape: IndexList[a_tma_rank],
+        b_tile_shape: IndexList[b_tma_rank],
+        c_tile_shape: IndexList[c_tma_rank],
+        a_desc_shape: IndexList[a_tma_rank],
+        b_desc_shape: IndexList[b_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
         grid_shape: IndexList[2],
         schedule: MatmulSchedule,
     ](
-        a_tma_op: TMATensorTile[a_type, a_tile_layout, a_desc_layout],
-        b_tma_op: TMATensorTile[b_type, b_tile_layout, b_desc_layout],
-        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
+        a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
+        b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
+        c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
         c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
         problem_shape: IndexList[3],
     ):
@@ -59,7 +64,11 @@ __extension HopperMatmulSM90Kernel:
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        var smem = Self.SMem()
+        ref smem = external_memory[
+            Scalar[DType.uint8],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+        ]().bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -71,8 +80,10 @@ __extension HopperMatmulSM90Kernel:
             lane_predicate,
         ) = Self.common_kernel_init()
 
-        # Create ring buffer
-        var ring_buffer = Self.build_ring_buffer(smem, warp_group_thread_idx)
+        var pipeline = smem.create_pipeline()
+        var barrier_handler = Self.TMABarrier(
+            pipeline, Self.num_consumer, Self.cluster_size
+        )
 
         # Create TileLoaderTMA loaders
         var a_loader, b_loader = Self.build_tma_loaders(
@@ -98,13 +109,16 @@ __extension HopperMatmulSM90Kernel:
                     var m_coord = work_info.m
                     var n_coord = work_info.n
 
-                    Self.producer_main_loop[num_k_iters=num_k_iters](
-                        UInt(m_coord),
-                        UInt(n_coord),
+                    Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
+                        Int(m_coord),
+                        Int(n_coord),
                         0,
                         a_loader,
                         b_loader,
-                        ring_buffer,
+                        barrier_handler,
+                        pipeline,
+                        smem.a_tiles(),
+                        smem.b_tiles(),
                     )
                     work_info = scheduler.fetch_next_work()
         else:
@@ -113,42 +127,39 @@ __extension HopperMatmulSM90Kernel:
                 Self.setup_consumer(warp_group_idx)
             )
 
-            @parameter
-            if a_type == DType.float8_e4m3fn:
-                _ = final_c_reg_tile.fill(0.0)
-            else:
-                _ = c_reg_tile.fill(0.0)
+            Self.consumer_arrive_empty_barriers(warp_group_thread_idx, pipeline)
 
-            # Enter consumer mode
-            with ring_buffer.consumer() as consumer:
-                while work_info.is_valid():
-                    Self.consumer_main_loop[num_k_iters=num_k_iters](
-                        wgmma_op,
-                        local_warp_group_idx,
-                        final_c_reg_tile,
-                        c_reg_tile,
-                        consumer,
-                    )
+            while work_info.is_valid():
+                Self.consumer_main_loop_pipeline[num_k_iters=num_k_iters](
+                    wgmma_op,
+                    local_warp_group_idx,
+                    final_c_reg_tile,
+                    c_reg_tile,
+                    pipeline,
+                    smem.a_tiles(),
+                    smem.b_tiles(),
+                    warp_group_thread_idx,
+                )
 
-                    var block_y = UInt(ceildiv(work_info.m, UInt32(Self.BM)))
-                    var block_x = UInt(ceildiv(work_info.n, UInt32(Self.BN)))
-                    var output_reg_tile = (
-                        final_c_reg_tile if a_type
-                        == DType.float8_e4m3fn else c_reg_tile
-                    )
+                var block_y = Int(ceildiv(work_info.m, UInt32(Self.BM)))
+                var block_x = Int(ceildiv(work_info.n, UInt32(Self.BN)))
+                var output_reg_tile = (
+                    final_c_reg_tile if a_type
+                    == DType.float8_e4m3fn else c_reg_tile
+                )
 
-                    Self.consumer_output(
-                        c_tma_op,
-                        c,
-                        smem.c_tile,
-                        output_reg_tile,
-                        warp_group_thread_idx,
-                        local_warp_group_idx,
-                        thread_idx.x - UInt(WARPGROUP_SIZE),
-                        Int(block_y),
-                        Int(block_x),
-                    )
-                    work_info = scheduler.fetch_next_work()
+                Self.consumer_output(
+                    c_tma_op,
+                    c,
+                    smem.c_tile(),
+                    output_reg_tile,
+                    warp_group_thread_idx,
+                    local_warp_group_idx,
+                    thread_idx.x - WARPGROUP_SIZE,
+                    block_y,
+                    block_x,
+                )
+                work_info = scheduler.fetch_next_work()
 
         Self.finalize_kernel()
 
@@ -160,13 +171,14 @@ __extension HopperMatmulSM90Kernel:
         `nvvm.cluster_dim`=cluster_shape,
     )
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
-    fn run_unaligned[
-        c_desc_layout: Layout,
-        c_tma_layout: Layout,
+    def run_unaligned[
+        c_tma_rank: Int,
+        c_tile_shape: IndexList[c_tma_rank],
+        c_desc_shape: IndexList[c_tma_rank],
     ](
-        c_tma_op: TMATensorTile[c_type, c_tma_layout, c_desc_layout],
-        a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-        b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
+        c_tma_op: TMATensorTile[c_type, c_tma_rank, c_tile_shape, c_desc_shape],
+        a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+        b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
         c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
     ):
         """Kernel using cp.async for A/B loading when K alignment doesn't meet TMA requirements.
@@ -176,7 +188,11 @@ __extension HopperMatmulSM90Kernel:
 
         # Initialize WgmmaOp and SMem first
         var wgmma_op = Self.WgmmaOp()
-        var smem = Self.SMem()
+        ref smem = external_memory[
+            Scalar[DType.uint8],
+            address_space=AddressSpace.SHARED,
+            alignment=128,
+        ]().bitcast[Self.SMem]()[]
 
         # Common initialization
         var (
@@ -188,9 +204,9 @@ __extension HopperMatmulSM90Kernel:
             lane_predicate,
         ) = Self.common_kernel_init()
 
-        # Create RingBuffer for cp.async operations
-        var ring_buffer = Self.build_ring_buffer[tma_transfer=False](
-            smem, warp_group_thread_idx
+        var pipeline = smem.create_pipeline()
+        var barrier_handler = CPAsyncBarrierHandler(
+            pipeline, Self.num_consumer, Self.cluster_size
         )
 
         # Create TileLoaderCPAsync loaders
@@ -204,37 +220,43 @@ __extension HopperMatmulSM90Kernel:
 
         # Split thread blocks into producer and consumer warp groups
         if warp_group_idx == 0:
-            # Producer warp group
+            # Producer warp group (all threads participate for cp.async)
             warpgroup_reg_dealloc[32]()
 
-            Self.producer_main_loop[num_k_iters=num_k_iters](
-                UInt(block_idx_swizzle[1]),
-                UInt(block_idx_swizzle[0]),
+            Self.producer_main_loop_pipeline[num_k_iters=num_k_iters](
+                block_idx_swizzle[1],
+                block_idx_swizzle[0],
                 0,
                 a_loader,
                 b_loader,
-                ring_buffer,
+                barrier_handler,
+                pipeline,
+                smem.a_tiles(),
+                smem.b_tiles(),
             )
         else:
             # Consumer warp groups
-            constrained[
-                Self.num_consumer <= 2, "Only support 1 or 2 consumer"
-            ]()
+            comptime assert (
+                Self.num_consumer <= 2
+            ), "Only support 1 or 2 consumer"
             warpgroup_reg_alloc[232]()
 
             var local_warp_group_idx = warp_group_idx - 1
             var c_reg_tile = Self.AccumRegTile.stack_allocation()
             var final_c_reg_tile = Self.AccumRegTile.stack_allocation()
 
-            # Enter consumer mode
-            with ring_buffer.consumer() as consumer:
-                Self.consumer_main_loop[num_k_iters=num_k_iters](
-                    wgmma_op,
-                    local_warp_group_idx,
-                    final_c_reg_tile,
-                    c_reg_tile,
-                    consumer,
-                )
+            Self.consumer_arrive_empty_barriers(warp_group_thread_idx, pipeline)
+
+            Self.consumer_main_loop_pipeline[num_k_iters=num_k_iters](
+                wgmma_op,
+                local_warp_group_idx,
+                final_c_reg_tile,
+                c_reg_tile,
+                pipeline,
+                smem.a_tiles(),
+                smem.b_tiles(),
+                warp_group_thread_idx,
+            )
 
             var output_reg_tile = (
                 final_c_reg_tile if a_type
@@ -244,11 +266,11 @@ __extension HopperMatmulSM90Kernel:
             Self.consumer_output(
                 c_tma_op,
                 c,
-                smem.c_tile,
+                smem.c_tile(),
                 output_reg_tile,
                 warp_group_thread_idx,
                 local_warp_group_idx,
-                thread_idx.x - UInt(WARPGROUP_SIZE),
+                thread_idx.x - WARPGROUP_SIZE,
                 block_idx_swizzle[1],
                 block_idx_swizzle[0],
             )

@@ -32,8 +32,7 @@ def conv2d(
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
-    """Computes the 2-D convolution product of the input with the given filter, bias,
-    strides, dilations, paddings, and groups.
+    """Computes the 2-D convolution product of the input with the given filter, bias, strides, dilations, paddings, and groups.
 
     The op supports 2-D convolution, with the following layout assumptions:
 
@@ -67,15 +66,18 @@ def conv2d(
     This op currently only supports strides and padding on the input.
 
     Args:
-        input: An NHWC input tensor to perform the convolution upon.
+        x: An NHWC input tensor to perform the convolution upon.
         filter: The convolution filter in RSCF layout:
-                (height, width, in_channels / num_groups, out_channels).
+            (height, width, in_channels / num_groups, out_channels).
         stride: The stride of the convolution operation.
         dilation: The spacing between the kernel points.
         padding: The amount of padding applied to the input.
         groups: When greater than 1, divides the convolution into multiple
-                parallel convolutions. The number of input and output
-                channels must both be divisible by the number of groups.
+            parallel convolutions. The number of input and output channels
+            must both be divisible by the number of groups.
+        bias: Optional 1-D bias of shape (out_channels,).
+        input_layout: Layout of the input tensor (default NHWC).
+        filter_layout: Layout of the filter tensor (default RSCF).
 
     Returns:
         A symbolic tensor value with the convolution applied.
@@ -131,8 +133,7 @@ def conv3d(
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.QRSCF,
 ) -> TensorValue:
-    """Computes the 3-D convolution product of the input with the given filter,
-    strides, dilations, paddings, and groups.
+    """Computes the 3-D convolution product of the input with the given filter, strides, dilations, paddings, and groups.
 
     The op supports 3-D convolution, with the following layout assumptions:
 
@@ -172,8 +173,11 @@ def conv3d(
         dilation: The spacing between the kernel points.
         padding: The amount of padding applied to the input.
         groups: When greater than 1, divides the convolution into multiple
-                parallel convolutions. The number of input and output
-                channels must both be divisible by the number of groups.
+            parallel convolutions. The number of input and output channels
+            must both be divisible by the number of groups.
+        bias: Optional 1-D bias of shape (out_channels,).
+        input_layout: Layout of the input tensor (default NDHWC).
+        filter_layout: Layout of the filter tensor (default QRSCF).
 
     Returns:
         A symbolic tensor value with the convolution applied.

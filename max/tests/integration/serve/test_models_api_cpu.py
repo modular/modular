@@ -16,8 +16,10 @@ import pytest
 from async_asgi_testclient import TestClient
 from fastapi import FastAPI
 from max.driver import DeviceSpec
-from max.nn.legacy.kv_cache import KVCacheStrategy
-from max.pipelines import PipelineConfig, SupportedEncoding
+from max.pipelines import PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
+from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
     ListModelsResponse,
@@ -25,6 +27,8 @@ from max.serve.schemas.openai import (
 )
 
 SMOLLM_135M_REPO_ID = "HuggingFaceTB/SmolLM-135M"
+SMOLLM_135M_REVISION = hf_repo_lock.revision_for_hf_repo(SMOLLM_135M_REPO_ID)
+assert SMOLLM_135M_REVISION is not None
 
 
 @pytest.mark.asyncio()
@@ -32,15 +36,19 @@ SMOLLM_135M_REPO_ID = "HuggingFaceTB/SmolLM-135M"
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=SMOLLM_135M_REPO_ID,
-            huggingface_model_revision=hf_repo_lock.revision_for_hf_repo(
-                SMOLLM_135M_REPO_ID
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=SMOLLM_135M_REPO_ID,
+                        huggingface_model_revision=SMOLLM_135M_REVISION,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
             ),
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
-            max_batch_size=16,
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,
@@ -70,13 +78,19 @@ MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
     "pipeline_config",
     [
         PipelineConfig(
-            model_path=MODEL_NAME,
-            served_model_name=MODEL_ALIAS,
-            max_length=512,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding=SupportedEncoding.float32,
-            cache_strategy=KVCacheStrategy.PAGED,
-            max_batch_size=16,
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path=MODEL_NAME,
+                        served_model_name=MODEL_ALIAS,
+                        device_specs=[DeviceSpec.cpu()],
+                        quantization_encoding="float32",
+                        kv_cache=KVCacheConfig(),
+                        max_length=512,
+                    )
+                }
+            ),
+            runtime=PipelineRuntimeConfig(max_batch_size=16),
         )
     ],
     indirect=True,

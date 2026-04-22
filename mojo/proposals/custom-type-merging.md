@@ -3,9 +3,9 @@
 Chris Lattner, Feb 28, 2025
 Status: Implemented in 25.3
 
-NOTE: this doc explains an expansion of the Mojo type checker.  It is now
+NOTE: this doc explains an expansion of the Mojo type checker. It is now
 implemented, but the doc still explains it as "the old behavior" and then "the
-new change".  If you are reading this to understand Mojo's behavior, please
+new change". If you are reading this to understand Mojo's behavior, please
 skip down to the "Proposed Solution" section.
 
 One small but important decision the Mojo type checker needs to handle is “what
@@ -39,7 +39,7 @@ fn get_common_type(typea, typeb) raises -> Type:
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
 
-   # Elided: do similar test for @nonmaterializable types.
+   # Elided: do similar test for @__nonmaterializable types.
    throw "no common type found"
 ```
 
@@ -226,7 +226,7 @@ fn get_common_type(typea, typeb) raises -> Type:
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
 
-   # Elided: do similar test for @nonmaterializable types.
+   # Elided: do similar test for @__nonmaterializable types.
    throw "no common type found"
 ```
 
@@ -235,7 +235,7 @@ To paraphrase, the overall behavior here has this order of resolution:
 1) If either type implements a matching `__merge_with__` function, then that
    overrides all other behavior.
 
-2) If not, the compiler checks for implicit conversions.  This should cover
+2) If not, the compiler checks for implicit conversions. This should cover
    almost all cases, because typically common types are one of the two types.
 
 3) The compiler rejects things that are ambiguous.
@@ -243,7 +243,7 @@ To paraphrase, the overall behavior here has this order of resolution:
 Some other notes that may be helpful:
 
 - Any given type is allowed to have multiple `__merge_with__` overloads for
-  different cases.  Each overload can produce different target types if they
+  different cases. Each overload can produce different target types if they
   want to. This allows defining `A.mergewith(B)->C` but `A.mergewith(D)->E`.
 
 - When dealing with a merge two incompatible types `A <-> B`, it is sufficient

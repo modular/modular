@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+"""Defines the :class:`ComponentModel` abstract base class for pipeline components."""
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -22,6 +24,7 @@ from max.graph.weights import Weights
 
 if TYPE_CHECKING:
     from max.pipelines.lib import SupportedEncoding
+    from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
 
 
 class ComponentModel(ABC):
@@ -33,13 +36,16 @@ class ComponentModel(ABC):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        *,
+        cache_config: DenoisingCacheConfig | None = None,
     ) -> None:
         self.config = config
         self.encoding = encoding
         self.devices = devices
         self.weights = weights
+        self.cache_config = cache_config
 
     @abstractmethod
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> Callable[..., Any] | None:
         """Load and return a runtime model instance."""
         ...

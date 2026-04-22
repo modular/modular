@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import (
+from std.reflection import (
     struct_field_count,
     struct_field_names,
     get_type_name,
@@ -19,7 +19,7 @@ from reflection import (
 )
 
 
-fn show_type[T: AnyType]():
+def show_type[T: AnyType]():
     """Displays a compile-time representation of a struct's fields and types.
 
     Prints the struct name followed by a tree view of its fields with their
@@ -52,8 +52,7 @@ fn show_type[T: AnyType]():
     comptime field_types = struct_field_types[T]()
     print("struct", type_name)
 
-    @parameter
-    for idx in range(field_count):
+    comptime for idx in range(field_count):
         comptime field_name = field_names[idx]
         comptime field_type = get_type_name[field_types[idx]]()
         var intro = "├──" if idx < (field_count - 1) else "└──"
@@ -82,11 +81,11 @@ struct ParameterizedStruct[T: Copyable, item_count: Int = DefaultItemCount](
 ):
     var list: List[Self.T]
 
-    fn __init__(out self):
+    def __init__(out self):
         self.list = List[Self.T](capacity=Self.item_count)
 
 
-fn main():
+def main():
     show_type[MyStruct]()
     show_type[Optional[Float64]]()
     show_type[Dict[Int, String]]()

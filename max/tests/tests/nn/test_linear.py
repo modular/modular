@@ -17,14 +17,15 @@ from __future__ import annotations
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, ShardingStrategy, TensorType
-from max.nn.legacy.float8_config import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+from max.nn.linear import Linear
+from max.nn.quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
-from max.nn.legacy.linear import Linear
 
 
 def test_linear_shard_basic() -> None:
@@ -100,17 +101,18 @@ def test_linear_shard_with_float8_tensor_scale() -> None:
             TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
         ],
     ):
-        float8_config = Float8Config(
-            weight_scale=Float8WeightScaleSpec(
-                dtype=DType.float32, granularity=Float8ScaleGranularity.TENSOR
+        quant_config = QuantConfig(
+            format=QuantFormat.COMPRESSED_TENSORS_FP8,
+            weight_scale=WeightScaleSpec(
+                dtype=DType.float32, granularity=ScaleGranularity.TENSOR
             ),
-            input_scale=Float8InputScaleSpec(
+            input_scale=InputScaleSpec(
                 dtype=DType.float32,
-                granularity=Float8ScaleGranularity.TENSOR,
-                origin=Float8ScaleOrigin.STATIC,
+                granularity=ScaleGranularity.TENSOR,
+                origin=ScaleOrigin.STATIC,
             ),
-            mlp_in_float8=set(),
-            attn_qkv_in_float8=set(),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
         )
 
         linear = Linear(
@@ -118,7 +120,7 @@ def test_linear_shard_with_float8_tensor_scale() -> None:
             out_dim=1024,
             dtype=DType.float32,
             device=DeviceRef.GPU(0),
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
 
@@ -149,17 +151,18 @@ def test_linear_shard_with_float8_rowwise_scale() -> None:
             TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
         ],
     ):
-        float8_config = Float8Config(
-            weight_scale=Float8WeightScaleSpec(
-                dtype=DType.float32, granularity=Float8ScaleGranularity.ROWWISE
+        quant_config = QuantConfig(
+            format=QuantFormat.COMPRESSED_TENSORS_FP8,
+            weight_scale=WeightScaleSpec(
+                dtype=DType.float32, granularity=ScaleGranularity.ROWWISE
             ),
-            input_scale=Float8InputScaleSpec(
+            input_scale=InputScaleSpec(
                 dtype=DType.float32,
-                granularity=Float8ScaleGranularity.TENSOR,
-                origin=Float8ScaleOrigin.STATIC,
+                granularity=ScaleGranularity.TENSOR,
+                origin=ScaleOrigin.STATIC,
             ),
-            mlp_in_float8=set(),
-            attn_qkv_in_float8=set(),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
         )
 
         linear = Linear(
@@ -167,7 +170,7 @@ def test_linear_shard_with_float8_rowwise_scale() -> None:
             out_dim=1024,
             dtype=DType.float32,
             device=DeviceRef.GPU(0),
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         linear.sharding_strategy = ShardingStrategy.rowwise(num_devices=2)
 
@@ -191,20 +194,21 @@ def test_linear_shard_with_float8_block_scale() -> None:
             TensorType(DType.float32, (1, 4096), device=DeviceRef.GPU(0))
         ],
     ):
-        float8_config = Float8Config(
-            weight_scale=Float8WeightScaleSpec(
+        quant_config = QuantConfig(
+            format=QuantFormat.BLOCKSCALED_FP8,
+            weight_scale=WeightScaleSpec(
                 dtype=DType.float32,
-                granularity=Float8ScaleGranularity.BLOCK,
+                granularity=ScaleGranularity.BLOCK,
                 block_size=(128, 128),
             ),
-            input_scale=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.BLOCK,
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.BLOCK,
                 dtype=DType.float32,
                 block_size=(1, 128),
-                origin=Float8ScaleOrigin.DYNAMIC,
+                origin=ScaleOrigin.DYNAMIC,
             ),
-            mlp_in_float8=set(),
-            attn_qkv_in_float8=set(),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
         )
 
         linear = Linear(
@@ -212,7 +216,7 @@ def test_linear_shard_with_float8_block_scale() -> None:
             out_dim=1024,
             dtype=DType.float32,
             device=DeviceRef.GPU(0),
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         # Check that the input scale is none.
         assert linear.input_scale is None
@@ -265,24 +269,25 @@ def test_linear_sharding_preserves_config() -> None:
             TensorType(DType.bfloat16, (1, 2048), device=DeviceRef.GPU(0))
         ],
     ):
-        float8_config = Float8Config(
-            weight_scale=Float8WeightScaleSpec(
-                dtype=DType.float32, granularity=Float8ScaleGranularity.TENSOR
+        quant_config = QuantConfig(
+            format=QuantFormat.COMPRESSED_TENSORS_FP8,
+            weight_scale=WeightScaleSpec(
+                dtype=DType.float32, granularity=ScaleGranularity.TENSOR
             ),
-            input_scale=Float8InputScaleSpec(
+            input_scale=InputScaleSpec(
                 dtype=DType.float32,
-                granularity=Float8ScaleGranularity.TENSOR,
-                origin=Float8ScaleOrigin.STATIC,
+                granularity=ScaleGranularity.TENSOR,
+                origin=ScaleOrigin.STATIC,
             ),
-            mlp_in_float8=set(),
-            attn_qkv_in_float8=set(),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
         )
         linear = Linear(
             in_dim=2048,
             out_dim=512,
             dtype=DType.bfloat16,
             has_bias=True,
-            float8_config=float8_config,
+            quant_config=quant_config,
             clip_weight=0.5,
             device=DeviceRef.GPU(0),
         )
@@ -299,7 +304,7 @@ def test_linear_sharding_preserves_config() -> None:
         )  # 512/2
         assert sharded.weight.dtype == DType.bfloat16
         assert sharded.bias is not None
-        assert sharded.float8_config == float8_config
+        assert sharded.quant_config == quant_config
         assert sharded.clip_weight == 0.5
         assert sharded.device == DeviceRef.GPU(1)
 
@@ -443,7 +448,7 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
     """Tests that weight_scale is replicated with head_aware_columnwise
     strategy.
     """
-    with Graph("test", input_types=[]) as graph:
+    with Graph("test", input_types=[]):
         num_heads = 30  # Not divisible by 4
         head_dim = 64
         hidden_size = num_heads * head_dim  # 1920
@@ -451,18 +456,19 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
 
         # Create a Linear layer with float8 config that has rowwise
         # weight_scale.
-        float8_config = Float8Config(
-            weight_scale=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.ROWWISE,
+        quant_config = QuantConfig(
+            format=QuantFormat.FBGEMM_FP8,
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.ROWWISE,
                 dtype=DType.float32,
             ),
-            input_scale=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.TENSOR,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.TENSOR,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
             ),
-            mlp_in_float8=set(),
-            attn_qkv_in_float8=set(),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
         )
 
         linear = Linear(
@@ -470,7 +476,7 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
             out_dim=hidden_size,
             dtype=DType.float32,
             device=DeviceRef.CPU(),
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         # Set head_aware_columnwise sharding strategy.
@@ -490,18 +496,19 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
         )
 
         # Also test regular columnwise for comparison.
-        float8_config2 = Float8Config(
-            weight_scale=Float8WeightScaleSpec(
-                granularity=Float8ScaleGranularity.ROWWISE,
+        quant_config2 = QuantConfig(
+            format=QuantFormat.FBGEMM_FP8,
+            weight_scale=WeightScaleSpec(
+                granularity=ScaleGranularity.ROWWISE,
                 dtype=DType.float32,
             ),
-            input_scale=Float8InputScaleSpec(
-                granularity=Float8ScaleGranularity.TENSOR,
-                origin=Float8ScaleOrigin.DYNAMIC,
+            input_scale=InputScaleSpec(
+                granularity=ScaleGranularity.TENSOR,
+                origin=ScaleOrigin.DYNAMIC,
                 dtype=DType.float32,
             ),
-            mlp_in_float8=set(),
-            attn_qkv_in_float8=set(),
+            mlp_quantized_layers=set(),
+            attn_quantized_layers=set(),
         )
 
         linear2 = Linear(
@@ -509,7 +516,7 @@ def test_weight_scale_sharding_with_head_aware_columnwise() -> None:
             out_dim=hidden_size,
             dtype=DType.float32,
             device=DeviceRef.CPU(),
-            float8_config=float8_config2,
+            quant_config=quant_config2,
         )
 
         strategy2 = ShardingStrategy.columnwise(num_devices=num_devices)

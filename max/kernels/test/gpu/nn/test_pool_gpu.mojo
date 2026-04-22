@@ -11,10 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext, HostBuffer
+from std.gpu.host import DeviceContext
 from layout._fillers import arange
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.pool import (
     PoolMethod,
     avg_pool,
@@ -22,12 +21,10 @@ from nn.pool import (
     max_pool,
     max_pool_gpu,
 )
-from testing import assert_almost_equal
-
-from utils.index import IndexList
+from std.testing import assert_almost_equal
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_max_pool_2d(ctx)
         test_avg_pool_2d(ctx)
@@ -39,7 +36,7 @@ def main():
         test_max_pool_pad_dilation_2d_gpu(ctx)
 
 
-fn test_max_pool_2d(ctx: DeviceContext) raises:
+def test_max_pool_2d(ctx: DeviceContext) raises:
     print("== test_max_pool_2d")
 
     # output should have form
@@ -55,7 +52,7 @@ fn test_max_pool_2d(ctx: DeviceContext) raises:
     pool(PoolMethod.MAX, ctx)
 
 
-fn test_avg_pool_2d(ctx: DeviceContext) raises:
+def test_avg_pool_2d(ctx: DeviceContext) raises:
     print("== test_avg_pool_2d")
 
     # output should have form
@@ -71,22 +68,22 @@ fn test_avg_pool_2d(ctx: DeviceContext) raises:
     pool(PoolMethod.AVG, ctx)
 
 
-fn test_maxpool_2d_ceil_gpu(ctx: DeviceContext) raises:
+def test_maxpool_2d_ceil_gpu(ctx: DeviceContext) raises:
     print("== test_max_pool_2d_ceil_gpu")
     pool_ceil_test(PoolMethod.MAX, ctx)
 
 
-fn test_average_pool_2d_ceil_excludeBound_gpu(ctx: DeviceContext) raises:
+def test_average_pool_2d_ceil_excludeBound_gpu(ctx: DeviceContext) raises:
     print("== test_average_pool_2d_ceil_excludeBound_gpu")
     pool_ceil_test(PoolMethod.AVG, ctx)
 
 
-fn test_average_pool_2d_ceil_includeBound_gpu(ctx: DeviceContext) raises:
+def test_average_pool_2d_ceil_includeBound_gpu(ctx: DeviceContext) raises:
     print("== test_average_pool_2d_ceil_includeBound_gpu")
     pool_ceil_test[True, True](PoolMethod.AVG, ctx)
 
 
-fn pool[
+def pool[
     count_boundary: Bool = False
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
     comptime in_layout = row_major[2, 5, 7, 2]()
@@ -142,15 +139,15 @@ fn pool[
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
     if pool_method == PoolMethod.MAX:
-        max_pool_gpu[int_type = DType.int32](
+        max_pool_gpu[int_type=DType.int32](
             ctx,
             d_input,
             filter_tensor,
@@ -159,7 +156,7 @@ fn pool[
             paddings_tensor,
             d_output,
         )
-        max_pool[int_type = DType.int32](
+        max_pool[int_type=DType.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -168,7 +165,7 @@ fn pool[
             h_output_ref,
         )
     else:
-        avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool_gpu[int_type=DType.int32, count_boundary=count_boundary](
             ctx,
             d_input,
             filter_tensor,
@@ -177,7 +174,7 @@ fn pool[
             paddings_tensor,
             d_output,
         )
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -194,7 +191,7 @@ fn pool[
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn pool_ceil_test[
+def pool_ceil_test[
     count_boundary: Bool = False, ceil_mode: Bool = True
 ](pool_method: PoolMethod, ctx: DeviceContext) raises:
     comptime in_layout = row_major[1, 4, 4, 1]()
@@ -250,15 +247,15 @@ fn pool_ceil_test[
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
     if pool_method == PoolMethod.MAX:
-        max_pool_gpu[int_type = DType.int32](
+        max_pool_gpu[int_type=DType.int32](
             ctx,
             d_input,
             filter_tensor,
@@ -268,7 +265,7 @@ fn pool_ceil_test[
             d_output,
             ceil_mode,
         )
-        max_pool[int_type = DType.int32](
+        max_pool[int_type=DType.int32](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -278,7 +275,7 @@ fn pool_ceil_test[
             ceil_mode,
         )
     else:
-        avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool_gpu[int_type=DType.int32, count_boundary=count_boundary](
             ctx,
             d_input,
             filter_tensor,
@@ -288,7 +285,7 @@ fn pool_ceil_test[
             d_output,
             ceil_mode,
         )
-        avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+        avg_pool[int_type=DType.int32, count_boundary=count_boundary](
             input_tensor,
             filter_tensor,
             stride_tensor,
@@ -306,7 +303,7 @@ fn pool_ceil_test[
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn test_avg_pool_2d_with_padding_gpu[
+def test_avg_pool_2d_with_padding_gpu[
     count_boundary: Bool = False
 ](ctx: DeviceContext) raises:
     print("== test_avg_pool_2d_with_padding_gpu:", count_boundary)
@@ -364,14 +361,14 @@ fn test_avg_pool_2d_with_padding_gpu[
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
-    avg_pool_gpu[int_type = DType.int32, count_boundary=count_boundary](
+    avg_pool_gpu[int_type=DType.int32, count_boundary=count_boundary](
         ctx,
         d_input,
         filter_tensor,
@@ -380,7 +377,7 @@ fn test_avg_pool_2d_with_padding_gpu[
         paddings_tensor,
         d_output,
     )
-    avg_pool[int_type = DType.int32, count_boundary=count_boundary](
+    avg_pool[int_type=DType.int32, count_boundary=count_boundary](
         input_tensor,
         filter_tensor,
         stride_tensor,
@@ -397,7 +394,7 @@ fn test_avg_pool_2d_with_padding_gpu[
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
+def test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     print("== test_max_pool_pad_dilation_2d_gpu")
 
     comptime in_layout = row_major[1, 4, 4, 1]()
@@ -453,14 +450,14 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
     ctx.enqueue_copy(d_output_buffer, out_host_buffer)
 
-    max_pool_gpu[int_type = DType.int32](
+    max_pool_gpu[int_type=DType.int32](
         ctx,
         d_input,
         filter_tensor,
@@ -469,7 +466,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
         paddings_tensor,
         d_output,
     )
-    max_pool[int_type = DType.int32](
+    max_pool[int_type=DType.int32](
         input_tensor,
         filter_tensor,
         stride_tensor,
@@ -486,7 +483,7 @@ fn test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     assert_allclose(h_output_ref, output_tensor)
 
 
-fn assert_allclose[
+def assert_allclose[
     dtype: DType,
 ](
     h_output_ref: TileTensor[dtype, ...],
@@ -494,7 +491,9 @@ fn assert_allclose[
 ) raises:
     try:
         for i in range(h_output_ref.layout.product()):
-            assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
+            assert_almost_equal(
+                h_output_ref.raw_load(i), h_output_gpu.raw_load(i)
+            )
     except e:
         print(e)
         print("left: ", h_output_ref)

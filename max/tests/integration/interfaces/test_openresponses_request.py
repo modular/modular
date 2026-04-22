@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -83,7 +83,10 @@ async def test_from_fastapi_request_minimal(
     assert request.body.model == "test-model"
     assert request.body.input == "Generate an image of a cat"
     assert request.body.seed is None
-    assert request.body.provider_options is None
+    # provider_options defaults to ProviderOptions with default ImageProviderOptions
+    assert request.body.provider_options is not None
+    assert request.body.provider_options.image is not None
+    assert request.body.provider_options.image.guidance_scale == 3.5
 
 
 @pytest.mark.asyncio
@@ -154,8 +157,6 @@ async def test_from_fastapi_request_with_message_input(
             "model": "test-model",
             "input": [
                 {"role": "user", "content": "Generate an image of a cat"},
-                {"role": "assistant", "content": "What style?"},
-                {"role": "user", "content": "Realistic"},
             ],
         }
     )
@@ -168,7 +169,7 @@ async def test_from_fastapi_request_with_message_input(
     assert request.request_id.value == "test-request-id-123"
     assert request.body.model == "test-model"
     assert isinstance(request.body.input, list)
-    assert len(request.body.input) == 3
+    assert len(request.body.input) == 1
     assert request.body.input[0].role == "user"
     assert request.body.input[0].content == "Generate an image of a cat"
 
@@ -226,12 +227,12 @@ def test_openresponses_request_is_frozen() -> None:
 
 
 def test_openresponses_request_inherits_from_request() -> None:
-    """Test that OpenResponsesRequest properly inherits from Request."""
-    from max.interfaces.request import Request
-
+    """Test that OpenResponsesRequest has request_id field."""
     body = OpenResponsesRequestBody(model="test", input="test")
     request = OpenResponsesRequest(request_id=RequestID(), body=body)
 
-    assert isinstance(request, Request)
+    # Verify it has a request_id field
     assert hasattr(request, "request_id")
     assert isinstance(request.request_id, RequestID)
+    # Verify it has a __str__ method that returns the request_id
+    assert str(request) == str(request.request_id)

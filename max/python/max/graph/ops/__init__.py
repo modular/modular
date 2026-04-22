@@ -12,30 +12,43 @@
 # ===----------------------------------------------------------------------=== #
 """Implements operations used when staging a graph.
 
-This module provides operations for building computational graphs in MAX. These
-operations create, transform, and manipulate tensor values within the graph.
+This module provides operations for building a :class:`~max.graph.Graph` in
+MAX. Most operations return a :class:`~max.graph.TensorValue`, which supports
+standard Python operators such as ``+``, ``*``, and ``@`` (matrix
+multiplication), as well as convenience methods like
+:meth:`~max.graph.TensorValue.reshape` and
+:meth:`~max.graph.TensorValue.flatten`. Ops like
+:func:`~max.graph.ops.constant` can also add constant values to your graph.
 
-You can also use functions in [`Graph`](/max/api/python/graph/Graph) to add
-constant values to your graph with operations like
-[`constant()`](/max/api/python/graph/ops#max.graph.ops.constant).
+When an operation receives inputs with different data types
+(:class:`~max.dtype.DType`), MAX promotes the output to a common type by
+picking the higher-ranked category (``bool < unsigned int < signed int <
+float``) and the larger bit width. The result is always one of the input types.
+Plainly, the promotion rule for two values ``x`` and ``y`` is:
 
-The [`TensorValue`](/max/api/python/graph/TensorValue/) type (returned by most
-operations) implements various dunder methods to support operations between
-TensorValues, such as `+` for addition, `*` for multiplication, and `@` for
-matrix multiplication. It also provides convenience methods like
-[`reshape()`](/max/api/python/graph/TensorValue/#max.graph.TensorValue.reshape)
-and
-[`flatten()`](/max/api/python/graph/TensorValue/#max.graph.TensorValue.flatten).
-"""
+.. code-block:: python
+
+    max(category(x), category(y)), max(bitwidth(x), bitwidth(y))
+
+If any input can't be safely represented in the chosen type, MAX raises an
+error. For example, MAX fails to promote ``uint8`` and ``int8`` to ``int8``,
+since ``int8`` can't represent all ``uint8`` values."""
 
 from __future__ import annotations
 
 # Import types for type annotations
 from ..value import TensorValue, TensorValueLike
-from . import allreduce, random, reducescatter
+from . import (
+    allreduce,
+    bundled_allreduce,
+    distributed_ep,
+    random,
+    reducescatter,
+)
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
+from .bottom_k import bottom_k
 from .broadcast import distributed_broadcast
 from .broadcast_to import broadcast_to
 from .buffer import buffer_create, buffer_load, buffer_store, buffer_store_slice
@@ -51,31 +64,54 @@ from .conv_transpose import conv2d_transpose
 from .cumsum import cumsum
 from .custom import custom, inplace_custom
 from .debug import print
+from .distributed_scatter import distributed_scatter
 from .elementwise import *
 from .elementwise import max as _elementwise_max
 from .elementwise import min as _elementwise_min
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd
+from .group_norm import group_norm
 from .hann_window import hann_window
 from .irfft import irfft
 from .layer_norm import layer_norm
 from .matmul import matmul
+from .nms import non_maximum_suppression
 from .nonzero import nonzero
 from .outer import outer
 from .pad import pad
+from .parallel import parallel
 from .permute import permute
-from .pooling import avg_pool2d, max_pool2d
+from .pooling import avg_pool2d, max_pool2d, roi_align
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
-from .reduction import argmax, argmin, mean, sum
+from .reduction import argmax, argmin, mean, prod, sum
 from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
-from .resize import InterpolationMode, resize
-from .scatter import masked_scatter, scatter, scatter_nd
+from .resize import (
+    InterpolationMode,
+    resize,
+    resize_bicubic,
+    resize_linear,
+    resize_nearest,
+)
+from .rms_norm import rms_norm
+from .scatter import (
+    masked_scatter,
+    scatter,
+    scatter_add,
+    scatter_max,
+    scatter_min,
+    scatter_mul,
+    scatter_nd,
+    scatter_nd_add,
+    scatter_nd_max,
+    scatter_nd_min,
+    scatter_nd_mul,
+)
 from .shape_to_tensor import shape_to_tensor
 from .shard_and_stack import shard_and_stack
 from .slice_tensor import slice_tensor

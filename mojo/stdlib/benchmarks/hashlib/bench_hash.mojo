@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import Hasher
-from hashlib._ahash import AHasher
-from hashlib._fnv1a import Fnv1a
+from std.hashlib import Hasher
+from std.hashlib._ahash import AHasher
+from std.hashlib._fnv1a import Fnv1a
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
 comptime words_ar: String = """
@@ -568,7 +568,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 """
 
 
-fn gen_word_pairs[words: String = words_en]() -> List[String]:
+def gen_word_pairs[words: String = words_en]() -> List[String]:
     var result = List[String]()
     var list = words.split(",")
     for w in list:
@@ -583,25 +583,25 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
+def bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
     var words = gen_word_pairs[s]()
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for w in words:
-            var h = hash[HasherType=HasherType](w)
+            var h = hash[HasherType](w)
             keep(h)
 
     b.iter[call_fn]()
 
 
 @parameter
-fn bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
+def bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
-        var h = hash[HasherType=HasherType](s)
+    def call_fn():
+        var h = hash[HasherType](s)
         keep(h)
 
     b.iter[call_fn]()
@@ -610,7 +610,7 @@ fn bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[
         bench_small_keys[words_ar, AHasher[SIMD[DType.uint64, 4](0)]]

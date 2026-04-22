@@ -15,7 +15,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, ops
-from max.nn.legacy import Signals
+from max.nn import Signals
 
 
 def test_broadcast_basic() -> None:
@@ -157,26 +157,32 @@ def test_broadcast_single_gpu() -> None:
             input=graph.inputs[0].tensor,
             signal_buffers=[graph.inputs[1].buffer],
         )
-        # Single GPU broadcast returns the input unchanged
         assert len(broadcast_outputs) == 1
-        assert broadcast_outputs[0]._mlir_value == graph.inputs[0]._mlir_value
+        assert broadcast_outputs[0].device == devices[0]
+        assert broadcast_outputs[0].shape == graph.inputs[0].tensor.shape
+        assert broadcast_outputs[0].dtype == graph.inputs[0].tensor.dtype
 
 
 def test_broadcast_empty() -> None:
-    """Test that broadcast with no signal buffers returns empty list."""
-    with Graph(
-        "broadcast_empty",
-        input_types=[
-            TensorType(
-                dtype=DType.float32, shape=[6, 5], device=DeviceRef.GPU(id=0)
-            ),
-        ],
-    ) as graph:
-        broadcast_outputs = ops.distributed_broadcast(
-            input=graph.inputs[0].tensor,
-            signal_buffers=[],
-        )
-        assert broadcast_outputs == []
+    """Test that broadcast with no signal buffers raises ValueError."""
+    with pytest.raises(
+        ValueError,
+        match=r"distributed_broadcast requires at least 1 signal buffer",
+    ):
+        with Graph(
+            "broadcast_empty",
+            input_types=[
+                TensorType(
+                    dtype=DType.float32,
+                    shape=[6, 5],
+                    device=DeviceRef.GPU(id=0),
+                ),
+            ],
+        ) as graph:
+            ops.distributed_broadcast(
+                input=graph.inputs[0].tensor,
+                signal_buffers=[],
+            )
 
 
 def test_broadcast_different_dtypes() -> None:

@@ -10,11 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+
+"""Test DP=1, TP=1 basic send/recv using GPU 0 and GPU 1."""
+
 from __future__ import annotations
 
 import multiprocessing as mp
 import os
-import re
 import time
 
 import numpy as np
@@ -25,23 +27,28 @@ from max.kv_cache import KVTransferEngine
 
 
 def transfer_routine_sender(
-    sender_md_queue: mp.Queue,
-    receiver_md_queue: mp.Queue,
-    transfer_queue: mp.Queue,
-    sender_done_queue: mp.Queue,
-    receiver_done_queue: mp.Queue,
+    sender_md_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue: mp.Queue,  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue,  # type: ignore[type-arg]
     total_num_pages: int,
     src_idxs: list[int],
     dst_idxs: list[int],
     total_bytes: int,
     GB: float,
 ) -> None:
-    # Enabling UCX debug logging only for sender
+    # Enable UCX debug logging to verify CUDA IPC transport is selected.
     os.environ["UCX_LOG_LEVEL"] = "debug"
 
     device = Accelerator(1)
 
-    blocks_np = np.full(total_bytes, 42, dtype=np.int8)
+    # Fill each page with a distinct value so scatter bugs are detectable.
+    # Page i gets value (i + 1).
+    page_size = total_bytes // total_num_pages
+    blocks_np = np.empty(total_bytes, dtype=np.int8)
+    for i in range(total_num_pages):
+        blocks_np[i * page_size : (i + 1) * page_size] = i + 1
     blocks = Buffer.from_numpy(blocks_np).to(device)
 
     # Create engine (DP=1, TP=1)
@@ -67,20 +74,24 @@ def transfer_routine_sender(
     bw = total_bytes / (t1 - t0) / GB
     ms = (t1 - t0) * 1000
 
-    # This print statement is consumed by capfd. Unfortunately, we can't serialize
-    # the capfd object into child to call capfd.disabled().
+    # This print is consumed by capfd in the test. We can't serialize capfd
+    # into the child process to call capfd.disabled() here.
     print(
         f"[Sender] Transferring {total_bytes / GB:.2f} GB took {ms:.2f} ms ({bw:.2f} GB/s)"
     )
 
-    # Check that the transfer speed is at least 1 GB/s
-    # We found that CUDA_COPY yields ~.3GB/s while CUDA_IPC yields 100+GB/s
-    # Note that CUDA_IPC requires memory to be allocated via `cuMemAlloc` and not
-    # `cuMemAllocAsync`.
+    # Check that the transfer speed is at least 1 GB/s.
+    # Note: this alone does not guarantee CUDA IPC is used — d2h→h2d can also
+    # exceed 1 GB/s. The cuMemcpyDtoDAsync_v2 log assertion in the test
+    # is the authoritative check for transport selection.
     assert bw > 1.0, f"Transfer speed is too low: {bw:.2f} GB/s"
 
-    # Verify results
-    assert (blocks.to_numpy() == 42).all()
+    # Verify sender buffer is unchanged
+    result = blocks.to_numpy()
+    for i in range(total_num_pages):
+        assert (result[i * page_size : (i + 1) * page_size] == i + 1).all(), (
+            f"Sender page {i} was modified"
+        )
 
     sender_done_queue.put(None)
     receiver_done_queue.get()
@@ -88,12 +99,14 @@ def transfer_routine_sender(
 
 
 def transfer_routine_receiver(
-    sender_md_queue: mp.Queue,
-    receiver_md_queue: mp.Queue,
-    transfer_queue: mp.Queue,
-    sender_done_queue: mp.Queue,
-    receiver_done_queue: mp.Queue,
+    sender_md_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue,  # type: ignore[type-arg]
+    transfer_queue: mp.Queue,  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue,  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue,  # type: ignore[type-arg]
     total_num_pages: int,
+    src_idxs: list[int],
+    dst_idxs: list[int],
     total_bytes: int,
 ) -> None:
     device = Accelerator(0)
@@ -117,8 +130,18 @@ def transfer_routine_receiver(
     transfer_req = transfer_queue.get()
     engine.sync_and_release(transfer_req)
 
-    # Verify results
-    assert (blocks.to_numpy() == 42).all()
+    # Verify page-level correctness.
+    # Sender page i has value (i + 1). src_idxs[j] maps to dst_idxs[j], so
+    # receiver page dst_idxs[j] should equal src_idxs[j] + 1.
+    result = blocks.to_numpy()
+    page_size = total_bytes // total_num_pages
+    for src_idx, dst_idx in zip(src_idxs, dst_idxs, strict=True):
+        expected = src_idx + 1
+        assert (
+            result[dst_idx * page_size : (dst_idx + 1) * page_size] == expected
+        ).all(), (
+            f"Receiver page {dst_idx} expected value {expected} (from src page {src_idx})"
+        )
 
     receiver_done_queue.put(None)
     sender_done_queue.get()
@@ -128,11 +151,11 @@ def transfer_routine_receiver(
 def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
     # Use multiprocessing.Queue for inter-process communication
     ctx = mp.get_context("spawn")
-    sender_md_queue: mp.Queue = ctx.Queue()
-    receiver_md_queue: mp.Queue = ctx.Queue()
-    transfer_queue: mp.Queue = ctx.Queue()
-    sender_done_queue: mp.Queue = ctx.Queue()
-    receiver_done_queue: mp.Queue = ctx.Queue()
+    sender_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    receiver_md_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    transfer_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    sender_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
+    receiver_done_queue: mp.Queue = ctx.Queue()  # type: ignore[type-arg]
 
     # Transfer parameters
     GB = 1024 * 1024 * 1024
@@ -165,6 +188,8 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
             sender_done_queue,
             receiver_done_queue,
             total_num_pages,
+            src_idxs,
+            dst_idxs,
             total_bytes,
         ),
     )
@@ -184,7 +209,6 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
 
     out, _err = capfd.readouterr()
 
-    # Let some print statements actually be printed
     with capfd.disabled():
         print()
         print("-" * 80)
@@ -193,13 +217,6 @@ def test_send_recv_basic(capfd: pytest.CaptureFixture[str]) -> None:
                 print(line)
         print("-" * 80)
 
-    # Check stdout
-    assert re.search(r"Transferring .* GB took .* ms \(.* GB/s\)", out)
-    assert "UCX  DEBUG register host memory on: cuda_cpy, self" in out
-    assert "UCX  DEBUG register cuda memory on: cuda_cpy, cuda_ipc" in out
-    assert "UCX  DEBUG register cuda-managed memory on: cuda_cpy" in out
-    assert "UCX  DEBUG no memory domain supports registering rocm memory" in out
-    assert (
-        "UCX  DEBUG cuMemcpyDtoDAsync_v2(dst, src, iov[0].length, *stream) -> 0"
-        in out
-    )
+    # Verify CUDA IPC transport is selected. The bw > 1 GB/s check alone is
+    # insufficient since d2h->h2d paths can also exceed 1 GB/s.
+    assert "UCX  DEBUG cuMemcpyDtoDAsync_v2" in out

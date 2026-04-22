@@ -13,11 +13,17 @@
 
 import typing
 
-import pytest
 import torch
-from max.driver import accelerator_api
+from max.dtype import DType
 from torch_reference.configuration_deepseek import DeepseekV2Config
 from torch_reference.modeling_deepseek import DeepseekV2Attention
+
+# Tolerances for different KV cache dtypes
+# FP8 has lower precision so needs looser tolerances
+TOLERANCES = {
+    DType.bfloat16: {"rtol": 5e-4, "atol": 5e-4},
+    DType.float8_e4m3fn: {"rtol": 5e-2, "atol": 5e-2},
+}
 
 
 def generate_torch_outputs(
@@ -32,15 +38,13 @@ def generate_torch_outputs(
     return torch_output[0]
 
 
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_latent_attention_decode(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     attention_mask: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
     generate_latent_attention_max_outputs: typing.Callable[..., torch.Tensor],
+    kv_dtype: DType,
 ) -> None:
     torch_output = generate_torch_outputs(
         config, input_tensor, attention_mask, attention_weights
@@ -48,18 +52,17 @@ def test_latent_attention_decode(
     max_output = generate_latent_attention_max_outputs(
         config, input_tensor, attention_weights, use_prefill=False
     )
-    torch.testing.assert_close(torch_output, max_output, rtol=5e-4, atol=5e-4)
+    tol = TOLERANCES[kv_dtype]
+    torch.testing.assert_close(torch_output, max_output, **tol)
 
 
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_latent_attention_prefill(
     config: DeepseekV2Config,
     input_tensor: torch.Tensor,
     attention_mask: torch.Tensor,
     attention_weights: dict[str, torch.Tensor],
     generate_latent_attention_max_outputs: typing.Callable[..., torch.Tensor],
+    kv_dtype: DType,
 ) -> None:
     torch_output = generate_torch_outputs(
         config, input_tensor, attention_mask, attention_weights
@@ -67,4 +70,5 @@ def test_latent_attention_prefill(
     max_output = generate_latent_attention_max_outputs(
         config, input_tensor, attention_weights, use_prefill=True
     )
-    torch.testing.assert_close(torch_output, max_output, rtol=5e-4, atol=5e-4)
+    tol = TOLERANCES[kv_dtype]
+    torch.testing.assert_close(torch_output, max_output, **tol)

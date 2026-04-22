@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
-from python._cpython import PythonVersion
-from testing import assert_equal, TestSuite
+from std.python import Python
+from std.python._cpython import PythonVersion
+from std.testing import assert_equal, TestSuite
 
 
-fn _test_python_version(mut python: Python) raises:
+def _test_python_version(mut python: Python) raises:
     var version = "3.10.8 (main, Nov 24 2022, 08:08:27) [Clang 14.0.6 ]"
     var python_version = PythonVersion(version)
     assert_equal(python_version.major, 3)
@@ -24,10 +24,10 @@ fn _test_python_version(mut python: Python) raises:
     assert_equal(python_version.patch, 8)
 
 
-def test_with_python_version():
+def test_with_python_version() raises:
     var python = Python()
     _test_python_version(python)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

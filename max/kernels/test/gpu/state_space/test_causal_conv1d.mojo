@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,36 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp
-from sys.info import simd_width_of
+from std.math import ceildiv, exp
 
-from algorithm.functional import _get_start_indices_of_nth_subvolume
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 from layout import (
-    UNKNOWN_VALUE,
+    Idx,
     Layout,
     LayoutTensor,
-    RuntimeTuple,
     RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
 )
-from random import rand
-from layout.int_tuple import fill_like
-from memory import alloc
+from std.random import rand
+from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
     causal_conv1d_channel_first_fwd_gpu,
 )
-from testing import TestSuite, assert_almost_equal
+from std.testing import TestSuite, assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()
 
 
 @always_inline
-fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
+def silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     """Reference SiLU implementation: x * sigmoid(x) = x / (1 + exp(-x))."""
     var x_f32 = x.cast[DType.float32]()
     var neg_x = -x_f32
@@ -50,7 +49,7 @@ fn silu_ref[dtype: DType](x: Scalar[dtype]) -> Scalar[dtype]:
     return (x_f32 * sigmoid_x).cast[dtype]()
 
 
-fn run_causal_conv1d_gpu[
+def run_causal_conv1d_gpu[
     dtype: DType,
     activation: StaticString,
 ](
@@ -115,25 +114,36 @@ fn run_causal_conv1d_gpu[
 
     var silu_activation = activation == "silu"
 
+    # Create TileTensors for CPU reference
+    var input_tt = TileTensor(
+        input_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+    var weight_tt = TileTensor(weight_buf.ptr, row_major(Idx(dim), Idx(width)))
+    var bias_tt = TileTensor(
+        bias_buf.ptr,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var result_cpu_tt = TileTensor(
+        result_cpu_buf.ptr, row_major(Idx(batch), Idx(dim), Idx(seqlen))
+    )
+
     # Run CPU reference
     causal_conv1d_channel_first_fwd_cpu[
-        input_buf.dtype,
-        input_buf.layout,
-        weight_buf.dtype,
-        weight_buf.layout,
-        result_cpu_buf.dtype,
-        result_cpu_buf.layout,
-        bias_buf.dtype,
-        bias_buf.layout,
+        dtype,
+        dtype,
+        dtype,
+        dtype,
     ](
         batch,
         dim,
         seqlen,
         width,
-        input_buf,
-        weight_buf,
-        result_cpu_buf,
-        bias_buf,
+        input_tt,
+        weight_tt,
+        result_cpu_tt,
+        bias_tt,
         x_batch_stride,
         x_c_stride,
         x_l_stride,
@@ -176,6 +186,26 @@ fn run_causal_conv1d_gpu[
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
+    # Create TileTensors for GPU kernel
+    var input_device_tt = TileTensor(
+        input_device,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+    var weight_device_tt = TileTensor(
+        weight_device,
+        row_major(Idx(dim), Idx(width)),
+    )
+    var bias_device_tt = TileTensor(
+        bias_device,
+        row_major(
+            Idx(dim),
+        ),
+    )
+    var output_device_tt = TileTensor(
+        output_device,
+        row_major(Idx(batch), Idx(dim), Idx(seqlen)),
+    )
+
     # Run GPU kernel
     comptime kNThreads = 128
     comptime kNElts = 4
@@ -184,30 +214,30 @@ fn run_causal_conv1d_gpu[
         comptime kWidth = 1
         var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -218,10 +248,10 @@ fn run_causal_conv1d_gpu[
                 dim,
                 seqlen,
                 width,
-                input_device_tensor,
-                weight_device_tensor,
-                output_device_tensor,
-                bias_device_tensor,
+                input_device_tt,
+                weight_device_tt,
+                output_device_tt,
+                bias_device_tt,
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -239,30 +269,30 @@ fn run_causal_conv1d_gpu[
         comptime kWidth = 2
         var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -273,10 +303,10 @@ fn run_causal_conv1d_gpu[
                 dim,
                 seqlen,
                 width,
-                input_device_tensor,
-                weight_device_tensor,
-                output_device_tensor,
-                bias_device_tensor,
+                input_device_tt,
+                weight_device_tt,
+                output_device_tt,
+                bias_device_tt,
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -294,30 +324,30 @@ fn run_causal_conv1d_gpu[
         comptime kWidth = 3
         var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -328,10 +358,10 @@ fn run_causal_conv1d_gpu[
                 dim,
                 seqlen,
                 width,
-                input_device_tensor,
-                weight_device_tensor,
-                output_device_tensor,
-                bias_device_tensor,
+                input_device_tt,
+                weight_device_tt,
+                output_device_tt,
+                bias_device_tt,
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -349,30 +379,30 @@ fn run_causal_conv1d_gpu[
         comptime kWidth = 4
         var compiled_func = ctx.compile_function[
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
             causal_conv1d_channel_first_fwd_gpu[
-                input_device_tensor.dtype,
-                input_device_tensor.layout,
-                weight_device_tensor.dtype,
-                weight_device_tensor.layout,
-                output_device_tensor.dtype,
-                output_device_tensor.layout,
+                dtype,
+                dtype,
+                dtype,
                 kNThreads,
                 kWidth,
                 kNElts,
-                bias_device_tensor.dtype,
-                bias_device_tensor.layout,
+                dtype,
+                input_device_tt.LayoutType,
+                weight_device_tt.LayoutType,
+                output_device_tt.LayoutType,
+                bias_device_tt.LayoutType,
             ],
         ]()
         var silu_activation_int8 = Int8(silu_activation)
@@ -383,10 +413,10 @@ fn run_causal_conv1d_gpu[
                 dim,
                 seqlen,
                 width,
-                input_device_tensor,
-                weight_device_tensor,
-                output_device_tensor,
-                bias_device_tensor,
+                input_device_tt,
+                weight_device_tt,
+                output_device_tt,
+                bias_device_tt,
                 x_batch_stride,
                 x_c_stride,
                 x_l_stride,
@@ -427,7 +457,7 @@ fn run_causal_conv1d_gpu[
     result_cpu_heap.free()
 
 
-fn test_basic_gpu_causal_conv1d() raises:
+def test_basic_gpu_causal_conv1d() raises:
     """Test basic GPU causal conv1d without activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -435,7 +465,7 @@ fn test_basic_gpu_causal_conv1d() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 4, 8, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_with_silu() raises:
+def test_gpu_causal_conv1d_with_silu() raises:
     """Test GPU causal conv1d with SiLU activation."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -443,7 +473,7 @@ fn test_gpu_causal_conv1d_with_silu() raises:
     run_causal_conv1d_gpu[DType.float32, "silu"](2, 4, 8, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_1() raises:
+def test_gpu_causal_conv1d_width_1() raises:
     """Test GPU causal conv1d with kernel width 1."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -451,7 +481,7 @@ fn test_gpu_causal_conv1d_width_1() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 1, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_2() raises:
+def test_gpu_causal_conv1d_width_2() raises:
     """Test GPU causal conv1d with kernel width 2."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -459,7 +489,7 @@ fn test_gpu_causal_conv1d_width_2() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 2, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_3() raises:
+def test_gpu_causal_conv1d_width_3() raises:
     """Test GPU causal conv1d with kernel width 3."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -467,7 +497,7 @@ fn test_gpu_causal_conv1d_width_3() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_width_4() raises:
+def test_gpu_causal_conv1d_width_4() raises:
     """Test GPU causal conv1d with kernel width 4."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -475,7 +505,7 @@ fn test_gpu_causal_conv1d_width_4() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 8, 16, 4, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_large_sequence() raises:
+def test_gpu_causal_conv1d_large_sequence() raises:
     """Test GPU causal conv1d with larger sequence length."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -483,7 +513,7 @@ fn test_gpu_causal_conv1d_large_sequence() raises:
     run_causal_conv1d_gpu[DType.float32, "none"](2, 16, 128, 3, ctx=ctx)
 
 
-fn test_gpu_causal_conv1d_mamba_dimensions() raises:
+def test_gpu_causal_conv1d_mamba_dimensions() raises:
     """Test GPU causal conv1d with mamba-130m-hf realistic dimensions."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():
@@ -495,7 +525,7 @@ fn test_gpu_causal_conv1d_mamba_dimensions() raises:
         )
 
 
-fn test_gpu_causal_conv1d_strict_tolerance() raises:
+def test_gpu_causal_conv1d_strict_tolerance() raises:
     """Test GPU causal conv1d with strict tolerance (0.01%)."""
     var ctx = DeviceContext()
     if not ctx.is_compatible():

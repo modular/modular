@@ -19,13 +19,14 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import numpy as np
 from max.driver import Buffer, Device
 from max.engine import InferenceSession, Model
 from max.graph.weights import Weights, WeightsAdapter
-from max.nn.legacy.kv_cache import KVCacheInputs
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.dataprocessing import collate_batch
 from max.pipelines.lib import (
@@ -35,7 +36,6 @@ from max.pipelines.lib import (
     ModelOutputs,
     PipelineConfig,
     PipelineModel,
-    SupportedEncoding,
     upper_bounded_default,
 )
 from transformers import AutoConfig
@@ -48,6 +48,7 @@ logger = logging.getLogger("max.pipelines")
 PAD_VALUE = 1
 
 
+@dataclass
 class MPNetInputs(ModelInputs):
     """A class representing inputs for the MPNet model.
 
@@ -59,24 +60,12 @@ class MPNetInputs(ModelInputs):
     next_tokens_batch: Buffer
     attention_mask: Buffer
 
-    def __init__(
-        self,
-        next_tokens_batch: Buffer,
-        attention_mask: Buffer,
-    ) -> None:
-        self.next_tokens_batch = next_tokens_batch
-        self.attention_mask = attention_mask
-        # MPNet does not have KV cache inputs.
-        self.kv_cache_inputs = None
-
 
 class MPNetPipelineModel(PipelineModel[TextContext]):
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -86,8 +75,6 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -103,12 +90,12 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for MPNet, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.max_position_embeddings})."
             ) from e
@@ -125,7 +112,7 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> MPNetInputs:
         if len(replica_batches) > 1:
@@ -164,17 +151,16 @@ class MPNetPipelineModel(PipelineModel[TextContext]):
         )
 
     def load_model(self, session: InferenceSession) -> Model:
-        timer = CompilationTimer("model")
-        if self.adapter:
-            state_dict = self.adapter(dict(self.weights.items()))
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        config = MPNetConfig.initialize(self.pipeline_config)
-        graph = build_graph(config, state_dict)
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=state_dict)
-        timer.done()
+        with CompilationTimer("model") as timer:
+            if self.adapter:
+                state_dict = self.adapter(dict(self.weights.items()))
+            else:
+                state_dict = {
+                    key: value.data() for key, value in self.weights.items()
+                }
+            config = MPNetConfig.initialize(self.pipeline_config)
+            graph = build_graph(config, state_dict)
+            timer.mark_build_complete()
+            model = session.load(graph, weights_registry=state_dict)
 
         return model

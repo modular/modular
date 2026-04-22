@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import getsize
-from tempfile import NamedTemporaryFile
+from std.os.path import getsize
+from std.tempfile import NamedTemporaryFile
 
-from testing import TestSuite, assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-def test_getsize():
+def test_getsize() raises:
     with NamedTemporaryFile(delete=False) as tmp_file:
         file_path = tmp_file.name
         # No bytes written yet, 0 size.
         assert_equal(getsize(file_path), 0)
         var data_to_write = "test"
         tmp_file.write(data_to_write)
-        assert_equal(getsize(file_path), len(data_to_write))
+        assert_equal(getsize(file_path), data_to_write.byte_length())
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

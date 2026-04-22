@@ -10,16 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides a compact, grow-only set of non-negative integers.
+"""Provides a compact set of non-negative integers backed by inline storage.
 
 Optimized for space (1 bit per element) and speed (O(1) operations).
-Offers set/clear/test/toggle and fast population count. The underlying
-storage grows automatically but does not shrink unless `shrink_to_fit`
-is called (not implemented yet).
+Offers set/clear/test/toggle and fast population count.
 
 Example:
 ```mojo
-from collections import BitSet
+from std.collections import BitSet
 
 var bs = BitSet[128]()  # 128-bit set, all clear
 bs.set(42)              # Mark value 42 as present.
@@ -32,12 +30,13 @@ print(len(bs))          # Prints 0.
 # ---------------------------------------------------------------------------
 
 
-from math import ceildiv
-from sys import simd_width_of, bit_width_of
+from std.math import ceildiv
+from std.sys import simd_width_of, bit_width_of
 
-from algorithm import vectorize
-from bit import log2_floor, pop_count
-from memory import pack_bits
+from std.algorithm import vectorize
+from std.bit import log2_floor, pop_count
+from std.format._utils import FormatStruct
+from std.memory import pack_bits
 
 from .inline_array import InlineArray
 
@@ -50,19 +49,19 @@ comptime _WORD_BITS_LOG2 = log2_floor(_WORD_BITS)
 
 
 @always_inline
-fn _word_index(idx: Int) -> Int:
+def _word_index(idx: Int) -> Int:
     """Computes the 0-based index of the 64-bit word containing bit `idx`."""
     return idx >> _WORD_BITS_LOG2
 
 
 @always_inline
-fn _bit_mask(idx: Int) -> Int:
+def _bit_mask(idx: Int) -> Int:
     """Returns a Int64 mask with only the bit corresponding to `idx` set."""
     return 1 << (idx & _WORD_BITS - 1)
 
 
 @always_inline
-fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
+def _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
     """Checks if the index is within bounds for a BitSet operation.
 
     Parameters:
@@ -88,9 +87,7 @@ fn _check_index_bounds[operation_name: StaticString](idx: Int, max_size: Int):
 # ===-----------------------------------------------------------------------===#
 
 
-struct BitSet[size: Int](
-    Boolable, Copyable, Defaultable, Sized, Stringable, Writable
-):
+struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
     """A grow-only set storing non-negative integers efficiently using bits.
 
     Parameters:
@@ -115,11 +112,11 @@ struct BitSet[size: Int](
     # Constructors
     # --------------------------------------------------------------------- #
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initializes an empty BitSet with zero capacity and size."""
         self._words = type_of(self._words)(fill=0)
 
-    fn __init__(init: SIMD[DType.bool, _], out self: BitSet[init.size]):
+    def __init__(init: SIMD[DType.bool, _], out self: BitSet[init.size]):
         """Initializes a BitSet with the given SIMD vector of booleans.
 
         Args:
@@ -131,10 +128,9 @@ struct BitSet[size: Int](
         self._words = type_of(self._words)(uninitialized=True)
         comptime step = min(init.size, _WORD_BITS)
 
-        @parameter
-        for i in range(Self._words_size):
+        comptime for i in range(Self._words_size):
             self._words.unsafe_get(i) = pack_bits(
-                init.slice[step, offset = i * step]()
+                init.slice[step, offset=i * step]()
             ).cast[DType.int64]()
 
     # --------------------------------------------------------------------- #
@@ -142,7 +138,7 @@ struct BitSet[size: Int](
     # --------------------------------------------------------------------- #
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Counts the total number of bits that are set to 1 in the bitset.
 
         Uses the efficient `pop_count` intrinsic for each underlying word.
@@ -154,14 +150,13 @@ struct BitSet[size: Int](
         """
         var total = 0
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             total += Int(pop_count(self._words.unsafe_get(i)))
 
         return total
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks if the bitset is non-empty (contains at least one set bit).
 
         Returns:
@@ -170,11 +165,31 @@ struct BitSet[size: Int](
         return len(self) != 0
 
     # --------------------------------------------------------------------- #
+    # Utilities
+    # --------------------------------------------------------------------- #
+
+    @always_inline
+    def _zero_upper(mut self):
+        """Clears any bits in the last word that lie beyond the logical `size`.
+
+        When `size` is not a multiple of 64, the last storage word has unused
+        high bits. Operations like `set_all` and `toggle_all` write to the full
+        word, leaving those bits set. This method masks them back to zero so
+        that `__len__` (population count) and other word-level operations
+        remain correct. When `size` is an exact multiple of 64, this method
+        compiles away entirely.
+        """
+        comptime bits_in_last_word = Self.size % _WORD_BITS
+        comptime if bits_in_last_word != 0:
+            comptime mask = Int64((1 << bits_in_last_word) - 1)
+            self._words.unsafe_get(Self._words_size - 1) &= mask
+
+    # --------------------------------------------------------------------- #
     # Bit manipulation
     # --------------------------------------------------------------------- #
 
     @always_inline
-    fn set(mut self, idx: Int):
+    def set(mut self, idx: Int):
         """Sets the bit at the specified index `idx` to 1.
 
         If `idx` is greater than or equal to the current logical size,
@@ -189,7 +204,7 @@ struct BitSet[size: Int](
         self._words.unsafe_get(w) |= Int64(_bit_mask(idx))
 
     @always_inline
-    fn clear(mut self, idx: Int):
+    def clear(mut self, idx: Int):
         """Clears the bit at the specified index `idx` (sets it to 0).
 
         Aborts if `idx` is negative or greater than or equal to the
@@ -203,7 +218,7 @@ struct BitSet[size: Int](
         self._words.unsafe_get(w) &= Int64(~_bit_mask(idx))
 
     @always_inline
-    fn toggle(mut self, idx: Int):
+    def toggle(mut self, idx: Int):
         """Toggles (inverts) the bit at the specified index `idx`.
 
         If the bit becomes 1 and `idx` is greater than or equal to the
@@ -218,7 +233,7 @@ struct BitSet[size: Int](
         self._words.unsafe_get(w) ^= Int64(_bit_mask(idx))
 
     @always_inline
-    fn test(self, idx: Int) -> Bool:
+    def test(self, idx: Int) -> Bool:
         """Tests if the bit at the specified index `idx` is set (is 1).
 
         Aborts if `idx` is negative or greater than or equal to the
@@ -234,7 +249,7 @@ struct BitSet[size: Int](
         var w = _word_index(idx)
         return (self._words.unsafe_get(w) & Int64(_bit_mask(idx))) != 0
 
-    fn clear_all(mut self):
+    def clear_all(mut self):
         """Clears all bits in the set, resetting the logical size to 0.
 
         The allocated storage capacity remains unchanged. Equivalent to
@@ -242,28 +257,28 @@ struct BitSet[size: Int](
         """
         self = Self()
 
-    fn toggle_all(mut self):
+    def toggle_all(mut self):
         """Toggles (inverts) all bits in the set up to the compile-time `size`.
         """
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             self._words.unsafe_get(i) ^= ~0
+        self._zero_upper()
 
-    fn set_all(mut self):
+    def set_all(mut self):
         """Sets all bits in the set up to the compile-time `size`."""
 
-        @parameter
-        for i in range(self._words_size):
+        comptime for i in range(self._words_size):
             self._words.unsafe_get(i) = ~0
+        self._zero_upper()
 
     # --------------------------------------------------------------------- #
     # Set operations
     # --------------------------------------------------------------------- #
     @always_inline
     @staticmethod
-    fn _vectorize_apply[
-        func: fn[simd_width: Int](
+    def _vectorize_apply[
+        func: def[simd_width: Int](
             SIMD[DType.int64, simd_width],
             SIMD[DType.int64, simd_width],
         ) capturing -> SIMD[DType.int64, simd_width],
@@ -298,7 +313,7 @@ struct BitSet[size: Int](
 
         # Define a vectorized operation that processes multiple words at once
         @always_inline
-        fn _intersect[
+        def _intersect[
             simd_width: Int
         ](offset: Int) unified {mut res, read left, read right}:
             # Initialize SIMD vectors to hold multiple words from each bitset
@@ -306,8 +321,7 @@ struct BitSet[size: Int](
             var right_vec = SIMD[DType.int64, simd_width]()
 
             # Load a batch of words from both bitsets into SIMD vectors
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 left_vec[i] = left._words.unsafe_get(offset + i)
                 right_vec[i] = right._words.unsafe_get(offset + i)
 
@@ -316,20 +330,17 @@ struct BitSet[size: Int](
             var result_vec = func(left_vec, right_vec)
 
             # Store the results back into the result bitset
-            @parameter
-            for i in range(simd_width):
+            comptime for i in range(simd_width):
                 res._words.unsafe_get(offset + i) = result_vec[i]
 
         # Choose between vectorized or scalar implementation based on word count
-        @parameter
-        if Self._words_size >= simd_width:
+        comptime if Self._words_size >= simd_width:
             # If we have enough words, use SIMD vectorization for better
             # performance
             vectorize[simd_width](Self._words_size, _intersect)
         else:
             # For small bitsets, use a simple scalar implementation
-            @parameter
-            for i in range(Self._words_size):
+            comptime for i in range(Self._words_size):
                 res._words.unsafe_get(i) = func(
                     left._words.unsafe_get(i),
                     right._words.unsafe_get(i),
@@ -337,7 +348,7 @@ struct BitSet[size: Int](
 
         return res^
 
-    fn union(self, other: Self) -> Self:
+    def union(self, other: Self) -> Self:
         """Returns a new bitset that is the union of `self` and `other`.
 
         Args:
@@ -349,7 +360,7 @@ struct BitSet[size: Int](
 
         @parameter
         @always_inline
-        fn _union[
+        def _union[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -359,7 +370,7 @@ struct BitSet[size: Int](
 
         return Self._vectorize_apply[_union](self, other)
 
-    fn intersection(self, other: Self) -> Self:
+    def intersection(self, other: Self) -> Self:
         """Returns a new bitset that is the intersection of `self` and `other`.
 
         Args:
@@ -371,7 +382,7 @@ struct BitSet[size: Int](
 
         @parameter
         @always_inline
-        fn _intersection[
+        def _intersection[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -381,7 +392,7 @@ struct BitSet[size: Int](
 
         return Self._vectorize_apply[_intersection](self, other)
 
-    fn difference(self, other: Self) -> Self:
+    def difference(self, other: Self) -> Self:
         """Returns a new bitset that is the difference of `self` and `other`.
 
         Args:
@@ -393,7 +404,7 @@ struct BitSet[size: Int](
 
         @parameter
         @always_inline
-        fn _difference[
+        def _difference[
             simd_width: Int
         ](
             left: SIMD[DType.int64, simd_width],
@@ -408,7 +419,7 @@ struct BitSet[size: Int](
     # --------------------------------------------------------------------- #
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the set bits to the given writer.
         Outputs the indices of the set bits in ascending order, enclosed in
         curly braces and separated by commas (e.g., "{1, 5, 42}"). Uses
@@ -457,23 +468,11 @@ struct BitSet[size: Int](
 
         writer.write("}")
 
-    fn __repr__(self) -> String:
-        """Returns a developer-friendly string representation of the bitset.
+    @no_inline
+    def write_repr_to(self, mut writer: Some[Writer]):
+        """Write the string representation of the `BitSet` to the writer.
 
-        Currently equivalent to `__str__`.
-
-        Returns:
-            A string showing the set bits (e.g., "{1, 5, 42}").
+        Args:
+            writer: The value to write to.
         """
-        return String(self)
-
-    fn __str__(self) -> String:
-        """Returns a user-friendly string representation of the bitset.
-
-        Formats the set bits as a comma-separated list within curly braces,
-        like "{1, 5, 42}". Uses the `write_to` method internally.
-
-        Returns:
-            A string showing the set bits.
-        """
-        return String.write(self)
+        FormatStruct(writer, "BitSet").params(Self.size).fields(self)

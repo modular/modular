@@ -12,36 +12,35 @@
 # ===----------------------------------------------------------------------=== #
 # Issue #23536
 
-from algorithm.functional import stencil
-from testing import TestSuite
+from std.algorithm.functional import stencil
+from std.testing import TestSuite
 
-from utils import IndexList
-from utils.numerics import min_or_neg_inf
+from std.utils import IndexList
+from std.utils.numerics import min_or_neg_inf
 
-comptime _map_fn_type = fn[rank: Int](IndexList[rank]) capturing -> Tuple[
+comptime _map_fn_type = def[rank: Int](IndexList[rank]) capturing -> Tuple[
     IndexList[rank],
     IndexList[rank],
 ]
-comptime load_fn_type = fn[dtype: DType, rank: Int, simd_width: Int](
+comptime load_fn_type = def[dtype: DType, rank: Int, simd_width: Int](
     IndexList[rank]
 ) capturing -> SIMD[dtype, simd_width]
 
 
-fn _linear_index[
+def _linear_index[
     rank: Int
 ](coords: IndexList[rank, ...], shape: IndexList[rank]) -> Int:
     """Convert multi-dimensional coordinates to linear index (row-major)."""
     var linear_idx = 0
     var stride = 1
 
-    @parameter
-    for i in reversed(range(rank)):
+    comptime for i in reversed(range(rank)):
         linear_idx += coords[i] * stride
         stride *= shape[i]
     return linear_idx
 
 
-fn fill_span[
+def fill_span[
     dtype: DType, origin: MutOrigin
 ](buf: Span[Scalar[dtype], origin], size: Int):
     for j in range(size):
@@ -50,7 +49,7 @@ fn fill_span[
 
 # TODO: Refactor tests
 # CHECK-LABEL: test_stencil_avg_pool
-def test_stencil_avg_pool():
+def test_stencil_avg_pool() raises:
     print("== test_stencil_avg_pool")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -87,13 +86,9 @@ def test_stencil_avg_pool():
     for i in range(Int(output_shape_dims.flattened_length())):
         output.unsafe_ptr()[i] = 0
 
-    @parameter
-    fn map_fn[
-        rank: Int
-    ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
-    ]:
+    def map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](point[0], point[1])
         var upper_bound = IndexList[stencil_rank](
             point[0] + pool_window_h, point[1] + pool_window_w
@@ -101,45 +96,47 @@ def test_stencil_avg_pool():
         return lower_bound, upper_bound
 
     @always_inline
-    @__copy_capture(input, input_shape)
-    @parameter
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) unified {
+        read input_stack,
+        var input_shape,
+    } -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
-        return (
-            input.unsafe_ptr()
+        var r = (
+            input_stack.unsafe_ptr()
             .load[width=simd_width](linear_idx)
             ._refine[dtype]()
         )
 
+        return r
+
     @always_inline
-    @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
-    @parameter
-    fn avg_pool_compute[
-        simd_width: Int
+    def avg_pool_compute[
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) -> SIMD[dtype, simd_width]:
+    ) unified {} -> SIMD[dtype, simd_width]:
         return val + result
 
-    @always_inline
-    @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) unified {} -> Int:
         return 1
 
     @always_inline
-    @__copy_capture(output, output_shape)
-    @parameter
-    fn avg_pool_compute_finalize[
-        simd_width: Int
-    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
+    def avg_pool_compute_finalize[
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
+        var output,
+        var output_shape,
+    }:
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, res)
@@ -151,13 +148,16 @@ def test_stencil_avg_pool():
         stencil_axis,
         simd_with,
         dtype,
-        map_fn[stencil_rank],
+    ](
+        output_shape,
+        input_shape,
+        map_fn,
         dilation_fn,
         load_fn,
         avg_pool_compute_init,
         avg_pool_compute,
         avg_pool_compute_finalize,
-    ](output_shape, input_shape)
+    )
 
     # CHECK: 7.0    8.0     9.0
     # CHECK: 12.0    13.0    14.0
@@ -170,7 +170,7 @@ def test_stencil_avg_pool():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_padded
-def test_stencil_avg_pool_padded():
+def test_stencil_avg_pool_padded() raises:
     print("== test_stencil_avg_pool_padded")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -209,13 +209,9 @@ def test_stencil_avg_pool_padded():
     for i in range(output_shape_dims.flattened_length()):
         output.unsafe_ptr()[i] = 0
 
-    @parameter
-    fn map_fn[
-        rank: Int
-    ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
-    ]:
+    def map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] - pad_h, point[1] - pad_w
         )
@@ -224,48 +220,46 @@ def test_stencil_avg_pool_padded():
         )
         return lower_bound, upper_bound
 
-    @always_inline
-    @__copy_capture(input, input_shape)
-    @parameter
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) unified {
+        read input_stack,
+        var input_shape,
+    } -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
-            input.unsafe_ptr()
+            input_stack.unsafe_ptr()
             .load[width=simd_width](linear_idx)
             ._refine[dtype]()
         )
 
     @always_inline
-    @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
-    @parameter
-    fn avg_pool_compute[
-        simd_width: Int
+    def avg_pool_compute[
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) -> SIMD[dtype, simd_width]:
+    ) unified {} -> SIMD[dtype, simd_width]:
         return val + result
 
-    @always_inline
-    @__copy_capture(output, output_shape)
-    @parameter
-    fn avg_pool_compute_finalize[
-        simd_width: Int
-    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
+    def avg_pool_compute_finalize[
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
+        var output,
+        var output_shape,
+    }:
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, res)
 
-    @always_inline
-    @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) unified {} -> Int:
         return 1
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -275,13 +269,16 @@ def test_stencil_avg_pool_padded():
         stencil_axis,
         simd_with,
         dtype,
-        map_fn[stencil_rank],
+    ](
+        output_shape,
+        input_shape,
+        map_fn,
         dilation_fn,
         load_fn,
         avg_pool_compute_init,
         avg_pool_compute,
         avg_pool_compute_finalize,
-    ](output_shape, input_shape)
+    )
 
     # CHECK: 2.52 3.6 4.8 4.08 3.24
     # CHECK: 4.56 6.4 8.4 7.04 5.52
@@ -296,7 +293,7 @@ def test_stencil_avg_pool_padded():
 
 
 # CHECK-LABEL: test_stencil_avg_pool_stride_2
-def test_stencil_avg_pool_stride_2():
+def test_stencil_avg_pool_stride_2() raises:
     print("== test_stencil_avg_pool_stride_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -333,13 +330,9 @@ def test_stencil_avg_pool_stride_2():
     for i in range(Int(output_shape_dims.flattened_length())):
         output.unsafe_ptr()[i] = 0
 
-    @parameter
-    fn map_fn[
-        rank: Int
-    ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
-    ]:
+    def map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -349,48 +342,46 @@ def test_stencil_avg_pool_stride_2():
         )
         return lower_bound, upper_bound
 
-    @always_inline
-    @__copy_capture(input, input_shape)
-    @parameter
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) unified {
+        read input_stack,
+        var input_shape,
+    } -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
-            input.unsafe_ptr()
+            input_stack.unsafe_ptr()
             .load[width=simd_width](linear_idx)
             ._refine[dtype]()
         )
 
     @always_inline
-    @parameter
-    fn avg_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def avg_pool_compute_init[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     @always_inline
-    @parameter
-    fn avg_pool_compute[
-        simd_width: Int
+    def avg_pool_compute[
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) -> SIMD[dtype, simd_width]:
+    ) unified {} -> SIMD[dtype, simd_width]:
         return val + result
 
-    @always_inline
-    @__copy_capture(output, output_shape)
-    @parameter
-    fn avg_pool_compute_finalize[
-        simd_width: Int
-    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
+    def avg_pool_compute_finalize[
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
+        var output,
+        var output_shape,
+    }:
         var res = val / (pool_window_h * pool_window_w)
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, res)
 
-    @always_inline
-    @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) unified {} -> Int:
         return 1
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -400,13 +391,16 @@ def test_stencil_avg_pool_stride_2():
         stencil_axis,
         simd_with,
         dtype,
-        map_fn[stencil_rank],
+    ](
+        output_shape,
+        input_shape,
+        map_fn,
         dilation_fn,
         load_fn,
         avg_pool_compute_init,
         avg_pool_compute,
         avg_pool_compute_finalize,
-    ](output_shape, input_shape)
+    )
 
     # CHECK: 9.0     11.0    13.0
     # CHECK: 23.0    25.0    27.0
@@ -419,7 +413,7 @@ def test_stencil_avg_pool_stride_2():
 
 
 # CHECK-LABEL: test_stencil_max_pool_dilation_2
-def test_stencil_max_pool_dilation_2():
+def test_stencil_max_pool_dilation_2() raises:
     print("== test_stencil_max_pool_dilation_2")
     comptime rank = 4
     comptime stencil_rank = 2
@@ -460,13 +454,9 @@ def test_stencil_max_pool_dilation_2():
     for i in range(Int(output_shape_dims.flattened_length())):
         output.unsafe_ptr()[i] = 0
 
-    @parameter
-    fn map_fn[
-        rank: Int
-    ](point: IndexList[stencil_rank, ...]) -> Tuple[
-        IndexList[stencil_rank],
-        IndexList[stencil_rank],
-    ]:
+    def map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
         var lower_bound = IndexList[stencil_rank](
             point[0] * stride, point[1] * stride
         )
@@ -476,47 +466,46 @@ def test_stencil_max_pool_dilation_2():
         )
         return lower_bound, upper_bound
 
-    @always_inline
-    @__copy_capture(input, input_shape)
-    @parameter
-    fn load_fn[
+    def load_fn[
         simd_width: Int, dtype: DType
-    ](point: IndexList[rank, ...]) -> SIMD[dtype, simd_width]:
+    ](point: IndexList[rank, ...]) unified {
+        read input_stack,
+        var input_shape,
+    } -> SIMD[dtype, simd_width]:
         var linear_idx = _linear_index(point, input_shape)
         return (
-            input.unsafe_ptr()
+            input_stack.unsafe_ptr()
             .load[width=simd_width](linear_idx)
             ._refine[dtype]()
         )
 
     @always_inline
-    @parameter
-    fn max_pool_compute_init[simd_width: Int]() -> SIMD[dtype, simd_width]:
+    def max_pool_compute_init[
+        simd_width: Int
+    ]() unified {} -> SIMD[dtype, simd_width]:
         return min_or_neg_inf[dtype]()
 
     @always_inline
-    @parameter
-    fn max_pool_compute[
-        simd_width: Int
+    def max_pool_compute[
+        simd_width: SIMDSize
     ](
         point: IndexList[rank, ...],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) -> SIMD[dtype, simd_width]:
+    ) unified {} -> SIMD[dtype, simd_width]:
         return max(val, result)
 
-    @always_inline
-    @__copy_capture(output, output_shape)
-    @parameter
-    fn max_pool_compute_finalize[
-        simd_width: Int
-    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]):
+    def max_pool_compute_finalize[
+        simd_width: SIMDSize
+    ](point: IndexList[rank, ...], val: SIMD[dtype, simd_width]) unified {
+        var output,
+        var output_shape,
+    }:
         var linear_idx = _linear_index(point, output_shape)
         output.unsafe_ptr().store(linear_idx, val)
 
     @always_inline
-    @parameter
-    fn dilation_fn(dim: Int) -> Int:
+    def dilation_fn(dim: Int) unified {} -> Int:
         return dilation
 
     comptime stencil_axis = IndexList[stencil_rank](1, 2)
@@ -526,13 +515,16 @@ def test_stencil_max_pool_dilation_2():
         stencil_axis,
         simd_with,
         dtype,
-        map_fn[stencil_rank],
+    ](
+        output_shape,
+        input_shape,
+        map_fn,
         dilation_fn,
         load_fn,
         max_pool_compute_init,
         max_pool_compute,
         max_pool_compute_finalize,
-    ](output_shape, input_shape)
+    )
 
     # CHECK: 33.0    34.0    35.0
     # CHECK: 40.0    41.0    42.0
@@ -544,5 +536,68 @@ def test_stencil_max_pool_dilation_2():
         print("")
 
 
-def main():
+# CHECK-LABEL: test_stencil_size_0
+def test_stencil_size_0() raises:
+    comptime rank = 4
+    comptime stencil_rank = 2
+
+    # An output shape whose last dimension is 0 means we should do zero work.
+    var output_shape = IndexList[rank](1, 1, 1, 0)
+    var input_shape = IndexList[rank](1, 1, 1, 1)
+
+    def map_fn(
+        point: IndexList[stencil_rank, ...],
+    ) unified {} -> Tuple[IndexList[stencil_rank], IndexList[stencil_rank]]:
+        return IndexList[stencil_rank](0, 0), IndexList[stencil_rank](1, 1)
+
+    def map_strides(dim: Int) unified {} -> Int:
+        return 1
+
+    def load_fn[
+        simd_width: Int, dtype: DType
+    ](point: IndexList[rank, ...]) unified {} -> SIMD[dtype, simd_width]:
+        return 0
+
+    def init_fn[
+        simd_width: Int
+    ]() unified {} -> SIMD[DType.float32, simd_width]:
+        return 0
+
+    def compute_fn[
+        simd_width: SIMDSize
+    ](
+        point: IndexList[rank, ...],
+        a: SIMD[DType.float32, simd_width],
+        b: SIMD[DType.float32, simd_width],
+    ) unified {} -> SIMD[DType.float32, simd_width]:
+        return a + b
+
+    def finalize_fn[
+        simd_width: SIMDSize
+    ](
+        point: IndexList[rank, ...],
+        val: SIMD[DType.float32, simd_width],
+    ) unified {}:
+        pass
+
+    comptime stencil_axis = IndexList[stencil_rank](1, 2)
+    stencil[
+        rank,
+        stencil_rank,
+        stencil_axis,
+        1,
+        DType.float32,
+    ](
+        output_shape,
+        input_shape,
+        map_fn,
+        map_strides,
+        load_fn,
+        init_fn,
+        compute_fn,
+        finalize_fn,
+    )
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

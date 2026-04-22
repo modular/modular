@@ -11,17 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-# Tested on T4 GPU 2 Dec 2025
+from std.gpu.host import DeviceContext
 
 
-from gpu.host import DeviceContext
-
-
-fn kernel():
+def kernel():
     print("Hello from the GPU")
 
 
-def main():
+def main() raises:
     # Launch GPU kernel
     with DeviceContext() as ctx:
         ctx.enqueue_function[kernel, kernel](grid_dim=1, block_dim=1)

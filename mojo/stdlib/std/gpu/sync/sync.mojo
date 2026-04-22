@@ -23,14 +23,14 @@ The synchronization primitives help coordinate execution between threads within
 thread blocks and warps, and manage memory consistency across different memory spaces.
 """
 
-from os import abort
-from os.atomic import Consistency, fence
-from sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
-from sys._assembly import inlined_assembly
-from sys.info import CompilationTarget, _is_amd_cdna
-from sys.param_env import env_get_bool
+from std.os import abort
+from std.atomic import Ordering, fence
+from std.sys import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, llvm_intrinsic
+from std.sys._assembly import inlined_assembly
+from std.sys.info import CompilationTarget, _is_amd_cdna
+from std.sys.defines import get_defined_bool
 
-from gpu.intrinsics import Scope
+from std.gpu.intrinsics import Scope
 
 from .._utils import to_i32, to_llvm_shared_mem_ptr
 
@@ -38,7 +38,7 @@ from .._utils import to_i32, to_llvm_shared_mem_ptr
 # barrier
 # ===-----------------------------------------------------------------------===#
 
-comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = env_get_bool[
+comptime _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM = get_defined_bool[
     "USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM", False
 ]()
 
@@ -47,7 +47,7 @@ comptime MaxHardwareBarriers = 16
 
 
 @always_inline("nodebug")
-fn named_barrier[
+def named_barrier[
     num_threads: Int32,
 ](id: Int32 = 0):
     """Performs a named synchronization barrier at the block level.
@@ -74,18 +74,17 @@ fn named_barrier[
         - The number of threads value must be a multiple of the warp size.
     """
 
-    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    assert id < MaxHardwareBarriers, "barrier id should not exceed 16"
     comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
     _ = __mlir_op.`nvvm.barrier`[
-        _properties = __mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
-        _type = __mlir_type.i32,
+        _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1, 1, 0>}`,
     ](to_i32(id), to_i32(num_threads))
 
 
 @always_inline("nodebug")
-fn named_barrier_arrive[
+def named_barrier_arrive[
     num_threads: Int32,
 ](id: Int32 = 0):
     """Arrives at a named synchronization barrier at the block level.
@@ -106,7 +105,7 @@ fn named_barrier_arrive[
         - The barrier ID must not exceed 16.
         - All threads participating in the barrier must specify the same num_threads value.
     """
-    debug_assert(id < MaxHardwareBarriers, "barrier id should not exceed 16")
+    assert id < MaxHardwareBarriers, "barrier id should not exceed 16"
     comptime assert (
         is_nvidia_gpu()
     ), "named barrier is only supported by NVIDIA GPUs"
@@ -114,7 +113,7 @@ fn named_barrier_arrive[
 
 
 @always_inline("nodebug")
-fn barrier():
+def barrier():
     """Performs a synchronization barrier at the block level.
 
     This is equivalent to __syncthreads() in CUDA. All threads in a thread block must
@@ -122,28 +121,29 @@ fn barrier():
     memory operations before the barrier are visible to all threads after the barrier.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.barrier0`()
     elif _USE_EXPERIMENTAL_AMD_BLOCK_SYNC_LDS_WITHOUT_SYNC_VMEM:
         comptime assert is_amd_gpu()
         llvm_intrinsic["llvm.amdgcn.s.waitcnt", NoneType](Int32(0xC07F))
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
     elif is_amd_gpu():
-        fence[Consistency.RELEASE, scope="workgroup"]()
+        fence[Ordering.RELEASE, scope="workgroup"]()
         llvm_intrinsic["llvm.amdgcn.s.barrier", NoneType]()
-        fence[Consistency.ACQUIRE, scope="workgroup"]()
+        fence[Ordering.ACQUIRE, scope="workgroup"]()
     elif is_apple_gpu():
         # threadgroup_barrier(mem_flags::mem_threadgroup)
         llvm_intrinsic["llvm.air.wg.barrier", NoneType](Int32(2), Int32(1))
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
 @fieldwise_init
-struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
+struct AMDScheduleBarrierMask(
+    Equatable, Intable, TrivialRegisterPassable, Writable
+):
     """Represents different instruction scheduling masks for AMDGPU scheduling instructions.
 
     These masks control which types of instructions can be reordered across a barrier for
@@ -190,7 +190,7 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
     comptime TRANS = Self(1 << 10)
     """Allows reordering of transcendental instructions (sin, cos, exp, etc)."""
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Initializes an `AMDScheduleBarrierMask` from an integer value.
 
         This implicit constructor allows creating a barrier mask directly from an integer,
@@ -201,7 +201,7 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
         """
         self._value = Int32(value)
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compares two `AMDScheduleBarrierMask` instances for equality.
 
         Args:
@@ -212,42 +212,42 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
         """
         return self._value == other._value
 
-    fn __str__(self) -> String:
-        """Returns a string representation of the `AMDScheduleBarrierMask`.
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the `AMDScheduleBarrierMask`.
 
         Converts the mask to a human-readable string based on its value.
 
-        Returns:
-            A string representation of the mask, or aborts if the value is invalid.
+        Args:
+            writer: The object to write to.
         """
         if self == Self.NONE:
-            return "NONE"
+            return writer.write_string("NONE")
         elif self == Self.ALL_ALU:
-            return "ALL_ALU"
+            return writer.write_string("ALL_ALU")
         elif self == Self.VALU:
-            return "VALU"
+            return writer.write_string("VALU")
         elif self == Self.SALU:
-            return "SALU"
+            return writer.write_string("SALU")
         elif self == Self.MFMA:
-            return "MFMA"
+            return writer.write_string("MFMA")
         elif self == Self.ALL_VMEM:
-            return "ALL_VMEM"
+            return writer.write_string("ALL_VMEM")
         elif self == Self.VMEM_READ:
-            return "VMEM_READ"
+            return writer.write_string("VMEM_READ")
         elif self == Self.VMEM_WRITE:
-            return "VMEM_WRITE"
+            return writer.write_string("VMEM_WRITE")
         elif self == Self.ALL_DS:
-            return "ALL_DS"
+            return writer.write_string("ALL_DS")
         elif self == Self.DS_READ:
-            return "DS_READ"
+            return writer.write_string("DS_READ")
         elif self == Self.DS_WRITE:
-            return "DS_WRITE"
+            return writer.write_string("DS_WRITE")
         elif self == Self.TRANS:
-            return "TRANS"
+            return writer.write_string("TRANS")
         else:
             abort("invalid AMDScheduleBarrierMask value")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         """Converts the `AMDScheduleBarrierMask` to an integer.
 
         Returns:
@@ -257,7 +257,7 @@ struct AMDScheduleBarrierMask(Equatable, Intable, TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn schedule_barrier(
+def schedule_barrier(
     mask: AMDScheduleBarrierMask = AMDScheduleBarrierMask.NONE,
 ):
     """Controls instruction scheduling across a barrier point in AMD GPU code.
@@ -277,15 +277,14 @@ fn schedule_barrier(
         raise a compile time error.
     """
 
-    @parameter
-    if is_amd_gpu():
-        llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
-    else:
-        constrained[False, "schedule_barrier is only supported on AMDGPU."]()
+    comptime assert (
+        is_amd_gpu()
+    ), "schedule_barrier is only supported on AMDGPU."
+    llvm_intrinsic["llvm.amdgcn.sched.barrier", NoneType](Int32(Int(mask)))
 
 
 @always_inline("nodebug")
-fn schedule_group_barrier(
+def schedule_group_barrier(
     mask: AMDScheduleBarrierMask, size: Int32, sync_id: Int32
 ):
     """Controls instruction scheduling across a barrier point in AMD GPU code by creating schedule groups.
@@ -306,15 +305,12 @@ fn schedule_group_barrier(
         The sync_id parameter allows creating multiple schedule groups that can be ordered relative to each other.
     """
 
-    @parameter
-    if is_amd_gpu():
-        llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
-            Int32(Int(mask)), size, sync_id
-        )
-    else:
-        constrained[
-            False, "schedule_group_barrier is only supported on AMDGPU."
-        ]()
+    comptime assert (
+        is_amd_gpu()
+    ), "schedule_group_barrier is only supported on AMDGPU."
+    llvm_intrinsic["llvm.amdgcn.sched.group.barrier", NoneType](
+        Int32(Int(mask)), size, sync_id
+    )
 
 
 # reference for waitcnt_arg and related synchronization utilities:
@@ -335,41 +331,38 @@ struct _WaitCountArg:
     comptime MAX_LGKM_CNT: UInt32 = 0b1111
 
     @staticmethod
-    fn from_vmcnt(cnt: UInt32) -> UInt32:
+    def from_vmcnt(cnt: UInt32) -> UInt32:
         comptime assert (
             _is_amd_cdna()
         ), "from_vmcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_VM_CNT,
-            "cnt should be less than or equal to MAX_VM_CNT = 63",
-        )
+        assert (
+            cnt <= Self.MAX_VM_CNT
+        ), "cnt should be less than or equal to MAX_VM_CNT = 63"
         return Self.MAX & ((cnt & 0b1111) | ((cnt & 0b110000) << 10))
 
     @staticmethod
-    fn from_expcnt(cnt: UInt32) -> UInt32:
+    def from_expcnt(cnt: UInt32) -> UInt32:
         comptime assert (
             _is_amd_cdna()
         ), "from_expcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_EXP_CNT,
-            "cnt should be less than or equal to MAX_EXP_CNT = 7",
-        )
+        assert (
+            cnt <= Self.MAX_EXP_CNT
+        ), "cnt should be less than or equal to MAX_EXP_CNT = 7"
         return Self.MAX & (cnt << 4)
 
     @staticmethod
-    fn from_lgkmcnt(cnt: UInt32) -> UInt32:
+    def from_lgkmcnt(cnt: UInt32) -> UInt32:
         comptime assert (
             _is_amd_cdna()
         ), "from_lgkmcnt is only supported on AMD CDNA GPUs"
-        debug_assert(
-            cnt <= Self.MAX_LGKM_CNT,
-            "cnt should be less than or equal to MAX_LGKM_CNT = 15",
-        )
+        assert (
+            cnt <= Self.MAX_LGKM_CNT
+        ), "cnt should be less than or equal to MAX_LGKM_CNT = 15"
         return Self.MAX & (cnt << 8)
 
 
 @always_inline
-fn s_waitcnt[
+def s_waitcnt[
     *,
     vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
     expcnt: UInt32 = _WaitCountArg.MAX_EXP_CNT,
@@ -406,7 +399,7 @@ fn s_waitcnt[
 
 
 @always_inline
-fn s_waitcnt_barrier[
+def s_waitcnt_barrier[
     *,
     vmcnt: UInt32 = _WaitCountArg.MAX_VM_CNT,
     expcnt: UInt32 = _WaitCountArg.MAX_EXP_CNT,
@@ -441,7 +434,7 @@ fn s_waitcnt_barrier[
 
 
 @always_inline("nodebug")
-fn syncwarp(mask: Int = -1):
+def syncwarp(mask: Int = -1):
     """Synchronizes threads within a warp using a barrier.
 
     This function creates a synchronization point where threads in a warp must wait until all
@@ -465,10 +458,11 @@ fn syncwarp(mask: Int = -1):
         - Threads not participating in the sync must still execute the instruction.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.bar.warp.sync`(
-            __mlir_op.`index.casts`[_type = __mlir_type.i32](mask._mlir_value)
+            __mlir_op.`index.casts`[_type=__mlir_type.i32](
+                mask._int_mlir_index()
+            )
         )
     elif is_amd_gpu():
         # In AMD GPU this is a nop (everything executed in lock-step).
@@ -480,8 +474,8 @@ fn syncwarp(mask: Int = -1):
         )
         return
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name()
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
         ]()
 
 
@@ -491,9 +485,9 @@ fn syncwarp(mask: Int = -1):
 
 
 @always_inline("nodebug")
-fn _mbarrier_impl[
+def _mbarrier_impl[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[mut=True, type, address_space=address_space]):
+](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
     """Internal implementation for making a memory barrier track async operations.
 
     This is an internal helper function that implements the core memory barrier tracking
@@ -503,8 +497,7 @@ fn _mbarrier_impl[
         address: Pointer to the memory barrier object location.
     """
 
-    @parameter
-    if address_space == AddressSpace.SHARED:
+    comptime if address_space == AddressSpace.SHARED:
         llvm_intrinsic["llvm.nvvm.cp.async.mbarrier.arrive.shared", NoneType](
             address
         )
@@ -516,13 +509,13 @@ fn _mbarrier_impl[
             address.address_space_cast[AddressSpace.GENERIC]().address
         )
     else:
-        constrained[False, "invalid address space"]()
+        comptime assert False, "invalid address space"
 
 
 @always_inline("nodebug")
-fn async_copy_arrive[
+def async_copy_arrive[
     type: AnyType, address_space: AddressSpace
-](address: UnsafePointer[mut=True, type, address_space=address_space]):
+](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
     """Makes a memory barrier track all prior async copy operations from this thread.
 
     This function ensures that all previously initiated asynchronous copy operations
@@ -537,22 +530,21 @@ fn async_copy_arrive[
         address: Pointer to the memory barrier object location.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         _mbarrier_impl(address)
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="async_copy_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline("nodebug")
-fn mbarrier_init[
+def mbarrier_init[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
-        mut=True, type, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ],
     num_threads: Int32,
 ):
@@ -569,24 +561,23 @@ fn mbarrier_init[
         num_threads: Number of threads that will synchronize on this barrier.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic["llvm.nvvm.mbarrier.init.shared", NoneType](
             shared_mem, num_threads
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="mbarrier_init() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline("nodebug")
-fn mbarrier_arrive[
+def mbarrier_arrive[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
-        mut=True, type, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ]
 ) -> Int:
     """Signal thread arrival at a shared memory barrier.
@@ -604,25 +595,23 @@ fn mbarrier_arrive[
         An integer representing the current state of the memory barrier.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic["llvm.nvvm.mbarrier.arrive.shared", Int](
             shared_mem
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            Int,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="mbarrier_arrive() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline("nodebug")
-fn mbarrier_test_wait[
+def mbarrier_test_wait[
     type: AnyType
 ](
     shared_mem: UnsafePointer[
-        mut=True, type, address_space = AddressSpace.SHARED
+        mut=True, type, _, address_space=AddressSpace.SHARED
     ],
     state: Int,
 ) -> Bool:
@@ -642,24 +631,22 @@ fn mbarrier_test_wait[
         True if all threads have arrived, False otherwise.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         return llvm_intrinsic["llvm.nvvm.mbarrier.test.wait.shared", Bool](
             shared_mem, state
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            Bool,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="mbarrier_test_wair() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline("nodebug")
-fn mbarrier_arrive_expect_tx_shared[
+def mbarrier_arrive_expect_tx_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: UnsafePointer[mut=True, type, address_space = AddressSpace.SHARED],
+    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     tx_count: Int32,
 ):
     """Configure a shared memory barrier to expect additional async transactions.
@@ -675,25 +662,24 @@ fn mbarrier_arrive_expect_tx_shared[
         tx_count: Number of expected transactions to track.
     """
 
-    @parameter
-    if is_nvidia_gpu():
-        _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type = __mlir_type.i64](
+    comptime if is_nvidia_gpu():
+        _ = __mlir_op.`nvvm.mbarrier.arrive.expect_tx`[_type=__mlir_type.i64](
             to_llvm_shared_mem_ptr(addr), to_i32(tx_count)
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_shared() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline("nodebug")
-fn mbarrier_arrive_expect_tx_relaxed[
+def mbarrier_arrive_expect_tx_relaxed[
     type: AnyType,  # The type of the memory barrier
     scope: Scope = Scope.BLOCK,
     space: Scope = Scope.BLOCK,
 ](
-    addr: UnsafePointer[mut=True, type, address_space = AddressSpace.SHARED],
+    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     tx_count: Int32,
 ) -> UInt64:
     """Configure a shared memory barrier to expect additional async transactions.
@@ -724,15 +710,13 @@ fn mbarrier_arrive_expect_tx_relaxed[
         " cluster or block/CTA scope."
     )
 
-    @parameter
-    if space == Scope.CLUSTER:
+    comptime if space == Scope.CLUSTER:
         comptime assert scope == Scope.CLUSTER, (
             "mbarrier_arrive_expect_tx_relaxed scope and space must be the"
             " same if space is cluster."
         )
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         comptime asm = (
             """mbarrier.arrive.expect_tx.relaxed."""
             + scope.mnemonic()
@@ -747,19 +731,17 @@ fn mbarrier_arrive_expect_tx_relaxed[
             has_side_effect=True,
         ](addr, tx_count)
     else:
-        return CompilationTarget.unsupported_target_error[
-            UInt64,
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="mbarrier_arrive_expect_tx_relaxed() is only supported when targeting NVIDIA GPUs",
         ]()
-    return 0
 
 
 @always_inline("nodebug")
-fn mbarrier_try_wait_parity_shared[
+def mbarrier_try_wait_parity_shared[
     type: AnyType  # The type of the memory barrier
 ](
-    addr: UnsafePointer[mut=True, type, address_space = AddressSpace.SHARED],
+    addr: UnsafePointer[mut=True, type, _, address_space=AddressSpace.SHARED],
     phase: Int32,
     ticks: Int32,
 ):
@@ -777,22 +759,25 @@ fn mbarrier_try_wait_parity_shared[
         ticks: Timeout period in nanoseconds.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.mbarrier.try_wait.parity`(
             to_llvm_shared_mem_ptr(addr), to_i32(phase), to_i32(ticks)
         )
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="mbarrier_try_wait_parity_shared() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline("nodebug")
-fn umma_arrive_leader_cta[
+def umma_arrive_leader_cta[
     type: AnyType
-](mbar_ptr: UnsafePointer[mut=True, type, address_space = AddressSpace.SHARED]):
+](
+    mbar_ptr: UnsafePointer[
+        mut=True, type, _, address_space=AddressSpace.SHARED
+    ]
+):
     """Signal arrival at the barrier to the leader CTA of the pair.
 
     This function signals arrival at the barrier to the leader CTA of the pair.
@@ -813,8 +798,39 @@ fn umma_arrive_leader_cta[
     ](Int32(Int(mbar_ptr)) & 0xFEFFFFFF)
 
 
+@always_inline("nodebug")
+def umma_arrive_peer_cta[
+    type: AnyType
+](
+    mbar_ptr: UnsafePointer[
+        mut=True, type, _, address_space=AddressSpace.SHARED
+    ]
+):
+    """Signal arrival at the barrier on the peer CTA of the pair.
+
+    This is the mirror of `umma_arrive_leader_cta`. Where the leader variant
+    clears bit 24 of the SMEM address to target the leader CTA's barrier,
+    this function sets bit 24 to target the peer CTA's barrier within the
+    same cluster. Used when the leader CTA needs to signal a CTA-private
+    barrier on its partner.
+
+    Parameters:
+        type: The type of the memory barrier.
+
+    Args:
+        mbar_ptr: Pointer to the shared memory barrier.
+    """
+
+    inlined_assembly[
+        "mbarrier.arrive.shared::cluster.b64 _, [$0];",
+        NoneType,
+        constraints="r",
+        has_side_effect=True,
+    ](Int32(Int(mbar_ptr)) | 0x01000000)
+
+
 @always_inline
-fn cp_async_bulk_commit_group():
+def cp_async_bulk_commit_group():
     """Commits all prior initiated but uncommitted cp.async.bulk instructions into a cp.async.bulk-group.
 
     This function commits all previously initiated but uncommitted cp.async.bulk instructions into a
@@ -829,18 +845,17 @@ fn cp_async_bulk_commit_group():
         non-NVIDIA GPUs will result in a compile time error.
     """
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         __mlir_op.`nvvm.cp.async.bulk.commit.group`[_type=None]()
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="cp_async_bulk_commit_group() is only supported when targeting NVIDIA GPUs",
         ]()
 
 
 @always_inline
-fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
+def cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
     """Waits for completion of asynchronous bulk memory transfer groups.
 
     This function causes the executing thread to wait until a specified number of the most recent
@@ -859,7 +874,7 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
 
     Example:
         ```mojo
-        from gpu.sync.sync import cp_async_bulk_wait_group
+        from std.gpu.sync.sync import cp_async_bulk_wait_group
 
         # Wait until at most 2 async groups are pending
         cp_async_bulk_wait_group[2]()
@@ -870,21 +885,20 @@ fn cp_async_bulk_wait_group[n: Int32, read: Bool = True]():
     """
 
     @parameter
-    fn get_asm() -> String:
+    def get_asm() -> String:
         comptime base = "llvm.nvvm.cp.async.bulk.wait.group"
         if read:
             return base + ".read"
         return base
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         llvm_intrinsic[
             get_asm(),
             NoneType,
         ](n)
 
     else:
-        return CompilationTarget.unsupported_target_error[
-            operation = __get_current_function_name(),
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name(),
             note="cp_async_bulk_wait_group() is only supported when targeting NVIDIA GPUs",
         ]()

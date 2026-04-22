@@ -11,21 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from math import inf, isnan, log, nan, sqrt
-from sys import simd_width_of
+from std.collections import Optional
+from std.math import inf, isnan, log, nan, sqrt
+from std.sys import simd_width_of
 
-from algorithm import elementwise, mean, sum, vectorize
-from algorithm.functional import unswitch
+from std.algorithm import elementwise, mean, sum, vectorize
+from std.algorithm.functional import unswitch
 
-from utils import IndexList
+from std.utils import IndexList
 
 # ===----------------------------------------------------------------------=== #
 # kl_div
 # ===----------------------------------------------------------------------=== #
 
 
-fn kl_div(
+def kl_div(
     x: SIMD, y: type_of(x)
 ) -> type_of(x) where x.dtype.is_floating_point():
     """Elementwise function for computing Kullback-Leibler divergence.
@@ -48,7 +48,7 @@ fn kl_div(
     )
 
 
-fn kl_div[
+def kl_div[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -57,7 +57,7 @@ fn kl_div[
     len: Int,
 ) raises where dtype.is_floating_point():
     @parameter
-    fn kl_div_elementwise[
+    def kl_div_elementwise[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -71,7 +71,7 @@ fn kl_div[
     elementwise[kl_div_elementwise, simd_width_of[dtype]()](len)
 
 
-fn kl_div[
+def kl_div[
     dtype: DType, //, out_type: DType = DType.float64
 ](
     x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -84,15 +84,14 @@ fn kl_div[
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    fn kl_div_elementwise[simd_width: Int](idx: Int) unified {mut}:
+    def kl_div_elementwise[simd_width: Int](idx: Int) unified {x, y, mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
         var kl = kl_div(xi, yi)
 
         # TODO: should use VDPBF16PS when applicable
         # (i.e., host has avx512_bf16, type = bf16, out_type = float32)
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             accum_scalar += kl[0]
         else:
             accum_simd += rebind[type_of(accum_simd)](kl)
@@ -107,7 +106,7 @@ fn kl_div[
 # ===----------------------------------------------------------------------=== #
 
 
-fn correlation[
+def correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
     u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -132,15 +131,14 @@ fn correlation[
     """
     var umu = Scalar[out_type]()
     var vmu = Scalar[out_type]()
-    var w_val = UnsafePointer[u.type, MutAnyOrigin]()
+    var w_list = List[Scalar[dtype]]()
     if w:
-        # TODO: this is a memory leak and needs to be freed
-        w_val = alloc[Scalar[dtype]](len)
-        _div(w_val, w.value(), _sum(w.value(), len), len)
+        w_list = List[Scalar[dtype]](capacity=len)
+        _div(w_list.unsafe_ptr(), w.value(), _sum(w.value(), len), len)
     if centered:
         if w:
-            umu = _dot[out_type=out_type](u, w_val, len)
-            vmu = _dot[out_type=out_type](v, w_val, len)
+            umu = _dot[out_type=out_type](u, w_list.unsafe_ptr(), len)
+            vmu = _dot[out_type=out_type](v, w_list.unsafe_ptr(), len)
         else:
             umu = _mean(u, len).cast[out_type]()
             vmu = _mean(v, len).cast[out_type]()
@@ -154,16 +152,17 @@ fn correlation[
     var uu_simd = SIMD[out_type, simd_width]()
     var vv_simd = SIMD[out_type, simd_width]()
 
+    var w_val = w_list.unsafe_ptr()
+
     @parameter
-    fn accumulate[weighted: Bool]():
-        fn apply_wfn[simd_width: Int](idx: Int) unified {mut}:
+    def accumulate[weighted: Bool]():
+        def apply_wfn[simd_width: Int](idx: Int) unified {u, v, mut}:
             var ui = u.load[width=simd_width](idx).cast[out_type]() - umu
             var vi = v.load[width=simd_width](idx).cast[out_type]() - vmu
             var uw = ui
             var vw = vi
 
-            @parameter
-            if weighted:
+            comptime if weighted:
                 var wi = w_val.load[width=simd_width](idx).cast[out_type]()
                 uw *= wi
                 vw *= wi
@@ -172,8 +171,7 @@ fn correlation[
             var uuw = ui * uw
             var vvw = vi * vw
 
-            @parameter
-            if simd_width == 1:
+            comptime if simd_width == 1:
                 uv += uvw[0]
                 uu += uuw[0]
                 vv += vvw[0]
@@ -189,13 +187,11 @@ fn correlation[
     uv += uv_simd.reduce_add()
     uu += uu_simd.reduce_add()
     vv += vv_simd.reduce_add()
-    if w:
-        w_val.free()
 
     return (uv / sqrt(uu * vv)).clamp(-1, 1)
 
 
-fn uncentered_unweighted_correlation[
+def uncentered_unweighted_correlation[
     dtype: DType, //, out_type: DType = dtype
 ](
     u: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
@@ -229,7 +225,7 @@ fn uncentered_unweighted_correlation[
 # ===----------------------------------------------------------------------=== #
 
 
-fn cosine[
+def cosine[
     dtype: DType,
     //,
 ](
@@ -250,12 +246,12 @@ fn cosine[
     The cosine distance is also referred to as 'uncentered correlation',
     or 'reflective correlation'.
     """
-    return 1 - uncentered_unweighted_correlation[out_type = DType.float64](
+    return 1 - uncentered_unweighted_correlation[out_type=DType.float64](
         u, v, len
     )
 
 
-fn relative_difference[
+def relative_difference[
     dtype: DType,
     //,
 ](
@@ -287,7 +283,7 @@ fn relative_difference[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _sqrt[
+def _sqrt[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -295,7 +291,7 @@ fn _sqrt[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[
+    def apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -308,7 +304,7 @@ fn _sqrt[
     elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
-fn _mul[
+def _mul[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -317,7 +313,7 @@ fn _mul[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[
+    def apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -331,7 +327,7 @@ fn _mul[
     elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
-fn _div[
+def _div[
     dtype: DType, //
 ](
     output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -340,7 +336,7 @@ fn _div[
     len: Int,
 ) raises:
     @parameter
-    fn apply_fn[
+    def apply_fn[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx: IndexList[rank]):
         output.store(
@@ -352,7 +348,7 @@ fn _div[
     elementwise[apply_fn, simd_width_of[dtype]()](len)
 
 
-fn _sum[
+def _sum[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
     dtype
@@ -360,7 +356,7 @@ fn _sum[
     return sum(Span[Scalar[dtype]](ptr=src, length=len))
 
 
-fn _mean[
+def _mean[
     dtype: DType, //
 ](src: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], len: Int) raises -> Scalar[
     dtype
@@ -368,7 +364,7 @@ fn _mean[
     return mean(Span[Scalar[dtype]](ptr=src, length=len))
 
 
-fn _dot[
+def _dot[
     dtype: DType, //, out_type: DType = dtype
 ](
     x: UnsafePointer[Scalar[dtype], ImmutAnyOrigin], y: type_of(x), len: Int
@@ -379,14 +375,13 @@ fn _dot[
     var accum_simd = SIMD[out_type, simd_width](0)
     var accum_scalar = Scalar[out_type](0)
 
-    fn apply_fn[simd_width: Int](idx: Int) unified {mut}:
+    def apply_fn[simd_width: Int](idx: Int) unified {x, y, mut}:
         var xi = x.load[width=simd_width](idx).cast[out_type]()
         var yi = y.load[width=simd_width](idx).cast[out_type]()
 
         # TODO: should use VDPBF16PS when applicable
         # (i.e., host has avx512_bf16, type = bf16, out_type = float32)
-        @parameter
-        if simd_width == 1:
+        comptime if simd_width == 1:
             accum_scalar += xi[0] * yi[0]
         else:
             accum_simd += rebind[type_of(accum_simd)](xi * yi)

@@ -15,23 +15,19 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from collections import OptionalReg
+from std.collections import OptionalReg
 
-import time
-from io.io import _printf
-from math import sqrt
-from os.path import dirname
-from pathlib import Path
-from random import randint, randn, seed
-from sys import align_of, argv, simd_width_of, size_of
-from sys.param_env import env_get_string
+import std.time
+from std.io.io import _printf
+from std.math import sqrt
+from std.random import randint, randn, seed
+from std.sys import argv, size_of
 
-from gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
-from layout import UNKNOWN_VALUE, Layout, LayoutTensor
-from layout.runtime_layout import RuntimeLayout
-from memory import UnsafePointer
+from std.gpu.host import DeviceBuffer, DeviceContext
+from layout import TileTensor, Idx
+from layout.tile_layout import row_major
+from std.memory import UnsafePointer
 from shmem import *
-from shmem._mpi import MPI_Finalize
 from shmem.ep_comm import (
     BF16TokenFormat,
     EPLocalSyncCounters,
@@ -40,19 +36,17 @@ from shmem.ep_comm import (
     dispatch_wait_kernel,
     dispatch_async_kernel,
 )
-from testing import assert_equal
-
-from utils import IndexList
+from std.testing import assert_equal
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark":
             return True
     return False
 
 
-fn is_pressure_test() -> Bool:
+def is_pressure_test() -> Bool:
     for arg in argv():
         if arg == "--pressure-test":
             return True
@@ -60,26 +54,26 @@ fn is_pressure_test() -> Bool:
 
 
 @always_inline
-fn welford_update(
+def welford_update(
     mut mean: Float64, mut m2: Float64, count: Int, new_value: Float64
 ):
     var delta: Float64
     var delta2: Float64
     delta = new_value - mean
-    mean += delta / count
+    mean += delta / Float64(count)
     delta2 = new_value - mean
     m2 += delta * delta2
 
 
-fn legalize_topk_ids[
+def legalize_topk_ids[
     n_experts: Int, top_k: Int
-](topk_ids: UnsafePointer[mut=True, Int32], n_tokens: Int):
+](topk_ids: UnsafePointer[mut=True, Int32, _], n_tokens: Int):
     for tok_id in range(n_tokens):
         var topk_ids_for_token = topk_ids + tok_id * top_k
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        fn is_duplicate() -> Int:
+        def is_duplicate() unified {read} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -92,7 +86,7 @@ fn legalize_topk_ids[
             duplicate_idx = is_duplicate()
 
 
-fn test_combine[
+def test_combine[
     hidden_size: Int,
     top_k: Int,
     n_experts: Int,
@@ -100,17 +94,17 @@ fn test_combine[
     n_tokens_per_rank: Int,
 ](ctx: DeviceContext, my_rank: Int) raises:
     comptime input_type = DType.bfloat16
-    comptime gpu_target = get_gpu_target()
-    comptime gpu_simd_width = simd_width_of[DType.uint8, target=gpu_target]()
-    comptime gpu_alignment = align_of[
-        SIMD[DType.uint8, gpu_simd_width], target=gpu_target
-    ]()
+    comptime n_local_experts = n_experts // n_ranks
+    comptime max_recv_num_tokens = n_experts * n_tokens_per_rank
+
+    comptime output_tt_layout = row_major(
+        (Idx[max_recv_num_tokens](), Idx[hidden_size]())
+    )
     comptime token_fmt_type = BF16TokenFormat[
-        output_layout = Layout(), hidden_size, top_k, gpu_alignment
+        output_layout=type_of(output_tt_layout), hidden_size, top_k
     ]
     comptime msg_bytes = token_fmt_type.msg_size()
     comptime combine_msg_bytes = size_of[input_type]() * hidden_size
-    comptime n_local_experts = n_experts // n_ranks
 
     if my_rank == 0:
         print(
@@ -129,12 +123,12 @@ fn test_combine[
         )
 
     var send_buf = shmem_malloc[DType.uint8](
-        UInt(top_k * n_tokens_per_rank * msg_bytes)
+        top_k * n_tokens_per_rank * msg_bytes
     )
     var recv_buf = shmem_malloc[DType.uint8](
-        UInt(n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes)
+        n_local_experts * n_ranks * n_tokens_per_rank * msg_bytes
     )
-    var recv_count = shmem_malloc[DType.uint64](UInt(n_local_experts * n_ranks))
+    var recv_count = shmem_malloc[DType.uint64](n_local_experts * n_ranks)
     var recv_count_buf = DeviceBuffer(
         ctx, recv_count, n_local_experts * n_ranks, owning=False
     )
@@ -173,78 +167,41 @@ fn test_combine[
         n_tokens_per_rank * top_k * hidden_size
     )
 
-    comptime topk_ids_layout = Layout.row_major(UNKNOWN_VALUE, top_k)
-    comptime input_tokens_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    comptime output_layout = Layout.row_major(
-        n_tokens_per_rank * n_ranks * n_local_experts, hidden_size
+    var topk_ids_tensor = TileTensor[origin=ImmutAnyOrigin](
+        device_topk_buf, row_major(Idx(n_tokens_per_rank), Idx[top_k]())
     )
-    comptime row_offsets_layout = Layout.row_major(n_local_experts + 1)
-    comptime expert_ids_layout = Layout.row_major(n_local_experts)
-    comptime src_token_info_layout = Layout.row_major(
-        n_tokens_per_rank * n_ranks * n_local_experts, 2
-    )
-    comptime output_2_layout = Layout.row_major(
-        UNKNOWN_VALUE, top_k, hidden_size
-    )
-
-    var topk_ids_tensor = LayoutTensor[DType.int32, topk_ids_layout](
-        device_topk_buf,
-        RuntimeLayout[topk_ids_layout].row_major(
-            IndexList[2](n_tokens_per_rank, top_k)
-        ),
-    )
-    var input_tokens_tensor = LayoutTensor[input_type, input_tokens_layout](
+    var input_tokens_tensor = TileTensor[origin=ImmutAnyOrigin](
         device_input_buf,
-        RuntimeLayout[input_tokens_layout].row_major(
-            IndexList[2](n_tokens_per_rank, hidden_size)
-        ),
+        row_major(Idx(n_tokens_per_rank), Idx[hidden_size]()),
     )
-    var output_tensor = LayoutTensor[input_type, output_layout](
+    var output_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_buf,
-        RuntimeLayout[output_layout].row_major(
-            IndexList[2](
-                n_tokens_per_rank * n_ranks * n_local_experts, hidden_size
-            )
-        ),
+        row_major(Idx[max_recv_num_tokens](), Idx[hidden_size]()),
     )
-    var row_offsets_tensor = LayoutTensor[DType.uint32, row_offsets_layout](
-        device_row_offsets_buf,
-        RuntimeLayout[row_offsets_layout].row_major(
-            IndexList[1](n_local_experts + 1)
-        ),
+    var row_offsets_tensor = TileTensor[origin=MutAnyOrigin](
+        device_row_offsets_buf, row_major[n_local_experts + 1]()
     )
-    var expert_ids_tensor = LayoutTensor[DType.int32, expert_ids_layout](
-        device_expert_ids_buf,
-        RuntimeLayout[expert_ids_layout].row_major(
-            IndexList[1](n_local_experts)
-        ),
+    var expert_ids_tensor = TileTensor[origin=MutAnyOrigin](
+        device_expert_ids_buf, row_major[n_local_experts]()
     )
-    var src_token_info_tensor = LayoutTensor[
-        DType.int32, src_token_info_layout
-    ](
+    var src_token_info_tensor = TileTensor[origin=MutAnyOrigin](
         device_src_token_info_buf,
-        RuntimeLayout[src_token_info_layout].row_major(
-            IndexList[2](n_tokens_per_rank * n_ranks * n_local_experts, 2)
-        ),
+        row_major(Idx[max_recv_num_tokens](), Idx[2]()),
     )
-    var output_2_tensor = LayoutTensor[input_type, output_2_layout](
+    var output_2_tensor = TileTensor[origin=MutAnyOrigin](
         device_output_2_buf,
-        RuntimeLayout[output_2_layout].row_major(
-            IndexList[3](n_tokens_per_rank, top_k, hidden_size)
-        ),
+        row_major(Idx(n_tokens_per_rank), Idx[top_k](), Idx[hidden_size]()),
     )
 
-    var format_handler = BF16TokenFormat[hidden_size, top_k, gpu_alignment](
-        output_tensor.as_any_origin()
-    )
+    var format_handler = token_fmt_type(output_tensor)
 
     comptime hw_info = ctx.default_device_info
 
     comptime dispatch_async = dispatch_async_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        input_tokens_layout,
-        topk_ids_layout,
+        input_tokens_tensor.LayoutType,
+        topk_ids_tensor.LayoutType,
         hw_info.sm_count,
         n_experts,
         n_ranks,
@@ -257,22 +214,24 @@ fn test_combine[
 
     comptime dispatch_wait = dispatch_wait_kernel[
         hw_info.max_thread_block_size,
-        row_offsets_layout,
-        expert_ids_layout,
-        src_token_info_layout,
+        row_offsets_tensor.LayoutType,
+        expert_ids_tensor.LayoutType,
+        src_token_info_tensor.LayoutType,
         hw_info.sm_count,
         n_experts,
         n_ranks,
         n_tokens_per_rank,
         type_of(format_handler),
     ]
-    var func_dispatch_wait = ctx.compile_function_experimental[dispatch_wait]()
+    var func_dispatch_wait = ctx.compile_function[
+        dispatch_wait, dispatch_wait
+    ]()
 
     comptime combine_async = combine_async_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_layout,
-        src_token_info_layout,
+        output_tensor.LayoutType,
+        src_token_info_tensor.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -287,7 +246,7 @@ fn test_combine[
     comptime combine_wait = combine_wait_kernel[
         input_type,
         hw_info.max_thread_block_size,
-        output_2_layout,
+        output_2_tensor.LayoutType,
         hw_info.sm_count,
         top_k,
         n_experts,
@@ -309,16 +268,14 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_full_dispatch(ctx: DeviceContext) raises:
+    def run_full_dispatch(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var recv_buf_ptrs = InlineArray[UnsafePointer[UInt8, MutAnyOrigin], 1](
-            fill={}
-        )
-        var recv_count_ptrs = InlineArray[
+        var recv_buf_ptrs: InlineArray[
+            UnsafePointer[UInt8, MutAnyOrigin], 1
+        ] = [recv_buf]
+        var recv_count_ptrs: InlineArray[
             UnsafePointer[UInt64, MutAnyOrigin], 1
-        ](fill={})
-        recv_buf_ptrs[0] = recv_buf
-        recv_count_ptrs[0] = recv_count
+        ] = [recv_count]
 
         ctx.enqueue_function(
             func,
@@ -327,7 +284,7 @@ fn test_combine[
             send_buf,
             recv_buf_ptrs,
             recv_count_ptrs,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -340,10 +297,14 @@ fn test_combine[
             src_token_info_tensor,
             recv_buf,
             recv_count,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             OptionalReg[
-                LayoutTensor[input_type, Layout.row_major[2](), ImmutAnyOrigin]
+                TileTensor[
+                    input_type,
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
+                    ImmutAnyOrigin,
+                ]
             ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -352,28 +313,30 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_combine_async(ctx: DeviceContext) raises:
+    def run_combine_async(ctx: DeviceContext) raises:
         # the recv_buf ptrs and recv_count ptrs need to be passed in a InlinedArray
-        var combine_recv_buf_ptrs = InlineArray[
+        var combine_recv_buf_ptrs: InlineArray[
             UnsafePointer[UInt8, MutAnyOrigin], 1
-        ](fill={})
-        var combine_recv_count_ptrs = InlineArray[
+        ] = [send_buf]
+        var combine_recv_count_ptrs: InlineArray[
             UnsafePointer[UInt64, MutAnyOrigin], 1
-        ](fill={})
-        combine_recv_buf_ptrs[0] = send_buf
-        combine_recv_count_ptrs[0] = recv_count
+        ] = [recv_count]
 
         ctx.enqueue_function(
             func_combine_async,
-            output_tensor,
-            src_token_info_tensor,
+            output_tensor.as_immut(),
+            src_token_info_tensor.as_immut(),
             recv_buf,
             combine_recv_buf_ptrs,
             combine_recv_count_ptrs,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             OptionalReg[
-                LayoutTensor[input_type, Layout.row_major[2](), MutAnyOrigin]
+                TileTensor[
+                    input_type,
+                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
+                    MutAnyOrigin,
+                ]
             ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -381,13 +344,13 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_combine_async_wait(ctx: DeviceContext) raises:
+    def run_combine_async_wait(ctx: DeviceContext) raises:
         ctx.enqueue_function(
             func_combine_async_wait,
             output_2_tensor,
             send_buf,
             recv_count,
-            EPLocalSyncCounters[n_experts](atomic_counter.unsafe_ptr()),
+            EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
@@ -395,7 +358,7 @@ fn test_combine[
 
     @always_inline
     @parameter
-    fn run_e2e(ctx: DeviceContext) raises:
+    def run_e2e(ctx: DeviceContext) raises:
         run_combine_async(ctx)
         run_combine_async_wait(ctx)
 
@@ -423,15 +386,17 @@ fn test_combine[
 
         # First, bench kernel overhead
         run_full_dispatch(ctx)
-        new_value = ctx.execution_time[run_combine_async](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_combine_async](1)) * 1e-3
         welford_update(
             combine_async_stat_m, combine_async_stat_m2, i + 1, new_value
         )
 
         # sleep 10 ms to make sure transfer is finished
-        time.sleep(1e-2)
+        std.time.sleep(1e-2)
 
-        new_value = ctx.execution_time[run_combine_async_wait](1) * 1e-3
+        new_value = (
+            Float64(ctx.execution_time[run_combine_async_wait](1)) * 1e-3
+        )
         welford_update(
             combine_wait_stat_m, combine_wait_stat_m2, i + 1, new_value
         )
@@ -439,7 +404,7 @@ fn test_combine[
         # run one more time to measure bandwidth
         shmem_barrier_all_on_stream(ctx.stream())
         run_full_dispatch(ctx)
-        new_value = ctx.execution_time[run_e2e](1) * 1e-3
+        new_value = Float64(ctx.execution_time[run_e2e](1)) * 1e-3
         welford_update(e2e_stat_m, e2e_stat_m2, i + 1, new_value)
         # this time we do the clean up after we verify the results
 
@@ -477,11 +442,11 @@ fn test_combine[
     ](
         my_rank,
         combine_async_stat_m,
-        sqrt(combine_async_stat_m2 / num_iters),
+        sqrt(combine_async_stat_m2 / Float64(num_iters)),
         combine_wait_stat_m,
-        sqrt(combine_wait_stat_m2 / num_iters),
+        sqrt(combine_wait_stat_m2 / Float64(num_iters)),
         e2e_stat_m,
-        sqrt(e2e_stat_m2 / num_iters),
+        sqrt(e2e_stat_m2 / Float64(num_iters)),
     )
 
     shmem_free(send_buf)
@@ -489,11 +454,10 @@ fn test_combine[
     shmem_free(recv_count)
 
 
-def main():
+def main() raises:
     comptime test_gpu_counts = (8,)
 
-    @parameter
-    for gpu_idx in range(len(test_gpu_counts)):
+    comptime for gpu_idx in range(len(test_gpu_counts)):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() != num_gpus:
             continue
@@ -503,7 +467,7 @@ def main():
             test_combine[
                 hidden_size=7168,
                 top_k=8,
-                n_experts = min(num_gpus * 32, 256),
+                n_experts=min(num_gpus * 32, 256),
                 n_ranks=num_gpus,
                 n_tokens_per_rank=128,
             ](shmem_ctx.get_device_context(), Int(mype_node))

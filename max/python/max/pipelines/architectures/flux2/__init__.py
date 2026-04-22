@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""FLUX.2 diffusion architecture for image generation."""
 
-from .model import Flux2TransformerModel
+from .arch import flux2_arch, flux2_klein_arch
 
-__all__ = ["Flux2TransformerModel"]
+__all__ = ["flux2_arch", "flux2_klein_arch"]

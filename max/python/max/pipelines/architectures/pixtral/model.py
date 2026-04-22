@@ -15,105 +15,70 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from typing import cast
+from dataclasses import dataclass
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType
 from max.graph.weights import (
     SafetensorWeights,
     WeightData,
     Weights,
     WeightsAdapter,
 )
-from max.nn.legacy.kv_cache import (
-    KVCacheInputs,
-    KVCacheParams,
-    PagedCacheValues,
-)
-from max.nn.legacy.layer import Module
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheInputs, KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import (
     CompilationTimer,
     KVCacheConfig,
-    KVCacheMixin,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
-    PipelineModel,
-    SupportedEncoding,
+    PipelineModelWithKVCache,
     upper_bounded_default,
 )
+from max.pipelines.lib.utils import parse_state_dict_from_weights
 from max.profiler import traced
 from transformers import AutoConfig
 
 from .model_config import PixtralConfig
-from .pixtral import Pixtral
-from .vision_encoder.attention_utils import causal_attention_mask_2d_from_imgs
+from .pixtral import PixtralLanguage, PixtralVision
 
 logger = logging.getLogger("max.pipelines")
 
 
-# TODO(GEX-2071): Re-enable when parallel compilation works.
-_DO_PARALLEL_COMPILATION = False
-
-
+@dataclass
 class PixtralInputs(ModelInputs):
     """Holds inputs for the Pixtral model."""
 
-    input_ids: Buffer
+    tokens: Buffer
     input_row_offsets: Buffer
     return_n_logits: Buffer
 
-    # Image inputs
-    _pixel_values: Buffer
-    _attention_mask: Buffer
-
-    def __init__(
-        self,
-        input_ids: Buffer,
-        input_row_offsets: Buffer,
-        return_n_logits: Buffer,
-        pixel_values: Buffer,
-        attention_mask: Buffer,
-        kv_cache_inputs: KVCacheInputs | None = None,
-    ) -> None:
-        self.input_ids = input_ids
-        self.input_row_offsets = input_row_offsets
-        self.return_n_logits = return_n_logits
-        self._pixel_values = pixel_values
-        self._attention_mask = attention_mask
-        self.kv_cache_inputs = kv_cache_inputs
+    # Vision inputs — ragged tensor of pre-extracted patches from all images.
+    pixel_patches: Buffer | None = None
+    vision_attention_mask: Buffer | None = None
+    vision_position_ids: Buffer | None = None
+    image_token_indices: Buffer | None = None
 
     @property
     def has_vision_inputs(self) -> bool:
-        """Returns true iff this includes vision model inputs."""
-        return self._pixel_values is not None
-
-    @property
-    def pixel_values(self) -> Buffer:
-        return self._pixel_values
-
-    @property
-    def attention_mask(self) -> Buffer:
-        return self._attention_mask
+        return self.pixel_patches is not None
 
 
-class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
-    """The overall interface to the Pixtral model."""
+class PixtralModel(PipelineModelWithKVCache[TextAndVisionContext]):
+    """Pixtral pipeline model with separate vision and language graphs."""
 
-    model: Model
-    """Compiled and initialized model ready for inference."""
+    vision_model: Model
+    language_model: Model
 
     def __init__(
         self,
         pipeline_config: PipelineConfig,
         session: InferenceSession,
-        huggingface_config: AutoConfig,
-        encoding: SupportedEncoding,
         devices: list[Device],
         kv_cache_config: KVCacheConfig,
         weights: Weights,
@@ -123,8 +88,6 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         super().__init__(
             pipeline_config,
             session,
-            huggingface_config,
-            encoding,
             devices,
             kv_cache_config,
             weights,
@@ -132,48 +95,63 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             return_logits,
         )
 
-        self.model = self.load_model(session)
+        self.vision_model, self.language_model = self._load_models(session)
 
-    def execute(
-        self,
-        model_inputs: ModelInputs,
-    ) -> ModelOutputs:
+    def execute(self, model_inputs: ModelInputs) -> ModelOutputs:
         assert isinstance(model_inputs, PixtralInputs)
-
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
-
-        model_inputs = cast(PixtralInputs, model_inputs)
         assert model_inputs.kv_cache_inputs is not None, (
-            "Pixtral has KV cache inputs, but none were provided"
+            "Pixtral requires KV cache inputs"
         )
-        model_outputs = self.model.execute(
-            model_inputs.input_ids,
-            model_inputs.pixel_values,
-            model_inputs.attention_mask,
+
+        # Process vision inputs if present.
+        if model_inputs.has_vision_inputs:
+            assert model_inputs.pixel_patches is not None
+            assert model_inputs.vision_attention_mask is not None
+            assert model_inputs.vision_position_ids is not None
+            assert model_inputs.image_token_indices is not None
+
+            vision_outputs = self.vision_model.execute(
+                model_inputs.pixel_patches,
+                model_inputs.vision_attention_mask,
+                model_inputs.vision_position_ids,
+            )
+            assert isinstance(vision_outputs[0], Buffer)
+            image_embeddings = vision_outputs[0]
+            image_token_indices = model_inputs.image_token_indices
+        else:
+            image_embeddings = self._create_empty_image_embeddings()
+            image_token_indices = self._create_empty_indices()
+
+        # Execute language model with text and image embeddings.
+        language_outputs = self.language_model.execute(
+            model_inputs.tokens,
             model_inputs.input_row_offsets,
             model_inputs.return_n_logits,
-            *curr_kv_cache_inputs,
+            image_embeddings,
+            image_token_indices,
+            *model_inputs.kv_cache_inputs.flatten(),
         )
-        if len(model_outputs) == 3:
-            assert isinstance(model_outputs[0], Buffer)
-            assert isinstance(model_outputs[1], Buffer)
-            assert isinstance(model_outputs[2], Buffer)
+
+        if len(language_outputs) == 3:
+            assert isinstance(language_outputs[0], Buffer)
+            assert isinstance(language_outputs[1], Buffer)
+            assert isinstance(language_outputs[2], Buffer)
             return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[1],
-                logit_offsets=model_outputs[2],
+                next_token_logits=language_outputs[0],
+                logits=language_outputs[1],
+                logit_offsets=language_outputs[2],
             )
         else:
-            assert isinstance(model_outputs[0], Buffer)
+            assert isinstance(language_outputs[0], Buffer)
             return ModelOutputs(
-                next_token_logits=model_outputs[0],
-                logits=model_outputs[0],
+                next_token_logits=language_outputs[0],
+                logits=language_outputs[0],
             )
 
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> PixtralInputs:
         if len(replica_batches) > 1:
@@ -181,7 +159,7 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
 
         context_batch = replica_batches[0]
 
-        # Input row offset type: ["input_row_offsets_len"], UInt32
+        # Input row offsets.
         input_row_offsets = Buffer.from_numpy(
             np.cumsum(
                 [0] + [ctx.tokens.active_length for ctx in context_batch],
@@ -189,65 +167,108 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
             )
         ).to(self.devices[0])
 
-        # Input Ids: ["total_seq_len"], Int64
-        # Create a ragged token vector of length: sum(len(t) for t in tokens).
+        # Ragged token vector.
         tokens = np.ascontiguousarray(
             np.concatenate([ctx.tokens.active for ctx in context_batch])
         )
         input_ids = Buffer.from_numpy(tokens).to(self.devices[0])
 
-        num_images = sum(len(ctx.next_images) for ctx in context_batch)
+        # Pre-extract patches from all images and build ragged vision inputs.
+        patch_size = self.huggingface_config.vision_config.patch_size
+        image_token_index = self.huggingface_config.image_token_index
+        max_patches_per_side = (
+            self.huggingface_config.vision_config.image_size // patch_size
+        )
 
-        # TODO(MODELS-810): Support multiple images per batch
-        if num_images > 1:
-            raise ValueError(
-                "The pixtral implementation currently supports only one image per batch"
+        all_patches: list[np.ndarray] = []
+        all_position_ids: list[np.ndarray] = []
+        patch_counts: list[int] = []
+        indices_parts: list[np.ndarray] = []
+        batch_offset = 0
+
+        for ctx in context_batch:
+            if ctx.needs_vision_encoding:
+                for img_data in ctx.next_images:
+                    image = np.ascontiguousarray(img_data.pixel_values)
+                    C, H, W = image.shape
+                    n_h = H // patch_size
+                    n_w = W // patch_size
+                    n_patches = n_h * n_w
+
+                    # Extract patches: [C, H, W] -> [n_patches, C*p*p]
+                    patches = image.reshape(C, n_h, patch_size, n_w, patch_size)
+                    patches = patches.transpose(1, 3, 0, 2, 4)
+                    patches = patches.reshape(
+                        n_patches, C * patch_size * patch_size
+                    )
+                    all_patches.append(patches.astype(np.float32))
+
+                    # Position IDs for 2D RoPE.
+                    row_ids = np.repeat(np.arange(n_h), n_w)
+                    col_ids = np.tile(np.arange(n_w), n_h)
+                    pos_ids = row_ids * max_patches_per_side + col_ids
+                    all_position_ids.append(pos_ids.astype(np.int64))
+                    patch_counts.append(n_patches)
+
+            # Find image token positions in this context's active tokens.
+            active_tokens = ctx.tokens.active
+            image_positions = np.where(active_tokens == image_token_index)[0]
+            if len(image_positions) > 0:
+                indices_parts.append(
+                    (image_positions + batch_offset).astype(np.int32)
+                )
+            batch_offset += ctx.tokens.active_length
+
+        pixel_patches: Buffer | None = None
+        vision_attention_mask: Buffer | None = None
+        vision_position_ids: Buffer | None = None
+        image_token_indices: Buffer | None = None
+
+        if all_patches:
+            pixel_patches = Buffer.from_numpy(np.concatenate(all_patches)).to(
+                self.devices[0]
             )
 
-        # TODO: change this to work with all contexts in the batch.
-        # check if the request has pixel_values
-        if context_batch[0].needs_vision_encoding:
-            # Get first image in first batch. Pixtral processor returns CHW images.
-            next_images = context_batch[0].next_images
-            if len(next_images) != 1:
-                raise ValueError("Pixtral only supports one image per request")
-            image = np.ascontiguousarray(next_images[0].pixel_values)
-            pixel_values = Buffer.from_numpy(image).to(self.devices[0])
-            # TODO(KERN-782): This should be -inf but softmax saturates with NaNs.
+            vision_position_ids = Buffer.from_numpy(
+                np.concatenate(all_position_ids)
+            ).to(self.devices[0])
+
+            # Block-diagonal attention mask.
+            # NOTE: This is a dense N x N mask where N = total patches across
+            # all images. For multi-image batches this scales O(n^2) in memory
+            # and should be replaced with a sparse or per-image scheme.
+            total_patches = sum(patch_counts)
+            # TODO(KERN-782): fill_val should be -inf but softmax saturates.
             fill_val = -10000.0
-            attention_mask = causal_attention_mask_2d_from_imgs(
-                [image],
-                self.huggingface_config.vision_config.patch_size,
-                1,
+            mask = np.full(
+                (1, 1, total_patches, total_patches),
                 fill_val,
+                dtype=np.float32,
             )
-            attention_mask_tensor = Buffer.from_numpy(attention_mask).to(
-                self.devices[0]
-            )
-            return PixtralInputs(
-                input_ids=input_ids,
-                input_row_offsets=input_row_offsets,
-                pixel_values=pixel_values,
-                attention_mask=attention_mask_tensor,
-                return_n_logits=Buffer.from_numpy(
-                    np.array([return_n_logits], dtype=np.int64)
-                ),
-                kv_cache_inputs=kv_cache_inputs,
-            )
-        # TODO: return empty tensors for pixel_values and attention_mask
+            offset = 0
+            for count in patch_counts:
+                mask[0, 0, offset : offset + count, offset : offset + count] = (
+                    0.0
+                )
+                offset += count
+            vision_attention_mask = Buffer.from_numpy(mask).to(self.devices[0])
+
+        if indices_parts:
+            image_token_indices = Buffer.from_numpy(
+                np.concatenate(indices_parts)
+            ).to(self.devices[0])
+
         return PixtralInputs(
-            input_ids=input_ids,
+            tokens=input_ids,
             input_row_offsets=input_row_offsets,
-            pixel_values=Buffer.zeros(shape=(0, 0, 0), dtype=DType.float32).to(
-                self.devices[0]
-            ),
-            attention_mask=Buffer.zeros(
-                shape=(0, 1, 0, 0), dtype=DType.float32
-            ).to(self.devices[0]),
-            kv_cache_inputs=kv_cache_inputs,
             return_n_logits=Buffer.from_numpy(
                 np.array([return_n_logits], dtype=np.int64)
             ),
+            pixel_patches=pixel_patches,
+            vision_attention_mask=vision_attention_mask,
+            vision_position_ids=vision_position_ids,
+            image_token_indices=image_token_indices,
+            kv_cache_inputs=kv_cache_inputs,
         )
 
     def prepare_next_token_inputs(
@@ -257,24 +278,16 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
     ) -> PixtralInputs:
         assert isinstance(prev_model_inputs, PixtralInputs)
 
-        # input_ids, old_row_offsets, Optional: [pixel_values, attention_mask]
         old_row_offsets = prev_model_inputs.input_row_offsets
-
         row_offsets_size = old_row_offsets.shape[0]
         next_row_offsets = self._input_row_offsets_prealloc[:row_offsets_size]
-        # In multi-step execution, don't re-pass the pixel_values and attention_mask.
-        # TODO: return empty tensors for pixel_values and attention_mask
+
+        # Next-token steps have no vision inputs.
         return PixtralInputs(
-            input_ids=next_tokens,
+            tokens=next_tokens,
             input_row_offsets=next_row_offsets,
-            pixel_values=Buffer.zeros(shape=(0, 0, 0), dtype=DType.float32).to(
-                self.devices[0]
-            ),
-            attention_mask=Buffer.zeros(
-                shape=(0, 1, 0, 0), dtype=DType.float32
-            ).to(self.devices[0]),
-            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
             return_n_logits=prev_model_inputs.return_n_logits,
+            kv_cache_inputs=prev_model_inputs.kv_cache_inputs,
         )
 
     @classmethod
@@ -301,156 +314,214 @@ class PixtralModel(PipelineModel[TextAndVisionContext], KVCacheMixin):
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.text_config.max_position_embeddings,
-                default=pipeline_config.max_length,
+                default=pipeline_config.model.max_length,
             )
         except ValueError as e:
             raise ValueError(
                 "Unable to infer max_length for Pixtral, the provided "
-                f"max_length ({pipeline_config.max_length}) exceeds the "
+                f"max_length ({pipeline_config.model.max_length}) exceeds the "
                 f"model's max_position_embeddings "
                 f"({huggingface_config.text_config.max_position_embeddings})."
             ) from e
 
-    def _get_state_dict(
-        self,
-        weights: Weights,
-        adapter: WeightsAdapter | None = None,
-    ) -> dict[str, WeightData]:
-        pipeline_config = self.pipeline_config
-        huggingface_config = self.huggingface_config
-        if self.adapter:
-            state_dict = self.adapter(
-                dict(self.weights.items()),
-                huggingface_config=huggingface_config,
-                pipeline_config=self.pipeline_config,
-            )
-        else:
-            state_dict = {
-                key: value.data() for key, value in self.weights.items()
-            }
-        return state_dict
+    def _create_empty_image_embeddings(self) -> Buffer:
+        return Buffer.zeros(
+            shape=[0, self.huggingface_config.text_config.hidden_size],
+            dtype=self.dtype,
+        ).to(self.devices[0])
 
-    def graph_inputs(self) -> tuple[TensorType]:
-        # Generate DeviceRef
-        device_ref = DeviceRef.from_device(self.devices[0])
+    def _create_empty_indices(self) -> Buffer:
+        return Buffer.zeros(shape=[0], dtype=DType.int32).to(self.devices[0])
 
-        # Construct general input types
-        return_n_logits_type = TensorType(
-            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-        )
-
-        kv_inputs = self.kv_params.get_symbolic_inputs()
-
-        input_ids_type = TensorType(
-            DType.int64, shape=["total_seq_len"], device=DeviceRef.GPU()
-        )
-        # TODO: should be changed to add "batch_size", "n_images" dims when working with multiple images
-        pixel_values_type = TensorType(
-            DType.float32,
-            shape=["num_channels", "image_height", "image_width"],
-            device=DeviceRef.GPU(),
-        )
-
-        attention_mask_type = TensorType(
-            DType.float32,
-            shape=["n_images", 1, "num_patches", "num_patches"],
-            device=DeviceRef.GPU(),
-        )
-        input_row_offsets_type = TensorType(
-            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
-        )
-
+    def _vision_graph_input_types(
+        self, patch_dim: int
+    ) -> Sequence[TensorType | BufferType]:
         return (
-            input_ids_type,
-            pixel_values_type,
-            attention_mask_type,
-            input_row_offsets_type,
-            return_n_logits_type,
-            *kv_inputs[0],
+            TensorType(
+                DType.float32,
+                shape=["total_patches", patch_dim],
+                device=DeviceRef.GPU(),
+            ),
+            TensorType(
+                DType.float32,
+                shape=[1, 1, "total_patches", "total_patches"],
+                device=DeviceRef.GPU(),
+            ),
+            TensorType(
+                DType.int64,
+                shape=["total_patches"],
+                device=DeviceRef.GPU(),
+            ),
+        )
+
+    def _language_graph_input_types(self) -> Sequence[TensorType | BufferType]:
+        device_ref = DeviceRef.from_device(self.devices[0])
+        return (
+            TensorType(DType.int64, shape=["total_seq_len"], device=device_ref),
+            TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=device_ref,
+            ),
+            TensorType(
+                DType.int64,
+                shape=["return_n_logits"],
+                device=DeviceRef.CPU(),
+            ),
+            TensorType(
+                self.dtype,
+                shape=[
+                    "num_image_tokens",
+                    self.huggingface_config.text_config.hidden_size,
+                ],
+                device=device_ref,
+            ),
+            TensorType(
+                DType.int32,
+                shape=["total_image_tokens"],
+                device=device_ref,
+            ),
+            *self.kv_params.get_symbolic_inputs().flatten(),
         )
 
     @traced
-    def _build_graph(
-        self, weights: Weights, adapter: WeightsAdapter | None = None
-    ) -> Graph:
-        # Retrieve config
-        state_dict = self._get_state_dict(weights, adapter)
-        model_config = PixtralConfig.initialize(self.pipeline_config)
-        model_config.return_logits = self.return_logits
+    def _build_vision_graph(
+        self,
+        config: PixtralConfig,
+        state_dict: dict[str, WeightData],
+        patch_dim: int,
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
+        with Graph(
+            "pixtral_vision",
+            input_types=self._vision_graph_input_types(patch_dim),
+        ) as graph:
+            vision_nn = PixtralVision(config)
+            vision_nn.load_state_dict(
+                state_dict, weight_alignment=1, strict=True
+            )
 
-        # Get Graph Inputs
-        graph_inputs = self.graph_inputs()
+            pixel_patches, attention_mask, position_ids = graph.inputs
+            output = vision_nn(
+                pixel_patches.tensor,
+                attention_mask.tensor,
+                position_ids.tensor,
+            )
+            graph.output(output)
+            return graph, vision_nn.state_dict()
 
-        # Build Graph
-        nn_model: Module
+    @traced
+    def _build_language_graph(
+        self,
+        config: PixtralConfig,
+        state_dict: dict[str, WeightData],
+    ) -> tuple[Graph, dict[str, DLPackArray]]:
+        with Graph(
+            "pixtral_language",
+            input_types=self._language_graph_input_types(),
+        ) as graph:
+            language_nn = PixtralLanguage(config)
+            language_nn.load_state_dict(
+                state_dict,
+                override_quantization_encoding=True,
+                weight_alignment=1,
+                strict=True,
+            )
+
+            (
+                tokens,
+                input_row_offsets,
+                return_n_logits,
+                image_embeddings,
+                image_token_indices,
+                *kv_cache_inputs,
+            ) = graph.inputs
+
+            kv_collections = self._unflatten_kv_inputs(kv_cache_inputs)
+            outputs = language_nn(
+                tokens=tokens.tensor,
+                kv_collection=kv_collections[0],
+                return_n_logits=return_n_logits.tensor,
+                input_row_offsets=input_row_offsets.tensor,
+                image_embeddings=image_embeddings.tensor,
+                image_token_indices=image_token_indices.tensor,
+            )
+            graph.output(*outputs)
+            return graph, language_nn.state_dict()
+
+    @traced
+    def _load_models(self, session: InferenceSession) -> tuple[Model, Model]:
+        if self.pipeline_config.model.enable_echo:
+            raise ValueError(
+                "Pixtral model does not currently implement enable echo."
+            )
+
+        assert self.pipeline_config.runtime.max_batch_size, (
+            "Expected max_batch_size to be set"
+        )
+        self._input_row_offsets_prealloc = Buffer.from_numpy(
+            np.arange(
+                self.pipeline_config.runtime.max_batch_size + 1,
+                dtype=np.uint32,
+            )
+        ).to(self.devices[0])
+
+        if not isinstance(self.weights, SafetensorWeights):
+            raise ValueError(
+                "Only safetensors weights are currently supported in Pixtral."
+            )
+
         if len(self.devices) > 1:
             raise NotImplementedError(
                 "Pixtral does not support distributed inference"
             )
 
-        else:
-            nn_model = Pixtral(model_config)
-            nn_model.load_state_dict(
-                state_dict,
-                weight_alignment=1,
-                strict=True,
-            )
-            self.state_dict = nn_model.state_dict()
-
-            with Graph("mistral", input_types=graph_inputs) as graph:
-                (
-                    input_ids,
-                    pixel_values,
-                    attention_mask,
-                    input_row_offsets,
-                    return_n_logits,
-                    *kv_cache_inputs,
-                ) = graph.inputs
-                kv_collection = PagedCacheValues(
-                    kv_blocks=kv_cache_inputs[0].buffer,
-                    cache_lengths=kv_cache_inputs[1].tensor,
-                    lookup_table=kv_cache_inputs[2].tensor,
-                    max_lengths=kv_cache_inputs[3].tensor,
-                )
-                outputs = nn_model(
-                    input_ids=input_ids.tensor,
-                    pixel_values=pixel_values.tensor,
-                    attention_mask=attention_mask.tensor,
-                    kv_collection=kv_collection,
-                    return_n_logits=return_n_logits.tensor,
-                    input_row_offsets=input_row_offsets.tensor,
-                )
-                graph.output(*outputs)
-                return graph
-
-    @traced
-    def load_model(
-        self,
-        session: InferenceSession,
-    ) -> Model:
-        if self.pipeline_config.enable_echo:
-            raise ValueError(
-                "Pixtral model does not currently implement enable echo."
-            )
-
-        # Pre-allocate a buffer for input_row_offsets in multistep execution.
-        # We do this to avoid materializing and copying a buffer with each multistep step
-        assert self.pipeline_config.max_batch_size, (
-            "Expected max_batch_size to be set"
+        # Split full state dict into vision and language parts.
+        state_dict = parse_state_dict_from_weights(
+            self.pipeline_config, self.weights, self.adapter
         )
-        self._input_row_offsets_prealloc = Buffer.from_numpy(
-            np.arange(self.pipeline_config.max_batch_size + 1, dtype=np.uint32)
-        ).to(self.devices[0])
 
-        if not isinstance(self.weights, SafetensorWeights):
-            raise ValueError(
-                "only safetensors weights are currently supported in Pixtral models."
+        vision_config = self.huggingface_config.vision_config
+        patch_dim = (
+            vision_config.num_channels
+            * vision_config.patch_size
+            * vision_config.patch_size
+        )
+
+        vision_state_dict: dict[str, WeightData] = {}
+        language_state_dict: dict[str, WeightData] = {}
+        for k, v in state_dict.items():
+            if k.startswith("vision_encoder.") or k.startswith(
+                "multi_modal_projector."
+            ):
+                if k.startswith("vision_encoder."):
+                    new_key = k.replace("vision_encoder.", "", 1)
+                    vision_state_dict[new_key] = v
+                else:
+                    vision_state_dict[k] = v
+            elif k.startswith("language_model."):
+                language_state_dict[k] = v
+
+        model_config = PixtralConfig.initialize(self.pipeline_config)
+        model_config.return_logits = self.return_logits
+
+        # Build and compile vision model.
+        with CompilationTimer("vision model") as timer:
+            vision_graph, vision_weights = self._build_vision_graph(
+                model_config, vision_state_dict, patch_dim
+            )
+            timer.mark_build_complete()
+            vision_model = session.load(
+                vision_graph, weights_registry=vision_weights
             )
 
-        timer = CompilationTimer("model")
-        graph = self._build_graph(self.weights, self.adapter)
-        timer.mark_build_complete()
-        model = session.load(graph, weights_registry=self.state_dict)
-        timer.done()
+        # Build and compile language model.
+        with CompilationTimer("language model") as timer:
+            language_graph, language_weights = self._build_language_graph(
+                model_config, language_state_dict
+            )
+            timer.mark_build_complete()
+            language_model = session.load(
+                language_graph, weights_registry=language_weights
+            )
 
-        return model
+        return vision_model, language_model

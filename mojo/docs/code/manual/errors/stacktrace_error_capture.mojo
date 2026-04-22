@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-def func2() -> None:
+def func2() raises -> None:
     raise Error("Intentional error")
 
 
-def func1() -> None:
+def func1() raises -> None:
     func2()
 
 

@@ -11,40 +11,37 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import global_idx
-from gpu.primitives import block, warp
-from gpu.globals import WARP_SIZE
-from gpu.host import DeviceContext
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_equal
+from std.gpu import global_idx
+from std.gpu.primitives import block, warp
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
 comptime dtype = DType.uint64
 
 
-fn warp_sum_kernel[
+def warp_sum_kernel[
     dtype: DType,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(size):
+    if tid >= size:
         return
     output[tid] = warp.sum(input[tid])
 
 
-def test_warp_sum(ctx: DeviceContext):
+def test_warp_sum(ctx: DeviceContext) raises:
     comptime size = WARP_SIZE
     comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var in_host = alloc[Scalar[dtype]](size)
+    var out_host = alloc[Scalar[dtype]](size)
 
     for i in range(size):
         in_host[i] = UInt64(i)
@@ -76,9 +73,7 @@ def test_warp_sum(ctx: DeviceContext):
         assert_equal(
             out_host[i],
             expected,
-            msg=String(
-                "out_host[", i, "] = ", out_host[i], " expected = ", expected
-            ),
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup
@@ -86,29 +81,29 @@ def test_warp_sum(ctx: DeviceContext):
     out_host.free()
 
 
-fn block_sum_kernel[
+def block_sum_kernel[
     dtype: DType,
     block_size: Int,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     size: Int,
 ):
     var tid = global_idx.x
-    if tid >= UInt(size):
+    if tid >= size:
         return
     output[tid] = block.sum[block_size=block_size, broadcast=True](input[tid])
 
 
-def test_block_sum(ctx: DeviceContext):
+def test_block_sum(ctx: DeviceContext) raises:
     # Initialize a block with several warps. The sum for each warp is tested
     # above.
     comptime BLOCK_SIZE = WARP_SIZE * 2
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var in_host = alloc[Scalar[dtype]](size)
+    var out_host = alloc[Scalar[dtype]](size)
 
     for i in range(size):
         in_host[i] = UInt64(i)
@@ -140,9 +135,7 @@ def test_block_sum(ctx: DeviceContext):
         assert_equal(
             out_host[i],
             expected,
-            msg=String(
-                "out_host[", i, "] = ", out_host[i], " expected = ", expected
-            ),
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup
@@ -150,7 +143,7 @@ def test_block_sum(ctx: DeviceContext):
     out_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_warp_sum(ctx)
 

@@ -18,14 +18,13 @@ This module registers the following ops:
 - selective_scan_update: Single-step update for autoregressive inference
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
@@ -62,21 +61,21 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        x: OutputTensor[dtype=dtype, rank=4],
-        out_z: OutputTensor[dtype=dtype, rank=3],
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=3],
-        delta_bias: InputTensor[dtype=dtype, rank=1],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        x: OutputTensor[dtype=dtype, rank=4, ...],
+        out_z: OutputTensor[dtype=dtype, rank=3, ...],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         if output.shape() != u.shape():
@@ -89,17 +88,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var output_lt = output.to_layout_tensor()
-        var x_lt = x.to_layout_tensor()
-        var out_z_lt = out_z.to_layout_tensor()
-        var u_lt = u.to_layout_tensor()
-        var delta_lt = delta.to_layout_tensor()
-        var A_lt = A.to_layout_tensor()
-        var B_lt = B.to_layout_tensor()
-        var C_lt = C.to_layout_tensor()
-        var D_lt = D.to_layout_tensor()
-        var z_lt = z.to_layout_tensor()
-        var delta_bias_lt = delta_bias.to_layout_tensor()
+        var output_tt = output.to_tile_tensor[DType.int32]()
+        var x_tt = x.to_tile_tensor[DType.int32]()
+        var out_z_tt = out_z.to_tile_tensor[DType.int32]()
+        var u_tt = u.to_tile_tensor[DType.int32]()
+        var delta_tt = delta.to_tile_tensor[DType.int32]()
+        var A_tt = A.to_tile_tensor[DType.int32]()
+        var B_tt = B.to_tile_tensor[DType.int32]()
+        var C_tt = C.to_tile_tensor[DType.int32]()
+        var D_tt = D.to_tile_tensor[DType.int32]()
+        var z_tt = z.to_tile_tensor[DType.int32]()
+        var delta_bias_tt = delta_bias.to_tile_tensor[DType.int32]()
 
         var output_strides = output.strides()
         var x_strides = x.strides()
@@ -124,40 +123,28 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
 
         # Dispatch runtime dstate to compile-time DSTATE for @parameter for
         # loop unrolling and guaranteed register allocation on GPU.
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 selective_scan_fwd_cpu[
                     dtype,
                     16,
-                    output_lt.layout,
-                    x_lt.layout,
-                    out_z_lt.layout,
-                    u_lt.layout,
-                    delta_lt.layout,
-                    A_lt.layout,
-                    B_lt.layout,
-                    C_lt.layout,
-                    D_lt.layout,
-                    z_lt.layout,
-                    delta_bias_lt.layout,
                 ](
                     batch,
                     dim,
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    out_z_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    delta_bias_lt,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
                     output_strides,
                     x_strides,
                     out_z_strides,
@@ -169,39 +156,29 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_fwd_cpu[
                     dtype,
                     8,
-                    output_lt.layout,
-                    x_lt.layout,
-                    out_z_lt.layout,
-                    u_lt.layout,
-                    delta_lt.layout,
-                    A_lt.layout,
-                    B_lt.layout,
-                    C_lt.layout,
-                    D_lt.layout,
-                    z_lt.layout,
-                    delta_bias_lt.layout,
                 ](
                     batch,
                     dim,
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    out_z_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    delta_bias_lt,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
                     output_strides,
                     x_strides,
                     out_z_strides,
@@ -213,6 +190,7 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     delta_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()
@@ -226,32 +204,32 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     selective_scan_fwd_gpu[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        out_z_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        delta_bias_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        delta_bias_tt.LayoutType,
                     ],
                     selective_scan_fwd_gpu[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        out_z_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        delta_bias_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        delta_bias_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -262,17 +240,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    out_z_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    delta_bias_lt,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
                     output_strides,
                     x_strides,
                     out_z_strides,
@@ -293,32 +271,32 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     selective_scan_fwd_gpu[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        out_z_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        delta_bias_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        delta_bias_tt.LayoutType,
                     ],
                     selective_scan_fwd_gpu[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        out_z_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        delta_bias_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        out_z_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        delta_bias_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -329,17 +307,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    out_z_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    delta_bias_lt,
+                    output_tt,
+                    x_tt,
+                    out_z_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    delta_bias_tt,
                     output_strides,
                     x_strides,
                     out_z_strides,
@@ -358,17 +336,17 @@ struct SelectiveScanFwd[delta_softplus: Bool = False]:
             raise Error("Unsupported target: " + target)
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=3],
-        delta_bias: InputTensor[dtype=dtype, rank=1],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=3, ...],
+        delta_bias: InputTensor[dtype=dtype, rank=1, ...],
     ) -> IndexList[3]:
         return u.shape()
 
@@ -394,17 +372,17 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        x: OutputTensor[dtype=dtype, rank=4],
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        x: OutputTensor[dtype=dtype, rank=4, ...],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         if output.shape() != u.shape():
@@ -417,13 +395,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var output_lt = output.to_layout_tensor()
-        var x_lt = x.to_layout_tensor()
-        var u_lt = u.to_layout_tensor()
-        var delta_lt = delta.to_layout_tensor()
-        var A_lt = A.to_layout_tensor()
-        var B_lt = B.to_layout_tensor()
-        var C_lt = C.to_layout_tensor()
+        var output_tt = output.to_tile_tensor[DType.int32]()
+        var x_tt = x.to_tile_tensor[DType.int32]()
+        var u_tt = u.to_tile_tensor[DType.int32]()
+        var delta_tt = delta.to_tile_tensor[DType.int32]()
+        var A_tt = A.to_tile_tensor[DType.int32]()
+        var B_tt = B.to_tile_tensor[DType.int32]()
+        var C_tt = C.to_tile_tensor[DType.int32]()
 
         var output_strides = output.strides()
         var x_strides = x.strides()
@@ -442,32 +420,24 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                 "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
             )
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 selective_scan_fwd_cpu_minimal[
                     dtype,
                     16,
-                    output_lt.layout,
-                    x_lt.layout,
-                    u_lt.layout,
-                    delta_lt.layout,
-                    A_lt.layout,
-                    B_lt.layout,
-                    C_lt.layout,
                 ](
                     batch,
                     dim,
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
+                    output_tt,
+                    x_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
                     output_strides,
                     x_strides,
                     u_strides,
@@ -475,31 +445,25 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_fwd_cpu_minimal[
                     dtype,
                     8,
-                    output_lt.layout,
-                    x_lt.layout,
-                    u_lt.layout,
-                    delta_lt.layout,
-                    A_lt.layout,
-                    B_lt.layout,
-                    C_lt.layout,
                 ](
                     batch,
                     dim,
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
+                    output_tt,
+                    x_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
                     output_strides,
                     x_strides,
                     u_strides,
@@ -507,6 +471,7 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     A_strides,
                     B_strides,
                     C_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()
@@ -520,24 +485,24 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     selective_scan_fwd_gpu_minimal[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
                     ],
                     selective_scan_fwd_gpu_minimal[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -548,13 +513,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
+                    output_tt,
+                    x_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
                     output_strides,
                     x_strides,
                     u_strides,
@@ -571,24 +536,24 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     selective_scan_fwd_gpu_minimal[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
                     ],
                     selective_scan_fwd_gpu_minimal[
                         dtype,
                         DSTATE_VAL,
-                        output_lt.layout,
-                        x_lt.layout,
-                        u_lt.layout,
-                        delta_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
+                        output_tt.LayoutType,
+                        x_tt.LayoutType,
+                        u_tt.LayoutType,
+                        delta_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -599,13 +564,13 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
                     seqlen,
                     group_size,
                     delta_softplus_int8,
-                    output_lt,
-                    x_lt,
-                    u_lt,
-                    delta_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
+                    output_tt,
+                    x_tt,
+                    u_tt,
+                    delta_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
                     output_strides,
                     x_strides,
                     u_strides,
@@ -620,14 +585,14 @@ struct SelectiveScanFwdMinimal[delta_softplus: Bool = False]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
-        u: InputTensor[dtype=dtype, rank=3],
-        delta: InputTensor[dtype=dtype, rank=3],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=4],
-        C: InputTensor[dtype=dtype, rank=4],
+        u: InputTensor[dtype=dtype, rank=3, ...],
+        delta: InputTensor[dtype=dtype, rank=3, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=4, ...],
+        C: InputTensor[dtype=dtype, rank=4, ...],
     ) -> IndexList[3]:
         return u.shape()
 
@@ -656,21 +621,21 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
-        state_out: OutputTensor[dtype=dtype, rank=3],
-        output: OutputTensor[dtype=dtype, rank=2],
-        state_in: InputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        dt: InputTensor[dtype=dtype, rank=2],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=2],
-        dt_bias: InputTensor[dtype=dtype, rank=1],
+        state_out: OutputTensor[dtype=dtype, rank=3, ...],
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        state_in: InputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        dt: InputTensor[dtype=dtype, rank=2, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=2, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = state_out.dim_size(0)
@@ -679,17 +644,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
         var n_groups = B.dim_size(1)
         var group_size = dim // n_groups
 
-        var state_out_lt = state_out.to_layout_tensor()
-        var output_lt = output.to_layout_tensor()
-        var state_in_lt = state_in.to_layout_tensor()
-        var x_lt = x.to_layout_tensor()
-        var dt_lt = dt.to_layout_tensor()
-        var A_lt = A.to_layout_tensor()
-        var B_lt = B.to_layout_tensor()
-        var C_lt = C.to_layout_tensor()
-        var D_lt = D.to_layout_tensor()
-        var z_lt = z.to_layout_tensor()
-        var dt_bias_lt = dt_bias.to_layout_tensor()
+        var state_out_tt = state_out.to_tile_tensor[DType.int32]()
+        var output_tt = output.to_tile_tensor[DType.int32]()
+        var state_in_tt = state_in.to_tile_tensor[DType.int32]()
+        var x_tt = x.to_tile_tensor[DType.int32]()
+        var dt_tt = dt.to_tile_tensor[DType.int32]()
+        var A_tt = A.to_tile_tensor[DType.int32]()
+        var B_tt = B.to_tile_tensor[DType.int32]()
+        var C_tt = C.to_tile_tensor[DType.int32]()
+        var D_tt = D.to_tile_tensor[DType.int32]()
+        var z_tt = z.to_tile_tensor[DType.int32]()
+        var dt_bias_tt = dt_bias.to_tile_tensor[DType.int32]()
 
         var state_out_strides = state_out.strides()
         var output_strides = output.strides()
@@ -712,39 +677,27 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                 "Unsupported dstate: " + String(dstate) + ". Expected 8 or 16."
             )
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             if dstate == 16:
                 selective_scan_update_cpu[
                     dtype,
                     16,
-                    state_out_lt.layout,
-                    output_lt.layout,
-                    state_in_lt.layout,
-                    x_lt.layout,
-                    dt_lt.layout,
-                    A_lt.layout,
-                    B_lt.layout,
-                    C_lt.layout,
-                    D_lt.layout,
-                    z_lt.layout,
-                    dt_bias_lt.layout,
                 ](
                     batch,
                     dim,
                     group_size,
                     delta_softplus_int8,
-                    state_out_lt,
-                    output_lt,
-                    state_in_lt,
-                    x_lt,
-                    dt_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    dt_bias_lt,
+                    state_out_tt,
+                    output_tt,
+                    state_in_tt,
+                    x_tt,
+                    dt_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    dt_bias_tt,
                     state_out_strides,
                     output_strides,
                     state_in_strides,
@@ -756,38 +709,28 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
             else:
                 selective_scan_update_cpu[
                     dtype,
                     8,
-                    state_out_lt.layout,
-                    output_lt.layout,
-                    state_in_lt.layout,
-                    x_lt.layout,
-                    dt_lt.layout,
-                    A_lt.layout,
-                    B_lt.layout,
-                    C_lt.layout,
-                    D_lt.layout,
-                    z_lt.layout,
-                    dt_bias_lt.layout,
                 ](
                     batch,
                     dim,
                     group_size,
                     delta_softplus_int8,
-                    state_out_lt,
-                    output_lt,
-                    state_in_lt,
-                    x_lt,
-                    dt_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    dt_bias_lt,
+                    state_out_tt,
+                    output_tt,
+                    state_in_tt,
+                    x_tt,
+                    dt_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    dt_bias_tt,
                     state_out_strides,
                     output_strides,
                     state_in_strides,
@@ -799,6 +742,7 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     D_strides,
                     z_strides,
                     dt_bias_strides,
+                    ctx.get_optional_device_context(),
                 )
         elif is_gpu[target]():
             var gpu_ctx = ctx.get_device_context()
@@ -812,32 +756,32 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     selective_scan_update_gpu[
                         dtype,
                         DSTATE_VAL,
-                        state_out_lt.layout,
-                        output_lt.layout,
-                        state_in_lt.layout,
-                        x_lt.layout,
-                        dt_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        dt_bias_lt.layout,
+                        state_out_tt.LayoutType,
+                        output_tt.LayoutType,
+                        state_in_tt.LayoutType,
+                        x_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
                     ],
                     selective_scan_update_gpu[
                         dtype,
                         DSTATE_VAL,
-                        state_out_lt.layout,
-                        output_lt.layout,
-                        state_in_lt.layout,
-                        x_lt.layout,
-                        dt_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        dt_bias_lt.layout,
+                        state_out_tt.LayoutType,
+                        output_tt.LayoutType,
+                        state_in_tt.LayoutType,
+                        x_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -847,17 +791,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     dim,
                     group_size,
                     delta_softplus_int8,
-                    state_out_lt,
-                    output_lt,
-                    state_in_lt,
-                    x_lt,
-                    dt_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    dt_bias_lt,
+                    state_out_tt,
+                    output_tt,
+                    state_in_tt,
+                    x_tt,
+                    dt_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    dt_bias_tt,
                     state_out_strides,
                     output_strides,
                     state_in_strides,
@@ -878,32 +822,32 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     selective_scan_update_gpu[
                         dtype,
                         DSTATE_VAL,
-                        state_out_lt.layout,
-                        output_lt.layout,
-                        state_in_lt.layout,
-                        x_lt.layout,
-                        dt_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        dt_bias_lt.layout,
+                        state_out_tt.LayoutType,
+                        output_tt.LayoutType,
+                        state_in_tt.LayoutType,
+                        x_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
                     ],
                     selective_scan_update_gpu[
                         dtype,
                         DSTATE_VAL,
-                        state_out_lt.layout,
-                        output_lt.layout,
-                        state_in_lt.layout,
-                        x_lt.layout,
-                        dt_lt.layout,
-                        A_lt.layout,
-                        B_lt.layout,
-                        C_lt.layout,
-                        D_lt.layout,
-                        z_lt.layout,
-                        dt_bias_lt.layout,
+                        state_out_tt.LayoutType,
+                        output_tt.LayoutType,
+                        state_in_tt.LayoutType,
+                        x_tt.LayoutType,
+                        dt_tt.LayoutType,
+                        A_tt.LayoutType,
+                        B_tt.LayoutType,
+                        C_tt.LayoutType,
+                        D_tt.LayoutType,
+                        z_tt.LayoutType,
+                        dt_bias_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -913,17 +857,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
                     dim,
                     group_size,
                     delta_softplus_int8,
-                    state_out_lt,
-                    output_lt,
-                    state_in_lt,
-                    x_lt,
-                    dt_lt,
-                    A_lt,
-                    B_lt,
-                    C_lt,
-                    D_lt,
-                    z_lt,
-                    dt_bias_lt,
+                    state_out_tt,
+                    output_tt,
+                    state_in_tt,
+                    x_tt,
+                    dt_tt,
+                    A_tt,
+                    B_tt,
+                    C_tt,
+                    D_tt,
+                    z_tt,
+                    dt_bias_tt,
                     state_out_strides,
                     output_strides,
                     state_in_strides,
@@ -942,17 +886,17 @@ struct SelectiveScanUpdate[delta_softplus: Bool = False]:
             raise Error("Unsupported target: " + target)
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
-        state_in: InputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        dt: InputTensor[dtype=dtype, rank=2],
-        A: InputTensor[dtype=dtype, rank=2],
-        B: InputTensor[dtype=dtype, rank=3],
-        C: InputTensor[dtype=dtype, rank=3],
-        D: InputTensor[dtype=dtype, rank=1],
-        z: InputTensor[dtype=dtype, rank=2],
-        dt_bias: InputTensor[dtype=dtype, rank=1],
+        state_in: InputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        dt: InputTensor[dtype=dtype, rank=2, ...],
+        A: InputTensor[dtype=dtype, rank=2, ...],
+        B: InputTensor[dtype=dtype, rank=3, ...],
+        C: InputTensor[dtype=dtype, rank=3, ...],
+        D: InputTensor[dtype=dtype, rank=1, ...],
+        z: InputTensor[dtype=dtype, rank=2, ...],
+        dt_bias: InputTensor[dtype=dtype, rank=1, ...],
     ) -> Tuple[IndexList[3], IndexList[2]]:
         return (state_in.shape(), x.shape())

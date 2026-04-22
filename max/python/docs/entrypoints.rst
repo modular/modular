@@ -1,8 +1,22 @@
-:title: entrypoints
+:title: max.entrypoints
 :type: module
 :lang: python
-:source: max/entrypoints/llm.py
+:wrapper_class: rst-module-autosummary
 
-.. autoclass:: max.entrypoints.llm.LLM
-   :members:
-   :undoc-members:
+max.entrypoints
+===============
+
+.. automodule:: max.entrypoints
+   :no-members:
+
+.. currentmodule:: max.entrypoints
+
+Offline inference
+-----------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ~max.entrypoints.llm.LLM

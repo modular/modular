@@ -22,7 +22,6 @@ import os
 from enum import Enum, IntEnum
 from pathlib import Path
 
-from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from max.support.human_readable_formatter import to_human_readable_bytes
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -78,17 +77,20 @@ class Settings(BaseSettings):
     # Known sharp edges:
     #   1. .env files can use both the Settings attr name (eg host) as well as the alias MAX_SERVE_HOST.
     #   2. Environment variables can only use the alias (MAX_SERVE_...)
-    #   3. Explicit overrides can only use the alias (Settings(MAX_SERVE_HOST=...)
-    #   4. Explicit overrides using the wrong name silently do nothing (Settings(host=...)) has no effect.
+    #   3. Both name and alias can be used for direct initialization, but alias is preferred. Both Settings(MAX_SERVE_HOST=...) and Settings(host=...) work.
 
     model_config = SettingsConfigDict(
-        env_file=".env", env_prefix="", extra="allow", populate_by_name=True
+        env_file=".env",
+        env_prefix="MAX_SERVE_",
+        extra="allow",
+        populate_by_name=True,
     )
 
     # Server configuration
     api_types: list[APIType] = Field(
         description="List of exposed API types.",
         default=[APIType.OPENAI, APIType.SAGEMAKER],
+        alias="MAX_SERVE_API_TYPES",
     )
     offline_inference: bool = Field(
         description="If True, the server is run in offline inference mode. While it will still spin up workers, it will not spin up the API endpoint or use an HTTP port.",
@@ -234,12 +236,6 @@ class Settings(BaseSettings):
         default=False,
         description="When recording HTTP transactions, whether to include responses",
         alias="MAX_SERVE_TRANSACTION_RECORDING_INCLUDE_RESPONSES",
-    )
-
-    kv_cache_events_zmq_endpoint: str = Field(
-        default_factory=generate_zmq_ipc_path,
-        description="Expose KV Cache Events ZMQ Socket for communication between the KV Cache Agent and MAX Serve",
-        alias="MAX_SERVE_KV_CACHE_EVENTS_ZMQ_ENDPOINT",
     )
 
     di_bind_address: str = Field(

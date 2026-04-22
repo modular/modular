@@ -11,24 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.os import abort
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
-
-import benchmark
-from benchmark import Unit, keep
-from layout._coord import Coord
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+import std.benchmark
+from std.benchmark import Unit, keep
+from layout import Coord, TileTensor, row_major
 from nn.pad import pad_constant, pad_reflect
-from python import Python
-from testing import assert_true
+from std.python import Python
 
-from utils import IndexList, product
+from std.utils import IndexList, product
 
 
-fn pretty_print(
+def pretty_print(
     name: String,
     size: Int,
     rounds: Int,
@@ -47,8 +41,8 @@ fn pretty_print(
     )
 
 
-fn bench[
-    func: fn[rank: Int, size: Int, verify: Bool = False]() raises -> None,
+def bench[
+    func: def[rank: Int, size: Int, verify: Bool = False]() thin raises -> None,
     rank: Int,
     size: Int,
     name: String,
@@ -56,7 +50,7 @@ fn bench[
     comptime N = 100
 
     @parameter
-    fn runner():
+    def runner():
         try:
             for _ in range(N):
                 var result = func[rank, size]()
@@ -64,7 +58,7 @@ fn bench[
         except e:
             abort(String(e))
 
-    var ms = benchmark.run[runner](1, 10)
+    var ms = std.benchmark.run[runner](1, 10)
 
     pretty_print(
         name,
@@ -75,18 +69,17 @@ fn bench[
     )
 
 
-fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
+def test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime d_pre = 3
     comptime d_post = 7
     comptime d = d_pre + d_post
 
     @always_inline
-    fn get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
+    def get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
-        @parameter
-        if rank == 1:
+        comptime if rank == 1:
             in_shape = [n]
             out_shape = [n + d]
         elif rank == 2:
@@ -108,7 +101,7 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
@@ -120,13 +113,12 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     )
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         paddings[2 * i] = d_pre
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),
@@ -143,24 +135,23 @@ fn test_pad_constant_nd[rank: Int, n: Int, verify: Bool = False]() raises:
         # and the center contains the input values
         for i in range(out_size):
             # Just verify no crash occurs and values are set
-            _ = output.ptr[i]
+            _ = output.raw_load(i)
 
     input_ptr.free()
     output_ptr.free()
 
 
-fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
+def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime d_pre = 3
     comptime d_post = 7
     comptime d = d_pre + d_post
 
     @always_inline
-    fn get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
+    def get_in_out_shapes[rank: Int = 1]() -> InlineArray[IndexList[rank], 2]:
         var in_shape = IndexList[rank]()
         var out_shape = IndexList[rank]()
 
-        @parameter
-        if rank == 1:
+        comptime if rank == 1:
             in_shape = [n]
             out_shape = [n + d]
         elif rank == 2:
@@ -182,7 +173,7 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     comptime out_size = product(out_shape)
 
     # create a big input matrix and fill it with 1
-    var input_ptr = UnsafePointer[Scalar[DType.int]].alloc(in_size)
+    var input_ptr = alloc[Scalar[DType.int]](in_size)
     var input = TileTensor(
         input_ptr,
         row_major(Coord(in_shape)),
@@ -194,13 +185,12 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     )
     var paddings = TileTensor(paddings_stack, row_major[2 * rank]())
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         paddings[2 * i] = d_pre
         paddings[2 * i + 1] = d_post
 
     # Create an output matrix and fill with 0
-    var output_ptr = UnsafePointer[Scalar[DType.int]].alloc(out_size)
+    var output_ptr = alloc[Scalar[DType.int]](out_size)
     var output = TileTensor(
         output_ptr,
         row_major(Coord(out_shape)),
@@ -212,17 +202,17 @@ fn test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
     if verify:
         # Simple verification: check that values are set
         for i in range(out_size):
-            _ = output.ptr[i]
+            _ = output.raw_load(i)
 
     input_ptr.free()
     output_ptr.free()
 
 
 # CHECK-LABEL: test_pad_iterative
-def main():
+def main() raises:
     print("== test_pad_iterative")
 
-    def all[N: Int]():
+    def all[N: Int]() raises:
         bench[test_pad_constant_nd, 1, N, "test_pad_constant_1d"]()
         bench[test_pad_constant_nd, 2, N, "test_pad_constant_2d"]()
         bench[test_pad_constant_nd, 3, N, "test_pad_constant_3d"]()

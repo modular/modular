@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-GPU Kernel Function Attributes Module
+GPU Kernel Function Attributes Module.
 
 This module provides structures for defining and managing GPU kernel function attributes.
 It implements functionality similar to CUDA's CUfunction_attribute enum, allowing
@@ -28,7 +28,7 @@ such as shared memory allocation, cache behavior, and cluster configuration.
 
 
 @fieldwise_init
-struct Attribute(Equatable, TrivialRegisterType, Writable):
+struct Attribute(Equatable, TrivialRegisterPassable, Writable):
     """Represents GPU kernel function attributes.
 
     This struct defines constants for various function attributes that can be queried
@@ -121,7 +121,7 @@ struct Attribute(Equatable, TrivialRegisterType, Writable):
     CUclusterSchedulingPolicy / cudaClusterSchedulingPolicy."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two Attribute instances are equal.
 
         Args:
@@ -133,7 +133,7 @@ struct Attribute(Equatable, TrivialRegisterType, Writable):
         return self.code == other.code
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two Attribute instances are not equal.
 
         Args:
@@ -144,7 +144,7 @@ struct Attribute(Equatable, TrivialRegisterType, Writable):
         """
         return not (self == other)
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         """Writes a string representation of the `Attribute` to the provided writer.
 
             This method converts the `Attribute` enum value to its corresponding string name
@@ -178,7 +178,7 @@ struct Attribute(Equatable, TrivialRegisterType, Writable):
 
 
 @fieldwise_init
-struct FuncAttribute(Equatable, TrivialRegisterType):
+struct FuncAttribute(Equatable, TrivialRegisterPassable):
     """Implements CUDA's CUfunction_attribute enum for GPU kernel function attributes.
 
     This struct represents function attributes that can be set or queried for GPU kernels,
@@ -201,7 +201,7 @@ struct FuncAttribute(Equatable, TrivialRegisterType):
     """A null/invalid function attribute constant."""
 
     @always_inline("nodebug")
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two `FuncAttribute` instances are equal.
 
         Args:
@@ -213,7 +213,7 @@ struct FuncAttribute(Equatable, TrivialRegisterType):
         return self.attribute == other.attribute and self.value == other.value
 
     @always_inline("nodebug")
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         """Checks if two `FuncAttribute` instances are not equal.
 
         Args:
@@ -226,7 +226,7 @@ struct FuncAttribute(Equatable, TrivialRegisterType):
 
     @always_inline
     @staticmethod
-    fn CACHE_MODE_CA(val: Bool) -> FuncAttribute:
+    def CACHE_MODE_CA(val: Bool) -> FuncAttribute:
         """Creates a CACHE_MODE_CA function attribute.
 
         Indicates whether the function has been compiled with user specified
@@ -242,7 +242,7 @@ struct FuncAttribute(Equatable, TrivialRegisterType):
 
     @always_inline
     @staticmethod
-    fn MAX_DYNAMIC_SHARED_SIZE_BYTES(val: UInt32) -> FuncAttribute:
+    def MAX_DYNAMIC_SHARED_SIZE_BYTES(val: UInt32) -> FuncAttribute:
         """Creates a MAX_DYNAMIC_SHARED_SIZE_BYTES function attribute.
 
         The maximum size in bytes of dynamically-allocated shared memory that
@@ -261,7 +261,7 @@ struct FuncAttribute(Equatable, TrivialRegisterType):
 
     @always_inline
     @staticmethod
-    fn PREFERRED_SHARED_MEMORY_CARVEOUT(val: Int32) -> FuncAttribute:
+    def PREFERRED_SHARED_MEMORY_CARVEOUT(val: Int32) -> FuncAttribute:
         """Creates a PREFERRED_SHARED_MEMORY_CARVEOUT function attribute.
 
         On devices where the L1 cache and shared memory use the same hardware

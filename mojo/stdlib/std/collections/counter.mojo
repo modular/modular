@@ -15,7 +15,7 @@
 Import these APIs from the `collections` package:
 
 ```mojo
-from collections import Counter
+from std.collections import Counter
 
 ```
 
@@ -25,11 +25,18 @@ counted sets, also called bags or multisets, and extend that model by
 supporting negative counts.
 
 """
-from builtin.constrained import _constrained_conforms_to
-from collections.dict import Dict, _DictEntryIter, _DictKeyIter, _DictValueIter
-from hashlib import Hasher, default_hasher
+from std.collections.dict import (
+    Dict,
+    _DictEntryIter,
+    _DictEntryIterOwned,
+    _DictKeyIter,
+    _DictKeyIterOwned,
+    _DictValueIter,
+)
+import std.format._utils as fmt
+from std.hashlib import Hasher, default_hasher
 
-from utils import Variant
+from std.utils import Variant
 
 
 @fieldwise_init
@@ -39,10 +46,9 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Defaultable,
     Equatable,
     Iterable,
-    Representable,
+    IterableOwned,
     Sized,
-    Stringable,
-    Writable,
+    Writable where conforms_to(V, Writable),
 ):
     """A container for counting hashable items.
 
@@ -61,7 +67,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Example:
 
     ```mojo
-    from collections import Counter
+    from std.collections import Counter
 
     var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
     print(counter["a"]) # prints 3
@@ -83,6 +89,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         iterable_origin: The origin of the iterable.
     """
 
+    comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
+        Self.V, Int, Self.H
+    ]
+    """The owned iterator type for this counter."""
+
     # Fields
     var _data: Dict[Self.V, Int, Self.H]
 
@@ -90,11 +101,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self):
+    def __init__(out self):
         """Create a new, empty `Counter` object."""
         self._data = Dict[Self.V, Int, Self.H]()
 
-    fn __init__(out self, var *values: Self.V):
+    def __init__(out self, var *values: Self.V):
         """Create a new `Counter` from a list of values.
 
         Args:
@@ -103,7 +114,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
         print(counter["a"])  # print 3
@@ -119,7 +130,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         for item in values:
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
-    fn __init__(out self, items: List[Self.V, ...]):
+    def __init__(out self, items: List[Self.V, ...]):
         """Create a `Counter` from an input iterable.
 
         Args:
@@ -128,7 +139,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String](["a", "a", "a", "b", "b", "c", "d", "c", "c"])
         print(counter["a"]) # prints 3
@@ -140,7 +151,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             self._data[item.copy()] = self._data.get(item, 0) + 1
 
     @staticmethod
-    fn fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
+    def fromkeys(keys: List[Self.V, ...], value: Int) -> Self:
         """Create a new `Counter` from a list of keys and a default value.
 
         Args:
@@ -150,7 +161,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter["a"]) # output: 1
@@ -159,10 +170,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Returns:
             A new `Counter` with the count of each passed key set to `value`.
         """
-        debug_assert(
-            value >= 0,
-            "value must be non-negative",
-        )
+        assert value >= 0, "value must be non-negative"
         var result = Counter[Self.V, Self.H]()
         for key in keys:
             result[key] = value
@@ -172,7 +180,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __getitem__(self, key: Self.V) -> Int:
+    def __getitem__(self, key: Self.V) -> Int:
         """Get the count of a key.
 
         Args:
@@ -183,7 +191,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self.get(key, 0)
 
-    fn __setitem__(mut self, value: Self.V, count: Int):
+    def __setitem__(mut self, value: Self.V, count: Int):
         """Set a value in the keyword `Counter` by key.
 
         Args:
@@ -192,7 +200,15 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data[value.copy()] = count
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(deinit self) -> Self.IteratorOwnedType:
+        """Consume the counter and iterate over its keys.
+
+        Returns:
+            An iterator that owns the counter's keys.
+        """
+        return {_DictEntryIterOwned(self._data^, 0)}
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the `Counter`'s keys as immutable references.
 
         Returns:
@@ -200,7 +216,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return rebind[Self.IteratorType[origin_of(self)]](self._data.__iter__())
 
-    fn __contains__(self, key: Self.V) -> Bool:
+    def __contains__(self, key: Self.V) -> Bool:
         """Check if a given key is in the `Counter` or not.
 
         Args:
@@ -215,7 +231,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Trait implementations
     # ===------------------------------------------------------------------=== #
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Returns the number of elements currently stored in the `Counter`.
 
         Returns:
@@ -223,7 +239,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return len(self._data)
 
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Check if the `Counter` is empty or not.
 
         Returns:
@@ -231,75 +247,78 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return Bool(len(self))
 
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns a string representation of a `Counter`.
+    def _write_counter_body[
+        f_key: def(Self.V, mut Some[Writer]) thin,
+        f_val: def(Int, mut Some[Writer]) thin,
+    ](self, mut writer: Some[Writer]) where conforms_to(Self.V, Writable):
+        """Write the counter's key-value pairs to a writer.
 
-        Returns:
-            A string representation of the Counter.
-        """
-        return self.__str__()
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of a `Counter`.
-
-        Returns:
-            A string representation of the Counter.
-
-        Example:
-
-        ```mojo
-        from collections import Counter
-
-
-        var c = Counter[String]("a", "a", "a", "b", "b", "c", "d", "c", "c")
-        var counter_as_string = String(c)
-        print(counter_as_string)
-        # prints "Counter({'a': 3, 'c': 3, 'b': 2, 'd': 1})"
-        ```
-        """
-        var output = String()
-        self.write_to(output)
-        return output^
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
-        """Write `my_counter.__str__()` to a `Writer`.
-
-        Constraints:
-            `V` must conform to `Representable`.
+        Parameters:
+            f_key: The function to format keys.
+            f_val: The function to format values.
 
         Args:
             writer: The object to write to.
         """
-        _constrained_conforms_to[
-            conforms_to(Self.V, Representable),
-            Parent=Self,
-            Element = Self.V,
-            ParentConformsTo="Stringable",
-            ElementConformsTo="Representable",
-        ]()
-
-        writer.write("Counter({")
+        writer.write_string("{")
 
         var items = self.most_common(UInt(len(self)))
         for i in range(len(items)):
+            if i > 0:
+                writer.write_string(", ")
             ref item = items[i]
-            # Access the value and count from CountTuple
-            ref value = item._value
-            ref key = trait_downcast[Representable](value)
-            var count = item._count
-            writer.write(repr(key), ": ", repr(count))
-            if i < len(items) - 1:
-                writer.write(", ")
-        writer.write("})")
+            f_key(item._value, writer)
+            writer.write_string(": ")
+            f_val(item._count, writer)
+
+        writer.write_string("}")
+
+    @no_inline
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
+        """Write this `Counter` to a writer.
+
+        Constraints:
+            `V` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+        self._write_counter_body[
+            f_key=fmt.write_to[Self.V],
+            f_val=fmt.write_to[Int],
+        ](writer)
+
+    @no_inline
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.V, Writable):
+        """Write the repr of this `Counter` to a writer.
+
+        Constraints:
+            `V` must conform to `Writable`.
+
+        Args:
+            writer: The object to write to.
+        """
+
+        @parameter
+        def write_fields(mut w: Some[Writer]):
+            self._write_counter_body[
+                f_key=fmt.write_repr_to[Self.V],
+                f_val=fmt.write_repr_to[Int],
+            ](w)
+
+        fmt.FormatStruct(writer, "Counter").params(
+            fmt.TypeNames[Self.V](),
+        ).fields[FieldsFn=write_fields]()
 
     # ===------------------------------------------------------------------=== #
     # Comparison operators
     # ===------------------------------------------------------------------=== #
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Check if all counts agree. Missing counts are treated as zero.
 
         Args:
@@ -311,7 +330,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_eq(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        def is_eq(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) != other.get(e, 0):
                     return False
@@ -319,7 +338,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return is_eq(self.keys()) and is_eq(other.keys())
 
-    fn le(self, other: Self) -> Bool:
+    def le(self, other: Self) -> Bool:
         """Check if all counts are less than or equal to those in the other
         `Counter`.
 
@@ -336,7 +355,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -348,7 +367,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_le(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        def is_le(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) > other.get(e, 0):
                     return False
@@ -356,7 +375,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return is_le(self.keys())
 
-    fn lt(self, other: Self) -> Bool:
+    def lt(self, other: Self) -> Bool:
         """Check if all counts are less than those in the other `Counter`.
 
         Note that since we check that _all_ counts satisfy the condition, this
@@ -372,7 +391,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 3)
@@ -384,7 +403,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         @parameter
         @always_inline
-        fn is_lt(keys: _DictKeyIter[Self.V, Int, _]) -> Bool:
+        def is_lt(keys: _DictKeyIter[Self.V, Int, ...]) -> Bool:
             for e in keys:
                 if self.get(e, 0) >= other.get(e, 0):
                     return False
@@ -392,7 +411,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return is_lt(self.keys())
 
-    fn gt(self, other: Self) -> Bool:
+    def gt(self, other: Self) -> Bool:
         """Check if all counts are greater than those in the other `Counter`.
 
         Note that since we check that _all_ counts satisfy the condition, this
@@ -408,7 +427,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 3)
@@ -419,7 +438,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return other.lt(self)
 
-    fn ge(self, other: Self) -> Bool:
+    def ge(self, other: Self) -> Bool:
         """Check if all counts are greater than or equal to those in the other
         `Counter`.
 
@@ -436,7 +455,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -451,7 +470,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Binary operators
     # ===------------------------------------------------------------------=== #
 
-    fn __add__(self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         """Add counts from two `Counter`s.
 
         Args:
@@ -467,7 +486,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return +result^  # Remove zero and negative counts
 
-    fn __iadd__(mut self, other: Self):
+    def __iadd__(mut self, other: Self):
         """Add counts from another `Counter` to this `Counter`.
 
         Args:
@@ -476,7 +495,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         self.update(other)
         self._keep_positive()
 
-    fn __sub__(self, other: Self) -> Self:
+    def __sub__(self, other: Self) -> Self:
         """Subtract counts, but keep only results with positive counts.
 
         Args:
@@ -492,8 +511,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return +result^  # Remove zero and negative counts
 
-    fn __isub__(mut self, other: Self):
-        """Subtract counts from another `Counter` from this `Counter`, but kee
+    def __isub__(mut self, other: Self):
+        """Subtract counts from another `Counter` from this `Counter`, but keep
         only results with positive counts.
 
         Args:
@@ -502,7 +521,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         self.subtract(other)
         self._keep_positive()
 
-    fn __and__(self, other: Self) -> Self:
+    def __and__(self, other: Self) -> Self:
         """Intersection: keep common elements with the minimum count.
 
         Args:
@@ -520,7 +539,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return result^
 
-    fn __iand__(mut self, other: Self):
+    def __iand__(mut self, other: Self):
         """Intersection: keep common elements with the minimum count.
 
         Args:
@@ -537,7 +556,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
                 var key_copy = key.copy()  # Copy due to incorrect origins.
                 self[key_copy] = min(self.get(key, 0), other.get(key, 0))
 
-    fn __or__(self, other: Self) -> Self:
+    def __or__(self, other: Self) -> Self:
         """Union: keep all elements with the maximum count.
 
         Args:
@@ -560,7 +579,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
         return result^
 
-    fn __ior__(mut self, other: Self):
+    def __ior__(mut self, other: Self):
         """Union: keep all elements with the maximum count.
 
         Args:
@@ -571,7 +590,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             if newcount > 0:
                 self[key] = newcount
 
-    fn _keep_positive(mut self):
+    def _keep_positive(mut self):
         """Remove zero and negative counts from the `Counter`."""
         for key in self.keys():
             if self.get(key, 0) <= 0:
@@ -585,7 +604,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Unary operators
     # ===------------------------------------------------------------------=== #
 
-    fn __pos__(self) -> Self:
+    def __pos__(self) -> Self:
         """Return a shallow copy of the `Counter`, stripping non-positive
         counts.
 
@@ -598,7 +617,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
                 result[item.key] = item.value
         return result^
 
-    fn __neg__(self) -> Self:
+    def __neg__(self) -> Self:
         """Subtract from an empty `Counter`. Strips positive and zero counts,
         and flips the sign on negative counts.
 
@@ -615,7 +634,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     # Methods
     # ===------------------------------------------------------------------=== #
 
-    fn get(self, value: Self.V) -> Optional[Int]:
+    def get(self, value: Self.V) -> Optional[Int]:
         """Get a value from the `Counter`.
 
         Args:
@@ -628,7 +647,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("a").or_else(0)) # output: 1
@@ -637,7 +656,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.get(value)
 
-    fn get(self, value: Self.V, default: Int) -> Int:
+    def get(self, value: Self.V, default: Int) -> Int:
         """Get a value from the `Counter`.
 
         Args:
@@ -650,7 +669,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("a", default=0)) # output: 1
@@ -659,7 +678,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.get(value, default)
 
-    fn pop(mut self, value: Self.V) raises -> Int:
+    def pop(mut self, value: Self.V) raises -> Int:
         """Remove a value from the `Counter` by value.
 
         Args:
@@ -674,7 +693,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
         print(counter.get("b").or_else(0)) # output: 1
@@ -688,7 +707,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.pop(value)
 
-    fn pop(mut self, value: Self.V, var default: Int) -> Int:
+    def pop(mut self, value: Self.V, var default: Int) -> Int:
         """Remove a value from the `Counter` by value.
 
         Args:
@@ -703,7 +722,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 1)
@@ -715,7 +734,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.pop(value, default)
 
-    fn keys(
+    def keys(
         ref self,
     ) -> _DictKeyIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s keys as immutable references.
@@ -726,7 +745,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["d", "b", "a", "c"], 1)
         var key_list = List[String]()
@@ -738,7 +757,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.keys()
 
-    fn values(
+    def values(
         ref self,
     ) -> _DictValueIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s values as references.
@@ -749,7 +768,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         # Construct `counter`
         var counter = Counter[Int]([1, 2, 3, 1, 2, 1, 1, 1, 2, 5, 2, 9])
@@ -766,7 +785,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.values()
 
-    fn items(
+    def items(
         self,
     ) -> _DictEntryIter[Self.V, Int, Self.H, origin_of(self._data)]:
         """Iterate over the `Counter`'s entries as immutable references.
@@ -777,7 +796,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         for count in counter.items():
@@ -788,13 +807,13 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         return self._data.items()
 
-    fn clear(mut self):
+    def clear(mut self):
         """Remove all elements from the `Counter`.
 
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         print(counter.total()) # output: 9 (5 ones + 4 twos)
@@ -804,7 +823,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data.clear()
 
-    fn popitem(mut self) raises -> CountTuple[Self.V]:
+    def popitem(mut self) raises -> CountTuple[Self.V]:
         """Remove and return an arbitrary (key, value) pair from the `Counter`.
         Useful for destructively iterating over the `Counter`.
         Returns in LIFO order.
@@ -818,7 +837,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[String].fromkeys(["a", "b", "c"], 5)
         try:
@@ -834,7 +853,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
 
     # Special methods for counter
 
-    fn total(self) -> UInt:
+    def total(self) -> UInt:
         """Return the total of all counts in the `Counter`.
 
         Returns:
@@ -843,7 +862,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 1, 1, 1, 2, 2])
         print(counter.total()) # output: 9 (5 ones + 4 twos)
@@ -856,7 +875,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             total += count
         return UInt(total)
 
-    fn most_common(self, n: UInt) -> List[CountTuple[Self.V]]:
+    def most_common(self, n: UInt) -> List[CountTuple[Self.V]]:
         """Return a list of the `n` most common elements and their counts from
         the most common to the least.
 
@@ -869,7 +888,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
         for tuple in counter.most_common(2):
@@ -884,14 +903,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
             items.append(t^)
 
         @parameter
-        fn comparator(a: CountTuple[Self.V], b: CountTuple[Self.V]) -> Bool:
+        def comparator(a: CountTuple[Self.V], b: CountTuple[Self.V]) -> Bool:
             return a < b
 
         sort[comparator](items)
         items.shrink(Int(n))
         return items^
 
-    fn elements(self) -> List[Self.V]:
+    def elements(self) -> List[Self.V]:
         """Return an iterator over elements repeating each as many times as its
         count.
 
@@ -901,7 +920,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3, 1, 1, 1, 6, 6, 2, 2, 7])
         print(counter.elements())
@@ -914,7 +933,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
                 elements.append(item.key.copy())
         return elements^
 
-    fn update(mut self, other: Self):
+    def update(mut self, other: Self):
         """Update the `Counter`, like `Dict.update()` but add counts instead of
         replacing them.
 
@@ -924,7 +943,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -938,7 +957,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
                 self._data.get(item.key, 0) + item.value
             )
 
-    fn subtract(mut self, other: Self):
+    def subtract(mut self, other: Self):
         """Subtract counts. Both inputs and outputs may be zero or negative.
 
         Args:
@@ -947,7 +966,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         Example:
 
         ```mojo
-        from collections import Counter
+        from std.collections import Counter
 
         var counter = Counter[Int]([1, 2, 1, 2, 3, 3, 3])
         var other = Counter[Int].fromkeys([1, 2, 3], 10)
@@ -977,7 +996,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
     # Life cycle methods
     # ===------------------------------------------------------------------=== #
 
-    fn __init__(out self, value: Self.V, count: UInt):
+    def __init__(out self, value: Self.V, count: UInt):
         """Create a new `CountTuple`.
 
         Args:
@@ -991,7 +1010,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
     # Operator dunders
     # ===------------------------------------------------------------------=== #
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         """Compare two `CountTuple`s by count, then by value.
 
         Args:
@@ -1003,7 +1022,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
         """
         return self._count > other._count
 
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Compare two `CountTuple`s for equality.
 
         Args:
@@ -1015,7 +1034,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
         return self._count == other._count
 
     @always_inline
-    fn __getitem__(self, idx: Int) -> Variant[Self.V, Int]:
+    def __getitem__(self, idx: Int) -> Variant[Self.V, Int]:
         """Get an element in the `CountTuple`.
 
         Args:
@@ -1024,7 +1043,7 @@ struct CountTuple[V: KeyElement](Comparable, Copyable):
         Returns:
             The value if `idx` is `0` and the count if `idx` is `1`.
         """
-        debug_assert(0 <= idx <= 1, "index must be within bounds")
+        assert 0 <= idx <= 1, "index must be within bounds"
         if idx == 0:
             return self._value.copy()
         else:

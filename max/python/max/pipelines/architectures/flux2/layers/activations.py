@@ -13,7 +13,7 @@
 
 from functools import partial
 
-from max import functional as F
+from max.experimental import functional as F
 
 ACT2FN = {
     "silu": F.silu,

@@ -11,25 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from tensor._indexing import _row_major_strides
+from std.algorithm.functional import elementwise
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn _collapse_dims_around_axis(
+def _collapse_dims_around_axis(
     shape: IndexList, axis: Int, out result: IndexList[3]
 ) raises:
     if axis >= shape.size:
         raise Error("axis larger than provided shape")
 
-    @parameter
-    if shape.size == 0:
+    comptime if shape.size == 0:
         return IndexList[3](1, 1, 1)
 
     var split = shape[axis]
@@ -46,7 +42,7 @@ fn _collapse_dims_around_axis(
 
 
 @always_inline
-fn repeat_interleave[
+def repeat_interleave[
     dtype: DType,
     type_repeats: DType,
 ](
@@ -71,8 +67,8 @@ fn repeat_interleave[
     # comptime assert (is_row_major[input.rank](input.layout)) and (
     #     is_row_major[output.rank](output.layout)
     # )
-    comptime assert input.rank == output.rank
-    comptime assert repeats.rank == 1
+    comptime assert input.flat_rank == output.flat_rank
+    comptime assert repeats.flat_rank == 1
 
     # Compute the shape of the input and result buffers.
     # These are the shapes of the buffers we will be working on.
@@ -83,8 +79,8 @@ fn repeat_interleave[
         coord_to_index_list(output.layout.shape_coord()), axis
     )
 
-    debug_assert(collapsed_output_shape[0] == collapsed_input_shape[0])
-    debug_assert(collapsed_output_shape[2] == collapsed_input_shape[2])
+    assert collapsed_output_shape[0] == collapsed_input_shape[0]
+    assert collapsed_output_shape[2] == collapsed_input_shape[2]
 
     var collapsed_input = TileTensor(
         input.ptr,
@@ -119,16 +115,16 @@ fn repeat_interleave[
 
     @always_inline
     @parameter
-    fn func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
+    def func[width: Int, rank: Int, alignment: Int = 1](idx: IndexList[rank]):
         var output_index = rebind[IndexList[3]](idx)
         var input_index = output_index
         input_index[1] = offset_mapping[output_index[1]]
 
         var input_idx = collapsed_input.layout(Coord(input_index))
-        var input_value = collapsed_input.ptr.load[width=width](input_idx)
+        var input_value = collapsed_input.raw_load[width=width](input_idx)
 
         var output_idx = collapsed_output.layout(Coord(output_index))
-        collapsed_output.ptr.store(output_idx, input_value)
+        collapsed_output.raw_store(output_idx, input_value)
 
     elementwise[func, simd_width_of[output.dtype]()](
         coord_to_index_list(collapsed_output.layout.shape_coord())
@@ -136,15 +132,15 @@ fn repeat_interleave[
 
 
 @always_inline
-fn repeat_interleave_shape[
+def repeat_interleave_shape[
     type_repeats: DType,
 ](
-    input: TileTensor[...],
+    input: TileTensor,
     repeats: TileTensor[type_repeats, ...],
     axis: Int,
 ) raises -> IndexList[input.rank]:
     comptime assert type_repeats.is_integral()
-    comptime assert repeats.rank == 1
+    comptime assert repeats.flat_rank == 1
 
     var repeats_size = repeats.dim[0]()
     if repeats_size != 1 and repeats_size != Scalar[repeats.linear_idx_type](

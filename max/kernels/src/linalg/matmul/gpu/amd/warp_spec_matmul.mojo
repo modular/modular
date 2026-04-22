@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-AMD Warp-Specialized Matrix Multiplication
+AMD Warp-Specialized Matrix Multiplication.
 
 Architecture Overview:
 - Producer warps: Load tiles from global to shared memory
@@ -36,44 +36,35 @@ Ring Buffer Configuration:
 - Can be changed to SplitCounterSync in the RingBuffer type aliases for reduced contention
 - The trait-based design allows easy experimentation with different sync strategies
 """
-from gpu import (
+from std.gpu import (
     WARP_SIZE,
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
     block_idx,
     thread_idx,
-    warp_id as get_warp_id,
+    warp_id,
 )
-from gpu.intrinsics import inlined_assembly
-from layout import Layout, LayoutTensor
+from std.gpu.intrinsics import inlined_assembly
+from layout import Layout, LayoutTensor, TileTensor
 from layout.layout import blocked_product
-from layout.layout_tensor import (
-    ThreadScope,
-    copy_local_to_dram,
-    copy_local_to_shared,
-)
+from layout.layout_tensor import ThreadScope, copy_local_to_shared
 from layout.swizzle import Swizzle
-from layout.tensor_core import num_matrix_reg
-from linalg.structuring import ScatterGatherAmd, SMemArray
-from utils import IndexList, StaticTuple
+from linalg.structuring import ScatterGatherAmd
+from std.utils import IndexList, StaticTuple
 
 # Unified implementation with configurable sync strategies
 from .ring_buffer import RingBuffer
 from .ring_buffer_traits import SingleCounterSync, SplitCounterSync
-from .structured import (
-    AmdTileOperator,
-    SMemBuffer,
-    ThreadRole,
-)
+from .structured import AmdTileOperator, ThreadRole
 
 # Type aliases for cleaner code
 comptime GlobalTensor[dtype: DType, layout: Layout] = LayoutTensor[
-    dtype, layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+    dtype, layout, MutAnyOrigin, address_space=AddressSpace.GLOBAL
 ]
 
 
 @parameter
-fn validate_config[
+def validate_config[
     BM: Int,
     BN: Int,
     BK: Int,
@@ -88,52 +79,47 @@ fn validate_config[
 ]():
     """Validates the configuration parameters for the matrix multiplication kernel.
     """
-    constrained[
-        BM % WM == 0 and BN % WN == 0,
-        "Block dims must be divisible by warp dims",
-    ]()
-    constrained[
-        m_warps % producer_a == 0,
+    comptime assert (
+        BM % WM == 0 and BN % WN == 0
+    ), "Block dims must be divisible by warp dims"
+    comptime assert m_warps % producer_a == 0, (
         "M warps must be divisible by A producers: "
         + String(m_warps)
         + " % "
         + String(producer_a)
-        + " == 0",
-    ]()
-    constrained[
-        n_warps % producer_b == 0,
+        + " == 0"
+    )
+    comptime assert n_warps % producer_b == 0, (
         "N warps must be divisible by B producers: "
         + String(n_warps)
         + " % "
         + String(producer_b)
-        + " == 0",
-    ]()
-    constrained[
-        m_warps * n_warps % consumer == 0,
-        "Total warps must be divisible by consumers",
-    ]()
-    constrained[
-        consumer >= producer_a and consumer >= producer_b,
-        "Need enough consumers",
-    ]()
-    constrained[
-        consumer.is_power_of_two(), "Consumer warps must be power of 2"
-    ]()
+        + " == 0"
+    )
+    comptime assert (
+        m_warps * n_warps % consumer == 0
+    ), "Total warps must be divisible by consumers"
+    comptime assert (
+        consumer >= producer_a and consumer >= producer_b
+    ), "Need enough consumers"
+    comptime assert (
+        consumer.is_power_of_two()
+    ), "Consumer warps must be power of 2"
 
 
 @always_inline
-fn determine_thread_role[
+def determine_thread_role[
     producer_a_warps: Int,
     producer_b_warps: Int,
 ]() -> Tuple[ThreadRole, Int]:
     """Returns (role, consumer_warp_id within role group)."""
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
     comptime producer_thread_count = (
         producer_a_warps + producer_b_warps
     ) * WARP_SIZE
 
-    if thread_idx.x < UInt(producer_thread_count):
-        if warp_id < UInt(producer_a_warps):
+    if thread_idx.x < producer_thread_count:
+        if warp_id < producer_a_warps:
             return (ThreadRole.PRODUCER, 0)  # A producer
         else:
             return (ThreadRole.PRODUCER, 1)  # B producer
@@ -142,7 +128,7 @@ fn determine_thread_role[
 
 
 @parameter
-fn smem_tile_layout[
+def smem_tile_layout[
     k_tile_size: Int, block_rows: Int, block_cols: Int
 ]() -> Layout:
     # Shared memory layout
@@ -171,10 +157,9 @@ fn smem_tile_layout[
     # └─────────────────────────────────────────────────────────────────────────┘
     # stride between blocks = block_rows x k_tile_size = 64 x 32 = 2048
 
-    constrained[
-        block_cols % k_tile_size == 0,
-        "block_cols must be a multiple of k_tile_size",
-    ]()
+    comptime assert (
+        block_cols % k_tile_size == 0
+    ), "block_cols must be a multiple of k_tile_size"
 
     comptime base_layout = Layout.row_major(block_rows, k_tile_size)
     comptime num_repeats = block_cols // k_tile_size
@@ -187,7 +172,7 @@ fn smem_tile_layout[
 
 
 @parameter
-fn get_producer_warp_thread_layout[
+def get_producer_warp_thread_layout[
     k_tile_size: Int, simd_width: Int, block_rows: Int, block_cols: Int
 ]() -> Layout:
     # TODO: Document the logic behind this layout
@@ -213,22 +198,20 @@ fn get_producer_warp_thread_layout[
 
     comptime num_repeats_col = block_cols // k_tile_size
 
-    constrained[
-        num_repeats_col < (WARP_SIZE // inner_block_size),
+    comptime assert num_repeats_col < (WARP_SIZE // inner_block_size), (
         "not enough threads per warp to cover block k dimension: "
         + String(num_repeats_col)
         + " < "
         + String(WARP_SIZE)
         + " // "
-        + String(inner_block_size),
-    ]()
+        + String(inner_block_size)
+    )
     comptime outer_block_size = num_repeats_col * inner_block_size
     comptime num_repeats_row = WARP_SIZE // outer_block_size
 
-    constrained[
-        block_rows % (inner_block_rows * num_repeats_row) == 0,
-        "shared block size is not evenly distributable among threads",
-    ]()
+    comptime assert (
+        block_rows % (inner_block_rows * num_repeats_row) == 0
+    ), "shared block size is not evenly distributable among threads"
 
     comptime tiler_layout = Layout.row_major(
         num_repeats_row,
@@ -240,7 +223,7 @@ fn get_producer_warp_thread_layout[
 
 
 @always_inline
-fn lgkm_wait():
+def lgkm_wait():
     inlined_assembly[
         "s_waitcnt lgkmcnt(0)",
         NoneType,
@@ -250,7 +233,7 @@ fn lgkm_wait():
 
 
 @always_inline
-fn run_producer[
+def run_producer[
     dtype: DType,
     layout: Layout,
     block_rows: Int,  # BM for A, BN for B
@@ -267,7 +250,7 @@ fn run_producer[
 ](
     matrix: GlobalTensor[dtype, layout],
     mut ring_buffer: RingBuffer,
-    warp_id: UInt,
+    warp_id: Int,
     block_idx_dim: Int,
 ):
     """Generic producer function for loading matrix tiles from global to shared memory.
@@ -285,7 +268,7 @@ fn run_producer[
         dtype,
         Layout.row_major(elements_loaded_per_thread // simd_width, simd_width),
         MutAnyOrigin,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ].stack_allocation()
     var reg_tile_frag = reg_frag.vectorize[1, simd_width]()
 
@@ -293,14 +276,10 @@ fn run_producer[
     with ring_buffer.producer[warps_processed_per_producer]() as producer_view:
         var scatter_gather = ScatterGatherAmd[thread_layout](matrix)
 
-        @parameter
-        for producer_iteration in range(warps_processed_per_producer):
-            var warp_tile_idx = (
-                Int(warp_id) + producer_iteration * producer_warps
-            )
+        comptime for producer_iteration in range(warps_processed_per_producer):
+            var warp_tile_idx = warp_id + producer_iteration * producer_warps
 
-            @parameter
-            for tile_num in range(tile_count):
+            comptime for tile_num in range(tile_count):
                 comptime stage = tile_num % pipeline_stages
 
                 var gmem_tile = matrix.tile[block_rows, block_cols](
@@ -326,7 +305,7 @@ fn run_producer[
                     copy_local_to_shared[
                         thread_layout=thread_layout,
                         swizzle=swizzle,
-                        thread_scope = ThreadScope.WARP,
+                        thread_scope=ThreadScope.WARP,
                         row_major=True,
                     ](
                         smem_warp_tile[0].vectorize[1, simd_width](),
@@ -344,7 +323,11 @@ fn run_producer[
         )
     )
 )
-fn warp_specialized_matmul_kernel[
+@__name(
+    t"amd_warp_specialized_matmul_{in_type}_{out_type}_{BM}x{BN}x{BK}",
+    mangle=True,
+)
+def warp_specialized_matmul_kernel[
     in_type: DType,
     out_type: DType,
     a_layout: Layout,
@@ -362,16 +345,16 @@ fn warp_specialized_matmul_kernel[
     pipeline_stages: Int,
 ](
     a: LayoutTensor[
-        in_type, a_layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+        in_type, a_layout, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ],
     b: LayoutTensor[
-        in_type, b_layout, MutAnyOrigin, address_space = AddressSpace.GLOBAL
+        in_type, b_layout, MutAnyOrigin, address_space=AddressSpace.GLOBAL
     ],
     c: LayoutTensor[
         out_type,
         c_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.GLOBAL,
+        address_space=AddressSpace.GLOBAL,
     ],
 ):
     comptime K = a.shape[1]()
@@ -402,7 +385,7 @@ fn warp_specialized_matmul_kernel[
     var role_info = determine_thread_role[a_producer_warps, b_producer_warps]()
     var role = role_info[0]
     var role_group = role_info[1]
-    var warp_id = get_warp_id()
+    var warp_id = warp_id()
 
     comptime swizzle = Swizzle(3, 0, 1)
 
@@ -476,10 +459,10 @@ fn warp_specialized_matmul_kernel[
                 a,
                 ring_buffer_a,
                 warp_id,
-                Int(block_idx.x),
+                block_idx.x,
             )
         else:  # B producer
-            var producer_warp_id = warp_id - UInt(a_producer_warps)
+            var producer_warp_id = warp_id - a_producer_warps
             run_producer[
                 in_type,
                 b_layout,
@@ -498,7 +481,7 @@ fn warp_specialized_matmul_kernel[
                 b,
                 ring_buffer_b,
                 producer_warp_id,
-                Int(block_idx.y),
+                block_idx.y,
             )
 
     else:  # Consumer
@@ -506,17 +489,15 @@ fn warp_specialized_matmul_kernel[
             MMA_M, WARP_SIZE // MMA_M
         )
 
-        var c_block_tile = c.tile[BM, BN](Int(block_idx.x), Int(block_idx.y))
+        var c_block_tile = c.tile[BM, BN](block_idx.x, block_idx.y)
         var c_scatter_gather = ScatterGatherAmd[
-            output_thread_layout, thread_scope = ThreadScope.WARP
+            output_thread_layout, thread_scope=ThreadScope.WARP
         ](c)
 
         comptime total_consumer_operations = m_warps_per_block * n_warps_per_block
         comptime warps_computed_per_consumer = total_consumer_operations // consumer_warps
 
-        var consumer_warp_id = (
-            Int(warp_id) - a_producer_warps - b_producer_warps
-        )
+        var consumer_warp_id = warp_id - a_producer_warps - b_producer_warps
 
         # Create a single tile operator that we'll reuse for each tile
         var tile_operator = AmdTileOperator[
@@ -529,7 +510,7 @@ fn warp_specialized_matmul_kernel[
         ]()
 
         @parameter
-        fn compute_indices(consumer_iteration: Int) -> Tuple[Int, Int]:
+        def compute_indices(consumer_iteration: Int) -> Tuple[Int, Int]:
             """Computes warp tile indices for this consumer iteration."""
             var warp_tile_idx = (
                 consumer_warp_id + consumer_iteration * consumer_warps
@@ -546,16 +527,16 @@ fn warp_specialized_matmul_kernel[
             warps_computed_per_consumer
         ]() as consumer_view_b:
             # Process each tile completely before moving to the next
-            @parameter
-            for consumer_iteration in range(warps_computed_per_consumer):
+            comptime for consumer_iteration in range(
+                warps_computed_per_consumer
+            ):
                 var m_warp_idx, n_warp_idx = compute_indices(consumer_iteration)
 
                 # Reset accumulator for this new M,N position
                 tile_operator.reset_accumulator()
 
                 # Accumulate across all K tiles for this M, N position
-                @parameter
-                for tile_num in range(tile_count):
+                comptime for tile_num in range(tile_count):
                     comptime stage = tile_num % pipeline_stages
 
                     # Get tiles using consumer view context
@@ -567,15 +548,13 @@ fn warp_specialized_matmul_kernel[
                         comptime num_k_tiles = tile_operator.total_k_tiles
 
                         # Load all K tiles
-                        @parameter
-                        for k_idx in range(num_k_tiles):
+                        comptime for k_idx in range(num_k_tiles):
                             tile_operator.load_tile_fragment[k_idx](
                                 smem_tile_a[0], smem_tile_b[0]
                             )
 
                         # Perform MMA computation
-                        @parameter
-                        for k_idx in range(num_k_tiles):
+                        comptime for k_idx in range(num_k_tiles):
                             tile_operator.mma_compute[k_idx]()
 
                 # Write this tile's result to global memory
@@ -590,7 +569,7 @@ fn warp_specialized_matmul_kernel[
 
 
 @always_inline
-fn warp_specialized_matmul[
+def warp_specialized_matmul[
     M: Int,
     N: Int,
     K: Int,
@@ -605,14 +584,15 @@ fn warp_specialized_matmul[
     consumer_warps: Int,
     pipeline_stages: Int = 1,
 ](
-    a_device_tensor: LayoutTensor[
-        DType.bfloat16,
-        Layout.row_major(M, K),
-    ],
-    b_device_tensor: LayoutTensor[DType.bfloat16, Layout.row_major(N, K)],
-    c_device_tensor: LayoutTensor[DType.float32, Layout.row_major(M, N)],
+    a_tt: TileTensor[DType.bfloat16, ...],
+    b_tt: TileTensor[DType.bfloat16, ...],
+    c_tt: TileTensor[DType.float32, ...],
     ctx: DeviceContext,
 ) raises:
+    var a_device_tensor = a_tt.to_layout_tensor()
+    var b_device_tensor = b_tt.to_layout_tensor()
+    var c_device_tensor = c_tt.to_layout_tensor()
+
     comptime kernel = warp_specialized_matmul_kernel[
         a_device_tensor.dtype,
         c_device_tensor.dtype,

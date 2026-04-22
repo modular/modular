@@ -11,31 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import _accelerator_arch
-from sys.param_env import env_get_string, is_defined
+from std.sys.info import _accelerator_arch
+from std.sys.defines import get_defined_string, is_defined
 
-from gpu.host import DeviceContext
-from gpu.host.info import GPUInfo
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import GPUInfo
 
 
-fn api() -> String:
-    @parameter
-    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        comptime api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
+def api() -> String:
+    comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+        comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
-        @parameter
-        if api == "gpu":
+        comptime if api == "gpu":
             return String(GPUInfo.from_name[_accelerator_arch()]().api)
         return String(api)
     return "default"
 
 
-fn create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
+def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 
-    @parameter
-    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+    comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         print("Using DeviceContext: V2 - " + api())
         test_ctx = DeviceContext(device_id=device_id, api=api())
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():

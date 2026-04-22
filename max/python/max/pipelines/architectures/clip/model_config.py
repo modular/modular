@@ -17,10 +17,12 @@ from max.driver import Device
 from max.dtype.dtype import DType
 from max.graph import DeviceRef
 from max.pipelines.lib import MAXModelConfigBase, SupportedEncoding
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from pydantic import Field
+from typing_extensions import Self
 
 
-class ClipConfigBase(MAXModelConfigBase):
+class ClipConfig(MAXModelConfigBase):
     vocab_size: int = 49408
     hidden_size: int = 512
     intermediate_size: int = 2048
@@ -39,23 +41,22 @@ class ClipConfigBase(MAXModelConfigBase):
     dtype: DType = DType.bfloat16
     device: DeviceRef = Field(default_factory=DeviceRef.GPU)
 
-
-class ClipConfig(ClipConfigBase):
-    @staticmethod
-    def generate(
+    @classmethod
+    def initialize_from_config(
+        cls,
         config_dict: dict[str, Any],
         encoding: SupportedEncoding,
         devices: list[Device],
-    ) -> ClipConfigBase:
+    ) -> Self:
         init_dict = {
             key: value
             for key, value in config_dict.items()
-            if key in ClipConfigBase.__annotations__
+            if key in cls.model_fields
         }
         init_dict.update(
             {
-                "dtype": encoding.dtype,
+                "dtype": supported_encoding_dtype(encoding),
                 "device": DeviceRef.from_device(devices[0]),
             }
         )
-        return ClipConfigBase(**init_dict)
+        return cls(**init_dict)

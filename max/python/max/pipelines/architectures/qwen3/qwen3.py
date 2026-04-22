@@ -10,16 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Build a Qwen3 model that supports both single and multi-GPU inference."""
+"""Build a Qwen3 model that supports single-GPU, multi-GPU TP, and DP+EP."""
 
 from __future__ import annotations
 
 import functools
-from collections.abc import Callable
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from max.pipelines.architectures.qwen3vl_moe.nn.moe import Qwen3VLMoE
+from collections.abc import Callable, Sequence
 
 from max.dtype import DType
 from max.graph import (
@@ -33,34 +29,36 @@ from max.graph import (
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
-from max.nn.legacy.comm import Signals
-from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnLogits
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.comm import Signals
+from max.nn.comm.allreduce import Allreduce
+from max.nn.comm.ep import EPBatchManager
+from max.nn.data_parallelism import split_batch_replicated
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.moe import MoE, MoEQuantized
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+    ReturnLogits,
     forward_sharded_layers,
 )
 from max.pipelines.architectures.qwen3.layers.attention import Qwen3Attention
+from max.pipelines.architectures.qwen3.layers.moe import Qwen3MoEGate
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
 
 
-def distribute_value(
-    v: TensorValue, devices: list[DeviceRef]
-) -> list[TensorValue]:
-    """Distribute a tensor to multiple devices."""
-    return [v.to(device) for device in devices]
-
-
 class Qwen3TransformerBlock(Module):
-    """Qwen3 transformer block that supports both single and multi-GPU.
+    """Qwen3 transformer block supporting TP and DP+EP parallelism strategies.
 
-    Uses shardable attention and MLP/MoE layers with allreduce for combining
-    outputs across devices.
+    In TP mode: attention and MLP/MoE weights are sharded across devices,
+    allreduce combines partial outputs.
+
+    In DP mode: attention weights are replicated (each device processes its own
+    batch shard), MoE uses expert parallelism. No allreduce needed for attention.
     """
 
     def __init__(
@@ -70,10 +68,12 @@ class Qwen3TransformerBlock(Module):
         rope: Llama3RotaryEmbedding,
         create_norm: Callable[..., RMSNorm],
         linear_cls: Callable[..., Linear],
+        ep_manager: EPBatchManager | None = None,
     ) -> None:
         super().__init__()
         self.devices = config.devices
         num_devices = len(config.devices)
+        self.use_dp = config.data_parallel_degree > 1
 
         # Create attention layer
         self.self_attn = Qwen3Attention(
@@ -88,17 +88,36 @@ class Qwen3TransformerBlock(Module):
             devices=config.devices,
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
+            norm_dtype=config.norm_dtype or config.dtype,
+            quant_config=config.quant_config,
         )
-        self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
-            num_devices
-        )
+
+        if self.use_dp:
+            self.self_attn.sharding_strategy = ShardingStrategy.replicate(
+                num_devices
+            )
+        else:
+            self.self_attn.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
         self.self_attn_shards = self.self_attn.shard(config.devices)
 
         # Create MLP or MoE layer
-        self.mlp = self._get_mlp(config, layer_idx, linear_cls)
-        self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
-            num_devices
-        )
+        self.mlp = self._get_mlp(config, layer_idx, linear_cls, ep_manager)
+
+        if self.use_dp:
+            if hasattr(self.mlp, "_ep_batch_manager") and ep_manager:
+                self.mlp.sharding_strategy = ShardingStrategy.expert_parallel(
+                    num_devices
+                )
+            else:
+                self.mlp.sharding_strategy = ShardingStrategy.replicate(
+                    num_devices
+                )
+        else:
+            self.mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                num_devices
+            )
         self.mlp_shards = self.mlp.shard(config.devices)
 
         # Create norm layers (replicated across devices)
@@ -116,7 +135,7 @@ class Qwen3TransformerBlock(Module):
             self.post_attention_layernorm.shard(config.devices)
         )
 
-        # Allreduce for combining sharded outputs
+        # Allreduce for combining sharded outputs (only used in TP mode)
         self.allreduce = Allreduce(num_accelerators=num_devices)
         self.residual_multiplier = config.residual_multiplier
 
@@ -125,7 +144,8 @@ class Qwen3TransformerBlock(Module):
         config: Qwen3Config,
         layer_idx: int,
         linear_cls: Callable[..., Linear],
-    ) -> MLP | Qwen3VLMoE:
+        ep_manager: EPBatchManager | None = None,
+    ) -> MLP | MoE:
         """Get MLP or MoE layer based on config and layer index."""
         use_moe = (
             config.num_experts > 0
@@ -134,19 +154,23 @@ class Qwen3TransformerBlock(Module):
         )
 
         if use_moe:
-            from max.pipelines.architectures.qwen3vl_moe.nn.moe import (
-                Qwen3VLMoE,
+            ep_size = (
+                config.ep_config.n_gpus_per_node * config.ep_config.n_nodes
+                if config.ep_config is not None
+                else 1
             )
-
-            return Qwen3VLMoE(
+            moe_cls = MoEQuantized if config.quant_config is not None else MoE
+            return moe_cls(
                 devices=config.devices,
                 hidden_dim=config.hidden_size,
                 num_experts=config.num_experts,
                 num_experts_per_token=config.num_experts_per_tok,
                 moe_dim=config.moe_intermediate_size,
+                gate_cls=Qwen3MoEGate,
                 dtype=config.dtype,
-                mlp_only_layers=config.mlp_only_layers,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
+                ep_size=ep_size,
+                ep_batch_manager=ep_manager,
             )
         else:
             return MLP(
@@ -156,7 +180,7 @@ class Qwen3TransformerBlock(Module):
                 config.intermediate_size,
                 config.devices,
                 linear_cls,
-                float8_config=config.float8_config,
+                quant_config=config.quant_config,
             )
 
     def __call__(
@@ -168,19 +192,7 @@ class Qwen3TransformerBlock(Module):
         input_row_offsets: list[TensorValue],
         signal_buffers: list[BufferValue],
     ) -> list[TensorValue]:
-        """Forward pass through the block.
-
-        Args:
-            layer_idx: Layer index tensor.
-            xs: Per-device hidden states.
-            kv_collections: Per-device KV cache.
-            freqs_cis: Per-device RoPE frequencies.
-            input_row_offsets: Per-device row offsets.
-            signal_buffers: Per-device signal buffers for allreduce.
-
-        Returns:
-            Per-device updated hidden states.
-        """
+        """Forward pass through the block."""
         # Apply input layer norm
         norm_xs = forward_sharded_layers(self.input_layernorm_shards, xs)
 
@@ -196,8 +208,8 @@ class Qwen3TransformerBlock(Module):
             for i, shard in enumerate(self.self_attn_shards)
         ]
 
-        # Allreduce attention outputs (passthrough for single GPU)
-        if len(self.devices) > 1:
+        # Allreduce attention outputs (TP mode only)
+        if not self.use_dp and len(self.devices) > 1:
             attn_outs = self.allreduce(attn_outs, signal_buffers)
 
         # Residual connection
@@ -210,12 +222,13 @@ class Qwen3TransformerBlock(Module):
             self.post_attention_layernorm_shards, hs
         )
 
-        # MLP/MoE on each shard
-        mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-
-        # Allreduce MLP outputs (passthrough for single GPU)
-        if len(self.devices) > 1:
-            mlp_outs = self.allreduce(mlp_outs, signal_buffers)
+        # MLP/MoE
+        if self.use_dp:
+            mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
+        else:
+            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+            if len(self.devices) > 1:
+                mlp_outs = self.allreduce(mlp_outs, signal_buffers)
 
         # Residual connection
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
@@ -223,14 +236,54 @@ class Qwen3TransformerBlock(Module):
         return hs
 
 
-class Qwen3(Module):
-    """Unified Qwen3 model that supports both single and multi-GPU inference."""
+def _dp_logits_postprocess(
+    h: list[TensorValue],
+    input_row_offsets: list[TensorValue],
+    return_n_logits: TensorValue,
+    norm_shards: Sequence[Callable[[TensorValue], TensorValue]],
+    lm_head: Callable[
+        [list[TensorValue], Sequence[BufferValue]], Sequence[TensorValue]
+    ],
+    signal_buffers: list[BufferValue],
+    devices: list[DeviceRef],
+    return_logits: ReturnLogits,
+) -> tuple[TensorValue, ...]:
+    """Logits postprocessing for DP mode.
 
-    def __init__(self, config: Qwen3Config) -> None:
+    In DP mode each device has hidden states for its own batch shard. We gather
+    last-token hidden states from all devices before the vocab-parallel LM head.
+    """
+    last_token_per_dev: list[TensorValue] = []
+    for dev_idx in range(len(devices)):
+        last_token_indices = input_row_offsets[dev_idx][1:] - 1
+        last_token_h = ops.gather(h[dev_idx], last_token_indices, axis=0)
+        last_token_per_dev.append(last_token_h)
+
+    last_token_distributed = ops.allgather(last_token_per_dev, signal_buffers)
+
+    norm_last_token = forward_sharded_layers(
+        norm_shards, last_token_distributed
+    )
+    last_logits = ops.cast(
+        lm_head(norm_last_token, signal_buffers)[0],
+        DType.float32,
+    )
+
+    return (last_logits,)
+
+
+class Qwen3(DistributedLogitsPostprocessMixin, Module):
+    """Unified Qwen3 model supporting single-GPU, TP, and DP+EP inference."""
+
+    def __init__(
+        self, config: Qwen3Config, ep_manager: EPBatchManager | None = None
+    ) -> None:
         super().__init__()
         self.config = config
         self.devices = config.devices
         self.num_devices = len(config.devices)
+        self.use_dp = config.data_parallel_degree > 1
+        self.ep_manager = ep_manager
 
         # Validate quantization encoding
         if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
@@ -265,9 +318,7 @@ class Qwen3(Module):
             multiply_before_cast=False,
         )
 
-        linear_cls = functools.partial(
-            Linear, float8_config=config.float8_config
-        )
+        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
 
         # Create transformer layers
         self.layers = LayerList(
@@ -278,6 +329,7 @@ class Qwen3(Module):
                     rope=rope,
                     create_norm=create_norm,
                     linear_cls=linear_cls,
+                    ep_manager=ep_manager,
                 )
                 for i in range(config.num_hidden_layers)
             ]
@@ -290,11 +342,10 @@ class Qwen3(Module):
         )
         self.norm_shards = self.norm.shard(config.devices)
 
-        # Embedding and output layers - always use parallel versions
-        # They work correctly for single GPU too (parallel ops become no-ops)
+        # Embedding and output layers
         embedding_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_dtype = config.quant_config.embedding_output_dtype
 
         self.embed_tokens = VocabParallelEmbedding(
             config.vocab_size,
@@ -323,6 +374,8 @@ class Qwen3(Module):
         return_n_logits: TensorValue,
         input_row_offsets: TensorValue,
         signal_buffers: list[BufferValue],
+        host_input_row_offsets: TensorValue | None = None,
+        data_parallel_splits: TensorValue | None = None,
     ) -> tuple[TensorValue, ...]:
         """Forward pass through the model.
 
@@ -331,23 +384,32 @@ class Qwen3(Module):
             kv_collections: KV cache per device.
             return_n_logits: Number of logits to return.
             input_row_offsets: Row offsets for ragged batching.
-            signal_buffers: Signal buffers for allreduce (required even for single GPU).
-
-        Returns:
-            Tuple of logits tensors.
+            signal_buffers: Signal buffers for allreduce.
+            host_input_row_offsets: CPU-side row offsets (required for DP mode).
+            data_parallel_splits: Batch splits per device (required for DP mode).
         """
-        # Get embeddings - VocabParallelEmbedding returns list[TensorValue]
+        # Get embeddings
         h = self.embed_tokens(tokens, signal_buffers)
 
-        # Apply embedding multiplier if needed
         if self.embedding_multiplier != 1.0:
             h = [hi * self.embedding_multiplier for hi in h]
 
         # Distribute RoPE frequencies and row offsets to all devices
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
-        input_row_offsets_list = distribute_value(
-            input_row_offsets, self.devices
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
+        input_row_offsets_list = ops.distributed_broadcast(
+            input_row_offsets.to(self.devices[0]), signal_buffers
         )
+
+        # In DP mode, split batch across devices
+        if self.use_dp and data_parallel_splits is not None:
+            assert host_input_row_offsets is not None
+            h, input_row_offsets_list = split_batch_replicated(
+                self.devices,
+                h,
+                input_row_offsets_list,
+                host_input_row_offsets.cast(DType.int64),
+                data_parallel_splits,
+            )
 
         # Process through transformer layers
         for idx, layer in enumerate(self.layers):
@@ -361,89 +423,26 @@ class Qwen3(Module):
                 signal_buffers,
             )
 
-        # Get last token for logits computation
-        h0 = h[0]  # Use first device's output for indexing
-        last_token_indices = input_row_offsets[1:] - 1
-        last_token_h = ops.gather(h0, last_token_indices, axis=0)
-        last_token_distributed = distribute_value(last_token_h, self.devices)
+        if self.use_dp:
+            return _dp_logits_postprocess(
+                h,
+                input_row_offsets_list,
+                return_n_logits,
+                norm_shards=self.norm_shards,
+                lm_head=self.lm_head,
+                signal_buffers=signal_buffers,
+                devices=self.devices,
+                return_logits=self.return_logits,
+            )
 
-        # Apply final norm
-        norm_last_token = forward_sharded_layers(
-            self.norm_shards, last_token_distributed
+        return self._postprocess_logits(
+            h, input_row_offsets_list, return_n_logits, signal_buffers
         )
-
-        # Get logits - ColumnParallelLinear returns list[TensorValue]
-        last_logits = ops.cast(
-            self.lm_head(norm_last_token, signal_buffers)[0],
-            DType.float32,
-        )
-
-        # Handle additional logits based on return_logits setting
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
-                start=return_n_logits[0],
-                stop=0,
-                step=-1,
-                out_dim="return_n_logits_range",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-            computed_offsets = (
-                ops.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
-            )
-            last_indices = ops.reshape(computed_offsets, shape=(-1,))
-
-            # Gather from all hidden states
-            variable_tokens = [
-                ops.gather(h_device, last_indices, axis=0) for h_device in h
-            ]
-            variable_normed = forward_sharded_layers(
-                self.norm_shards, variable_tokens
-            )
-
-            logits = ops.cast(
-                self.lm_head(variable_normed, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = ops.range(
-                0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = forward_sharded_layers(self.norm_shards, h)
-
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0],
-                DType.float32,
-            )
-
-            offsets = input_row_offsets
-
-        if logits is not None and offsets is not None:
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)
 
     def input_types(
-        self, kv_params: KVCacheParams
+        self, kv_params: KVCacheParamInterface
     ) -> tuple[TensorType | BufferType, ...]:
-        """Get input types for graph construction.
-
-        Args:
-            kv_params: KV cache parameters.
-
-        Returns:
-            Tuple of input types for the graph.
-        """
+        """Get input types for graph construction."""
         device_ref = self.devices[0]
 
         tokens_type = TensorType(
@@ -464,13 +463,37 @@ class Qwen3(Module):
             return_n_logits_type,
         ]
 
-        # Always add signal buffer types (required for VocabParallelEmbedding
-        # and ColumnParallelLinear even with single GPU)
+        # DP mode needs additional inputs for batch splitting
+        if self.use_dp:
+            host_input_row_offsets_type = TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=DeviceRef.CPU(),
+            )
+            data_parallel_splits_type = TensorType(
+                DType.int64,
+                shape=[self.num_devices + 1],
+                device=DeviceRef.CPU(),
+            )
+            base_inputs.extend(
+                [host_input_row_offsets_type, data_parallel_splits_type]
+            )
+
+        # Signal buffers
         signals = Signals(devices=self.devices)
         signal_buffer_types = signals.input_types()
 
-        # Flatten KV types for all devices
-        flattened_kv_types = [
-            kv_type for sublist in kv_inputs for kv_type in sublist
-        ]
-        return tuple(base_inputs + signal_buffer_types + flattened_kv_types)
+        # KV cache inputs
+        flattened_kv_types = kv_inputs.flatten()
+
+        # EP inputs
+        ep_input_types: list[TensorType | BufferType] = []
+        if self.ep_manager is not None:
+            ep_input_types = list(self.ep_manager.input_types())
+
+        return tuple(
+            base_inputs
+            + signal_buffer_types
+            + flattened_kv_types
+            + ep_input_types
+        )

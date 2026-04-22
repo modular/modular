@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides word lists in multiple languages for use in string testing."""
 # RUN: %mojo %s
 
 # Most common words in different languages and the gen_words_pairs function
@@ -572,7 +573,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 """Most common Russian words."""
 
 
-fn gen_word_pairs[words: String = words_en]() -> List[String]:
+def gen_word_pairs[words: String = words_en]() -> List[String]:
     """Generates all pairwise combinations of words from a word list.
 
     Parameters:

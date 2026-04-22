@@ -33,8 +33,7 @@ def conv2d_transpose(
     input_layout: ConvInputLayout = ConvInputLayout.NHWC,
     filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> TensorValue:
-    """Computes the 2-D deconvolution of the input with the given filter,
-    strides, dilations, paddings, and groups.
+    """Computes the 2-D deconvolution of the input with the given filter, strides, dilations, paddings, and groups.
 
     The op supports the transpose (gradient) of convolution, with the following layout assumptions:
     (note the `out_channel` is w.r.t. the original convolution)
@@ -74,9 +73,9 @@ def conv2d_transpose(
         # Shape is 1x1
 
     Args:
-        input: An NHWC input tensor to perform the convolution upon.
+        x: An NHWC input tensor to perform the deconvolution upon.
         filter: The convolution filter in RSCF layout:
-                (height, width, out_channels, in_channels).
+            (height, width, out_channels, in_channels).
         stride: The stride of the sliding window for each dimension of input.
             If a single value is given it is replicated in the H and W dimension.
             By default the N and C dimensions are set to 0.
@@ -86,7 +85,9 @@ def conv2d_transpose(
             potential output shapes when any stride is greater than 1. Basically,
             we'll add `output_paddings[i]` number of zeros at the end of output's ith
             axis. We only support output_paddings = 0.
-        bias: tensor of shape (out_channels,)
+        bias: Tensor of shape (out_channels,).
+        input_layout: Layout of the input tensor (default NHWC).
+        filter_layout: Layout of the filter tensor (default RSCF).
 
     Returns:
         A symbolic tensor value with the convolution applied.

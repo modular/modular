@@ -1,0 +1,572 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+
+"""Tests for TPOT computation and request timestamps in calculate_metrics."""
+
+from __future__ import annotations
+
+import math
+from unittest.mock import MagicMock
+
+from max.benchmark.benchmark_serving import (
+    calculate_metrics,
+    calculate_pixel_generation_metrics,
+)
+from max.benchmark.benchmark_shared.request import (
+    PixelGenerationRequestFuncOutput,
+    RequestFuncOutput,
+)
+from max.diagnostics.cpu import CPUMetrics
+
+_EMPTY_CPU_METRICS = CPUMetrics(
+    user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0
+)
+
+
+def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
+    """Create a mock tokenizer that returns specified token counts.
+
+    Args:
+        token_counts: Mapping from generated text to the number of tokens.
+    """
+    tokenizer = MagicMock()
+
+    def side_effect(text: str, add_special_tokens: bool = True) -> MagicMock:
+        result = MagicMock()
+        result.input_ids = list(range(token_counts.get(text, 0)))
+        return result
+
+    tokenizer.side_effect = side_effect
+    return tokenizer
+
+
+def test_per_chunk_tpot_collected_from_outputs() -> None:
+    """Per-chunk TPOT values are correctly collected from outputs."""
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="hello world",
+        itl=[0.1, 0.2, 0.3],
+        tpot=[0.05, 0.1, 0.15],
+    )
+
+    tokenizer = _make_mock_tokenizer({"hello world": 5})
+
+    metrics, _ = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # TPOT percentiles should be based on the per-chunk values [0.05, 0.1, 0.15]
+    # scaled by 1000 (to ms)
+    assert math.isclose(metrics.tpot_ms.median, 100.0, rel_tol=1e-3)
+
+
+def test_tpot_weighted_mean() -> None:
+    """TPOT mean = sum(ITL) / decode_tokens * 1000 ms."""
+    # Request 1: 10 output tokens, ITL sum = 0.9s
+    output1 = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="ten tokens out",
+        itl=[0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1],
+        tpot=[0.1] * 9,
+    )
+
+    # Request 2: 4 output tokens, ITL sum = 0.6s
+    output2 = RequestFuncOutput(
+        success=True,
+        latency=0.8,
+        ttft=0.2,
+        prompt_len=5,
+        generated_text="four tok",
+        itl=[0.2, 0.2, 0.2],
+        tpot=[0.2] * 3,
+    )
+
+    # Mock tokenizer: output1 -> 10 tokens, output2 -> 4 tokens
+    tokenizer = _make_mock_tokenizer({"ten tokens out": 10, "four tok": 4})
+
+    metrics, _ = calculate_metrics(
+        outputs=[output1, output2],
+        dur_s=2.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # total_output = 10 + 4 = 14
+    # completed = 2
+    # decode_tokens = 14 - 2 = 12
+    # sum(itl) = 0.9 + 0.6 = 1.5
+    # weighted mean TPOT = 1.5 / 12 * 1000 = 125.0 ms
+    expected_mean = 1.5 / 12 * 1000.0
+    assert math.isclose(metrics.tpot_ms.mean, expected_mean, rel_tol=1e-6)
+
+
+def test_tpot_zero_decode_tokens() -> None:
+    """When all requests produce <= 1 token, TPOT mean is NaN."""
+    # Output with 1 token (only TTFT, no decode)
+    output = RequestFuncOutput(
+        success=True,
+        latency=0.1,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="a",
+        itl=[],
+        tpot=[],
+    )
+
+    # 1 output token, 1 completed -> decode_tokens = 0
+    tokenizer = _make_mock_tokenizer({"a": 1})
+
+    metrics, _ = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # With empty tpots, StandardPercentileMetrics gets [nan], so mean is nan
+    assert math.isnan(metrics.tpot_ms.mean)
+
+
+def test_empty_outputs_no_crash() -> None:
+    """Empty outputs list doesn't crash."""
+    tokenizer = _make_mock_tokenizer({})
+
+    metrics, actual_output_lens = calculate_metrics(
+        outputs=[],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert metrics.completed == 0
+    assert actual_output_lens == []
+    # TPOT mean should be NaN since there are no outputs
+    assert math.isnan(metrics.tpot_ms.mean)
+
+
+def test_itl_metrics_unchanged() -> None:
+    """ITL metrics remain unchanged by the TPOT refactor."""
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="hello world",
+        itl=[0.1, 0.2, 0.3],
+        tpot=[0.05, 0.1, 0.15],
+    )
+
+    tokenizer = _make_mock_tokenizer({"hello world": 5})
+
+    metrics, _ = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # ITL should be computed from the raw itl values [0.1, 0.2, 0.3] * 1000
+    assert math.isclose(metrics.itl_ms.mean, 200.0, rel_tol=1e-3)
+    assert math.isclose(metrics.itl_ms.median, 200.0, rel_tol=1e-3)
+
+
+def test_failed_requests_excluded() -> None:
+    """Failed requests don't contribute to TPOT."""
+    success_output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="hello",
+        itl=[0.1, 0.2],
+        tpot=[0.1, 0.2],
+    )
+    failed_output = RequestFuncOutput(
+        success=False,
+        error="test error",
+        itl=[999.0],
+        tpot=[999.0],
+    )
+
+    tokenizer = _make_mock_tokenizer({"hello": 3, "": 0})
+
+    metrics, _ = calculate_metrics(
+        outputs=[success_output, failed_output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # Only successful request's TPOT should be used
+    assert metrics.completed == 1
+    assert metrics.failures == 1
+    # TPOT values should only include [0.1, 0.2], not [999.0]
+    assert metrics.tpot_ms.median < 500.0
+
+
+def test_skip_last_n_requests() -> None:
+    """Skipping last N requests excludes them from latency metrics."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="first",
+            itl=[0.1, 0.2],
+            tpot=[0.1, 0.2],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="second",
+            itl=[0.1, 0.2],
+            tpot=[0.1, 0.2],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="third",
+            itl=[0.9, 0.8],
+            tpot=[0.9, 0.8],
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"first": 3, "second": 3, "third": 3})
+
+    metrics_all, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    metrics_skip_last, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # All 3 requests are still counted as completed
+    assert metrics_skip_last.completed == 3
+    # But the last request's high TTFT (0.5s) is excluded from latency metrics
+    assert metrics_skip_last.ttft_ms.mean < metrics_all.ttft_ms.mean
+
+
+def test_skip_first_and_last_n_requests() -> None:
+    """Skipping both first and last N requests works together."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="first",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="middle",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="last",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"first": 2, "middle": 2, "last": 2})
+
+    metrics, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # All 3 completed, but only middle request used for latency metrics
+    assert metrics.completed == 3
+    # Only the middle request's TTFT (0.1s = 100ms) should be measured
+    assert math.isclose(metrics.ttft_ms.mean, 100.0, rel_tol=1e-3)
+
+
+def test_skip_last_with_cancelled_requests() -> None:
+    """skip_last counts from end of completed requests, not the output array."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="first",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.2,
+            prompt_len=10,
+            generated_text="second",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.5,
+            prompt_len=10,
+            generated_text="third",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+        # Cancelled requests pad the output array
+        RequestFuncOutput(cancelled=True),
+        RequestFuncOutput(cancelled=True),
+        RequestFuncOutput(cancelled=True),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"first": 2, "second": 2, "third": 2})
+
+    metrics, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    assert metrics.completed == 3
+    # Only the second request should be measured (skip first 1, last 1)
+    assert math.isclose(metrics.ttft_ms.mean, 200.0, rel_tol=1e-3)
+
+
+def test_skip_all_requests_warns() -> None:
+    """Skipping all requests emits a warning."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="only",
+            itl=[0.1],
+            tpot=[0.1],
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"only": 2})
+
+    import warnings
+
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        calculate_metrics(
+            outputs=outputs,
+            dur_s=1.0,
+            tokenizer=tokenizer,
+            gpu_metrics=None,
+            cpu_metrics=_EMPTY_CPU_METRICS,
+            skip_first_n_requests=1,
+            skip_last_n_requests=1,
+            max_concurrency=None,
+            max_concurrent_conversations=None,
+            collect_gpu_stats=False,
+        )
+        assert len(w) == 1
+        assert "excluded" in str(w[0].message).lower()
+
+
+def test_calculate_pixel_generation_metrics() -> None:
+    outputs = [
+        PixelGenerationRequestFuncOutput(
+            success=True,
+            latency=1.0,
+            num_generated_outputs=1,
+        ),
+        PixelGenerationRequestFuncOutput(
+            success=True,
+            latency=2.0,
+            num_generated_outputs=2,
+        ),
+        PixelGenerationRequestFuncOutput(success=False, error="bad request"),
+    ]
+
+    metrics = calculate_pixel_generation_metrics(
+        outputs=outputs,
+        dur_s=5.0,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        max_concurrency=None,
+        collect_gpu_stats=False,
+    )
+
+    assert metrics.completed == 2
+    assert metrics.failures == 1
+    assert math.isclose(metrics.request_throughput, 0.4, rel_tol=1e-6)
+    assert metrics.total_generated_outputs == 3
+    assert math.isclose(metrics.latency_ms.mean, 1500.0, rel_tol=1e-6)
+
+
+def test_request_submit_time_defaults_to_none() -> None:
+    """request_submit_time field defaults to None."""
+    output = RequestFuncOutput()
+    assert output.request_submit_time is None
+    assert output.request_complete_time is None
+
+
+def test_request_submit_time_set_on_output() -> None:
+    """request_submit_time can be set and is preserved through metrics."""
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="hello",
+        itl=[0.1],
+        tpot=[0.1],
+        request_submit_time=100.5,
+    )
+
+    assert output.request_submit_time == 100.5
+
+    tokenizer = _make_mock_tokenizer({"hello": 2})
+    metrics, _ = calculate_metrics(
+        outputs=[output],
+        dur_s=1.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+    # Metrics are computed normally regardless of submit time
+    assert metrics.completed == 1
+
+
+def test_request_complete_time_property() -> None:
+    """request_complete_time property = submit_time + latency."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=1.5,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="a",
+            request_submit_time=100.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=2.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="b",
+            request_submit_time=101.0,
+        ),
+    ]
+
+    assert outputs[0].request_complete_time is not None
+    assert outputs[1].request_complete_time is not None
+    assert math.isclose(outputs[0].request_complete_time, 101.5)
+    assert math.isclose(outputs[1].request_complete_time, 103.0)
+
+    # Arrays stay index-aligned (same length as submit_times)
+    submit_times = [o.request_submit_time for o in outputs]
+    complete_times = [o.request_complete_time for o in outputs]
+    assert len(submit_times) == len(complete_times)

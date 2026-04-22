@@ -10,21 +10,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from gpu.host import DeviceContext
-from gpu.host.info import Vendor
-from layout._coord import Coord
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import Vendor
+from layout import Coord, TileTensor, row_major
 from layout._fillers import random
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
-from nn.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
-from testing import assert_almost_equal
+from nn.conv.conv_transpose import conv_transpose_naive, conv_transposed_cudnn
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 comptime dtype = DType.float32
 
 
-fn test_conv_transposed_cudnn[
+def test_conv_transposed_cudnn[
     input_len: Int,
     kernel_len: Int,
     in_channels: Int = 1,
@@ -93,7 +91,7 @@ fn test_conv_transposed_cudnn[
     # Create host TileTensors for NHWC
     var input_host = TileTensor(input_host_ptr, input_layout)
     var filter_host = TileTensor(filter_host_ptr, filter_layout)
-    var output_host = TileTensor(output_host_ptr, output_layout)
+    var _output_host = TileTensor(output_host_ptr, output_layout)
     var output_ref_host = TileTensor(output_ref_host_ptr, output_layout)
 
     random(input_host)
@@ -170,17 +168,17 @@ fn test_conv_transposed_cudnn[
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
         TileTensor(
-            d_input.unsafe_ptr(),
+            d_input,
             row_major(Coord(IndexList[4](1, in_channels, 1, input_len))),
         ),  # dy (input grad)
         TileTensor(
-            d_filter.unsafe_ptr(),
+            d_filter,
             row_major(
                 Coord(IndexList[4](in_channels, out_channels, 1, kernel_len))
             ),
         ),  # w (filter)
         TileTensor(
-            d_output.unsafe_ptr(),
+            d_output,
             row_major(Coord(IndexList[4](1, out_channels, 1, output_len))),
         ),  # dx (output)
         stride_hw,
@@ -222,7 +220,7 @@ fn test_conv_transposed_cudnn[
     _ = d_output^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Check if we're running on an NVIDIA GPU
         if ctx.default_device_info.vendor != Vendor.NVIDIA_GPU:

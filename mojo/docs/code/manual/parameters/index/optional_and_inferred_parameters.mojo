@@ -17,11 +17,11 @@ struct Bar[v: Int]:
     pass
 
 
-fn speak[a: Int = 3, msg: String = "woof"](bar: Bar[a]):
+def speak[a: Int = 3, msg: String = "woof"](bar: Bar[a]):
     print(msg, a)
 
 
-fn use_inferred():
+def use_inferred():
     speak(Bar[9]())  # prints 'woof 9'
 
 

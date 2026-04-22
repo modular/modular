@@ -10,26 +10,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import ceildiv
-from sys import (
-    align_of,
-    env_get_bool,
-    env_get_int,
+from std.math import ceildiv
+from std.sys import (
+    get_defined_bool,
+    get_defined_int,
     simd_width_of,
     size_of,
     has_nvidia_gpu_accelerator,
 )
 
-from algorithm import elementwise
-from buffer.buffer import NDBuffer
-from gpu.primitives.grid_controls import PDLLevel
-from gpu.host import DeviceContext, get_gpu_target
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from gpu.host.info import B200
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-from logger import Logger
+from std.algorithm import elementwise
+from std.gpu.primitives.grid_controls import PDLLevel
+from std.gpu.host import DeviceContext, get_gpu_target
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.host.info import B200
+from layout import Coord, Idx, TileTensor
+from layout.tile_tensor import NullableTileTensor
+from std.logger import Logger
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .....utils import (
     GemmShape,
@@ -39,21 +38,26 @@ from .....utils import (
 from .....utils_gpu import MatmulKernels, _vendor_blas_fallback_disabled
 from ..structured_kernels.config import (
     MatmulConfig,
-    build_configs,
+    build_sm100_matmul_configs,
+    build_sm100_batched_matmul_configs,
     choose_config,
+    default_matmul_config_bf16_fp8,
+    GEMMKind,
 )
 from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
-    matmul_sm100_fallback,
+    blackwell_batched_matmul_tma_umma_warp_specialized,
 )
 from internal_utils import Table
 from .tuning_configs import (
     _get_tuning_list_sm100_fp8,
     TuningConfigSM100,
     _get_tuning_list_sm100_bf16,
+    _get_tuning_list_sm100_batched_bf16,
+    _get_tuning_list_sm100_batched_fp8,
 )
 
 comptime DISPATCH_MISS = 0
@@ -63,7 +67,7 @@ comptime logger = Logger()
 
 
 @always_inline
-fn matmul_dispatch_sm100[
+def matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -73,45 +77,42 @@ fn matmul_dispatch_sm100[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    register_based_epilogue: Bool = True,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    constrained[a_type == b_type, "a_type and b_type must be the same"]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
 
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
-    @parameter
-    if env_get_bool["AUTOTUNING_MODE", False]():
-        var c_tensor = from_ndbuffer_row_major(c)
-        var a_tensor = from_ndbuffer_row_major(a)
-        var b_tensor = from_ndbuffer_row_major(b)
-
-        comptime BM = env_get_int["TUNE_BM", 128]()
-        comptime BN = env_get_int["TUNE_BN", 64]()
+    comptime if get_defined_bool["AUTOTUNING_MODE", False]():
+        comptime BM = get_defined_int["TUNE_BM", 128]()
+        comptime BN = get_defined_int["TUNE_BN", 64]()
         comptime BK = (
             TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
         )
         comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
-        comptime CLUSTER_DIM_X = env_get_int["TUNE_CLUSTER_DIM_X", 2]()
-        comptime CLUSTER_DIM_Y = env_get_int["TUNE_CLUSTER_DIM_Y", 1]()
-        comptime CLUSTER_DIM_Z = env_get_int["TUNE_CLUSTER_DIM_Z", 1]()
+        comptime CLUSTER_DIM_X = get_defined_int["TUNE_CLUSTER_DIM_X", 2]()
+        comptime CLUSTER_DIM_Y = get_defined_int["TUNE_CLUSTER_DIM_Y", 1]()
+        comptime CLUSTER_DIM_Z = get_defined_int["TUNE_CLUSTER_DIM_Z", 1]()
         comptime CLUSTER_DIM = Index(
             CLUSTER_DIM_X, CLUSTER_DIM_Y, CLUSTER_DIM_Z
         )
-        comptime BLOCK_SWIZZLE_SIZE = env_get_int[
+        comptime BLOCK_SWIZZLE_SIZE = get_defined_int[
             "TUNE_BLOCK_SWIZZLE_SIZE", 0
         ]()
-        comptime RASTERIZE_ORDER = env_get_int["TUNE_RASTER_ORDER", 1]()
-        comptime CTA_GROUP = env_get_int["TUNE_CTA_GROUP", 2]()
-        comptime K_GROUP_SIZE = env_get_int["TUNE_K_GROUP_SIZE", 1]()
-        comptime AB_SWAPPED = env_get_bool["TUNE_AB_SWAPPED", False]()
+        comptime RASTERIZE_ORDER = get_defined_int["TUNE_RASTER_ORDER", 1]()
+        comptime CTA_GROUP = get_defined_int["TUNE_CTA_GROUP", 2]()
+        comptime K_GROUP_SIZE = get_defined_int["TUNE_K_GROUP_SIZE", 1]()
+        comptime AB_SWAPPED = get_defined_bool["TUNE_AB_SWAPPED", False]()
 
         comptime umma_shape = Index(BM * CTA_GROUP, BN * CTA_GROUP, MMA_K)
 
@@ -128,15 +129,24 @@ fn matmul_dispatch_sm100[
         return blackwell_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             config=config,
-            register_based_epilogue=register_based_epilogue,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](c, a, b, ctx)
 
-    @parameter
-    if _vendor_blas_fallback_disabled():
+    # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
+    # static_N=1 is not supported on SM100 due to TMA requirements
+    # (N * size_of(c_type) % 16 == 0).
+    comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
+        if static_N == 1 or m == 1:
+            logger.info("------ Executing GEMV Matmul------")
+            gemv_gpu[
+                transpose_b=transpose_b,
+                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return
 
-        @parameter
-        if (
-            c_type == DType.bfloat16
+    comptime if _vendor_blas_fallback_disabled():
+        comptime if (
+            c_type in (DType.bfloat16, DType.float8_e4m3fn)
             and static_N * size_of[c_type]() % 16 == 0
             and static_K * size_of[a_type]() % 16 == 0
             and transpose_b
@@ -150,17 +160,13 @@ fn matmul_dispatch_sm100[
             if status:
                 return
             else:
-                raise Error("Heuristic and outliers dispatch failed.")
-        else:
-            constrained[
-                False,
-                "Unsupported shape for benchmarking mode.",
-            ]()
+                raise Error(
+                    "Heuristic failed to find a config for this (N,K) or m"
+                )
 
     var epilogue_type = String("None")
 
-    @parameter
-    if elementwise_compute_lambda_fn:
+    comptime if elementwise_compute_lambda_fn:
         epilogue_type = String("Compute Epilogue")
     elif elementwise_lambda_fn:
         epilogue_type = String("Normal Epilogue")
@@ -188,33 +194,18 @@ fn matmul_dispatch_sm100[
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
 
-    # 1. for m==1 our gemv matmul is faster than cublas for skinny bfloat16 matmuls
-    # 2. Our GEMV matmul dosen't support float8 yet.
-    # 3. static_N=1 is not supported on SM100 due to the output buffer TMA requirements. (`N * size_of(c_type) % 16 == 0`).
-    @parameter
-    if a_type == DType.bfloat16:
-        if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](c, a, b, ctx)
-            return
-
     # SM100 kernel requirements:
     # 1. `N * size_of(c_type) % 16B == 0` for output buffer (TMA requirement)
     # 2. `c_type == DType.bfloat16` SM100 kernel only supports bfloat16 for output buffer
-    @parameter
-    if (
-        c_type == DType.bfloat16
+    comptime if (
+        c_type in (DType.bfloat16, DType.float8_e4m3fn)
         and static_N * size_of[c_type]() % 16 == 0
         and static_K * size_of[a_type]() % 16 == 0
         and transpose_b
     ):
         var status = DISPATCH_MISS
 
-        @parameter
-        if a_type == b_type == DType.bfloat16:
+        comptime if a_type == b_type == DType.bfloat16:
             status = matmul_dispatch_sm100_bf16[
                 c_type=c_type,
                 a_type=a_type,
@@ -252,9 +243,10 @@ fn matmul_dispatch_sm100[
     ](c, a, b, ctx)
 
 
+@always_inline
 # NOTE:
 # 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_fp8[
+def matmul_dispatch_sm100_fp8[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -266,17 +258,20 @@ fn matmul_dispatch_sm100_fp8[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
     comptime MMA_K = 32
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-    var m = c.dim[0]()
+    var m = Int(c.dim[0]())
 
     if m <= 128:
         return heuristic_and_outliers_dispatch[
@@ -288,11 +283,11 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _dispatch[entry: TuningConfigSM100]() raises:
+    def _dispatch[entry: TuningConfigSM100]() raises:
         comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
             mma_shape=entry.mma_shape,
             cluster_shape=entry.cluster_shape,
-            block_swizzle_size=Int(entry.block_swizzle_size),
+            block_swizzle_size=entry.block_swizzle_size,
         )
 
         return _matmul_dispatch_sm100[
@@ -305,30 +300,28 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline("nodebug")
-    fn _search[
+    def _search[
         T: Table[TuningConfigSM100],
         domain: List[Int] = List[Int](),
     ]() raises -> Int:
         @parameter
         @always_inline
-        fn get_m(x: TuningConfigSM100) -> Int:
+        def get_m(x: TuningConfigSM100) -> Int:
             return x.M
 
         comptime m_values = T.query_values[Int, get_m, domain]()
 
-        @parameter
-        for static_m in m_values:
+        comptime for static_m in m_values:
 
             @parameter
             @always_inline
-            fn rule_eq_m(x: TuningConfigSM100) -> Bool:
+            def rule_eq_m(x: TuningConfigSM100) -> Bool:
                 return x.M == static_m
 
             if m <= static_m:
                 comptime idx_list = T.query_index[rule_eq_m, domain=domain]()
 
-                @parameter
-                if idx_list:
+                comptime if idx_list:
                     comptime entry = T.configs[idx_list[0]]
                     _dispatch[entry]()
                     return DISPATCH_HIT
@@ -343,7 +336,7 @@ fn matmul_dispatch_sm100_fp8[
 
     @parameter
     @always_inline
-    fn rule_eq_nk(x: TuningConfigSM100) -> Bool:
+    def rule_eq_nk(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime nk_idx_list = tuning_table.query_index[rule_eq_nk]()
@@ -351,983 +344,9 @@ fn matmul_dispatch_sm100_fp8[
     # TODO: re-enable the following tuning dispatch.
     # make sure the domain (nk_idx_list) is not empty!
     if m > 128:
-
-        @parameter
-        if nk_idx_list:
+        comptime if nk_idx_list:
             if _search[tuning_table, domain=nk_idx_list]() == DISPATCH_HIT:
                 return DISPATCH_HIT
-
-    # gemma-3-27b-it-prefill (TP1)
-    @parameter
-    if static_N == 5376 and static_K == 21504:
-        if m == 224 or m == 256:
-            comptime block_tile_shape = Index(128, 64, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 288:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 1024:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(8, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2000 or m == 2048:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(8, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000 or m == 3500:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 4096:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 43008 and static_K == 5376:
-        if m == 224:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 256:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 288 or m == 512:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 1024 or m == 2048:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2000 or m == 3500 or m == 4096 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000 or m == 7000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 8192 and static_K == 5376:
-        if m == 224 or m == 256:
-            comptime block_tile_shape = Index(128, 64, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 288 or m == 1024:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2048 or m == 3000:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3500:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 4096 or m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 5376 and static_K == 4096:
-        if m == 224:
-            comptime block_tile_shape = Index(128, 64, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 256:
-            comptime block_tile_shape = Index(128, 64, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 288:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 1024:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2000 or m == 2048:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(8, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3500 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 4096:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 7000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 21504 and static_K == 5376:
-        if m == 224 or m == 256:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 288:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 1024 or m == 4096:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2000 or m == 3500:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2048 or m == 3000 or m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    # gemma-3-27b-it-prefill (TP2)
-    @parameter
-    if static_N == 4096 and static_K == 5376:
-        if m == 2000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000 or m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3500:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 5376 and static_K == 2048:
-        if m == 2000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3500:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 5376 and static_K == 10752:
-        if m == 2000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(8, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=0,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3500:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    elif static_N == 10752 and static_K == 5376:
-        if m == 2000 or m == 3000 or m == 3500 or m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
 
     # TODO (KERN-2084): Enable default matmul for large shapes to increase accuracy
     # # fallback to default matmul for large shapes
@@ -1353,10 +372,11 @@ fn matmul_dispatch_sm100_fp8[
     return DISPATCH_MISS
 
 
-fn heuristic_and_outliers_dispatch[
+def select_and_launch_sm100_config[
     c_type: DType,
     a_type: DType,
     b_type: DType,
+    launch_type: def[config: MatmulConfig[...]]() raises unified -> None,
     //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -1365,19 +385,23 @@ fn heuristic_and_outliers_dispatch[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    launch: launch_type,
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    var m = Int(c.dim[0]())
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
 
-    constrained[
-        a_type == b_type and a_type in (DType.bfloat16, DType.float8_e4m3fn),
-        "Only support bfloat16 and float8_e4m3fn input types",
-    ]()
+    comptime assert a_type == b_type and a_type in (
+        DType.bfloat16,
+        DType.float8_e4m3fn,
+    ), "Only support bfloat16 and float8_e4m3fn input types"
 
     comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
@@ -1390,67 +414,62 @@ fn heuristic_and_outliers_dispatch[
 
     @parameter
     @always_inline
-    fn rule(x: TuningConfigSM100) -> Bool:
+    def rule(x: TuningConfigSM100) -> Bool:
         return x.K == static_K and x.N == static_N
 
     comptime outlier_configs = outliers.find[rule]()
 
-    @parameter
-    for tuning_config in outlier_configs:
-        if m >= tuning_config.M and m < tuning_config.M_end:
-            comptime matmul_config = MatmulConfig[
-                a_type, b_type, c_type, transpose_b
-            ](
-                mma_shape=tuning_config.mma_shape,
-                cta_group=tuning_config.cta_group,
-                cluster_shape=tuning_config.cluster_shape,
-                block_swizzle_size=Int(tuning_config.block_swizzle_size),
-                raster_order=tuning_config.rasterize_order,
-                AB_swapped=tuning_config.swapAB,
-                num_accum_pipeline_stages=Int(
-                    tuning_config.num_accum_pipeline_stages
-                ),
-                num_clc_pipeline_stages=Int(
-                    tuning_config.num_clc_pipeline_stages
-                ),
-                k_group_size=Int(tuning_config.k_group_size),
-                num_split_k=tuning_config.num_split_k,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=matmul_config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
+    # do not use outliers list when c_type is FP8 as we don't support all tile shapes dude to TMA requirements
+    comptime if c_type != DType.float8_e4m3fn:
+        comptime for tuning_config in outlier_configs:
+            if m >= tuning_config.M and m < tuning_config.M_end:
+                comptime matmul_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    mma_shape=tuning_config.mma_shape,
+                    cta_group=tuning_config.cta_group,
+                    cluster_shape=tuning_config.cluster_shape,
+                    block_swizzle_size=tuning_config.block_swizzle_size,
+                    raster_order=tuning_config.rasterize_order,
+                    AB_swapped=tuning_config.swapAB,
+                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                    k_group_size=tuning_config.k_group_size,
+                    num_split_k=tuning_config.num_split_k,
+                )
 
-            return DISPATCH_HIT
+                logger.info("dispatching to outlier config: ", matmul_config)
 
-    comptime configs = build_configs[
+                launch[matmul_config]()
+                return DISPATCH_HIT
+
+    comptime configs = build_sm100_matmul_configs[
         a_type, b_type, c_type, static_N, static_K, transpose_b
     ]()
+    var aligned_m = align_up(m, 64) if m >= 256 else m
     var config_runtime = choose_config[a_type, b_type, c_type, transpose_b](
-        m, static_N, static_K
+        aligned_m, static_N, static_K, 1
     )
 
-    @parameter
-    for config in configs:
+    comptime for config in configs:
         if config_runtime == config:
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
+            logger.info("dispatching to config: ", config)
+
+            launch[config]()
             return DISPATCH_HIT
+
+    # For float8_e4m3fn output, we should never fail dispatching, use the default config.
+    comptime if c_type == DType.float8_e4m3fn:
+        comptime default_config = default_matmul_config_bf16_fp8[
+            a_type, b_type, c_type, transpose_b
+        ]()
+        launch[default_config]()
+        return DISPATCH_HIT
 
     return DISPATCH_MISS
 
 
-# NOTE:
-# 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
-fn matmul_dispatch_sm100_bf16[
+def heuristic_and_outliers_dispatch[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1462,528 +481,64 @@ fn matmul_dispatch_sm100_bf16[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises -> Int:
-    var m = c.dim[0]()
-    comptime static_N = c.shape.get[1]()
-    comptime static_K = a.shape.get[1]()
-
-    comptime MMA_K = 16
-    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
-
-    comptime llama3_8b_NK = [
-        # TP1
-        Index(6144, 4096),
-        Index(4096, 4096),
-        Index(28672, 4096),
-        Index(4096, 14336),
-        # TP2
-        Index(3072, 4096),
-        Index(4096, 2048),
-        Index(14336, 4096),
-        Index(4096, 7168),
-    ]
-
-    comptime miscellaneous_NK = [
-        Index(1536, 4096),
-        Index(4096, 1536),
-    ]
-
-    @parameter
-    if Index(static_N, static_K) in miscellaneous_NK:
-        return heuristic_and_outliers_dispatch[
-            transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-            pdl_level=pdl_level,
+    @always_inline
+    def launch_callback[config: MatmulConfig[...]]() unified raises {read}:
+        _matmul_dispatch_sm100[
+            transpose_b,
+            rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](config),
+            elementwise_lambda_fn,
+            elementwise_compute_lambda_fn,
+            pdl_level,
         ](c, a, b, ctx)
 
-    @parameter
-    if Index(static_N, static_K) in llama3_8b_NK:
-        if m <= 128:
-            return heuristic_and_outliers_dispatch[
-                transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-
-    # gemma-3-27b-it-prefill (TP1)
-    @parameter
-    if static_N == 8192 and static_K == 5376:
-        if m == 48000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2000 or m == 3000 or m == 3500:
-            comptime block_tile_shape = Index(128, 112, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 4096 or m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 112, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    @parameter
-    if static_N == 5376 and static_K == 4096:
-        if m == 2000:
-            comptime block_tile_shape = Index(128, 104, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-        elif m == 3000 or m == 48000:
-            comptime block_tile_shape = Index(128, 112, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-        elif m == 3500 or m == 7000 or m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 4096:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    @parameter
-    if static_N == 43008 and static_K == 5376:
-        if m == 2000:
-            comptime block_tile_shape = Index(128, 112, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-        elif (
-            m == 512
-            or m == 3000
-            or m == 3500
-            or m == 4096
-            or m == 7000
-            or m == 48000
-        ):
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    @parameter
-    if static_N == 5376 and static_K == 21504:
-        if m == 2000:
-            comptime block_tile_shape = Index(128, 104, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3000:
-            comptime block_tile_shape = Index(128, 112, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=1,
-                num_pipeline_stages=7,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 3500 or m == 4096 or m == 7000 or m == 48000:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 8192:
-            comptime block_tile_shape = Index(128, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(4, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=8,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    @parameter
-    if static_N == 262208 and static_K == 5376:
-        if m == 1:
-            comptime block_tile_shape = Index(64, 128, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    # gemma-3-27b-it-prefill (TP=2)
-    @parameter
-    if static_N == 4096 and static_K == 5376:
-        if m == 3000:
-            comptime block_tile_shape = Index(128, 88, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    # llama-3-1-8b-it-prefill (TP=2)
-    @parameter
-    if static_N == 3072 and static_K == 4096:
-        if m == 4096:
-            comptime block_tile_shape = Index(128, 120, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 2048:
-            comptime block_tile_shape = Index(128, 96, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 2, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-        elif m == 512:
-            comptime block_tile_shape = Index(128, 48, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=2,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    @parameter
-    if static_N == 4096 and static_K == 2048:
-        if m == 512:
-            comptime block_tile_shape = Index(128, 56, BK)
-            comptime umma_shape = Index(
-                block_tile_shape[0] * 2, block_tile_shape[1] * 2, MMA_K
-            )
-            comptime cluster_shape = Index(2, 1, 1)
-            comptime config = MatmulConfig[a_type, b_type, c_type, transpose_b](
-                mma_shape=umma_shape,
-                cluster_shape=cluster_shape,
-                block_swizzle_size=4,
-            )
-            _matmul_dispatch_sm100[
-                transpose_b=transpose_b,
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
-                pdl_level=pdl_level,
-            ](c, a, b, ctx)
-            return DISPATCH_HIT
-
-    return DISPATCH_MISS
+    return select_and_launch_sm100_config[
+        transpose_b,
+        elementwise_lambda_fn,
+        elementwise_compute_lambda_fn,
+        pdl_level,
+    ](launch_callback, c, a, b, ctx)
 
 
-# NOTE: vendor blas, naive matmul, and multistage gemm dosen't support compute lambdas so we need to wrap them in a lambda function.
+# NOTE:
+# 1. SM100 matmul supports compute lambdas so we should just use normal and compute lambdas.
+def matmul_dispatch_sm100_bf16[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises -> Int:
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+
+    return sm100_heuristic_and_outliers_dispatch[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+
+
+# NOTE: vendor blas, naive matmul, and multistage gemm doesn't support compute lambdas so we need to wrap them in a lambda function.
 # if there is no compute lambda, then this wrapper will be a simple element wise lambda.
 @always_inline
-fn _vendor_blas_matmul_sm100[
+def _vendor_blas_matmul_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -1991,15 +546,16 @@ fn _vendor_blas_matmul_sm100[
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
-    comptime K = a.shape.get[1]()
-    comptime a_shape = a.shape
-    comptime b_shape = b.shape
-    comptime c_shape = c.shape
+    comptime assert c.rank == 2, "c must be of rank 2"
+    comptime assert a.rank == 2, "a must be of rank 2"
+    comptime assert b.rank == 2, "b must be of rank 2"
+    comptime K = a.static_shape[1]
+
     var shape = GemmShape.get[transpose_b=False](c, a, b)
     var m = shape.M
     var n = shape.N
@@ -2016,8 +572,7 @@ fn _vendor_blas_matmul_sm100[
         # fallback to multistage/naive gemms if the cublas failed. This is a workaround for now for KERN-1812
         logger.warning("Vendor BLAS failed")
 
-        @parameter
-        if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
+        comptime if not a_type.is_float8() and K * size_of[a_type]() >= 8 * 16:
             logger.info("Executing Multistage matmul kernel")
             comptime kernels = MatmulKernels[
                 a_type, b_type, c_type, transpose_b
@@ -2027,37 +582,27 @@ fn _vendor_blas_matmul_sm100[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
-            ](
-                rebind[NDBuffer[c_type, 2, c.origin, c.shape]](c),
-                rebind[NDBuffer[a_type, 2, a.origin, a.shape]](a),
-                rebind[NDBuffer[b_type, 2, b.origin, b.shape]](b),
-                config,
-                ctx,
-            )
+            ](c, a, b, config, ctx)
         else:
             comptime BLOCK_DIM = 16
             logger.info("Executing Naive matmul kernel")
-
-            var c_layout_tensor = from_ndbuffer_row_major(c)
-            var a_layout_tensor = from_ndbuffer_row_major(a)
-            var b_layout_tensor = from_ndbuffer_row_major(b)
 
             comptime kernel = matmul_kernel_naive[
                 c_type,
                 a_type,
                 b_type,
-                c_layout_tensor.layout,
-                a_layout_tensor.layout,
-                b_layout_tensor.layout,
+                type_of(c).LayoutType,
+                type_of(a).LayoutType,
+                type_of(b).LayoutType,
                 BLOCK_DIM,
                 transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_wrapper,
             ]
 
             ctx.enqueue_function[kernel, kernel](
-                c_layout_tensor,
-                a_layout_tensor,
-                b_layout_tensor,
+                c,
+                a,
+                b,
                 m,
                 n,
                 k,
@@ -2067,7 +612,7 @@ fn _vendor_blas_matmul_sm100[
         return
 
 
-fn _matmul_dispatch_sm100[
+def _matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
     b_type: DType,
@@ -2080,9 +625,9 @@ fn _matmul_dispatch_sm100[
     ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
-    c: NDBuffer[mut=True, c_type, 2, _, _],
-    a: NDBuffer[a_type, 2, _, _],
-    b: NDBuffer[b_type, 2, _, _],
+    c_tensor: NullableTileTensor[mut=True, c_type, ...],
+    a_tensor: TileTensor[a_type, ...],
+    b_tensor: TileTensor[b_type, ...],
     ctx: DeviceContext,
 ) raises:
     """Our sm100 matmul kernel still does not support fusion of elementwise
@@ -2091,18 +636,12 @@ fn _matmul_dispatch_sm100[
     operations if there is any.
     """
 
-    var c_tensor = from_ndbuffer_row_major(c)
-    var a_tensor = from_ndbuffer_row_major(a)
-    var b_tensor = from_ndbuffer_row_major(b)
+    comptime assert (
+        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None
+    ), "Either the epilogue lambda or the compute lambda can be used"
 
-    constrained[
-        elementwise_lambda_fn is None or elementwise_compute_lambda_fn is None,
-        "Either the epilogue lambda or the compute lambda can be used",
-    ]()
-
-    @parameter
-    if not elementwise_lambda_fn:
-        if not c.data:
+    comptime if not elementwise_lambda_fn:
+        if not c_tensor.ptr:
             raise "c must be allocated!"
 
         blackwell_matmul_tma_umma_warp_specialized[
@@ -2110,7 +649,7 @@ fn _matmul_dispatch_sm100[
             config=config,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tensor, a_tensor, b_tensor, ctx)
+        ](c_tensor.value(), a_tensor, b_tensor, ctx)
         return
 
     else:
@@ -2121,35 +660,40 @@ fn _matmul_dispatch_sm100[
             has_nvidia_gpu_accelerator()
             and ctx.default_device_info.compute >= B200.compute
         )
-        comptime simd_size = 32 // size_of[c.type]() if use_32b_simd else (
-            simd_width_of[c.type, target = get_gpu_target()]()
+        comptime simd_size = 32 // size_of[c_type]() if use_32b_simd else (
+            simd_width_of[c_type, target=get_gpu_target()]()
         )
-
-        @parameter
-        @__copy_capture(c)
-        fn epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[
-                width=simd_width,
-                # Load takes alignment in bytes, lambda takes number of elements
-                alignment = alignment * size_of[c.type](),
-            ](c_coord)
-            epilogue[c.type, simd_width, alignment=alignment](c_coord, c_val)
 
         # If c is already allocated, we can just use the sm100 matmul and
         # apply the epilogue.
-        if c.data:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
+        if c_tensor.ptr:
+            var m = Int(c_tensor.dim[0]())
+            var n = Int(c_tensor.dim[1]())
+            var c_tt = c_tensor.value()
+
+            @parameter
+            @__copy_capture(c_tt)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                comptime assert c_tt.flat_rank >= 2
+                comptime assert idx.element_type.is_integral()
+                var c_coord = Coord(Idx(idx[0]), Idx(idx[1]))
+                var c_val = c_tt.load[
+                    width=simd_width,
+                    # load_alignment is in bytes, lambda alignment is in elements
+                    alignment=alignment * size_of[c_type](),
+                ](c_coord)
+                epilogue[c_type, simd_width, alignment=alignment](
+                    IndexList[2](idx[0], idx[1]), c_val
+                )
 
             blackwell_matmul_tma_umma_warp_specialized[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
-            ](c_tensor, a_tensor, b_tensor, ctx)
+            ](c_tt, a_tensor, b_tensor, ctx)
 
             elementwise[epilogue_wrapper, simd_size, target="gpu"](
                 Index(m, n), ctx
@@ -2157,17 +701,11 @@ fn _matmul_dispatch_sm100[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c.type](
-            c.num_elements()
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
+            c_tensor.num_elements()
         )
 
-        # Construct a new buffer with external origin pointing to the temporary storage.
-        var c_tmp = NDBuffer[c.type, 2, MutExternalOrigin](
-            rebind[UnsafePointer[Scalar[c.type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            IndexList[2](c.dim[0](), c.dim[1]()),
-        )
+        var c_tmp = TileTensor(tmp_device_buffer, c_tensor.layout)
 
         _matmul_dispatch_sm100[
             transpose_b=transpose_b,
@@ -2175,6 +713,164 @@ fn _matmul_dispatch_sm100[
             elementwise_lambda_fn=elementwise_lambda_fn,
             elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
-        ](c_tmp, a, b, ctx)
+        ](c_tmp, a_tensor, b_tensor, ctx)
 
         _ = tmp_device_buffer^
+
+
+@always_inline
+def dispatch_sm100_batched_matmul[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    transpose_b: Bool,
+    pdl_level: PDLLevel = PDLLevel(1),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch batched matmul to SM100 kernel.
+
+    First, try to dispatch to a batched matmul config from the tuning table. Then try to find a optimized config for the given shape.
+    If not found, then dispatch to a default config.
+    """
+
+    comptime MMA_K = 32 if a_type == DType.float8_e4m3fn else 16
+    comptime BK = TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]()
+
+    var batch_size = Int(c.dim(0))
+    var m = Int(c.dim(1))
+    comptime static_K = a.LayoutType._shape_types[2].static_value
+    comptime static_N = c.LayoutType._shape_types[2].static_value
+
+    comptime static_NK = Index(static_N, static_K)
+
+    logger.info(
+        "Dispatching to SM100 Batched Matmul B= ",
+        batch_size,
+        " M= ",
+        m,
+        " N= ",
+        static_N,
+        " K= ",
+        static_K,
+    )
+
+    comptime outliers = Table(
+        _get_tuning_list_sm100_batched_bf16(), "batched_bf16_heuristic_outliers"
+    ) if a_type == DType.bfloat16 else Table(
+        _get_tuning_list_sm100_batched_fp8(), "batched_fp8_heuristic_outliers"
+    )
+
+    @parameter
+    @always_inline
+    def rule(x: TuningConfigSM100) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime outlier_configs = outliers.find[rule]()
+
+    comptime if c_type in (DType.bfloat16,):
+        comptime for tuning_config in outlier_configs:
+            if (
+                batch_size == tuning_config.batch_size
+                and m >= tuning_config.M
+                and m < tuning_config.M_end
+            ):
+                comptime matmul_config = MatmulConfig[
+                    a_type, b_type, c_type, transpose_b
+                ](
+                    mma_shape=tuning_config.mma_shape,
+                    cta_group=tuning_config.cta_group,
+                    cluster_shape=tuning_config.cluster_shape,
+                    block_swizzle_size=tuning_config.block_swizzle_size,
+                    raster_order=tuning_config.rasterize_order,
+                    AB_swapped=tuning_config.swapAB,
+                    num_accum_pipeline_stages=tuning_config.num_accum_pipeline_stages,
+                    num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
+                    k_group_size=tuning_config.k_group_size,
+                    num_split_k=tuning_config.num_split_k,
+                    gemm_kind=GEMMKind.BMM,
+                )
+
+                logger.info("Using batched tuning config: ", matmul_config)
+
+                blackwell_batched_matmul_tma_umma_warp_specialized[
+                    transpose_b=transpose_b,
+                    config=matmul_config,
+                    pdl_level=pdl_level,
+                ](c, a, b, ctx)
+
+                return
+
+    comptime configs = build_sm100_batched_matmul_configs[
+        a_type, b_type, c_type, static_N, static_K, transpose_b
+    ]()
+    var aligned_m = align_up(m, 64) if m >= 256 else m
+    var config_runtime = choose_config[
+        a_type, b_type, c_type, transpose_b, gemm_kind=GEMMKind.BMM
+    ](aligned_m, static_N, static_K, batch_size)
+
+    comptime for config in configs:
+        if config_runtime == config:
+            logger.info("dispatching to batched matmul config: ", config)
+
+            blackwell_batched_matmul_tma_umma_warp_specialized[
+                transpose_b=transpose_b,
+                config=config,
+                pdl_level=pdl_level,
+            ](c, a, b, ctx)
+            return
+
+    # fallback to default config
+    comptime default_config = default_matmul_config_bf16_fp8[
+        a_type,
+        b_type,
+        c_type,
+        transpose_b,
+        gemm_kind=GEMMKind.BMM,
+    ]()
+
+    blackwell_batched_matmul_tma_umma_warp_specialized[
+        transpose_b=transpose_b,
+        config=default_config,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+
+
+def sm100_heuristic_and_outliers_dispatch[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = True,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises -> Int:
+    @always_inline
+    def launch_callback[config: MatmulConfig[...]]() unified raises {read}:
+        blackwell_matmul_tma_umma_warp_specialized[
+            transpose_b,
+            config=rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](
+                config
+            ),
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+    return select_and_launch_sm100_config[
+        transpose_b,
+        elementwise_lambda_fn,
+        elementwise_compute_lambda_fn,
+        pdl_level,
+    ](launch_callback, c, a, b, ctx)

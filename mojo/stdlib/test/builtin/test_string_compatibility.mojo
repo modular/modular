@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_true, TestSuite
+from std.testing import assert_equal, assert_true, TestSuite
 
 
-def test_literals():
+def test_literals() raises:
     """Test string literal operations and type inference.
 
     String literals now materialize to String by default.
@@ -46,7 +46,7 @@ def test_literals():
     assert_equal(in_place, "this is a string in-place operation")
 
 
-def test_alias_expressions():
+def test_alias_expressions() raises:
     """Test string alias expressions."""
     comptime alias_concat = "foo" + "bar"
     comptime alias_concat_string = "foo" + String("bar")
@@ -79,7 +79,7 @@ def _test_string_types_compatibility(
     static_string: StaticString,
     string_slice: StringSlice,
     cond: Bool = True,
-):
+) raises:
     """Test compatibility between String, StaticString, and StringSlice in various operations.
     Focus on String and StringSlice compatibility.
     """
@@ -125,7 +125,7 @@ def _test_string_types_compatibility(
 def _test_string_slice_conversions(
     string: String,
     string_slice: StringSlice,
-):
+) raises:
     """Test explicit conversions between String and StringSlice."""
     # Convert String to StringSlice
     var slice_from_string = StringSlice(string)
@@ -145,7 +145,7 @@ def _test_string_slice_conversions(
 
 def _test_equality_operations(
     string: String, static_string: StaticString, string_slice: StringSlice
-):
+) raises:
     """Test equality operations between different string types."""
     var string_a = String("hello")
     var static_a = "hello"
@@ -173,7 +173,7 @@ def _test_chained_operations(
     static_string: StaticString,
     string_slice: StringSlice,
     cond: Bool = True,
-):
+) raises:
     """Test chained operations with mixed string types."""
     # Chained concatenation
     var chained = string + static_string + string_slice
@@ -197,7 +197,7 @@ def _test_chained_operations(
     assert_equal(complex_cond, expected_complex)
 
 
-def _test_with_collections(string: String, static_string: StaticString):
+def _test_with_collections(string: String, static_string: StaticString) raises:
     """Test string types in collection contexts."""
     # List operations with mixed string types
     var string_list = List[String]()
@@ -227,7 +227,7 @@ def _test_dict_literals(
     string: String,
     static_string: StaticString,
     cond: Bool = True,
-):
+) raises:
     """Test dict literal initialization with different string types."""
     # Mixed dict literals - StaticString keys with String values
     var mixed_dict1 = {
@@ -255,7 +255,7 @@ def _test_dict_literals(
     # Dict literal with computed keys and values
     var computed_dict = {
         string if cond else static_string: static_string if cond else string,
-        "conditional": string if len(string) > 0 else static_string,
+        "conditional": string if string else static_string,
     }
     assert_equal(computed_dict[string], static_string)
     assert_equal(computed_dict["conditional"], string)
@@ -264,7 +264,7 @@ def _test_dict_literals(
 def _test_list_comprehensions(
     string: String,
     static_string: StaticString,
-):
+) raises:
     """Test list comprehensions with mixed string types."""
 
     # List comprehension with mixed string types and operations
@@ -277,7 +277,8 @@ def _test_list_comprehensions(
     # List comprehension with complex conditional logic and mixed types
     var test_strings: List[String] = ["short", "medium", "a", "long_string"]
     var categorized = [
-        "short" if len(s) < 6 else ("medium" if len(s) < 11 else String("long"))
+        "short" if s.byte_length()
+        < 6 else ("medium" if s.byte_length() < 11 else String("long"))
         for s in test_strings
     ]
     assert_equal(categorized[0], "short")
@@ -297,7 +298,7 @@ def _test_conditional_edge_cases(
     static_string: StaticString,
     cond1: Bool = True,
     cond2: Bool = False,
-):
+) raises:
     """Test edge cases with conditional expressions."""
     var empty_string = String("")
 
@@ -312,56 +313,56 @@ def _test_conditional_edge_cases(
     assert_equal(empty_cond2, empty_string)
 
 
-def test_string_types_compatibility():
+def test_string_types_compatibility() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     var string_slice = StringSlice("string_slice")
     _test_string_types_compatibility(string, static_string, string_slice)
 
 
-def test_string_slice_conversions():
+def test_string_slice_conversions() raises:
     var string = "string"
     var string_slice = StringSlice("string_slice")
     _test_string_slice_conversions(string, string_slice)
 
 
-def test_equality_operations():
+def test_equality_operations() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     var string_slice = StringSlice("string_slice")
     _test_equality_operations(string, static_string, string_slice)
 
 
-def test_chained_operations():
+def test_chained_operations() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     var string_slice = StringSlice("string_slice")
     _test_chained_operations(string, static_string, string_slice)
 
 
-def test_with_collections():
+def test_with_collections() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_with_collections(string, static_string)
 
 
-def test_dict_literals():
+def test_dict_literals() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_dict_literals(string, static_string)
 
 
-def test_list_comprehensions():
+def test_list_comprehensions() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_list_comprehensions(string, static_string)
 
 
-def test_conditional_edge_cases():
+def test_conditional_edge_cases() raises:
     var string = "string"
     var static_string = StaticString("static_string")
     _test_conditional_edge_cases(string, static_string)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

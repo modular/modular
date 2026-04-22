@@ -11,33 +11,39 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from sys import align_of, size_of
+from std.math import iota
+from std.sys import align_of, size_of
 
-from algorithm import parallelize_over_rows
-from bit import log2_floor
+from std.algorithm import parallelize_over_rows
+from std.bit import log2_floor
 from compiler import register
-from gpu import WARP_SIZE, barrier, block_dim, block_idx, thread_idx
-from gpu.primitives import warp
-from gpu.memory import AddressSpace, external_memory
-from memory import Span
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu import (
+    WARP_SIZE,
+    barrier,
+    block_dim,
+    block_idx,
+    thread_idx,
+)
+from std.gpu.primitives import warp
+from std.gpu.memory import AddressSpace, external_memory
+from std.memory import Span
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils.numerics import min_or_neg_inf
+from std.utils.numerics import min_or_neg_inf
 
 
 @fieldwise_init
-struct TopKElement[T: DType](Comparable, TrivialRegisterType):
+struct TopKElement[T: DType](Comparable, TrivialRegisterPassable):
     """Stores the value with it's index."""
 
     var idx: Int32
     var val: Scalar[Self.T]
 
-    fn __eq__(self, rhs: Self) -> Bool:
+    def __eq__(self, rhs: Self) -> Bool:
         return self.val == rhs.val
 
-    fn __lt__(self, rhs: Self) -> Bool:
+    def __lt__(self, rhs: Self) -> Bool:
         return self.val < rhs.val
 
 
@@ -51,23 +57,22 @@ struct TopK:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         rank: Int,
         //,  # Forces the previous two params to be inferred from the args
         K: Int,
         target: StaticString,
     ](
-        out_vals: OutputTensor[dtype=dtype, rank=rank],
-        out_idxs: OutputTensor[dtype = DType.int32, rank=rank],
-        in_vals: InputTensor[dtype=dtype, rank=rank],
+        out_vals: OutputTensor[dtype=dtype, rank=rank, ...],
+        out_idxs: OutputTensor[dtype=DType.int32, rank=rank, ...],
+        in_vals: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
     ) raises:
-        constrained[rank == 2, "rank must be 2"]()
-        constrained[
-            not (target == "gpu" and K > WARP_SIZE),
-            "K can't be larger than warp size",
-        ]()
+        comptime assert rank == 2, "rank must be 2"
+        comptime assert not (
+            target == "gpu" and K > WARP_SIZE
+        ), "K can't be larger than warp size"
 
         var shape = in_vals.shape()
         var batch_size = shape[0]
@@ -78,7 +83,7 @@ struct TopK:
         var in_vals_tensor = in_vals.to_layout_tensor()
 
         @parameter
-        fn top_k_gpu[
+        def top_k_gpu[
             K: Int,
         ](
             out_vals: type_of(out_vals_tensor),
@@ -91,8 +96,8 @@ struct TopK:
             # Get a pointer to shared memory for the indices and values
             var top_k_sram = external_memory[
                 TopKElement[dtype],
-                address_space = AddressSpace.SHARED,
-                alignment = align_of[TopKElement[dtype]](),
+                address_space=AddressSpace.SHARED,
+                alignment=align_of[TopKElement[dtype]](),
             ]()
 
             # Threads put their corresponding index and value into shared memory
@@ -100,14 +105,12 @@ struct TopK:
             # Finish packing the values across threads in this block
             barrier()
 
-            @parameter
-            for i in range(K):
+            comptime for i in range(K):
                 var reduced = top_k_sram[tid]
                 comptime limit = log2_floor(WARP_SIZE)
 
                 # TODO(KERN-1544): `gpu.shuffle.warp_max` support index/value
-                @parameter
-                for j in reversed(range(limit)):
+                comptime for j in reversed(range(limit)):
                     comptime offset = 1 << j
                     # Parallel reduction using warp shuffle. Each thread gets a
                     # value from a thread 'offset' positions higher, keeping the
@@ -131,8 +134,7 @@ struct TopK:
                     var index = reduced.idx % Int32(block_dim.x)
                     top_k_sram[index].val = min_or_neg_inf[dtype]()
 
-        @parameter
-        if target == "gpu":
+        comptime if target == "gpu":
             dev_ctx.enqueue_function_experimental[top_k_gpu[K]](
                 out_vals_tensor,
                 out_idxs_tensor,
@@ -144,13 +146,13 @@ struct TopK:
         else:
 
             @parameter
-            fn top_k_cpu(start_idx: Int, end_idx: Int):
+            def top_k_cpu(start_idx: Int, end_idx: Int):
                 for row_idx in range(start_idx, end_idx):
                     var offset = row_idx * K
                     iota(out_idxs.unsafe_ptr() + offset, K)
 
                     @parameter
-                    fn val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
+                    def val_greater_than(lhs: Int32, rhs: Int32) -> Bool:
                         return (
                             in_vals[row_idx, Int(lhs)]
                             > in_vals[row_idx, Int(rhs)]

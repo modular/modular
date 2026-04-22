@@ -11,18 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from testing import (
+from std.os import abort
+from std.testing import (
     assert_raises,
     assert_equal,
     assert_true,
     assert_false,
     TestSuite,
 )
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 
 
-def test_rng_xoshiro_float():
+def test_rng_xoshiro_float() raises:
     var rng = Rng(seed=1234)
     for _ in range(100):
         var f = rng._xoshiro_float()
@@ -30,23 +30,22 @@ def test_rng_xoshiro_float():
         assert_true(f <= 1.0)
 
 
-def test_rng_rand_bool():
+def test_rng_rand_bool() raises:
     var rng = Rng(seed=1234)
     for _ in range(100):
         assert_true(rng.rand_bool(true_probability=1.0))
         assert_false(rng.rand_bool(true_probability=0.0))
 
 
-def test_rng_rand_scalar():
-    def test_dtype[dtype: DType](min: Scalar[dtype], max: Scalar[dtype]):
+def test_rng_rand_scalar() raises:
+    def test_dtype[dtype: DType](min: Scalar[dtype], max: Scalar[dtype]) raises:
         var rng = Rng(seed=1234)
         for _ in range(100):
             var value = rng.rand_scalar[dtype](min=min, max=max)
             assert_true(value >= min)
             assert_true(value <= max)
 
-    @parameter
-    for dtype in [
+    comptime for dtype in [
         DType.uint,
         DType.uint8,
         DType.uint16,
@@ -65,18 +64,17 @@ def test_rng_rand_scalar():
 
         test_dtype[dtype](scalar.MIN_FINITE, scalar.MAX_FINITE)
 
-        @parameter
-        if dtype.is_signed():
+        comptime if dtype.is_signed():
             test_dtype[dtype](scalar(-10), scalar(10))
         else:
             test_dtype[dtype](scalar(10), scalar(20))
 
 
-def test_rng_rand_scalar_raises():
+def test_rng_rand_scalar_raises() raises:
     with assert_raises(contains="invalid min/max"):
         var rng = Rng(seed=1234)
         var _ = rng.rand_scalar[DType.int32](min=10, max=5)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

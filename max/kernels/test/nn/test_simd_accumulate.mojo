@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from buffer import NDBuffer
+from layout import TileTensor, row_major
 from linalg.accumulate import _Accumulator, _simd_load_maybe_partial
-from testing import *
+from std.testing import *
 
 
 # TODO: rewrite c-layout comments according to the new struct.
-def test_maybe_partial_load():
+def test_maybe_partial_load() raises:
     comptime simd_size = 4
     comptime size = simd_size + 1
 
@@ -37,7 +37,7 @@ def test_maybe_partial_load():
 
 def test_accumulate[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
-]():
+]() raises:
     comptime type = DType.float32
 
     # A: [[ 0.0, 0.0 ],
@@ -60,8 +60,7 @@ def test_accumulate[
     for i in range(2 * length):
         var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
 
-        @parameter
-        for j in range(num_cols):
+        comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var acc = _Accumulator[type, num_rows, num_cols, simd_size]()
@@ -129,7 +128,7 @@ def test_accumulate[
 
 def test_accumulate_with_offsets[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
-]():
+]() raises:
     comptime type = DType.float32
 
     # A: [[ 0.0, 0.0 ],
@@ -152,14 +151,11 @@ def test_accumulate_with_offsets[
     for i in range(2 * length):
         var b_ptr = b.unsafe_ptr() + i * num_cols * simd_size
 
-        @parameter
-        for j in range(num_cols):
+        comptime for j in range(num_cols):
             (b_ptr + j * simd_size).store(SIMD[type, simd_size](i))
 
     var a_base_stack = InlineArray[Int32, num_rows](uninitialized=True)
-    var a_base_offsets = NDBuffer[DType.int32, 1, _, num_rows](
-        a_base_stack.unsafe_ptr()
-    )
+    var a_base_offsets = TileTensor(a_base_stack, row_major[num_rows]())
     a_base_offsets[0] = 0
     a_base_offsets[1] = Int32(length)
 
@@ -243,7 +239,7 @@ def test_accumulate_with_offsets[
 
 def test_load_store[
     simd_size: Int = 4, num_rows: Int = 2, num_cols: Int = 2, length: Int = 2
-]():
+]() raises:
     comptime type = DType.float32
     comptime size = simd_size + 1
     comptime residual = 1
@@ -255,11 +251,8 @@ def test_load_store[
 
     # A: [[ 4x0.0, 4x1.0, -1.0],
     #     [ 4x1.0, 4x2.0, -1.0]]
-    @parameter
-    for i in range(num_rows):
-
-        @parameter
-        for j in range(num_cols):
+    comptime for i in range(num_rows):
+        comptime for j in range(num_cols):
             a.unsafe_ptr().store(
                 i * row_size + j * simd_size,
                 SIMD[type, simd_size](i + j),
@@ -311,11 +304,10 @@ def test_load_store[
 
     # TODO: replace the following with simd.mojo:insert (after resolving its issue).
     @always_inline
-    fn simd_insert(mut x: SIMD[type, _], y: SIMD[type, _]):
+    def simd_insert(mut x: SIMD[type, _], y: SIMD[type, _]):
         comptime assert x.size >= y.size
 
-        @parameter
-        for i in range(y.size):
+        comptime for i in range(y.size):
             x[i] = y[i]
 
     simd_insert(tile1[0, 2], residual_vec1)
@@ -334,7 +326,7 @@ def test_load_store[
     )
 
 
-def main():
+def main() raises:
     test_maybe_partial_load()
     test_accumulate()
     test_accumulate_with_offsets()

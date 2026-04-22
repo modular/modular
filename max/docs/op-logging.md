@@ -11,8 +11,8 @@ Op logging is disabled by default and can be enabled in several ways:
 
 ### 1. Via Python InferenceSession API
 
-When using the MAX Python API, set the mojo logging level via `set_mojo_log_level`
-on the InferenceSession object:
+When using the MAX Python API, set the mojo logging level via
+`set_mojo_log_level` on the InferenceSession object:
 
 ```python
 from max.engine import InferenceSession, LogLevel

@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 from common import TestStruct
-from python import PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module_a() -> PythonObject:
+def PyInit_mojo_module_a() -> PythonObject:
     try:
         var m = PythonModuleBuilder("mojo_module_a")
         _ = (

@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Set
-from math import rsqrt
-from random import random_ui64, seed
+from std.collections import Set
+from std.math import rsqrt
+from std.random import random_ui64, seed
 
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -21,12 +21,12 @@ from kv_cache.types import (
 )
 from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._fillers import random
-from memory import alloc, memcpy
-from nn.flash_attention import flash_attention_kv_cache
-from nn.mha_mask import CausalMask
-from testing import assert_almost_equal
+from std.memory import alloc, memcpy
+from nn.attention.cpu.mha import flash_attention_kv_cache
+from nn.attention.mha_mask import CausalMask
+from std.testing import assert_almost_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 comptime kv_params_llama3 = KVCacheStaticParams(num_heads=8, head_size=128)
 comptime llama_num_q_heads = 32
@@ -40,7 +40,7 @@ def execute_ragged_flash_attention[
     cache_lengths_list: List[Int],
     num_layers: Int,
     layer_idx: Int,
-):
+) raises:
     comptime num_blocks = 32
     comptime CollectionType = ContinuousBatchingKVCacheCollection[
         dtype, kv_params
@@ -55,10 +55,9 @@ def execute_ragged_flash_attention[
         num_blocks,
         ")",
     )
-    debug_assert(
-        len(valid_lengths_list) == len(cache_lengths_list),
-        "expected valid_lengths and cache_lengths size to be equal",
-    )
+    assert len(valid_lengths_list) == len(
+        cache_lengths_list
+    ), "expected valid_lengths and cache_lengths size to be equal"
 
     comptime layout_1d = Layout.row_major[1]()
     var input_row_offsets = LayoutTensor[DType.uint32, layout_1d](
@@ -90,11 +89,9 @@ def execute_ragged_flash_attention[
 
     comptime layout_3d = Layout.row_major[3]()
     var q_ragged = LayoutTensor[dtype, layout_3d](
-        alloc[Scalar[dtype]](
-            total_length * num_q_heads * Int(kv_params.head_size)
-        ),
+        alloc[Scalar[dtype]](total_length * num_q_heads * kv_params.head_size),
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     )
     random(q_ragged)
@@ -102,17 +99,14 @@ def execute_ragged_flash_attention[
     comptime layout_4d = Layout.row_major[4]()
     var q_padded = LayoutTensor[dtype, layout_4d](
         alloc[Scalar[dtype]](
-            batch_size
-            * max_prompt_length
-            * num_q_heads
-            * Int(kv_params.head_size)
+            batch_size * max_prompt_length * num_q_heads * kv_params.head_size
         ),
         RuntimeLayout[layout_4d].row_major(
             IndexList[4](
                 batch_size,
                 max_prompt_length,
                 num_q_heads,
-                Int(kv_params.head_size),
+                kv_params.head_size,
             )
         ),
     )
@@ -129,33 +123,28 @@ def execute_ragged_flash_attention[
         memcpy(
             dest=padded_ptr,
             src=ragged_ptr,
-            count=unpadded_seq_len * num_q_heads * Int(kv_params.head_size),
+            count=unpadded_seq_len * num_q_heads * kv_params.head_size,
         )
 
     # initialize reference output
     var ref_output = LayoutTensor[dtype, layout_4d](
         alloc[Scalar[dtype]](
-            batch_size
-            * max_prompt_length
-            * num_q_heads
-            * Int(kv_params.head_size)
+            batch_size * max_prompt_length * num_q_heads * kv_params.head_size
         ),
         RuntimeLayout[layout_4d].row_major(
             IndexList[4](
                 batch_size,
                 max_prompt_length,
                 num_q_heads,
-                Int(kv_params.head_size),
+                kv_params.head_size,
             )
         ),
     ).fill(0)
 
     var test_output = LayoutTensor[dtype, layout_3d](
-        alloc[Scalar[dtype]](
-            total_length * num_q_heads * Int(kv_params.head_size)
-        ),
+        alloc[Scalar[dtype]](total_length * num_q_heads * kv_params.head_size),
         RuntimeLayout[layout_3d].row_major(
-            IndexList[3](total_length, num_q_heads, Int(kv_params.head_size))
+            IndexList[3](total_length, num_q_heads, kv_params.head_size)
         ),
     ).fill(0)
 
@@ -167,8 +156,8 @@ def execute_ragged_flash_attention[
             * 2
             * num_layers
             * max_seq_len_cache
-            * Int(kv_params.num_heads)
-            * Int(kv_params.head_size)
+            * kv_params.num_heads
+            * kv_params.head_size
         ),
         RuntimeLayout[layout_6d].row_major(
             IndexList[6](
@@ -176,8 +165,8 @@ def execute_ragged_flash_attention[
                 2,
                 num_layers,
                 max_seq_len_cache,
-                Int(kv_params.num_heads),
-                Int(kv_params.head_size),
+                kv_params.num_heads,
+                kv_params.head_size,
             )
         ),
     )
@@ -262,8 +251,8 @@ def execute_ragged_flash_attention[
                 for hd in range(kv_params.head_size):
                     try:
                         assert_almost_equal(
-                            ref_out[bs, s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[bs, s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                         )
                     except e:
                         print(
@@ -272,8 +261,8 @@ def execute_ragged_flash_attention[
                             s,
                             h,
                             hd,
-                            ref_out[bs, s, h, Int(hd)][0],
-                            test_out[ragged_offset + s, h, Int(hd)][0],
+                            ref_out[bs, s, h, hd][0],
+                            test_out[ragged_offset + s, h, hd][0],
                         )
                         raise e^
 
@@ -291,7 +280,7 @@ def execute_ragged_flash_attention[
 comptime dtype = DType.float32
 
 
-def execute_flash_attention_suite():
+def execute_flash_attention_suite() raises:
     for bs in [1, 16]:
         ce_cache_sizes = List[Int]()
         ce_seq_lens = List[Int]()
@@ -322,6 +311,6 @@ def execute_flash_attention_suite():
     )
 
 
-def main():
+def main() raises:
     seed(42)
     execute_flash_attention_suite()

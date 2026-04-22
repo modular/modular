@@ -272,7 +272,7 @@ def test_json_deserialization() -> None:
         "max_output_tokens": 500,
     }
 
-    request = OpenResponsesRequestBody(**json_data)
+    request = OpenResponsesRequestBody.model_validate(json_data)
 
     assert request.model == "gpt-4"
     assert request.input == "Hello!"
@@ -365,7 +365,7 @@ def test_create_response_body_provider_options_json_deserialization() -> None:
         },
     }
 
-    request = OpenResponsesRequestBody(**json_data)
+    request = OpenResponsesRequestBody.model_validate(json_data)
 
     assert request.model == "gpt-4"
     assert request.input == "Hello!"
@@ -385,7 +385,15 @@ def test_create_response_body_without_provider_options() -> None:
     )
 
     assert request.model == "gpt-4"
-    assert request.provider_options is None
+    # provider_options defaults to ProviderOptions with default ImageProviderOptions
+    assert request.provider_options is not None
+    assert request.provider_options.max is None
+    assert request.provider_options.image is not None
+    assert request.provider_options.image.guidance_scale == 3.5
+    assert request.provider_options.image.true_cfg_scale == 1.0
+    assert request.provider_options.image.steps == 50
+    assert request.provider_options.image.num_images == 1
+    assert request.provider_options.video is None
 
 
 def test_create_response_body_with_partial_provider_options() -> None:

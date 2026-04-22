@@ -81,7 +81,7 @@ def test_builtin_integerattr(mlir_context) -> None:  # noqa: ANN001
 def test_builtin_moduleop(mlir_context) -> None:  # noqa: ANN001
     loc = mlir.Location.current
     assert loc
-    op = builtin.ModuleOp(loc)
+    builtin.ModuleOp(loc)
 
 
 def test_mo_graph_op(mlir_context) -> None:  # noqa: ANN001
@@ -324,7 +324,7 @@ def test_lower_remove_dead_values(mlir_context) -> None:  # noqa: ANN001
     module = Operation._from_cmlir(graph._module.operation)
     assert isinstance(module, builtin.ModuleOp)
     assert "mo.chain.create()" in str(module)
-    lower(module, [builtin.passes.RemoveDeadValues()])
+    lower(module, [builtin.passes.RemoveDeadValuesPass()])
     assert isinstance(module, builtin.ModuleOp)
     assert "mo.chain.create()" not in str(module)
 
@@ -337,7 +337,7 @@ def test_lowering_failure_diagnostic(mlir_context) -> None:  # noqa: ANN001
     with pytest.raises(Exception):
         module.verify()
     with pytest.raises(Exception):
-        lower(module, [builtin.passes.RemoveDeadValues()])
+        lower(module, [builtin.passes.RemoveDeadValuesPass()])
 
 
 def test_construct_pass_with_options(mlir_context) -> None:  # noqa: ANN001

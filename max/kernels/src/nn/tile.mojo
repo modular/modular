@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._tile_tensor import TileTensor
-from memory import memcpy
+from layout import TileTensor
+from std.memory import memcpy
 
-from utils import IndexList
+from std.utils import IndexList
 
 # TODO: This implementation supports up to 4 dimensions.
 
@@ -25,15 +25,13 @@ from utils import IndexList
 
 
 @always_inline
-fn tile[
+def tile[
     dtype: DType, type_repeats: DType
 ](
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
-    repeats: TileTensor[
-        type_repeats, address_space = AddressSpace.GENERIC, ...
-    ],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    repeats: TileTensor[type_repeats, address_space=AddressSpace.GENERIC, ...],
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
 ) raises:
     """
@@ -60,7 +58,7 @@ fn tile[
     ), "Currently only inputs of up to three dimensions are supported."
 
     comptime assert (
-        repeats.rank == 1 and type_repeats == DType.int64
+        repeats.flat_rank == 1 and type_repeats == DType.int64
     ), "Rank of repeats tensor needs to be one-dimensional and of int64 type."
 
     if input.rank != Int(repeats.dim(0)):
@@ -73,16 +71,13 @@ fn tile[
     var num_depth_input = 1
     var num_rows_input = 1
 
-    @parameter
-    if input.rank == 4:
+    comptime if input.rank == 4:
         num_dp_input = Int(input.dim(input.rank - 4))
 
-    @parameter
-    if input.rank >= 3:
+    comptime if input.rank >= 3:
         num_depth_input = Int(input.dim(input.rank - 3))
 
-    @parameter
-    if input.rank >= 2:
+    comptime if input.rank >= 2:
         num_rows_input = Int(input.dim(input.rank - 2))
     var num_cols_input = Int(input.dim(input.rank - 1))
 
@@ -95,16 +90,13 @@ fn tile[
     var repeat_depth = 1
     var repeat_dp = 1
 
-    @parameter
-    if input.rank >= 2:
+    comptime if input.rank >= 2:
         repeat_rows = Int(repeats[repeats_len - 2])
 
-    @parameter
-    if input.rank >= 3:
+    comptime if input.rank >= 3:
         repeat_depth = Int(repeats[repeats_len - 3])
 
-    @parameter
-    if input.rank >= 4:
+    comptime if input.rank >= 4:
         repeat_dp = Int(repeats[repeats_len - 4])
 
     # Initializes output by first copying in the original input to the
@@ -163,8 +155,7 @@ fn tile[
     #            [4, 5, 6, 4, 5, 6]]
     # Moving from the inner to the outermost dimension, we can memcpy to
     # replicate contiguous memory areas (representing a dimension to be tiled).
-    @parameter
-    if input.rank >= 2:
+    comptime if input.rank >= 2:
         var src_index_stride = num_rows_input * num_cols_input * repeat_cols
         var count = src_index_stride
         for dp in range(num_dp_input):
@@ -191,8 +182,7 @@ fn tile[
                     memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the third dimension from the end (if tensor rank >= 3)
-    @parameter
-    if input.rank >= 3:
+    comptime if input.rank >= 3:
         var src_index_stride = (
             num_depth_input
             * repeat_rows
@@ -219,8 +209,7 @@ fn tile[
                 memcpy(dest=dst_ptr, src=src_ptr, count=count)
 
     # Handles tiling across the fourth dimension from the end (if tensor rank == 4)
-    @parameter
-    if input.rank == 4:
+    comptime if input.rank == 4:
         var src_index_stride = (
             num_dp_input
             * repeat_depth
@@ -241,10 +230,9 @@ fn tile[
 
 
 @always_inline
-fn tile_shape[
+def tile_shape[
     input_type: DType,
     repeats_type: DType,
-    single_thread_blocking_override: Bool,
 ](
     input_buf: TileTensor[input_type, ...],
     repeats_buf: TileTensor[repeats_type, ...],
@@ -256,8 +244,6 @@ fn tile_shape[
     Parameters:
         input_type: Type of the input tensor.
         repeats_type: Type of the repeats tensor.
-        single_thread_blocking_override: If True, then the operation is run
-          synchronously using a single thread.
 
     Args:
         input_buf: The input tensor.
@@ -266,7 +252,7 @@ fn tile_shape[
     Returns:
         The output shape.
     """
-    comptime assert repeats_buf.rank == 1, "repeats_buf must be of rank 1"
+    comptime assert repeats_buf.flat_rank == 1, "repeats_buf must be of rank 1"
 
     # TODO add runtime test once we support dynamic rank execution, currently
     # MLIR verifier of `MO::TileOp` prevents testing this with static rank.
@@ -276,8 +262,7 @@ fn tile_shape[
     # Compute and return the output shape.
     var output_shape = IndexList[input_buf.rank]()
 
-    @parameter
-    for i in range(input_buf.rank):
+    comptime for i in range(input_buf.rank):
         output_shape[i] = Int(input_buf.dim(i)) * Int(repeats_buf[i])
 
     return output_shape

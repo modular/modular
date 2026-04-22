@@ -11,19 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import isfile
-from pathlib import Path
+from std.os.path import isfile
+from std.pathlib import Path
 
-from reflection import source_location
-from testing import TestSuite, assert_false, assert_true
+from std.reflection import source_location
+from std.testing import TestSuite, assert_false, assert_true
 
 
-def test_isfile():
-    assert_true(isfile(source_location().file_name))
+def test_isfile() raises:
+    assert_true(isfile(source_location().file_name()))
     assert_false(isfile("this/file/does/not/exist"))
 
     assert_false(isfile(Path()))
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

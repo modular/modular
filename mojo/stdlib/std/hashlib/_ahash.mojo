@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
-from bit import rotate_bits_left
-from memory import Span, bitcast
+from std.sys import size_of
+from std.bit import rotate_bits_left
+from std.memory import Span, bitcast
 
 from .hasher import Hasher
 
@@ -24,7 +24,7 @@ comptime ROT = 23
 
 
 @always_inline
-fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
+def _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
     """A fast function to emulate a folded multiply of two 64 bit uints.
 
     Args:
@@ -42,7 +42,7 @@ fn _folded_multiply(lhs: UInt64, rhs: UInt64) -> UInt64:
 
 
 @always_inline
-fn _read_small(data: UnsafePointer[mut=False, UInt8], length: Int) -> U128:
+def _read_small(data: UnsafePointer[mut=False, UInt8, _], length: Int) -> U128:
     """Produce a `SIMD[DType.uint64, 2]` value from data which is smaller than or equal to `8` bytes.
 
     Args:
@@ -90,7 +90,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
     var pad: UInt64
     var extra_keys: U128
 
-    fn __init__(out self):
+    def __init__(out self):
         """Initialize the hasher."""
         comptime pi_key = Self.key ^ U256(
             0x243F_6A88_85A3_08D3,
@@ -103,7 +103,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.extra_keys = U128(pi_key[2], pi_key[3])
 
     @always_inline
-    fn _update(mut self, new_data: UInt64):
+    def _update(mut self, new_data: UInt64):
         """Update the buffer value with new data.
 
         Args:
@@ -112,7 +112,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         self.buffer = _folded_multiply(new_data ^ self.buffer, MULTIPLE)
 
     @always_inline
-    fn _large_update(mut self, new_data: U128):
+    def _large_update(mut self, new_data: U128):
         """Update the buffer value with new data.
 
         Args:
@@ -122,7 +122,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         var combined = _folded_multiply(xored[0], xored[1])
         self.buffer = rotate_bits_left[ROT]((self.buffer + self.pad) ^ combined)
 
-    fn _update_with_bytes(mut self, data: Span[Byte, _]):
+    def _update_with_bytes(mut self, data: Span[Byte, _]):
         """Consume provided data to update the internal buffer.
 
         Args:
@@ -148,7 +148,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
             var value = _read_small(ptr, length)
             self._large_update(value)
 
-    fn _update_with_simd(mut self, new_data: SIMD[_, _]):
+    def _update_with_simd(mut self, new_data: SIMD[_, _]):
         """Update the buffer value with new data.
 
         Args:
@@ -161,28 +161,22 @@ struct AHasher[key: U256](Defaultable, Hasher):
         # e.g. int128 is 16 bytes long and evaluates to 2 rounds
         comptime rounds = max(1, size_of[new_data.dtype]() // 8)
 
-        @parameter
-        if rounds == 1:
+        comptime if rounds == 1:
             # vector values are not bigger than 8 bytes each
             var u64 = new_data.to_bits[DType.uint64]()
 
-            @parameter
-            if u64.size == 1:
+            comptime if u64.size == 1:
                 self._update(u64[0])
             else:
-
-                @parameter
-                for i in range(0, u64.size, 2):
+                comptime for i in range(0, u64.size, 2):
                     self._large_update(U128(u64[i], u64[i + 1]))
         else:
             # vector values will contribute to hash in multiple rounds
-            @parameter
-            for i in range(new_data.size):
+            comptime for i in range(new_data.size):
                 var v = new_data[i]
                 comptime assert size_of[v.dtype]() > 8 and v.dtype.is_integral()
 
-                @parameter
-                for r in range(0, rounds, 2):
+                comptime for r in range(0, rounds, 2):
                     var u64_1 = (v >> Scalar[new_data.dtype](r * 64)).cast[
                         DType.uint64
                     ]()
@@ -191,7 +185,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
                     ).cast[DType.uint64]()
                     self._large_update(U128(u64_1, u64_2))
 
-    fn update[T: Hashable](mut self, value: T):
+    def update(mut self, value: Some[Hashable]):
         """Update the buffer value with new hashable value.
 
         Args:
@@ -200,7 +194,7 @@ struct AHasher[key: U256](Defaultable, Hasher):
         value.__hash__(self)
 
     @always_inline
-    fn finish(var self) -> UInt64:
+    def finish(var self) -> UInt64:
         """Computes the hash value based on all the previously provided data.
 
         Returns:

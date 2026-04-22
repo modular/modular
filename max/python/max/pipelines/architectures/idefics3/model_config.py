@@ -20,12 +20,13 @@ from typing import Literal
 from max.dtype import DType
 from max.graph import DeviceRef
 from max.graph.weights import WeightData
-from max.nn.legacy.kv_cache import KVCacheParams
-from max.nn.legacy.transformer import ReturnLogits
+from max.nn.kv_cache import KVCacheParams
+from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.llama3.model_config import Llama3Config
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
-from transformers.models.auto.configuration_auto import AutoConfig
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 
@@ -87,7 +88,7 @@ class Idefics3VisionConfig:
         quantization_encoding = pipeline_config.model.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must be set")
-        dtype = quantization_encoding.dtype
+        dtype = supported_encoding_dtype(quantization_encoding)
 
         vision_config = getattr(huggingface_config, "vision_config", None)
         if vision_config is None:
@@ -201,7 +202,11 @@ class Idefics3Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
         """Initializes an Idefics3Config instance from pipeline configuration.
 
         Args:
@@ -210,10 +215,11 @@ class Idefics3Config(ArchConfigWithKVCache):
         Returns:
             An Idefics3Config instance with fields initialized from config.
         """
-        huggingface_config = pipeline_config.model.huggingface_config
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
@@ -233,7 +239,7 @@ class Idefics3Config(ArchConfigWithKVCache):
         return cls(
             devices=[
                 DeviceRef(spec.device_type, spec.id)
-                for spec in pipeline_config.model.device_specs
+                for spec in model_config.device_specs
             ],
             # Multimodal parameters specific to Idefics3
             scale_factor=getattr(huggingface_config, "scale_factor", 2),

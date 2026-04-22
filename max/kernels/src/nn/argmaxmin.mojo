@@ -16,18 +16,24 @@
 # _argn
 # ===-----------------------------------------------------------------------===#
 
-from math import align_down, ceildiv, iota
-from sys.info import simd_width_of
+from std.math import align_down, ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import sync_parallelize
-from algorithm.functional import _get_num_workers
-from math.math import min as _min
-from layout._tile_tensor import TileTensor
+from std.algorithm import sync_parallelize
+from std.algorithm.functional import _get_num_workers
+from std.gpu.host import DeviceContext
+from std.math.math import min as _min
+from layout import TileTensor
 
 
-fn _argn[
+def _argn[
     is_max: Bool
-](input: TileTensor, axis: Int, output: TileTensor[mut=True, ...]) raises:
+](
+    input: TileTensor,
+    axis: Int,
+    output: TileTensor[mut=True, ...],
+    ctx: Optional[DeviceContext] = None,
+) raises:
     """
     Finds the indices of the maximum/minimum element along the specified axis.
 
@@ -39,6 +45,7 @@ fn _argn[
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        ctx: The context to execute the work on.
     """
     comptime rank = input.rank
     comptime simd_width = simd_width_of[input.dtype]()
@@ -53,8 +60,7 @@ fn _argn[
     if canonical_axis != rank - 1:
         raise Error("axis other than innermost not supported yet")
 
-    @parameter
-    for subaxis in range(rank):
+    comptime for subaxis in range(rank):
         var output_subaxis = output.dim(subaxis)
         var input_subaxis = output.dim(subaxis)
         if subaxis == canonical_axis:
@@ -69,10 +75,9 @@ fn _argn[
     var chunk_size: Int
     var parallel_size = 1
 
-    @parameter
-    if rank == 1:
-        input_stride = input.numel()
-        output_stride = output.numel()
+    comptime if rank == 1:
+        input_stride = input.num_elements()
+        output_stride = output.num_elements()
         chunk_size = 1
     else:
         input_stride = Int(input.dynamic_stride(canonical_axis - 1))
@@ -83,7 +88,7 @@ fn _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.numel()),
+            _get_num_workers(input.num_elements()),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
@@ -92,29 +97,27 @@ fn _argn[
         axis_size, chunk_size, output_stride, input_stride, parallel_size
     )
     @parameter
-    fn task_func(task_id: Int):
+    def task_func(task_id: Int):
         @parameter
         @always_inline
-        fn cmpeq[
-            dtype: DType, simd_width: Int
+        def cmpeq[
+            dtype: DType, simd_width: SIMDSize
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            @parameter
-            if is_max:
+            comptime if is_max:
                 return a.le(b)
             else:
                 return a.ge(b)
 
         @parameter
         @always_inline
-        fn cmp[
-            dtype: DType, simd_width: Int
+        def cmp[
+            dtype: DType, simd_width: SIMDSize
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
-            @parameter
-            if is_max:
+            comptime if is_max:
                 return a.lt(b)
             else:
                 return a.gt(b)
@@ -130,8 +133,7 @@ fn _argn[
             var global_val: Scalar[input.dtype]
 
             # initialize limits
-            @parameter
-            if is_max:
+            comptime if is_max:
                 global_val = Scalar[input.dtype].MIN
             else:
                 global_val = Scalar[input.dtype].MAX
@@ -155,8 +157,7 @@ fn _argn[
                 global_indices = mask.select(global_indices, indices)
                 global_values = mask.select(global_values, curr_values)
 
-            @parameter
-            if is_max:
+            comptime if is_max:
                 global_val = global_values.reduce_max()
             else:
                 global_val = global_values.reduce_min()
@@ -180,7 +181,7 @@ fn _argn[
                 idx = min_indices.reduce_min()
             output_dim_ptr[] = idx
 
-    sync_parallelize[task_func](parallel_size)
+    sync_parallelize[task_func](parallel_size, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -188,10 +189,11 @@ fn _argn[
 # ===-----------------------------------------------------------------------===#
 
 
-fn argmax(
+def argmax(
     input: TileTensor,
     axis: Int,
     output: TileTensor[mut=True, ...],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """
     Finds the indices of the maximum element along the specified axis.
@@ -200,16 +202,18 @@ fn argmax(
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        ctx: The context to execute the work on.
     """
 
-    _argn[is_max=True](input, axis, output)
+    _argn[is_max=True](input, axis, output, ctx)
 
 
-fn argmax(
+def argmax(
     input: TileTensor,
     axis_buf: TileTensor,
     output: TileTensor[mut=True, ...],
-) raises where axis_buf.rank == 1:
+    ctx: Optional[DeviceContext] = None,
+) raises where axis_buf.flat_rank == 1:
     """
     Finds the indices of the maximum element along the specified axis.
 
@@ -217,9 +221,10 @@ fn argmax(
         input: The input tensor.
         axis_buf: The axis tensor.
         output: The axis tensor.
+        ctx: The context to execute the work on.
     """
 
-    argmax(input, Int(axis_buf[0]), output)
+    argmax(input, Int(axis_buf[0]), output, ctx)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -227,10 +232,11 @@ fn argmax(
 # ===-----------------------------------------------------------------------===#
 
 
-fn argmin(
+def argmin(
     input: TileTensor,
     axis: Int,
     output: TileTensor[mut=True, ...],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     """
     Finds the indices of the minimum element along the specified axis.
@@ -239,16 +245,18 @@ fn argmin(
         input: The input tensor.
         axis: The axis.
         output: The output tensor.
+        ctx: The context to execute the work on.
     """
 
-    _argn[is_max=False](input, axis, output)
+    _argn[is_max=False](input, axis, output, ctx)
 
 
-fn argmin(
+def argmin(
     input: TileTensor,
     axis_buf: TileTensor,
     output: TileTensor[mut=True, ...],
-) raises where axis_buf.rank == 1:
+    ctx: Optional[DeviceContext] = None,
+) raises where axis_buf.flat_rank == 1:
     """
     Finds the indices of the minimum element along the specified axis.
 
@@ -256,6 +264,7 @@ fn argmin(
         input: The input tensor.
         axis_buf: The axis tensor.
         output: The axis tensor.
+        ctx: The context to execute the work on.
     """
 
-    argmin(input, Int(axis_buf[0]), output)
+    argmin(input, Int(axis_buf[0]), output, ctx)

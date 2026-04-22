@@ -12,17 +12,18 @@
 # ===----------------------------------------------------------------------=== #
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import DimList, NDBuffer
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx, warp_id, lane_id
-from gpu.compute.mma import (
+
+from std.math.uutils import udivmod
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import lane_id, thread_idx, warp_id
+from std.gpu.compute.mma import (
     wgmma_async,
     wgmma_commit_group_sync,
     wgmma_fence_aligned,
     wgmma_wait_group_sync,
 )
-from layout import Layout, LayoutTensor
+from layout import Layout, LayoutTensor, TileTensor, row_major
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core_async import (
@@ -30,10 +31,10 @@ from layout.tensor_core_async import (
     _rhs_descriptor,
     tile_layout_k_major,
 )
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
 
-fn wgmma_kernel_rs[
+def wgmma_kernel_rs[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -55,14 +56,14 @@ fn wgmma_kernel_rs[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -93,28 +94,21 @@ fn wgmma_kernel_rs[
         var mat_b_desc = _rhs_descriptor[transpose_b](b_smem_tile)
 
         var a_reg = SIMD[DType.bfloat16, 8](0)
-        var row = warp_id() * 16 + lane_id() // 4
-        var col = (lane_id() % 4) * 2
-        a_reg[0] = a_gmem_tile.ptr[row * UInt(K) + col].cast[DType.bfloat16]()
-        a_reg[1] = a_gmem_tile.ptr[row * UInt(K) + col + 1].cast[
+        var lane_q, lane_r = udivmod(lane_id(), 4)
+        var row = warp_id() * 16 + lane_q
+        var col = lane_r * 2
+        a_reg[0] = a_gmem_tile.ptr[row * K + col].cast[DType.bfloat16]()
+        a_reg[1] = a_gmem_tile.ptr[row * K + col + 1].cast[DType.bfloat16]()
+        a_reg[2] = a_gmem_tile.ptr[(row + 8) * K + col].cast[DType.bfloat16]()
+        a_reg[3] = a_gmem_tile.ptr[(row + 8) * K + col + 1].cast[
             DType.bfloat16
         ]()
-        a_reg[2] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col].cast[
+        a_reg[4] = a_gmem_tile.ptr[row * K + col + 8].cast[DType.bfloat16]()
+        a_reg[5] = a_gmem_tile.ptr[row * K + col + 9].cast[DType.bfloat16]()
+        a_reg[6] = a_gmem_tile.ptr[(row + 8) * K + col + 8].cast[
             DType.bfloat16
         ]()
-        a_reg[3] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 1].cast[
-            DType.bfloat16
-        ]()
-        a_reg[4] = a_gmem_tile.ptr[row * UInt(K) + col + 8].cast[
-            DType.bfloat16
-        ]()
-        a_reg[5] = a_gmem_tile.ptr[row * UInt(K) + col + 9].cast[
-            DType.bfloat16
-        ]()
-        a_reg[6] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 8].cast[
-            DType.bfloat16
-        ]()
-        a_reg[7] = a_gmem_tile.ptr[(row + 8) * UInt(K) + col + 9].cast[
+        a_reg[7] = a_gmem_tile.ptr[(row + 8) * K + col + 9].cast[
             DType.bfloat16
         ]()
 
@@ -124,15 +118,15 @@ fn wgmma_kernel_rs[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](a_reg, mat_b_desc, c_reg)
 
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
+        c_gmem.tile[16, WMMA_N](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -143,7 +137,7 @@ fn wgmma_kernel_rs[
         ]()
 
 
-fn wgmma_kernel_ss[
+def wgmma_kernel_ss[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -165,14 +159,14 @@ fn wgmma_kernel_ss[
         DType.bfloat16,
         a_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_smem_tile = LayoutTensor[
         DType.bfloat16,
         b_smem_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     comptime num_output_regs = WMMA_M * WMMA_N // 128
@@ -209,14 +203,14 @@ fn wgmma_kernel_ss[
             WMMA_M,
             WMMA_N,
             WMMA_K,
-            a_type = DType.bfloat16,
-            b_type = DType.bfloat16,
+            a_type=DType.bfloat16,
+            b_type=DType.bfloat16,
         ](mat_a_desc, mat_b_desc, c_reg)
         wgmma_commit_group_sync()
         wgmma_wait_group_sync()
 
     var th_local_res = (
-        c_gmem.tile[16, WMMA_N](Int(warp_id()), 0)
+        c_gmem.tile[16, WMMA_N](warp_id(), 0)
         .vectorize[1, 2]()
         .distribute[Layout.row_major(8, 4)](lane_id())
     )
@@ -227,7 +221,7 @@ fn wgmma_kernel_ss[
         ]()
 
 
-fn wgmma_bf16_bf16_f32[
+def wgmma_bf16_bf16_f32[
     M: Int, N: Int, K: Int, transpose_b: Bool = False, a_reg: Bool = False
 ](ctx: DeviceContext) raises:
     print(
@@ -274,21 +268,15 @@ fn wgmma_bf16_bf16_f32[
     )
     ctx.synchronize()
 
-    var a_buf = NDBuffer[DType.bfloat16, 2, _, DimList(M, K)](
-        a.device_tensor().ptr
-    )
-    var b_buf = NDBuffer[DType.bfloat16, 2, _, DimList(N, K)](
-        b.device_tensor().ptr
-    )
-    var c_ref_buf = NDBuffer[DType.bfloat16, 2, _, DimList(M, N)](
-        c_ref.device_tensor().ptr
-    )
+    var a_tt = TileTensor(a.device_tensor().ptr, row_major[M, K]())
+    var b_tt = TileTensor(b.device_tensor().ptr, row_major[N, K]())
+    var c_ref_tt = TileTensor(c_ref.device_tensor().ptr, row_major[M, N]())
 
     vendor_blas.matmul(
         ctx,
-        c_ref_buf,
-        a_buf,
-        b_buf,
+        c_ref_tt.to_layout_tensor(),
+        a_tt.to_layout_tensor(),
+        b_tt.to_layout_tensor(),
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -305,7 +293,7 @@ fn wgmma_bf16_bf16_f32[
     _ = c_ref^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         wgmma_bf16_bf16_f32[64, 8, 16, True](ctx)
         wgmma_bf16_bf16_f32[64, 16, 16, True](ctx)

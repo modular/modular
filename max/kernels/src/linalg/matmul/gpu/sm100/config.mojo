@@ -19,6 +19,7 @@ compatibility. New code should import directly from sm100_structured.config.
 from ..sm100_structured.structured_kernels.config import (
     MatmulConfig,
     BlockScaledMatmulConfig,
+    GEMMKind,
     choose_config,
-    build_configs,
+    build_sm100_matmul_configs,
 )

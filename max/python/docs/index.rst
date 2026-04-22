@@ -22,40 +22,92 @@ upon the others so you can move between levels seamlessly as requirements evolve
 For an introduction, see the
 `Model developer guide </max/develop/>`_.
 
-Packages and modules
-====================
-
-* :code_link:`/max/api/python/diagnostics/gpu|diagnostics.gpu`: GPU monitoring and performance diagnostics utilities.
-* :code_link:`/max/api/python/driver|driver`: Low-level device management and tensor operations.
-* :code_link:`/max/api/python/dtype|dtype`: Unified data type system supporting various numeric formats.
-* :code_link:`/max/api/python/engine|engine`: Model execution runtime with automatic optimization.
-* :code_link:`/max/api/python/entrypoints|entrypoints`: Command-line tools and serving infrastructure.
-* :code_link:`/max/api/python/functional|functional`: Functional tensor operations (relu, softmax, etc.).
-* :code_link:`/max/api/python/graph|graph`: Computational graph construction with 100+ operations for complete model control.
-* :code_link:`/max/api/python/interfaces|interfaces`: Universal interfaces for consistent API integration.
-* :code_link:`/max/api/python/kv_cache|kv_cache`: KV cache management for efficient attention computation.
-* :code_link:`/max/api/python/nn|nn`: High-level neural network building blocks with automatic graph compilation.
-* :code_link:`/max/api/python/pipelines|pipelines`: Pre-built, optimized model architectures for immediate deployment.
-* :code_link:`/max/api/python/profiler|profiler`: Performance profiling and tracing utilities.
-* :code_link:`/max/api/python/random|random`: Random tensor generation utilities.
-* :code_link:`/max/api/python/tensor|tensor`: Tensor class with eager execution.
-* :code_link:`/max/api/python/torch|torch`: PyTorch integration for custom operations and interoperability.
+Modules
+=======
 
 .. toctree::
-   :hidden:
+   :maxdepth: 1
 
-   diagnostics/gpu/index.rst
+   diagnostics.gpu
    driver
    dtype
    engine
    entrypoints
-   functional
+   graph
+   graph.ops
+   graph.quantization
+   graph.weights
    interfaces
-   kv_cache/index.rst
+   kv_cache
+   nn
+   nn.attention
+   nn.kernels
+   nn.kv_cache
+   pipelines
+   pipelines.architectures
+   pipelines.architectures.bert
+   pipelines.architectures.deepseekV2
+   pipelines.architectures.deepseekV3
+   pipelines.architectures.deepseekV3_2
+   pipelines.architectures.deepseekV3_nextn
+   pipelines.architectures.eagle_llama3
+   pipelines.architectures.exaone
+   pipelines.architectures.exaone_modulev3
+   pipelines.architectures.flux1_modulev3
+   pipelines.architectures.flux2
+   pipelines.architectures.flux2_modulev3
+   pipelines.architectures.gemma3
+   pipelines.architectures.gemma3_modulev3
+   pipelines.architectures.gemma3multimodal
+   pipelines.architectures.gemma3multimodal_modulev3
+   pipelines.architectures.gemma4
+   pipelines.architectures.gpt_oss
+   pipelines.architectures.gpt_oss_modulev3
+   pipelines.architectures.granite
+   pipelines.architectures.granite_modulev3
+   pipelines.architectures.idefics3
+   pipelines.architectures.idefics3_modulev3
+   pipelines.architectures.internvl
+   pipelines.architectures.kimik2_5
+   pipelines.architectures.llama3
+   pipelines.architectures.llama3_modulev3
+   pipelines.architectures.mamba
+   pipelines.architectures.minimax_m2
+   pipelines.architectures.mistral
+   pipelines.architectures.mistral3
+   pipelines.architectures.mpnet
+   pipelines.architectures.mpnet_modulev3
+   pipelines.architectures.olmo
+   pipelines.architectures.olmo2
+   pipelines.architectures.olmo2_modulev3
+   pipelines.architectures.olmo3
+   pipelines.architectures.olmo_modulev3
+   pipelines.architectures.phi3
+   pipelines.architectures.phi3_modulev3
+   pipelines.architectures.pixtral
+   pipelines.architectures.pixtral_modulev3
+   pipelines.architectures.qwen2
+   pipelines.architectures.qwen2_5vl
+   pipelines.architectures.qwen3
+   pipelines.architectures.qwen3_embedding
+   pipelines.architectures.qwen3_embedding_modulev3
+   pipelines.architectures.qwen3vl_moe
+   pipelines.architectures.qwen_image
+   pipelines.architectures.qwen_image_edit
+   pipelines.architectures.unified_eagle_llama3
+   pipelines.architectures.unified_mtp_deepseekV3
+   pipelines.architectures.wan
+   pipelines.architectures.z_image_modulev3
+   pipelines.core
+   pipelines.lib
+   pipelines.lib.interfaces
+   pipelines.lib.log_probabilities
    profiler
-   random
-   tensor
-   torch
-   graph/index.rst
-   pipelines/index.rst
-   nn/index.rst
+   experimental
+   experimental.nn
+   experimental.nn.norm
+   experimental.nn.rope
+   experimental.tensor
+   experimental.random
+   experimental.functional
+   experimental.torch

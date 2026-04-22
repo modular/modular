@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 
-fn main():
-    # CHECK: hello world
+def main():
+    # CHECK: ABORT: {{.*}}/test_trap.mojo:19:10: hello world
     abort("hello world")

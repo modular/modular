@@ -20,7 +20,7 @@ from max._core.dialects import mo
 
 from ..graph import Graph
 from ..type import _ChainType
-from ..value import BufferValueLike, TensorType, TensorValue, TensorValueLike
+from ..value import BufferValueLike, TensorValue, TensorValueLike
 from .utils import _buffer_values, _tensor_values
 
 
@@ -64,66 +64,26 @@ def sum(
             f"tensors. Got: {devices=}"
         )
 
-    # Per-device execution model:
-    # Create one allreduce op per device, each threading the destination
-    # device's chain independently.
-    # Do not merge device chains.
-    results = []
     graph = Graph.current
-    for input_tensor, device in zip(inputs, devices, strict=True):
-        in_chain = graph.device_chains[device]
-        # Each op takes all inputs but only produces output for its device.
-        result, out_chain = Graph.current._add_op_generated(
-            mo.DistributedAllreduceSumOp,
-            # Single output tensor type.
-            input_tensor.type,
-            # Output chain type.
-            _ChainType(),
-            inputs,
-            signal_buffers,
-            in_chain,
-            device,
-        )
 
-        results.append(result.tensor)
-        # Advance only this device's chain.
-        graph.device_chains[device] = out_chain
+    # Merge all device chains into one input chain.
+    in_chain = graph._merge_chains(
+        [graph._current_chain, *(graph.device_chains[d] for d in devices)]
+    )
 
-    return results
-
-
-def matmul_allreduce(
-    inputs: Iterable[TensorValueLike],
-    weights: Iterable[TensorValueLike],
-    signal_buffers: Iterable[BufferValueLike],
-) -> list[TensorValue]:
-    inputs = _tensor_values(inputs)
-    weights = _tensor_values(weights)
-    signal_buffers = _buffer_values(signal_buffers)
-
-    def infer_out_type(a: TensorValue, b: TensorValue) -> TensorType:
-        if a.rank != 2 or b.rank != 2:
-            raise ValueError("matmul_allreduce inputs must be 2D")
-        m = a.shape[-2]
-        n = b.shape[-2]
-        out_shape = a.shape[:-2] + [m, n]
-        return TensorType(
-            dtype=a.dtype,
-            shape=out_shape,
-            device=a.device,
-        )
-
-    in_chain = Graph.current._current_chain
-    *results, out_chain = Graph.current._add_op_generated(
-        mo.DistributedMatmulAllreduceOp,
-        # Types for 2 outputs: chain, list of tensors
-        [infer_out_type(a, b) for a, b in zip(inputs, weights, strict=True)],
+    # Stage a single allreduce op across all devices.
+    *results, out_chain = graph._add_op_generated(
+        mo.DistributedAllreduceSumOp,
+        [inp.type for inp in inputs],
         _ChainType(),
         inputs,
-        weights,
         signal_buffers,
         in_chain,
     )
 
-    Graph.current._update_chain(out_chain)
+    # Update all chains.
+    graph._update_chain(out_chain)
+    for device in devices:
+        graph.device_chains[device] = out_chain
+
     return [res.tensor for res in results]

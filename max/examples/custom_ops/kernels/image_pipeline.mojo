@@ -12,28 +12,28 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from builtin.simd import SIMD
+from std.builtin.simd import SIMD
 from compiler import register
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @register("grayscale")
 struct Grayscale:
     @staticmethod
-    fn execute[
+    def execute[
         # The kind of device this is running on: "cpu" or "gpu"
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype = DType.uint8, rank=2],
-        img_in: InputTensor[dtype = DType.uint8, rank=3],
+        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=DType.uint8, rank=3, ...],
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
-        fn color_to_grayscale[
+        def color_to_grayscale[
             simd_width: Int
         ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
             var row = idx[0]
@@ -57,17 +57,17 @@ struct Grayscale:
 @register("brightness")
 struct Brightness:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype = DType.uint8, rank=2],
-        img_in: InputTensor[dtype = DType.uint8, rank=2],
+        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
         brightness: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline  # Added for consistency
-        fn brighten[
+        def brighten[
             simd_width: Int  # Renamed 'width' to 'simd_width'
         ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
             var pixels_f32 = img_in.load[simd_width](idx).cast[DType.float32]()
@@ -82,17 +82,17 @@ struct Brightness:
 @register("blur")
 struct Blur:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString,
     ](
-        img_out: OutputTensor[dtype = DType.uint8, rank=2],
-        img_in: InputTensor[dtype = DType.uint8, rank=2],
+        img_out: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        img_in: InputTensor[dtype=DType.uint8, rank=2, ...],
         blur_size: Int64,
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
-        fn blur_kernel[
+        def blur_kernel[
             simd_width: Int
         ](idx: IndexList[img_out.rank]) -> SIMD[DType.uint8, simd_width]:
             """

@@ -16,16 +16,16 @@ file system paths.
 You can import these APIs from the `os.path` package. For example:
 
 ```mojo
-from os.path import isdir
+from std.os.path import isdir
 ```
 """
 
-from collections.string.string_slice import _unsafe_strlen
-from pwd import getpwuid
-from stat import S_ISDIR, S_ISLNK, S_ISREG
-from ffi import MAX_PATH, c_char, external_call, get_errno
-from sys import CompilationTarget
-from sys._libc import realpath as libc_realpath
+from std.collections.string.string_slice import _unsafe_strlen
+from std.pwd import getpwuid
+from std.stat import S_ISDIR, S_ISLNK, S_ISREG
+from std.ffi import MAX_PATH, c_char, external_call, get_errno
+from std.sys import CompilationTarget
+from std.sys._libc import realpath as libc_realpath
 
 from .. import PathLike
 from .._linux_aarch64 import _lstat as _lstat_linux_arm
@@ -45,9 +45,8 @@ from ..os import sep
 
 
 @always_inline
-fn _get_stat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+def _get_stat_st_mode(var path: String) raises -> Int:
+    comptime if CompilationTarget.is_macos():
         return Int(_stat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_stat_linux_arm(path^).st_mode)
@@ -56,9 +55,8 @@ fn _get_stat_st_mode(var path: String) raises -> Int:
 
 
 @always_inline
-fn _get_lstat_st_mode(var path: String) raises -> Int:
-    @parameter
-    if CompilationTarget.is_macos():
+def _get_lstat_st_mode(var path: String) raises -> Int:
+    comptime if CompilationTarget.is_macos():
         return Int(_lstat_macos(path^).st_mode)
     elif CompilationTarget.has_neon():
         return Int(_lstat_linux_arm(path^).st_mode)
@@ -71,14 +69,14 @@ fn _get_lstat_st_mode(var path: String) raises -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn _user_home_path(path: String) -> String:
+def _user_home_path(path: String) -> String:
     var user_end = path.find(sep, 1)
     if user_end < 0:
-        user_end = len(path)
+        user_end = path.byte_length()
     # Special POSIX syntax for ~[user-name]/path
-    if len(path) > 1 and user_end > 1:
+    if path.byte_length() > 1 and user_end > 1:
         try:
-            return pwd.getpwnam(String(path[1:user_end])).pw_dir
+            return pwd.getpwnam(String(path[byte=1:user_end])).pw_dir
         except:
             return ""
     else:
@@ -92,7 +90,7 @@ fn _user_home_path(path: String) -> String:
         return user_home
 
 
-fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+def expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     """Expands a tilde "~" prefix in `path` to the user's home directory.
 
     For example, `~/folder` becomes `/home/current_user/folder`. On macOS and
@@ -131,7 +129,7 @@ fn expanduser[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 # ===----------------------------------------------------------------------=== #
 # isdir
 # ===----------------------------------------------------------------------=== #
-fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path is an existing directory. This follows
     symbolic links, so both islink() and isdir() can be true for the same path.
 
@@ -144,6 +142,14 @@ fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     Returns:
         True if the path is a directory or a link to a directory and
         False otherwise.
+
+    Example:
+    ```mojo
+    from std.os.path import isdir
+
+    isdir("/tmp")       # returns True
+    isdir("noexist")    # returns False
+    ```
     """
     var fspath = path.__fspath__()
     try:
@@ -160,7 +166,7 @@ fn isdir[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Test whether a path is a regular file.
 
     Parameters:
@@ -171,6 +177,14 @@ fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Returns True if the path is a regular file.
+
+    Example:
+    ```mojo
+    from std.os.path import isfile
+
+    isfile("/etc/hosts")  # returns True
+    isfile("/tmp")        # returns False (it's a directory)
+    ```
     """
     var fspath = path.__fspath__()
     try:
@@ -185,7 +199,7 @@ fn isfile[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 # islink
 # ===----------------------------------------------------------------------=== #
-fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path refers to an existing directory entry that is a
     symbolic link.
 
@@ -197,6 +211,13 @@ fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         True if the path is a link to a directory and False otherwise.
+
+    Example:
+    ```mojo
+    from std.os.path import islink
+
+    islink("/etc/hosts")  # returns False (regular file, not a symlink)
+    ```
     """
     try:
         return S_ISLNK(_get_lstat_st_mode(path.__fspath__()))
@@ -209,7 +230,7 @@ fn islink[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
+def dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the directory component of a pathname.
 
     Parameters:
@@ -220,11 +241,19 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 
     Returns:
         The directory component of a pathname.
+
+    Example:
+    ```mojo
+    from std.os.path import dirname
+
+    dirname("/a/b/c.txt")  # returns "/a/b"
+    dirname("c.txt")       # returns ""
+    ```
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = String(fspath[:i])
-    if head and head != os.sep * len(head):
+    var head = String(fspath[byte=:i])
+    if head and head != os.sep * head.byte_length():
         return String(head.rstrip(os.sep))
     return head
 
@@ -234,7 +263,9 @@ fn dirname[PathLike: os.PathLike, //](path: PathLike) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
+def realpath[
+    PathLike: os.PathLike & ImplicitlyDestructible, //
+](path: PathLike) raises -> String:
     """Expands all symbolic links and resolves references to /./, /../ and extra
     '/' characters in the null-terminated string named by path to produce a
     canonicalized absolute pathname.The resulting path will have no symbolic
@@ -270,16 +301,19 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
     """
     var string = String(capacity=MAX_PATH)
 
+    # Bind the fspath result to a variable so its buffer stays alive
+    # through the libc_realpath call (avoids use-after-free).
+    var fspath = path.__fspath__()
     var returned_path_ptr = libc_realpath(
-        path.__fspath__().unsafe_ptr().bitcast[c_char](),
-        string._ptr_or_data.bitcast[Int8](),
+        fspath.as_c_string_slice().unsafe_ptr(),
+        string.unsafe_ptr_mut().bitcast[c_char](),
     )
     if not returned_path_ptr:
         raise Error("realpath failed to resolve: ", get_errno())
 
     # We wrote the data directly into the String buffer
     # now we need to figure out the length
-    string.set_byte_length(Int(_unsafe_strlen(string._ptr_or_data)))
+    string.set_byte_length(Int(_unsafe_strlen(string.unsafe_ptr())))
     string._set_nul_terminated()
 
     return string^
@@ -290,7 +324,7 @@ fn realpath[PathLike: os.PathLike, //](path: PathLike) raises -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path exists.
 
     Parameters:
@@ -301,6 +335,14 @@ fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Returns True if the path exists and is not a broken symbolic link.
+
+    Example:
+    ```mojo
+    from std.os.path import exists
+
+    exists("/tmp")       # returns True
+    exists("noexist")    # returns False
+    ```
     """
     try:
         _ = _get_stat_st_mode(path.__fspath__())
@@ -314,7 +356,7 @@ fn exists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if path exists or is a broken symlink.
 
     Parameters:
@@ -338,7 +380,7 @@ fn lexists[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
+def getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
     """Return the size, in bytes, of the specified path.
 
     Parameters:
@@ -361,7 +403,7 @@ fn getsize[PathLike: os.PathLike, //](path: PathLike) raises -> Int:
 # ===----------------------------------------------------------------------=== #
 
 
-fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
+def is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
     """Return True if `path` is an absolute path name.
     On Unix, that means it begins with a slash.
 
@@ -373,6 +415,14 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 
     Returns:
         Return `True` if path is an absolute path name.
+
+    Example:
+    ```mojo
+    from std.os.path import is_absolute
+
+    is_absolute("/usr/bin")   # returns True
+    is_absolute("relative")   # returns False
+    ```
     """
     return path.__fspath__().startswith(sep)
 
@@ -385,7 +435,7 @@ fn is_absolute[PathLike: os.PathLike, //](path: PathLike) -> Bool:
 # TODO(MOCO-1532):
 #   Use StringSlice here once param inference bug for empty variadic
 #   list of parameterized types is fixed.
-fn join(var path: String, *paths: String) -> String:
+def join(var path: String, *paths: String) -> String:
     """Join two or more pathname components, inserting '/' as needed.
     If any component is an absolute path, all previous path components
     will be discarded.  An empty last part will result in a path that
@@ -397,6 +447,14 @@ fn join(var path: String, *paths: String) -> String:
 
     Returns:
         The joined path.
+
+    Example:
+    ```mojo
+    from std.os.path import join
+
+    join("a", "b", "c")     # returns "a/b/c"
+    join("a", "/b", "c")    # returns "/b/c" (absolute resets)
+    ```
     """
     var joined_path = path
 
@@ -416,7 +474,7 @@ fn join(var path: String, *paths: String) -> String:
 # ===----------------------------------------------------------------------=== #
 
 
-fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
+def split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
     """
     Split a given pathname into two components: head and tail. This is useful
     for separating the directory path from the filename. If the input path ends
@@ -433,20 +491,28 @@ fn split[PathLike: os.PathLike, //](path: PathLike) -> Tuple[String, String]:
 
     Returns:
         A tuple containing two strings: (head, tail).
+
+    Example:
+    ```mojo
+    from std.os.path import split
+
+    split("/a/b/c.txt")  # returns ("/a/b", "c.txt")
+    split("/a/b/")       # returns ("/a/b", "")
+    ```
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head, tail = fspath[:i], fspath[i:]
-    if head and head != String(os.sep) * len(head):
+    var head, tail = fspath[byte=:i], fspath[byte=i:]
+    if head and head != String(os.sep) * head.byte_length():
         head = head.rstrip(sep)
     return String(head), String(tail)
 
 
-fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
+def basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Returns the tail section of a path.
 
     ```mojo
-    from os.path import basename
+    from std.os.path import basename
 
     basename("a/path/foo.txt")  # returns "foo.txt"
     ```
@@ -462,14 +528,14 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
     """
     var fspath = path.__fspath__()
     var i = fspath.rfind(os.sep) + 1
-    var head = fspath[i:]
-    if head and head != os.sep * len(head):
+    var head = fspath[byte=i:]
+    if head and head != os.sep * head.byte_length():
         return String(head.rstrip(os.sep))
     return String(head)
 
 
 # TODO uncomment this when unpacking is supported
-# fn join[PathLike: os.PathLike](path: PathLike, *paths: PathLike) -> String:
+# def join[PathLike: os.PathLike](path: PathLike, *paths: PathLike) -> String:
 #     """Join two or more pathname components, inserting '/' as needed.
 #     If any component is an absolute path, all previous path components
 #     will be discarded.  An empty last part will result in a path that
@@ -499,7 +565,7 @@ fn basename[PathLike: os.PathLike, //](path: PathLike) -> String:
 
 # TODO: Move this to a generic path module when Windows is supported.
 # As it can be used for both Windows and Unix-like systems.
-fn _split_extension(
+def _split_extension(
     path: StringSlice,
     sep: StringSlice,
     alt_sep: StringSlice,
@@ -527,13 +593,15 @@ fn _split_extension(
         var file_start = head_end + 1
         while file_start < file_end:
             if StringSlice(path[byte=file_start]) != extension_sep:
-                return String(path[:file_end]), String(path[file_end:])
+                return String(path[byte=:file_end]), String(
+                    path[byte=file_end:]
+                )
             file_start += 1
 
     return String(path), ""
 
 
-fn split_extension[
+def split_extension[
     PathLike: os.PathLike, //
 ](path: PathLike) raises -> Tuple[String, String]:
     """Splits `path` into the root and extension.
@@ -549,6 +617,14 @@ fn split_extension[
 
     Raises:
         If the operation fails.
+
+    Example:
+    ```mojo
+    from std.os.path import split_extension
+
+    split_extension("foo.tar.gz")  # returns ("foo.tar", ".gz")
+    split_extension("README")      # returns ("README", "")
+    ```
     """
     return _split_extension(path.__fspath__(), sep, "", ".")
 
@@ -558,7 +634,7 @@ fn split_extension[
 # ===----------------------------------------------------------------------=== #
 
 
-fn splitroot[
+def splitroot[
     PathLike: os.PathLike, //
 ](path: PathLike) -> Tuple[String, String, String]:
     """Splits `path` into drive, root and tail. The tail contains anything after the root.
@@ -576,17 +652,17 @@ fn splitroot[
     comptime empty = ""
 
     # Relative path, e.g.: 'foo'
-    if p[:1] != StringSlice(sep):
+    if p[byte=:1] != StringSlice(sep):
         return empty, empty, p
 
     # Absolute path, e.g.: '/foo', '///foo', '////foo', etc.
-    elif p[1:2] != StringSlice(sep) or p[2:3] == StringSlice(sep):
-        return empty, String(sep), String(p[1:])
+    elif p[byte=1:2] != StringSlice(sep) or p[byte=2:3] == StringSlice(sep):
+        return empty, String(sep), String(p[byte=1:])
 
     # Precisely two leading slashes, e.g.: '//foo'. Implementation defined per POSIX, see
     # https://pubs.opengroup.org/onlinepubs/9699919799/basedefs/V1_chap04.html#tag_04_13
     else:
-        return empty, String(p[:2]), String(p[2:])
+        return empty, String(p[byte=:2]), String(p[byte=2:])
 
 
 # ===----------------------------------------------------------------------=== #
@@ -594,7 +670,7 @@ fn splitroot[
 # ===----------------------------------------------------------------------=== #
 
 
-fn _is_shell_special_variable(byte: Byte) -> Bool:
+def _is_shell_special_variable(byte: Byte) -> Bool:
     """Checks if `$` + `byte` identifies a special shell variable, such as `$@`.
 
     Args:
@@ -625,7 +701,7 @@ fn _is_shell_special_variable(byte: Byte) -> Bool:
     return Int(byte) in materialize[shell_variables]()
 
 
-fn _is_alphanumeric(byte: Byte) -> Bool:
+def _is_alphanumeric(byte: Byte) -> Bool:
     """Checks if `byte` is an ASCII letter, number, or underscore.
 
     Args:
@@ -646,7 +722,7 @@ fn _is_alphanumeric(byte: Byte) -> Bool:
     )
 
 
-fn _parse_variable_name[
+def _parse_variable_name[
     immutable: ImmutOrigin
 ](bytes: Span[Byte, immutable]) -> Tuple[StringSlice[immutable], Int]:
     """Returns the environment variable name and the byte count required to extract it.
@@ -684,7 +760,7 @@ fn _parse_variable_name[
     return StringSlice(unsafe_from_utf8=bytes[:i]), i
 
 
-fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
+def expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     """Replaces `${var}` or `$var` in the path with values from the current environment variables.
     Malformed variable names and references to non-existing variables are left unchanged.
 
@@ -708,23 +784,23 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
         if bytes[j] == UInt8(ord("$")) and j + 1 < len(bytes):
             if not buf:
                 buf.reserve(new_capacity=2 * len(bytes))
-            buf.write_string(path_str[i:j])
+            buf.write_string(path_str[byte=i:j])
 
             var name, length = _parse_variable_name(bytes[j + 1 :])
 
             # Invalid syntax (`${}` or `${`) or $ was not followed by a name; write as is.
             if name.startswith("{") or name == "":
-                buf.write_string(path_str[j : j + length + 1])
+                buf.write_string(path_str[byte = j : j + length + 1])
             # Shell variable (eg `$@` or `$*`); write as is.
             elif _is_shell_special_variable(name.as_bytes()[0]):
-                buf.write_string(path_str[j : j + 2])
+                buf.write_string(path_str[byte = j : j + 2])
             # Environment variable; expand it. If no value, write as is.
             else:
                 value = os.getenv(String(name))
                 if value != "":
                     buf.write(value)
                 else:
-                    buf.write_string(path_str[j : j + length + 1])
+                    buf.write_string(path_str[byte = j : j + length + 1])
 
             j += length
             i = j + 1
@@ -733,5 +809,5 @@ fn expandvars[PathLike: os.PathLike, //](path: PathLike) -> String:
     if not buf:
         return path_str
 
-    buf.write_string(path_str[i:])
+    buf.write_string(path_str[byte=i:])
     return buf

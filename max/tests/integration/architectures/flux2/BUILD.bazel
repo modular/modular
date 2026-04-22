@@ -1,0 +1,81 @@
+# FLUX2 component benchmarks.
+
+load(
+    "//bazel:api.bzl",
+    "modular_py_test",
+    "requirement",
+)
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+modular_py_test(
+    name = "benchmark_text_encoder",
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "conftest.py",
+        "test_profile_text_encoder.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "60",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/profiler",
+        requirement("numpy"),
+        requirement("pytest-benchmark"),
+    ],
+)
+
+modular_py_test(
+    name = "benchmark_transformer",
+    size = "large",
+    timeout = "long",
+    srcs = [
+        "conftest.py",
+        "test_profile_transformer.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "150",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    tags = [
+        "gpu",
+        "manual",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        "//max/python/max/profiler",
+        requirement("numpy"),
+        requirement("pytest-benchmark"),
+    ],
+)

@@ -23,8 +23,8 @@ from max.graph import (
     TensorValue,
     Weight,
 )
-from max.nn.legacy.layer import LayerList, Module
-from max.nn.legacy.norm import LayerNorm
+from max.nn.layer import LayerList, Module
+from max.nn.norm import LayerNorm
 
 from ..model_config import Gemma3ForConditionalGenerationConfig
 from .attention import Gemma3VisionAttention
@@ -170,7 +170,7 @@ class Gemma3VisionEncoder(Module):
     """Wrapper class for a stack of vision encoder layers"""
 
     def __init__(self, config: Gemma3ForConditionalGenerationConfig):
-        """Intialise the stack of encoder layers based on config, and prepare
+        """Initialise the stack of encoder layers based on config, and prepare
         sharding strategy"""
         super().__init__()
         self.config = config

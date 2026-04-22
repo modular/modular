@@ -62,8 +62,8 @@ let foo: Foo = 10
 - Constructors *not* decorated may not be used as conversions (this is an
     **opt-in** design)
 - Since we know which conversion we’re inserting at a call-site at compile time,
-    we can correctly mark it as `raises` or not. Implicit conversion constructors
-    are therefore allowed to be `raises` .
+  we can correctly mark it as `raises` or not. Implicit conversion constructors
+  are therefore allowed to be `raises`.
 - We continue with our same rules on 1-hop conversion and overload selection.
 
 ### Example
@@ -99,6 +99,7 @@ design space looks like:
   - There doesn’t seem to be appetite for changing this from a constructor to
     another method.
 - No implicit conversions
-  - The Google C++ style guide [bans implicit conversions](https://google.github.io/styleguide/cppguide.html#Implicit_Conversions).
+  - The Google C++ style guide
+    [bans implicit conversions](https://google.github.io/styleguide/cppguide.html#Implicit_Conversions).
   - This would be a hard change for the current language. Literal types for
     example are only really usable through implicit conversion.

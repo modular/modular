@@ -12,15 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn dynamic_function(i: Int) -> Int:
+def dynamic_function(i: Int) -> Int:
     return i % 4
 
 
-fn process(i: Int):
+def process(i: Int):
     pass
 
 
-fn lookup_fn(count: Int):
+def lookup_fn(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     for i in range(count):
@@ -36,7 +36,7 @@ fn lookup_fn(count: Int):
         process(lookup)
 
 
-fn lookup_fn2(count: Int):
+def lookup_fn2(count: Int):
     comptime list_of_values = [1, 3, 5, 7]
 
     var list = materialize[list_of_values]()

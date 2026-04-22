@@ -11,26 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import fma, isclose
-from os import abort
-from random import rand
-from sys import CompilationTarget, argv, simd_width_of, size_of
+from std.math import fma, isclose
+from std.os import abort
+from std.random import rand
+from std.sys import CompilationTarget, argv, simd_width_of, size_of
 
-import benchmark
-from algorithm.functional import vectorize
-from layout import Layout, RuntimeLayout
-from layout.int_tuple import IntTuple, size
+import std.benchmark
+from std.algorithm.functional import vectorize
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout.int_tuple import size
 from layout.layout import expand_modes_alike, flatten
-from layout.layout_tensor import LayoutTensor
-from memory import LegacyUnsafePointer, stack_allocation
+from std.memory import alloc, stack_allocation
+from std.testing import assert_false
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_false
-
-from utils import StaticTuple
+from std.utils import StaticTuple
 
 
-fn matmul_naive[
+def matmul_naive[
     layoutC: Layout, layoutA: Layout, layoutB: Layout, elt: DType
 ](
     C: LayoutTensor[elt, layoutC, MutAnyOrigin],
@@ -66,7 +63,7 @@ comptime cacheline_size: Int = 64
 # really need this, though.
 # Also: cacheline_size of 64 is currently hard coded.
 @always_inline
-fn stride[elt: DType](nrw: Int) -> Int:
+def stride[elt: DType](nrw: Int) -> Int:
     if nrw * size_of[elt]() >= cacheline_size:
         return cacheline_size // size_of[elt]()
     else:
@@ -74,7 +71,7 @@ fn stride[elt: DType](nrw: Int) -> Int:
 
 
 @always_inline
-fn getKr[mode: IntTuple]() -> Int:
+def getKr[mode: IntTuple]() -> Int:
     if mode.is_value() or len(mode) == 1:
         return 1
     else:
@@ -83,12 +80,12 @@ fn getKr[mode: IntTuple]() -> Int:
 
 # Assumes that we have packed `A` and `B`, `C` also uses a packed layout.
 # @always_inline
-fn matmul_ukern[
+def matmul_ukern[
     elt: DType, width: Int, mr: Int, nr: Int, kr: Int, kf: Int
 ](
-    C: UnsafePointer[Scalar[elt]],
-    A: UnsafePointer[Scalar[elt]],
-    B: UnsafePointer[Scalar[elt]],
+    C: UnsafePointer[mut=True, Scalar[elt], _],
+    A: UnsafePointer[Scalar[elt], _],
+    B: UnsafePointer[Scalar[elt], _],
     inc: Bool,
 ):
     comptime Align: Int = size_of[elt]() * width
@@ -105,11 +102,8 @@ fn matmul_ukern[
         SIMD[elt, width], mr * nr
     ]()
 
-    @parameter
-    for m in range(mr):
-
-        @parameter
-        for n in range(nr):
+    comptime for m in range(mr):
+        comptime for n in range(nr):
             acc[n + m * nr] = SIMD[elt, width]()
     var Bloads: StaticTuple[SIMD[elt, width], nr] = StaticTuple[
         SIMD[elt, width], nr
@@ -118,35 +112,29 @@ fn matmul_ukern[
     # This is a trick to repeatedly re-touch A's memory in the microkernel,
     # so that A can stay in the L1-cache, while we stream B through it.
 
-    var Ao: UnsafePointer[Scalar[elt]] = A
-    var Bo: UnsafePointer[Scalar[elt]] = B
+    var Ao = A
+    var Bo = B
     # TODO: static assert that kf%Astride == 0
     for _ in range(Astride):
         # Aecause we repeatedly call `matmul_ukern` with the same
         # slice of `A`, but different slice of `B`, we wish for `A`
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
-        var Atmp: UnsafePointer[Scalar[elt]] = Ao
+        var Atmp = Ao
         Ao = Ao + 1
         for _ in range(kf):
-
-            @parameter
-            for _ in range(kr):
-
-                @parameter
-                for n in range(nr):
+            comptime for _ in range(kr):
+                comptime for n in range(nr):
                     Bloads[n] = Bo.load[width=width, alignment=Align](n * width)
 
-                @parameter
-                for m in range(mr):
+                comptime for m in range(mr):
                     var Abroadcast: SIMD[elt, width] = SIMD[elt, width](
-                        Atmp.load[width=1, alignment = size_of[elt]()](
+                        Atmp.load[width=1, alignment=size_of[elt]()](
                             m * Astride
                         )
                     )
 
-                    @parameter
-                    for n in range(nr):
+                    comptime for n in range(nr):
                         # breakpoint()
                         acc[n + m * nr] = fma(
                             Abroadcast, Bloads[n], acc[n + m * nr]
@@ -156,28 +144,18 @@ fn matmul_ukern[
     if inc:
         # Note, `C` would have spilled from the L1 cache by the time
         # we load it again had we loaded before the reduction loop.
-        @parameter
-        for m in range(mr):
-
-            @parameter
-            for n0 in range(CstoreReps):
-
-                @parameter
-                for n1 in range(CstoresPer):
+        comptime for m in range(mr):
+            comptime for n0 in range(CstoreReps):
+                comptime for n1 in range(CstoresPer):
                     acc[n1 + n0 * CstoresPer + m * nr] = acc[
                         n1 + n0 * CstoresPer + m * nr
                     ] + C.load[width=width, alignment=Align](
                         (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width
                     )
 
-    @parameter
-    for m in range(mr):
-
-        @parameter
-        for n0 in range(CstoreReps):
-
-            @parameter
-            for n1 in range(CstoresPer):
+    comptime for m in range(mr):
+        comptime for n0 in range(CstoreReps):
+            comptime for n1 in range(CstoresPer):
                 C.store[alignment=Align](
                     (n1 + m * CstoresPer + n0 * (mr * CstoresPer)) * width,
                     acc[n1 + n0 * CstoresPer + m * nr],
@@ -193,7 +171,7 @@ fn matmul_ukern[
 # B's shape is (Kc*size_of(elt)/64, 64/size_of(elt), K/Kc), (nr,Nc/nr,N/Nc)
 # B's strides are ((nr*64/size_of(elt), 1, Nc*Kc), (64/size_of(elt), nr*Kc, Nc*K)
 #
-fn matmul[
+def matmul[
     elt: DType,
     M: Int,
     N: Int,
@@ -283,22 +261,21 @@ fn matmul[
     comptime assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
     comptime assert size(layoutB.stride[1].tuple()[2]) == Nc * K
 
-    comptime Ptr = UnsafePointer[Scalar[elt]]
-    var pc: UnsafePointer[Scalar[elt]] = C.ptr
-    var pa: UnsafePointer[Scalar[elt]] = A.ptr
+    var pc = C.ptr
+    var pa = A.ptr
     # TODO: nontemporal prefetches on the microkernel slices of `B`
     #       as the slice does not get reused at the L2 or L3 level.
     # TODO: prefetches on `A`, to hide latency, as we stream it through
     #       the L1, suffering L2->register latency for each load.
     # NOTE: Read comments within the loop from the inside out.
     for _ in range(M // Mc):
-        var pb: UnsafePointer[Scalar[elt]] = B.ptr
-        var pak: type_of(pb) = pa
+        var pb = B.ptr
+        var pak = pa
         for _ in range(N // Nc):
-            var pck: UnsafePointer[Scalar[elt]] = pc
+            var pck = pc
             pak = pa
             for kc in range(K // Kc):
-                var pbk: UnsafePointer[Scalar[elt]] = pb
+                var pbk = pb
                 pck = pc
                 for _ in range(Mc // Mr):  # mr
                     pbk = pb
@@ -314,26 +291,27 @@ fn matmul[
         pa = pak
 
 
-fn alloc_tensor[
+def alloc_tensor[
     elt: DType, layout: Layout
 ]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
+    comptime size: Int = layout.size()
     return LayoutTensor[elt, layout, MutAnyOrigin](
-        UnsafePointer[Scalar[elt]].alloc(layout.size(), alignment=64)
+        alloc[Scalar[elt]](size, alignment=64)
     )
 
 
-fn alloc_tensor[
+def alloc_tensor[
     elt: DType, layout: Layout
 ](rtlayout: RuntimeLayout[layout, ...]) -> LayoutTensor[
     elt, layout, MutAnyOrigin
 ]:
     return LayoutTensor[elt, layout, MutAnyOrigin](
-        UnsafePointer[Scalar[elt]].alloc(rtlayout.size(), alignment=64),
+        alloc[Scalar[elt]](rtlayout.size(), alignment=64),
         rtlayout,
     )
 
 
-fn max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
+def max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
     # this could be implemented more generically, e.g.
     # mapreduce-style?
     # Use `Buffer` for SIMD?
@@ -349,78 +327,81 @@ fn max_min_idx_positive(x: List[Int], y: List[Int]) -> Int:
     return argmax
 
 
-fn delete_idx(arg: List[Int], idx: Int) -> List[Int]:
+def delete_idx(arg: List[Int], idx: Int) -> List[Int]:
     var res = List[Int]()
     res.reserve(len(arg) - 1)
     for i in range(len(arg)):
         if i != idx:
             res.append(arg[i])
-    return res
+    return res^
 
 
 @always_inline
-fn strided_load[
+def strided_load[
     elt: DType, //, W: Int, X: Int
-](p: UnsafePointer[Scalar[elt]], i: Int) -> SIMD[elt, W]:
-    @parameter
-    if X == 1:
+](p: UnsafePointer[Scalar[elt], _], i: Int) -> SIMD[elt, W]:
+    comptime if X == 1:
         return p.load[width=W](i)
     else:
         return (p + i * X).strided_load[width=W](X)
 
 
 @always_inline
-fn strided_store[
+def strided_store[
     elt: DType, W: Int, //, X: Int
-](p: UnsafePointer[Scalar[elt]], i: Int, x: SIMD[elt, W]):
-    @parameter
-    if X == 1:
+](p: UnsafePointer[mut=True, Scalar[elt], _], i: Int, x: SIMD[elt, W]):
+    comptime if X == 1:
         p.store(i, x)
     else:
         (p + i * X).strided_store(x, X)
 
 
 @always_inline
-fn vectorize_flat[
+def vectorize_flat[
     elt_a: DType,
     elt_b: DType,
     //,
-    f: fn[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
+    f: def[width: Int, stride_a: Int, stride_b: Int](
+        UnsafePointer[mut=True, Scalar[elt_a], _],
+        UnsafePointer[Scalar[elt_b], _],
+        Int,
     ) capturing -> None,
     simd_width: Int,
     unroll_factor: Int,
     shape: List[Int],
     stride_a: List[Int],
     stride_b: List[Int],
-](a: UnsafePointer[Scalar[elt_a]], b: UnsafePointer[Scalar[elt_b]]):
+](
+    a: UnsafePointer[mut=True, Scalar[elt_a], _],
+    b: UnsafePointer[Scalar[elt_b], _],
+):
     comptime assert len(shape) == len(stride_a)
     comptime assert len(shape) == len(stride_b)
 
-    @parameter
-    if len(shape) == 1:
+    comptime if len(shape) == 1:
         # perform the copy
         comptime int_stride_a: Int = stride_a[0]
         comptime int_stride_b: Int = stride_b[0]
         comptime size = shape[0]
 
         @always_inline
-        @parameter
-        fn vf[width: Int](i: Int):
+        def vf[width: Int](i: Int) unified {var a, var b}:
             f[width, int_stride_a, int_stride_b](a, b, i)
 
         vectorize[
-            vf,
             simd_width,
-            unroll_factor = min(size // simd_width, unroll_factor),
-        ](size)
+            unroll_factor=min(size // simd_width, unroll_factor),
+        ](size, vf)
     else:
         # we find the maximum min stride, subset, and loop over it.
         comptime max_idx = max_min_idx_positive(stride_b, stride_a)
         comptime subset_shape = delete_idx(shape, max_idx)
         comptime subset_stride_b = delete_idx(stride_b, max_idx)
         comptime subset_stride_a = delete_idx(stride_a, max_idx)
-        for i in range(shape[max_idx]):
+        comptime loop_size: Int = shape[max_idx]
+        comptime a_stride: Int = stride_a[max_idx]
+        comptime b_stride: Int = stride_b[max_idx]
+        for i in range(loop_size):
             vectorize_flat[
                 f,
                 simd_width,
@@ -428,25 +409,27 @@ fn vectorize_flat[
                 subset_shape,
                 subset_stride_a,
                 subset_stride_b,
-            ](a + i * stride_a[max_idx], b + i * stride_b[max_idx])
+            ](a + i * a_stride, b + i * b_stride)
 
 
-fn tolist(x: IntTuple) -> List[Int]:
+def tolist(x: IntTuple) -> List[Int]:
     var list = List[Int]()
     var flat = flatten(x)
     for y in flat:
         list.append(y.value())
-    return list
+    return list^
 
 
-fn vectorize_layout_tensor[
+def vectorize_layout_tensor[
     elt_a: DType,
     layout_a: Layout,
     elt_b: DType,
     layout_b: Layout,
     //,
-    f: fn[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[Scalar[elt_a]], UnsafePointer[Scalar[elt_b]], Int
+    f: def[width: Int, stride_a: Int, stride_b: Int](
+        UnsafePointer[mut=True, Scalar[elt_a], _],
+        UnsafePointer[Scalar[elt_b], _],
+        Int,
     ) capturing -> None,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
@@ -465,7 +448,7 @@ fn vectorize_layout_tensor[
     )
 
 
-fn copy_to[
+def copy_to[
     elt_dst: DType,
     layout_dst: Layout,
     elt_src: DType,
@@ -479,11 +462,11 @@ fn copy_to[
 ):
     @always_inline
     @parameter
-    fn copy[
+    def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        dstp: UnsafePointer[Scalar[elt_dst]],
-        srcp: UnsafePointer[Scalar[elt_src]],
+        dstp: UnsafePointer[mut=True, Scalar[elt_dst], _],
+        srcp: UnsafePointer[Scalar[elt_src], _],
         i: Int,
     ):
         var vsrc = strided_load[width, stride_b](srcp, i)
@@ -492,7 +475,7 @@ fn copy_to[
     vectorize_layout_tensor[copy, simd_width, unroll_factor](dst, src)
 
 
-fn check_approx_equal[
+def check_approx_equal[
     elt_dst: DType,
     layout_dst: Layout,
     elt_src: DType,
@@ -513,11 +496,11 @@ fn check_approx_equal[
 
     @always_inline
     @parameter
-    fn check[
+    def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        pa: UnsafePointer[Scalar[elt_dst]],
-        pb: UnsafePointer[Scalar[elt_src]],
+        pa: UnsafePointer[mut=True, Scalar[elt_dst], _],
+        pb: UnsafePointer[Scalar[elt_src], _],
         i: Int,
     ):
         var va = strided_load[width, stride_a](pa, i).cast[cmp_elt]()
@@ -530,7 +513,7 @@ fn check_approx_equal[
 
 
 # Kc == Nc, so don't need to specify both
-fn matmulb2b[
+def matmulb2b[
     elt: DType,
     M: Int,
     N: Int,
@@ -642,21 +625,19 @@ fn matmulb2b[
     comptime assert size(layoutC.stride[1].tuple()[1]) == WNr * Kc
     comptime assert size(layoutC.stride[1].tuple()[2]) == Nc * Kc
 
-    var pa: UnsafePointer[Scalar[elt]] = A.ptr
-    var pd: UnsafePointer[Scalar[elt]] = D.ptr
+    var pa = A.ptr
+    var pd = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB: UnsafePointer[Scalar[elt]] = stack_allocation[
-        Mc * Nc, elt, alignment=64
-    ]()
+    var AB = stack_allocation[Mc * Nc, elt, alignment=64]()
     # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the
     #       loop tree.
     for _ in range(M // Mc):  # mc
-        var pb: UnsafePointer[Scalar[elt]] = B.ptr
-        var pc: UnsafePointer[Scalar[elt]] = C.ptr
-        var pak: UnsafePointer[Scalar[elt]] = pa
-        var pdk: UnsafePointer[Scalar[elt]] = pd
+        var pb = B.ptr
+        var pc = C.ptr
+        var pak = pa
+        var pdk = pd
         for lc in range(L // Nc):  # lc, reduction for (AB)*C
             pak = pa
             for kc in range(
@@ -676,8 +657,8 @@ fn matmulb2b[
                 # for `prefetchnta`, to load slices to the L1 where they may be
                 # held and reused, without polluting any of the other caches, where
                 # the memory is not reused.
-                var pabk: UnsafePointer[Scalar[elt]] = AB
-                var pbk: UnsafePointer[Scalar[elt]] = pb
+                var pabk = AB
+                var pbk = pb
                 for _ in range(Mc // Mr):  # mr               - hold in l2 cache
                     # Comment #1
                     # Size of slices accessed per iteration:
@@ -755,8 +736,8 @@ fn matmulb2b[
                 # We might be able to load `D` with `prefetchnta` when updating it,
                 # and using a streaming store to write? Although, this would
                 # necessitate fences.
-                var pabk: UnsafePointer[Scalar[elt]] = AB
-                var pck: UnsafePointer[Scalar[elt]] = pc
+                var pabk = AB
+                var pck = pc
                 for _ in range(
                     Mc // Mr
                 ):  # mr                - hold in l2 cache
@@ -784,7 +765,7 @@ fn matmulb2b[
 
 
 @always_inline
-fn bench_b2b[
+def bench_b2b[
     elt: DType,
     M: Int,
     N: Int,
@@ -897,9 +878,12 @@ fn bench_b2b[
     var Brm64 = alloc_tensor[DType.float64, Layout.row_major(K, L)]()
     var Crm64 = alloc_tensor[DType.float64, Layout.row_major(L, N)]()
     var ABrm64 = alloc_tensor[DType.float64, Layout.row_major(M, L)]()
-    rand(Atile.ptr, Atile.layout.size())
-    rand(Btile.ptr, Btile.layout.size())
-    rand(Ctile.ptr, Ctile.layout.size())
+    comptime layout_A_size: Int = layout_A.size()
+    comptime layout_B_size: Int = layout_B.size()
+    comptime layout_C_size: Int = layout_C.size()
+    rand(Atile.ptr, layout_A_size)
+    rand(Btile.ptr, layout_B_size)
+    rand(Ctile.ptr, layout_C_size)
     copy_to(Ctileb2b, Ctile)
     copy_to(Arm64, Atile)
     copy_to(Brm64, Btile)
@@ -909,13 +893,13 @@ fn bench_b2b[
 
     @always_inline
     @parameter
-    fn test_tile_fn():
+    def test_tile_fn():
         matmul[elt, M, L, K, W, Mc, Nc, Kc, Mr, Nr, Kr](ABtile, Atile, Btile)
         matmul[elt, M, N, L, W, Mc, Nc, Kc, Mr, Nr, Kr](Dtile, ABtile, Ctile)
 
-    var flops = 2e-9 * (M * K * L + M * L * N)
+    var flops = 2e-9 * Float64(M * K * L + M * L * N)
     if do_benchmark:
-        var secs_tile = benchmark.run[func3=test_tile_fn](
+        var secs_tile = std.benchmark.run[func3=test_tile_fn](
             max_runtime_secs=1.0
         ).mean()
         print("GFLOPS Tile: ", flops / secs_tile)
@@ -926,13 +910,13 @@ fn bench_b2b[
 
     @always_inline
     @parameter
-    fn test_tile_b2b_fn():
+    def test_tile_b2b_fn():
         matmulb2b[elt, M, N, K, L, W, Mc, Nc, Mr, Nr, Kr](
             Dtile, Atile, Btile, Ctileb2b
         )
 
     if do_benchmark:
-        var secs_tile_b2b = benchmark.run[func3=test_tile_b2b_fn](
+        var secs_tile_b2b = std.benchmark.run[func3=test_tile_b2b_fn](
             max_runtime_secs=1.0
         ).mean()
         print("GFLOPS B2B:  ", flops / secs_tile_b2b)
@@ -954,14 +938,14 @@ fn bench_b2b[
     ABrm64.ptr.free()
 
 
-fn getMr() -> Int:
+def getMr() -> Int:
     if CompilationTarget.is_x86():
         if CompilationTarget.has_avx512f():
             return 9
     return 6
 
 
-fn getNr() -> Int:
+def getNr() -> Int:
     if CompilationTarget.is_x86():
         if CompilationTarget.has_avx512f():
             return 3
@@ -970,7 +954,7 @@ fn getNr() -> Int:
     return 4
 
 
-fn main() raises -> None:
+def main() raises -> None:
     comptime elt = DType.float32
     comptime W = simd_width_of[elt]()
     comptime Mr = getMr()

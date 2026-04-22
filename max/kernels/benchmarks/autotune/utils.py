@@ -48,7 +48,7 @@ def load_pickle(path: Path | str) -> Any:
         return pickle.load(handle)
 
 
-def flatten(value: int | object | Iterable) -> list[Any]:
+def flatten(value: int | object | Iterable) -> list[Any]:  # type: ignore[type-arg]
     """Flatten nested iterables into a single list."""
     if not isinstance(value, Iterable) or isinstance(value, str):
         return [value]
@@ -76,6 +76,51 @@ def _get_visible_device_prefix(target_accelerator: str = "") -> str:
         return "ROCR_VISIBLE_DEVICES"
     else:
         return ""
+
+
+def _get_gpu_count(target_accelerator: str = "") -> int | None:
+    """Detect available GPUs, capped by any visibility env var."""
+    hw_count = _get_hw_gpu_count(target_accelerator)
+    if hw_count is None:
+        return None
+    prefix = _get_visible_device_prefix(target_accelerator)
+    if prefix:
+        vis = os.environ.get(prefix, "").strip()
+        if vis:
+            return min(hw_count, len(set(v.strip() for v in vis.split(","))))
+    return hw_count
+
+
+def _get_hw_gpu_count(target_accelerator: str) -> int | None:
+    """Query physical GPU count from vendor tools."""
+    if "nvidia" in target_accelerator or "cuda" in target_accelerator:
+        smi = get_nvidia_smi()
+        if not smi:
+            return None
+        try:
+            out = subprocess.check_output(
+                [smi, "--query-gpu=name", "--format=csv,noheader"],
+                timeout=10,
+            )
+            return len(out.decode().strip().splitlines())
+        except (subprocess.SubprocessError, OSError):
+            return None
+    if "amd" in target_accelerator:
+        smi = shutil.which("rocm-smi")
+        if not smi:
+            return None
+        try:
+            out = subprocess.check_output(
+                [smi, "--showproductname", "--csv"],
+                timeout=10,
+                stderr=subprocess.DEVNULL,
+            )
+            lines = out.decode().strip().splitlines()
+            # CSV: "device,Card series,..." header, then "card0,..." per GPU
+            return sum(1 for line in lines if line.startswith("card"))
+        except (subprocess.SubprocessError, OSError):
+            return None
+    return None
 
 
 @functools.cache

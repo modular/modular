@@ -97,7 +97,7 @@ def generate_torch_outputs(
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     grid_thw: torch.Tensor,
     cu_window_seqlens: torch.Tensor,
-    vision_config: dict,
+    vision_config: dict,  # type: ignore[type-arg]
     use_window_attention: bool = False,
 ) -> torch.Tensor:
     """Generate reference outputs using HuggingFace Qwen2.5VL implementation."""
@@ -141,7 +141,7 @@ def generate_max_outputs(
     position_embeddings: tuple[torch.Tensor, torch.Tensor],
     grid_thw: torch.Tensor,
     cu_window_seqlens: torch.Tensor,
-    qwen2_5vl_config: dict,
+    qwen2_5vl_config: dict,  # type: ignore[type-arg]
     dtype: DType,
     device: Device,
     use_window_attention: bool = False,
@@ -256,7 +256,6 @@ def test_vision_attention_multiple_images(
 
     # Load config and generate weights
     config_loader = get_config_loader()
-    hf_config = config_loader.load_hf_vision_config(ConfigNames.QWEN2_5VL_3B)
     qwen2_5vl_config = config_loader.create_qwen2_5vl_config(
         ConfigNames.QWEN2_5VL_3B
     )

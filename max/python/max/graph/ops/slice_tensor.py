@@ -295,10 +295,17 @@ def slice_arguments(
             )
 
         if isinstance(subslice, int):
-            # Create a single-element slice that will be squeezed later.
-            # Set stop to input dim when index is -1 since x[-1:0] is wrong.
-            stop = input_shape[i] if subslice == -1 else subslice + 1
-            subslice = slice(subslice, stop)
+            # Normalize negative integer indices to positive when the
+            # dimension is static, so that rmo.slice receives
+            # non-negative starts (stop = normalized + 1 <= dim).
+            if subslice < 0 and isinstance(input_shape[i], StaticDim):
+                subslice = int(input_shape[i]) + subslice
+            elif subslice == -1:
+                # For symbolic dims, -1+1=0 would give an empty slice
+                # instead of selecting the last element.  Use stop=dim.
+                subslice = slice(subslice, input_shape[i])
+            if isinstance(subslice, int):
+                subslice = slice(subslice, subslice + 1)
 
         step = subslice.step if subslice.step is not None else 1
         if not isinstance(step, int) or step <= 0:

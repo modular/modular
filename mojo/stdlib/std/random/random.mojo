@@ -15,7 +15,7 @@
 You can import these APIs from the `random` package. For example:
 
 ```mojo
-from random import seed
+from std.random import seed
 ```
 
 These functions use a shared, global pseudorandom number generator (PRNG)
@@ -29,20 +29,20 @@ Warning:
     authentication tokens, or encryption keys.
 """
 
-import math
-from math import floor
-from time import perf_counter_ns
+import std.math
+from std.math import floor
+from std.time import perf_counter_ns
 
 from ._rng import _get_global_random_state
 
 
-fn seed():
+def seed():
     """Seeds the random number generator using a time-based value.
 
     Example:
 
     ```mojo
-    from random import seed
+    from std.random import seed
 
     seed()
     ```
@@ -50,7 +50,7 @@ fn seed():
     seed(Int(perf_counter_ns()))
 
 
-fn seed(a: Int):
+def seed(a: Int):
     """Seeds the random number generator using the value provided.
 
     Args:
@@ -59,7 +59,7 @@ fn seed(a: Int):
     Example:
 
     ```mojo
-    from random import seed
+    from std.random import seed
 
     seed(123456)
     ```
@@ -67,7 +67,7 @@ fn seed(a: Int):
     _get_global_random_state()[].seed(UInt64(a))
 
 
-fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
+def random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
     """Returns a random `Float64` number from the given range [min, max).
 
     Args:
@@ -79,7 +79,7 @@ fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
 
     Example:
     ```mojo
-    from random import random_float64, seed
+    from std.random import random_float64, seed
 
     seed()
     var rnd = random_float64(10.0, 20.0)
@@ -89,7 +89,7 @@ fn random_float64(min: Float64 = 0, max: Float64 = 1) -> Float64:
     return _get_global_random_state()[].random_float64(min, max)
 
 
-fn random_si64(min: Int64, max: Int64) -> Int64:
+def random_si64(min: Int64, max: Int64) -> Int64:
     """Returns a random `Int64` number from the given range [min, max].
 
     Args:
@@ -102,7 +102,7 @@ fn random_si64(min: Int64, max: Int64) -> Int64:
     Example:
 
     ```mojo
-    from random import random_si64, seed
+    from std.random import random_si64, seed
 
     seed()
     var rnd = random_si64(-100, 100)
@@ -112,7 +112,7 @@ fn random_si64(min: Int64, max: Int64) -> Int64:
     return _get_global_random_state()[].random_int64(min, max)
 
 
-fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
+def random_ui64(min: UInt64, max: UInt64) -> UInt64:
     """Returns a random `UInt64` number from the given range [min, max].
 
     Args:
@@ -125,7 +125,7 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
     Example:
 
     ```mojo
-    from random import random_ui64, seed
+    from std.random import random_ui64, seed
 
     seed()
     var rnd = random_ui64(0, 100)
@@ -135,10 +135,36 @@ fn random_ui64(min: UInt64, max: UInt64) -> UInt64:
     return _get_global_random_state()[].random_uint64(min, max)
 
 
-fn randint[
+def randint[
     dtype: DType
 ](
-    ptr: UnsafePointer[mut=True, Scalar[dtype]], size: Int, low: Int, high: Int
+    span: Span[mut=True, Scalar[dtype], _],
+    low: Int,
+    high: Int,
+) where dtype.is_integral():
+    """Fills memory with uniformly distributed random integers in the range [low, high].
+
+    Constraints:
+        The type must be integral.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        low: The inclusive lower bound.
+        high: The inclusive upper bound.
+    """
+    randint(span.unsafe_ptr(), len(span), low, high)
+
+
+def randint[
+    dtype: DType
+](
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
+    size: Int,
+    low: Int,
+    high: Int,
 ) where dtype.is_integral():
     """Fills memory with uniformly distributed random integers in the range [low, high].
 
@@ -157,8 +183,8 @@ fn randint[
     Example:
 
     ```mojo
-    from random import randint, seed
-    from memory import alloc
+    from std.random import randint, seed
+    from std.memory import alloc
     seed()
     var size: Int = 10
     var ptr = alloc[Int32](size)
@@ -169,8 +195,7 @@ fn randint[
     ```
     """
 
-    @parameter
-    if dtype.is_signed():
+    comptime if dtype.is_signed():
         for si in range(size):
             ptr[si] = random_si64(Int64(low), Int64(high)).cast[dtype]()
     else:
@@ -178,7 +203,37 @@ fn randint[
             ptr[ui] = random_ui64(UInt64(low), UInt64(high)).cast[dtype]()
 
 
-fn rand[
+def rand[
+    dtype: DType
+](
+    span: Span[mut=True, Scalar[dtype], _],
+    /,
+    *,
+    min: Float64 = 0.0,
+    max: Float64 = 1.0,
+    int_scale: Optional[Int] = None,
+):
+    """Fills memory with random values from a uniform distribution.
+
+    Behavior depends on the dtype:
+    - Floating-point types sample values uniformly from [min, max).
+    - Integral types sample values uniformly from [min, max],
+    clamped to the representable range of the dtype.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        min: The lower bound of the range.
+        max: The upper bound of the range.
+        int_scale: Optional quantization scale for floating-point types.
+            When provided, values are quantized to increments of 2^(-int_scale).
+    """
+    rand(span.unsafe_ptr(), len(span), min=min, max=max, int_scale=int_scale)
+
+
+def rand[
     dtype: DType
 ](
     ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -210,8 +265,8 @@ fn rand[
     Example:
 
     ```mojo
-    from random import rand, seed
-    from memory import alloc
+    from std.random import rand, seed
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -224,8 +279,7 @@ fn rand[
     """
     var scale_val = int_scale.or_else(-1)
 
-    @parameter
-    if dtype.is_floating_point():
+    comptime if dtype.is_floating_point():
         if scale_val >= 0:
             var scale_double: Float64 = Float64(1 << scale_val)
             for i in range(size):
@@ -240,22 +294,20 @@ fn rand[
 
         return
 
-    @parameter
-    if dtype.is_signed():
-        var min_ = math.max(
+    comptime if dtype.is_signed():
+        var min_ = std.math.max(
             Scalar[dtype].MIN.cast[DType.int64](), min.cast[DType.int64]()
         )
-        var max_ = math.min(
+        var max_ = std.math.min(
             max.cast[DType.int64](), Scalar[dtype].MAX.cast[DType.int64]()
         )
         for i in range(size):
             ptr[i] = random_si64(min_, max_).cast[dtype]()
         return
 
-    @parameter
-    if dtype == DType.bool or dtype.is_unsigned():
-        var min_ = math.max(min.cast[DType.uint64](), 0)
-        var max_ = math.min(
+    comptime if dtype == DType.bool or dtype.is_unsigned():
+        var min_ = std.math.max(min.cast[DType.uint64](), 0)
+        var max_ = std.math.min(
             max.cast[DType.uint64](), Scalar[dtype].MAX.cast[DType.uint64]()
         )
         for i in range(size):
@@ -263,7 +315,7 @@ fn rand[
         return
 
 
-fn randn_float64(
+def randn_float64(
     mean: Float64 = 0.0, standard_deviation: Float64 = 1.0
 ) -> Float64:
     """Returns a random `Float64` sampled from a normal distribution.
@@ -278,7 +330,7 @@ fn randn_float64(
     Example:
 
     ```mojo
-    from random import randn_float64, seed
+    from std.random import randn_float64, seed
     seed()
     var rnd = randn_float64(0.0, 1.0)
     print(rnd)  # Random Float64 from Normal(0.0, 1.0)
@@ -287,7 +339,30 @@ fn randn_float64(
     return _get_global_random_state()[].normal_float64(mean, standard_deviation)
 
 
-fn randn[
+def randn[
+    dtype: DType
+](
+    span: Span[mut=True, Scalar[dtype], _],
+    mean: Float64 = 0.0,
+    standard_deviation: Float64 = 1.0,
+):
+    """Fills memory with random values from a Normal distribution.
+
+    Constraints:
+        The type should be floating point.
+
+    Parameters:
+        dtype: The dtype of the pointer.
+
+    Args:
+        span: The memory area to fill.
+        mean: The mean of the normal distribution.
+        standard_deviation: The standard deviation of the normal distribution.
+    """
+    randn(span.unsafe_ptr(), len(span), mean, standard_deviation)
+
+
+def randn[
     dtype: DType
 ](
     ptr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -312,8 +387,8 @@ fn randn[
     Example:
 
     ```mojo
-    from random import randn, seed
-    from memory import alloc
+    from std.random import randn, seed
+    from std.memory import alloc
 
     seed()
     var size: Int = 10
@@ -330,7 +405,7 @@ fn randn[
     return
 
 
-fn shuffle[T: Copyable, //](mut list: List[T]):
+def shuffle[T: Copyable, //](mut list: List[T]):
     """Shuffles the elements of the list randomly.
 
     Performs an in-place Fisher-Yates shuffle on the provided list.
@@ -344,8 +419,8 @@ fn shuffle[T: Copyable, //](mut list: List[T]):
     Example:
 
     ```mojo
-    from random import shuffle
-    from collections.list import List
+    from std.random import shuffle
+    from std.collections.list import List
     var list: List[Int] = [0, 1, 2, 3, 4, 5]
     shuffle(list)
     print(list)  # The list elements are now in random order

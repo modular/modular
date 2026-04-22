@@ -13,6 +13,7 @@ _FILECHECK_TESTS = [
     "test_debug_assert_gpu_error.mojo",
     "test_grid_dependence_control.mojo",
     "test_kernel_with_list.mojo",
+    "test_metal_print.mojo",
     "test_print.mojo",
     "test_printf.mojo",
     "test_producer_consumer.mojo",
@@ -21,12 +22,7 @@ _FILECHECK_TESTS = [
     "test_tensor_core_fp8_mma_sync.mojo",
 ]
 
-_EXTRA_COPTS = {
-    "test_grid_dependence_control.mojo": [
-        "-D",
-        "PDL_LEVEL=1",
-    ],
-}
+_EXTRA_COPTS = {}
 
 _APPLE_GPU_INCOMPATIBLE = select({
     "//:apple_gpu": ["@platforms//:incompatible"],
@@ -49,6 +45,8 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_fp8_mma_sync.mojo": ["//:h100_gpu"],
     "test_wmma.mojo": ["//:nvidia_gpu"],
     "test_wmma_amd.mojo": ["//:amd_gpu"],
+    "test_tcgen05.mojo": ["//:b200_gpu"],
+    "test_metal_print.mojo": ["//:apple_gpu"],  # Metal GPU print tests (Apple only)
     "test_debug_assert_gpu_error.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
     "test_print_elementwise.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2366
     "test_print.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2405
@@ -59,6 +57,8 @@ _EXTRA_CONSTRAINTS = {
     "test_prefix_sum.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_shuffle.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
     "test_simd_reduction.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: llvm.ctlz intrinsic not evaluating at compile time on macOS
+    "test_verify_buffers_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # Uses block.sum/block.max (llvm.ctlz issue)
+    "test_fast_div.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3587 — Metal compilation failure (originally wrong FastDiv remainder)
 }
 
 [

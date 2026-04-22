@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import TestSuite, assert_equal, assert_true, assert_raises
+from std.testing import TestSuite, assert_equal, assert_true, assert_raises
 
 
-fn test_next() raises:
+def test_next() raises:
     var l = [1, 2, 3]
 
     var it = iter(l)
@@ -32,5 +32,5 @@ fn test_next() raises:
         _ = next(it2)  # raises StopIteration
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

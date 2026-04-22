@@ -35,6 +35,6 @@ async def ping() -> Response:
 @router.post("/invocations", response_model=None)
 async def invocations(
     request: Request,
-) -> CreateChatCompletionResponse | EventSourceResponse:
+) -> CreateChatCompletionResponse | EventSourceResponse | Response:
     """proxy to /v1/chat/completions"""
     return await openai_create_chat_completion(request)

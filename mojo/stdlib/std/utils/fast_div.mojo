@@ -17,13 +17,13 @@ This method replaces division by constants with a sequence of shifts and
 multiplications, significantly optimizing division performance.
 """
 
-from bit import log2_ceil
-from builtin.dtype import _uint_type_of_width
-from gpu.intrinsics import mulhi
-from sys.info import bit_width_of
+from std.bit import log2_ceil
+from std.builtin.dtype import _uint_type_of_width
+from std.gpu.intrinsics import mulhi
+from std.sys.info import bit_width_of
 
 
-struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
+struct FastDiv[dtype: DType](TrivialRegisterPassable, Writable):
     """Implements fast division for a given type.
 
     This struct provides optimized division by a constant divisor,
@@ -46,34 +46,43 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
     var _log2_shift: UInt8
 
     @always_inline
-    fn __init__(out self, divisor: Int = 1):
+    def __init__(out self, divisor: Int = 1):
         """Initializes FastDiv with the divisor.
 
         Constraints:
-            ConstraintError: If the bitwidth of the type is > 32.
+            ConstraintError: If the bitwidth of the type is > 64.
 
         Args:
             divisor: The divisor to use for fast division.
                 Defaults to 1.
         """
         comptime assert (
-            bit_width_of[Self.dtype]() <= 32
+            bit_width_of[Self.dtype]() <= 64
         ), "larger types are not currently supported"
         self._div = Scalar[Self.uint_type](divisor)
 
         self._is_pow2 = divisor.is_power_of_two()
-        self._log2_shift = log2_ceil(Int32(divisor)).cast[DType.uint8]()
+        self._log2_shift = UInt8(log2_ceil(divisor))
 
         # Only compute magic number parameters if not power of 2
         if not self._is_pow2:
+            comptime wide_type = _uint_type_of_width[
+                bit_width_of[Self.dtype]() * 2
+            ]()
             self._mprime = (
                 (
-                    (UInt64(1) << UInt64(bit_width_of[Self.dtype]()))
-                    * (
-                        (1 << self._log2_shift.cast[DType.uint64]())
-                        - UInt64(divisor)
+                    (
+                        Scalar[wide_type](1)
+                        << Scalar[wide_type](bit_width_of[Self.dtype]())
                     )
-                    / UInt64(divisor)
+                    * (
+                        (
+                            Scalar[wide_type](1)
+                            << self._log2_shift.cast[wide_type]()
+                        )
+                        - Scalar[wide_type](divisor)
+                    )
+                    / Scalar[wide_type](divisor)
                 )
             ).cast[Self.uint_type]() + 1
             self._sh1 = min(self._log2_shift, 1)
@@ -84,7 +93,7 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
             self._sh2 = 0
 
     @always_inline
-    fn __rdiv__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+    def __rdiv__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
         """Divides the other scalar by the divisor.
 
         Args:
@@ -96,7 +105,7 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
         return other / self
 
     @always_inline
-    fn __rtruediv__(
+    def __rtruediv__(
         self, other: Scalar[Self.uint_type]
     ) -> Scalar[Self.uint_type]:
         """Divides the other scalar by the divisor (true division).
@@ -114,15 +123,24 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
             return other >> self._log2_shift.cast[Self.uint_type]()
         else:
             # FastDiv algorithm for non-power-of-2 divisors.
-            var t = mulhi(
-                self._mprime.cast[DType.uint32](), other.cast[DType.uint32]()
-            ).cast[Self.uint_type]()
+            var t: Scalar[Self.uint_type]
+
+            comptime if bit_width_of[Self.dtype]() <= 32:
+                t = mulhi(
+                    self._mprime.cast[DType.uint32](),
+                    other.cast[DType.uint32](),
+                ).cast[Self.uint_type]()
+            else:
+                t = mulhi(
+                    self._mprime.cast[DType.uint64](),
+                    other.cast[DType.uint64](),
+                ).cast[Self.uint_type]()
             return (
                 t + ((other - t) >> self._sh1.cast[Self.uint_type]())
             ) >> self._sh2.cast[Self.uint_type]()
 
     @always_inline
-    fn __rmod__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
+    def __rmod__(self, other: Scalar[Self.uint_type]) -> Scalar[Self.uint_type]:
         """Computes the remainder of division.
 
         Args:
@@ -135,7 +153,7 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
         return other - (q * self._div)
 
     @always_inline
-    fn __divmod__(
+    def __divmod__(
         self, other: Scalar[Self.uint_type]
     ) -> Tuple[Scalar[Self.uint_type], Scalar[Self.uint_type]]:
         """Computes both quotient and remainder.
@@ -150,7 +168,7 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
         return q, (other - (q * self._div))
 
     @no_inline
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         """Writes the FastDiv parameters to a writer.
 
         Parameters:
@@ -165,12 +183,3 @@ struct FastDiv[dtype: DType](Stringable, TrivialRegisterType, Writable):
         writer.write("sh2: ", self._sh2, "\n")
         writer.write("is_pow2: ", self._is_pow2, "\n")
         writer.write("log2_shift: ", self._log2_shift, "\n")
-
-    @no_inline
-    fn __str__(self) -> String:
-        """Get the object as a string.
-
-        Returns:
-            A string representation.
-        """
-        return String.write(self)

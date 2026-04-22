@@ -15,14 +15,14 @@
 You can import these APIs from the `sys` package. For example:
 
 ```mojo
-from sys import PrefetchLocality
+from std.sys import PrefetchLocality
 ```
 """
 
-import math
-from collections.string.string_slice import _get_kgen_string
-from sys import is_compile_time
-from sys.info import _is_sm_9x_or_newer, is_gpu
+import std.math
+from std.collections.string.string_slice import _get_kgen_string
+from std.memory._poison import _check_not_poison_masked
+from std.sys.info import _is_sm_9x_or_newer, is_gpu
 
 
 from ._assembly import inlined_assembly
@@ -35,9 +35,9 @@ from .info import is_amd_gpu, is_apple_gpu, is_nvidia_gpu, size_of
 
 
 @always_inline("nodebug")
-fn llvm_intrinsic[
+def llvm_intrinsic[
     intrin: StaticString,
-    type: __TypeOfAllTypes,
+    type: TrivialRegisterPassable,
     *types: AnyType,
     has_side_effect: Bool = True,
 ](*args: *types) -> type:
@@ -61,12 +61,11 @@ fn llvm_intrinsic[
 
     comptime intrin_kgen_string = _get_kgen_string[intrin]()
 
-    @parameter
-    if _mlirtype_is_eq[type, NoneType]():
+    comptime if _type_is_eq[type, NoneType]():
         __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=None,
-            hasSideEffects = has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect._mlir_value,
         ](loaded_pack)
         return rebind[type](None)
 
@@ -74,7 +73,7 @@ fn llvm_intrinsic[
         return __mlir_op.`pop.call_llvm_intrinsic`[
             intrin=intrin_kgen_string,
             _type=type,
-            hasSideEffects = has_side_effect._mlir_value,
+            hasSideEffects=has_side_effect._mlir_value,
         ](loaded_pack)
 
 
@@ -84,7 +83,7 @@ fn llvm_intrinsic[
 
 
 @always_inline("nodebug")
-fn gather[
+def gather[
     dtype: DType,
     size: Int,
     //,
@@ -109,7 +108,9 @@ fn gather[
     In general, for some vector of pointers `base`, mask `mask`, and passthrough
     `passthrough` a call of the form:
 
-    ```mojo
+    ```text
+    from std.sys.intrinsics import gather
+
     result = gather(base, mask, passthrough)
     ```
 
@@ -138,18 +139,15 @@ fn gather[
       A SIMD[dtype, size] containing the result of the gather operation.
     """
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return UnsafePointer[Scalar[dtype], MutExternalOrigin](
             unsafe_from_address=Int(base[0])
         ).load[invariant=invariant]() if mask else passthrough[0]
 
-    @parameter
-    if is_gpu() and invariant:
+    comptime if is_gpu() and invariant:
         var result = SIMD[dtype, size]()
 
-        @parameter
-        for i in range(size):
+        comptime for i in range(size):
             result[i] = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[i])
             ).load[invariant=invariant]() if mask[i] else passthrough[i]
@@ -167,7 +165,10 @@ fn gather[
         passthrough,
     )
     _ = base
-    return SIMD(mlir_value=result)
+    var loaded = SIMD[dtype, size](mlir_value=result)
+    comptime if dtype.is_floating_point():
+        _check_not_poison_masked[dtype, size](loaded, mask)
+    return loaded
 
 
 # ===-----------------------------------------------------------------------===#
@@ -176,9 +177,9 @@ fn gather[
 
 
 @always_inline("nodebug")
-fn scatter[
+def scatter[
     dtype: DType,
-    size: Int,
+    size: SIMDSize,
     //,
     alignment: Int = 0,
 ](
@@ -208,7 +209,9 @@ fn scatter[
     In general, for some vector `value`, vector of pointers `base`, and mask
     `mask` a call of the form:
 
-    ```mojo
+    ```text
+    from std.sys.intrinsics import scatter
+
     scatter(value, base, mask)
     ```
 
@@ -233,8 +236,7 @@ fn scatter[
         the base vector.
     """
 
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             var ptr = UnsafePointer[Scalar[dtype], MutExternalOrigin](
                 unsafe_from_address=Int(base[0])
@@ -257,7 +259,7 @@ fn scatter[
 # ===-----------------------------------------------------------------------===#
 
 
-struct PrefetchLocality(TrivialRegisterType):
+struct PrefetchLocality(TrivialRegisterPassable):
     """The prefetch locality.
 
     The locality, rw, and cache type correspond to LLVM prefetch intrinsic's
@@ -277,7 +279,7 @@ struct PrefetchLocality(TrivialRegisterType):
     """Extremely local locality (keep in cache)."""
 
     @always_inline("nodebug")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Constructs a prefetch locality option.
 
         Args:
@@ -287,7 +289,7 @@ struct PrefetchLocality(TrivialRegisterType):
         self.value = Int32(value)
 
 
-struct PrefetchRW(TrivialRegisterType):
+struct PrefetchRW(TrivialRegisterPassable):
     """Prefetch read or write."""
 
     var value: Int32
@@ -298,7 +300,7 @@ struct PrefetchRW(TrivialRegisterType):
     """Write prefetch."""
 
     @always_inline("nodebug")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Constructs a prefetch read-write option.
 
         Args:
@@ -308,7 +310,7 @@ struct PrefetchRW(TrivialRegisterType):
         self.value = Int32(value)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         """Checks if two prefetch read-write options are equal.
 
         Args:
@@ -321,7 +323,7 @@ struct PrefetchRW(TrivialRegisterType):
 
 
 # LLVM prefetch cache type
-struct PrefetchCache(TrivialRegisterType):
+struct PrefetchCache(TrivialRegisterPassable):
     """Prefetch cache type."""
 
     var value: Int32
@@ -332,7 +334,7 @@ struct PrefetchCache(TrivialRegisterType):
     """The data prefetching option."""
 
     @always_inline("nodebug")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         """Constructs a prefetch option.
 
         Args:
@@ -342,7 +344,7 @@ struct PrefetchCache(TrivialRegisterType):
         self.value = Int32(value)
 
 
-struct PrefetchOptions(Defaultable, TrivialRegisterType):
+struct PrefetchOptions(Defaultable, TrivialRegisterPassable):
     """Collection of configuration parameters for a prefetch intrinsic call.
 
     The op configuration follows similar interface as LLVM intrinsic prefetch
@@ -366,14 +368,14 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
     """Indicates i-cache or d-cache prefetching."""
 
     @always_inline("nodebug")
-    fn __init__(out self):
+    def __init__(out self):
         """Constructs an instance of PrefetchOptions with default params."""
         self.rw = PrefetchRW.READ
         self.locality = PrefetchLocality.HIGH
         self.cache = PrefetchCache.DATA
 
     @always_inline("nodebug")
-    fn for_read(self) -> Self:
+    def for_read(self) -> Self:
         """
         Sets the prefetch purpose to read.
 
@@ -385,7 +387,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn for_write(self) -> Self:
+    def for_write(self) -> Self:
         """
         Sets the prefetch purpose to write.
 
@@ -397,7 +399,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn no_locality(self) -> Self:
+    def no_locality(self) -> Self:
         """
         Sets the prefetch locality to none.
 
@@ -409,7 +411,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn low_locality(self) -> Self:
+    def low_locality(self) -> Self:
         """
         Sets the prefetch locality to low.
 
@@ -421,7 +423,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn medium_locality(self) -> Self:
+    def medium_locality(self) -> Self:
         """
         Sets the prefetch locality to medium.
 
@@ -433,7 +435,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn high_locality(self) -> Self:
+    def high_locality(self) -> Self:
         """
         Sets the prefetch locality to high.
 
@@ -445,7 +447,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn to_data_cache(self) -> Self:
+    def to_data_cache(self) -> Self:
         """
         Sets the prefetch target to data cache.
 
@@ -457,7 +459,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
         return updated
 
     @always_inline("nodebug")
-    fn to_instruction_cache(self) -> Self:
+    def to_instruction_cache(self) -> Self:
         """
         Sets the prefetch target to instruction cache.
 
@@ -470,7 +472,7 @@ struct PrefetchOptions(Defaultable, TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn prefetch[
+def prefetch[
     dtype: DType, //, params: PrefetchOptions = PrefetchOptions()
 ](addr: UnsafePointer[Scalar[dtype], ...]):
     """Prefetches an instruction or data into cache before it is used.
@@ -490,8 +492,7 @@ fn prefetch[
         params.rw == PrefetchRW.READ or type_of(addr).mut == True
     ), "prefetch pointer mutability must match the prefetch read-write option"
 
-    @parameter
-    if is_nvidia_gpu():
+    comptime if is_nvidia_gpu():
         inlined_assembly[
             "prefetch.global.L2 [$0];",
             NoneType,
@@ -516,10 +517,10 @@ fn prefetch[
 
 
 @always_inline("nodebug")
-fn masked_load[
+def masked_load[
     dtype: DType,
     //,
-    size: Int,
+    size: SIMDSize,
     alignment: Int = 1,
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -545,18 +546,18 @@ fn masked_load[
     Returns:
       The loaded memory stored in a vector of type SIMD[dtype, size].
     """
-    debug_assert(Bool(addr), "masked_load requires a valid (non-null) pointer")
-
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         return addr.load() if mask else passthrough[0]
 
-    return llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
+    var result = llvm_intrinsic["llvm.masked.load", SIMD[dtype, size]](
         addr.bitcast[NoneType]().address,
         Int32(alignment),
         mask,
         passthrough,
     )
+    comptime if dtype.is_floating_point():
+        _check_not_poison_masked[dtype, size](result, mask)
+    return result
 
 
 # ===-----------------------------------------------------------------------===#
@@ -565,8 +566,8 @@ fn masked_load[
 
 
 @always_inline("nodebug")
-fn masked_store[
-    size: Int,
+def masked_store[
+    size: SIMDSize,
     alignment: Int = 1,
 ](
     value: SIMD,
@@ -586,10 +587,7 @@ fn masked_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(Bool(addr), "masked_store requires a valid (non-null) pointer")
-
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             addr.store(value[0])
         return
@@ -608,8 +606,8 @@ fn masked_store[
 
 
 @always_inline("nodebug")
-fn compressed_store[
-    dtype: DType, size: Int
+def compressed_store[
+    dtype: DType, size: SIMDSize
 ](
     value: SIMD[dtype, size],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -628,12 +626,7 @@ fn compressed_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(
-        Bool(addr), "compressed_store requires a valid (non-null) pointer"
-    )
-
-    @parameter
-    if size == 1:
+    comptime if size == 1:
         if mask:
             addr.store(value[0])
         return
@@ -651,7 +644,7 @@ fn compressed_store[
 
 
 @always_inline("nodebug")
-fn strided_load[
+def strided_load[
     dtype: DType, //, simd_width: Int, *, invariant: Bool = False
 ](
     addr: UnsafePointer[mut=False, Scalar[dtype], ...],
@@ -676,16 +669,13 @@ fn strided_load[
     Returns:
       A vector containing the loaded data.
     """
-    debug_assert(Bool(addr), "strided_load requires a valid (non-null) pointer")
-
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * math.iota[DType.int, simd_width]()
+        * std.math.iota[DType.int, simd_width]()
     )
     var passthrough = SIMD[dtype, simd_width]()
     return gather[invariant=invariant](offset, mask, passthrough)
@@ -697,8 +687,8 @@ fn strided_load[
 
 
 @always_inline("nodebug")
-fn strided_store[
-    dtype: DType, //, simd_width: Int
+def strided_store[
+    dtype: DType, //, simd_width: SIMDSize
 ](
     value: SIMD[dtype, simd_width],
     addr: UnsafePointer[mut=True, Scalar[dtype], ...],
@@ -720,12 +710,7 @@ fn strided_store[
       mask: A binary vector which prevents memory access to certain lanes of
         `value`.
     """
-    debug_assert(
-        Bool(addr), "strided_store requires a valid (non-null) pointer"
-    )
-
-    @parameter
-    if simd_width == 1:
+    comptime if simd_width == 1:
         if mask:
             addr.store(value[0])
         return
@@ -733,40 +718,17 @@ fn strided_store[
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())
-        * math.iota[DType.int, simd_width]()
+        * std.math.iota[DType.int, simd_width]()
     )
     scatter(value, offset, mask)
 
 
 # ===-------------------------------------------------------------------===#
-# _mlirtype_is_eq
+# _type_is_eq
 # ===-------------------------------------------------------------------===#
 
 
-fn _mlirtype_is_eq[t1: __TypeOfAllTypes, t2: __TypeOfAllTypes]() -> Bool:
-    """Compares the two type for equality.
-
-    Parameters:
-        t1: The LHS of the type comparison.
-        t2: The RHS of the type comparison.
-
-    Returns:
-        Returns True if t1 and t2 are the same type and False otherwise.
-    """
-    return __mlir_attr[
-        `#kgen.param.expr<eq,`,
-        `#kgen.type<`,
-        t1,
-        `> : !kgen.type`,
-        `,`,
-        `#kgen.type<`,
-        t2,
-        `> : !kgen.type`,
-        `> : i1`,
-    ]
-
-
-fn _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
+def _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
     """Compares the two type for equality.
 
     Parameters:
@@ -790,7 +752,7 @@ fn _type_is_eq[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 @always_inline("builtin")
-fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
+def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
     """Compares the two type for equality at parse-time.
 
     Parameters:
@@ -818,13 +780,13 @@ fn _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
-struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a, `>`]
+struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a.values, `>`]
 
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    fn __getitem__[i: Int](self) -> Self.a[i]:
+    def __getitem_param__[i: Int](self) -> Self.a[i]:
         """Get the element.
 
         Parameters:
@@ -833,7 +795,7 @@ struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index = i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 
@@ -844,7 +806,7 @@ struct _RegisterPackType[*a: TrivialRegisterType](TrivialRegisterType):
 
 
 @always_inline("nodebug")
-fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
+def expect[T: TrivialRegisterPassable, //, expected_val: T](val: T) -> T:
     """Provides information about expected (the most probable) value of `val`,
     which can be used by optimizers.
 
@@ -861,7 +823,7 @@ fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
     Notes:
         Only works with integer/boolean types.
     """
-    if is_compile_time():
+    if __is_run_in_comptime_interpreter:
         return val
     return llvm_intrinsic["llvm.expect", T, has_side_effect=False](
         val, expected_val
@@ -874,7 +836,7 @@ fn expect[T: TrivialRegisterType, //, expected_val: T](val: T) -> T:
 
 
 @always_inline("nodebug")
-fn likely(val: Bool) -> Bool:
+def likely(val: Bool) -> Bool:
     """Provides information that the most probable value of `val` is going to be
     `True`. This information can be used by optimizers.
 
@@ -893,7 +855,7 @@ fn likely(val: Bool) -> Bool:
 
 
 @always_inline("nodebug")
-fn unlikely(val: Bool) -> Bool:
+def unlikely(val: Bool) -> Bool:
     """Provides information that the most probable value of `val` is going to be
     `False`. This information can be used by optimizers.
 
@@ -912,14 +874,14 @@ fn unlikely(val: Bool) -> Bool:
 
 
 @always_inline("nodebug")
-fn assume(val: Bool):
+def assume(val: Bool):
     """Signals to the optimizer that the condition is always true. This allows
     the optimizer to optimize the code.
 
     Args:
       val: The input value which is assumed to be `True`.
     """
-    if is_compile_time():
+    if __is_run_in_comptime_interpreter:
         return
     llvm_intrinsic["llvm.assume", NoneType](val)
 
@@ -930,9 +892,9 @@ fn assume(val: Bool):
 
 
 @always_inline
-fn implicitarg_ptr(
+def implicitarg_ptr(
     out result: UnsafePointer[
-        UInt8, MutExternalOrigin, address_space = AddressSpace.CONSTANT
+        UInt8, MutExternalOrigin, address_space=AddressSpace.CONSTANT
     ]
 ):
     """
@@ -954,23 +916,7 @@ fn implicitarg_ptr(
 
 
 @always_inline
-fn readfirstlane(value: Int32) -> Int32:
-    """
-    Get the value in the lowest active lane of the input operand.
-
-    Args:
-        value: The input value.
-
-    Returns:
-        The value in the lowest active lane of the input operand.
-    """
-    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
-    return llvm_intrinsic["llvm.amdgcn.readfirstlane.i32", Int32, Int32](value)
-
-
-# TODO: this can be parameterized for __TypeOfAllTypes but I am hitting compiler errors so skipping for now
-@always_inline
-fn readfirstlane(value: UnsafePointer) -> type_of(value):
+def readfirstlane(value: UnsafePointer) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -987,7 +933,7 @@ fn readfirstlane(value: UnsafePointer) -> type_of(value):
 
 
 @always_inline
-fn readfirstlane(value: Int) -> type_of(value):
+def readfirstlane(value: Int) -> type_of(value):
     """
     Get the value in the lowest active lane of the input operand.
 
@@ -1000,6 +946,31 @@ fn readfirstlane(value: Int) -> type_of(value):
     comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
     return llvm_intrinsic[
         "llvm.amdgcn.readfirstlane", type_of(value), type_of(value)
+    ](value)
+
+
+@always_inline
+def readfirstlane[dtype: DType](value: Scalar[dtype]) -> Scalar[dtype]:
+    """Gets the value in the lowest active lane of the input operand.
+
+    Constraints:
+        The scalar type must be 2, 4, or 8 bytes wide.
+
+    Parameters:
+        dtype: The element type.
+
+    Args:
+        value: The input scalar value.
+
+    Returns:
+        The value in the lowest active lane of the input operand.
+    """
+    comptime assert is_amd_gpu(), "This intrinsic is only defined for AMD GPUs"
+    comptime assert (
+        size_of[Scalar[dtype]]() >= 2
+    ), "readfirstlane requires a scalar type of at least 16 bits"
+    return llvm_intrinsic[
+        "llvm.amdgcn.readfirstlane", Scalar[dtype], Scalar[dtype]
     ](value)
 
 
@@ -1009,7 +980,7 @@ fn readfirstlane(value: Int) -> type_of(value):
 
 
 @always_inline
-fn sendmsg(opcode: Int32, msg: Int32):
+def sendmsg(opcode: Int32, msg: Int32):
     """
     Send a message to fixed function hardware.
     Refer to the specific ISA manual for the ops and messages.
@@ -1030,7 +1001,7 @@ fn sendmsg(opcode: Int32, msg: Int32):
 
 
 @always_inline
-fn ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
+def ballot[dtype: DType](value: Bool) -> Scalar[dtype]:
     """
     Returns a bitfield(Int32 or Int64) containing the result
     of its Bool argument in all active lanes, and zero in all inactive lanes.

@@ -18,18 +18,26 @@ from unittest.mock import MagicMock, NonCallableMock
 from max.driver import DeviceSpec
 from max.dtype import DType
 from max.pipelines.architectures.deepseekV3 import deepseekV3_arch
-from max.pipelines.lib import PipelineConfig, PipelineRole, SupportedEncoding
+from max.pipelines.lib import (
+    PipelineConfig,
+    PipelineModel,
+    PipelineRole,
+    SupportedEncoding,
+)
 
 MAX_SEND_TOKENS_PER_RANK = 128
 NUM_RANKS = 8
+GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
 
-def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
+def mock_pipeline_config(
+    pipeline_role: PipelineRole,
+    quantization_encoding: SupportedEncoding = "float8_e4m3fn",
+) -> NonCallableMock:
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
-    pipeline_config.model.quantization_encoding = (
-        SupportedEncoding.float8_e4m3fn
-    )
+    pipeline_config.runtime = MagicMock()
+    pipeline_config.model.quantization_encoding = quantization_encoding
     pipeline_config.model.kv_cache.cache_dtype = DType.bfloat16
     pipeline_config.model.data_parallel_degree = NUM_RANKS
     pipeline_config.model.device_specs = [
@@ -37,11 +45,13 @@ def mock_pipeline_config(pipeline_role: PipelineRole) -> NonCallableMock:
     ]
 
     # Pipeline config attributes
-    pipeline_config.pipeline_role = pipeline_role
-    pipeline_config.max_length = 1024 * 1024  # ~million tokens
-    pipeline_config.max_batch_total_tokens = None
-    pipeline_config.ep_size = NUM_RANKS
-    pipeline_config.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
+    pipeline_config.runtime.pipeline_role = pipeline_role
+    pipeline_config.model.max_length = 1024 * 1024  # ~million tokens
+    pipeline_config.runtime.max_batch_total_tokens = None
+    pipeline_config.runtime.ep_size = NUM_RANKS
+    pipeline_config.runtime.max_batch_input_tokens = MAX_SEND_TOKENS_PER_RANK
+    pipeline_config.runtime.device_graph_capture = False
+    pipeline_config.speculative = None
 
     return pipeline_config
 
@@ -62,13 +72,15 @@ def mock_huggingface_config() -> MagicMock:
     huggingface_config.num_nextn_predict_layers = 1
     huggingface_config.vocab_size = 129280
     huggingface_config.n_shared_experts = 1
+    huggingface_config.num_experts_per_tok = 8
 
     return huggingface_config
 
 
 def test_deepseekv3_memory_estimation() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    assert issubclass(deepseek_model, PipelineModel)
+    pipeline_config = mock_pipeline_config("decode_only")
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
@@ -92,22 +104,50 @@ def test_deepseekv3_memory_estimation() -> None:
 
 def test_deepseekv3_memory_estimation_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
     huggingface_config = mock_huggingface_config()
     assert huggingface_config is not None
 
     # For DecodeOnly, we only need to consider moe_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.DecodeOnly)
+    pipeline_config = mock_pipeline_config("decode_only")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 6442450944
+    assert mem == 5225054208
 
     # For PrefillAndDecode, we also need to consider mla_activation_memory
-    pipeline_config = mock_pipeline_config(PipelineRole.PrefillAndDecode)
+    pipeline_config = mock_pipeline_config("prefill_and_decode")
     mem = deepseek_model.estimate_activation_memory(
         pipeline_config, huggingface_config
     )
-    assert mem == 549755813888
+    assert mem == 551759642624
+
+    # Also check model with different quantization encoding
+    pipeline_config = mock_pipeline_config("decode_only", "float4_e2m1fnx2")
+    mem = deepseek_model.estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+    assert mem == 4399759360
+
+
+def test_deepseekv3_memory_estimation_adds_graph_capture_headroom() -> None:
+    deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
+    huggingface_config = mock_huggingface_config()
+    assert huggingface_config is not None
+
+    pipeline_config = mock_pipeline_config("decode_only")
+    baseline = deepseek_model.estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+
+    pipeline_config.runtime.device_graph_capture = True
+    with_headroom = deepseek_model.estimate_activation_memory(
+        pipeline_config, huggingface_config
+    )
+
+    expected_headroom = GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE * NUM_RANKS
+    assert with_headroom == baseline + expected_headroom
 
 
 def mock_weights_pipeline_config(
@@ -119,9 +159,8 @@ def mock_weights_pipeline_config(
 
     pipeline_config = NonCallableMock(spec=PipelineConfig)
     pipeline_config.model = MagicMock()
-    pipeline_config.model.quantization_encoding = (
-        SupportedEncoding.float8_e4m3fn
-    )
+    pipeline_config.runtime = MagicMock()
+    pipeline_config.model.quantization_encoding = "float8_e4m3fn"
     pipeline_config.model.data_parallel_degree = dp_degree
     pipeline_config.model.device_specs = [
         NonCallableMock(spec=DeviceSpec) for _ in range(n_gpus)
@@ -130,7 +169,7 @@ def mock_weights_pipeline_config(
     # Use a large enough weights size to account for the algorithm's subtractions.
     # DeepSeek-V3 has ~671B parameters, ~700GB at FP8.
     pipeline_config.model.weights_size.return_value = 700 * 1024**3
-    pipeline_config.ep_size = ep_size
+    pipeline_config.runtime.ep_size = ep_size
 
     return pipeline_config
 
@@ -160,6 +199,7 @@ def test_deepseekv3_estimate_weights_size_no_expert_parallelism() -> None:
     would cause a ZeroDivisionError (n_nodes = 1 // 8 = 0).
     """
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
 
     # EP=1 (no expert parallelism), 8 GPUs, DP=1
     pipeline_config = mock_weights_pipeline_config(
@@ -173,6 +213,7 @@ def test_deepseekv3_estimate_weights_size_no_expert_parallelism() -> None:
 
 def test_deepseekv3_estimate_weights_size_dp_ep_exact() -> None:
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
 
     # EP=8, 8 GPUs, DP=8
     pipeline_config = mock_weights_pipeline_config(
@@ -183,6 +224,19 @@ def test_deepseekv3_estimate_weights_size_dp_ep_exact() -> None:
     # than the actual weights size.
     mem = deepseek_model.estimate_weights_size(pipeline_config)
     assert mem == 1124551261664
+
+
+def test_deepseekv3_estimate_weights_size_tp_ep_exact() -> None:
+    deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
+
+    # EP=8, 8 GPUs, TP attention (DP=1)
+    pipeline_config = mock_weights_pipeline_config(
+        n_gpus=8, ep_size=8, dp_degree=1
+    )
+
+    mem = deepseek_model.estimate_weights_size(pipeline_config)
+    assert mem == 754209345468
 
 
 def test_deepseekv3_estimate_weights_size_routing_experts_scaling() -> None:
@@ -196,6 +250,7 @@ def test_deepseekv3_estimate_weights_size_routing_experts_scaling() -> None:
     - EP=n_gpus*n_nodes: routing_experts_memory = routing_experts_size / n_nodes
     """
     deepseek_model = deepseekV3_arch.pipeline_model
+    assert issubclass(deepseek_model, PipelineModel)
     routing_experts_size = compute_routing_experts_size()
     n_gpus = 8
 

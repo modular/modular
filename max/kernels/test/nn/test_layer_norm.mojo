@@ -11,23 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import rsqrt
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import rsqrt
-
-from itertools import product
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.itertools import product
+from layout import Coord, Idx, TileTensor, row_major
 from layout.math import mean, variance
 from nn.normalization import *
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-fn run_layer_norm_cpu[
+def run_layer_norm_cpu[
     dtype: DType, rank: Int
 ](shape: IndexList[rank], rtol: Float64 = 0.01) raises:
     var cols = shape[rank - 1]
@@ -57,29 +52,29 @@ fn run_layer_norm_cpu[
     @__copy_capture(input_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
-        return input_buf.ptr.load[width=width](idx)
+        return input_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_fn[
+    def gamma_fn[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
-        return gamma.ptr.load[width=width](idx)
+        return gamma.raw_load[width=width](idx)
 
     @__copy_capture(output_buf)
     @always_inline
     @parameter
-    fn output_fn[
+    def output_fn[
         width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank], val: SIMD[dtype, width]):
         var idx = output_buf.layout(Coord(coords))
-        output_buf.ptr.store[width=width, alignment=alignment](
+        output_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
@@ -105,7 +100,7 @@ fn run_layer_norm_cpu[
     beta_ptr.free()
 
 
-def main():
+def main() raises:
     print("0")
     run_layer_norm_cpu[DType.float32](Index(3, 5))
     print("1")

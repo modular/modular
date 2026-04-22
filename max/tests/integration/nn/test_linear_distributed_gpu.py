@@ -22,7 +22,7 @@ from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, Type
-from max.nn.legacy import ColumnParallelLinear, Linear, Signals
+from max.nn import ColumnParallelLinear, Linear, Signals
 
 
 def _distribute_value(
@@ -35,7 +35,7 @@ def _single_gpu_linear(
     batch_size: int,
     in_dim: int,
     out_dim: int,
-    state_dict: Mapping[str, npt.NDArray],
+    state_dict: Mapping[str, npt.NDArray],  # type: ignore[type-arg]
     session: InferenceSession,
 ) -> Model:
     """Compiles a Linear layer that runs on a single device."""
@@ -63,7 +63,7 @@ def _multi_gpu_linear(
     batch_size: int,
     in_dim: int,
     out_dim: int,
-    state_dict: Mapping[str, npt.NDArray],
+    state_dict: Mapping[str, npt.NDArray],  # type: ignore[type-arg]
     session: InferenceSession,
     devices: Sequence[Device],
 ) -> Model:

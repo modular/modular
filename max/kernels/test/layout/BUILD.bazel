@@ -5,7 +5,6 @@ package(default_visibility = ["//max:consumers"])
 _FILECHECK_TESTS = [
     "test_element.mojo",
     "test_layout.mojo",
-    "test_nd_buffer_stub.mojo",
     "test_swizzle.mojo",
     "test_tensor.mojo",
     "test_tensor_masked.mojo",
@@ -30,23 +29,34 @@ _EXTRA_CONSTRAINTS = {
         deps = [
             "//max:layout",
             "@mojo//:std",
+            "@mojo//:test_utils",
         ],
     )
     for src in _FILECHECK_TESTS
 ]
 
+mojo_filecheck_test(
+    name = "test_negative_index_int_tuple.mojo.test",
+    srcs = ["test_negative_index_int_tuple.mojo"],
+    expect_crash = True,
+    deps = [
+        "//max:layout",
+        "@mojo//:std",
+    ],
+)
+
 [
     mojo_test(
         name = src + ".test",
         srcs = [src],
-        tags = (["manual"] if src == "test_tiled_matmul_backtoback.mojo" else []),  # TODO(MOCO-1523)
         deps = [
             "//max:layout",
             "@mojo//:std",
+            "@mojo//:test_utils",
         ],
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + ["test_negative_index_int_tuple.mojo"],
     )
 ]

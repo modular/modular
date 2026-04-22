@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import inf, isinf, isnan
+from std.math import inf, isinf, isnan
+from std.memory import bitcast
 
-from testing import assert_equal, assert_raises, assert_true
-from testing import TestSuite
+from std.testing import assert_equal, assert_raises, assert_true
+from std.testing import TestSuite
 
 
-def test_basic_parsing():
+def test_basic_parsing() raises:
     """Test basic parsing functionality."""
     assert_equal(atof("123"), 123.0)
     assert_equal(atof("123.456"), 123.456)
@@ -25,7 +26,7 @@ def test_basic_parsing():
     assert_equal(atof("+123.456"), 123.456)
 
 
-def test_scientific_notation():
+def test_scientific_notation() raises:
     """Test scientific notation parsing, which contained the primary bug."""
     assert_equal(atof("1.23e2"), 123.0)
     assert_equal(atof("1.23e+2"), 123.0)
@@ -35,7 +36,7 @@ def test_scientific_notation():
     assert_equal(atof("1.23E-2"), 0.0123)
 
 
-def test_nan_and_inf():
+def test_nan_and_inf() raises:
     """Test NaN and infinity parsing."""
     assert_true(isnan(atof("nan")))
     assert_true(isnan(atof("NaN")))
@@ -46,26 +47,26 @@ def test_nan_and_inf():
     assert_true(isinf(atof("-infinity")))
 
 
-def test_leading_decimal():
+def test_leading_decimal() raises:
     """Test parsing with leading decimal point."""
     assert_equal(atof(".123"), 0.123)
     assert_equal(atof("-.123"), -0.123)
     assert_equal(atof("+.123"), 0.123)
 
 
-def test_trailing_f():
+def test_trailing_f() raises:
     """Test parsing with trailing 'f'."""
     assert_equal(atof("123.456f"), 123.456)
     assert_equal(atof("123.456F"), 123.456)
 
 
-def test_large_exponents():
+def test_large_exponents() raises:
     """Test handling of large exponents."""
     assert_equal(atof("1e309"), inf[DType.float64]())
     assert_equal(atof("1e-309"), 1e-309)
 
 
-def test_error_cases():
+def test_error_cases() raises:
     """Test error cases."""
     with assert_raises(
         contains=(
@@ -132,12 +133,16 @@ comptime numbers_to_test = [
     T(3.5e-18, "3.5e-18"),
     T(3.5e-19, "3.5e-19"),
     T(47421763.54864864647, "47421763.54864864647"),
+    # Normal/subnormal boundary
+    T(4.4501363245856945e-308, "4.4501363245856945e-308"),
+    T(2.2250738585072014e-308, "2.2250738585072014e-308"),  # smallest normal
+    T(2.2250738585072009e-308, "2.2250738585072009e-308"),  # largest subnormal
     # TODO: Make atof work when many digits are present, e.g.
     # "47421763.548648646474532187448684",
 ]
 
 
-def test_atof_generate_cases():
+def test_atof_generate_cases() raises:
     for number, number_as_str in materialize[numbers_to_test]():
         for suffix in ["", "f", "F"]:
             for exponent in ["e", "E"]:
@@ -152,5 +157,27 @@ def test_atof_generate_cases():
                     assert_equal(atof(final_string), final_value)
 
 
-def main():
+def test_normal_subnormal_boundary() raises:
+    def as_bits(f: Float64) -> UInt64:
+        return bitcast[DType.uint64](f)
+
+    # Smallest normal: biased exponent 1, mantissa 0
+    # Bit pattern: 0x0010000000000000
+    var smallest_normal = atof("2.2250738585072014e-308")
+    assert_equal(as_bits(smallest_normal), UInt64(0x0010000000000000))
+
+    # Largest subnormal: biased exponent 0, mantissa all 1s
+    # Bit pattern: 0x000FFFFFFFFFFFFF
+    var largest_subnormal = atof("2.2250738585072009e-308")
+    assert_equal(as_bits(largest_subnormal), UInt64(0x000FFFFFFFFFFFFF))
+
+    # Reported bug: should be normal, not subnormal
+    # Bit pattern: 0x0020000000000001
+    var reported_bug = atof("4.4501363245856945e-308")
+    assert_equal(as_bits(reported_bug), as_bits(4.4501363245856945e-308))
+    # Verify it's a normal number (biased exponent > 0)
+    assert_true(as_bits(reported_bug) >= UInt64(0x0010000000000000))
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

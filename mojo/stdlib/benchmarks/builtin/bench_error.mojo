@@ -19,7 +19,7 @@ Key metrics:
 - error_catch_depth_*: Shows impact of call stack depth on capture time
 """
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 # ===-----------------------------------------------------------------------===#
@@ -28,53 +28,53 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 
 @no_inline
-fn create_error_depth_1() raises:
+def create_error_depth_1() raises:
     """Create and raise an error at depth 1."""
     raise Error("test error")
 
 
 @no_inline
-fn create_error_depth_2() raises:
+def create_error_depth_2() raises:
     """Create and raise an error at depth 2."""
     create_error_depth_1()
 
 
 @no_inline
-fn create_error_depth_3() raises:
+def create_error_depth_3() raises:
     """Create and raise an error at depth 3."""
     create_error_depth_2()
 
 
 @no_inline
-fn create_error_depth_4() raises:
+def create_error_depth_4() raises:
     """Create and raise an error at depth 4."""
     create_error_depth_3()
 
 
 @no_inline
-fn create_error_depth_5() raises:
+def create_error_depth_5() raises:
     """Create and raise an error at depth 5."""
     create_error_depth_4()
 
 
 @no_inline
-fn create_error_depth_10() raises:
+def create_error_depth_10() raises:
     """Create and raise an error at depth 10."""
 
     @no_inline
-    fn d6() raises:
+    def d6() raises:
         create_error_depth_5()
 
     @no_inline
-    fn d7() raises:
+    def d7() raises:
         d6()
 
     @no_inline
-    fn d8() raises:
+    def d8() raises:
         d7()
 
     @no_inline
-    fn d9() raises:
+    def d9() raises:
         d8()
 
     d9()
@@ -86,7 +86,7 @@ fn create_error_depth_10() raises:
 
 
 @parameter
-fn bench_error_catch_no_print_depth3(mut b: Bencher) raises:
+def bench_error_catch_no_print_depth3(mut b: Bencher) raises:
     """Benchmark catching errors without printing the stack trace.
 
     This is the common case in production code - errors are caught and handled
@@ -95,7 +95,7 @@ fn bench_error_catch_no_print_depth3(mut b: Bencher) raises:
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(100):
             try:
                 create_error_depth_3()
@@ -106,12 +106,12 @@ fn bench_error_catch_no_print_depth3(mut b: Bencher) raises:
 
 
 @parameter
-fn bench_error_catch_depth1(mut b: Bencher) raises:
+def bench_error_catch_depth1(mut b: Bencher) raises:
     """Benchmark with shallow call stack (depth 1)."""
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(100):
             try:
                 create_error_depth_1()
@@ -122,12 +122,12 @@ fn bench_error_catch_depth1(mut b: Bencher) raises:
 
 
 @parameter
-fn bench_error_catch_depth5(mut b: Bencher) raises:
+def bench_error_catch_depth5(mut b: Bencher) raises:
     """Benchmark with medium call stack (depth 5)."""
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(100):
             try:
                 create_error_depth_5()
@@ -138,12 +138,12 @@ fn bench_error_catch_depth5(mut b: Bencher) raises:
 
 
 @parameter
-fn bench_error_catch_depth10(mut b: Bencher) raises:
+def bench_error_catch_depth10(mut b: Bencher) raises:
     """Benchmark with deeper call stack (depth 10)."""
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(100):
             try:
                 create_error_depth_10()
@@ -154,12 +154,12 @@ fn bench_error_catch_depth10(mut b: Bencher) raises:
 
 
 @parameter
-fn bench_error_create_only(mut b: Bencher) raises:
+def bench_error_create_only(mut b: Bencher) raises:
     """Benchmark just creating Error objects (no raise/catch overhead)."""
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for _ in range(100):
             var e = Error("test error")
             keep(e)
@@ -172,7 +172,7 @@ fn bench_error_create_only(mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=3))
 
     m.bench_function[bench_error_create_only](BenchId("error_create_only"))

@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""Max DType definitions."""
+
 import enum
 
 import numpy
@@ -24,30 +26,30 @@ class DType(enum.Enum):
     """Boolean data type. Stores ``True`` or ``False`` values."""
 
     int8 = 135
-    """8-bit signed integer. Range: -128 to 127."""
+    """8-bit signed integer, range -128 to 127."""
 
     int16 = 137
-    """16-bit signed integer. Range: -32,768 to 32,767."""
+    """16-bit signed integer, range -32,768 to 32,767."""
 
     int32 = 139
-    """32-bit signed integer. Range: -2,147,483,648 to 2,147,483,647."""
+    """32-bit signed integer, range -2,147,483,648 to 2,147,483,647."""
 
     int64 = 141
     """
-    64-bit signed integer. Range: -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807.
+    64-bit signed integer, range -9,223,372,036,854,775,808 to 9,223,372,036,854,775,807.
     """
 
     uint8 = 134
-    """8-bit unsigned integer. Range: 0 to 255."""
+    """8-bit unsigned integer, range 0 to 255."""
 
     uint16 = 136
-    """16-bit unsigned integer. Range: 0 to 65,535."""
+    """16-bit unsigned integer, range 0 to 65,535."""
 
     uint32 = 138
-    """32-bit unsigned integer. Range: 0 to 4,294,967,295."""
+    """32-bit unsigned integer, range 0 to 4,294,967,295."""
 
     uint64 = 140
-    """64-bit unsigned integer. Range: 0 to 18,446,744,073,709,551,615."""
+    """64-bit unsigned integer, range 0 to 18,446,744,073,709,551,615."""
 
     float16 = 79
     """
@@ -166,34 +168,6 @@ class DType(enum.Enum):
 
         Raises:
             ValueError: If the input dtype is not supported.
-        """
-
-    def to_torch(self):
-        """
-        Converts this ``DType`` to the corresponding torch dtype.
-
-        Returns:
-            DType: The corresponding torch dtype object.
-
-        Raises:
-            ValueError: If the dtype is not supported.
-            ImportError: If `torch` isn't installed.
-        """
-
-    @staticmethod
-    def from_torch(tensor) -> DType:
-        """
-        Converts a torch dtype to the corresponding DType.
-
-        Args:
-            dtype (np.dtype): The torch dtype to convert.
-
-        Returns:
-            DType: The corresponding DType enum value.
-
-        Raises:
-            ValueError: If the input dtype is not supported.
-            ImportError: If `torch` isn't installed.
         """
 
     @property

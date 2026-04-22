@@ -7,6 +7,10 @@ _FILECHECK_TESTS = [
     "test_process.mojo",
 ]
 
+_GPU_FILECHECK_TESTS = [
+    "test_trap_gpu.mojo",
+]
+
 _LIT_TESTS = [
     "test_no_trap.mojo",
     "path/test_islink.mojo",
@@ -18,6 +22,7 @@ _ENV = {
 
 _EXPECT_CRASH = [
     "test_trap.mojo",
+    "test_trap_gpu.mojo",
 ]
 
 [
@@ -35,6 +40,32 @@ _EXPECT_CRASH = [
         ],
     )
     for src in _FILECHECK_TESTS
+]
+
+_EXTRA_CONSTRAINTS = {
+    "test_trap_gpu.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-3697
+}
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        expect_crash = src in _EXPECT_CRASH,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + _EXTRA_CONSTRAINTS.get(src, []),
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _GPU_FILECHECK_TESTS
 ]
 
 [
@@ -55,7 +86,7 @@ _EXPECT_CRASH = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS + _LIT_TESTS,
+        exclude = _FILECHECK_TESTS + _GPU_FILECHECK_TESTS + _LIT_TESTS,
     )
 ]
 

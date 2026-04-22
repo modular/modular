@@ -12,27 +12,27 @@
 # ===----------------------------------------------------------------------=== #
 
 import compiler
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor, foreach
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 @compiler.register("add_constant")
 struct AddConstant[value: Int]:
     @staticmethod
-    fn execute[
+    def execute[
         # e.g. "CUDA" or "CPU"
         target: StaticString,
     ](
         output: OutputTensor,
-        x: InputTensor[dtype = output.dtype, rank = output.rank],
+        x: InputTensor[dtype=output.dtype, rank=output.rank, ...],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
     ) raises:
         @parameter
         @always_inline
-        fn add_constant[
+        def add_constant[
             width: Int
         ](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + Scalar[output.dtype](Self.value)
@@ -42,7 +42,7 @@ struct AddConstant[value: Int]:
     # You only need to implement this if you do not manually annotate
     # output shapes in the graph.
     @staticmethod
-    fn shape(
+    def shape(
         x: InputTensor,
     ) raises -> IndexList[x.rank]:
         raise Error("NotImplemented")

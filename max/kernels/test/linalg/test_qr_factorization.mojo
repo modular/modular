@@ -11,20 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand, seed
+from std.os import abort
+from std.random import rand, seed
 
 import internal_utils
-from layout.layout_tensor import UNKNOWN_VALUE, Layout, LayoutTensor
+from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from linalg.qr_factorization import form_q, qr_factorization
-from memory import LegacyUnsafePointer, memcpy
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
+from std.memory import alloc, memcpy
+from std.testing import assert_almost_equal
 
 
 # A is a general matrix, B is a non-unit upper triangular matrix
-fn trmm[
+def trmm[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -47,7 +45,7 @@ fn trmm[
                 C[i, j] += A[i, p] * B[p, j]
 
 
-fn a_mul_bt[
+def a_mul_bt[
     dtype: DType,
     element_layout: Layout,
 ](
@@ -76,7 +74,7 @@ def all_almost_id[
     A: LayoutTensor[dtype, element_layout=element_layout, ...],
     atol: Float64,
     rtol: Float64,
-):
+) raises:
     m, n = Int(A.runtime_layout.shape[0]), Int(A.runtime_layout.shape[1])
     for i in range(m):
         for j in range(n):
@@ -86,11 +84,11 @@ def all_almost_id[
             assert_almost_equal(A[i, j], reference, atol=atol, rtol=rtol)
 
 
-fn create_vector[
+def create_vector[
     dtype: DType, layout: Layout
 ](
     m: Int,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
     var dynamic_layout = type_of(result.runtime_layout)(
@@ -100,12 +98,12 @@ fn create_vector[
     return {ptr, dynamic_layout}
 
 
-fn create_tensor[
+def create_tensor[
     dtype: DType, layout: Layout
 ](
     m: Int,
     n: Int,
-    ptr: UnsafePointer[Scalar[dtype]],
+    ptr: UnsafePointer[mut=True, Scalar[dtype], _],
     out result: LayoutTensor[dtype, layout, ptr.origin],
 ):
     var dynamic_layout = type_of(result.runtime_layout)(
@@ -115,7 +113,7 @@ fn create_tensor[
     return {ptr, dynamic_layout}
 
 
-def main():
+def main() raises:
     atol = 1e-5
     rtol = 1e-3
     m, n = 80, 50
@@ -123,9 +121,9 @@ def main():
     comptime a_layout = Layout.row_major(UNKNOWN_VALUE, UNKNOWN_VALUE)
     comptime v_layout = Layout(UNKNOWN_VALUE)
     comptime T = Float32
-    var a_ptr = UnsafePointer[T]().alloc(m * n)
-    var a_ptr_copy = UnsafePointer[T]().alloc(m * n)
-    var v_ptr = UnsafePointer[T]().alloc(min_mn)
+    var a_ptr = alloc[T](m * n)
+    var a_ptr_copy = alloc[T](m * n)
+    var v_ptr = alloc[T](min_mn)
     seed(123)
     rand[DType.float32](a_ptr, m * n)
     var a = create_tensor[DType.float32, a_layout](m, n, a_ptr)
@@ -135,18 +133,18 @@ def main():
     var v = create_vector[DType.float32, v_layout](min_mn, v_ptr)
     qr_factorization[DType.float32](v, a)
     # form Q
-    var q_ptr = UnsafePointer[T]().alloc(m * m)
+    var q_ptr = alloc[T](m * m)
     var q = create_tensor[DType.float32, a_layout](m, m, q_ptr)
     form_q[DType.float32](v, a, q)
     print("check backward stability")
-    var q_mul_r_ptr = UnsafePointer[T]().alloc(m * n)
+    var q_mul_r_ptr = alloc[T](m * n)
     var q_mul_r = create_tensor[DType.float32, a_layout](m, n, q_mul_r_ptr)
     trmm[DType.float32](q, a, q_mul_r)
     internal_utils.assert_almost_equal(
         q_mul_r.ptr, a_copy.ptr, m * n, atol=atol, rtol=rtol
     )
     print("check orthogonality")
-    var q_mul_qt_ptr = UnsafePointer[T]().alloc(m * m)
+    var q_mul_qt_ptr = alloc[T](m * m)
     var q_mul_qt = create_tensor[DType.float32, a_layout](m, m, q_mul_qt_ptr)
     a_mul_bt[DType.float32](q, q, q_mul_qt)
     all_almost_id(q_mul_qt, atol=atol, rtol=rtol)

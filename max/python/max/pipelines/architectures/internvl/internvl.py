@@ -32,26 +32,29 @@ from max.graph import (
 from max.graph.ops.allgather import allgather
 from max.graph.ops.resize import InterpolationMode
 from max.graph.weight import _compute_shard_range
-from max.nn.legacy.attention import TensorParallelAttentionWithRope
-from max.nn.legacy.attention.mask_config import MHAMaskVariant
-from max.nn.legacy.comm import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.kernels import flash_attention_gpu
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import LayerNorm, RMSNorm
-from max.nn.legacy.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.attention import (
+    TensorParallelAttentionWithRope,
+    num_heads_for_device,
+)
+from max.nn.attention.mask_config import MHAMaskVariant
+from max.nn.comm import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kernels import flash_attention_gpu
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import LayerNorm, RMSNorm
+from max.nn.rotary_embedding import DynamicRotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+)
 from max.pipelines.architectures.llama3.model_config import (
     Llama3Config as Qwen2Config,
 )
 from max.pipelines.architectures.qwen3.model_config import Qwen3Config
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
-from .embedding_utils import merge_multimodal_embeddings
-from .layers.attention import (
-    InternVLMultiheadAttention,
-    compute_heads_per_device,
-)
+from .layers.attention import InternVLMultiheadAttention
 from .model_config import InternVLConfig
 
 
@@ -62,21 +65,6 @@ class DeviceAttentionParams:
     device_heads: int
     head_start: int
     head_dim: int
-
-
-def distribute_value(
-    v: TensorValue, devices: Sequence[DeviceRef]
-) -> list[TensorValue]:
-    """Distributes a tensor value across multiple devices.
-
-    Args:
-        v: The tensor value to distribute.
-        devices: The list of devices to distribute the tensor across.
-
-    Returns:
-        A list of tensor values, one per device.
-    """
-    return [v.to(device) for device in devices]
 
 
 class InternVLDecoderLayer(Module):
@@ -209,8 +197,8 @@ class InternVLDecoderLayer(Module):
             norm_xs,
             signal_buffers,
             kv_collections,
-            freqs_cis=freqs_cis,
-            input_row_offsets=input_row_offsets,
+            freqs_cis,
+            input_row_offsets,
         )
 
         # Add residual.
@@ -235,7 +223,7 @@ class InternVLDecoderLayer(Module):
         return hs
 
 
-class InternVLLanguageModel(Module):
+class InternVLLanguageModel(DistributedLogitsPostprocessMixin, Module):
     """Implements the language model component of InternVL.
 
     This model is based on Qwen2.5 architecture and is designed to process
@@ -326,13 +314,15 @@ class InternVLLanguageModel(Module):
             quantization_encoding=None,
         )
 
+        self.return_logits = config.llm_config.return_logits
+
         # Store image context token ID.
         self.image_context_token_id = image_context_token_id
 
     def __call__(
         self,
         tokens: TensorValue,
-        signal_buffers: Iterable[BufferValue],
+        signal_buffers: Sequence[BufferValue],
         kv_collections: Sequence[PagedCacheValues],
         return_n_logits: TensorValue,
         input_row_offsets: Sequence[TensorValue],
@@ -371,7 +361,7 @@ class InternVLLanguageModel(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         # Run through decoder layers.
         for idx, layer in enumerate(self.layers):
@@ -384,27 +374,9 @@ class InternVLLanguageModel(Module):
                 input_row_offsets=input_row_offsets,
             )
 
-        # Get last token logits only (no variable logits support).
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    norm_shard(h)
-                    for norm_shard, h in zip(
-                        self.norm_shards, last_token_h, strict=True
-                    )
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        return (last_logits,)
 
 
 class InternVisionEmbeddings(Module, Shardable):
@@ -440,7 +412,7 @@ class InternVisionEmbeddings(Module, Shardable):
             in_dim=3 * self.patch_size * self.patch_size,
             out_dim=self.embed_dim,
             dtype=self.dtype,
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
             has_bias=True,
         )
 
@@ -451,14 +423,14 @@ class InternVisionEmbeddings(Module, Shardable):
             "class_embedding",
             dtype=self.dtype,
             shape=(1, 1, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
         )
 
         self.position_embedding = Weight(
             "position_embedding",
             dtype=self.dtype,
             shape=(1, self.num_positions, self.embed_dim),
-            device=device if device else DeviceRef.CPU(),
+            device=device or DeviceRef.CPU(),
         )
 
     @property
@@ -1033,8 +1005,8 @@ class InternVisionEncoderLayer(Module):
             DeviceAttentionParams with device-specific attention parameters
         """
         num_heads = self.config.vision_config.num_attention_heads
-        device_heads = compute_heads_per_device(
-            total_heads=num_heads,
+        device_heads = num_heads_for_device(
+            num_heads=num_heads,
             device_idx=device_idx,
             num_devices=len(self.devices),
         )
@@ -1143,9 +1115,7 @@ class InternVisionEncoderLayer(Module):
         for i, norm_out in enumerate(norm1_outs):
             attn = self.attn_per_device[i]
             # Rowwise QKV projection - each device computes partial QKV
-            qkv = norm_out @ attn.wqkv.T
-            if attn.wqkv_bias is not None:
-                qkv += attn.wqkv_bias
+            qkv = attn.qkv_proj(norm_out)
             qkv_outs.append(qkv)
 
         # Split QKV into components per device
@@ -1315,12 +1285,6 @@ class InternVLVisionModel(Module):
         self.config = config
         self.devices = config.devices
 
-        default_device = (
-            config.llm_config.devices[0]
-            if config.llm_config.devices
-            else DeviceRef.CPU()
-        )
-
         self.embeddings = InternVisionEmbeddings(config)
         self.embeddings.sharding_strategy = ShardingStrategy.replicate(
             len(config.devices)
@@ -1378,7 +1342,6 @@ class InternVLVisionModel(Module):
         assert self.ps_version != "v1"
 
         batch_size = x.shape[0]
-        c = x.shape[3]
 
         # Common case: downsample by 2x.
         # [N, H, W, C] -> [N, H, W/2, C*2].

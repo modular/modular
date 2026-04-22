@@ -11,65 +11,73 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OptionalReg
-from math import ceildiv, recip
-from math.constants import log2e
-
-from sys import size_of, simd_width_of
-from sys.info import _cdna_4_or_newer
-from sys.intrinsics import _type_is_eq
-from sys._assembly import inlined_assembly
-from algorithm.functional import unswitch
-from gpu import barrier, block_idx, lane_id, thread_idx
-from gpu import warp_id as get_warp_id
-from layout import Layout, LayoutTensor
-from layout._utils import idx2crd, make_amd_buffer_resource
-from layout.int_tuple import UNKNOWN_VALUE
-from layout.layout import blocked_product
-from layout.layout_tensor import (
-    ThreadScope,
-    copy_dram_to_local,
-    copy_local_to_dram,
-)
-from memory import bitcast
-from sys.intrinsics import readfirstlane
-from nn.mha_mask import CausalMask, MASK_VALUE, MaterializedMask
+from std.collections import OptionalReg
+from std.math import ceildiv
+from std.math.constants import log2e
+from std.memory import bitcast
+from std.sys import size_of
+from std.sys.intrinsics import _type_is_eq, readfirstlane
+from std.sys._assembly import inlined_assembly
+from std.gpu import barrier, block_idx, lane_id, thread_idx
+from layout import Layout, LayoutTensor, TileTensor, UNKNOWN_VALUE
 from layout.swizzle import Swizzle
+from layout import row_major as tt_row_major
+from layout._utils import idx2crd
+from structured_kernels.amd_tile_io import RegTileWriter
+from layout.layout_tensor import copy_local_to_dram, ThreadScope
+from nn.attention.mha_mask import CausalMask
 from layout.tensor_core import TiledTensorCore, num_matrix_reg
-from memory.pointer import AddressSpace as BaseAddressSpace
-from nn.mha_mask import MHAMask, TileMaskStatus
-from nn.mha_operand import MHAOperand
-from nn.mha_utils import (
-    MHAConfig,
-    _kernel_mask,
-    get_start_and_end_for_partitions,
-)
+from nn.attention.mha_mask import MHAMask, TileMaskStatus
+from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_utils import MHAConfig, _kernel_mask
 from .softmax import Softmax
-from sys import _RegisterPackType
-from utils import Index, IndexList
-from utils.numerics import get_accum_type, min_or_neg_inf
+from std.sys import _RegisterPackType
+from std.utils import Index, IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
 
 from .buffers import (
-    KBuffer,
     KVBuffer,
     OutputRegisterBuffer,
     PRegisterBuffer,
     QRegisterBuffer,
-    VBuffer,
-    VBufferTransposeLoads,
 )
-from .mma import mma
+from .mma import TiledMmaOp
 from .utils import (
     GlobalMemoryManager,
-    LocalLayoutTensor,
-    SharedLayoutTensor,
     SharedMemoryManager,
-    copy_local_to_dram2,
     get_fragment_layout,
     get_nested_fragment_layout,
     get_warp_coords,
     get_warp_layout,
 )
+
+
+@always_inline
+def _b_mma[
+    T: KVBuffer
+](b: T) -> TileTensor[
+    T._dtype,
+    type_of(
+        tt_row_major[
+            T.mma_tile_layout.shape[0].value(),
+            T.mma_tile_layout.shape[1].value(),
+        ]()
+    ),
+    MutAnyOrigin,
+    address_space=AddressSpace.LOCAL,
+]:
+    """Convert a KVBuffer's MMA LayoutTensor to TileTensor."""
+    comptime rows = T.mma_tile_layout.shape[0].value()
+    comptime cols = T.mma_tile_layout.shape[1].value()
+    comptime TTType = TileTensor[
+        T._dtype,
+        type_of(tt_row_major[rows, cols]()),
+        MutAnyOrigin,
+        address_space=AddressSpace.LOCAL,
+    ]
+    return rebind[TTType](
+        TileTensor(b.get_mma_tile().ptr, tt_row_major[rows, cols]())
+    )
 
 
 trait AttentionConfig(ImplicitlyCopyable):
@@ -81,40 +89,42 @@ trait AttentionConfig(ImplicitlyCopyable):
     comptime depth_padded: Bool
     # double buffer
     comptime double_buffer: Bool
+    # double buffer K only (V stays single-buffered)
+    comptime double_buffer_k_only: Bool
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         ...
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         ...
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         ...
 
     @staticmethod
     @always_inline
-    fn get_mma_shape() -> IndexList[3]:
+    def get_mma_shape() -> IndexList[3]:
         ...
 
     @staticmethod
     @always_inline
-    fn get_q_offset[q_depth: UInt]() -> UInt32:
+    def get_q_offset[q_depth: Int]() -> UInt32:
         ...
 
     @staticmethod
     @always_inline
-    fn get_output_offset[output_depth: UInt]() -> UInt32:
+    def get_output_offset[output_depth: Int]() -> UInt32:
         ...
 
 
 @always_inline
-fn _mask_apply[
+def _mask_apply[
     attention_config_t: AttentionConfig,
     accum_type: DType,
     token_gen: Bool,
@@ -138,11 +148,14 @@ fn _mask_apply[
     mask_warp_col: UInt32,
     scale: Scalar[accum_type],
     mask: mask_t,
-    p_reg_vectorized: LayoutTensor[mut=True, accum_type, ...],
+    p_reg_tile: TileTensor[mut=True, accum_type, ...],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):
     comptime output_frag_size = fragment_layout.size()
+    var p_reg_vectorized = p_reg_tile.to_layout_tensor().vectorize[
+        1, output_frag_size
+    ]()
 
     comptime rowwise_stride = fragment_layout.shape[0].value()
     comptime colwise_stride = fragment_layout.shape[1].value()
@@ -151,20 +164,16 @@ fn _mask_apply[
 
     var lane = lane_id()
 
-    var coords = idx2crd[warp_layout](Int(lane))
+    var coords = idx2crd[warp_layout](lane)
     var lane_row = coords[0] * rowwise_stride
     var lane_col = coords[1] * colwise_stride
 
-    @parameter
-    if token_gen:
+    comptime if token_gen:
         if lane_row >= group:
             return
 
-    @parameter
-    for m_mma in range(num_m_mmas):
-
-        @parameter
-        for n_mma in range(num_n_mmas):
+    comptime for m_mma in range(num_m_mmas):
+        comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             # Coordinates in mask for current mma tile.
@@ -187,44 +196,23 @@ fn _mask_apply[
             comptime is_causal_mask = _type_is_eq[mask_t, CausalMask]()
 
             if masked:
-
-                @parameter
-                for j in range(0, output_frag_size, 2 if is_causal_mask else 1):
-                    var q_head_idx = attention_config_t.q_head_idx()
-
-                    @parameter
-                    if is_causal_mask:
-                        var x_0 = Int32(
-                            score_row_with_start_pos
-                            - score_col_with_cache_start_pos
-                        )
+                comptime if is_causal_mask and not token_gen:
+                    var x_0 = Int32(
+                        score_row_with_start_pos
+                        - score_col_with_cache_start_pos
+                    )
+                    comptime for j in range(0, output_frag_size, 2):
                         comptime y_0 = Int32(fragment_layout(j)) - 1
                         var val_0 = p_reg_vectorized[mma_id, 0][j]
-
                         comptime y_1 = Int32(fragment_layout(j + 1)) - 1
                         var val_1 = p_reg_vectorized[mma_id, 0][j + 1]
-                        var val_inf = Scalar[accum_type](-10000.0)
-
-                        # v_cmp writing to 2 sgprs or vcc requires waiting for 1 cycle
-                        # before they can be used in another VALU instruction.
-                        # Using 2 cmp and 2 cndmask instructions avoids this wait.
-                        # Without using this inline asm, we would stall for a cycle after each comparison.
-                        # the generated asm without this would be:
-                        # v_cmp_lt_i32_e32 vcc, -1, v221
-                        # s_nop 1
-                        # v_cndmask_b32_e32 v82, v227, v82, vcc
-                        # v_cmp_lt_i32_e32 vcc, 0, v221
-                        # s_nop 1
-                        # v_cndmask_b32_e32 v83, v227, v83, vcc
-
-                        # this inline asm does the same thing as CausalMask.mask(),
-                        # it just processes 2 elements at a time vs. 1.
                         comptime asm = """
-                            v_cmp_lt_i32_e64 $2, $5, $4
-                            v_cmp_lt_i32_e64 $3, $8, $7
-                            v_cndmask_b32_e64 $0, $10, $6, $2
-                            v_cndmask_b32_e64 $1, $10, $9, $3
-                            """
+                                v_mov_b32 $4, 0xc61c4000
+                                v_cmp_lt_i32_e64 $2, $6, $5
+                                v_cmp_lt_i32_e64 $3, $9, $8
+                                v_cndmask_b32_e64 $0, $4, $7, $2
+                                v_cndmask_b32_e64 $1, $4, $10, $3
+                                """
                         var ret = inlined_assembly[
                             asm,
                             _RegisterPackType[
@@ -232,30 +220,21 @@ fn _mask_apply[
                                 Scalar[accum_type],
                                 Int64,
                                 Int64,
+                                Scalar[accum_type],
                             ],
-                            constraints="=v,=v,=&s,=&s,v,n,v,v,n,v,v,~{vcc}",
-                        ](x_0, y_0, val_0, x_0, y_1, val_1, val_inf)
+                            constraints="=v,=v,=&s,=&s,=&v,v,n,v,v,n,v,~{vcc}",
+                        ](x_0, y_0, val_0, x_0, y_1, val_1)
                         p_reg_vectorized[mma_id, 0][j] = ret[0]
                         p_reg_vectorized[mma_id, 0][j + 1] = ret[1]
 
-                        # p_reg_vectorized[mma_id, 0][j] = mask.mask[
-                        #     element_type = DType.int32
-                        # ](
-                        #     IndexList[4, element_type = DType.int32](
-                        #         Int(block_idx.z),
-                        #         Int(q_head_idx),
-                        #         Int(score_row_with_start_pos)
-                        #         - Int(score_col_with_cache_start_pos),
-                        #         Int(fragment_col),
-                        #     ),
-                        #     p_reg_vectorized[mma_id, 0][j],
-                        # )
-                    else:
+                else:
+                    var q_head_idx = attention_config_t.q_head_idx()
+                    comptime for j in range(0, output_frag_size, 1):
                         comptime fragment_col = fragment_layout(j)
                         p_reg_vectorized[mma_id, 0][j] = mask.mask(
-                            IndexList[4, element_type = DType.uint32](
-                                Int(block_idx.z),
-                                Int(q_head_idx),
+                            IndexList[4, element_type=DType.uint32](
+                                block_idx.z,
+                                q_head_idx,
                                 Int(score_row_with_start_pos),
                                 Int(
                                     score_col_with_cache_start_pos
@@ -265,8 +244,7 @@ fn _mask_apply[
                             p_reg_vectorized[mma_id, 0][j],
                         )
 
-            @parameter
-            if mask_t.apply_log2e_after_mask:
+            comptime if mask_t.apply_log2e_after_mask:
                 p_reg_vectorized[mma_id, 0] = (
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
@@ -277,18 +255,17 @@ fn _mask_apply[
                     + kv_tile_num_rows if token_gen else num_keys
                 )
 
-                @parameter
-                for j in range(output_frag_size):
+                comptime for j in range(output_frag_size):
                     comptime fragment_col = fragment_layout(j)
 
                     var bound_x = num_keys if token_gen else seq_len
 
                     p_reg_vectorized[mma_id, 0][j] = _kernel_mask(
-                        IndexList[2, element_type = DType.uint32](
+                        IndexList[2, element_type=DType.uint32](
                             Int(score_row),
                             Int(score_col + UInt32(fragment_col)),
                         ),
-                        IndexList[2, element_type = DType.uint32](
+                        IndexList[2, element_type=DType.uint32](
                             Int(bound_x), Int(bound_y)
                         ),
                         p_reg_vectorized[mma_id, 0][j],
@@ -307,22 +284,22 @@ struct Attention[
     group: Int,
     token_gen: Bool,
     sink: Bool,
-    q_depth: Int = Int(config.depth),
-    cache_depth: Int = Int(config.depth),
-    output_depth: Int = Int(config.depth),
+    q_depth: Int = config.depth,
+    cache_depth: Int = config.depth,
+    output_depth: Int = config.depth,
 ]:
-    comptime BM = Self.config.block_m()
-    comptime BN = Self.config.block_n()
-    comptime BK = Self.config.block_k()
-    comptime WM = Self.config.warp_m()
-    comptime WN = Self.config.warp_n()
-    comptime num_threads = Self.config.num_threads()
-    comptime num_heads = Self.config.num_heads
-    comptime num_warps_n = Self.BN // Self.WN
-    comptime num_warps_m = Self.BM // Self.WM
-    comptime depth = Self.config.depth
-    comptime accum_type = get_accum_type[Self.q_type]()
+    comptime BM: Int = Self.config.block_m()
+    comptime BN: Int = Self.config.block_n()
+    comptime BK: Int = Self.config.block_k()
+    comptime WM: Int = Self.config.warp_m()
+    comptime WN: Int = Self.config.warp_n()
+    comptime num_threads: Int = Self.config.num_threads()
+    comptime num_heads: Int = Self.config.num_heads
+    comptime num_warps_n: Int = Self.BN // Self.WN
+    comptime num_warps_m: Int = Self.BM // Self.WM
+    comptime depth: Int = Self.config.depth
 
+    comptime accum_type = get_accum_type[Self.q_type]()
     comptime mma_shape = Self.attention_config_t.get_mma_shape()
 
     comptime fragment_layout = get_fragment_layout[Self.mma_shape]()
@@ -331,22 +308,33 @@ struct Attention[
         Self.mma_shape
     ]()
 
-    comptime num_m_mmas = ceildiv(Self.WM, UInt(Self.mma_shape[0]))
-    comptime num_n_mmas = ceildiv(Self.WN, UInt(Self.mma_shape[1]))
-    comptime num_n_mmas_output = ceildiv(
-        Self.output_depth // Int(Self.num_warps_n), Self.mma_shape[1]
+    comptime num_m_mmas: Int = ceildiv(Self.WM, Self.mma_shape[0])
+    comptime num_n_mmas: Int = ceildiv(Self.WN, Self.mma_shape[1])
+
+    comptime num_n_mmas_output: Int = ceildiv(
+        Self.output_depth // Self.num_warps_n, Self.mma_shape[1]
     )
 
     comptime swap_a_b = True
     comptime use_exp2 = True
-    # we want to load 16B of data for each fragment so k_group_size is set such that
-    # k_group_size * num_matrix_fragments * size_of[Self.q_type]() = 16B
-    comptime k_group_size = 16 // (
-        num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
-        * size_of[Self.q_type]()
+    # We want to load 16B of data for each fragment so k_group_size is set
+    # such that k_group_size * num_matrix_fragments * size_of[q_type]() = 16B.
+    # Capped at 1 minimum and BK//MMA_K maximum to avoid exceeding tile bounds.
+    # On gfx950 this evaluates to 1; on gfx942 it can be 2.
+    comptime k_group_size: Int = max(
+        1,
+        min(
+            16
+            // (
+                num_matrix_reg[Self.mma_shape[0], Self.mma_shape[2]]()
+                * size_of[Self.q_type]()
+            ),
+            Self.BK // Self.mma_shape[2],
+        ),
     )
-    comptime num_k_mmas2 = ceildiv(
-        Self.BK, UInt(Self.mma_shape[2] * Self.k_group_size)
+
+    comptime num_k_mmas2: Int = ceildiv(
+        Self.BK, Self.mma_shape[2] * Self.k_group_size
     )
 
     comptime warp_layout = get_warp_layout[Self.mma_shape]()
@@ -355,29 +343,44 @@ struct Attention[
 
     comptime OutputRegisterBufferType = OutputRegisterBuffer[
         Self.accum_type,
-        Int(Self.num_m_mmas),
+        Self.num_m_mmas,
         Self.num_n_mmas_output,
         Self.output_frag_size,
     ]
 
+    # P swizzle for shared_memory_backed path (BN != WN, 16x16 MMA).
+    # Swizzle(3,0,3) XORs bits [5:3] into [2:0] of the 8-element group
+    # index, spreading rows across LDS bank groups. Achieves 0.93% bank
+    # conflict rate (P writes only — reads are conflict-free on MI355).
+    comptime _p_shared_memory_backed = Self.BN != Self.WN
+    comptime _p_swizzle = (
+        Swizzle(3, 0, 3) if (
+            Self._p_shared_memory_backed
+            and Self.mma_shape[0] == 16
+            # Disable for FP8 16x16x128: interleaved layout doesn't fit
+            # when BK=128 (4 warps × 2 n_mmas × 4 frag_w = 32 > simd_w=16).
+            and Self.mma_shape[2] <= 2 * Self.mma_shape[1]
+        ) else Optional[Swizzle](None)
+    )
+
     comptime PRegisterBufferType = PRegisterBuffer[
         Self.accum_type,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.WM),
-        Int(Self.WN),
-        Int(Self.num_m_mmas),
-        Int(Self.num_n_mmas),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.WM,
+        Self.WN,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
         Self.output_frag_size,
-        Self.BN != Self.WN,
+        Self._p_shared_memory_backed,
         Self.mma_shape,
         Self.k_group_size,
-        # use double buffer as proxy for experimental kernel
-        # need to find a better way to determine this
-        tr_load_enabled = Self.attention_config_t.double_buffer,
-        num_stages = 2 if Self.attention_config_t.double_buffer else 1,
+        # full_kv=True means gfx950 kernel which needs tr_load for 32x32 MMA
+        tr_load_enabled=Self.attention_config_t.full_kv,
+        num_stages=2 if Self.attention_config_t.double_buffer else 1,
+        p_swizzle=Self._p_swizzle,
     ]
 
     comptime GlobalMemoryManagerType = GlobalMemoryManager[
@@ -399,23 +402,24 @@ struct Attention[
         Self.attention_config_t.depth_padded,
         Self.attention_config_t.double_buffer,
         Self.q_type,
-        Int(Self.BM),
-        Int(Self.BN),
-        Int(Self.BK),
-        Int(Self.depth),
+        Self.BM,
+        Self.BN,
+        Self.BK,
+        Self.depth,
         Self.token_gen,
+        double_buffer_k_only=Self.attention_config_t.double_buffer_k_only,
     ]
 
     comptime QRegisterBufferType = QRegisterBuffer[
-        dtype = Self.q_type,
-        mma_shape = Self.mma_shape,
-        k_group_size = Self.k_group_size,
-        WM = Int(Self.WM),
-        WN = Int(Self.WN),
-        BN = Int(Self.BN),
-        BK = Int(Self.BK),
-        depth = Self.q_depth,
-        thread_layout = Self.warp_layout,
+        dtype=Self.q_type,
+        mma_shape=Self.mma_shape,
+        k_group_size=Self.k_group_size,
+        WM=Self.WM,
+        WN=Self.WN,
+        BN=Self.BN,
+        BK=Self.BK,
+        depth=Self.q_depth,
+        thread_layout=Self.warp_layout,
     ]
 
     var out_reg_buffer: Self.OutputRegisterBufferType
@@ -447,61 +451,82 @@ struct Attention[
 
     var softmax: Softmax[
         Self.accum_type,
-        Layout.row_major(Int(Self.num_m_mmas), Int(Self.num_n_mmas)),
-        Layout.row_major(Int(Self.num_warps_m), Int(Self.num_warps_n)),
+        Layout.row_major(Self.num_m_mmas, Self.num_n_mmas),
+        Layout.row_major(Self.num_warps_m, Self.num_warps_n),
         Self.warp_layout,
         Self.fragment_layout,
         Self.use_exp2,
     ]
 
-    var warp_scratch_tensor: SharedLayoutTensor[
+    comptime _warp_scratch_layout = tt_row_major[
+        2 * Int(Self.num_warps_n), Int(Self.BM)
+    ]()
+    var warp_scratch_tensor: TileTensor[
         Self.accum_type,
-        Layout.row_major(2 * Int(Self.num_warps_n), Int(Self.BM)),
+        type_of(Self._warp_scratch_layout),
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     @staticmethod
     @always_inline
-    fn q_head_idx() -> UInt:
+    def q_head_idx() -> Int:
         return Self.attention_config_t.q_head_idx()
 
     @staticmethod
     @always_inline
-    fn q_tile_idx() -> UInt:
+    def q_tile_idx() -> Int:
         return Self.attention_config_t.q_tile_idx()
 
     @staticmethod
     @always_inline
-    fn kv_head_idx() -> UInt:
+    def kv_head_idx() -> Int:
         return Self.attention_config_t.kv_head_idx()
 
     @always_inline
-    fn zero_p_buffer[stage: Int = 0](self):
+    def zero_p_buffer[stage: Int = 0](self):
         self.p_reg_buffer.zero[stage]()
 
     @always_inline
-    fn get_batch_idx(self) -> Int:
+    def get_batch_idx(self) -> Int:
         return self.batch_idx
 
     @always_inline
-    fn scale_p_reg[stage: Int = 0](self):
-        var p_reg_vectorized = self.p_reg_buffer.vectorize[stage]()
+    def scale_q_buffer(self):
+        """Pre-scale Q registers by scale factor (scale * log2e).
 
-        @parameter
-        for m_mma in range(Self.num_m_mmas):
+        After this, QK matmul produces already-scaled scores so the
+        hot loop can skip per-element scale multiplication. The Q values
+        are cast to f32, scaled, then quantized back to bf16.
+        """
+        self.q_buffer.scale[Self.accum_type](self.scale)
 
-            @parameter
-            for n_mma in range(Self.num_n_mmas):
+    @always_inline
+    def scale_p_reg[stage: Int = 0](self):
+        var p_vec = self.p_reg_buffer.stage_tile[stage]().vectorize[
+            1, Self.output_frag_size
+        ]()
+
+        comptime for m_mma in range(Self.num_m_mmas):
+            comptime for n_mma in range(Self.num_n_mmas):
                 comptime mma_id = n_mma * Self.num_m_mmas + m_mma
-                p_reg_vectorized[mma_id, 0] *= self.scale
+                p_vec[mma_id, 0] = p_vec[mma_id, 0] * self.scale
+
+    comptime MmaOp = TiledMmaOp[
+        get_accum_type[Self.q_type](),
+        Self.q_type,
+        Self.mma_shape,
+        group_size=Self.k_group_size,
+    ]
 
     @staticmethod
     @always_inline
-    fn get_tensor_core_mma_qk(
+    def get_tensor_core_mma_qk(
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=True,
         ],
     ):
@@ -509,102 +534,186 @@ struct Attention[
 
     @staticmethod
     @always_inline
-    fn get_tensor_core_mma_pv(
+    def get_tensor_core_mma_pv(
         out result: TiledTensorCore[
             get_accum_type[Self.q_type](),
             Self.q_type,
             Self.mma_shape,
-            group_size = Self.k_group_size,
+            group_size=Self.k_group_size,
             transpose_b=False,
         ],
     ):
         return type_of(result)()
 
     @always_inline
-    fn mma_qk[
+    def mma_qk[
         k_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn() capturing -> None] = None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
         beg_iter: Int = 0,
-        num_iters: Int = Int(Self.depth // Self.BK),
+        num_iters: Int = Self.depth // Self.BK,
         prefetched_b_tile: Bool = False,
     ](mut self, mut k_buffer: k_buffer_type):
-        mma[
-            tensor_core_mma = Self.get_tensor_core_mma_qk(),
-            BK = Int(Self.BK),
+        comptime num_k_mmas = ceildiv(
+            Int(Self.BK), Self.mma_shape[2] * Self.k_group_size
+        )
+
+        @parameter
+        @always_inline
+        def do_mma[i: Int, k_mma: Int]():
+            Self.MmaOp.mma[swap_a_b=Self.swap_a_b](
+                self.q_buffer.mma_tile[i, k_mma](),
+                _b_mma(k_buffer),
+                self.p_reg_buffer.reg_tile,
+            )
+
+        Self._dma_loop[
+            num_k_mmas=num_k_mmas,
+            mma_fn=do_mma,
             prefetch_function=prefetch_function,
-            swap_a_b = Self.swap_a_b,
             beg_iter=beg_iter,
             num_iters=num_iters,
             prefetched_b_tile=prefetched_b_tile,
-        ](
-            self.p_reg_buffer,
-            self.q_buffer,
-            k_buffer,
-        )
+        ](k_buffer)
 
     @always_inline
-    fn mma_pv[
+    def mma_pv[
         v_buffer_type: KVBuffer,
         //,
-        prefetch_function: OptionalReg[fn() capturing -> None] = None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
         prefetched_b_tile: Bool = True,
     ](mut self, mut v_buffer: v_buffer_type):
-        mma[
-            tensor_core_mma = Self.get_tensor_core_mma_pv(),
-            BK = Int(Self.BK),
-            prefetch_function=prefetch_function,
-            swap_a_b = Self.swap_a_b,
-            num_iters = Int(Self.BN // Self.BK),
-            prefetched_b_tile=prefetched_b_tile,
-        ](
-            self.out_reg_buffer,
-            self.p_reg_buffer,
-            v_buffer,
+        comptime num_k_mmas = ceildiv(
+            Int(Self.BK), Self.mma_shape[2] * Self.k_group_size
         )
 
+        @parameter
+        @always_inline
+        def do_mma[i: Int, k_mma: Int]():
+            Self.MmaOp.mma[swap_a_b=Self.swap_a_b](
+                self.p_reg_buffer.mma_tile[i, k_mma](),
+                _b_mma(v_buffer),
+                self.out_reg_buffer.reg_tile,
+            )
+
+        Self._dma_loop[
+            num_k_mmas=num_k_mmas,
+            mma_fn=do_mma,
+            prefetch_function=prefetch_function,
+            num_iters=Int(Self.BN // Self.BK),
+            prefetched_b_tile=prefetched_b_tile,
+        ](v_buffer)
+
+    @staticmethod
     @always_inline
-    fn mask_status(
+    def _dma_loop[
+        b_buffer_type: KVBuffer,
+        //,
+        num_k_mmas: Int,
+        mma_fn: def[i: Int, k_mma: Int]() capturing -> None,
+        prefetch_function: OptionalReg[def() capturing -> None] = None,
+        beg_iter: Int = 0,
+        num_iters: Int = 1,
+        prefetched_b_tile: Bool = False,
+    ](mut b_tile: b_buffer_type,):
+        """Orchestrate DMA pipeline: DRAM->SMEM->registers, then call mma_fn.
+
+        Parameters:
+            b_buffer_type: KV buffer type for DMA orchestration.
+            num_k_mmas: Number of MMA tiles along the K dimension.
+            mma_fn: Comptime callback invoked per (iter, k_mma) after
+                B registers are loaded.
+            prefetch_function: Optional function to prefetch the next tile.
+            beg_iter: Starting iteration index.
+            num_iters: Number of iterations over tiles.
+            prefetched_b_tile: Whether B tile is already prefetched.
+
+        Args:
+            b_tile: KV buffer for DMA orchestration.
+        """
+        comptime assert (
+            b_buffer_type._num_stages == 1 or b_buffer_type._num_stages == 2
+        ), "b_tile.num_stages must be 1 or 2"
+
+        comptime if b_buffer_type._num_stages == 1:
+            comptime for i in range(beg_iter, beg_iter + num_iters):
+                b_tile.load_from_dram()
+                b_tile.copy_to_shared[0]()
+
+                barrier()
+
+                comptime for k_mma in range(num_k_mmas):
+                    b_tile.load_from_shared[k_mma,]()
+                    mma_fn[i, k_mma]()
+
+                comptime if i == beg_iter + num_iters - 2:
+                    comptime if prefetch_function:
+                        comptime prefetch_func = prefetch_function.value()
+                        prefetch_func()
+
+                barrier()
+        else:
+            comptime if not prefetched_b_tile:
+                b_tile.load_from_dram()
+
+            comptime for i in range(beg_iter, beg_iter + num_iters):
+                comptime if i < beg_iter + num_iters - 1:
+                    b_tile.load_from_dram()
+
+                    comptime if i == beg_iter + num_iters - 2:
+                        comptime if prefetch_function:
+                            comptime prefetch_func = prefetch_function.value()
+                            prefetch_func()
+
+                b_tile.copy_to_shared[i % 2]()
+
+                barrier()
+
+                comptime for k_mma in range(num_k_mmas):
+                    b_tile.load_from_shared[k_mma,]()
+                    mma_fn[i, k_mma]()
+
+                barrier()
+
+    @always_inline
+    def mask_status(
         self,
         kv_tile_start_row: UInt32,
     ) -> TileMaskStatus:
-        @parameter
-        if Self.token_gen:
+        comptime if Self.token_gen:
             # Decoding with mask checking: check single token at num_keys-1
             return self.mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     self.num_keys - 1,
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype = DType.uint32](Int(1), Int(Self.BN)),
+                Index[dtype=DType.uint32](1, Self.BN),
             )
         else:
             # Prefill or decoding without mask checking: check full tile
             return self.mask.status(
-                Index[dtype = DType.uint32](
+                Index[dtype=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype = DType.uint32](Int(Self.BM), Int(Self.BN)),
+                Index[dtype=DType.uint32](Self.BM, Self.BN),
             )
 
     @always_inline
-    fn mask_advance(mut self):
-        @parameter
-        if not Self.token_gen:
+    def mask_advance(mut self):
+        comptime if not Self.token_gen:
             self.mask_warp_col += UInt32(Self.BN)
 
     @always_inline
-    fn mask_skip_tile(self, status: TileMaskStatus) -> Bool:
+    def mask_skip_tile(self, status: TileMaskStatus) -> Bool:
         return status == TileMaskStatus.FULL_MASK
 
     @always_inline
-    fn mask_skip_and_advance(
+    def mask_skip_and_advance(
         mut self,
         kv_tile_start_row: UInt32,
     ) -> Bool:
-        @parameter
-        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
+        comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -614,7 +723,7 @@ struct Attention[
         return False
 
     @always_inline
-    fn mask_apply[
+    def mask_apply[
         stage: Int = 0
     ](
         mut self,
@@ -624,19 +733,19 @@ struct Attention[
     ):
         @always_inline
         @parameter
-        fn _mask_apply_impl(masked: Bool):
+        def _mask_apply_impl(masked: Bool):
             _mask_apply[
-                attention_config_t = Self.attention_config_t,
-                accum_type = Self.accum_type,
-                token_gen = Self.token_gen,
-                mma_shape = Self.mma_shape,
-                num_m_mmas = Int(Self.num_m_mmas),
-                num_n_mmas = Int(Self.num_n_mmas),
-                mask_t = Self.mask_t,
-                group = Self.group,
-                fragment_layout = Self.fragment_layout_nested,
-                warp_layout = Self.warp_layout,
-                use_exp2 = Self.use_exp2,
+                attention_config_t=Self.attention_config_t,
+                accum_type=Self.accum_type,
+                token_gen=Self.token_gen,
+                mma_shape=Self.mma_shape,
+                num_m_mmas=Self.num_m_mmas,
+                num_n_mmas=Self.num_n_mmas,
+                mask_t=Self.mask_t,
+                group=Self.group,
+                fragment_layout=Self.fragment_layout_nested,
+                warp_layout=Self.warp_layout,
+                use_exp2=Self.use_exp2,
             ](
                 masked,
                 kv_tile_start_row,
@@ -649,15 +758,12 @@ struct Attention[
                 self.mask_warp_col,
                 self.scale,
                 self.mask,
-                self.p_reg_buffer.vectorize[stage](),
+                self.p_reg_buffer.stage_tile[stage](),
                 not_last_iter,
                 UInt32(self.cache_start_pos),
             )
 
-        # self.scale_p_reg[stage]()
-
-        @parameter
-        if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
+        comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
             var mask_status = self.mask_status(
                 kv_tile_start_row,
             )
@@ -667,17 +773,17 @@ struct Attention[
         self.mask_advance()
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         attention_config: Self.attention_config_t,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
-        q: UnsafePointer[Scalar[Self.q_type], MutAnyOrigin],
+        q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
             LayoutTensor[
-                Self.q_type, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+                Self.q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
             ]
         ],
         batch_idx: Int,
@@ -695,22 +801,26 @@ struct Attention[
             UInt32(Self.q_tile_idx()),
             UInt32(Self.kv_head_idx()),
             seq_len,
-            Self.attention_config_t.get_q_offset[UInt(Self.q_depth)](),
-            Self.attention_config_t.get_output_offset[
-                UInt(Self.output_depth)
-            ](),
+            Self.attention_config_t.get_q_offset[Self.q_depth](),
+            Self.attention_config_t.get_output_offset[Self.output_depth](),
         )
         self.smem_manager = Self.SharedMemoryManagerType()
 
-        self.warp_scratch_tensor = type_of(self.warp_scratch_tensor)(
-            self.smem_manager.get_warp_scratch_ptr[Self.accum_type]()
+        self.warp_scratch_tensor = TileTensor[
+            Self.accum_type,
+            type_of(Self._warp_scratch_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ](
+            self.smem_manager.get_warp_scratch_ptr[Self.accum_type](),
+            Self._warp_scratch_layout,
         )
 
         self.p_reg_buffer = Self.PRegisterBufferType(
             self.smem_manager.get_p_ptr[Self.q_type]()
         )
 
-        var q_tile = self.gmem_manager.get_q_tensor(q)
+        var q_tile = self.gmem_manager.get_q_tile(q)
         self.q_buffer = Self.QRegisterBufferType(q_tile)
 
         self.output_ptr = output_ptr
@@ -720,10 +830,10 @@ struct Attention[
         self.mask = mask
 
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
-        var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
-        var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        self.mask_warp_row = UInt32(warp_row * Int(Self.WM))
-        self.mask_warp_col = UInt32(warp_col * Int(Self.WN))
+        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
+        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
+        self.mask_warp_row = UInt32(warp_row * Self.WM)
+        self.mask_warp_col = UInt32(warp_col * Self.WN)
 
         self.batch_idx = batch_idx
 
@@ -738,40 +848,24 @@ struct Attention[
 
         comptime is_causal_mask = _type_is_eq[Self.mask_t, CausalMask]()
 
-        @parameter
-        if not is_causal_mask or (not Self.attention_config_t.double_buffer):
-            # using double buffer as proxy for the experimental kernel,
-            # using readfirstlane for the gfx942 kernel leads to incorrect results.
-            # This needs more investigation.
-            # Disable inline asm for all other masks except causal mask,
-            # Inline asm was generating bad code for the MaterializedMask,
-            # and for now we only care about the performance of the causal mask.
-            self.scale = scale_log2e
+        comptime if is_causal_mask and Self.attention_config_t.double_buffer:
+            self.scale = readfirstlane(scale_log2e.cast[DType.float32]()).cast[
+                Self.accum_type
+            ]()
         else:
-            self.scale = inlined_assembly[
-                "v_readfirstlane_b32 $0, $1",
-                Scalar[Self.accum_type],
-                constraints="=s,v",
-            ](scale_log2e)
-            # readfirstlane does not work without inline asm
-            # bitcast[Self.accum_type](
-            #     readfirstlane(bitcast[DType.int32](Float32(scale_log2e)))
-            # )
-
+            self.scale = scale_log2e
         self.seq_len = seq_len
         self.num_keys = num_keys
         self.start_pos = start_pos
         self.cache_start_pos = cache_start_pos
         self.kv_start_row = 0
 
-        @parameter
-        if Self.sink:
-            debug_assert(
-                Bool(sink_weights),
-                "expect sink_weights to be non-null when sink=true",
-            )
+        comptime if Self.sink:
+            assert Bool(
+                sink_weights
+            ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
-                sink_weights.value()[Int(self.q_head_idx())][0].cast[
+                sink_weights.value()[self.q_head_idx()][0].cast[
                     Self.accum_type
                 ]()
                 * log2e
@@ -785,63 +879,82 @@ struct Attention[
             _ = self.softmax.rowsum_tensor.fill(0)
 
     @always_inline
-    fn online_softmax[stage: Int = 0](mut self):
-        var warp_scratch = self.warp_scratch_tensor
+    def online_softmax[stage: Int = 0](mut self):
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
+        var warp_scratch = self.warp_scratch_tensor.tile[
+            2 * Int(Self.num_warps_n), Int(Self.WM)
+        ](0, warp_row)
 
         self.softmax.full(
-            self.out_reg_buffer.vectorize(),
-            self.p_reg_buffer.vectorize[stage](),
-            warp_scratch.tile[2 * Int(Self.num_warps_n), Int(Self.WM)](
-                0, warp_row
-            ),
+            self.out_reg_buffer.reg_tile,
+            self.p_reg_buffer.stage_tile[stage](),
+            warp_scratch,
         )
 
     @always_inline
-    fn store_output(self):
+    def store_output(self):
         var warp_row = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[0]
         var warp_col = get_warp_coords[Int(Self.BN), Int(Self.WN)]()[1]
-        var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
-        var output_warp_tile = output_tile.tile[
-            Int(Self.WM), Self.output_depth // Int(Self.num_warps_n)
-        ](warp_row, warp_col)
 
-        @parameter
-        if Self.mma_shape[0] == 32:
-            copy_local_to_dram2[
-                dst_thread_layout = Self.warp_layout,
-                thread_scope = ThreadScope.WARP,
-            ](
-                output_warp_tile.vectorize[
-                    1,
-                    4,
-                ](),
-                self.out_reg_buffer.reg_tile.vectorize[1, 4](),
-                output_tile,
+        comptime if Self.token_gen and Self.mma_shape[0] != 32:
+            # Token-gen 16x16 MMA: use LayoutTensor copy_local_to_dram.
+            # RegTileWriter.store uses TileTensor distribute_with_offset
+            # which produces wrong output positions when
+            # group == mma_shape[0] (all MMA rows active).
+            var output_tensor = self.gmem_manager.get_output_tensor(
+                self.output_ptr
             )
-        else:
+            var output_warp_tile = output_tensor.tile[
+                Self.WM, Self.output_depth // Self.num_warps_n
+            ](warp_row, warp_col)
             copy_local_to_dram[
-                dst_thread_layout = Self.warp_layout,
-                thread_scope = ThreadScope.WARP,
+                dst_thread_layout=Self.warp_layout,
+                thread_scope=ThreadScope.WARP,
             ](
                 output_warp_tile.vectorize[
                     Self.fragment_layout.shape[0].value(),
                     Self.fragment_layout.shape[1].value(),
                 ](),
-                self.out_reg_buffer.vectorize(),
-                output_tile,
+                self.out_reg_buffer.reg_tile.to_layout_tensor().vectorize[
+                    1, Self.output_frag_size
+                ](),
+                output_tensor,
             )
+        else:
+            var output_tile = self.gmem_manager.get_output_tile[
+                Self.output_type
+            ](self.output_ptr)
+            var output_warp_tile = output_tile.tile[
+                Self.WM, Self.output_depth // Self.num_warps_n
+            ](warp_row, warp_col)
+            var writer = RegTileWriter[
+                Self.output_type,
+                Self.warp_layout.shape[0].value(),
+                Self.warp_layout.shape[1].value(),
+            ](output_tile)
+            comptime if Self.mma_shape[0] == 32:
+                writer.store_mfma32(
+                    output_warp_tile.vectorize[1, 4](),
+                    self.out_reg_buffer.reg_tile,
+                )
+            else:
+                writer.store(
+                    output_warp_tile.vectorize[
+                        Self.fragment_layout.shape[0].value(),
+                        Self.fragment_layout.shape[1].value(),
+                    ](),
+                    self.out_reg_buffer.reg_tile,
+                )
 
     @always_inline
-    fn copy_fragment_to_smem(self):
-        @parameter
-        if not Self.token_gen:
+    def copy_fragment_to_smem(self):
+        comptime if not Self.token_gen:
             return
 
         self.p_reg_buffer.copy_to_shared()
 
     @always_inline
-    fn store_partition_info(
+    def store_partition_info(
         self,
         num_partitions: Int,
         exp_sum_ptr: UnsafePointer[
@@ -851,13 +964,12 @@ struct Attention[
             Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
         ],
     ):
-        @parameter
-        if not Self.token_gen:
+        comptime if not Self.token_gen:
             return
 
         var q_head_idx = self.q_head_idx()
         if num_partitions > 1:
-            if thread_idx.x < UInt(Self.group):
+            if thread_idx.x < Self.group:
                 var row_sum = self.softmax.rowsum_tensor[0, 0][0]
                 var row_max = self.softmax.rowmax_tensor[0, 0][0]
 

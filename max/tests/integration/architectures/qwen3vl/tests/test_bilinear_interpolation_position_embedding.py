@@ -18,7 +18,7 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import DeviceRef, Dim, Graph, TensorType
 from max.pipelines.architectures.qwen3vl_moe.nn.data_processing import (
     get_bilinear_interpolation_weights_and_indices,
 )
@@ -67,7 +67,7 @@ def generate_torch_outputs(
 
 def generate_max_outputs(
     grid_thw: torch.Tensor,
-    qwen3vl_config: dict,
+    qwen3vl_config: dict,  # type: ignore[type-arg]
     embeddings_weights: dict[str, torch.Tensor],
     dtype: DType,
     device: Device,
@@ -103,13 +103,19 @@ def generate_max_outputs(
     )
 
     # Define input types
-    idx_type = TensorType(DType.int64, shape=np_idx.shape, device=device_ref)
+    total_patches = Dim("total_patches")
+    n_images = Dim("n_images")
+    idx_type = TensorType(
+        DType.int64, shape=[np_idx.shape[0], total_patches], device=device_ref
+    )
     weights_type = TensorType(
-        DType.float64, shape=np_weights.shape, device=device_ref
+        DType.float64,
+        shape=[np_weights.shape[0], total_patches, np_weights.shape[2]],
+        device=device_ref,
     )
 
     grid_thw_type = TensorType(
-        DType.int64, shape=grid_thw.shape, device=device_ref
+        DType.int64, shape=[n_images, grid_thw.shape[1]], device=device_ref
     )
 
     with Graph(
@@ -232,8 +238,6 @@ def test_vision_patch_position_embedding_multiple_images(
     ).generate_position_embedding_weights()
 
     # Create test inputs for multiple images
-    in_channels = hf_vision_config.get("in_channels", 3)
-    temporal_patch_size = hf_vision_config["temporal_patch_size"]
     patch_size = hf_vision_config["patch_size"]
 
     # Calculate patches for each image and create grid_thw

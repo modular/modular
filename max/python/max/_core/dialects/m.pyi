@@ -327,7 +327,7 @@ class TargetInfoAttr(max._core.Attribute):
         data_layout: DataLayout,
         relocation_model: max._core._RelocationModel,
         simd_bit_width: int,
-        index_bit_width: int,
+        index_bit_width: int | None,
         tune_cpu: str,
         accelerator_arch: str,
     ) -> None: ...

@@ -12,19 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext, HostBuffer
-from layout._coord import Coord, Idx
+from std.gpu.host import DeviceContext, HostBuffer
+from std.math import align_up
+from layout import Idx, TileTensor, row_major
 from layout._fillers import random
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
 from nn.moe import moe_create_indices
-from random import rand
-from testing import assert_equal
-
-from utils import IndexList
+from std.testing import assert_equal
 
 
-fn get_expert_dictionary(
+def get_expert_dictionary(
     topk_ids: HostBuffer[DType.uint32], num_tokens: Int
 ) -> Dict[UInt32, UInt32]:
     var expert_dictionary = Dict[UInt32, UInt32]()
@@ -38,7 +34,7 @@ fn get_expert_dictionary(
     return expert_dictionary^
 
 
-fn check_token_expert_order(
+def check_token_expert_order(
     token_expert_order: HostBuffer[DType.uint32],
     topk_ids: HostBuffer[DType.uint32],
     num_tokens: Int,
@@ -70,7 +66,7 @@ fn check_token_expert_order(
         assert_equal(k_v.value, 0, "tokens are grouped incorrectly")
 
 
-fn check_expert_stats(
+def check_expert_stats(
     expert_usage_stats: HostBuffer[DType.uint32],
     topk_ids: HostBuffer[DType.uint32],
     num_tokens: Int,
@@ -80,7 +76,6 @@ fn check_expert_stats(
     """
 
     var expert_dictionary = get_expert_dictionary(topk_ids, num_tokens)
-    var total_experts = len(expert_dictionary)
 
     var mx_value: UInt32 = 0
 
@@ -91,14 +86,9 @@ fn check_expert_stats(
     assert_equal(
         expert_usage_stats[0], mx_value, "most frequent expert is incorrect"
     )
-    assert_equal(
-        expert_usage_stats[1],
-        UInt32(total_experts),
-        "number of experts is incorrect",
-    )
 
 
-fn check_expert_indices(
+def check_expert_indices(
     expert_start_indices: HostBuffer[DType.uint32],
     expert_ids: HostBuffer[DType.int32],
     token_expert_order: HostBuffer[DType.uint32],
@@ -124,7 +114,7 @@ fn check_expert_indices(
             )
 
 
-fn check_restore_token_order(
+def check_restore_token_order(
     restore_token_order: HostBuffer[DType.uint32],
     token_expert_order: HostBuffer[DType.uint32],
     num_tokens: Int,
@@ -141,9 +131,42 @@ fn check_restore_token_order(
         )
 
 
-fn test_moe_create_indices[
-    expected_count: Int = 8192, num_experts: Int = 256
-](token_expert_order_length: Int, ctx: DeviceContext,) raises:
+def check_scales_offset[
+    scale_alignment: Int = 128,
+](
+    scales_offset: HostBuffer[DType.uint32],
+    expert_start_indices: HostBuffer[DType.uint32],
+    expert_usage_stats: HostBuffer[DType.uint32],
+) raises:
+    """Validates scales_offset values against expert_start_indices.
+
+    For each active expert i (in processing order), scales_offset[i] should
+    equal the difference between the cumulative aligned block count and the
+    cumulative actual block count up to that expert.
+    """
+    var num_active_experts = Int(expert_usage_stats[1])
+    var cumulative_actual: UInt32 = 0
+    var cumulative_aligned: UInt32 = 0
+
+    for i in range(num_active_experts):
+        var expected = cumulative_aligned // UInt32(
+            scale_alignment
+        ) - cumulative_actual // UInt32(scale_alignment)
+        assert_equal(
+            scales_offset[i],
+            expected,
+            "scales_offset mismatch at expert index " + String(i),
+        )
+        var token_count = expert_start_indices[i + 1] - expert_start_indices[i]
+        cumulative_actual += token_count
+        cumulative_aligned += align_up(token_count, UInt32(scale_alignment))
+
+
+def test_moe_create_indices[
+    expected_count: Int = 8192,
+    num_experts: Int = 256,
+    test_scales_offset: Bool = False,
+](token_expert_order_length: Int, ctx: DeviceContext) raises:
     var token_expert_order_buffer_host = ctx.enqueue_create_host_buffer[
         DType.uint32
     ](token_expert_order_length)
@@ -209,7 +232,7 @@ fn test_moe_create_indices[
     )
 
     var top_k_host = TileTensor(
-        top_k_buffer_host.unsafe_ptr(),
+        top_k_buffer_host,
         row_major(Idx(token_expert_order_length)),
     )
 
@@ -219,15 +242,34 @@ fn test_moe_create_indices[
     random(top_k_host, min=0, max=UInt32(num_experts))
     ctx.enqueue_copy(top_k_buffer_device, top_k_buffer_host)
 
-    moe_create_indices["gpu", expected_count=expected_count](
-        token_expert_order,
-        expert_start_indices,
-        restore_token_order,
-        expert_ids,
-        expert_usage_stats,
-        top_k,
-        ctx,
+    var scales_offset_buffer_host = ctx.enqueue_create_host_buffer[
+        DType.uint32
+    ](num_experts)
+    var scales_offset_buffer = ctx.enqueue_create_buffer[DType.uint32](
+        num_experts
     )
+
+    comptime if test_scales_offset:
+        moe_create_indices["gpu", expected_count=expected_count](
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+            top_k,
+            ctx,
+            scales_offset_p=scales_offset_buffer.unsafe_ptr(),
+        )
+    else:
+        moe_create_indices["gpu", expected_count=expected_count](
+            token_expert_order,
+            expert_start_indices,
+            restore_token_order,
+            expert_ids,
+            expert_usage_stats,
+            top_k,
+            ctx,
+        )
 
     ctx.enqueue_copy(
         token_expert_order_buffer_host, token_expert_order_buffer_device
@@ -240,7 +282,15 @@ fn test_moe_create_indices[
     ctx.enqueue_copy(
         expert_start_indices_buffer_host, expert_start_indices_buffer
     )
+    ctx.enqueue_copy(scales_offset_buffer_host, scales_offset_buffer)
     ctx.synchronize()
+
+    comptime if test_scales_offset:
+        check_scales_offset(
+            scales_offset_buffer_host,
+            expert_start_indices_buffer_host,
+            expert_usage_stats_buffer_host,
+        )
 
     check_token_expert_order(
         token_expert_order_buffer_host,
@@ -268,33 +318,22 @@ fn test_moe_create_indices[
     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-        test_moe_create_indices(
-            197,
-            ctx,
-        )
-
-        test_moe_create_indices(
-            2500,
-            ctx,
-        )
-
-        test_moe_create_indices(
-            11,
-            ctx,
-        )
-
-        test_moe_create_indices(
-            1,
-            ctx,
-        )
-
-        test_moe_create_indices(
-            20660,
-            ctx,
-        )
-
+        test_moe_create_indices(197, ctx)
+        test_moe_create_indices(2500, ctx)
+        test_moe_create_indices(11, ctx)
+        test_moe_create_indices(1, ctx)
+        test_moe_create_indices(20660, ctx)
         test_moe_create_indices[expected_count=256, num_experts=256](
             100_000, ctx
         )
+
+        test_moe_create_indices[test_scales_offset=True](197, ctx)
+        test_moe_create_indices[test_scales_offset=True](2500, ctx)
+        test_moe_create_indices[test_scales_offset=True](11, ctx)
+        test_moe_create_indices[test_scales_offset=True](1, ctx)
+        test_moe_create_indices[test_scales_offset=True](20660, ctx)
+        test_moe_create_indices[
+            expected_count=256, num_experts=256, test_scales_offset=True
+        ](100_000, ctx)

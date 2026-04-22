@@ -34,11 +34,9 @@ from max.interfaces import (
     VLMTextGenerationContext,
 )
 from max.kv_cache.kv_connector import KVConnector
-from max.nn.legacy.kv_cache.metrics import KVCacheMetrics
+from max.kv_cache.memory_tier import MemoryTier
+from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-)
 from max.support.math import ceildiv
 
 from .block_pool import BlockPool
@@ -51,7 +49,23 @@ from .block_utils import (
 logger = logging.getLogger("max.pipelines")
 
 
+def _compute_seq_len(
+    ctx: TextGenerationContext, num_steps: int, num_speculative_steps: int
+) -> int:
+    seq_len = (
+        len(ctx.tokens)
+        + len(ctx.spec_decoding_state.draft_tokens_to_verify)
+        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+        + num_speculative_steps
+        + num_steps
+        - 1
+    )
+    return seq_len
+
+
 class BlockManager:
+    """Manages allocation and deallocation of paged KV cache blocks."""
+
     @traced
     def __init__(
         self,
@@ -125,8 +139,7 @@ class BlockManager:
         self,
         ctx: TextGenerationContext,
     ) -> None:
-        """Compute the block hashes for the request."""
-
+        """Computes the block hashes for the request."""
         hashes = self.req_to_hashes[ctx.request_id]
 
         num_hashed_tokens = len(hashes) * self.block_size
@@ -156,18 +169,31 @@ class BlockManager:
 
     @traced
     def reuse_blocks_from_prefix_cache(
-        self, ctx: TextGenerationContext
-    ) -> None:
-        """Reuse blocks from prefix cache.
+        self,
+        ctx: TextGenerationContext,
+        skip_tokens: bool = True,
+    ) -> int:
+        """Reuses blocks from prefix cache.
 
         Full blocks are directly reused and appended to the request's blocks.
-        Partial blocks can be reused via COW. The blocks/tokens to copy to and
-        from are returned as a tuple.
+        Partial blocks can be reused via COW.
+
+        Args:
+            ctx: The request context.
+            skip_tokens: When True (default), advances the context's active
+                token window via ``ctx.tokens.skip_processing`` to reflect
+                the reused prefix-cache blocks.  Set to False when multiple
+                cache managers share a context and the caller will apply the
+                skip separately.
+
+        Returns:
+            The number of tokens that were (or should be) skipped due to
+            prefix-cache reuse.  Returns 0 when no blocks were reused.
         """
         self.assert_runtime_invariants(ctx)
 
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
-            return
+            return 0
 
         req_blocks = self.req_to_blocks[ctx.request_id]
 
@@ -184,7 +210,7 @@ class BlockManager:
             )
 
             # Since we got cache hits, clear out existing uncommitted blocks
-            self.release_uncommitted_blocks(ctx)
+            self.release_uncommitted_blocks(ctx, skip_tokens=skip_tokens)
 
             # Append them to the request's blocks.
             req_blocks.extend(prefix_cache_blocks)
@@ -192,23 +218,25 @@ class BlockManager:
             new_committed_idx = (
                 prev_committed_idx + len(prefix_cache_blocks) * self.block_size
             )
-            # Update BlockManager's committed index and advance ctx start_idx
             self.req_to_committed_idx[ctx.request_id] = new_committed_idx
-            ctx.tokens.skip_processing(
-                new_committed_idx - ctx.tokens.processed_length
-            )
-            assert ctx.tokens.active_length >= 1, (
-                "No active tokens after prefix caching! "
-                "We should never get 100% prefix cache hit rate. "
-                "Something went wrong!"
-            )
+
+            skip_amount = new_committed_idx - ctx.tokens.processed_length
+            if skip_tokens:
+                ctx.tokens.skip_processing(skip_amount)
+                assert ctx.tokens.active_length >= 1, (
+                    "No active tokens after prefix caching! "
+                    "We should never get 100% prefix cache hit rate. "
+                    "Something went wrong!"
+                )
+            return skip_amount
+
+        return 0
 
     @traced
     def _count_full_blocks_from_prefix_cache(
         self, ctx: TextGenerationContext, desired_hashes: list[int]
     ) -> int:
         """Returns the count of device and host blocks with the desired hashes."""
-
         # Count the number of device block hashes that are in the device prefix cache.
         device_prefix_cache = self.device_block_pool.hash_to_committed_block
 
@@ -244,7 +272,6 @@ class BlockManager:
         desired_hashes: list[int],
     ) -> list[KVCacheBlock]:
         """Returns a list of device blocks with the desired hashes."""
-
         device_prefix_cache = self.device_block_pool.hash_to_committed_block
 
         blocks = []
@@ -297,7 +324,15 @@ class BlockManager:
             device_block_ids.append(device_block.bid)
 
         # Load from host cache via connector - returns the block hashes.
-        loaded_hashes = self.connector.load(ctx, device_block_ids, [])
+        loaded_hashes = self.connector.load(ctx, device_block_ids)
+
+        # The connector may return fewer hashes than requested (e.g.
+        # transport failure or connector degraded between lookup/load).
+        # Free any surplus pre-allocated device blocks.
+        if len(loaded_hashes) < len(blocks):
+            for surplus_block in blocks[len(loaded_hashes) :]:
+                self.device_block_pool.free_block(surplus_block)
+            blocks = blocks[: len(loaded_hashes)]
 
         # Commit the device blocks into the device prefix cache.
         for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
@@ -312,9 +347,9 @@ class BlockManager:
         self, ctx: TextGenerationContext
     ) -> int:
         """Returns the number of computed (cached) blocks related to this request.
+
         Note that only full blocks are counted.
         """
-
         assert self.enable_prefix_caching
 
         num_committed_blocks = (
@@ -331,10 +366,10 @@ class BlockManager:
     def get_full_blocks_from_prefix_cache(
         self, ctx: TextGenerationContext
     ) -> list[KVCacheBlock]:
-        """Get the computed (cached) blocks for the request.
+        """Gets the computed (cached) blocks for the request.
+
         Note that the computed blocks must be full.
         """
-
         assert self.enable_prefix_caching
 
         req_hashes = self.req_to_hashes[ctx.request_id]
@@ -373,7 +408,6 @@ class BlockManager:
         Args:
             ctx: TextGenerationContext.
         """
-
         req_blocks = self.req_to_blocks[ctx.request_id]
         req_hashes = self.req_to_hashes[ctx.request_id]
         num_committed_blocks = (
@@ -384,24 +418,25 @@ class BlockManager:
         # to the block size.
         num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
-        # Commit these blocks into the prefix cache.
+        # Commit these blocks into the prefix cache, collecting newly
+        # committed blocks for a single batched save to the connector.
+        new_bids: list[int] = []
+        new_hashes: list[int] = []
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
-
-            # Get the block hash.
             block_hash = req_hashes[block_idx]
 
-            # Get the parent block hash.
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
                 block_hash, block
             )
             if new_block is not None:
                 req_blocks[block_idx] = new_block
             else:
-                # This block was newly committed (not a duplicate).
-                # Queue for offload to connector's external tier.
-                # Note: actual D2H copy and metrics are tracked by the connector.
-                self.connector.save([block.bid], [block_hash])
+                new_bids.append(block.bid)
+                new_hashes.append(block_hash)
+
+        if new_bids:
+            self.connector.save(new_bids, new_hashes)
 
         # Update committed index managed by BlockManager.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -410,7 +445,6 @@ class BlockManager:
 
     def release(self, request_id: RequestID) -> None:
         """Release the blocks for the request."""
-
         blocks = self.req_to_blocks[request_id]
         ordered_blocks: Iterable[KVCacheBlock] = blocks
         if self.enable_prefix_caching:
@@ -431,7 +465,10 @@ class BlockManager:
 
     @traced
     def allocate_new_blocks(
-        self, ctx: TextGenerationContext, num_steps: int = 1
+        self,
+        ctx: TextGenerationContext,
+        num_steps: int = 1,
+        num_speculative_steps: int = 0,
     ) -> None:
         """Allocate new blocks for a request to accommodate additional tokens.
 
@@ -443,20 +480,25 @@ class BlockManager:
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
             satisfy the allocation.
         """
-
         # It is impossible to schedule this request, even if it was the only req
         # and could use the entire KV cache.
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
-        if len(ctx.tokens) > total_kv_slots:
+        seq_len = (
+            len(ctx.tokens)
+            + len(ctx.spec_decoding_state.draft_tokens_to_verify)
+            + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+        )
+        if seq_len > total_kv_slots:
             raise InsufficientBlocksError(
-                f"Insufficient KV pages for a single request with {len(ctx.tokens)} tokens.\n"
+                f"Insufficient KV pages for a single request with {seq_len} tokens.\n"
                 f"The KVCache has {self.total_num_blocks} pages with page size {self.block_size}. This is only enough to support {total_kv_slots} tokens.\n"
                 "You must restart your process and set a lower max seq len to prevent a single request from using the entire KV cache."
             )
@@ -465,16 +507,22 @@ class BlockManager:
         self._metrics.input_tokens += ctx.tokens.active_length
 
         # Determine number of new blocks to allocate.
-        num_new_blocks = self.num_blocks_to_allocate(ctx, num_steps)
+        num_new_blocks = self.num_blocks_to_allocate(
+            ctx, num_steps, num_speculative_steps
+        )
 
-        # Check that the number of completed tokens is less than or equal to the number of tokens we can
-        # currently store in the reserved blocks.
+        # Verify that committed tokens fit within the currently allocated
+        # blocks.  We check against committed_idx (block-manager-internal
+        # state) rather than ctx.tokens.processed_length, because the latter
+        # is shared across multiple cache managers and may not reflect this
+        # cache's state when skip_tokens=False is used.
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        assert ctx.tokens.processed_length <= (
-            num_current_blocks * self.block_size
-        ), (
-            f"Expected at least {ceildiv(ctx.tokens.processed_length, self.block_size)} blocks to store KV for {ctx.tokens.processed_length} tokens, but only {num_current_blocks} are assigned. This should never happen."
+        committed_idx = self.req_to_committed_idx[ctx.request_id]
+        assert committed_idx <= (num_current_blocks * self.block_size), (
+            f"Expected at least {ceildiv(committed_idx, self.block_size)} "
+            f"blocks to store KV for {committed_idx} committed tokens, but "
+            f"only {num_current_blocks} are assigned."
         )
 
         # Check that we have enough free blocks to allocate the new blocks.
@@ -490,20 +538,26 @@ class BlockManager:
 
     @traced
     def num_blocks_to_allocate(
-        self, ctx: TextGenerationContext, num_steps: int = 1
+        self,
+        ctx: TextGenerationContext,
+        num_steps: int = 1,
+        num_speculative_steps: int = 0,
     ) -> int:
         """Calculates the number of new blocks to allocate for a request.
 
         Args:
             ctx: The request context containing sequence information and token indices.
             num_steps: Number of additional steps to allocate blocks for. Defaults to 1.
+            num_speculative_steps: Number of speculative steps to allocate blocks for. Defaults to 0.
 
         Returns:
             The number of new blocks to allocate.
         """
         current_blocks = self.req_to_blocks[ctx.request_id]
         num_current_blocks = len(current_blocks)
-        current_seq_len = len(ctx.tokens) + num_steps - 1
+        current_seq_len = _compute_seq_len(
+            ctx, num_steps, num_speculative_steps
+        )
         num_required_blocks = ceildiv(current_seq_len, self.block_size)
         num_new_blocks = num_required_blocks - num_current_blocks
 
@@ -524,10 +578,15 @@ class BlockManager:
 
     @traced
     def allocate_device_block(self) -> KVCacheBlock:
+        """Allocates a single block from the device block pool."""
         new_block, _ = self.device_block_pool.alloc_block()
         return new_block
 
-    def release_uncommitted_blocks(self, ctx: TextGenerationContext) -> None:
+    def release_uncommitted_blocks(
+        self,
+        ctx: TextGenerationContext,
+        skip_tokens: bool = True,
+    ) -> None:
         """Release the uncommitted blocks for the request."""
         req_blocks = self.req_to_blocks[ctx.request_id]
         num_committed_blocks = (
@@ -538,14 +597,25 @@ class BlockManager:
         for _ in range(num_uncommitted_blocks):
             block = req_blocks.pop()
             self.device_block_pool.free_block(block)
-        delta = (
-            ctx.tokens.processed_length
-            - self.req_to_committed_idx[ctx.request_id]
-        )
-        if delta > 0:
-            ctx.tokens.rewind_processing(delta)
-        elif delta < 0:
-            ctx.tokens.skip_processing(-delta)
+        if skip_tokens:
+            delta = (
+                ctx.tokens.processed_length
+                - self.req_to_committed_idx[ctx.request_id]
+            )
+            if delta > 0:
+                ctx.tokens.rewind_processing(delta)
+            elif delta < 0:
+                ctx.tokens.skip_processing(-delta)
+
+    def register_dummy_request(
+        self, request_id: RequestID, sentinel_request_id: RequestID
+    ) -> None:
+        """Maps a dummy request to the sentinel's block via ref-count sharing."""
+        sentinel_blocks = self.req_to_blocks[sentinel_request_id]
+        assert len(sentinel_blocks) == 1
+        sentinel_block = sentinel_blocks[0]
+        self.device_block_pool.touch(sentinel_block)
+        self.req_to_blocks[request_id] = [sentinel_block]
 
     @traced
     def get_req_blocks(self, request_id: RequestID) -> list[int]:
@@ -554,7 +624,7 @@ class BlockManager:
 
     @traced
     def reset_prefix_cache(self) -> None:
-        """Reset the device prefix cache.
+        """Resets the device prefix cache.
 
         Note: Host prefix cache reset is handled by the connector.
         """
@@ -562,16 +632,16 @@ class BlockManager:
 
     @property
     def metrics(self) -> KVCacheMetrics:
+        """Returns combined metrics for this manager and its connector."""
         return self._metrics + self.connector.metrics
 
     def reset_metrics(self) -> None:
+        """Resets local metrics to zero."""
         self._metrics = KVCacheMetrics()
 
     @traced
     def assert_runtime_invariants(self, ctx: TextGenerationContext) -> None:
-        """If runtime checks are enabled, assert that the runtime checks are
-        correct.
-        """
+        """Asserts runtime invariants when runtime checks are enabled."""
         if not self.enable_runtime_checks:
             return
 

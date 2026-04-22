@@ -8,8 +8,14 @@ package(default_visibility = [
 ])
 
 modular_py_test(
-    name = "lib",
-    srcs = glob(["test_*.py"]),
+    name = "tests",
+    srcs = glob(
+        ["test_*.py"],
+        exclude = [
+            "test_bounded_cache.py",
+            "test_reasoning.py",
+        ],
+    ),
     imports = ["."],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
@@ -19,7 +25,6 @@ modular_py_test(
         "//max/python/max/config",
         "//max/python/max/driver",
         "//max/python/max/dtype",
-        "//max/python/max/engine",
         "//max/python/max/entrypoints",
         "//max/python/max/graph",
         "//max/python/max/nn",
@@ -28,5 +33,24 @@ modular_py_test(
         requirement("pyyaml"),
         requirement("pydantic"),
         requirement("pytest-mock"),
+    ],
+)
+
+modular_py_test(
+    name = "test_bounded_cache",
+    srcs = ["test_bounded_cache.py"],
+    deps = [
+        "//max/python/max/pipelines/lib",
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines/lib",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
     ],
 )

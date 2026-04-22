@@ -11,18 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.os import abort
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from os import abort
-
-from python import PythonObject
-from python._cpython import PyObjectPtr
-from python.bindings import PythonModuleBuilder
+from std.python import PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     """Create a Python module with a function binding for `mojo_incr_np_array`.
     """
 
@@ -45,10 +42,10 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
     See: https://numpy.org/doc/2.1/reference/c-api/types-and-structures.html#c.PyArrayObject
     """
 
-    var data: UnsafePointer[Scalar[Self.dtype]]
+    var data: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
     var nd: Int
-    var dimensions: UnsafePointer[Int]
-    var strides: UnsafePointer[Int]
+    var dimensions: UnsafePointer[Int, MutAnyOrigin]
+    var strides: UnsafePointer[Int, MutAnyOrigin]
     var base: PyObjectPtr
     var descr: PyObjectPtr
     var flags: Int
@@ -59,12 +56,12 @@ struct PyArrayObject[dtype: DType](ImplicitlyCopyable):
 
 
 @export
-fn mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
+def mojo_incr_np_array(py_array_object: PythonObject) raises -> PythonObject:
     comptime dtype = DType.int32
 
     print("Hello from mojo_incr_np_array")
 
-    var py_array_object_ptr = LegacyUnsafePointer[PyArrayObject[dtype], ...](
+    var py_array_object_ptr = UnsafePointer[PyArrayObject[dtype], ...](
         unchecked_downcast_value=py_array_object
     )
 

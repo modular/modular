@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
 
-struct Result(Equatable, TrivialRegisterType, Writable):
+struct Result(Equatable, TrivialRegisterPassable, Writable):
     var _value: Int32
     comptime SUCCESS = Self(0)
     comptime NOT_INITIALIZED = Self(1)
@@ -27,37 +27,33 @@ struct Result(Equatable, TrivialRegisterType, Writable):
     comptime NOT_SUPPORTED = Self(15)
     comptime LICENSE_ERROR = Self(16)
 
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self._value = Int32(value)
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self == Self.SUCCESS:
-            return writer.write("SUCCESS")
+            return writer.write_string("SUCCESS")
         if self == Self.NOT_INITIALIZED:
-            return writer.write("NOT_INITIALIZED")
+            return writer.write_string("NOT_INITIALIZED")
         if self == Self.ALLOC_FAILED:
-            return writer.write("ALLOC_FAILED")
+            return writer.write_string("ALLOC_FAILED")
         if self == Self.INVALID_VALUE:
-            return writer.write("INVALID_VALUE")
+            return writer.write_string("INVALID_VALUE")
         if self == Self.ARCH_MISMATCH:
-            return writer.write("ARCH_MISMATCH")
+            return writer.write_string("ARCH_MISMATCH")
         if self == Self.MAPPING_ERROR:
-            return writer.write("MAPPING_ERROR")
+            return writer.write_string("MAPPING_ERROR")
         if self == Self.EXECUTION_FAILED:
-            return writer.write("EXECUTION_FAILED")
+            return writer.write_string("EXECUTION_FAILED")
         if self == Self.INTERNAL_ERROR:
-            return writer.write("INTERNAL_ERROR")
+            return writer.write_string("INTERNAL_ERROR")
         if self == Self.NOT_SUPPORTED:
-            return writer.write("NOT_SUPPORTED")
+            return writer.write_string("NOT_SUPPORTED")
         if self == Self.LICENSE_ERROR:
-            return writer.write("LICENSE_ERROR")
+            return writer.write_string("LICENSE_ERROR")
 
         abort("unreachable: invalid Result entry")
 
-    fn __int__(self) -> Int:
+    def __int__(self) -> Int:
         return Int(self._value)

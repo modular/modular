@@ -14,8 +14,8 @@
 from collections.abc import Callable
 from typing import Any
 
-from max import functional as F
 from max.driver import Device
+from max.experimental import functional as F
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
@@ -31,14 +31,16 @@ class ClipModel(ComponentModel):
         encoding: SupportedEncoding,
         devices: list[Device],
         weights: Weights,
+        **kwargs: Any,
     ) -> None:
         super().__init__(
             config,
             encoding,
             devices,
             weights,
+            **kwargs,
         )
-        self.config = ClipConfig.generate(
+        self.config = ClipConfig.initialize_from_config(
             config,
             encoding,
             devices,

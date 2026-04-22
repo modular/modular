@@ -20,13 +20,14 @@ from unittest.mock import MagicMock, patch
 
 from max.driver import DeviceSpec
 from max.graph.weights import WeightsFormat
-from max.nn.legacy.kv_cache import KVCacheStrategy
 from max.pipelines.lib import (
     KVCacheConfig,
     MAXModelConfig,
     PipelineConfig,
+    PipelineRuntimeConfig,
     SupportedEncoding,
 )
+from max.pipelines.lib.model_manifest import ModelManifest
 from transformers import AutoConfig
 from typing_extensions import ParamSpec
 
@@ -47,7 +48,7 @@ class DummyMAXModelConfig(MAXModelConfig):
 
     def validate_and_resolve_with_resolved_quantization_encoding(
         self,
-        supported_encodings: dict[SupportedEncoding, list[KVCacheStrategy]],
+        supported_encodings: set[SupportedEncoding],
         default_weights_format: WeightsFormat,
     ) -> None:
         pass
@@ -60,9 +61,7 @@ class DummyPipelineConfig(PipelineConfig):
         quantization_encoding: SupportedEncoding,
         max_batch_size: int | None,
         max_length: int | None,
-        pdl_level: str = "1",
         device_specs: list[DeviceSpec] | None = None,
-        kv_cache_strategy: KVCacheStrategy = KVCacheStrategy.MODEL_DEFAULT,
         # TODO(AITLIB-328): These values do not belong in PipelineConfig,
         # but are somehow used by MockPipelineModel in pipeline_model.py.
         eos_prob: float | None = None,
@@ -83,10 +82,28 @@ class DummyPipelineConfig(PipelineConfig):
         # Seed `self` with a real (but unvalidated) PipelineConfig instance, so
         # we keep pydantic-internal state consistent while still avoiding full
         # validation / resolution.
-        base = PipelineConfig.model_construct(
-            max_batch_size=max_batch_size,
+        model_config = DummyMAXModelConfig.model_construct(
+            model_path=model_path,
+            device_specs=device_specs,
+            quantization_encoding=quantization_encoding,
             max_length=max_length,
-            pdl_level=pdl_level,
+        )
+        model_config.kv_cache = KVCacheConfig()
+        # NOTE: Using MagicMock without spec here because HuggingFace configs
+        # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
+        # strict type checking should pass a model-specific huggingface_config
+        # parameter to DummyPipelineConfig or use the real AutoConfig.
+        # TODO: Consider accepting huggingface_config as an optional parameter
+        # to allow tests to provide model-specific spec'd mocks.
+        model_config._huggingface_config = MagicMock()
+
+        manifest = ModelManifest({"main": model_config})
+        runtime = PipelineRuntimeConfig.model_construct(
+            max_batch_size=max_batch_size,
+        )
+        base = PipelineConfig.model_construct(
+            runtime=runtime,
+            models=manifest,
         )
         self.__dict__.update(base.__dict__)
         for attr in (
@@ -96,24 +113,6 @@ class DummyPipelineConfig(PipelineConfig):
         ):
             if hasattr(base, attr):
                 object.__setattr__(self, attr, getattr(base, attr))
-
-        model_config = DummyMAXModelConfig.model_construct(
-            model_path=model_path,
-            device_specs=device_specs,
-            quantization_encoding=quantization_encoding,
-        )
-        model_config.kv_cache = KVCacheConfig(
-            cache_strategy=kv_cache_strategy,
-        )
-        # NOTE: Using MagicMock without spec here because HuggingFace configs
-        # vary by model type (LlamaConfig, Qwen2Config, etc.). Tests that need
-        # strict type checking should pass a model-specific huggingface_config
-        # parameter to DummyPipelineConfig or use the real AutoConfig.
-        # TODO: Consider accepting huggingface_config as an optional parameter
-        # to allow tests to provide model-specific spec'd mocks.
-        model_config._huggingface_config = MagicMock()
-        # Populate the model field so callers see the configured model.
-        object.__setattr__(self, "model", model_config)
 
         # These values don't belong in PipelineConfig, but are used by
         # MockPipelineModel in pipeline_model.py.
@@ -170,6 +169,10 @@ def mock_huggingface_config(func: Callable[_P, _R]) -> Callable[_P, _R]:
                 cfg.num_key_value_heads = 32
                 cfg.num_hidden_layers = 2
                 cfg.rope_theta = 10000.0
+                cfg.rope_parameters = {
+                    "rope_type": "default",
+                    "rope_theta": 10000.0,
+                }
                 cfg.max_position_embeddings = 2048
                 cfg.intermediate_size = 11008
                 cfg.vocab_size = 32000
@@ -305,8 +308,15 @@ def mock_pipeline_config_hf_dependencies(
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        with patch(
-            "max.pipelines.lib.config.PipelineConfig.resolve", return_value=None
+        with (
+            patch(
+                "max.pipelines.lib.config.PipelineConfig.resolve",
+                return_value=None,
+            ),
+            patch(
+                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                return_value=None,
+            ),
         ):
             return func(*args, **kwargs)
 

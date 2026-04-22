@@ -18,13 +18,12 @@ from typing import Any
 import numpy as np
 import pytest
 from max.interfaces import (
+    EOSTracker,
     GenerationStatus,
     ImageMetadata,
     PixelGenerationContext,
     RequestID,
     SamplingParams,
-    SamplingParamsGenerationConfigDefaults,
-    SamplingParamsInput,
     TextGenerationContext,
     TokenBuffer,
     VLMTextGenerationContext,
@@ -33,6 +32,7 @@ from max.interfaces import (
 )
 from max.pipelines.core import (
     PixelContext,
+    SpecDecodingState,
     TextAndVisionContext,
     TextContext,
     TTSContext,
@@ -91,7 +91,7 @@ def test_context__get_min_token_logit_mask() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4},
+        eos_tracker=EOSTracker(eos_token_ids={4}),
         sampling_params=SamplingParams(min_new_tokens=3),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
@@ -119,7 +119,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids() -> (
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
         sampling_params=SamplingParams(min_new_tokens=3),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
@@ -146,7 +146,7 @@ def test_context__get_min_token_logit_mask_with_multiple_eos_token_ids_multistep
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
         sampling_params=SamplingParams(min_new_tokens=3),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(4)
     assert len(vocab_mask) == 4
@@ -193,7 +193,7 @@ def test_context__get_min_token_logit_mask_with_no_min_new_tokens() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4, 5},
+        eos_tracker=EOSTracker(eos_token_ids={4, 5}),
     )
     vocab_mask = context.get_min_token_logit_mask(1)
     assert len(vocab_mask) == 1
@@ -217,9 +217,9 @@ def test_context__eos() -> None:
         request_id=RequestID(),
         max_length=10,
         tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
-        eos_token_ids={4},
+        eos_tracker=EOSTracker(eos_token_ids={4}),
     )
-    assert context.eos_token_ids == {4}
+    assert context.eos_tracker.eos_token_ids == {4}
     assert context.is_initial_prompt
     context.update(4)
     assert not context.is_initial_prompt
@@ -414,7 +414,7 @@ def test_context_sampling_params_stop() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_sequences=[[1, 2]],
+        eos_tracker=EOSTracker(eos_sequences=[[1, 2]]),
         sampling_params=custom_params,
     )
 
@@ -428,7 +428,7 @@ def test_context_sampling_params_stop() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_sequences=[[2], [3, 1]],
+        eos_tracker=EOSTracker(eos_sequences=[[2], [3, 1]]),
         sampling_params=custom_params,
     )
     context.update(1)
@@ -446,7 +446,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_token_ids=set([5, 4, 2]),
+        eos_tracker=EOSTracker(eos_token_ids={5, 4, 2}),
         sampling_params=custom_params,
     )
     context.update(1)
@@ -459,7 +459,7 @@ def test_context_sampling_params_eos_token_ids() -> None:
         request_id=RequestID(),
         max_length=50,
         tokens=TokenBuffer(np.array([0], dtype=np.int64)),
-        eos_token_ids=set([5, 4, 2]),
+        eos_tracker=EOSTracker(eos_token_ids={5, 4, 2}),
         sampling_params=custom_params,
     )
     context.update(3)
@@ -467,85 +467,6 @@ def test_context_sampling_params_eos_token_ids() -> None:
 
     assert not context.is_done
     assert np.array_equal(context.tokens.generated, np.array([3, 6]))
-
-
-def test_sampling_params_from_input_and_generation_config_defaults_override() -> (
-    None
-):
-    """Test that SamplingParamsGenerationConfigDefaults values override SamplingParams class defaults."""
-    # Create defaults that override some SamplingParams class defaults
-    generation_defaults = SamplingParamsGenerationConfigDefaults(
-        temperature=0.5,
-        top_k=50,
-        max_new_tokens=100,
-    )
-
-    # Create SamplingParams with no user overrides
-    sampling_params = SamplingParams.from_input_and_generation_config(
-        SamplingParamsInput(),
-        sampling_params_defaults=generation_defaults,
-    )
-
-    # Verify that generation config defaults override SamplingParams class defaults
-    assert (
-        sampling_params.temperature == 0.5
-    )  # from generation_defaults, not 1.0 (class default)
-    assert (
-        sampling_params.top_k == 50
-    )  # from generation_defaults, not -1 (class default)
-    assert (
-        sampling_params.max_new_tokens == 100
-    )  # from generation_defaults, not None (class default)
-
-    # Verify that fields not in generation_defaults retain their class defaults
-    assert sampling_params.top_p == 1  # class default
-    assert sampling_params.min_p == 0.0  # class default
-    assert sampling_params.frequency_penalty == 0.0  # class default
-    assert sampling_params.repetition_penalty == 1.0  # class default
-
-
-def test_sampling_params_from_input_and_generation_config_user_override() -> (
-    None
-):
-    """Test that user-provided values take highest priority over defaults."""
-    # Create generation defaults
-    generation_defaults = SamplingParamsGenerationConfigDefaults(
-        temperature=0.5,
-        top_k=50,
-        top_p=0.9,
-        max_new_tokens=100,
-    )
-
-    # Create SamplingParams with user overrides
-    user_input = SamplingParamsInput(
-        temperature=0.8,  # Override generation default (0.5)
-        top_k=10,  # Override generation default (50)
-        min_new_tokens=5,  # Not in generation defaults, overrides class default (0)
-    )
-
-    sampling_params = SamplingParams.from_input_and_generation_config(
-        user_input,
-        sampling_params_defaults=generation_defaults,
-    )
-
-    # Verify user values take highest priority
-    assert (
-        sampling_params.temperature == 0.8
-    )  # user value, not generation default (0.5)
-    assert (
-        sampling_params.top_k == 10
-    )  # user value, not generation default (50)
-    assert (
-        sampling_params.min_new_tokens == 5
-    )  # user value, not class default (0)
-
-    # Verify generation defaults are used when user doesn't override
-    assert sampling_params.top_p == 0.9  # from generation_defaults
-    assert sampling_params.max_new_tokens == 100  # from generation_defaults
-
-    # Verify class defaults are used when neither user nor generation defaults provide values
-    assert sampling_params.min_p == 0.0  # class default
-    assert sampling_params.frequency_penalty == 0.0  # class default
 
 
 def test_context_serializable() -> None:
@@ -747,7 +668,7 @@ def test_text_context_update_with_future_token() -> None:
     context = TextContext(
         max_length=50,
         tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
-        eos_token_ids=set([42]),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
     )
 
     with pytest.raises(
@@ -782,6 +703,24 @@ def test_text_context_update_with_future_token() -> None:
     context.realize_future_token(42)
     assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, 5, 42]
     assert context.status == GenerationStatus.END_OF_SEQUENCE
+
+
+def test_text_context_update_with_preemption_and_future_token() -> None:
+    context = TextContext(
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+        eos_tracker=EOSTracker(eos_token_ids={42}),
+    )
+    assert context.tokens.generated_length == 0
+
+    context.update_with_future_token()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4, FUTURE_TOKEN]
+    assert context.tokens.generated_length == 1
+
+    # Notice that the future token is deleted when the context is reset.
+    context.reset()
+    assert context.tokens.all.tolist() == [0, 1, 2, 3, 4]
+    assert context.tokens.generated_length == 0
 
 
 def test_vision_context_reset() -> None:
@@ -1092,32 +1031,31 @@ def test_text_and_vision_context_sad_case() -> None:
             vision_token_ids=[98],
         )
 
-    # Test that current_position cannot bisect an image
-    # Create a TokenBuffer and chunk it to position 7 (which bisects the image at 5-9)
+    # When the buffer is actively chunked (chunked prefill), current_position
+    # may bisect an image — the vision encoder cache handles re-encoding.
     token_buffer = TokenBuffer(tokens)
-    token_buffer.chunk(7)
+    token_buffer.chunk(7)  # bisects img0 at 5-9
 
-    with pytest.raises(
-        ValueError,
-        match=r"It is invalid for the current_position \(7\) to bisect an image \(ImageMetadata\(start_idx=5, end_idx=9",
-    ):
-        _ = TextAndVisionContext(
-            max_length=50,
-            tokens=token_buffer,
-            images=[
-                ImageMetadata(
-                    start_idx=5,
-                    end_idx=9,
-                    pixel_values=np.array([99]),
-                ),
-                ImageMetadata(
-                    start_idx=15,
-                    end_idx=19,
-                    pixel_values=np.array([99]),
-                ),
-            ],
-            vision_token_ids=[98],
-        )
+    ctx = TextAndVisionContext(
+        max_length=50,
+        tokens=token_buffer,
+        images=[
+            ImageMetadata(
+                start_idx=5,
+                end_idx=9,
+                pixel_values=np.array([99]),
+            ),
+            ImageMetadata(
+                start_idx=15,
+                end_idx=19,
+                pixel_values=np.array([99]),
+            ),
+        ],
+        vision_token_ids=[98],
+    )
+    # img0 is bisected but this is valid during chunked prefill.
+    assert ctx.image_idx == 0
+    assert ctx.needs_vision_encoding
 
     with pytest.raises(
         ValueError,
@@ -1154,6 +1092,72 @@ def does_not_raise_due_to_check_in_property_method() -> None:
     # See GENAI-318 for details.
     _ = isinstance(ctx, VLMTextGenerationContext)
     _ = isinstance(ctx, PixelGenerationContext)
+
+
+def test_context__spec_decoding_state_lazy_init() -> None:
+    """Tests that spec_decoding_state is lazily initialized and reset clears it."""
+    context = TextContext(
+        request_id=RequestID(),
+        max_length=10,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3], dtype=np.int64)),
+    )
+
+    # Initially None
+    assert context._spec_decoding_state is None
+
+    # Lazy initialization on first access
+    state = context.spec_decoding_state
+    assert isinstance(state, SpecDecodingState)
+    assert state.draft_tokens_to_verify == []
+
+    # Same instance on subsequent access
+    assert context.spec_decoding_state is state
+
+    # Mutate the state
+    state.draft_tokens_to_verify = [10, 20, 30]
+
+    # Reset clears the state
+    context.update(4)
+    context.reset()
+    assert context._spec_decoding_state is None
+
+    # Re-access creates a fresh state
+    new_state = context.spec_decoding_state
+    assert isinstance(new_state, SpecDecodingState)
+    assert new_state is not state
+    assert new_state.draft_tokens_to_verify == []
+
+
+def test_context__spec_decoding_state_serializable() -> None:
+    """Tests that TextContext with SpecDecodingState can be serialized."""
+    context = TextContext(
+        request_id=RequestID(),
+        max_length=50,
+        tokens=TokenBuffer(np.array([0, 1, 2, 3, 4], dtype=np.int64)),
+    )
+
+    # Initialize state with non-default values
+    context.spec_decoding_state.draft_tokens_to_verify = [10, 20]
+
+    # Pickle round-trip
+    pickle_encoded = pickle.dumps(context)
+    pickle_decoded = pickle.loads(pickle_encoded)
+
+    assert isinstance(pickle_decoded, TextContext)
+    assert pickle_decoded._spec_decoding_state is not None
+    assert pickle_decoded.spec_decoding_state.draft_tokens_to_verify == [10, 20]
+
+    # MsgPack round-trip
+    serialize = msgpack_numpy_encoder()
+    deserialize = msgpack_numpy_decoder(TextContext)
+    msgpack_encoded = serialize(context)
+    msgpack_decoded = deserialize(msgpack_encoded)
+
+    assert isinstance(msgpack_decoded, TextContext)
+    assert msgpack_decoded.spec_decoding_state.draft_tokens_to_verify == [
+        10,
+        20,
+    ]
 
 
 def test_pixel_context_serializable() -> None:

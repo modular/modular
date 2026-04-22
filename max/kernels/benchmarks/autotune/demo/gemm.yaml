@@ -12,7 +12,7 @@
 ##===----------------------------------------------------------------------===##
 
 name: multistage_gemm
-file: $KERNEL_BENCHMARKS_ROOT/gpu/bench_matmul.mojo
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
 params:
   M: [8192]
   N: [8192]

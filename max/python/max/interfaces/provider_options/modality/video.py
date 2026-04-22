@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -65,4 +65,10 @@ class VideoProviderOptions(BaseModel):
             "Total video duration equals num_frames / frames_per_second."
         ),
         gt=0,
+    )
+
+    guidance_scale_2: float | None = Field(
+        None,
+        description="Secondary guidance scale for boundary timestep switching.",
+        gt=0.0,
     )

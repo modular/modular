@@ -16,12 +16,13 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import (
-    Float8Config,
-    Float8InputScaleSpec,
-    Float8ScaleGranularity,
-    Float8ScaleOrigin,
-    Float8WeightScaleSpec,
+from max.nn import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    ScaleOrigin,
+    WeightScaleSpec,
 )
 from max.pipelines.architectures.deepseekV3_2.layers import DeepseekV3_2MLP
 
@@ -88,8 +89,8 @@ def test_mlp_float32() -> None:
     assert g is not None
 
 
-def test_mlp_with_float8_config() -> None:
-    """Tests MLP works with Float8Config for weight quantization on GPU.
+def test_mlp_with_quant_config() -> None:
+    """Tests MLP works with QuantConfig for weight quantization on GPU.
 
     Float8 matmul requires:
     - Weight dtype of float8_e4m3fn (not bfloat16)
@@ -99,18 +100,19 @@ def test_mlp_with_float8_config() -> None:
     hidden_dim = 64
     feed_forward_length = 128
 
-    float8_config = Float8Config(
-        weight_scale=Float8WeightScaleSpec(
+    quant_config = QuantConfig(
+        format=QuantFormat.FBGEMM_FP8,
+        weight_scale=WeightScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.ROWWISE,
+            granularity=ScaleGranularity.ROWWISE,
         ),
-        input_scale=Float8InputScaleSpec(
+        input_scale=InputScaleSpec(
             dtype=DType.float32,
-            granularity=Float8ScaleGranularity.COLWISE,
-            origin=Float8ScaleOrigin.DYNAMIC,
+            granularity=ScaleGranularity.COLWISE,
+            origin=ScaleOrigin.DYNAMIC,
         ),
-        mlp_in_float8=set(),
-        attn_qkv_in_float8=set(),
+        mlp_quantized_layers=set(),
+        attn_quantized_layers=set(),
     )
 
     # Float8 requires float8 weight dtype, not bfloat16
@@ -120,7 +122,7 @@ def test_mlp_with_float8_config() -> None:
         hidden_dim=hidden_dim,
         feed_forward_length=feed_forward_length,
         devices=[DeviceRef.CPU()],
-        float8_config=float8_config,
+        quant_config=quant_config,
     )
 
     # Initialize weight names to avoid collisions.
@@ -130,7 +132,7 @@ def test_mlp_with_float8_config() -> None:
         return mlp(x)
 
     g = Graph(
-        "test_mlp_float8_config",
+        "test_mlp_quant_config",
         forward=forward,
         input_types=[
             TensorType(DType.bfloat16, (10, hidden_dim), DeviceRef.GPU())
@@ -141,6 +143,6 @@ def test_mlp_with_float8_config() -> None:
     assert g is not None
 
     # Verify the float8 config was passed to the linear layers.
-    assert mlp.gate_proj.float8_config is not None
-    assert mlp.down_proj.float8_config is not None
-    assert mlp.up_proj.float8_config is not None
+    assert mlp.gate_proj.quant_config is not None
+    assert mlp.down_proj.quant_config is not None
+    assert mlp.up_proj.quant_config is not None

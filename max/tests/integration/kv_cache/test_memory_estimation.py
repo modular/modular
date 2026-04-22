@@ -14,7 +14,7 @@
 import pytest
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import (
+from max.nn.kv_cache import (
     KVCacheParams,
     KVCacheQuantizationConfig,
     compute_num_device_blocks,
@@ -210,7 +210,6 @@ def test_bytes_per_block() -> None:
     num_layers = 17
     page_size = 128
     data_parallel_degree = 1
-    n_devices = 1
 
     params = KVCacheParams(
         dtype=dtype,

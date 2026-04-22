@@ -27,6 +27,9 @@ from max.interfaces import (
 from max.interfaces.queue import drain_queue
 from max.kv_cache import PagedKVCacheManager
 from max.pipelines.core import TextContext
+from max.pipelines.lib.speculative_decoding.utils import (
+    SpeculativeDecodingMetrics,
+)
 from max.serve.telemetry.metrics import METRICS
 from max.support.human_readable_formatter import to_human_readable_latency
 
@@ -69,6 +72,21 @@ class BatchMetrics:
     total_host_kv_blocks: int
     h2d_blocks_copied: int
     d2h_blocks_copied: int
+    disk_blocks_written: int
+    disk_blocks_read: int
+
+    draft_tokens_generated: int
+    draft_tokens_accepted: int
+    avg_acceptance_length: float
+    max_acceptance_length: int
+    acceptance_rate_per_position: list[float]
+
+    nixl_read_latency_avg_ms: float
+    nixl_write_latency_avg_ms: float
+    rpc_acquire_latency_avg_ms: float
+    rpc_read_latency_avg_ms: float
+    nixl_read_gib_per_s: float = 0.0
+    nixl_write_gib_per_s: float = 0.0
 
     @classmethod
     def create(
@@ -81,6 +99,7 @@ class BatchMetrics:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
+        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = len(inputs.flat_batch)
@@ -89,8 +108,8 @@ class BatchMetrics:
             batch_size * inputs.num_steps / batch_execution_time_s
         )
 
-        used_kv_pct = 0.0
         total_kv_blocks = 0
+        used_kv_pct = 0.0
         cache_hit_rate = 0.0
         cache_hit_tokens = 0
         cache_miss_tokens = num_input_tokens
@@ -98,39 +117,103 @@ class BatchMetrics:
         total_host_kv_blocks = 0
         h2d_blocks_copied = 0
         d2h_blocks_copied = 0
+        disk_blocks_written = 0
+        disk_blocks_read = 0
+        nixl_read_latency_avg_ms = 0.0
+        nixl_write_latency_avg_ms = 0.0
+        rpc_acquire_latency_avg_ms = 0.0
+        rpc_read_latency_avg_ms = 0.0
+        nixl_read_gib_per_s = 0.0
+        nixl_write_gib_per_s = 0.0
+        num_replicas = sch_config.data_parallel_degree
         if kv_cache is not None:
+            # TODO SERVOPT-939: Add some sugar
+            total_kv_blocks = sum(
+                kv_cache.get_num_pages(replica_idx)
+                for replica_idx in range(num_replicas)
+            )
+            used_kv_blocks = sum(
+                kv_cache.get_num_used_pages(replica_idx)
+                for replica_idx in range(num_replicas)
+            )
+            assert total_kv_blocks > 0
+            used_kv_pct = used_kv_blocks / total_kv_blocks
             cache_hit_tokens = sum(
                 kv_cache.get_metrics(replica_idx).cache_tokens
-                for replica_idx in range(kv_cache.num_replicas)
+                for replica_idx in range(num_replicas)
             )
             all_tokens = cache_hit_tokens + cache_miss_tokens
-            cache_hit_rate = 0.0
             # We have to handle case where denominator is 0 (empty batch)
             if all_tokens > 0:
                 # This may differ from cache_metrics.cache_hit_rate due as this
                 # calculation takes chunked prefill into account.
                 cache_hit_rate = cache_hit_tokens / all_tokens
 
-            if kv_cache.enable_kvcache_swapping_to_host:
-                total_host_kv_blocks = sum(
-                    kv_cache.get_num_host_pages(replica_idx)
-                    for replica_idx in range(kv_cache.num_replicas)
-                )
+            total_host_kv_blocks = sum(
+                kv_cache.get_num_host_pages(replica_idx)
+                for replica_idx in range(num_replicas)
+            )
+            if total_host_kv_blocks > 0:
                 used_host_kv_blocks = sum(
                     kv_cache.get_num_used_host_pages(replica_idx)
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
                 )
                 used_host_kv_pct = used_host_kv_blocks / total_host_kv_blocks
                 h2d_blocks_copied = sum(
                     kv_cache.get_metrics(replica_idx).h2d_blocks_copied
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
                 )
                 d2h_blocks_copied = sum(
                     kv_cache.get_metrics(replica_idx).d2h_blocks_copied
-                    for replica_idx in range(kv_cache.num_replicas)
+                    for replica_idx in range(num_replicas)
+                )
+                disk_blocks_written = sum(
+                    kv_cache.get_metrics(replica_idx).disk_blocks_written
+                    for replica_idx in range(num_replicas)
+                )
+                disk_blocks_read = sum(
+                    kv_cache.get_metrics(replica_idx).disk_blocks_read
+                    for replica_idx in range(num_replicas)
                 )
 
-                kv_cache.reset_metrics()
+            # dKV latency metrics: sum across replicas then average.
+            agg = sum(
+                (
+                    kv_cache.get_metrics(replica_idx)
+                    for replica_idx in range(num_replicas)
+                ),
+                kv_cache.get_metrics(0).__class__(),
+            )
+            nixl_read_latency_avg_ms = agg.nixl_read_latency_avg_ms
+            nixl_write_latency_avg_ms = agg.nixl_write_latency_avg_ms
+            rpc_acquire_latency_avg_ms = agg.rpc_acquire_latency_avg_ms
+            rpc_read_latency_avg_ms = agg.rpc_read_latency_avg_ms
+            nixl_read_gib_per_s = agg.nixl_read_gib_per_s
+            nixl_write_gib_per_s = agg.nixl_write_gib_per_s
+
+            kv_cache.reset_metrics()
+
+        draft_tokens_generated = 0
+        draft_tokens_accepted = 0
+        avg_acceptance_length = 0.0
+        max_acceptance_length = 0
+        acceptance_rate_per_position: list[float] = []
+        if speculative_decoding_metrics is not None:
+            draft_tokens_generated = (
+                speculative_decoding_metrics.draft_tokens_generated
+            )
+            draft_tokens_accepted = (
+                speculative_decoding_metrics.draft_tokens_accepted
+            )
+            avg_acceptance_length = (
+                speculative_decoding_metrics.avg_acceptance_length
+            )
+            max_acceptance_length = (
+                speculative_decoding_metrics.num_speculative_tokens
+            )
+            acceptance_rate_per_position = (
+                speculative_decoding_metrics.acceptance_rate_per_position
+            )
 
         return cls(
             batch_type=inputs.batch_type,
@@ -157,6 +240,19 @@ class BatchMetrics:
             total_host_kv_blocks=total_host_kv_blocks,
             h2d_blocks_copied=h2d_blocks_copied,
             d2h_blocks_copied=d2h_blocks_copied,
+            disk_blocks_written=disk_blocks_written,
+            disk_blocks_read=disk_blocks_read,
+            draft_tokens_generated=draft_tokens_generated,
+            draft_tokens_accepted=draft_tokens_accepted,
+            avg_acceptance_length=avg_acceptance_length,
+            max_acceptance_length=max_acceptance_length,
+            acceptance_rate_per_position=acceptance_rate_per_position,
+            nixl_read_latency_avg_ms=nixl_read_latency_avg_ms,
+            nixl_write_latency_avg_ms=nixl_write_latency_avg_ms,
+            rpc_acquire_latency_avg_ms=rpc_acquire_latency_avg_ms,
+            rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
+            nixl_read_gib_per_s=nixl_read_gib_per_s,
+            nixl_write_gib_per_s=nixl_write_gib_per_s,
         )
 
     def pretty_format(self) -> str:
@@ -173,9 +269,49 @@ class BatchMetrics:
 
         host_kv_str = ""
         if self.total_host_kv_blocks != 0:
+            disk_str = ""
+            if self.disk_blocks_written > 0 or self.disk_blocks_read > 0:
+                disk_str = (
+                    f", Disk: {self.disk_blocks_written} written, "
+                    f"{self.disk_blocks_read} read"
+                )
             host_kv_str = (
                 f"Host KVCache Usage: {self.used_host_kv_pct:.1%} of {self.total_host_kv_blocks} blocks, "
-                f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H | "
+                f"Blocks copied: {self.h2d_blocks_copied} H2D, {self.d2h_blocks_copied} D2H{disk_str} | "
+            )
+
+        if self.draft_tokens_generated > 0:
+            acceptance_rate = (
+                self.draft_tokens_accepted / self.draft_tokens_generated
+            )
+            # Format per-position acceptance rates
+            if self.acceptance_rate_per_position:
+                pos_rates_str = ", ".join(
+                    f"p{i}={rate:.0%}"
+                    for i, rate in enumerate(self.acceptance_rate_per_position)
+                )
+                per_pos_str = f", Per-Pos: [{pos_rates_str}]"
+            else:
+                per_pos_str = ""
+            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks{per_pos_str} | "
+        else:
+            spec_decode_str = ""
+
+        dkv_str = ""
+        has_dkv = (
+            self.nixl_read_latency_avg_ms > 0
+            or self.nixl_write_latency_avg_ms > 0
+            or self.rpc_acquire_latency_avg_ms > 0
+            or self.rpc_read_latency_avg_ms > 0
+        )
+        if has_dkv:
+            dkv_str = (
+                f"dKV: read {self.nixl_read_latency_avg_ms:.1f}ms"
+                f" ({self.nixl_read_gib_per_s:.2f} GiB/s), "
+                f"write {self.nixl_write_latency_avg_ms:.1f}ms"
+                f" ({self.nixl_write_gib_per_s:.2f} GiB/s), "
+                f"acquire {self.rpc_acquire_latency_avg_ms:.1f}ms, "
+                f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
             )
 
         return (
@@ -190,6 +326,8 @@ class BatchMetrics:
             f"Execution: {to_human_readable_latency(self.batch_execution_time_s)} | "
             f"{kv_str}"
             f"{host_kv_str}"
+            f"{dkv_str}"
+            f"{spec_decode_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
 
@@ -207,6 +345,22 @@ class BatchMetrics:
         METRICS.cache_hit_rate(self.cache_hit_rate)
         METRICS.cache_hits(self.cache_hit_tokens)
         METRICS.cache_misses(self.cache_miss_tokens)
+
+        if self.nixl_read_latency_avg_ms > 0:
+            METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
+        if self.nixl_write_latency_avg_ms > 0:
+            METRICS.dkv_nixl_write_latency(self.nixl_write_latency_avg_ms)
+        if self.rpc_acquire_latency_avg_ms > 0:
+            METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
+        if self.rpc_read_latency_avg_ms > 0:
+            METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+
+        # Emit per-position acceptance rate metrics for speculative decoding
+        for position, rate in enumerate(self.acceptance_rate_per_position):
+            METRICS.spec_decode_acceptance_rate_per_position(
+                position=position,
+                acceptance_rate=rate * 100,  # Convert to percentage
+            )
 
 
 class SchedulerLogger:
@@ -244,6 +398,7 @@ class SchedulerLogger:
         num_pending_reqs: int,
         num_terminated_reqs: int,
         total_preemption_count: int,
+        speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -255,20 +410,22 @@ class SchedulerLogger:
             batch_execution_time_s: The time it took to execute the batch.
             num_pending_reqs: The number of pending requests.
             total_preemption_count: The total number of preemptions.
+            speculative_decoding_metrics: The speculative decoding metrics, if any.
 
         Returns:
             None
         """
         # Compute the batch level metrics.
         metrics = BatchMetrics.create(
-            sch_config,
-            inputs,
-            kv_cache,
-            batch_creation_time_s,
-            batch_execution_time_s,
-            num_pending_reqs,
-            num_terminated_reqs,
-            total_preemption_count,
+            sch_config=sch_config,
+            inputs=inputs,
+            kv_cache=kv_cache,
+            batch_creation_time_s=batch_creation_time_s,
+            batch_execution_time_s=batch_execution_time_s,
+            num_pending_reqs=num_pending_reqs,
+            num_terminated_reqs=num_terminated_reqs,
+            total_preemption_count=total_preemption_count,
+            speculative_decoding_metrics=speculative_decoding_metrics,
         )
 
         # Always publish metrics.

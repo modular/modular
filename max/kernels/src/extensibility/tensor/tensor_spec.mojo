@@ -10,7 +10,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""
+"""Provides tensor spec types for describing tensor shapes and dtypes.
+
 You can import these APIs from the `max.tensor` package. For example:
 
 ```mojo
@@ -18,19 +19,19 @@ from max.tensor import RuntimeTensorSpec
 ```
 """
 
-from sys import size_of
+from std.sys import size_of
 
-from utils import IndexList, product
+from std.utils import IndexList, product
 
 
 @fieldwise_init
-struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterType):
+struct RuntimeTensorSpec[dtype: DType, rank: Int](TrivialRegisterPassable):
     var shape: IndexList[Self.rank]
 
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         return self.shape[idx]
 
-    fn bytecount(self) -> Int:
+    def bytecount(self) -> Int:
         """
         Gets the total byte count.
 

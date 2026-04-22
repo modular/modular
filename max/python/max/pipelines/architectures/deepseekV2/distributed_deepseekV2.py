@@ -17,18 +17,18 @@ from __future__ import annotations
 import functools
 
 from max.graph import ShardingStrategy
-from max.nn.legacy.attention.multi_latent_attention import (
+from max.nn.attention.multi_latent_attention import (
     TensorParallelLatentAttentionWithRope,
 )
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.linear import MLP, ColumnParallelLinear
-from max.nn.legacy.moe import MoE
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import (
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.linear import MLP, ColumnParallelLinear
+from max.nn.moe import MoE
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.legacy.transformer import (
+from max.nn.transformer import (
     DistributedTransformer,
     DistributedTransformerBlock,
 )
@@ -88,6 +88,7 @@ class DistributedDeepseekV2(DistributedTransformer):
                     qk_rope_head_dim=config.qk_rope_head_dim,
                     v_head_dim=config.v_head_dim,
                     devices=config.devices,
+                    buffer_size=config.max_batch_context_length,
                 ),
                 mlp=self._get_mlp(config, idx),
                 attention_norm=distributed_norm(),

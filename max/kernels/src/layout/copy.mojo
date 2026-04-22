@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides copy policy traits and utilities for layout memory operations."""
 
-from builtin.device_passable import DevicePassable
+from std.builtin.device_passable import DevicePassable
 
 
 trait CopyPolicy(DevicePassable, ImplicitlyCopyable):
@@ -22,7 +23,7 @@ trait CopyPolicy(DevicePassable, ImplicitlyCopyable):
     """
 
     @staticmethod
-    fn verify_source_tensor(src: LayoutTensor):
+    def verify_source_tensor(src: LayoutTensor):
         """
         A static function that verifies the source tensor
         is compatible with the copy operation. If the tensor is not valid
@@ -34,7 +35,7 @@ trait CopyPolicy(DevicePassable, ImplicitlyCopyable):
         ...
 
     @staticmethod
-    fn verify_destination_tensor(dst: LayoutTensor):
+    def verify_destination_tensor(dst: LayoutTensor):
         """
         A static function that verifies the destination tensor
         is compatible with the copy operation. If the tensor is not valid

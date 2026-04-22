@@ -48,9 +48,7 @@ def patch_pipeline_registry_context_type(
 
 @pytest.fixture
 def app(mock_pipeline_config: PipelineConfig):  # noqa: ANN201
-    settings = Settings(
-        api_types=[APIType.KSERVE], MAX_SERVE_USE_HEARTBEAT=False
-    )
+    settings = Settings(api_types=[APIType.KSERVE], use_heartbeat=False)
 
     pipeline_settings = ServingTokenGeneratorSettings(
         model_factory=EchoTokenGenerator,

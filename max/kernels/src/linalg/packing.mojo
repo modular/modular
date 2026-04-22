@@ -10,24 +10,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from math import align_down, align_up
-from sys import align_of, simd_width_of
-from sys.info import CompilationTarget
-from sys.intrinsics import PrefetchOptions
+from std.math import align_down, align_up
+from std.sys import align_of, simd_width_of
+from std.sys.info import CompilationTarget
+from std.sys.intrinsics import PrefetchOptions
 
-from algorithm import unswitch
-from buffer.buffer import NDBuffer, partial_simd_load
-from buffer.dimlist import DimList
-from memory import (
-    LegacyUnsafePointer,
+from std.algorithm import unswitch
+from linalg.utils import partial_simd_load
+from layout import Coord, Idx, TileTensor
+from layout.tile_tensor import stack_allocation as tt_stack_allocation
+from std.sys import prefetch
+from layout.tile_layout import TensorLayout, row_major
+from std.memory import (
     memcpy,
+    memset_zero,
     stack_allocation,
 )
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from register import register_internal
-
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 from .matmul.cpu.apple_accelerate import use_apple_accelerate_lib
 from .transpose import transpose, transpose_inplace
@@ -49,28 +49,26 @@ from .utils import (
 struct PackMatrixRows[
     original_mut: Bool,
     //,
-    # original matrix shape list
-    original_shape: DimList,
-    # packed matrix shape list
-    packed_shape: DimList,
     dtype: DType,
     simd_size: Int,
     row_inner_size: Int,
     packed_origin: MutOrigin,
     original_origin: Origin[mut=original_mut],
+    packed_layout: TensorLayout,
+    original_layout: TensorLayout,
 ](ImplicitlyCopyable):
     """Pack rows from a matrix into the mlas packed layout and
     extract inner vectors of rows into the packed inner dimension,
     e.g. extract tile [X, Y] and pack into [Xo][Y][Xi].
     """
 
-    # packed matrix
-    var packed_matrix: NDBuffer[
-        Self.dtype, 3, Self.packed_origin, Self.packed_shape
+    # packed matrix (rank 3)
+    var packed_matrix: TileTensor[
+        Self.dtype, Self.packed_layout, Self.packed_origin
     ]
-    # original matrix:
-    var original_matrix: NDBuffer[
-        Self.dtype, 2, Self.original_origin, Self.original_shape
+    # original matrix (rank 2)
+    var original_matrix: TileTensor[
+        Self.dtype, Self.original_layout, Self.original_origin
     ]
     # offsets in original matrix
     var global_offset: IndexList[2]
@@ -85,12 +83,12 @@ struct PackMatrixRows[
     # Interface method:
     #  run the packing and store to the given buffer.
     @staticmethod
-    fn run(
-        packed_matrix: NDBuffer[
-            Self.dtype, 3, Self.packed_origin, Self.packed_shape
+    def run(
+        packed_matrix: TileTensor[
+            Self.dtype, Self.packed_layout, Self.packed_origin
         ],
-        original_matrix: NDBuffer[
-            Self.dtype, 2, Self.original_origin, Self.original_shape
+        original_matrix: TileTensor[
+            Self.dtype, Self.original_layout, Self.original_origin
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -98,17 +96,14 @@ struct PackMatrixRows[
     ):
         """Interface function to run the packing routine.
         Args:
-            packed_matrix(NDBuffer): pre-allocated buffer space for packed
-                data.
-            original_matrix(NDBuffer): data buffer containing the original matrix
+            packed_matrix: Pre-allocated buffer space for packed data.
+            original_matrix: Data buffer containing the original matrix
                 to pack.
-            global_offset(IndexList): offset to use when indexing the
-                original matrix.
-            pack_tile_dim(IndexList): 2D dimension tuple describing the
-                size of the packed tile.
-            valid_data_dim(IndexList): 2D dimension tuple describing the
-                amount of valid data on the global buffer starting from the
-                offset.
+            global_offset: Offset to use when indexing the original matrix.
+            pack_tile_dim: 2D dimension tuple describing the size of the
+                packed tile.
+            valid_data_dim: 2D dimension tuple describing the amount of
+                valid data on the global buffer starting from the offset.
         """
         comptime assert Self.row_inner_size % Self.simd_size == 0
 
@@ -138,31 +133,25 @@ struct PackMatrixRows[
 
         instance._pack()
 
-    fn _transpose_pack_helper[
+    def _transpose_pack_helper[
         skip_row_bound: Bool,
         skip_col_bound: Bool,
     ](
         self,
-        transpose_buffer: NDBuffer[
-            mut=True,
-            Self.dtype,
-            2,
-            _,
-            DimList(Self.simd_size, Self.simd_size),
-        ],
+        transpose_buffer: TileTensor[mut=True, Self.dtype, ...],
         local_off_set: IndexList[2],
     ):
         """Helper function: transpose packs a [simd_size, simd_size] sub-tile of
         matrix, with bound checking and zero-filling. Bound checking can be
         statically skipped, based on the parameters.
            Args:
-               skip_row_bound(Bool): boundary check on x dimension will be
+               skip_row_bound: Boundary check on x dimension will be
                    skipped if true.
-               skip_col_bound(Bool): boundary check on y dimension will be
+               skip_col_bound: Boundary check on y dimension will be
                    skpped if true.
-               transpose_buffer(NDBuffer): pre-allocated work space to hold
+               transpose_buffer: Pre-allocated work space to hold
                    transposed temporary data.
-               local_offset(IndexList): offset of the sub-tile to work on
+               local_off_set: Offset of the sub-tile to work on
                    within the whole tile of data to pack.
         """
         # Calculate the remaining bound from the local offset.
@@ -176,8 +165,7 @@ struct PackMatrixRows[
 
         # Fill the simd_size x simd_size transpose buffer
         #  with un-transposed data.
-        @parameter
-        for idx in range(Self.simd_size):
+        comptime for idx in range(Self.simd_size):
             comptime inner_row_idx = idx
             # Check that the current row has valid data.
             if skip_row_bound or (inner_row_idx < read_bound[0]):
@@ -187,31 +175,39 @@ struct PackMatrixRows[
                 )
                 var row_data: SIMD[Self.dtype, Self.simd_size]
 
-                @parameter
-                if skip_col_bound:
+                comptime if skip_col_bound:
                     # This is fastest path where both row and col bounds
                     #  are skipped so the code path is simd-in and simd-out
                     #  without any predicate.
-                    row_data = self.original_matrix.load[
-                        width = Self.simd_size
+                    row_data = self.original_matrix.load_linear[
+                        width=Self.simd_size, alignment=1
                     ](row_global_index)
                 else:
-                    # Not skipping col bound, need to to a partial fill of
+                    # Not skipping col bound, need to do a partial fill of
                     #  the transpose buffer row.
                     row_data = partial_simd_load[Self.simd_size](
-                        self.original_matrix._offset(row_global_index),
+                        self.original_matrix.ptr
+                        + self.original_matrix.layout(
+                            Coord(
+                                Idx(row_global_index[0]),
+                                Idx(row_global_index[1]),
+                            )
+                        ),
                         0,  # no left bound.
                         read_bound[1],
                         0,
                     )
 
-                transpose_buffer.store[width = Self.simd_size](
-                    Index(inner_row_idx, 0), row_data
-                )
+                transpose_buffer.store_linear[
+                    width=Self.simd_size, alignment=1
+                ](Index(inner_row_idx, 0), row_data)
             else:
                 # Row out of defined bound, fill the transpose buffer with zero
-                transpose_buffer.store[width = Self.simd_size](
-                    Index(inner_row_idx, 0), SIMD[Self.dtype, Self.simd_size](0)
+                transpose_buffer.store_linear[
+                    width=Self.simd_size, alignment=1
+                ](
+                    Index(inner_row_idx, 0),
+                    SIMD[Self.dtype, Self.simd_size](0),
                 )
 
         # Transpose the buffered data
@@ -221,17 +217,19 @@ struct PackMatrixRows[
 
         # Write to packed space:
         #  transposed_inner_row_idx now corresponds to the original column idx.
-        @parameter
-        for idx in range(Self.simd_size):
-            var transposed_data = transpose_buffer.load[width = Self.simd_size](
-                Index(idx, 0)
-            )
+        comptime for idx in range(Self.simd_size):
+            var transposed_data = transpose_buffer.load_linear[
+                width=Self.simd_size, alignment=1
+            ](Index(idx, 0))
             # compute the packed index
-            var _row_outer = local_off_set[0] // Self.row_inner_size
-            var _row_inner = local_off_set[0] % Self.row_inner_size
+            var _row_outer, _row_inner = divmod(
+                local_off_set[0], Self.row_inner_size
+            )
 
             if skip_col_bound or (idx < write_bound[1]):
-                self.packed_matrix.store[width = Self.simd_size](
+                self.packed_matrix.store_linear[
+                    width=Self.simd_size, alignment=1
+                ](
                     Index(
                         _row_outer,
                         local_off_set[1] + idx,
@@ -242,19 +240,14 @@ struct PackMatrixRows[
             # Out of bound columns are discarded as there's no allocation for them
             #  in the packed buffer.
 
-    fn _pack(self):
+    def _pack(self):
         """Helper function: Allocates transpose workspace and launch the
         transpose helper function until all required data has been packed.
         """
 
-        var transpose_buffer = NDBuffer[
-            Self.dtype,
-            2,
-            MutAnyOrigin,
-            DimList(Self.simd_size, Self.simd_size),
-        ].stack_allocation[
-            alignment = align_of[SIMD[Self.dtype, Self.simd_size]]()
-        ]()
+        var transpose_buffer = tt_stack_allocation[dtype=Self.dtype,](
+            row_major[Self.simd_size, Self.simd_size]()
+        )
 
         var valid_tile_simd_dim = Index(
             min(
@@ -276,7 +269,7 @@ struct PackMatrixRows[
         @always_inline
         @__copy_capture(transpose_buffer)
         @parameter
-        fn transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
+        def transpose_pack_unit[static_switch0: Bool, static_switch1: Bool]():
             self._transpose_pack_helper[
                 # skip_row_bound, skip_col_bound
                 static_switch0,
@@ -303,10 +296,6 @@ struct PackMatrixRows[
 struct PackMatrixCols[
     original_mut: Bool,
     //,
-    # original matrix shape list
-    original_shape: DimList,
-    # packed matrix shape list
-    packed_shape: DimList,
     dtype: DType,
     simd_size: Int,
     column_inner_size: Int,
@@ -314,19 +303,21 @@ struct PackMatrixCols[
     use_i8mm: Bool,
     packed_origin: MutOrigin,
     original_origin: Origin[mut=original_mut],
+    packed_layout: TensorLayout,
+    original_layout: TensorLayout,
 ](ImplicitlyCopyable):
     """Pack columns from a matrix into the mlas packed layout and
     extract inner vectors of columns into the packed inner dimension,
     e.g. extracts [X, Y] and packs as [Yo][X][Yi].
     """
 
-    # packed matrix
-    var packed_matrix: NDBuffer[
-        Self.dtype, 3, Self.packed_origin, Self.packed_shape
+    # packed matrix (rank 3)
+    var packed_matrix: TileTensor[
+        Self.dtype, Self.packed_layout, Self.packed_origin
     ]
-    # original matrix:
-    var original_matrix: NDBuffer[
-        Self.dtype, 2, Self.original_origin, Self.original_shape
+    # original matrix (rank 2)
+    var original_matrix: TileTensor[
+        Self.dtype, Self.original_layout, Self.original_origin
     ]
     # offsets in original matrix:
     var global_offset: IndexList[2]
@@ -338,10 +329,12 @@ struct PackMatrixCols[
 
     # Interface function:
     @staticmethod
-    fn run(
-        packed_matrix: NDBuffer[Self.dtype, 3, MutAnyOrigin, Self.packed_shape],
-        original_matrix: NDBuffer[
-            Self.dtype, 2, MutAnyOrigin, Self.original_shape
+    def run(
+        packed_matrix: TileTensor[
+            Self.dtype, Self.packed_layout, Self.packed_origin
+        ],
+        original_matrix: TileTensor[
+            Self.dtype, Self.original_layout, Self.original_origin
         ],
         global_offset: IndexList[2],
         pack_tile_dim: IndexList[2],
@@ -349,23 +342,19 @@ struct PackMatrixCols[
     ):
         """Interface function to run the packing routine.
         Args:
-            packed_matrix(NDBuffer): pre-allocated buffer space for packed
-                data.
-            original_matrix(NDBuffer): data buffer containing the original matrix
+            packed_matrix: Pre-allocated buffer space for packed data.
+            original_matrix: Data buffer containing the original matrix
                 to pack.
-            global_offset(IndexList): offset to use when indexing the
-                original matrix.
-            pack_tile_dim(IndexList): 2D dimension tuple describing the
-                size of the packed tile.
-            valid_data_dim(IndexList): 2D dimension tuple describing the
-                amount of valid data on the global buffer starting from the
-                offset.
+            global_offset: Offset to use when indexing the original matrix.
+            pack_tile_dim: 2D dimension tuple describing the size of the
+                packed tile.
+            valid_data_dim: 2D dimension tuple describing the amount of
+                valid data on the global buffer starting from the offset.
         """
         comptime assert Self.column_inner_size % Self.simd_size == 0
-        debug_assert(
-            pack_tile_dim[1] % Self.column_inner_size == 0,
-            "Unimplemented tile pattern.",
-        )
+        assert (
+            pack_tile_dim[1] % Self.column_inner_size == 0
+        ), "Unimplemented tile pattern."
 
         var instance = Self(
             packed_matrix,
@@ -378,7 +367,7 @@ struct PackMatrixCols[
         instance._pack()
 
     @always_inline
-    fn _pack_helper[
+    def _pack_helper[
         skip_row_bound: Bool, skip_col_bound: Bool
     ](self, row_start: Int, valid_row_count: Int, col_start: Int):
         """Helper function: copy several simd vectors on the column from the
@@ -395,65 +384,74 @@ struct PackMatrixCols[
 
         @always_inline
         @parameter
-        fn pack_vector(row_idx: Int, col_idx: Int):
+        def pack_vector(row_idx: Int, col_idx: Int):
             var global_idx = self.global_offset + Index(row_idx, col_idx)
             var data = SIMD[Self.dtype, Self.simd_size](0)
             if skip_col_bound or (
                 col_idx + Self.simd_size <= self.valid_data_dim[1]
             ):
-                data = self.original_matrix.load[width = Self.simd_size](
-                    global_idx
-                )
+                data = self.original_matrix.load_linear[
+                    width=Self.simd_size, alignment=1
+                ](global_idx)
             elif col_idx < self.valid_data_dim[1]:
                 # Starting point within bound but cannot load a whole
                 #  vector. Do a partial load.
                 data = partial_simd_load[Self.simd_size](
-                    self.original_matrix._offset(global_idx),
+                    self.original_matrix.ptr
+                    + self.original_matrix.layout(
+                        Coord(Idx(global_idx[0]), Idx(global_idx[1]))
+                    ),
                     0,
                     self.valid_data_dim[1] - col_idx,
                     0,
                 )
 
             # map to packed index
-            var col_idx_outer = col_idx // Self.column_inner_size
-            var col_idx_inner = col_idx % Self.column_inner_size
-            self.packed_matrix.store[width = Self.simd_size](
-                Index(col_idx_outer, row_idx, col_idx_inner),
+            var col_idx_outer, col_idx_inner = divmod(
+                col_idx, Self.column_inner_size
+            )
+            self.packed_matrix.store_linear[width=Self.simd_size, alignment=1](
+                Index(
+                    col_idx_outer,
+                    row_idx,
+                    col_idx_inner,
+                ),
                 data,
             )
 
         @always_inline
         @parameter
-        fn pack_body[idx: Int]():
+        def pack_body[idx: Int]():
             pack_vector(row_start + idx, col_start)
 
         @always_inline
         @parameter
-        fn prefetch_body[idx: Int]():
+        def prefetch_body[idx: Int]():
             var global_row_idx = (
                 self.global_offset[0] + row_start + unroll_factor + idx
             )
             var global_col_idx = self.global_offset[1] + col_start
-            self.original_matrix.prefetch[
+            prefetch[
                 PrefetchOptions().for_read().high_locality().to_data_cache()
-            ](global_row_idx, global_col_idx)
+            ](
+                self.original_matrix.ptr
+                + self.original_matrix.layout(
+                    Coord(Idx(global_row_idx), Idx(global_col_idx))
+                )
+            )
 
-        @parameter
-        if skip_row_bound:
+        comptime if skip_row_bound:
             if not CompilationTarget.has_neon():
-
-                @parameter
-                for i in range(unroll_factor):
+                comptime for i in range(unroll_factor):
                     prefetch_body[i]()
 
-            @parameter
-            for i in range(unroll_factor):
+            comptime for i in range(unroll_factor):
                 pack_body[i]()
         else:
             for row_idx in range(row_start, valid_row_count):
                 pack_vector(row_idx, col_start)
 
-    fn _pack_vnni(self):
+    def _pack_vnni(self):
         """Copy the B tile from the original matrix to the packed buffer for VNNI.
         """
         comptime assert Self.use_vnni
@@ -466,23 +464,26 @@ struct PackMatrixCols[
         for i in range(0, self.pack_tile_dim[0], vnni_cols):
             for j in range(self.pack_tile_dim[1] // nr):
                 for p in range(nr):
-
-                    @parameter
-                    for l in range(vnni_cols):
+                    comptime for l in range(vnni_cols):
                         var local_idx = Index(i + l, p + nr * j)
-                        var val = (
-                            0 if local_idx[0] >= kc
-                            or local_idx[1]
-                            >= nc else self.original_matrix[
-                                self.global_offset + local_idx
-                            ]
+                        var val = 0 if local_idx[0] >= kc or local_idx[
+                            1
+                        ] >= nc else self.original_matrix.load_linear[width=1](
+                            Index(
+                                self.global_offset[0] + local_idx[0],
+                                self.global_offset[1] + local_idx[1],
+                            )
                         )
-                        self.packed_matrix.store(
-                            Index(j, i // vnni_cols, vnni_cols * p + l),
+                        self.packed_matrix.store_linear[width=1](
+                            Index(
+                                j,
+                                i // vnni_cols,
+                                vnni_cols * p + l,
+                            ),
                             val,
                         )
 
-    fn _pack_i8mm(self):
+    def _pack_i8mm(self):
         comptime i8mm_rows = 2
         comptime i8mm_cols = 8
 
@@ -496,14 +497,17 @@ struct PackMatrixCols[
                     for i2 in range(i8mm_cols):
                         for p2 in range(i8mm_rows):
                             var local_idx = Index(i + i2, nr * j + p + p2)
-                            var val = (
-                                0 if local_idx[0] >= kc
-                                or local_idx[1]
-                                >= nc else self.original_matrix[
-                                    self.global_offset + local_idx
-                                ]
+                            var val = 0 if local_idx[0] >= kc or local_idx[
+                                1
+                            ] >= nc else self.original_matrix.load_linear[
+                                width=1
+                            ](
+                                Index(
+                                    self.global_offset[0] + local_idx[0],
+                                    self.global_offset[1] + local_idx[1],
+                                )
                             )
-                            self.packed_matrix.store[width=1](
+                            self.packed_matrix.store_linear[width=1](
                                 Index(
                                     j,
                                     i // i8mm_cols,
@@ -512,7 +516,7 @@ struct PackMatrixCols[
                                 val,
                             )
 
-    fn _pack_default(self):
+    def _pack_default(self):
         """Copy the B tile from the original matrix to the packed buffer.
         Each iteration copies a block of shape (unroll_factor, simd_size)."""
         comptime assert not Self.use_vnni and not Self.use_i8mm
@@ -525,7 +529,7 @@ struct PackMatrixCols[
         @always_inline
         @__copy_capture(valid_row_count)
         @parameter
-        fn pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
+        def pack_unit[skip_row_bound: Bool, skip_col_bound: Bool]():
             self._pack_helper[skip_row_bound, skip_col_bound](
                 row_idx, valid_row_count, col_idx
             )
@@ -540,9 +544,8 @@ struct PackMatrixCols[
                 col_idx += Self.simd_size
             row_idx += unroll_factor
 
-    fn _pack(self):
-        @parameter
-        if Self.use_vnni:
+    def _pack(self):
+        comptime if Self.use_vnni:
             self._pack_vnni()
         elif Self.use_i8mm:
             self._pack_i8mm()
@@ -551,62 +554,55 @@ struct PackMatrixCols[
 
 
 @always_inline
-fn _pack_matmul_b_shape_func_impl[
+def _pack_matmul_b_shape_func_impl[
     a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
     transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
 ](
-    b_input: NDBuffer[b_type, 2, _, b_shape], kernel_type_m: Int = 0
+    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    kernel_type_m: Int = 0,
 ) -> IndexList[2]:
-    """Sets in shape_ref the shape required by `pack_b`'s `b_packed_ref`
-    argument.
+    """Computes the padded shape required by `pack_b` directly from TileTensor
+    dimensions.
 
     If transpose_b is True, this returns the un-transposed shape, since pack_b
     will un-transpose `b_ref` as part of the packing layout transformation."""
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
 
     var output = IndexList[2]()
 
-    var n = b_input.dim(0) if transpose_in_0 else b_input.dim(1)
-    var k = b_input.dim(1) if transpose_in_0 else b_input.dim(0)
+    var dim0 = Int(b_input.dim[0]())
+    var dim1 = Int(b_input.dim[1]())
+    var n = dim0 if transpose_in_0 else dim1
+    var k = dim1 if transpose_in_0 else dim0
     var tile_n_k = IndexList[2]()
 
     @parameter
     @always_inline
-    fn dispatch_on_kernel_type[kernel_type: Bool]():
+    def dispatch_on_kernel_type[kernel_type: Bool]():
         comptime config = get_kernel_config[
             a_type,
-            b_type,
+            b_input.dtype,
             c_type,
             kernel_type=kernel_type,
         ]()
         tile_n_k = _get_tile_n_k[
-            a_type, b_type, c_type, config.kernel_cols, transpose_in_0
+            a_type, b_input.dtype, c_type, config.kernel_cols, transpose_in_0
         ](b_input)
 
     dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
-    @parameter
-    if transpose_in_0:
-        output[0] = b_input.dim(1)
-        output[1] = b_input.dim(0)
+    comptime if transpose_in_0:
+        output[0] = dim1
+        output[1] = dim0
     else:
-        output[0] = b_input.dim(0)
-        output[1] = b_input.dim(1)
+        output[0] = dim0
+        output[1] = dim1
 
-    # If we are on MacOS with Float32 data dtypes, we use apple_matmul
-    # (which is a binding for cblas_sgemm that doesn't support packing) and a
-    # special gemv for M=1 (apple_gemv).
-    # So override packing, BUT pack functions will do transpose (facilitates
-    # apple_gemv), so assign the transposed B dimensions.
-    @parameter
-    if not use_apple_accelerate_lib[c_type, a_type, b_type]():
-        comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-        comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime if not use_apple_accelerate_lib[c_type, a_type, b_input.dtype]():
+        comptime use_vnni = use_vnni_fn[a_type, b_input.dtype, c_type]()
+        comptime use_i8mm = use_i8mm_fn[a_type, b_input.dtype, c_type]()
         comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
         output[0] = align_up(output[0], factor)
         output[1] = align_up(output[1], tile_n_k[0])
@@ -618,49 +614,16 @@ fn _pack_matmul_b_shape_func_impl[
     return output
 
 
-@register_internal("pack_matmul_b_shape_func")
-@always_inline
-fn pack_matmul_b_shape_func[
-    a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
-    c_type: DType,
-    c_shape: DimList,
-    transpose_in_0: Bool,
-    single_thread_blocking_override: Bool,
-](b_input: NDBuffer[b_type, 2, _, b_shape]) -> IndexList[2]:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var kernel_type_m = 0
-
-    @parameter
-    if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-
-    return _pack_matmul_b_shape_func_impl[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transpose_in_0,
-        single_thread_blocking_override,
-    ](b_input, kernel_type_m)
-
-
-fn pack_b[
+def pack_b[
     transpose_b: Bool,
     simd_size: Int,
     inner_size: Int,
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    src_shape: DimList,
-    dst_shape: DimList,
 ](
-    dst: NDBuffer[mut=True, b_type, 2, _, dst_shape],
-    src: NDBuffer[b_type, 2, _, src_shape],
+    dst: TileTensor[mut=True, b_type, address_space=AddressSpace.GENERIC, ...],
+    src: TileTensor[b_type, address_space=AddressSpace.GENERIC, ...],
     tile_n: Int,
     tile_k: Int,
 ):
@@ -670,8 +633,13 @@ fn pack_b[
     Tiles (not tile contents) are stored in row major order, so tile[i, j] is
     tile_n * tile_k bytes away from tile[i, j+1].
     """
-    dst.zero()  # zero the padding to be safe, shouldn't be necessary
-    var dst_flat = dst.flatten()
+    # Strip extra type params from existential `...` pattern.
+    var src_tt = TileTensor(src.ptr, src.layout)
+    var dst_tt = TileTensor(dst.ptr, dst.layout)
+    memset_zero(
+        dst_tt.ptr, dst_tt.num_elements()
+    )  # zero the padding to be safe
+    var dst_flat_ptr = dst_tt.ptr
     var dst_offset: Int = 0
 
     comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
@@ -679,45 +647,43 @@ fn pack_b[
     comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
     comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
-    @parameter
-    if not transpose_b:
-        var k_in = src.dim[0]()
-        var n_in = src.dim[1]()
-        var k_out = dst.dim[0]()
-        var n_out = dst.dim[1]()
+    comptime if not transpose_b:
+        var k_in = Int(src_tt.dim[0]())
+        var n_in = Int(src_tt.dim[1]())
+        var k_out = Int(dst_tt.dim[0]())
+        var n_out = Int(dst_tt.dim[1]())
 
-        debug_assert(
-            n_out % tile_n == 0,
-            "N dimension of output must be padded to tile_n",
-        )
+        assert (
+            n_out % tile_n == 0
+        ), "N dimension of output must be padded to tile_n"
 
         for idx_k in range(0, k_out, tile_k):
             var tile_k2 = align_up(min(tile_k, k_out - idx_k), factor)
 
             for idx_n in range(0, n_out, tile_n):
-                var packed_dst_view = NDBuffer[b_type, 3](
-                    dst_flat.data + dst_offset,
-                    DimList(
-                        tile_n // inner_size2,
-                        tile_k2 // factor,
-                        inner_size2 * factor,
+                var packed_dst_view = TileTensor(
+                    dst_flat_ptr + dst_offset,
+                    row_major(
+                        Coord(
+                            Idx(tile_n // inner_size2),
+                            Idx(tile_k2 // factor),
+                            Idx(inner_size2 * factor),
+                        )
                     ),
                 )
                 var valid_k = min(tile_k2, k_in - idx_k)
                 var valid_n = min(tile_n, n_in - idx_n)
                 PackMatrixCols[
-                    src_shape,
-                    DimList.create_unknown[3](),
                     b_type,
                     simd_size,
                     inner_size,
                     use_vnni,
                     use_i8mm,
                     packed_dst_view.origin,
-                    src.origin,
+                    src_tt.origin,
                 ].run(
                     packed_dst_view,
-                    src,
+                    src_tt,
                     # Input is [K, N]:
                     # Starting global offset for packing.
                     Index(idx_k, idx_n),
@@ -728,33 +694,36 @@ fn pack_b[
                 dst_offset += tile_n * tile_k2
     else:
         # _t = transpose, annoying WAR since variables can't have same name in if/else
-        var k_in_t = src.dim[1]()
-        var n_in_t = src.dim[0]()
-        var k_out_t = dst.dim[0]()
-        var n_out_t = dst.dim[1]()
+        var k_in_t = Int(src_tt.dim[1]())
+        var n_in_t = Int(src_tt.dim[0]())
+        var k_out_t = Int(dst_tt.dim[0]())
+        var n_out_t = Int(dst_tt.dim[1]())
 
-        debug_assert(
-            n_out_t % tile_n == 0,
-            "N dimension of output must be padded to tile_n",
-        )
+        assert (
+            n_out_t % tile_n == 0
+        ), "N dimension of output must be padded to tile_n"
 
         for idx_k_t in range(0, k_out_t, tile_k):
             for idx_n_t in range(0, n_out_t, tile_n):
-                var packed_dst_view_t = NDBuffer[b_type, 3](
-                    dst_flat.data + dst_offset,
-                    DimList(tile_n // inner_size, tile_k, inner_size),
+                var packed_dst_view_t = TileTensor(
+                    dst_flat_ptr + dst_offset,
+                    row_major(
+                        Coord(
+                            Idx(tile_n // inner_size),
+                            Idx(tile_k),
+                            Idx(inner_size),
+                        )
+                    ),
                 )
                 var valid_k_t = min(tile_k, k_in_t - idx_k_t)
                 var valid_n_t = min(tile_n, n_in_t - idx_n_t)
                 PackMatrixRows[
-                    src_shape,
-                    DimList.create_unknown[3](),
                     b_type,
                     simd_size,
                     inner_size,
                 ].run(
                     packed_dst_view_t,
-                    src,
+                    src_tt,
                     # Input is [N, K]:
                     # Starting global offset for packing.
                     Index(idx_n_t, idx_k_t),
@@ -766,66 +735,63 @@ fn pack_b[
 
 
 @always_inline
-fn _pack_b_ndbuffer_impl[
-    b_mut: Bool,
+def _pack_b_ndbuffer_impl[
+    b_type: DType,
     //,
     a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
     transposed: Bool,
-    b_origin: Origin[mut=b_mut],
-    output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[b_type, 2, b_origin, b_shape],
-    output_buffer: NDBuffer[b_type, 2, output_origin],
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
     kernel_type_m: Int,
 ) raises:
-    """Performs the layout transformation on `b_input` expected by
+    """TileTensor implementation of `_pack_b_ndbuffer_impl`.
+
+    Performs the layout transformation on `b_input` expected by
     `matmul_dynamic_tile` when `b_packed` is True and stores the result in
     `output_buffer`.
 
-    When transpose_b is True, this also un-transposes b_input as part of the layout
-    transformation."""
+    When transpose_b is True, this also un-transposes b_input as part of the
+    layout transformation."""
+    comptime assert b_input.rank == 2, "b must be rank 2"
+    comptime assert b_input.flat_rank == 2, "b must have a non-nested layout"
+    comptime assert output_buffer.rank == 2, "output must be rank 2"
+    comptime assert (
+        output_buffer.flat_rank == 2
+    ), "output must have a non-nested layout"
+
+    var dim0 = Int(b_input.dim[0]())
+    var dim1 = Int(b_input.dim[1]())
 
     # Matrix by vector pattern -> use gemv
-    if b_input.dim(1) == 1:
+    if dim1 == 1:
         # For gemv no packing is necessary
-        memcpy(dest=output_buffer.data, src=b_input.data, count=b_input.dim(0))
+        memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=dim0)
 
     else:
-        var n = b_input.dim(0) if transposed else b_input.dim(1)
-        var k = b_input.dim(1) if transposed else b_input.dim(0)
+        var n = dim0 if transposed else dim1
+        var k = dim1 if transposed else dim0
 
-        # If we are on MacOS with Float32 data dtypes, we use apple_matmul
-        # (which is a binding for cblas_sgemm that doesn't support packing) and a
-        # special gemv for M=1 (apple_gemv).
-        # So override packing, BUT do transpose (facilitates apple_gemv).
-        @parameter
-        if use_apple_accelerate_lib[c_type, a_type, b_type]():
-            # If already transposed, skip transpose step and do a memcpy.
-            @parameter
-            if not transposed:
-                var perm = NDBuffer[
-                    DType.int, 1, MutAnyOrigin, 2
-                ].stack_allocation()
-                perm[0] = 1
-                perm[1] = 0
+        comptime if use_apple_accelerate_lib[c_type, a_type, b_type]():
+            comptime if not transposed:
+                var perm_ptr = stack_allocation[2, Scalar[DType.int]]()
+                perm_ptr[0] = 1
+                perm_ptr[1] = 0
 
-                transpose(output_buffer, b_input, perm.data)
+                transpose(output_buffer, b_input, perm_ptr)
 
             else:
-                memcpy(dest=output_buffer.data, src=b_input.data, count=n * k)
+                memcpy(dest=output_buffer.ptr, src=b_input.ptr, count=n * k)
             return
-
-        # The config (in particular inner size and tile_k) needs to EXACTLY match the
-        # values used in the matmul algorithm consuming this packed b matrix
 
         @parameter
         @always_inline
-        fn dispatch_on_kernel_type[kernel_type: Bool]():
+        def dispatch_on_kernel_type[kernel_type: Bool]():
             comptime config = get_kernel_config[
                 a_type,
                 b_type,
@@ -842,87 +808,90 @@ fn _pack_b_ndbuffer_impl[
                 a_type,
                 b_type,
                 c_type,
-                src_shape=b_shape,
-                dst_shape = DimList.create_unknown[2](),
             ](output_buffer, b_input, tile_n_k[0], tile_n_k[1])
 
         dispatch_get_kernel_type[dispatch_on_kernel_type](kernel_type_m, n, k)
 
 
-@register_internal("layout_transform_KN_to_KNkni")
-fn pack_b_ndbuffer[
-    b_mut: Bool,
+@always_inline
+def pack_matmul_b_shape_func[
+    a_type: DType,
+    c_type: DType,
+    transpose_in_0: Bool,
+](
+    b_input: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    kernel_type_m: Int = 0,
+) -> IndexList[2]:
+    """TileTensor primary implementation of `pack_matmul_b_shape_func`.
+
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    static shape params (0 = dynamic M).
+    """
+    return _pack_matmul_b_shape_func_impl[a_type, c_type, transpose_in_0](
+        b_input, kernel_type_m
+    )
+
+
+@always_inline
+def pack_b_ndbuffer[
+    b_type: DType,
     //,
     a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
-    b_origin: Origin[mut=b_mut],
-    output_origin: MutOrigin,
 ](
-    b_input: NDBuffer[b_type, 2, b_origin, b_shape],
-    output_buffer: NDBuffer[b_type, 2, output_origin],
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    kernel_type_m: Int = 0,
 ) raises:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var kernel_type_m = 0
+    """TileTensor primary implementation of `pack_b_ndbuffer`.
 
-    @parameter
-    if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-    _pack_b_ndbuffer_impl[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transposed=False,
-    ](b_input, output_buffer, kernel_type_m)
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    static shape params (0 = dynamic M).
+    """
+    _pack_b_ndbuffer_impl[a_type, c_type, transposed=False](
+        b_input, output_buffer, kernel_type_m
+    )
 
 
-@register_internal("layout_transform_NK_to_KNkni")
-fn pack_transposed_b_ndbuffer[
+@always_inline
+def pack_transposed_b_ndbuffer[
+    b_type: DType,
+    //,
     a_type: DType,
-    a_shape: DimList,
-    b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
 ](
-    b_input: NDBuffer[b_type, 2, _, b_shape],
-    output_buffer: NDBuffer[mut=True, b_type, 2],
+    b_input: TileTensor[
+        mut=False, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    output_buffer: TileTensor[
+        mut=True, b_type, address_space=AddressSpace.GENERIC, ...
+    ],
+    kernel_type_m: Int = 0,
 ) raises:
-    # NOTE `get_kernel_type` expects `m == 0` for dynamic M.
-    var kernel_type_m = 0
+    """TileTensor primary implementation of `pack_transposed_b_ndbuffer`.
 
-    @parameter
-    if a_shape.at[0]().has_value():
-        kernel_type_m = a_shape.at[0]().get()
-    _pack_b_ndbuffer_impl[
-        a_type,
-        a_shape,
-        b_type,
-        b_shape,
-        c_type,
-        c_shape,
-        transposed=True,
-    ](b_input, output_buffer, kernel_type_m)
+    Takes `kernel_type_m` directly instead of extracting it from `a_shape`
+    static shape params (0 = dynamic M).
+    """
+    _pack_b_ndbuffer_impl[a_type, c_type, transposed=True](
+        b_input, output_buffer, kernel_type_m
+    )
 
 
 @fieldwise_init
 struct BTileGenerator[
-    mut: Bool,
-    //,
     config: KernelConfig,
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    shape: DimList,
+    b_layout: TensorLayout,
     transpose_b: Bool,
     b_packed: Bool,
-    origin: Origin[mut=mut],
+    origin: ImmutOrigin,
 ](ImplicitlyCopyable):
     """Struct to encapsulate a tile of B that supports prepacking.
 
@@ -930,37 +899,39 @@ struct BTileGenerator[
     Otherwise, calls to get_tile will copy a tile from B into a stack allocated
     scratch buffer and return a view of that."""
 
-    var b: NDBuffer[
-        Self.b_type, 2, Self.origin, Self.shape
+    var b: TileTensor[
+        Self.b_type, Self.b_layout, Self.origin
     ]  # packed layout if b_packed is True
-    var b_tile_stack_ptr: UnsafePointer[Scalar[Self.b_type]]
+    var b_tile_stack_ptr: Optional[
+        UnsafePointer[Scalar[Self.b_type], MutAnyOrigin]
+    ]
     var tile_n_k: IndexList[2]
 
     # needs to be always_inline so b_tile_stack_ptr gets allocated on caller's stack
     @always_inline
     @staticmethod
-    fn get(
-        b: NDBuffer[Self.b_type, 2, Self.origin, Self.shape],
+    def get(
+        b: TileTensor[Self.b_type, Self.b_layout, Self.origin],
         tile_n_k: IndexList[2],
     ) -> BTileGenerator[
         Self.config,
         Self.a_type,
         Self.b_type,
         Self.c_type,
-        Self.shape,
+        Self.b_layout,
         Self.transpose_b,
         Self.b_packed,
         Self.origin,
     ]:
-        var b_tile_stack_ptr = UnsafePointer[Scalar[Self.b_type]]()
+        var b_tile_stack_ptr = Optional[
+            UnsafePointer[Scalar[Self.b_type], MutAnyOrigin]
+        ]()
 
-        debug_assert(
-            not (Self.transpose_b and Self.b_packed),
-            "b cannot be both transposed and pre-packed.",
-        )
+        assert not (
+            Self.transpose_b and Self.b_packed
+        ), "b cannot be both transposed and pre-packed."
 
-        @parameter
-        if not Self.b_packed:
+        comptime if not Self.b_packed:
             b_tile_stack_ptr = stack_allocation[
                 get_pack_data_size[Self.b_type](),
                 Self.b_type,
@@ -972,19 +943,27 @@ struct BTileGenerator[
             Self.a_type,
             Self.b_type,
             Self.c_type,
-            Self.shape,
+            Self.b_layout,
             Self.transpose_b,
             Self.b_packed,
         ](b, b_tile_stack_ptr, tile_n_k)
 
-    fn get_tile[
+    comptime PackedTileLayout = type_of(
+        row_major(Coord(Idx(Int(0)), Idx(Int(0)), Idx(Int(0))))
+    )
+
+    def get_tile[
         inner_size: Int
     ](
         self,
         global_offset: GemmShape,
         tile_dim_nk: IndexList[2],
         valid_data_dim_nk: IndexList[2],
-    ) -> NDBuffer[Self.b_type, 3, MutAnyOrigin, Self.config.packed_shape]:
+    ) -> TileTensor[
+        Self.b_type,
+        Self.PackedTileLayout,
+        ImmutAnyOrigin,
+    ]:
         """Get a packed matrix (B) tile.
 
         Args:
@@ -1006,21 +985,25 @@ struct BTileGenerator[
         comptime inner_size2 = inner_size // 2 if use_i8mm else inner_size
 
         var k = align_up(tile_dim_nk[1], factor)
-        var tile_shape_nopack = DimList(
+        var tile_shape_nopack = IndexList[3](
             tile_dim_nk[0] // inner_size2,
             k // factor,
             factor * inner_size2,
         )
 
-        var packed_b = NDBuffer[Self.b_type, 3, _, Self.config.packed_shape](
-            self.b_tile_stack_ptr, tile_shape_nopack
+        var packed_b = TileTensor(
+            self.b_tile_stack_ptr,
+            row_major(
+                Coord(
+                    Idx(tile_shape_nopack[0]),
+                    Idx(tile_shape_nopack[1]),
+                    Idx(tile_shape_nopack[2]),
+                )
+            ),
         )
 
-        @parameter
-        if Self.transpose_b and not Self.b_packed:
+        comptime if Self.transpose_b and not Self.b_packed:
             PackMatrixRows[
-                Self.shape,
-                Self.config.packed_shape,
                 Self.b_type,
                 Self.config.simd_size,
                 inner_size,
@@ -1034,11 +1017,9 @@ struct BTileGenerator[
                 # Valid amount of input from the starting offset.
                 Index(valid_data_dim_nk[0], valid_data_dim_nk[1]),
             )
-            return packed_b
+            return packed_b.as_immut().as_any_origin()
         elif (not Self.transpose_b) and (not Self.b_packed):
             PackMatrixCols[
-                Self.shape,
-                Self.config.packed_shape,
                 Self.b_type,
                 Self.config.simd_size,
                 inner_size,
@@ -1070,17 +1051,14 @@ struct BTileGenerator[
                 min(self.tile_n_k[1], valid_data_dim_nk[1]), factor
             )
 
-            var tile_shape_pack = DimList(
+            var tile_shape_pack = IndexList[3](
                 self.tile_n_k[0] // inner_size2,
                 tile_k2 // factor,
                 inner_size2 * factor,
             )
             var tile_k_idx = global_offset.K // tile_k
-            var b_flat = self.b.flatten()
-            var n_padded = self.b.dim[1]()
-            var b_tile_view = NDBuffer[
-                Self.b_type, 3, _, Self.config.packed_shape
-            ](
+            var n_padded = Int(self.b.dim[1]())
+            var b_tile_view = TileTensor(
                 # tiles are ordered in row-major order
                 # a bit of trickieness going on here, this works because:
                 #   1. tile_k is the same for every thread (tile_n is not) since threads
@@ -1088,15 +1066,19 @@ struct BTileGenerator[
                 #   2. the n dimension of each thread's tile is guaranteed to be an
                 #       exact multiple of the inner size
                 #   3. each tile has dims [tile_n/inner, tile_k, inner]
-                b_flat.data
+                self.b.ptr
                 + (tile_k_idx * tile_k * n_padded + global_offset.N * tile_k2),
-                tile_shape_pack,
+                row_major(
+                    Coord(
+                        Idx(tile_shape_pack[0]),
+                        Idx(tile_shape_pack[1]),
+                        Idx(tile_shape_pack[2]),
+                    )
+                ),
             )
-            return b_tile_view
+            return b_tile_view.as_any_origin()
 
         else:
-            debug_assert(
-                False, "unreachable, b_packed not supported with transpose_b"
-            )
+            assert False, "unreachable, b_packed not supported with transpose_b"
 
-        return packed_b
+        return packed_b.as_immut().as_any_origin()

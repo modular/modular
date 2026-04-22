@@ -5,23 +5,31 @@ description: You can install Mojo using pixi, uv, conda, pip, or other Python/Co
 
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
-import Requirements from '@site/src/components/Requirements';
-import { requirementsNoGPU } from '@site/docs/max/requirements';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export const tooltipNightly = (<Tooltip
+  parent="nightly"
+  content="To get the stable build, change the version in the website header."
+/>);
+export const tooltipStable = (<Tooltip
+  parent="stable"
+  content="To get the nightly build, change the version in the website header."
+/>);
 
 You can install Mojo as a Python or Conda package. This page shows you how to
-install using `pixi`, `uv`, `pip`, and `conda`, but you can use other tools.
-
-:::note Start coding
+install using `pixi` and `uv`, but you can use other tools.
 
 For a beginner's guide to Mojo, instead see the [get started
 tutorial](/mojo/manual/get-started), which includes installation steps.
 
+:::note System requirements
+
+You can use Mac, Linux, or Windows with WSL. For details, see the
+[system requirements](/mojo/requirements). For GPU programming, see
+[GPU compatibility](/mojo/requirements#gpu-compatibility).
+
 :::
-
-System requirements:
-
-<Requirements requirementsData={requirementsNoGPU}
-url="/mojo/manual/install#system-requirements" />
 
 ## Install
 
@@ -38,7 +46,6 @@ fast, language agnostic, and provides lock files for package dependencies. For
 more help with it, see our [Pixi basics guide](/pixi).
 
 :::
-
 
 <Tabs groupId="install">
 <TabItem value="pixi" label="pixi" default>
@@ -69,31 +76,30 @@ more help with it, see our [Pixi basics guide](/pixi).
 
     :::
 
-3. Install Mojo:
+<ConditionalVersionDocs version="nightly">
 
-    <Tabs groupId="release">
-      <TabItem value="nightly" label="Nightly">
+3. Install Mojo ({tooltipNightly}):
 
-        ```sh
-        pixi add mojo
-        ```
+    ```sh
+    pixi add mojo
+    ```
 
-      </TabItem>
-      <TabItem value="stable" label="Stable">
+</ConditionalVersionDocs>
+<ConditionalVersionDocs version="stable">
 
-        ```sh
-        pixi add "mojo==0.26.1"
-        ```
+3. Install Mojo ({tooltipStable}):
 
-      </TabItem>
-    </Tabs>
+    ```sh
+    pixi add "mojo==0.26.2"
+    ```
+
+</ConditionalVersionDocs>
 
 4. Enter the virtual environment so you can access the `mojo` CLI:
 
     ```sh
     pixi shell
     ```
-
 
 </TabItem>
 <TabItem value="uv" label="uv">
@@ -118,123 +124,27 @@ more help with it, see our [Pixi basics guide](/pixi).
     uv venv && source .venv/bin/activate
     ```
 
-4. Install Mojo:
+<ConditionalVersionDocs version="nightly">
 
-    <Tabs groupId="release">
-      <TabItem value="nightly" label="Nightly">
-
-        ```sh
-        uv pip install mojo \
-          --index https://whl.modular.com/nightly/simple/ \
-          --prerelease allow
-        ```
-
-        </TabItem>
-        <TabItem value="stable" label="Stable">
-
-        ```sh
-        uv pip install mojo \
-          --extra-index-url https://modular.gateway.scarf.sh/simple/
-        ```
-
-        </TabItem>
-      </Tabs>
-
-
-</TabItem>
-<TabItem value="pip" label="pip">
-
-1. Create a project folder:
+4. Install Mojo ({tooltipNightly}):
 
     ```sh
-    mkdir hello-world && cd hello-world
+    uv pip install mojo \
+      --index https://whl.modular.com/nightly/simple/ \
+      --prerelease allow
     ```
 
-2. Create and activate a virtual environment:
+</ConditionalVersionDocs>
+<ConditionalVersionDocs version="stable">
+
+4. Install Mojo ({tooltipStable}):
 
     ```sh
-    python3 -m venv .venv/hello-world \
-      && source .venv/hello-world/bin/activate
+    uv pip install mojo \
+      --extra-index-url https://modular.gateway.scarf.sh/simple/
     ```
 
-3. Install Mojo:
-
-    <Tabs groupId="release">
-      <TabItem value="nightly" label="Nightly">
-
-        ```sh
-        pip install --pre mojo \
-          --extra-index-url https://whl.modular.com/nightly/simple/
-        ```
-
-        </TabItem>
-        <TabItem value="stable" label="Stable">
-
-        ```sh
-        pip install mojo \
-          --extra-index-url https://modular.gateway.scarf.sh/simple/
-        ```
-
-        </TabItem>
-      </Tabs>
-
-
-</TabItem>
-<TabItem value="conda" label="conda">
-
-1. If you don't have it, install conda. A common choice is to use
-   [Homebrew](https://brew.sh/):
-
-    ```sh
-    brew install miniconda
-    ```
-
-2. Initialize conda for shell interaction:
-
-    ```sh
-    conda init
-    ```
-
-    If you're on a Mac, instead use:
-
-    ```sh
-    conda init zsh
-    ```
-
-    Then restart your terminal for the changes to take effect.
-
-3. Create a project:
-
-    ```sh
-    conda create -n hello-world
-    ```
-
-4. Start the virtual environment:
-
-    ```sh
-    conda activate hello-world
-    ```
-
-5. Install Mojo:
-
-    <Tabs groupId="release">
-      <TabItem value="nightly" label="Nightly">
-
-        ```sh
-        conda install -c conda-forge \
-          -c https://conda.modular.com/max-nightly/ mojo
-        ```
-
-        </TabItem>
-        <TabItem value="stable" label="Stable">
-
-        ```sh
-        conda install -c conda-forge \
-          -c https://conda.modular.com/max/ "mojo==0.26.1"
-        ```
-
-        </TabItem>
-      </Tabs>
+</ConditionalVersionDocs>
 
 </TabItem>
 </Tabs>
@@ -300,6 +210,15 @@ file with a `main()` function:
     Hello, World!
     ```
 
+### Try Mojo agent skills
+
+Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
+to generate more accurate Mojo code while learning Mojo:
+
+```bash
+npx skills add modular/skills
+```
+
 ### Try some examples
 
 The
@@ -335,7 +254,7 @@ language and its standard library. Here's how to download and use them.
 
     This displays a window that shows an initial random state for the grid and
     then automatically updates it with subsequent generations. Quit the program
-    by pressing the `q` or `<Escape>` key or by closing the window.
+    by pressing the <kbd>Q</kbd> or <kbd>Esc</kbd> key or by closing the window.
 
     :::note
 
@@ -376,20 +295,6 @@ uv sync --upgrade-package mojo
 ```
 
 </TabItem>
-<TabItem value="pip" label="pip">
-
-```sh
-pip install --upgrade mojo
-```
-
-</TabItem>
-<TabItem value="conda" label="conda">
-
-```sh
-conda update mojo
-```
-
-</TabItem>
 </Tabs>
 
 ## Uninstall
@@ -426,125 +331,8 @@ process applies.
   ```
 
   </TabItem>
-  <TabItem value="pip" label="pip">
-  This removes the package from your local environment:
-
-  ```sh
-  pip uninstall mojo
-  ```
-
-  However, this won't uninstall `mojo` dependencies, so some "sub packages"
-  remain installed. Consider using
-  [`pip-autoremove`](https://github.com/invl/pip-autoremove) or switch to a
-  better package manager like Pixi.
-
-  This deactivates your virtual environment:
-
-  ```sh
-  deactivate
-  ```
-
-  </TabItem>
-  <TabItem value="conda" label="conda">
-  This removes the package from your local project:
-
-  ```sh
-  conda remove mojo
-  ```
-
-  This deactivates your virtual environment:
-
-  ```sh
-  conda deactivate
-  ```
-
-  </TabItem>
 </Tabs>
-
-## What's included
-
-We actually offer two Mojo packages: `mojo` and `mojo-compiler`.
-
-For most situation, you want `mojo` because it includes all the developer tools
-(it's a superset of the `mojo-compiler` package).
-
-### `mojo`
-
-This gives you everything you need for Mojo development.
-
-Includes:
-
-- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
-- [Mojo standard library](/mojo/lib)
-- [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
-- Mojo language server (LSP) for IDE/editor integration
-- [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
-- [Mojo code formatter](/mojo/cli/format)
-- [Mojo REPL](/mojo/cli/repl)
-
-### `mojo-compiler`
-
-This package is smaller and is useful for environments where you only need to
-call or build existing Mojo code. For example, this is good if you're running
-Mojo in a production environment or when you're programming in Python and
-[calling a Mojo package](/mojo/manual/python/mojo-from-python)—situations where
-you don't need the LSP and debugger tools.
-
-Includes:
-
-- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
-- [Mojo standard library](/mojo/lib)
-- [`mojo` Python
-  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 
 ## System requirements
 
-To install `mojo` or `mojo-compiler`, your system must meet these
-specifications.
-
-<Tabs groupId="os">
-<TabItem value="mac" label="Mac">
-
-- macOS Sequoia (15) or later
-- Apple silicon (M1 - M5 processor)
-- Python 3.10 - 3.14
-- Xcode or Xcode Command Line Tools 16 or later
-- We have [limited compatibility](#gpu-compatibility) for Apple Silicon GPUs.
-  You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
-  downloads the Metal utilities required for GPU programming in later versions
-  of Xcode.
-
-</TabItem>
-<TabItem value="linux" label="Linux">
-
-- Ubuntu 22.04 LTS
-- x86-64 CPU (with [SSE4.2 or
-  newer](https://www.intel.com/content/www/us/en/support/articles/000057621/processors.html))
-  or AWS Graviton2/3 CPU
-- Minimum 8 GiB RAM
-- Python 3.10 - 3.14
-- g++ or clang++ C++ compiler
-- To use GPUs, see the [GPU compatibility](#gpu-compatibility)
-
-</TabItem>
-<TabItem value="windows" label="Windows">
-
-Windows is not officially supported at this time.
-
-In the meantime, you can try Mojo on Windows [with
-WSL](https://learn.microsoft.com/en-us/windows/wsl/install), using a compatible
-version of Ubuntu (see our requirements for Linux).
-
-</TabItem>
-</Tabs>
-
-### GPU compatibility
-
-import GpuRequirements from '@site/docs/mojo/_includes/gpu-requirements.mdx';
-
-Mojo supports both CPUs and GPUs, so you don't need a GPU to program with Mojo.
-But if you do want to program for GPUs with Mojo, we recommend the following
-GPUs.
-
-<GpuRequirements />
+Relocated to the [system requirements](/mojo/requirements) page.

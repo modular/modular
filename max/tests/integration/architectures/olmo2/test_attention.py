@@ -18,13 +18,15 @@ import torch
 from max.driver import Accelerator, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
+from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.kv_cache import KVCacheParams
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.olmo2.layers.attention import (
     Olmo2Attention as MaxOlmo2Attention,
 )
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from test_common.context_utils import create_text_context
 from torch.utils.dlpack import from_dlpack
 from transformers.models.olmo2.modeling_olmo2 import Olmo2RotaryEmbedding
@@ -112,9 +114,10 @@ def generate_max_outputs(
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
-    state_dict = {}
-    for weight_name, value in attention_weights.items():
-        state_dict[weight_name] = value.to(dtype.to_torch()).cpu()
+    state_dict = {
+        weight_name: value.to(max_dtype_to_torch(dtype)).cpu()
+        for weight_name, value in attention_weights.items()
+    }
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -134,7 +137,7 @@ def generate_max_outputs(
         rope=Llama3RotaryEmbedding(
             dim=text_config.hidden_size,
             n_heads=text_config.num_attention_heads,
-            theta=text_config.rope_theta,
+            theta=get_rope_theta(text_config),
             max_seq_len=MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,
@@ -154,6 +157,7 @@ def generate_max_outputs(
         params=kv_params,
         total_num_pages=1,
         session=session,
+        max_batch_size=128,
     )
     assert isinstance(kv_manager, PagedKVCacheManager)
 
@@ -167,15 +171,7 @@ def generate_max_outputs(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
 
-    cache_positions_type = TensorType(
-        DType.uint32,
-        ["total_seq_len"],
-        device=device_ref,
-    )
-    kv_cache_args = kv_params.get_symbolic_inputs()
-    flattened_kv_types = [
-        kv_type for sublist in kv_cache_args for kv_type in sublist
-    ]
+    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     # Build graph.
     with Graph(
@@ -187,11 +183,8 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_cache[0].buffer,
-            cache_lengths=kv_cache[1].tensor,
-            lookup_table=kv_cache[2].tensor,
-            max_lengths=kv_cache[3].tensor,
+        kv_collection = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
         )
 
         graph.output(
@@ -210,19 +203,19 @@ def generate_max_outputs(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(
         Buffer.from_dlpack(input_tensor[0]).to(device),
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        blocks.to(device),
-        cache_lengths.to(device),
-        lookup_table_tensor.to(device),
-        is_cache_empty_buf,
+        kv_runtime_inputs.kv_blocks.to(device),
+        kv_runtime_inputs.cache_lengths.to(device),
+        kv_runtime_inputs.lookup_table.to(device),
+        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 
     return output

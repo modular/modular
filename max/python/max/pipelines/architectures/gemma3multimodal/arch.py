@@ -12,15 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.nn.legacy.kv_cache import KVCacheStrategy
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
-from max.pipelines.lib import (
-    RopeType,
-    SupportedArchitecture,
-    SupportedEncoding,
-    TextAndVisionTokenizer,
-)
+from max.pipelines.lib import SupportedArchitecture, TextAndVisionTokenizer
 
 from .model import Gemma3_MultiModalModel
 from .model_config import Gemma3ForConditionalGenerationConfig
@@ -28,8 +22,6 @@ from .model_config import Gemma3ForConditionalGenerationConfig
 example_repo_ids = [
     # it = Instruction tuned (recommended).
     # pt = Pre-trained.
-    "google/gemma-3-12b-it",
-    "google/gemma-3-12b-pt",
     "google/gemma-3-4b-it",
     "google/gemma-3-4b-pt",
     "google/gemma-3-12b-it",
@@ -39,20 +31,22 @@ example_repo_ids = [
 ]
 
 gemma3_multimodal_arch = SupportedArchitecture(
-    name="Gemma3ForConditionalGeneration_Legacy",
+    name="Gemma3ForConditionalGeneration",
     example_repo_ids=example_repo_ids,
-    default_encoding=SupportedEncoding.bfloat16,
+    default_encoding="bfloat16",
     supported_encodings={
-        SupportedEncoding.bfloat16: [KVCacheStrategy.PAGED],
-        SupportedEncoding.float8_e4m3fn: [KVCacheStrategy.PAGED],
+        "bfloat16",
+        "float8_e4m3fn",
     },
     pipeline_model=Gemma3_MultiModalModel,
     task=PipelineTask.TEXT_GENERATION,
     tokenizer=TextAndVisionTokenizer,
     default_weights_format=WeightsFormat.safetensors,
     multi_gpu_supported=True,
-    rope_type=RopeType.normal,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    rope_type="normal",
     required_arguments={
+        "max_num_steps": 1,
         "enable_prefix_caching": False,
         "enable_chunked_prefill": False,
     },

@@ -25,6 +25,8 @@ managed and destroyed in Mojo:
 These traits are built into Mojo and do not need to be imported.
 """
 
+from std.builtin.variadics import _MLIR
+
 # ===----------------------------------------------------------------------=== #
 #  AnyType
 # ===----------------------------------------------------------------------=== #
@@ -43,7 +45,7 @@ trait AnyType:
     Generic code will commonly want to use `T: ImplicitlyDestructible` instead
     of `T: AnyType`.
 
-    # `AnyType`, Object Destructors, and Linear Types
+    **`AnyType`, Object Destructors, and Linear Types**
 
     Mojo's `AnyType` is a lower-level, more powerful building block than is
     found in many mainstream programming languages today.
@@ -60,7 +62,7 @@ trait AnyType:
     trivial (possibly empty) destructor function. Mojo's `AnyType` is more
     basic than that seemingly minimum requirement.
 
-    *Unlike* in programming langauges the reader is likely to be familiar with,
+    *Unlike* in programming languages the reader is likely to be familiar with,
     Mojo enforces strong object lifecycles, but does *not* require that a type
     provide an implicitly-callable destructor function. Instead, a type may
     choose to provide only named, explicitly-callable destructor methods.
@@ -90,26 +92,28 @@ trait AnyType:
     Linear types can act as a guard that some explicit action must be performed
     sometime "in the future" after initial object construction.
 
-    The following is a simple example of a non-implicilty-destructible type with
+    The following is a simple example of a non-implicitly-destructible type with
     a named destructor method:
 
     ```mojo
+    from std.pathlib import Path
+
     @explicit_destroy
     struct FileBuffer:
-        fn __init__(out self, path: Path):
-            # ... open the file at the specified `path` ...
+        def __init__(out self, path: Path):
+            pass  # ... open the file at the specified `path` ...
 
-        fn write(self, data: Some[Writable]):
-            # ... buffered write of the specified data to this file ...
+        def write(self, data: Some[Writable]):
+            pass  # ... buffered write of the specified data to this file ...
 
-        fn save_and_close(deinit self):
-            # ... save out the buffered data ...
+        def save_and_close(deinit self):
+            pass  # ... save out the buffered data ...
 
-    # 🔴 ERROR: 'file' abandoned without being explicitly destroyed
-    fn write_greeting_to_file(var file: FileBuffer):
-        file.write("Hello there!")
-
-        # 🟢 FIX: add `file^.save_and_close()`
+    # ERROR: 'file' abandoned without being explicitly destroyed
+    # def write_greeting_to_file(var file: FileBuffer):
+    #     file.write("Hello there!")
+    #
+    # FIX: add `file^.save_and_close()`
     ```
 
     In the above example, the user is saved from forgetting to flush any
@@ -149,13 +153,15 @@ trait ImplicitlyDestructible:
     Example:
 
     ```mojo
+    from std.memory import UnsafePointer, alloc
+
     struct ResourceOwner(ImplicitlyDestructible):
-        var ptr: UnsafePointer[Int]
+        var ptr: UnsafePointer[Int, MutAnyOrigin]
 
-        fn __init__(out self, size: Int):
-            self.ptr = UnsafePointer[Int].alloc(size)
+        def __init__(out self, size: Int):
+            self.ptr = alloc[Int](size)
 
-        fn __del__(deinit self):
+        def __del__(deinit self):
             # Clean up owned resources
             self.ptr.free()
     ```
@@ -168,7 +174,7 @@ trait ImplicitlyDestructible:
     - Use composition to automatically handle nested resource cleanup
     """
 
-    fn __del__(deinit self, /):
+    def __del__(deinit self, /):
         """Destroys the instance and cleans up any owned resources.
 
         This method is called automatically when an instance's lifetime ends. It receives
@@ -194,33 +200,50 @@ trait ImplicitlyDestructible:
     """
 
 
-# A temporary alias to help with the linear types transition, see
-# https://www.notion.so/modularai/Linear-Types-14a1044d37bb809ab074c990fe1a84e3.
-@deprecated(use=AnyType)
-comptime UnknownDestructibility = AnyType
-"""Temporary alias for types that can be implicitly destroyed."""
+comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
+comptime __SomeTypeListImpl[
+    Trait: type_of(AnyType), values: _MLIR.KGENTypeListType[Trait]
+] = TypeList[Trait=Trait, values]()
 
-
-comptime __SomeImpl[Trait: __TypeOfAllTypes, T: Trait] = T
-
-comptime Some[Trait: __TypeOfAllTypes] = __SomeImpl[Trait]
+comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]
 """An alias allowing users to tersely express that a function argument is an
 instance of a type that implements a trait or trait composition.
 
 For example, instead of writing
 
 ```mojo
-fn foo[T: Intable, //](x: T) -> Int:
+def foo[T: Intable, //](x: T) -> Int:
     return x.__int__()
 ```
 
 one can write:
 
 ```mojo
-fn foo(x: Some[Intable]) -> Int:
+def foo(x: Some[Intable]) -> Int:
     return x.__int__()
 ```
 
 Parameters:
     Trait: The trait or trait composition that the argument type must implement.
+"""
+
+comptime SomeTypeList[Trait: type_of(AnyType)] = __SomeTypeListImpl[Trait, ...]
+"""An alias allowing users to tersely express that a function argument is a
+list of types that implement a trait or trait composition. This is particularly
+useful for variadic packs.
+
+For example, instead of writing
+
+```mojo
+def foo[*arg_types: Copyable](*args: *arg_types) -> Int: ...
+```
+
+one can write:
+
+```mojo
+def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
+```
+
+Parameters:
+    Trait: The trait or trait composition that the argument types must implement.
 """

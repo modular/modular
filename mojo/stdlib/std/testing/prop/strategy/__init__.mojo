@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the `Strategy` trait and exports built-in strategies for property-based testing."""
 
-from testing.prop.random import Rng
+from std.testing.prop.random import Rng
 from .simd_strategy import *
 from .list_strategy import *
 from .string_strategy import *
@@ -24,12 +25,10 @@ trait Strategy(ImplicitlyDestructible, Movable):
     produce the random input values for the properties being tested.
     """
 
-    # TODO: `Value` should require `Representable/Stringable` once conditional
-    # conformance is supported.
     comptime Value: Copyable
     """The type the strategy produces."""
 
-    fn value(mut self, mut rng: Rng) raises -> Self.Value:
+    def value(mut self, mut rng: Rng) raises -> Self.Value:
         """Produces a random value using this strategy.
 
         Args:

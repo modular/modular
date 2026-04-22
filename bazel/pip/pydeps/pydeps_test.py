@@ -87,6 +87,7 @@ def main() -> int:
     unresolved_imports, unused_deps = check_dependencies_against_imports(
         working_dir.absolute(),
         final_srcs,
+        target_srcs,
         third_party_deps,
         ignore_extra_deps,
         ignore_unresolved_imports,

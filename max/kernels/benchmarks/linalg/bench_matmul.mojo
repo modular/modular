@@ -11,56 +11,68 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
-from random import rand
+from std.os import abort
+from std.random import rand
+from std.utils.numerics import get_accum_type
 
-from benchmark import *
-from benchmark import keep
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from std.benchmark import *
+from std.benchmark import keep
+from layout import Coord, RuntimeInt, TileTensor, row_major
 from linalg.matmul import matmul
 from linalg.packing import pack_b_ndbuffer, pack_matmul_b_shape_func
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal
-
-from utils import IndexList
-from utils.index import Index
+from std.testing import assert_almost_equal
 
 
-fn gemm_naive(a: NDBuffer, b: NDBuffer, c: NDBuffer[mut=True, ...]):
-    var m = c.get_shape()[0]
-    var n = c.get_shape()[1]
-    var k = a.get_shape()[1]
-    c.zero()
+def _ri(v: Int) -> RuntimeInt[DType.int64]:
+    return RuntimeInt[DType.int64](Int64(v))
+
+
+def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
+    """Naive reference matmul. Accumulates into an `acc_type` (f32 for f16/bf16
+    output) scratch buffer so that verification matches the main matmul's
+    internal fp32-scratch behavior."""
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+    var k = Int(a.dim[1]())
+
+    comptime acc_type = get_accum_type[c.dtype]()
+
+    var accum = alloc[Scalar[acc_type]](m * n)
+    for idx in range(m * n):
+        accum[idx] = Scalar[acc_type](0)
 
     for i in range(m):
         for p in range(k):
+            var a_val = a.raw_load(i * k + p).cast[acc_type]()
             for j in range(n):
-                var a_val = a[i, p].cast[c.type]()
-                var b_val = b[p, j].cast[c.type]()
-                c[i, j] += a_val * b_val
+                var b_val = b.raw_load(p * n + j).cast[acc_type]()
+                accum[i * n + j] += a_val * b_val
+
+    for idx in range(m * n):
+        c.ptr[idx] = accum[idx].cast[c.dtype]()
+    accum.free()
 
 
-fn verify(a: NDBuffer, b: NDBuffer, c: NDBuffer):
-    var m = c.get_shape()[0]
-    var n = c.get_shape()[1]
+def verify(a: TileTensor, b: TileTensor, c: TileTensor):
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
 
-    var c_ref_ptr = UnsafePointer[Scalar[c.type]].alloc(m * n)
-    var c_ref = NDBuffer[c.type, c.rank](c_ref_ptr, c.get_shape())
+    var c_ref_ptr = alloc[Scalar[c.dtype]](m * n)
+    var c_ref = TileTensor(c_ref_ptr, row_major(Coord(_ri(m), _ri(n))))
     gemm_naive(a, b, c_ref)
 
     for i in range(m):
         for j in range(n):
             try:
-                assert_almost_equal(c[i, j], c_ref[i, j])
+                assert_almost_equal(
+                    c.raw_load(i * n + j), c_ref.raw_load(i * n + j)
+                )
             except e:
                 abort(String(e))
     c_ref_ptr.free()
 
 
-fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
+def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     # disatch to bench_matmul with concrete spec type
     m.bench_with_input[
         MatmulSpec[spec.static_info], bench_matmul[spec.static_info]
@@ -72,7 +84,7 @@ fn bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:
     )
 
 
-fn bench_matmul[
+def bench_matmul[
     static: MatmulSpecStatic
 ](mut bencher: Bencher, spec: MatmulSpec[static]) raises capturing:
     comptime a_type = spec.static_info.a_type
@@ -80,60 +92,39 @@ fn bench_matmul[
     comptime c_type = spec.static_info.c_type
     comptime b_packed = spec.static_info.b_packed
     comptime alignment = 64
-    var a_ptr = UnsafePointer[Scalar[a_type],].alloc(
-        spec.m * spec.k, alignment=alignment
-    )
-    var b_ptr = UnsafePointer[Scalar[b_type],].alloc(
-        spec.k * spec.n, alignment=alignment
-    )
-    var c_ptr = UnsafePointer[Scalar[c_type],].alloc(
-        spec.m * spec.n, alignment=alignment
-    )
-    var a = NDBuffer[a_type, 2](a_ptr, Index(spec.m, spec.k))
-    var b = NDBuffer[b_type, 2](b_ptr, Index(spec.k, spec.n))
-    var c = NDBuffer[c_type, 2](c_ptr, Index(spec.m, spec.n))
-    rand[a_type](a_ptr, len(a))
-    rand[b_type](b_ptr, len(b))
-    c.zero()
+    var a_ptr = alloc[Scalar[a_type],](spec.m * spec.k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type],](spec.k * spec.n, alignment=alignment)
+    var c_ptr = alloc[Scalar[c_type],](spec.m * spec.n, alignment=alignment)
+    var a = TileTensor(a_ptr, row_major(Coord(_ri(spec.m), _ri(spec.k))))
+    var b = TileTensor(b_ptr, row_major(Coord(_ri(spec.k), _ri(spec.n))))
+    var c = TileTensor(c_ptr, row_major(Coord(_ri(spec.m), _ri(spec.n))))
+    rand[a_type](a_ptr, spec.m * spec.k)
+    rand[b_type](b_ptr, spec.k * spec.n)
+    _ = c.fill(Scalar[c_type](0))
 
-    var padded_n_k = pack_matmul_b_shape_func[
-        a_type,
-        DimList.create_unknown[2](),
-        b_type,
-        DimList.create_unknown[2](),
-        c_type,
-        DimList.create_unknown[2](),
-        transpose_in_0=False,
-        single_thread_blocking_override=False,
-    ](b)
+    var padded_n_k = pack_matmul_b_shape_func[a_type, c_type, False](b)
 
     var padded_n = padded_n_k[1] if b_packed else spec.n
     var padded_k = padded_n_k[0] if b_packed else spec.k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type],].alloc(
+    var bp_ptr = alloc[Scalar[b_type],](
         padded_k * padded_n, alignment=alignment
     )
-    var bp = NDBuffer[b_type, 2](bp_ptr, Index(padded_k, padded_n))
+    var bp = TileTensor(bp_ptr, row_major(Coord(_ri(padded_k), _ri(padded_n))))
 
     if b_packed:
-        pack_b_ndbuffer[
-            a_type,
-            DimList.create_unknown[2](),
-            b_type,
-            DimList.create_unknown[2](),
-            c_type,
-            DimList.create_unknown[2](),
-        ](b, bp)
+        pack_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
+    @__copy_capture(a, b, c, bp)
     @parameter
-    fn bench_fn() raises:
+    def bench_fn() raises:
         matmul[
             transpose_b=False,
             b_packed=b_packed,
             saturated_vnni=False,
         ](c, a, bp if b_packed else b)
-        keep(c.data)
+        keep(c.ptr)
 
     bencher.iter[bench_fn]()
     verify(a, b, c)
@@ -153,16 +144,18 @@ struct MatmulSpecStatic(ImplicitlyCopyable):
 
 
 @fieldwise_init
-struct MatmulSpec[static_info: MatmulSpecStatic](
-    ImplicitlyCopyable, Stringable
-):
+struct MatmulSpec[static_info: MatmulSpecStatic](ImplicitlyCopyable, Writable):
     var m: Int
     var n: Int
     var k: Int
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String(
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the matmul spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "m=",
             self.m,
             ";n=",
@@ -179,11 +172,11 @@ struct MatmulSpec[static_info: MatmulSpecStatic](
             Self.static_info.c_type,
         )
 
-    fn flops(self) -> Int:
+    def flops(self) -> Int:
         return 2 * self.m * self.n * self.k
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
 
     comptime packed_float32 = MatmulSpecStatic(
@@ -198,10 +191,47 @@ def main():
         b_type=DType.float32,
         c_type=DType.float32,
     )
-
+    comptime unpacked_f16_f16 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.float16,
+        b_type=DType.float16,
+        c_type=DType.float16,
+    )
+    comptime unpacked_f16_f32 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.float16,
+        b_type=DType.float16,
+        c_type=DType.float32,
+    )
+    comptime unpacked_bf16_bf16 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.bfloat16,
+        b_type=DType.bfloat16,
+        c_type=DType.bfloat16,
+    )
+    comptime unpacked_bf16_f32 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.bfloat16,
+        b_type=DType.bfloat16,
+        c_type=DType.float32,
+    )
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=256, n=256, k=256))
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=512, n=512, k=512))
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=1024, n=1024, k=1024))
     bench_matmul_spec(m, MatmulSpec[unpacked_float32](m=256, n=256, k=256))
+
+    # fp16/bf16 coverage — exercises the internal fp32 scratch-buffer path.
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f16](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f16](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f16](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f32](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f32](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f32](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_bf16](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_bf16](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_bf16](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_f32](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_f32](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_f32](m=1024, n=1024, k=1024))
 
     m.dump_report()

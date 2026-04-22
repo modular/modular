@@ -177,9 +177,8 @@ class Package:
         exec_compatible_with = HOST_CONSTRAINTS,"""
 
         patches_line = ""
-        if self.library_name.startswith("torch@"):
-            # Apply something like https://github.com/pytorch/pytorch/pull/165648,
-            # with a few more fixups specific to 2.8.0
+        if self.library_name.startswith("torch@2.9.1"):
+            # Backport https://github.com/pytorch/pytorch/pull/167046
             patches_line = """
         post_install_patches = ["@@//bazel/public-patches:torch-cuda-deps.patch"],"""
 

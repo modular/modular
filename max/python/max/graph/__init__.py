@@ -14,7 +14,13 @@
 
 from . import dtype_promotion, ops
 from .dim import AlgebraicDim, Dim, DimLike, StaticDim, SymbolicDim
-from .graph import Graph, KernelLibrary
+from .graph import (
+    DevicePlacementPolicy,
+    Graph,
+    GraphDebugConfig,
+    KernelLibrary,
+    Module,
+)
 from .type import (
     BufferType,
     DeviceKind,

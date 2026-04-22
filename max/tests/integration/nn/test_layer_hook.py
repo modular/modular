@@ -20,8 +20,8 @@ from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
-from max.nn.legacy.hooks.print_hook import PrintHook
-from max.nn.legacy.layer import Layer, add_layer_hook, clear_hooks
+from max.nn.hooks.print_hook import PrintHook
+from max.nn.layer import Layer, add_layer_hook, clear_hooks
 from pytest_mock import MockerFixture
 
 
@@ -244,7 +244,8 @@ def test_hook_many_args_kwargs(mocker: MockerFixture) -> None:
 
 
 def test_print_hook_filter(
-    session: InferenceSession, capfd: pytest.CaptureFixture
+    session: InferenceSession,
+    capfd: pytest.CaptureFixture,  # type: ignore[type-arg]
 ) -> None:
     # Create a model with two inner layers and name them.
     print_hook = PrintHook(filter=["model.inner_layer_2"])

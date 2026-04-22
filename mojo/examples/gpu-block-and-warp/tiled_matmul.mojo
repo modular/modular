@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 """
-Tiled Matrix Multiplication GPU Kernel Example
+Tiled Matrix Multiplication GPU Kernel Example.
 
 This example demonstrates a basic tiled matrix multiplication GPU kernel
 implementation in Mojo, with a specific focus on using gpu.sync.barrier()
@@ -28,14 +28,14 @@ The implementation shows:
 This example uses only open source Mojo standard library and layout package.
 """
 
-from math import ceildiv
-from sys import exit, has_accelerator
+from std.math import ceildiv
+from std.sys import exit, has_accelerator
 
 # GPU programming imports from open source stdlib
-from gpu.sync import barrier
-from gpu.host import DeviceContext
-from gpu import thread_idx, block_idx
-from gpu.memory import AddressSpace
+from std.gpu.sync import barrier
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx, block_idx
+from std.gpu.memory import AddressSpace
 
 # Layout tensor support from open source layout package
 from layout import Layout, LayoutTensor
@@ -73,7 +73,7 @@ comptime tile_a_layout = Layout.row_major(TILE_M, TILE_K)
 comptime tile_b_layout = Layout.row_major(TILE_K, TILE_N)
 
 
-fn tiled_matmul_kernel(
+def tiled_matmul_kernel(
     matrix_a: LayoutTensor[float_dtype, matrix_a_layout, MutAnyOrigin],
     matrix_b: LayoutTensor[float_dtype, matrix_b_layout, MutAnyOrigin],
     matrix_c: LayoutTensor[float_dtype, matrix_c_layout, MutAnyOrigin],
@@ -97,14 +97,14 @@ fn tiled_matmul_kernel(
         float_dtype,
         tile_a_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var tile_b_shared = LayoutTensor[
         float_dtype,
         tile_b_layout,
         MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     # Initialize accumulator and start tiling loop
@@ -112,13 +112,12 @@ fn tiled_matmul_kernel(
 
     # Iterate through tiles along K dimension
     # Use @parameter to unroll the loop at compile time
-    @parameter
-    for k_tile in range(0, MATRIX_K, TILE_K):
+    comptime for k_tile in range(0, MATRIX_K, TILE_K):
         # Cooperative tile loading
         # Calculate global coordinates for tile loading
         var a_global_row = tile_row_start + thread_y
-        var a_global_col = UInt(k_tile) + thread_x
-        var b_global_row = UInt(k_tile) + thread_y
+        var a_global_col = k_tile + thread_x
+        var b_global_row = k_tile + thread_y
         var b_global_col = tile_col_start + thread_x
 
         # Bounds checking
@@ -148,8 +147,7 @@ fn tiled_matmul_kernel(
         barrier()
 
         # Compute dot product using shared memory tiles
-        @parameter
-        for k in range(TILE_K):
+        comptime for k in range(TILE_K):
             var a_element = tile_a_shared[thread_y, k]
             var b_element = tile_b_shared[k, thread_x]
             accumulator += a_element * b_element
@@ -162,10 +160,9 @@ fn tiled_matmul_kernel(
         matrix_c[global_row, global_col] = accumulator
 
 
-def main():
+def main() raises:
     # Check for GPU availability
-    @parameter
-    if not has_accelerator():
+    comptime if not has_accelerator():
         print("No GPU detected - this example requires a supported GPU")
     else:
         print("Tiled Matrix Multiplication GPU Example")
@@ -294,8 +291,7 @@ def main():
                 expected_str += String(expected_val, " ")
             print(expected_str)
 
-        @parameter
-        if MATRIX_SIZE > 4:
+        comptime if MATRIX_SIZE > 4:
             print("... (remaining elements not displayed)")
 
         print(

@@ -11,16 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import Coord, Idx, TileTensor, coord_to_index_list, row_major
 
-from utils.index import IndexList
-from utils.numerics import get_accum_type
+from std.utils.numerics import get_accum_type
 
 
 @always_inline
-fn cumsum[
+def cumsum[
     dtype: DType,
     exclusive: Bool,
     reverse: Bool,
@@ -53,10 +50,9 @@ fn cumsum[
     comptime accum_type = DType.float64 if dtype == DType.float32 else get_accum_type[
         dtype
     ]()
-    debug_assert(
-        -input.rank <= axis < input.rank,
-        "Axis value must be in range [-rank, rank)",
-    )
+    assert (
+        -input.rank <= axis < input.rank
+    ), "Axis value must be in range [-rank, rank)"
     var axis_pos = axis if axis >= 0 else axis + input.rank
 
     var shape = coord_to_index_list(input.layout.shape_coord())
@@ -74,18 +70,17 @@ fn cumsum[
 
     var output_data = TileTensor(
         output.ptr,
-        row_major(Coord(Idx(output.numel()))),
+        row_major(Coord(Idx(output.num_elements()))),
     )
     var input_data = TileTensor(
         input.ptr,
-        row_major(Coord(Idx(input.numel()))),
+        row_major(Coord(Idx(input.num_elements()))),
     )
 
     for outer_index in range(outer):
         var outer_index_adj: Int
 
-        @parameter
-        if reverse:
+        comptime if reverse:
             outer_index_adj = (outer - 1) - outer_index
         else:
             outer_index_adj = outer_index
@@ -94,8 +89,7 @@ fn cumsum[
             var accumulator: Scalar[accum_type] = 0
             var inner_index_adj: Int
 
-            @parameter
-            if reverse:
+            comptime if reverse:
                 inner_index_adj = (inner - 1) - inner_index
             else:
                 inner_index_adj = inner_index
@@ -103,8 +97,7 @@ fn cumsum[
             for depth_index in range(depth):
                 var depth_index_adj: Int
 
-                @parameter
-                if reverse:
+                comptime if reverse:
                     depth_index_adj = (depth - 1) - depth_index
                 else:
                     depth_index_adj = depth_index
@@ -115,8 +108,7 @@ fn cumsum[
                     + depth_index_adj * outer
                 )
 
-                @parameter
-                if exclusive:
+                comptime if exclusive:
                     output_data[index] = accumulator.cast[dtype]()
                     accumulator = (
                         accumulator + input_data[index].cast[accum_type]()

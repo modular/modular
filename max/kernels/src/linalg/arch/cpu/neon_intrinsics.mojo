@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import llvm_intrinsic
+from std.sys import llvm_intrinsic
 
-from memory.unsafe import bitcast
+from std.memory.unsafe import bitcast
 
 # ===-----------------------------------------------------------------------===#
 # dot product
 # ===-----------------------------------------------------------------------===#
 
 
-fn _neon_dotprod[
-    a_type: DType, b_type: DType, c_type: DType, width: Int
+def _neon_dotprod[
+    a_type: DType, b_type: DType, c_type: DType, width: SIMDSize
 ](
     c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
@@ -32,26 +32,24 @@ fn _neon_dotprod[
 
     @parameter
     @always_inline
-    fn call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
+    def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
-    @parameter
-    if a_type == DType.uint8 and b_type == DType.uint8:
+    comptime if a_type == DType.uint8 and b_type == DType.uint8:
         return call_intrinsic["llvm.aarch64.neon.udot.v4i32.v16i8"]()
     elif a_type == DType.int8 and b_type == DType.int8:
         return call_intrinsic["llvm.aarch64.neon.sdot.v4i32.v16i8"]()
     else:
-        constrained[False, "unsupported A and B types"]()
-        return SIMD[c_type, width]()
+        comptime assert False, "unsupported A and B types"
 
 
-fn _neon_dotprod_lane[
+def _neon_dotprod_lane[
     lane: Int,
     a_type: DType,
     b_type: DType,
     c_type: DType,
-    width: Int,
-    b_width: Int,
+    width: SIMDSize,
+    b_width: SIMDSize,
 ](
     c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
@@ -74,8 +72,8 @@ fn _neon_dotprod_lane[
 # ===-----------------------------------------------------------------------===#
 
 
-fn _neon_matmul[
-    a_type: DType, b_type: DType, c_type: DType, width: Int
+def _neon_matmul[
+    a_type: DType, b_type: DType, c_type: DType, width: SIMDSize
 ](
     c: SIMD[c_type, width],
     a: SIMD[a_type, width * 4],
@@ -86,16 +84,14 @@ fn _neon_matmul[
 
     @parameter
     @always_inline
-    fn call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
+    def call_intrinsic[intrin: StaticString]() -> SIMD[c_type, width]:
         return llvm_intrinsic[intrin, SIMD[c_type, width]](c, a, b)
 
-    @parameter
-    if a_type == DType.uint8 and b_type == DType.uint8:
+    comptime if a_type == DType.uint8 and b_type == DType.uint8:
         return call_intrinsic["llvm.aarch64.neon.ummla.v4i32.v16i8"]()
     elif a_type == DType.uint8 and b_type == DType.int8:
         return call_intrinsic["llvm.aarch64.neon.usmmla.v4i32.v16i8"]()
     elif a_type == DType.int8 and b_type == DType.int8:
         return call_intrinsic["llvm.aarch64.neon.smmla.v4i32.v16i8"]()
     else:
-        constrained[False, "unsupported A and B types"]()
-        return SIMD[c_type, width]()
+        comptime assert False, "unsupported A and B types"

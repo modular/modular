@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from itertools import product
-from itertools.itertools import _Product2, _Product3, _Product4
-from testing import (
+from std.itertools import product
+from std.itertools.itertools import _Product2, _Product3, _Product4
+from std.testing import (
     TestSuite,
     assert_equal,
     assert_false,
@@ -23,7 +23,7 @@ from testing import (
 from test_utils import Observable
 
 
-def test_product2():
+def test_product2() raises:
     var l1 = ["hey", "hi", "hello"]
     var l2 = [10, 20, 30]
 
@@ -63,11 +63,10 @@ def test_product2():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_product2_param():
+def test_product2_param() raises:
     var trip_count = 0
 
-    @parameter
-    for i, j in product(range(2), range(2)):
+    comptime for i, j in product(range(2), range(2)):
         assert_true(i in (0, 1))
         assert_true(j in (0, 1))
         trip_count += 1
@@ -75,7 +74,7 @@ def test_product2_param():
     assert_equal(trip_count, 4)
 
 
-def test_product2_unequal():
+def test_product2_unequal() raises:
     """Checks the product if the two input iterators are unequal."""
     var l1 = ["hey", "hi", "hello", "holla"]
     var l2 = [10, 20, 30]
@@ -126,7 +125,7 @@ def test_product2_unequal():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_product3():
+def test_product3() raises:
     """Tests the product of three iterables."""
     var l1 = [1, 2]
     var l2 = [10, 20]
@@ -180,12 +179,11 @@ def test_product3():
         _ = it.__next__()  # raises StopIteration
 
 
-def test_product3_param():
+def test_product3_param() raises:
     """Tests the product of three iterables with parameter for loop."""
     var trip_count = 0
 
-    @parameter
-    for i, j, k in product(range(2), range(2), range(2)):
+    comptime for i, j, k in product(range(2), range(2), range(2)):
         assert_true(i in (0, 1))
         assert_true(j in (0, 1))
         assert_true(k in (0, 1))
@@ -194,7 +192,7 @@ def test_product3_param():
     assert_equal(trip_count, 8)
 
 
-def test_product4():
+def test_product4() raises:
     """Tests the product of four iterables."""
     var l1 = [1, 2]
     var l2 = [3, 4]
@@ -213,12 +211,11 @@ def test_product4():
     assert_equal(count, 16)
 
 
-def test_product4_param():
+def test_product4_param() raises:
     """Tests the product of four iterables with parameter for loop."""
     var trip_count = 0
 
-    @parameter
-    for i, j, k, l in product(range(2), range(2), range(2), range(2)):
+    comptime for i, j, k, l in product(range(2), range(2), range(2), range(2)):
         assert_true(i in (0, 1))
         assert_true(j in (0, 1))
         assert_true(k in (0, 1))
@@ -228,7 +225,7 @@ def test_product4_param():
     assert_equal(trip_count, 16)
 
 
-def test_product4_order():
+def test_product4_order() raises:
     """Tests that product(a, b, c, d) produces elements in the correct order."""
     var l1 = [0, 1]
     var l2 = [0, 1]
@@ -257,7 +254,7 @@ def test_product4_order():
     assert_equal(elem[3], 0)
 
 
-def test_product_bounds():
+def test_product_bounds() raises:
     var it = product(range(3), range(2))
     for i in range(6, -1, -1):
         assert_equal(it.bounds()[0], i)
@@ -273,18 +270,18 @@ struct TestCopyIterator[
 ](Copyable, Iterator):
     comptime Element = NoneType
 
-    var counter: Observable[CopyOrigin = Self.CopyOrigin]
+    var counter: Observable[CopyOrigin=Self.CopyOrigin]
 
-    fn __init__(out self, ref[Self.CopyOrigin] copies: Int):
-        self.counter = Observable[CopyOrigin = Self.CopyOrigin](
+    def __init__(out self, ref[Self.CopyOrigin] copies: Int):
+        self.counter = Observable[CopyOrigin=Self.CopyOrigin](
             copies=Pointer(to=copies)
         )
 
-    fn __next__(mut self) raises StopIteration -> Self.Element:
+    def __next__(mut self) raises StopIteration -> Self.Element:
         return None
 
 
-def test_product2_copies():
+def test_product2_copies() raises:
     var copy_a = 0
     var copy_b = 0
     var _product_iter = _Product2(
@@ -294,7 +291,7 @@ def test_product2_copies():
     assert_equal(copy_b, 1)
 
 
-def test_product3_copies():
+def test_product3_copies() raises:
     var copy_a = 0
     var copy_b = 0
     var copy_c = 0
@@ -308,7 +305,7 @@ def test_product3_copies():
     assert_equal(copy_c, 3)
 
 
-def test_product4_copies():
+def test_product4_copies() raises:
     var copy_a = 0
     var copy_b = 0
     var copy_c = 0
@@ -325,5 +322,139 @@ def test_product4_copies():
     assert_equal(copy_d, 7)
 
 
-def main():
+@fieldwise_init
+struct _CopyableOwnedIter[size: Int](Copyable, IterableOwned, Iterator):
+    """A `Copyable` owned iterator backed by an `InlineArray` for testing."""
+
+    comptime Element = Int
+    comptime IteratorOwnedType: Iterator = Self
+    var _data: InlineArray[Int, Self.size]
+    var _index: Int
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Int:
+        if self._index >= Self.size:
+            raise StopIteration()
+        var val = self._data[self._index]
+        self._index += 1
+        return val
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.size - self._index
+        return (remaining, remaining)
+
+
+@fieldwise_init
+struct _CopyableOwned[size: Int](IterableOwned):
+    """An `IterableOwned` whose owned iterator is `Copyable` for testing."""
+
+    comptime IteratorOwnedType: Iterator = _CopyableOwnedIter[Self.size]
+    var _data: InlineArray[Int, Self.size]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return _CopyableOwnedIter(self._data, 0)
+
+
+def _owned2(a: Int, b: Int) -> _CopyableOwned[2]:
+    var data: InlineArray[Int, 2] = [a, b]
+    return _CopyableOwned(data)
+
+
+def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
+    var data: InlineArray[Int, 3] = [a, b, c]
+    return _CopyableOwned(data)
+
+
+def test_product2_owned() raises:
+    var it = product(_owned3(1, 2, 3), _owned2(10, 20))
+
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 20)
+
+    elem = next(it)
+    assert_equal(elem[0], 3)
+    assert_equal(elem[1], 10)
+    elem = next(it)
+    assert_equal(elem[0], 3)
+    assert_equal(elem[1], 20)
+
+    with assert_raises():
+        _ = it.__next__()
+
+
+def test_product3_owned() raises:
+    var it = product(_owned2(1, 2), _owned2(10, 20), _owned2(100, 200))
+
+    var elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 200)
+
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 1)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 200)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 10)
+    assert_equal(elem[2], 200)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 100)
+
+    elem = next(it)
+    assert_equal(elem[0], 2)
+    assert_equal(elem[1], 20)
+    assert_equal(elem[2], 200)
+
+    with assert_raises():
+        _ = it.__next__()
+
+
+def test_product4_owned() raises:
+    var count = 0
+    for a, b, c, d in product(
+        _owned2(1, 2), _owned2(3, 4), _owned2(5, 6), _owned2(7, 8)
+    ):
+        assert_true(a in (1, 2))
+        assert_true(b in (3, 4))
+        assert_true(c in (5, 6))
+        assert_true(d in (7, 8))
+        count += 1
+
+    assert_equal(count, 16)
+
+
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceContext
-from testing import TestSuite, assert_equal
+from std.gpu.host import DeviceContext
+from std.testing import TestSuite, assert_equal
 
 
 @parameter
-fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
+def _timed_iter_func(context: DeviceContext, iter: Int) raises:
     comptime length = 64
 
     var in_host = context.enqueue_create_host_buffer[DType.float32](length)
@@ -47,11 +47,11 @@ fn _timed_iter_func(context: DeviceContext, iter: Int) raises:
 
 
 @parameter
-fn _timed_func(context: DeviceContext) raises:
+def _timed_func(context: DeviceContext) raises:
     _timed_iter_func(context, 2)
 
 
-def test_timing():
+def test_timing() raises:
     var ctx = create_test_device_context()
     print("Running test_timing(" + ctx.name() + "):")
 
@@ -66,5 +66,5 @@ def test_timing():
     print("Done.")
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

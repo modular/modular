@@ -11,26 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from reflection import struct_field_count, struct_field_types
+from std.reflection import struct_field_count, struct_field_types
 
 
 trait MakeCopyable:
-    fn copy_to(self, mut other: Self):
+    def copy_to(self, mut other: Self):
         comptime field_count = struct_field_count[Self]()
         comptime field_types = struct_field_types[Self]()
 
-        @parameter
-        for idx in range(field_count):
+        comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
 
             # Guard: field type must be copyable
-            @parameter
-            if not conforms_to(field_type, Copyable):
+            comptime if not conforms_to(field_type, Copyable):
                 continue
 
             # Perform copy
-            ref p_value = __struct_field_ref(idx, self)
-            __struct_field_ref(idx, other) = p_value
+            ref p_value = trait_downcast[ImplicitlyCopyable](
+                __struct_field_ref(idx, self)
+            )
+            trait_downcast[ImplicitlyCopyable](
+                __struct_field_ref(idx, other)
+            ) = p_value
 
 
 @fieldwise_init
@@ -40,21 +42,19 @@ struct MultiType(MakeCopyable, Writable):
     var y: Bool
     var z: Float64
 
-    fn write_to[W: Writer](self, mut writer: W):
+    def write_to[W: Writer](self, mut writer: W):
         writer.write("[{}, {}, {}, {}]".format(self.w, self.x, self.y, self.z))
 
 
-fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
+def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime field_count = struct_field_count[T]()
     comptime field_types = struct_field_types[T]()
 
-    @parameter
-    for idx in range(field_count):
+    comptime for idx in range(field_count):
         # Guard: field type must be equatable
         comptime field_type = field_types[idx]
 
-        @parameter
-        if not conforms_to(field_type, Equatable):
+        comptime if not conforms_to(field_type, Equatable):
             continue
 
         # Fetch values
@@ -70,7 +70,7 @@ fn test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     return True
 
 
-fn main():
+def main():
     var original_instance = MultiType("Hello", 1, True, 2.5)
     var target_instance = MultiType("", 0, False, 0.0)
     original_instance.copy_to(target_instance)

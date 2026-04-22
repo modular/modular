@@ -22,9 +22,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.kernels import KVCacheParams
-from max.nn.legacy.kv_cache import PagedCacheValues
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.kernels import KVCacheParams
+from max.nn.kv_cache import PagedCacheValues
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
 from max.pipelines.architectures.gemma3.layers.attention import (
     Gemma3Attention as MaxGemma3Attention,
 )
@@ -56,17 +56,31 @@ def _get_position_embeddings(
 ) -> tuple[torch.Tensor, torch.Tensor]:
     """Generates rotary position embeddings based on the input tensor shape."""
     seq_len = input_tensor.shape[1]
-    if use_global_rope:
-        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
-    else:
-        config = copy.deepcopy(text_config)
-        config.rope_theta = config.rope_local_base_freq
-        config.rope_scaling = {"rope_type": "default"}
-        rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
     position_ids = torch.arange(
         seq_len, dtype=torch.long, device="cuda"
     ).unsqueeze(0)
-    cos, sin = rotary_emb(input_tensor, position_ids)
+
+    rope_params = getattr(text_config, "rope_parameters", None)
+    if isinstance(rope_params, dict) and "sliding_attention" in rope_params:
+        # v5: single embedding handles both layer types natively
+        rotary_emb = Gemma3RotaryEmbedding(config=text_config, device="cuda")
+        layer_type = (
+            "full_attention" if use_global_rope else "sliding_attention"
+        )
+        cos, sin = rotary_emb(input_tensor, position_ids, layer_type=layer_type)
+    else:
+        # v4: need separate embedding with hacked config for local rope
+        if use_global_rope:
+            rotary_emb = Gemma3RotaryEmbedding(
+                config=text_config, device="cuda"
+            )
+        else:
+            config = copy.deepcopy(text_config)
+            config.rope_theta = config.rope_local_base_freq
+            config.rope_scaling = {"rope_type": "default"}
+            rotary_emb = Gemma3RotaryEmbedding(config=config, device="cuda")
+        cos, sin = rotary_emb(input_tensor, position_ids)
+
     return cos.to(torch.bfloat16).to("cuda"), sin.to(torch.bfloat16).to("cuda")
 
 
@@ -141,9 +155,10 @@ def generate_max_outputs(
     device_ref = DeviceRef.GPU() if is_gpu else DeviceRef.CPU()
     input_seq_len = input_tensor.shape[1]
 
-    state_dict = {}
-    for weight_name, value in attention_weights.items():
-        state_dict[weight_name] = value.cpu()
+    state_dict = {
+        weight_name: value.cpu()
+        for weight_name, value in attention_weights.items()
+    }
 
     kv_params = KVCacheParams(
         dtype=dtype,
@@ -156,11 +171,19 @@ def generate_max_outputs(
 
     session = InferenceSession(devices=[Accelerator(0)])
 
+    rope_params = getattr(text_config, "rope_parameters", None)
+    if isinstance(rope_params, dict) and "full_attention" in rope_params:
+        rope_theta = rope_params["full_attention"]["rope_theta"]
+        rope_local_base_freq = rope_params["sliding_attention"]["rope_theta"]
+    else:
+        rope_theta = text_config.rope_theta
+        rope_local_base_freq = text_config.rope_local_base_freq
+
     attention = MaxGemma3Attention(
         rope_global=Llama3RotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
-            text_config.rope_theta,
+            rope_theta,
             MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,
@@ -168,7 +191,7 @@ def generate_max_outputs(
         rope_local=Llama3RotaryEmbedding(
             text_config.hidden_size,
             text_config.num_attention_heads,
-            text_config.rope_local_base_freq,
+            rope_local_base_freq,
             MAX_SEQ_LEN,
             interleaved=False,
             head_dim=text_config.head_dim,
@@ -189,6 +212,7 @@ def generate_max_outputs(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Construct input types.
@@ -200,15 +224,7 @@ def generate_max_outputs(
     input_row_offsets_type = TensorType(
         DType.uint32, shape=["input_row_offsets_len"], device=device_ref
     )
-    cache_positions_type = TensorType(
-        DType.uint32,
-        ["total_seq_len"],
-        device=device_ref,
-    )
-    kv_cache_args = kv_params.get_symbolic_inputs()
-    flattened_kv_types = [
-        kv_type for sublist in kv_cache_args for kv_type in sublist
-    ]
+    flattened_kv_types = kv_params.get_symbolic_inputs().flatten()
 
     # Build graph.
     with Graph(
@@ -220,11 +236,8 @@ def generate_max_outputs(
         ),
     ) as graph:
         inputs, input_row_offsets, *kv_cache = graph.inputs
-        kv_collection = PagedCacheValues(
-            kv_blocks=kv_cache[0].buffer,
-            cache_lengths=kv_cache[1].tensor,
-            lookup_table=kv_cache[2].tensor,
-            max_lengths=kv_cache[3].tensor,
+        kv_collection: PagedCacheValues = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
         )
 
         graph.output(
@@ -241,19 +254,19 @@ def generate_max_outputs(
     batch = [create_text_context(np.empty(input_seq_len))]
     kv_manager.claim(batch[0].request_id, replica_idx=0)
     kv_manager.alloc(batch[0], replica_idx=0, num_steps=1)
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    assert kv_runtime_inputs.attention_dispatch_metadata is not None
 
     output = compiled.execute(
         Buffer.from_dlpack(input_tensor[0]).to(device),
         Buffer.from_numpy(np.array([0, input_seq_len], dtype=np.uint32)).to(
             device
         ),
-        blocks.to(device),
-        cache_lengths.to(device),
-        lookup_table_tensor.to(device),
-        is_cache_empty_buf,
+        kv_runtime_inputs.kv_blocks.to(device),
+        kv_runtime_inputs.cache_lengths.to(device),
+        kv_runtime_inputs.lookup_table.to(device),
+        kv_runtime_inputs.max_lengths,
+        kv_runtime_inputs.attention_dispatch_metadata,
     )[0]
 
     return output

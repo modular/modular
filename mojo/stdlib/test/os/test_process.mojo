@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-from os.path import exists
-from os import Process
-from os.process import Pipe
+from std.collections import List
+from std.os.path import exists
+from std.os import Process, setenv
+from std.os.process import Pipe
 
-from testing import (
+from std.testing import (
     assert_false,
     assert_raises,
     assert_true,
@@ -24,7 +24,7 @@ from testing import (
 )
 
 
-def test_pipe():
+def test_pipe() raises:
     var p = Pipe()
     var s = InlineArray[UInt8, 5](fill=0)
     p.write_bytes("hello".as_bytes())
@@ -35,7 +35,7 @@ def test_pipe():
         _ = p.read_bytes(Span(s))
 
 
-def test_process_run():
+def test_process_run() raises:
     print("== test_process_run")
     # CHECK-LABEL: == test_process_run
     # CHECK-NEXT: == TEST_ECHO
@@ -43,7 +43,7 @@ def test_process_run():
     _ = Process.run(command, ["== TEST_ECHO"])
 
 
-def test_process_wait():
+def test_process_wait() raises:
     print("== test_process_wait")
     var command = "echo"
     var p = Process.run(command, ["== TEST_WAIT"])
@@ -52,7 +52,7 @@ def test_process_wait():
     assert_false(p.kill())
 
 
-def test_process_kill():
+def test_process_kill() raises:
     print("== test_process_kill")
     var command = "sleep"
     var p = Process.run(command, ["60"])
@@ -60,7 +60,7 @@ def test_process_kill():
     assert_true(p.wait().has_exited())
 
 
-def test_process_run_missing():
+def test_process_run_missing() raises:
     print("== test_process_run_missing")
     # CHECK-LABEL: == test_process_run_missing
     # CHECK-NEXT: Failed to execute ThIsFiLeCoUlDNoTPoSsIbLlYExIsT.NoTAnExTeNsIoN, EINT error code: 2
@@ -81,9 +81,20 @@ def test_process_run_missing():
         _ = Process.run(missing_executable_file, List[String]())
 
 
-def main():
+def test_process_inherits_env() raises:
+    # Set a unique env var and verify the child process inherits it.
+    # `printenv VAR` exits 0 if the variable is set, 1 if unset.
+    _ = setenv("_MOJO_TEST_ENV_INHERIT", "inherited_ok")
+
+    var p = Process.run("printenv", ["_MOJO_TEST_ENV_INHERIT"])
+    var status = p.wait()
+    assert_equal(status.exit_code.value(), 0)
+
+
+def main() raises:
     test_process_run()
     test_process_run_missing()
     test_process_wait()
     test_process_kill()
     test_pipe()
+    test_process_inherits_env()

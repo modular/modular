@@ -2,6 +2,7 @@
 authors = [{ name = "Modular", email = "hello@modular.com" }]
 dependencies = [
     "aiohttp>=3.10.5",
+    "cyclopts>=4.2.5",
     "datasets>=2.21.0",
     "hf-transfer>=0.1.9",
     "huggingface-hub>=0.28.0",
@@ -16,7 +17,7 @@ dependencies = [
     "taskgroup>=0.2.2",
     "tokenizers>=0.19.0",
     "tqdm>=4.67.1",
-    "transformers>=4.57.0",
+    "transformers>=5.0.0,<5.3.0",
     "typing-extensions>=4.12.2",
     "Pillow>=11.0.0",
     # for upload.py

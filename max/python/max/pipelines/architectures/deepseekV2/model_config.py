@@ -19,10 +19,11 @@ from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef
-from max.nn.legacy.kv_cache import KVCacheParams, KVCacheStrategy
-from max.pipelines.lib import KVCacheConfig, PipelineConfig
-from max.pipelines.lib.config_enums import PipelineRole
+from max.nn.kv_cache import KVCacheParams
+from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
+from max.pipelines.lib.config.config_enums import supported_encoding_dtype
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
+from max.pipelines.lib.pipeline_variants.utils import get_rope_theta
 from max.pipelines.lib.utils import upper_bounded_default
 from transformers import AutoConfig
 from typing_extensions import Self, override
@@ -79,6 +80,8 @@ class DeepseekV2Config(ArchConfigWithKVCache):
     attention_bias: bool = False
     attention_dropout: float = 0.0
 
+    max_batch_context_length: int = 131072
+
     graph_mode: str = "auto"  # "auto" | "prefill" | "decode"
 
     @override
@@ -95,7 +98,10 @@ class DeepseekV2Config(ArchConfigWithKVCache):
                 "'silu' is the only hidden_act currently supported"
             )
 
-        if self.rope_scaling and self.rope_scaling["type"] != "yarn":
+        rope_type = self.rope_scaling and self.rope_scaling.get(
+            "rope_type", self.rope_scaling.get("type")
+        )
+        if rope_type and rope_type != "yarn":
             raise ValueError(
                 "'yarn' is the only rope_scaling type currently supported"
             )
@@ -119,9 +125,8 @@ class DeepseekV2Config(ArchConfigWithKVCache):
         devices: list[DeviceRef],
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
-        page_size: int = 128,
     ) -> KVCacheParams:
-        return KVCacheParams(
+        return kv_cache_config.to_params(
             dtype=cache_dtype,
             # n_kv_heads should always be 1 because we only cache a single latent vector
             # in LatentAttention
@@ -129,13 +134,9 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             head_dim=huggingface_config.kv_lora_rank
             + huggingface_config.qk_rope_head_dim,
             num_layers=DeepseekV2Config.get_num_layers(huggingface_config),
-            cache_strategy=KVCacheStrategy.PAGED,
             devices=devices,
-            page_size=page_size,
-            enable_prefix_caching=kv_cache_config.enable_prefix_caching,
-            enable_kvcache_swapping_to_host=kv_cache_config.enable_kvcache_swapping_to_host,
-            host_kvcache_swap_space_gb=kv_cache_config.host_kvcache_swap_space_gb,
             is_mla=True,
+            num_q_heads=huggingface_config.num_attention_heads,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
         )
 
@@ -145,23 +146,28 @@ class DeepseekV2Config(ArchConfigWithKVCache):
 
     @override
     @classmethod
-    def initialize(cls, pipeline_config: PipelineConfig) -> Self:
-        huggingface_config = pipeline_config.model.huggingface_config
+    def initialize(
+        cls,
+        pipeline_config: PipelineConfig,
+        model_config: MAXModelConfig | None = None,
+    ) -> Self:
+        model_config = model_config or pipeline_config.model
+        huggingface_config = model_config.huggingface_config
         if huggingface_config is None:
             raise ValueError(
-                f"HuggingFace config is required for '{pipeline_config.model.model_path}', "
+                f"HuggingFace config is required for '{model_config.model_path}', "
                 "but config could not be loaded. "
                 "Please ensure the model repository contains a valid config.json file."
             )
         devices = [
             DeviceRef(spec.device_type, spec.id)
-            for spec in pipeline_config.model.device_specs
+            for spec in model_config.device_specs
         ]
-        kv_cache_config = pipeline_config.model.kv_cache
-        quantization_encoding = pipeline_config.model.quantization_encoding
+        kv_cache_config = model_config.kv_cache
+        quantization_encoding = model_config.quantization_encoding
         if quantization_encoding is None:
             raise ValueError("quantization_encoding must not be None")
-        cache_dtype = pipeline_config.model.kv_cache.cache_dtype
+        cache_dtype = model_config.kv_cache.cache_dtype
         kv_params = cls.construct_kv_params(
             huggingface_config=huggingface_config,
             pipeline_config=pipeline_config,
@@ -170,16 +176,16 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             cache_dtype=cache_dtype,
         )
 
-        if pipeline_config.pipeline_role is PipelineRole.PrefillOnly:
+        if pipeline_config.runtime.pipeline_role == "prefill_only":
             graph_mode = "prefill"
-        elif pipeline_config.pipeline_role is PipelineRole.DecodeOnly:
+        elif pipeline_config.runtime.pipeline_role == "decode_only":
             graph_mode = "decode"
         else:
             graph_mode = "auto"
 
         max_seq_len = upper_bounded_default(
             upper_bound=huggingface_config.max_position_embeddings,
-            default=pipeline_config.max_length,
+            default=model_config.max_length,
         )
 
         return cls(
@@ -211,7 +217,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             qk_rope_head_dim=huggingface_config.qk_rope_head_dim,
             rms_norm_eps=huggingface_config.rms_norm_eps,
             rope_scaling=huggingface_config.rope_scaling,
-            rope_theta=huggingface_config.rope_theta,
+            rope_theta=get_rope_theta(huggingface_config),
             routed_scaling_factor=huggingface_config.routed_scaling_factor,
             scoring_func=huggingface_config.scoring_func,
             seq_aux=huggingface_config.seq_aux,
@@ -221,7 +227,7 @@ class DeepseekV2Config(ArchConfigWithKVCache):
             use_cache=huggingface_config.use_cache,
             v_head_dim=huggingface_config.v_head_dim,
             vocab_size=huggingface_config.vocab_size,
-            dtype=quantization_encoding.dtype,
+            dtype=supported_encoding_dtype(quantization_encoding),
             kv_params=kv_params,
             devices=devices,
             graph_mode=graph_mode,

@@ -10,8 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Either imports the respective loader if its necessary dependency is
-available, or adds a stub if not."""
+"""Imports the respective loader if its dependency is available, or adds a stub if not."""
 
 try:
     import gguf  # type: ignore # noqa: F401

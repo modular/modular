@@ -11,8 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
-from memory import Span
+from std.collections import List
+from std.memory import Span
 
 
 def to_byte_span[
@@ -25,4 +25,4 @@ def to_byte_span[
 
 def main():
     list: List[Byte] = [77, 111, 106, 111]
-    span = to_byte_span(list)
+    _ = to_byte_span(list)

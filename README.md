@@ -5,14 +5,9 @@
   | [Changelog] | [MAX Model Development]
 </div>
 
-[About Modular]: https://www.modular.com/
-[Get started]: https://docs.modular.com/max/get-started
-[API docs]: https://docs.modular.com/max/api
-[Contributing]: ./CONTRIBUTING.md
-[Changelog]: https://docs.modular.com/max/changelog
-[MAX Model Development]: /max/docs/development.md
-
 ---
+
+🤝 Join our [monthly community meetings][public-com-meet-doc]!
 
 # Modular Platform
 
@@ -47,8 +42,8 @@ After your model endpoint is up and running, you can start sending the model
 inference requests using
 [our OpenAI-compatible REST API](https://docs.modular.com/max/api/serve).
 
-Try running hundreds of other models from
-[our model repository](https://builds.modular.com/?category=models).
+Explore all the models you can deploy with Modular in our
+[Model Library](https://www.modular.com/models).
 
 ## Deploy our container
 
@@ -85,12 +80,13 @@ kernels**!
 Highlights include:
 
 - Mojo standard library: [/mojo/stdlib](mojo/stdlib)
-- MAX GPU and CPU kernels: [/max/kernels](max/kernels) (Mojo kernels)
-- MAX inference server: [/max/python/max/serve](max/python/max/serve)
+- MAX GPU and CPU kernels: [/max/kernels](/max/kernels) (Mojo kernels)
+- MAX inference server: [/max/python/max/serve](/max/python/max/serve)
   (OpenAI-compatible endpoint)
-- MAX model pipelines: [/max/python/max/pipelines](max/python/max/pipelines)
+- MAX model pipelines: [/max/python/max/pipelines](/max/python/max/pipelines)
   (Python-based graphs)
-- Code examples: [/max/examples](max/examples) + [/mojo/examples](mojo/examples)
+- Code examples: [/max/examples](/max/examples) +
+  [/mojo/examples](mojo/examples)
 
 This repo has two major branches:
 
@@ -114,7 +110,8 @@ docs, and more.
 First, please read the [Contribution Guide](./CONTRIBUTING.md), and then refer
 to the following documentation about how to develop in the repo:
 
-- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework codebase.
+- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
+  codebase.
 - [`/mojo/stdlib/docs`](/mojo/stdlib/docs): Docs for developers working in the
   Mojo standard library.
 
@@ -122,6 +119,24 @@ We also welcome your bug reports. If you have a bug, please [file an issue
 here](https://github.com/modular/modular/issues/new/choose).
 
 ## News & Announcements
+
+**[2026/3]** [Modular Platform 26.2][26.2] delivers state-of-the-art image
+generation with over 4x speedup on FLUX.2 models, expanded hardware support for
+NVIDIA B300, Jetson Thor, DGX Spark, and AMD RDNA consumer GPUs, and Mojo
+language upgrades that make it easier to write GPU kernels with AI coding
+agents.
+
+**[2026/2]** We announced that [BentoML is joining Modular][bentoml-joins].
+We are committed to building in the open and will be extending our support
+of open source AI with [Bento's own open project][bentoml-github].
+Read the answers in our [February 2026 AMA][bentoml-joins-ama] to learn more
+about our plans.
+
+**[2026/1]** [Modular Platform 26.1][26.1] graduates the MAX Python API out of
+experimental with PyTorch-like eager mode and model.compile() for production,
+stabilizes the MAX LLM Book, and expands Apple silicon GPU support. Mojo gains
+compile-time reflection, linear types, typed errors, and improved error messages
+as it progresses toward 1.0.
 
 **[2025/12]** [The Path to Mojo 1.0][mojo-1.0] was officially announced
 with a planned release in H1 2026 and tons of details on what to expect.
@@ -164,6 +179,70 @@ Mojo and MAX.
 [GPU Kernel Hackathon][hackathon], featuring talks from Modular and
 Anthropic engineers.
 
+---
+
+## Community & Events
+
+We host regular meetups digitally and around the world. During these meetups
+we share updates from the Modular team, feature community contributions, and
+invite guest speakers to share their expertise, as well as answer community
+questions.
+
+Join us!
+
+| Channel               | Link                                            |
+|-----------------------|-------------------------------------------------|
+| 💬 Discord            | [discord.gg/modular][discord]                   |
+| 💬 Forum              | [forum.modular.com][forum]                      |
+| 📅 Meetup Group       | [meetup.com/modular-meetup-group][meetup-group] |
+| 🎥 Community Meetings | [Upcoming community calls][public-com-meet-doc] |
+
+**Upcoming events** will be posted on our [Meetup page][meetup-group] and
+[Discord][discord]. Community meeting recordings will be posted on our
+[YouTube][youtube].
+
+## Contact us
+
+If you'd like to chat with the team and other community members, please send a
+message to our [Discord channel](https://discord.gg/modular) and [our
+forum board](https://forum.modular.com/).
+
+## License
+
+This repository and its contributions are licensed under the Apache License v2.0
+with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
+Modular, MAX and Mojo usage and distribution are licensed under the
+[Modular Community License](https://www.modular.com/legal/community).
+
+### Third party licenses
+
+You are entirely responsible for checking and validating the licenses of third
+parties (i.e. Huggingface) for related software and libraries that are
+downloaded.
+
+## Thanks to our contributors
+
+<a href="https://github.com/modular/modular/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=modular/modular" />
+</a>
+
+<!-- Link references -->
+
+<!-- Header navigation links -->
+[About Modular]: https://www.modular.com/
+[Get started]: https://docs.modular.com/max/get-started
+[API docs]: https://docs.modular.com/max/api
+[Contributing]: ./CONTRIBUTING.md
+[Changelog]: https://docs.modular.com/max/changelog
+[MAX Model Development]: /max/docs/development.md
+
+<!-- News & Announcements links -->
+[public-com-meet-doc]: https://modul.ar/community-meeting-doc
+[bentoml-github]: https://github.com/bentoml/BentoML
+[bentoml-joins-ama]: https://forum.modular.com/t/modular-has-acquired-bentoml-ask-us-anything/2706/1
+[bentoml-joins]: https://www.modular.com/blog/bentoml-joins-modular
+[26.2]: https://www.modular.com/blog/modular-26-2-state-of-the-art-image-generation-and-upgraded-ai-coding-with-mojo
+[26.1]: https://www.modular.com/blog/modular-26-1-a-big-step-towards-more-programmable-and-portable-ai-infrastructure
 [mojo-1.0]: https://www.modular.com/blog/the-path-to-mojo-1-0
 [dec-meetup]: https://www.youtube.com/live/WK5dVQ8vhbU?si=Fjde8j_50V4bwiAv
 [25.7]: https://www.modular.com/blog/modular-25-7-faster-inference-safer-gpu-programming-and-a-more-unified-developer-experience
@@ -176,47 +255,8 @@ Anthropic engineers.
 [hack-weekend]: https://www.meetup.com/modular-meetup-group/events/308311461/
 [hackathon]: https://www.modular.com/blog/modverse-48
 
----
-
-## Community & Events
-
-We host regular meetups, hackathons, and community calls. Join us!
-
-| Channel               | Link                                            |
-|-----------------------|-------------------------------------------------|
-| 💬 Discord            | [discord.gg/modular][discord]                   |
-| 💬 Forum              | [forum.modular.com][forum]                      |
-| 📅 Meetup Group       | [meetup.com/modular-meetup-group][meetup-group] |
-| 🎥 Community Meetings | Recordings on [YouTube][youtube]                |
-
-**Upcoming events** will be posted on our [Meetup page][meetup-group] and
-[Discord][discord].
-
+<!-- Community & Events links -->
 [discord]: https://discord.gg/modular
 [forum]: https://forum.modular.com/
 [meetup-group]: https://www.meetup.com/modular-meetup-group/
 [youtube]: https://www.youtube.com/@modularinc
-
-## Contact us
-
-If you'd like to chat with the team and other community members, please send a
-message to our [Discord channel](https://discord.gg/modular) and [our
-forum board](https://forum.modular.com/).
-
-## License
-
-This repository and its contributions are licensed under the Apache License
-v2.0 with LLVM Exceptions (see the LLVM [License](https://llvm.org/LICENSE.txt)).
-Modular, MAX and Mojo usage and distribution are licensed under the
-[Modular Community License](https://www.modular.com/legal/community).
-
-### Third party licenses
-
-You are entirely responsible for checking and validating the licenses of
-third parties (i.e. Huggingface) for related software and libraries that are downloaded.
-
-## Thanks to our contributors
-
-<a href="https://github.com/modular/modular/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=modular/modular" />
-</a>

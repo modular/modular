@@ -31,7 +31,7 @@ from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy import Allreduce, Signals
+from max.nn import Allreduce, Signals
 
 
 def check_available_devices() -> int:

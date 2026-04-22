@@ -12,8 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 
-struct IO(TrivialRegisterType):
-    var value: Int
+struct IO(TrivialRegisterPassable):
+    var value: SIMDSize
 
     # TODO: either rename or get rid of this
     comptime Unknown = IO(-1)
@@ -30,15 +30,28 @@ struct IO(TrivialRegisterType):
     comptime _FusedComputeOutput = IO(31)
 
     @always_inline("builtin")
-    fn __init__(out self, value: Int):
+    def __init__(out self, value: Int):
         self.value = value
 
-    fn __eq__(self, other: IO) -> Bool:
+    def __eq__(self, other: IO) -> Bool:
         return self.value == other.value
+
+    def __ne__(self, other: IO) -> Bool:
+        return self.value != other.value
+
+    @always_inline("nodebug")
+    def is_fused(self) -> Bool:
+        """True when this IO represents any fused variant (input, output, or
+        compute-output)."""
+        return (
+            self == IO.FusedInput
+            or self == IO.FusedOutput
+            or self == IO._FusedComputeOutput
+        )
 
 
 @fieldwise_init
-struct IOSpec[mut: Bool, input: IO](TrivialRegisterType):
+struct IOSpec[mut: Bool, input: IO](TrivialRegisterPassable):
     """
     Parameter used to encode whether a particular tensor argument to a DPS kernel
     is an output, input, or mutable input.

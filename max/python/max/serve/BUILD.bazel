@@ -8,7 +8,6 @@ modular_py_library(
     deps = [
         requirement("pydantic"),
         requirement("pydantic-settings"),
-        "//max/python/max/serve/worker_interface",
         "//max/python/max/support",
     ],
 )
@@ -41,6 +40,7 @@ modular_py_library(
     deps = [
         ":config",
         "//max/python/max/interfaces",
+        "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         "//max/python/max/serve/pipelines",
         "//max/python/max/serve/recordreplay",

@@ -18,14 +18,13 @@ This module registers operations for variable-length causal 1D convolution:
 - causal_conv1d_varlen_states: Extract states from varlen sequences
 """
 
-from math import ceildiv
+from std.math import ceildiv
 
 import compiler_internal as compiler
-from gpu.host import DeviceContext
-from gpu.host.info import is_cpu, is_gpu
-from runtime.asyncrt import DeviceContextPtr
+from std.gpu.host.info import is_cpu, is_gpu
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 from state_space.varlen_causal_conv1d import (
     causal_conv1d_varlen_fwd_cpu,
@@ -65,18 +64,18 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=2],
-        conv_states: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        conv_states: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var dim = x.dim_size(0)
@@ -84,14 +83,16 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         var width = weight.dim_size(1)
         var batch = query_start_loc.dim_size(0) - 1
 
-        var output_lt = output.to_layout_tensor()
-        var x_lt = x.to_layout_tensor()
-        var weight_lt = weight.to_layout_tensor()
-        var bias_lt = bias.to_layout_tensor()
-        var query_start_loc_lt = query_start_loc.to_layout_tensor()
-        var cache_indices_lt = cache_indices.to_layout_tensor()
-        var has_initial_state_lt = has_initial_state.to_layout_tensor()
-        var conv_states_lt = conv_states.to_layout_tensor()
+        var output_tt = output.to_tile_tensor[DType.int32]()
+        var x_tt = x.to_tile_tensor[DType.int32]()
+        var weight_tt = weight.to_tile_tensor[DType.int32]()
+        var bias_tt = bias.to_tile_tensor[DType.int32]()
+        var query_start_loc_tt = query_start_loc.to_tile_tensor[DType.int32]()
+        var cache_indices_tt = cache_indices.to_tile_tensor[DType.int32]()
+        var has_initial_state_tt = has_initial_state.to_tile_tensor[
+            DType.int32
+        ]()
+        var conv_states_tt = conv_states.to_tile_tensor[DType.int32]()
 
         # Get strides as UInt32
         var x_strides = x.strides()
@@ -124,38 +125,29 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
         comptime PAD_SLOT_ID: Int32 = -1
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_fwd_cpu[
-                x_lt.dtype,
-                x_lt.layout,
-                weight_lt.dtype,
-                weight_lt.layout,
-                bias_lt.dtype,
-                bias_lt.layout,
-                output_lt.dtype,
-                output_lt.layout,
-                query_start_loc_lt.dtype,
-                query_start_loc_lt.layout,
-                cache_indices_lt.dtype,
-                cache_indices_lt.layout,
-                has_initial_state_lt.dtype,
-                has_initial_state_lt.layout,
-                conv_states_lt.dtype,
-                conv_states_lt.layout,
+                x_tt.dtype,
+                weight_tt.dtype,
+                bias_tt.dtype,
+                output_tt.dtype,
+                query_start_loc_tt.dtype,
+                cache_indices_tt.dtype,
+                has_initial_state_tt.dtype,
+                conv_states_tt.dtype,
             ](
                 dim,
                 total_seqlen,
                 width,
                 batch,
-                x_lt,
-                weight_lt,
-                bias_lt,
-                query_start_loc_lt,
-                cache_indices_lt,
-                has_initial_state_lt,
-                conv_states_lt,
-                output_lt,
+                x_tt,
+                weight_tt,
+                bias_tt,
+                query_start_loc_tt,
+                cache_indices_tt,
+                has_initial_state_tt,
+                conv_states_tt,
+                output_tt,
                 x_dim_stride,
                 x_seqlen_stride,
                 weight_dim_stride,
@@ -182,46 +174,46 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                 comptime kWidth = 1
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -229,14 +221,14 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                     dim,
                     total_seqlen,
                     batch,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    query_start_loc_lt,
-                    cache_indices_lt,
-                    has_initial_state_lt,
-                    conv_states_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    query_start_loc_tt,
+                    cache_indices_tt,
+                    has_initial_state_tt,
+                    conv_states_tt,
+                    output_tt,
                     x_dim_stride,
                     x_seqlen_stride,
                     weight_dim_stride,
@@ -259,46 +251,46 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                 comptime kWidth = 2
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -306,14 +298,14 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                     dim,
                     total_seqlen,
                     batch,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    query_start_loc_lt,
-                    cache_indices_lt,
-                    has_initial_state_lt,
-                    conv_states_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    query_start_loc_tt,
+                    cache_indices_tt,
+                    has_initial_state_tt,
+                    conv_states_tt,
+                    output_tt,
                     x_dim_stride,
                     x_seqlen_stride,
                     weight_dim_stride,
@@ -336,46 +328,46 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                 comptime kWidth = 3
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -383,14 +375,14 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                     dim,
                     total_seqlen,
                     batch,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    query_start_loc_lt,
-                    cache_indices_lt,
-                    has_initial_state_lt,
-                    conv_states_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    query_start_loc_tt,
+                    cache_indices_tt,
+                    has_initial_state_tt,
+                    conv_states_tt,
+                    output_tt,
                     x_dim_stride,
                     x_seqlen_stride,
                     weight_dim_stride,
@@ -413,46 +405,46 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                 comptime kWidth = 4
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_fwd_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        query_start_loc_lt.dtype,
-                        query_start_loc_lt.layout,
-                        cache_indices_lt.dtype,
-                        cache_indices_lt.layout,
-                        has_initial_state_lt.dtype,
-                        has_initial_state_lt.layout,
-                        conv_states_lt.dtype,
-                        conv_states_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        query_start_loc_tt.dtype,
+                        cache_indices_tt.dtype,
+                        has_initial_state_tt.dtype,
+                        conv_states_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
                         BLOCK_SEQ,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        query_start_loc_tt.LayoutType,
+                        cache_indices_tt.LayoutType,
+                        has_initial_state_tt.LayoutType,
+                        conv_states_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -460,14 +452,14 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
                     dim,
                     total_seqlen,
                     batch,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    query_start_loc_lt,
-                    cache_indices_lt,
-                    has_initial_state_lt,
-                    conv_states_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    query_start_loc_tt,
+                    cache_indices_tt,
+                    has_initial_state_tt,
+                    conv_states_tt,
+                    output_tt,
                     x_dim_stride,
                     x_seqlen_stride,
                     weight_dim_stride,
@@ -495,15 +487,15 @@ struct CausalConv1DVarlenFwd[activation: StaticString]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=2],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        query_start_loc: InputTensor[dtype = DType.int32, rank=1],
-        cache_indices: InputTensor[dtype = DType.int32, rank=1],
-        has_initial_state: InputTensor[dtype = DType.bool, rank=1],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        query_start_loc: InputTensor[dtype=DType.int32, rank=1, ...],
+        cache_indices: InputTensor[dtype=DType.int32, rank=1, ...],
+        has_initial_state: InputTensor[dtype=DType.bool, rank=1, ...],
     ) -> IndexList[2]:
         return x.shape()
 
@@ -534,17 +526,17 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
-        output: OutputTensor[dtype=dtype, rank=3],
-        conv_state: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=3],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        cache_seqlens: InputTensor[dtype = DType.int32, rank=1],
-        conv_state_indices: InputTensor[dtype = DType.int32, rank=1],
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        conv_state: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var batch = x.dim_size(0)
@@ -553,13 +545,15 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         var width = weight.dim_size(1)
         var state_len = conv_state.dim_size(2)
 
-        var output_lt = output.to_layout_tensor()
-        var x_lt = x.to_layout_tensor()
-        var weight_lt = weight.to_layout_tensor()
-        var bias_lt = bias.to_layout_tensor()
-        var conv_state_lt = conv_state.to_layout_tensor()
-        var cache_seqlens_lt = cache_seqlens.to_layout_tensor()
-        var conv_state_indices_lt = conv_state_indices.to_layout_tensor()
+        var output_tt = output.to_tile_tensor[DType.int32]()
+        var x_tt = x.to_tile_tensor[DType.int32]()
+        var weight_tt = weight.to_tile_tensor[DType.int32]()
+        var bias_tt = bias.to_tile_tensor[DType.int32]()
+        var conv_state_tt = conv_state.to_tile_tensor[DType.int32]()
+        var cache_seqlens_tt = cache_seqlens.to_tile_tensor[DType.int32]()
+        var conv_state_indices_tt = conv_state_indices.to_tile_tensor[
+            DType.int32
+        ]()
 
         var x_strides = x.strides()
         var weight_strides = weight.strides()
@@ -585,36 +579,28 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
         var silu_activation = Self.activation == "silu"
         comptime PAD_SLOT_ID: Int32 = -1
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_update_cpu[
-                x_lt.dtype,
-                x_lt.layout,
-                weight_lt.dtype,
-                weight_lt.layout,
-                bias_lt.dtype,
-                bias_lt.layout,
-                output_lt.dtype,
-                output_lt.layout,
-                conv_state_lt.dtype,
-                conv_state_lt.layout,
-                cache_seqlens_lt.dtype,
-                cache_seqlens_lt.layout,
-                conv_state_indices_lt.dtype,
-                conv_state_indices_lt.layout,
+                x_tt.dtype,
+                weight_tt.dtype,
+                bias_tt.dtype,
+                output_tt.dtype,
+                conv_state_tt.dtype,
+                cache_seqlens_tt.dtype,
+                conv_state_indices_tt.dtype,
             ](
                 batch,
                 dim,
                 seqlen,
                 width,
                 state_len,
-                x_lt,
-                weight_lt,
-                bias_lt,
-                conv_state_lt,
-                cache_seqlens_lt,
-                conv_state_indices_lt,
-                output_lt,
+                x_tt,
+                weight_tt,
+                bias_tt,
+                conv_state_tt,
+                cache_seqlens_tt,
+                conv_state_indices_tt,
+                output_tt,
                 x_batch_stride,
                 x_dim_stride,
                 x_seqlen_stride,
@@ -641,40 +627,40 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 comptime kWidth = 1
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -683,13 +669,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     dim,
                     seqlen,
                     state_len,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    conv_state_lt,
-                    cache_seqlens_lt,
-                    conv_state_indices_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    conv_state_tt,
+                    cache_seqlens_tt,
+                    conv_state_indices_tt,
+                    output_tt,
                     x_batch_stride,
                     x_dim_stride,
                     x_seqlen_stride,
@@ -713,40 +699,40 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 comptime kWidth = 2
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -755,13 +741,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     dim,
                     seqlen,
                     state_len,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    conv_state_lt,
-                    cache_seqlens_lt,
-                    conv_state_indices_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    conv_state_tt,
+                    cache_seqlens_tt,
+                    conv_state_indices_tt,
+                    output_tt,
                     x_batch_stride,
                     x_dim_stride,
                     x_seqlen_stride,
@@ -785,40 +771,40 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 comptime kWidth = 3
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -827,13 +813,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     dim,
                     seqlen,
                     state_len,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    conv_state_lt,
-                    cache_seqlens_lt,
-                    conv_state_indices_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    conv_state_tt,
+                    cache_seqlens_tt,
+                    conv_state_indices_tt,
+                    output_tt,
                     x_batch_stride,
                     x_dim_stride,
                     x_seqlen_stride,
@@ -857,40 +843,40 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                 comptime kWidth = 4
                 var compiled_func = gpu_ctx.compile_function[
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                     causal_conv1d_varlen_update_gpu[
-                        x_lt.dtype,
-                        x_lt.layout,
-                        weight_lt.dtype,
-                        weight_lt.layout,
-                        bias_lt.dtype,
-                        bias_lt.layout,
-                        output_lt.dtype,
-                        output_lt.layout,
-                        conv_state_lt.dtype,
-                        conv_state_lt.layout,
-                        cache_seqlens_lt.dtype,
-                        cache_seqlens_lt.layout,
-                        conv_state_indices_lt.dtype,
-                        conv_state_indices_lt.layout,
+                        x_tt.dtype,
+                        weight_tt.dtype,
+                        bias_tt.dtype,
+                        output_tt.dtype,
+                        conv_state_tt.dtype,
+                        cache_seqlens_tt.dtype,
+                        conv_state_indices_tt.dtype,
                         kWidth,
                         BLOCK_DIM,
+                        x_tt.LayoutType,
+                        weight_tt.LayoutType,
+                        bias_tt.LayoutType,
+                        conv_state_tt.LayoutType,
+                        cache_seqlens_tt.LayoutType,
+                        conv_state_indices_tt.LayoutType,
+                        output_tt.LayoutType,
                     ],
                 ]()
                 gpu_ctx.enqueue_function(
@@ -899,13 +885,13 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
                     dim,
                     seqlen,
                     state_len,
-                    x_lt,
-                    weight_lt,
-                    bias_lt,
-                    conv_state_lt,
-                    cache_seqlens_lt,
-                    conv_state_indices_lt,
-                    output_lt,
+                    x_tt,
+                    weight_tt,
+                    bias_tt,
+                    conv_state_tt,
+                    cache_seqlens_tt,
+                    conv_state_indices_tt,
+                    output_tt,
                     x_batch_stride,
                     x_dim_stride,
                     x_seqlen_stride,
@@ -934,14 +920,14 @@ struct CausalConv1DVarlenUpdate[activation: StaticString]:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=3],
-        weight: InputTensor[dtype=dtype, rank=2],
-        bias: InputTensor[dtype=dtype, rank=1],
-        cache_seqlens: InputTensor[dtype = DType.int32, rank=1],
-        conv_state_indices: InputTensor[dtype = DType.int32, rank=1],
+        x: InputTensor[dtype=dtype, rank=3, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        bias: InputTensor[dtype=dtype, rank=1, ...],
+        cache_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
+        conv_state_indices: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[3]:
         return x.shape()
 
@@ -965,13 +951,13 @@ struct CausalConv1DVarlenStates:
     """
 
     @staticmethod
-    fn execute[
+    def execute[
         dtype: DType,
         target: StaticString,
     ](
-        states: OutputTensor[dtype=dtype, rank=3],
-        x: InputTensor[dtype=dtype, rank=2],
-        cu_seqlens: InputTensor[dtype = DType.int32, rank=1],
+        states: OutputTensor[dtype=dtype, rank=3, ...],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
         ctx: DeviceContextPtr,
     ) capturing raises:
         var total_tokens = x.dim_size(0)
@@ -979,9 +965,9 @@ struct CausalConv1DVarlenStates:
         var batch = cu_seqlens.dim_size(0) - 1
         var state_len = states.dim_size(2)
 
-        var states_lt = states.to_layout_tensor()
-        var x_lt = x.to_layout_tensor()
-        var cu_seqlens_lt = cu_seqlens.to_layout_tensor()
+        var states_tt = states.to_tile_tensor[DType.int32]()
+        var x_tt = x.to_tile_tensor[DType.int32]()
+        var cu_seqlens_tt = cu_seqlens.to_tile_tensor[DType.int32]()
 
         var x_strides = x.strides()
         var states_strides = states.strides()
@@ -992,23 +978,19 @@ struct CausalConv1DVarlenStates:
         var states_dim_stride = UInt32(states_strides[1])
         var states_seqlen_stride = UInt32(states_strides[2])
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
             causal_conv1d_varlen_states_cpu[
-                x_lt.dtype,
-                x_lt.layout,
-                cu_seqlens_lt.dtype,
-                cu_seqlens_lt.layout,
-                states_lt.dtype,
-                states_lt.layout,
+                x_tt.dtype,
+                cu_seqlens_tt.dtype,
+                states_tt.dtype,
             ](
                 total_tokens,
                 dim,
                 batch,
                 state_len,
-                x_lt,
-                cu_seqlens_lt,
-                states_lt,
+                x_tt,
+                cu_seqlens_tt,
+                states_tt,
                 x_seqlen_stride,
                 x_dim_stride,
                 states_batch_stride,
@@ -1020,24 +1002,24 @@ struct CausalConv1DVarlenStates:
             comptime BLOCK_DIM = 128
             var compiled_func = gpu_ctx.compile_function[
                 causal_conv1d_varlen_states_gpu[
-                    x_lt.dtype,
-                    x_lt.layout,
-                    cu_seqlens_lt.dtype,
-                    cu_seqlens_lt.layout,
-                    states_lt.dtype,
-                    states_lt.layout,
+                    x_tt.dtype,
+                    cu_seqlens_tt.dtype,
+                    states_tt.dtype,
                     BLOCK_DIM,
                     BLOCK_DIM,
+                    x_tt.LayoutType,
+                    cu_seqlens_tt.LayoutType,
+                    states_tt.LayoutType,
                 ],
                 causal_conv1d_varlen_states_gpu[
-                    x_lt.dtype,
-                    x_lt.layout,
-                    cu_seqlens_lt.dtype,
-                    cu_seqlens_lt.layout,
-                    states_lt.dtype,
-                    states_lt.layout,
+                    x_tt.dtype,
+                    cu_seqlens_tt.dtype,
+                    states_tt.dtype,
                     BLOCK_DIM,
                     BLOCK_DIM,
+                    x_tt.LayoutType,
+                    cu_seqlens_tt.LayoutType,
+                    states_tt.LayoutType,
                 ],
             ]()
             gpu_ctx.enqueue_function(
@@ -1046,9 +1028,9 @@ struct CausalConv1DVarlenStates:
                 dim,
                 batch,
                 state_len,
-                x_lt,
-                cu_seqlens_lt,
-                states_lt,
+                x_tt,
+                cu_seqlens_tt,
+                states_tt,
                 x_seqlen_stride,
                 x_dim_stride,
                 states_batch_stride,
@@ -1061,11 +1043,11 @@ struct CausalConv1DVarlenStates:
             raise Error("Unsupported target device")
 
     @staticmethod
-    fn shape[
+    def shape[
         dtype: DType,
     ](
-        x: InputTensor[dtype=dtype, rank=2],
-        cu_seqlens: InputTensor[dtype = DType.int32, rank=1],
+        x: InputTensor[dtype=dtype, rank=2, ...],
+        cu_seqlens: InputTensor[dtype=DType.int32, rank=1, ...],
     ) -> IndexList[3]:
         var batch = cu_seqlens.dim_size(0) - 1
         var dim = x.dim_size(1)

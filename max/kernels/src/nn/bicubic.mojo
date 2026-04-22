@@ -16,20 +16,24 @@ Bicubic interpolation is a 2D extension of cubic interpolation for resampling
 digital images. It uses the weighted average of the 4x4 neighborhood of pixels
 around the target location to compute the interpolated value.
 """
-from math import clamp, floor
+from std.math import clamp, floor
 
-from gpu.host.info import is_gpu
-from gpu import block_dim, block_idx, thread_idx
-from layout._coord import Coord, Idx, coord, coord_to_index_list
-from layout._layout import TensorLayout, row_major
-from layout._tile_tensor import TileTensor
-from runtime.asyncrt import DeviceContextPtr
-from utils import Index
-from itertools import product
+from std.gpu.host.info import is_gpu
+from std.gpu import block_dim, block_idx, thread_idx
+from layout import (
+    Coord,
+    Idx,
+    TensorLayout,
+    TileTensor,
+    coord,
+    coord_to_index_list,
+)
+from std.runtime.asyncrt import DeviceContextPtr
+from std.itertools import product
 
 
 @always_inline
-fn map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
+def map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
     """Map output pixel coordinate to input coordinate using center alignment.
     This implements the standard coordinate mapping for image resizing:
     input_coord = (output_coord + 0.5) * scale - 0.5
@@ -43,7 +47,7 @@ fn map_output_to_input_coord(output_coord: Int, scale: Float32) -> Float32:
     return (Float32(output_coord) + 0.5) * scale - 0.5
 
 
-fn cubic_kernel(x: Float32) -> Float32:
+def cubic_kernel(x: Float32) -> Float32:
     """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
     filter.
 
@@ -73,7 +77,7 @@ fn cubic_kernel(x: Float32) -> Float32:
 
 
 @always_inline
-fn cubic_kernel(x: SIMD) -> type_of(x):
+def cubic_kernel(x: SIMD) -> type_of(x):
     """Cubic interpolation kernel matching PyTorch/torchvision's BICUBIC
     filter.
 
@@ -106,9 +110,9 @@ fn cubic_kernel(x: SIMD) -> type_of(x):
     return abs_x.le(1).select(case_1, abs_x.lt(2).select(case_2, case_3))
 
 
-fn cpu_bicubic_kernel(
+def cpu_bicubic_kernel(
     output_host: TileTensor[mut=True, ...],
-    input_host: TileTensor[...],
+    input_host: TileTensor,
 ) -> None:
     """Perform bicubic interpolation on a TileTensor of form NCHW.
 
@@ -117,9 +121,12 @@ fn cpu_bicubic_kernel(
         input_host: Input tensor of shape [B, C, H, W].
     """
     comptime assert (
-        output_host.rank == 4 and input_host.rank == 4
+        output_host.flat_rank == 4 and input_host.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
     comptime assert output_host.dtype == input_host.dtype
+    # Provide evidence that flat_rank >= 4 for the coord[DType.int64](...) loads/stores below.
+    comptime assert input_host.flat_rank >= 4
+    comptime assert output_host.flat_rank >= 4
 
     # get dimensions
     var input_shape = coord_to_index_list(input_host.layout.shape_coord())
@@ -155,8 +162,7 @@ fn cpu_bicubic_kernel(
         var sum_weights: Float32 = 0.0
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -184,7 +190,8 @@ fn cpu_bicubic_kernel(
         )
 
 
-fn gpu_bicubic_kernel[
+@__name(t"gpu_bicubic_{dtype}", mangle=True)
+def gpu_bicubic_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
     output_origin: MutOrigin,
@@ -201,8 +208,11 @@ fn gpu_bicubic_kernel[
         input: Input tensor of shape [B, C, H, W] on the device.
     """
 
-    comptime assert input.rank == 4
-    comptime assert output.rank == 4
+    comptime assert input.flat_rank == 4
+    comptime assert output.flat_rank == 4
+    # Provide evidence that flat_rank >= 4 for the Coord(Idx(...), ...) loads/stores below.
+    comptime assert input.flat_rank >= 4
+    comptime assert output.flat_rank >= 4
 
     var b = block_idx.x
     var c = block_idx.y
@@ -246,8 +256,7 @@ fn gpu_bicubic_kernel[
         var weights_x = cubic_kernel(SIMD[DType.float32, 4](-1, 0, 1, 2) - dx)
 
         # get the 4x4 surrounding pixels, and assign weights to them
-        @parameter
-        for i, j in product(range(4), range(4)):
+        comptime for i, j in product(range(4), range(4)):
             # don't be <0 or >frame bounds
             var y_pos = clamp(in_y_floor + i - 1, 0, in_height - 1)
             var x_pos = clamp(in_x_floor + j - 1, 0, in_width - 1)
@@ -268,15 +277,15 @@ fn gpu_bicubic_kernel[
         )
 
 
-fn resize_bicubic[
+def resize_bicubic[
     dtype: DType,
     //,
     target: StaticString,
 ](
     output: TileTensor[
-        mut=True, dtype, address_space = AddressSpace.GENERIC, ...
+        mut=True, dtype, address_space=AddressSpace.GENERIC, ...
     ],
-    input: TileTensor[dtype, address_space = AddressSpace.GENERIC, ...],
+    input: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
     ctx: DeviceContextPtr,
 ) raises:
     """Perform bicubic interpolation.
@@ -287,11 +296,10 @@ fn resize_bicubic[
         ctx: Device context to enqueue GPU kernels on.
     """
     comptime assert (
-        output.rank == 4 and input.rank == 4
+        output.flat_rank == 4 and input.flat_rank == 4
     ), "bicubic resize only supports rank 4 tensors"
 
-    @parameter
-    if is_gpu[target]():
+    comptime if is_gpu[target]():
         var input_shape = coord_to_index_list(input.layout.shape_coord())
         var N = input_shape[0]
         var C = input_shape[1]
@@ -300,12 +308,12 @@ fn resize_bicubic[
         var block_size = 256
         comptime kernel = gpu_bicubic_kernel[
             output.dtype,
-            output_origin = output.origin,
-            OutputLayoutType = output.LayoutType,
-            input_origin = ImmutOrigin(input.origin),
-            InputLayoutType = input.LayoutType,
+            output_origin=output.origin,
+            OutputLayoutType=output.LayoutType,
+            input_origin=ImmutOrigin(input.origin),
+            InputLayoutType=input.LayoutType,
         ]
-        ctx.get_device_context().enqueue_function_experimental[kernel](
+        ctx.get_device_context().enqueue_function[kernel, kernel](
             output,
             input.as_immut(),
             grid_dim=(N, C),

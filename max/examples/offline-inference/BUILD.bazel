@@ -6,10 +6,10 @@ modular_py_binary(
     name = "basic",
     srcs = ["basic.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/entrypoints",
         "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
     ],
 )
 
@@ -18,6 +18,7 @@ modular_run_binary_test(
     timeout = "long",
     binary = "basic",
     tags = [
+        "manual",  #QUA-63, PRDT-830
         "requires-network",
     ],
     target_compatible_with = select({

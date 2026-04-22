@@ -12,14 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from layout import TileTensor, row_major
 from nn.repeat_interleave import _collapse_dims_around_axis, repeat_interleave
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-fn test_collapse_dims_around_axis() raises:
+def test_collapse_dims_around_axis() raises:
     # CHECK-LABEL: test_collapse_dims_around_axis
     print("test_collapse_dims_around_axis")
 
@@ -42,7 +41,7 @@ fn test_collapse_dims_around_axis() raises:
     print(_collapse_dims_around_axis(IndexList[5](2, 2, 2, 2, 2), 4))
 
 
-fn test_repeat_interleave_1d() raises:
+def test_repeat_interleave_1d() raises:
     # CHECK-LABEL: test_repeat_interleave_1d
     print("test_repeat_interleave_1d")
 
@@ -82,7 +81,7 @@ fn test_repeat_interleave_1d() raises:
     print()
 
 
-fn test_repeat_interleave_1d_broadcast_repeats() raises:
+def test_repeat_interleave_1d_broadcast_repeats() raises:
     # CHECK-LABEL: test_repeat_interleave_1d_broadcast_repeats
     print("test_repeat_interleave_1d_broadcast_repeats")
 
@@ -119,7 +118,7 @@ fn test_repeat_interleave_1d_broadcast_repeats() raises:
     print()
 
 
-fn test_repeat_interleave_2d_axis_0() raises:
+def test_repeat_interleave_2d_axis_0() raises:
     # CHECK-LABEL: test_repeat_interleave_2d_axis_0
     print("test_repeat_interleave_2d_axis_0")
 
@@ -164,7 +163,7 @@ fn test_repeat_interleave_2d_axis_0() raises:
     print()
 
 
-fn test_repeat_interleave_2d_axis_1() raises:
+def test_repeat_interleave_2d_axis_1() raises:
     # CHECK-LABEL: test_repeat_interleave_2d_axis_1
     print("test_repeat_interleave_2d_axis_1")
 
@@ -206,7 +205,7 @@ fn test_repeat_interleave_2d_axis_1() raises:
     print()
 
 
-fn test_repeat_interleave_3d() raises:
+def test_repeat_interleave_3d() raises:
     # CHECK-LABEL: test_repeat_interleave_3d
     print("test_repeat_interleave_3d")
 
@@ -266,7 +265,7 @@ fn test_repeat_interleave_3d() raises:
     print()
 
 
-def main():
+def main() raises:
     test_collapse_dims_around_axis()
     test_repeat_interleave_1d()
     test_repeat_interleave_1d_broadcast_repeats()

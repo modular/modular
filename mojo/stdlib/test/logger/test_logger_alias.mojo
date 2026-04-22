@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Level, Logger
-from testing import TestSuite
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
 comptime log = Logger[Level.INFO]()
 
 
-def test_log_alias():
+def test_log_alias() raises:
     # CHECK-NOT: DEBUG
     # CHECK-NOT: :::     hello world
     log.debug("hello", "world")
@@ -27,5 +27,5 @@ def test_log_alias():
     log.info("hello")
 
 
-fn main() raises:
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -14,7 +14,35 @@
 import json
 
 from click.testing import CliRunner
-from smoke_tests import smoke_test_github_matrix
+from hf_repo_lock import load_db
+from smoke_tests import smoke_test, smoke_test_github_matrix
+
+
+def test_all_models_in_hf_repo_lock() -> None:
+    """Every smoke test model must have a pinned revision in hf-repo-lock.tsv."""
+    lock = load_db()
+    missing = [m for m in smoke_test_github_matrix.HF_MODELS if m not in lock]
+    assert not missing, f"Models missing from hf-repo-lock.tsv: {missing}"
+
+
+def test_custom_model_keys_have_dunder() -> None:
+    bad = [k for k in smoke_test_github_matrix.CUSTOM_MODELS if "__" not in k]
+    assert not bad, (
+        f"CUSTOM_MODELS keys must contain '__' to separate the base model "
+        f"from the alias suffix: {bad}"
+    )
+
+
+def test_custom_models_defined_in_model_aliases() -> None:
+    missing = [
+        k
+        for k in smoke_test_github_matrix.CUSTOM_MODELS
+        if k not in smoke_test.MODEL_ALIASES
+    ]
+    assert not missing, (
+        f"CUSTOM_MODELS keys must have a corresponding entry in "
+        f"smoke_test.MODEL_ALIASES: {missing}"
+    )
 
 
 def test_smoke_test_github_matrix_b200_max_ci() -> None:

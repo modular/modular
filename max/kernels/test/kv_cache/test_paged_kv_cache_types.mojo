@@ -16,19 +16,26 @@ from kv_cache.types import (
     PagedKVCache,
     PagedKVCacheCollection,
 )
-from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
-from memory import alloc
-from testing import assert_true
+from layout import (
+    IntTuple,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    UNKNOWN_VALUE,
+    coord,
+)
+from std.memory import alloc
+from std.testing import assert_true
 
-from utils.index import Index, IndexList
-from collections import OptionalReg
+from std.utils.index import IndexList
+from std.collections import OptionalReg
 
 comptime kv_params = KVCacheStaticParams(num_heads=16, head_size=16)
 
 
 def do_test[
     page_size: Int, layout_block_size: Int, scale_dtype: DType = DType.invalid
-]():
+]() raises:
     comptime batch_size = 16
     comptime max_num_blocks = 100
     comptime shape = IndexList[6](
@@ -36,8 +43,8 @@ def do_test[
         2,
         1,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
 
     var blocks_ptr = alloc[Float32](shape.flattened_length())
@@ -70,8 +77,7 @@ def do_test[
         LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin]
     ] = None
 
-    @parameter
-    if scale_dtype == DType.float8_e4m3fn:
+    comptime if scale_dtype == DType.float8_e4m3fn:
         # Use the same shape as the blocks
         var scales_ptr = alloc[Scalar[scale_dtype]](shape.flattened_length())
         scales = LayoutTensor[scale_dtype, Layout.row_major[6](), MutAnyOrigin](
@@ -113,8 +119,8 @@ def do_test[
     )
 
     comptime layout = Layout(
-        IntTuple(layout_block_size, Int(kv_params.head_size)),
-        IntTuple(Int(kv_params.num_heads * kv_params.head_size), 1),
+        IntTuple(layout_block_size, kv_params.head_size),
+        IntTuple(kv_params.num_heads * kv_params.head_size, 1),
     )
 
     var cache = collection.get_key_cache(1)
@@ -126,7 +132,7 @@ def do_test[
     lookup_table_ptr.free()
 
 
-fn test_paged_kv_cache_stride_is_unknown() raises:
+def test_paged_kv_cache_stride_is_unknown() raises:
     """Test that PagedKVCache has UNKNOWN stride[0] for view tensor correctness.
 
     PagedKVCache is a 4D view of a 6D parent tensor. The outer stride depends
@@ -152,8 +158,8 @@ fn test_paged_kv_cache_stride_is_unknown() raises:
     comptime stride_2 = CacheType.blocks_layout.stride[2].value()
     comptime stride_3 = CacheType.blocks_layout.stride[3].value()
 
-    comptime expected_stride_1 = Int(kv_params.num_heads * kv_params.head_size)
-    comptime expected_stride_2 = Int(kv_params.head_size)
+    comptime expected_stride_1 = kv_params.num_heads * kv_params.head_size
+    comptime expected_stride_2 = kv_params.head_size
     comptime expected_stride_3 = 1
 
     assert_true(
@@ -179,7 +185,7 @@ fn test_paged_kv_cache_stride_is_unknown() raises:
     )
 
 
-fn test_paged_kv_cache_offset_correctness() raises:
+def test_paged_kv_cache_offset_correctness() raises:
     """Test that PagedKVCache offset calculations use correct runtime strides.
 
     This test verifies that when accessing elements through a PagedKVCache view,
@@ -299,8 +305,9 @@ fn test_paged_kv_cache_offset_correctness() raises:
     # If the bug existed (using compile-time stride[0] = page_size * num_heads * head_size),
     # we'd compute wrong offset: 1*16 + 0*8 + 1*4 + 2 = 22 (wrong!)
 
-    # Access via the blocks LayoutTensor using IndexList - this tests _offset(IndexList)
-    var value = key_cache.blocks.load[1](Index(1, 0, 1, 2))
+    # Access via the blocks TileTensor - this tests the layout offset computation
+    var idx = coord[DType.int64](Tuple(1, 0, 1, 2))
+    var value = key_cache.blocks.raw_load[width=1](key_cache.blocks.layout(idx))
     var expected_value = Float32(expected_6d_offset)
 
     assert_true(
@@ -320,7 +327,7 @@ fn test_paged_kv_cache_offset_correctness() raises:
     lookup_table_ptr.free()
 
 
-fn test_paged_kv_cache_quantization() raises:
+def test_paged_kv_cache_quantization() raises:
     comptime CacheType = PagedKVCache[
         DType.float32, kv_params, 16, DType.float8_e4m3fn, 256
     ]
@@ -331,7 +338,7 @@ fn test_paged_kv_cache_quantization() raises:
     )
 
 
-def main():
+def main() raises:
     test_paged_kv_cache_stride_is_unknown()
     test_paged_kv_cache_offset_correctness()
     test_paged_kv_cache_quantization()

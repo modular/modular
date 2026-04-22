@@ -11,20 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
-from os import abort
-from sys import size_of
+from std.math import iota
+from std.os import abort
+from std.sys import size_of
 
-from algorithm.functional import parallelize_over_rows
-from benchmark import Bench, Bencher, BenchId, BenchMetric, ThroughputMeasure
-from gpu.host import DeviceContext, HostBuffer
+from std.algorithm.functional import parallelize_over_rows
+from std.benchmark import (
+    Bench,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
+from std.gpu.host import DeviceContext, HostBuffer
 from internal_utils import arg_parse, human_readable_size
-from memory import LegacyUnsafePointer
+from std.testing import assert_almost_equal, assert_true
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from testing import assert_almost_equal, assert_true
-
-from utils import IndexList
+from std.utils import IndexList
 
 
 @fieldwise_init
@@ -45,18 +48,14 @@ struct Config(ImplicitlyCopyable, Writable):
     comptime PEER_TO_PEER = Self(Self.P2P, False)
     comptime UNDEFINED = Self(-1, False)
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return (
             self.direction == other.direction
             and self.pinned_memory == other.pinned_memory
         )
 
     @staticmethod
-    fn get(handle: String) -> Self:
+    def get(handle: String) -> Self:
         if handle == "host_to_device":
             return Self.HOST_TO_DEVICE
         elif handle == "host_pinned_to_device":
@@ -78,7 +77,7 @@ struct Config(ImplicitlyCopyable, Writable):
             )
             return Self.UNDEFINED
 
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         if self.direction == Self.DToD:
             writer.write("device_to_device")
             return
@@ -96,7 +95,7 @@ struct Config(ImplicitlyCopyable, Writable):
 
 
 @no_inline
-fn bench_memcpy(
+def bench_memcpy(
     mut b: Bench,
     length_in_bytes: Int,
     *,
@@ -127,10 +126,10 @@ fn bench_memcpy(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             if config.direction == Config.DToH:
                 context.enqueue_copy(mem_host, mem_device)
             elif config.direction == Config.HToD:
@@ -152,7 +151,7 @@ fn bench_memcpy(
 
     b.bench_function[bench_func](
         BenchId(
-            String("memcpy_", config),
+            String(t"memcpy_{config}"),
             input_id="length=" + human_readable_size(length_in_bytes),
         ),
         [ThroughputMeasure(BenchMetric.bytes, transferred_size_in_bytes)],
@@ -166,7 +165,7 @@ fn bench_memcpy(
 
 
 @no_inline
-fn bench_p2p(
+def bench_p2p(
     mut b: Bench,
     length_in_bytes: Int,
     *,
@@ -177,7 +176,7 @@ fn bench_p2p(
     length_in_elements = length_in_bytes // size_of[dtype]()
 
     # Create host buffers for verification
-    var host_ptr = UnsafePointer[Scalar[dtype]].alloc(length_in_elements)
+    var host_ptr = alloc[Scalar[dtype]](length_in_elements)
 
     # Initialize source data with known pattern
     iota(host_ptr, length_in_elements)
@@ -192,10 +191,10 @@ fn bench_p2p(
 
     @parameter
     @always_inline
-    fn bench_func(mut b: Bencher):
+    def bench_func(mut b: Bencher):
         @parameter
         @always_inline
-        fn kernel_launch(ctx: DeviceContext) raises:
+        def kernel_launch(ctx: DeviceContext) raises:
             ctx2.enqueue_copy(dst_buf, src_buf)
 
         b.iter_custom[kernel_launch](ctx1)
@@ -220,7 +219,7 @@ fn bench_p2p(
 
     # Parallel verification
     @parameter
-    fn verify_chunk(start: Int, end: Int):
+    def verify_chunk(start: Int, end: Int):
         for i in range(start, end):
             try:
                 assert_almost_equal(host_ptr[i], Float32(i))
@@ -241,7 +240,7 @@ fn bench_p2p(
     _ = dst_buf
 
 
-def main():
+def main() raises:
     var m = Bench()
 
     var log2_length = arg_parse("log2_length", 20)

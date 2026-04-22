@@ -10,22 +10,23 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from collections import Optional
-from random import random_si64, random_float64
-from sys import align_of, size_of, env_get_bool
+from std.collections import Optional
+from std.random import random_float64
+from std.sys import align_of, size_of, get_defined_bool
 
 import linalg.matmul.vendor.blas as vendor_blas
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from gpu.host.nvidia.tma import TensorMapSwizzle
-from memory import LegacyUnsafePointer
-
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.memory import alloc
 from internal_utils import assert_almost_equal
-from random import rand
-from internal_utils._utils import ValOrDim, dynamic, static
-from layout._ndbuffer_stub import from_ndbuffer_row_major
+from std.random import rand
+from layout import (
+    TileTensor,
+    Coord,
+    CoordLike,
+    row_major,
+    Idx,
+)
 from linalg.matmul.gpu.sm100_structured.default.matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
 )
@@ -34,11 +35,15 @@ from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
 )
 from linalg.utils import elementwise_compute_lambda_type
 
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 
 def test_matmul_sm100_epilogue[
+    MType: CoordLike,
+    NType: CoordLike,
+    KType: CoordLike,
+    //,
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -55,11 +60,7 @@ def test_matmul_sm100_epilogue[
     register_based_epilogue: Bool = False,
     swapAB: Bool = False,
     k_group_size: Int = 1,
-](ctx: DeviceContext, m: ValOrDim, n: ValOrDim, k: ValOrDim):
-    var M = m.value
-    var N = n.value
-    var K = k.value
-
+](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     print(
         String(
             "in/out dtypes=(",
@@ -70,11 +71,11 @@ def test_matmul_sm100_epilogue[
             c_type,
             ") ",
             " problem shape=(",
-            M,
+            m.value(),
             ", ",
-            N,
+            n.value(),
             ", ",
-            K,
+            k.value(),
             ") ",
             "mma_shape=",
             mma_shape,
@@ -89,65 +90,45 @@ def test_matmul_sm100_epilogue[
         )
     )
 
-    comptime static_a_shape = DimList(m.dim, k.dim)
-    comptime static_b_shape = DimList(n.dim, k.dim) if transpose_b else DimList(
-        k.dim, n.dim
+    var a_shape = row_major(Coord(m, Idx[KType.static_value]()))
+    var b_shape = row_major(
+        Coord(
+            Idx[NType.static_value if transpose_b else KType.static_value](),
+            Idx[KType.static_value if transpose_b else NType.static_value](),
+        )
     )
-    comptime static_c_shape = DimList(m.dim, n.dim)
-    var dynamic_a_shape = DimList(m.value, k.value)
-    var dynamic_b_shape = DimList(n.value, k.value) if transpose_b else DimList(
-        k.value, n.value
-    )
-    var dynamic_c_shape = DimList(m.value, n.value)
+    var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value * k.value
-    var b_size = n.value * k.value if transpose_b else k.value * n.value
-    var c_size = m.value * n.value
+    var a_size = m.value() * k.value()
+    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
+    var c_size = m.value() * n.value()
 
-    var a_host_ptr = UnsafePointer[Scalar[a_type]].alloc(a_size)
-    var a_host = NDBuffer[a_type, 2, _, static_a_shape](
-        a_host_ptr, dynamic_a_shape
-    )
-    var b_host_ptr = UnsafePointer[Scalar[b_type]].alloc(b_size)
-    var b_host = NDBuffer[b_type, 2, _, static_b_shape](
-        b_host_ptr, dynamic_b_shape
-    )
-    var c_host_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ptr, dynamic_c_shape
-    )
-    var c_host_ref_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_ref = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_ref_ptr, dynamic_c_shape
-    )
-    var c_host_copy_ptr = UnsafePointer[Scalar[c_type]].alloc(c_size)
-    var c_host_copy = NDBuffer[c_type, 2, _, static_c_shape](
-        c_host_copy_ptr, dynamic_c_shape
-    )
+    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host = TileTensor(a_host_ptr, a_shape)
+    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host = TileTensor(b_host_ptr, b_shape)
+    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host = TileTensor(c_host_ptr, c_shape)
+    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
+    var c_host_copy_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_copy = TileTensor(c_host_copy_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = NDBuffer[a_type, 2, _, static_a_shape](
-        a_device.unsafe_ptr(), dynamic_a_shape
-    )
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_device_nd = NDBuffer[b_type, 2, _, static_b_shape](
-        b_device.unsafe_ptr(), dynamic_b_shape
-    )
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = NDBuffer[c_type, 2, _, static_c_shape](
-        c_device.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = NDBuffer[c_type, 2, _, static_c_shape](
-        c_device_ref.unsafe_ptr(), dynamic_c_shape
-    )
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var c_tensor = c_device_nd
+    var c_tensor_lt = c_tensor.to_layout_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor)
-    fn test_lambda_add_coords_summ[
+    @__copy_capture(c_tensor_lt)
+    def test_lambda_add_coords_summ[
         _dtype: DType,
         width: Int,
         *,
@@ -157,15 +138,16 @@ def test_matmul_sm100_epilogue[
     ]:
         # this function helps us determine if the provided indexes are correct
         # while also testing arithmetic operations
-        return val + c_tensor.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor_lt.load[width=width](idx).cast[_dtype]()
 
-    rand(a_host.data, a_host.num_elements())
-    rand(b_host.data, b_host.num_elements())
+    rand(a_host.ptr, a_host.num_elements())
+    rand(b_host.ptr, b_host.num_elements())
 
-    for i in range(M):
-        for j in range(N):
-            c_host[i, j] = Scalar[c_type](random_float64(-1, 1))
-            c_host_copy[i, j] = c_host[i, j]
+    for i in range(m.value()):
+        for j in range(n.value()):
+            comptime assert c_host.flat_rank >= 2
+            c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
+            c_host_copy[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -180,6 +162,7 @@ def test_matmul_sm100_epilogue[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
+        register_based_epilogue=register_based_epilogue,
     )
 
     comptime optional_lambda_fn = Optional[elementwise_compute_lambda_type](
@@ -190,11 +173,10 @@ def test_matmul_sm100_epilogue[
         transpose_b=transpose_b,
         config=matmul_config,
         elementwise_compute_lambda_fn=optional_lambda_fn,
-        register_based_epilogue=register_based_epilogue,
     ](
-        from_ndbuffer_row_major(c_device_nd),
-        from_ndbuffer_row_major(a_device_nd),
-        from_ndbuffer_row_major(b_device_nd),
+        c_tensor,
+        a_tensor,
+        b_tensor,
         ctx,
     )
 
@@ -203,11 +185,15 @@ def test_matmul_sm100_epilogue[
         " a_type==float8_e4m3fn. Add the non-transposed case if needed."
     )
 
+    var a_lt = a_tensor.to_layout_tensor()
+    var b_lt = b_tensor.to_layout_tensor()
+    var c_ref_lt = c_ref_tensor.to_layout_tensor()
+
     vendor_blas.matmul(
         ctx,
-        c_device_ref_nd,
-        a_device_nd,
-        b_device_nd,
+        c_ref_lt,
+        a_lt,
+        b_lt,
         c_row_major=True,
         transpose_b=transpose_b,
     )
@@ -218,12 +204,12 @@ def test_matmul_sm100_epilogue[
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
     ctx.synchronize()
 
-    var c_tensor_host = c_host_copy
+    var c_tensor_host_lt = c_host_copy.to_layout_tensor()
 
     @parameter
     @always_inline
-    @__copy_capture(c_tensor_host)
-    fn test_lambda_add_coords_summ_local[
+    @__copy_capture(c_tensor_host_lt)
+    def test_lambda_add_coords_summ_local[
         _dtype: DType,
         width: Int,
         *,
@@ -231,23 +217,25 @@ def test_matmul_sm100_epilogue[
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> SIMD[
         _dtype, width
     ]:
-        return val + c_tensor_host.load[width=width](idx).cast[_dtype]()
+        return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
 
-    @parameter
-    if optional_lambda_fn:
+    comptime if optional_lambda_fn:
         # Apply the compute lambda directly on the reference tensor
         # alias compute_lambda = elementwise_compute_lambda_fn.value()
-        for i in range(M):
-            for j in range(N):
-                c_host_ref[Index(i, j)] = test_lambda_add_coords_summ_local(
+        for i in range(m.value()):
+            for j in range(n.value()):
+                comptime assert c_host_ref.flat_rank >= 2
+                c_host_ref[
+                    (Idx(i), Idx(j))
+                ] = test_lambda_add_coords_summ_local(
                     IndexList[2](i, j),
-                    c_host_ref[Index(i, j)],
+                    c_host_ref[(Idx(i), Idx(j))],
                 )
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host.data,
-        c_host_ref.data,
+        c_host.ptr,
+        c_host_ref.ptr,
         c_host.num_elements(),
         atol=0.0001,
         rtol=rtol,
@@ -270,11 +258,11 @@ def test_matmul_sm100_epilogue[
 # Quick mode: reduce test configs for faster iteration
 # QUICK_TEST=True: 48 tests (8 configs × 6 sizes) - ~30 seconds
 # FASTER_TEST=True: 8 tests (4 configs × 2 sizes) - ~5 seconds
-comptime QUICK_TEST = env_get_bool["QUICK_TEST", False]()
-comptime FASTER_TEST = env_get_bool["FASTER_TEST", False]()
+comptime QUICK_TEST = get_defined_bool["QUICK_TEST", False]()
+comptime FASTER_TEST = get_defined_bool["FASTER_TEST", False]()
 
 
-def main():
+def main() raises:
     comptime dtype = DType.bfloat16
     comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[dtype]())
     comptime MMA_K = 16
@@ -283,15 +271,12 @@ def main():
     comptime n_scale_max = 3 if FASTER_TEST else (5 if QUICK_TEST else 17)
 
     with DeviceContext() as ctx:
-
-        @parameter
-        for mma_m_scale in range(1, 3):
-
-            @parameter
-            for mma_n_scale in range(1, n_scale_max):
+        comptime for mma_m_scale in range(1, 3):
+            comptime for mma_n_scale in range(1, n_scale_max):
                 # Quick/Faster mode: skip odd n_scale values
-                @parameter
-                if (QUICK_TEST or FASTER_TEST) and mma_n_scale % 2 != 0:
+                comptime if (
+                    QUICK_TEST or FASTER_TEST
+                ) and mma_n_scale % 2 != 0:
                     continue
 
                 comptime block_tile_shape = Index(
@@ -302,31 +287,25 @@ def main():
                     128 * mma_m_scale, 16 * mma_n_scale, MMA_K
                 )
 
-                @parameter
-                for register_based_epilogue in [True, False]:
-                    # SMEM epilogue has issues for MMA_M==128 and odd MMA_N
-                    @parameter
-                    if (
-                        not register_based_epilogue
-                        and mma_m_scale == 1
-                        and mma_n_scale % 2 != 0
-                    ):
-                        continue
-
+                comptime for register_based_epilogue in [True, False]:
                     # Helper to run test with varying cluster/k_group/sizes
                     @parameter
-                    fn run[
+                    def run[
+                        MType: CoordLike,
+                        NType: CoordLike,
+                        KType: CoordLike,
+                        //,
                         cluster_m: Int,
                         cluster_n: Int,
                         k_group: Int = 1,
-                    ](m: ValOrDim, n: ValOrDim, k: ValOrDim) raises:
+                    ](m: MType, n: NType, k: KType) raises:
                         test_matmul_sm100_epilogue[
                             dtype,
                             dtype,
                             DType.bfloat16,
                             block_tile_shape,
                             umma_shape,
-                            cluster_shape = StaticTuple[Int32, 3](
+                            cluster_shape=StaticTuple[Int32, 3](
                                 Int32(cluster_m), Int32(cluster_n), 1
                             ),
                             cta_group=2,
@@ -336,18 +315,16 @@ def main():
                         ](ctx, m, n, k)
 
                     # FASTER mode: 2 key test cases only
-                    run[4, 4](dynamic(1000), static[1024](), static[1024]())
+                    run[4, 4](Idx(Int(1000)), Idx(1024), Idx(1024))
 
-                    @parameter
-                    if not FASTER_TEST:
-                        run[4, 4](dynamic(512), static[4096](), static[1024]())
+                    comptime if not FASTER_TEST:
+                        run[4, 4](Idx(Int(512)), Idx(4096), Idx(1024))
                         run[4, 4, k_group=2](
-                            dynamic(500), static[2048](), static[4096]()
+                            Idx(Int(500)), Idx(2048), Idx(4096)
                         )
-                        run[8, 2](dynamic(1024), static[256](), static[128]())
+                        run[8, 2](Idx(Int(1024)), Idx(256), Idx(128))
 
-                    run[2, 2](static[1024](), static[1024](), static[2048]())
+                    run[2, 2](Idx(1024), Idx(1024), Idx(2048))
 
-                    @parameter
-                    if not FASTER_TEST:
-                        run[4, 4](dynamic(8192), static[2560](), static[8192]())
+                    comptime if not FASTER_TEST:
+                        run[4, 4](Idx(Int(8192)), Idx(2560), Idx(8192))

@@ -14,13 +14,13 @@
 import math
 
 import numpy as np
-from max import functional as F
 from max.driver import Device
 from max.dtype import DType
+from max.experimental import functional as F
+from max.experimental.nn import Embedding, Linear, Module
+from max.experimental.nn.sequential import ModuleList
+from max.experimental.tensor import Tensor
 from max.graph import Dim, TensorType
-from max.nn import Embedding, Linear, Module
-from max.nn.sequential import ModuleList
-from max.tensor import Tensor
 
 from .model_config import T5Config
 
@@ -293,7 +293,7 @@ class T5Attention(
         Returns:
             TensorValue: Relative position buckets.
         """
-        relative_buckets = Tensor.constant(
+        relative_buckets = Tensor(
             0, dtype=DType.int32, device=relative_position.device
         )
 

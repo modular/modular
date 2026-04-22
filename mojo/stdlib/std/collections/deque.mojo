@@ -17,14 +17,15 @@ You can import these APIs from the `collections` package.
 Examples:
 
 ```mojo
-from collections import Deque
+from std.collections import Deque
 ```
 """
 
 
-from bit import next_power_of_two
-from builtin.constrained import _constrained_conforms_to
-import format._utils as fmt
+from std.bit import next_power_of_two
+import std.format._utils as fmt
+from std.hashlib import Hasher
+from std.collections import check_bounds
 
 # ===-----------------------------------------------------------------------===#
 # Deque
@@ -34,11 +35,12 @@ import format._utils as fmt
 struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     Boolable,
     Copyable,
+    Equatable where conforms_to(ElementType, Equatable),
+    Hashable where conforms_to(ElementType, Hashable),
     Iterable,
-    Representable,
+    IterableOwned,
     Sized,
-    Stringable,
-    Writable,
+    Writable where conforms_to(ElementType, Writable),
 ):
     """Implements a double-ended queue.
 
@@ -59,6 +61,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _DequeIterOwned[Self.ElementType]
+    """The owned iterator type for this deque."""
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -100,7 +105,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    fn __init__(
+    def __init__(
         out self,
         *,
         var elements: Optional[List[Self.ElementType]] = None,
@@ -148,7 +153,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if elements is not None:
             self.extend(elements.take())
 
-    fn __init__(
+    def __init__(
         out self, var *values: Self.ElementType, __list_literal__: () = ()
     ):
         """Constructs a deque from the given values.
@@ -157,17 +162,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             values: The values to populate the deque with.
             __list_literal__: Tell Mojo to use this method for list literals.
         """
-        self = Self(elements=values^)
-
-    fn __init__(
-        out self, *, var elements: VariadicListMem[Self.ElementType, _]
-    ):
-        """Constructs a deque from the given values.
-
-        Args:
-             elements: The values to populate the deque with.
-        """
-        args_length = len(elements)
+        args_length = len(values)
 
         if args_length < self.default_capacity:
             capacity = self.default_capacity
@@ -176,35 +171,35 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         self = Self(capacity=capacity)
 
-        # Transfer all of the elements into the deque.
+        # Transfer all of the values into the deque.
         @parameter
-        fn init_elt(idx: Int, var elt: Self.ElementType):
+        def init_elt(idx: Int, var elt: Self.ElementType):
             (self._data + idx).init_pointee_move(elt^)
 
-        elements^.consume_elements[init_elt]()
+        values^.consume_elements[init_elt]()
 
-        # Remember how many elements we have.
+        # Remember how many values we have.
         self._tail = args_length
 
-    fn __copyinit__(out self, other: Self):
-        """Creates a deepcopy of the given deque.
+    def __init__(out self, *, copy: Self):
+        """Creates a deep copy of the given deque.
 
         Args:
-            other: The deque to copy.
+            copy: The deque to copy.
         """
         self = Self(
-            capacity=other._capacity,
-            min_capacity=other._min_capacity,
-            maxlen=other._maxlen,
-            shrink=other._shrink,
+            capacity=copy._capacity,
+            min_capacity=copy._min_capacity,
+            maxlen=copy._maxlen,
+            shrink=copy._shrink,
         )
-        for i in range(len(other)):
-            offset = other._physical_index(other._head + i)
-            (self._data + i).init_pointee_copy((other._data + offset)[])
+        for i in range(len(copy)):
+            offset = copy._physical_index(copy._head + i)
+            (self._data + i).init_pointee_copy((copy._data + offset)[])
 
-        self._tail = len(other)
+        self._tail = len(copy)
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Destroys all elements in the deque and free its memory."""
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
@@ -215,7 +210,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    fn __add__(self, other: Self) -> Self:
+    def __add__(self, other: Self) -> Self:
         """Concatenates self with other and returns the result as a new deque.
 
         Args:
@@ -229,7 +224,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             new.append(element.copy())
         return new^
 
-    fn __iadd__(mut self, other: Self):
+    def __iadd__(mut self, other: Self):
         """Appends the elements of other deque into self.
 
         Args:
@@ -238,7 +233,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for element in other:
             self.append(element.copy())
 
-    fn __mul__(self, n: Int) -> Self:
+    def __mul__(self, n: Int) -> Self:
         """Concatenates `n` deques of `self` and returns a new deque.
 
         Args:
@@ -260,7 +255,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                 new.append(element.copy())
         return new^
 
-    fn __imul__(mut self, n: Int):
+    def __imul__(mut self, n: Int):
         """Concatenates self `n` times in place.
 
         Args:
@@ -275,14 +270,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             for element in orig:
                 self.append(element.copy())
 
-    fn __eq__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], other: Deque[T]) -> Bool:
+    def __eq__(
+        self, other: Self
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Checks if two deques are equal.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             other: The deque to compare with.
@@ -296,35 +287,31 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset_self = self._physical_index(self._head + i)
             offset_other = other._physical_index(other._head + i)
-            if (self._data + offset_self)[] != (other._data + offset_other)[]:
+            ref lhs = trait_downcast[Equatable]((self._data + offset_self)[])
+            ref rhs = trait_downcast[Equatable]((other._data + offset_other)[])
+            if lhs != rhs:
                 return False
         return True
 
-    fn __ne__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], other: Deque[T]) -> Bool:
-        """Checks if two deques are not equal.
+    def __hash__[
+        H: Hasher
+    ](self, mut hasher: H) where conforms_to(Self.ElementType, Hashable):
+        """Updates hasher with the hash of each element in the deque.
 
         Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
+            H: The hasher type.
 
         Args:
-            other: The deque to compare with.
-
-        Returns:
-            `True` if the deques are not equal, `False` otherwise.
+            hasher: The hasher instance.
         """
-        return not (self == other)
+        for i in range(len(self)):
+            var offset = self._physical_index(self._head + i)
+            trait_downcast[Hashable]((self._data + offset)[]).__hash__(hasher)
 
-    fn __contains__[
-        T: Equatable & Copyable, //
-    ](self: Deque[T], value: T) -> Bool:
+    def __contains__(
+        self, value: Self.ElementType
+    ) -> Bool where conforms_to(Self.ElementType, Equatable):
         """Verify if a given value is present in the deque.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             value: The value to find.
@@ -332,13 +319,23 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             True if the value is contained in the deque, False otherwise.
         """
+        ref rhs = trait_downcast[Equatable](value)
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 return True
         return False
 
-    fn __iter__(
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        """Consume the deque and return an iterator over its elements.
+
+        Returns:
+            An iterator that owns the deque's elements.
+        """
+        return {self^, 0}
+
+    def __iter__(
         ref self,
     ) -> Self.IteratorType[origin_of(self)]:
         """Iterates over elements of the deque, returning the references.
@@ -348,7 +345,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return _DequeIter(0, Pointer(to=self))
 
-    fn __reversed__(
+    def __reversed__(
         ref self,
     ) -> _DequeIter[Self.ElementType, origin_of(self), False]:
         """Iterate backwards over the deque, returning the references.
@@ -363,7 +360,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    fn __bool__(self) -> Bool:
+    def __bool__(self) -> Bool:
         """Checks whether the deque has any elements or not.
 
         Returns:
@@ -372,7 +369,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         return self._head != self._tail
 
     @always_inline
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         """Gets the number of elements in the deque.
 
         Returns:
@@ -380,7 +377,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return (self._tail - self._head) & (self._capacity - 1)
 
-    fn __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
+    @always_inline
+    def __getitem__(ref self, idx: IntLiteral) -> ref[self] Self.ElementType:
         """Gets the deque element at the given index.
 
         Args:
@@ -389,94 +387,78 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             A reference to the element at the given index.
         """
-        normalized_idx = idx
+        comptime assert (
+            IntLiteral[idx.value]() >= 0
+        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
 
-        debug_assert(
-            -len(self) <= normalized_idx < len(self),
-            "index: ",
-            normalized_idx,
-            " is out of bounds for `Deque` of size: ",
-            len(self),
-        )
+    @always_inline
+    def __getitem__(ref self, idx: Int) -> ref[self] Self.ElementType:
+        """Gets the deque element at the given index.
 
-        if normalized_idx < 0:
-            normalized_idx += len(self)
+        Args:
+            idx: The index of the element.
 
-        offset = self._physical_index(self._head + normalized_idx)
-        return (self._data + offset)[]
+        Returns:
+            A reference to the element at the given index.
+        """
+        check_bounds(idx, len(self))
+        return self._unchecked_get(idx)
 
-    fn _write_self_to[
-        f: fn(Self.ElementType, mut Some[Writer])
-    ](self, mut writer: Some[Writer]):
-        fmt.constrained_conforms_to_writable[Self.ElementType, Parent=Self]()
+    @always_inline
+    def _unchecked_get(ref self, idx: Int) -> ref[self] Self.ElementType:
+        offset = self._physical_index(self._head + idx)
+        return self._data[offset]
 
+    def _write_self_to[
+        f: def(Self.ElementType, mut Some[Writer]) thin
+    ](self, mut writer: Some[Writer]) where conforms_to(
+        Self.ElementType, Writable
+    ):
         var iterator = self.__iter__()
 
         @parameter
-        fn iterate(mut w: Some[Writer]) raises StopIteration:
+        def iterate(mut w: Some[Writer]) raises StopIteration:
             f(iterator.__next__(), w)
 
         fmt.write_sequence_to[ElementFn=iterate](writer)
         _ = iterator^
 
     @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes `my_deque.__str__()` to a `Writer`.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
-        self._write_self_to[f = fmt.write_to[Self.ElementType]](writer)
+        self._write_self_to[f=fmt.write_to[Self.ElementType]](writer)
 
     @no_inline
-    fn write_repr_to(self, mut writer: Some[Writer]):
+    def write_repr_to(
+        self, mut writer: Some[Writer]
+    ) where conforms_to(Self.ElementType, Writable):
         """Writes the repr representation of this deque to a `Writer`.
-
-        Constraints:
-            ElementType must conform to `Writable`.
 
         Args:
             writer: The object to write to.
         """
 
         @parameter
-        fn write_fields(mut w: Some[Writer]):
-            self._write_self_to[f = fmt.write_repr_to[Self.ElementType]](w)
+        def write_fields(mut w: Some[Writer]):
+            self._write_self_to[f=fmt.write_repr_to[Self.ElementType]](w)
 
         fmt.FormatStruct(writer, "Deque").params(
             fmt.TypeNames[Self.ElementType](),
         ).fields[FieldsFn=write_fields]()
 
-    @no_inline
-    fn __str__(self) -> String:
-        """Returns a string representation of a `Deque`.
-
-        Returns:
-            A string representation of the deque.
-        """
-        output = String()
-        self.write_to(output)
-        return output^
-
-    @no_inline
-    fn __repr__(self) -> String:
-        """Returns a string representation of a `Deque`.
-
-        Returns:
-            A string representation of the deque.
-        """
-        output = String()
-        self.write_repr_to(output)
-        return output^
-
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
 
-    fn append(mut self, var value: Self.ElementType):
+    def append(mut self, var value: Self.ElementType):
         """Appends a value to the right side of the deque.
 
         Args:
@@ -493,7 +475,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn appendleft(mut self, var value: Self.ElementType):
+    def appendleft(mut self, var value: Self.ElementType):
         """Appends a value to the left side of the deque.
 
         Args:
@@ -510,7 +492,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn clear(mut self):
+    def clear(mut self):
         """Removes all elements from the deque leaving it with length 0.
 
         Resets the underlying storage capacity to `_min_capacity`.
@@ -524,12 +506,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = 0
 
-    fn count[T: Equatable & Copyable, //](self: Deque[T], value: T) -> Int:
+    def count(
+        self, value: Self.ElementType
+    ) -> Int where conforms_to(Self.ElementType, Equatable):
         """Counts the number of occurrences of a `value` in the deque.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the trait `Equatable`.
 
         Args:
             value: The value to count.
@@ -537,14 +517,16 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             The number of occurrences of the value in the deque.
         """
+        ref rhs = trait_downcast[Equatable](value)
         count = 0
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 count += 1
         return count
 
-    fn extend(mut self, var values: List[Self.ElementType]):
+    def extend(mut self, var values: List[Self.ElementType]):
         """Extends the right side of the deque by consuming elements of the list argument.
 
         Args:
@@ -579,7 +561,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         # free the list backing buffer
         values_data.free()
 
-    fn extendleft(mut self, var values: List[Self.ElementType]):
+    def extendleft(mut self, var values: List[Self.ElementType]):
         """Extends the left side of the deque by consuming elements from the list argument.
 
         Acts as series of left appends resulting in reversed order of elements in the list argument.
@@ -615,20 +597,14 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         values_data.free()
 
-    fn index[
-        T: Equatable & Copyable, //
-    ](
-        self: Deque[T],
-        value: T,
+    def index(
+        self,
+        value: Self.ElementType,
         start: Int = 0,
         stop: Optional[Int] = None,
-    ) raises -> Int:
+    ) raises -> Int where conforms_to(Self.ElementType, Equatable):
         """Returns the index of the first occurrence of a `value` in a deque
         restricted by the range given the `start` and `stop` bounds.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the `Equatable` trait.
 
         Args:
             value: The value to search for.
@@ -658,13 +634,16 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         start_normalized = max(min(start_normalized, len(self)), 0)
         stop_normalized = max(min(stop_normalized, len(self)), 0)
 
+        ref rhs = trait_downcast[Equatable](value)
         for idx in range(start_normalized, stop_normalized):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 return idx
         raise "ValueError: Given element is not in deque"
 
-    fn insert(mut self, idx: Int, var value: Self.ElementType) raises:
+    @always_inline
+    def insert(mut self, idx: Int, var value: Self.ElementType) raises:
         """Inserts the `value` into the deque at position `idx`.
 
         Args:
@@ -679,42 +658,31 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         if deque_len == self._maxlen:
             raise "IndexError: Deque is already at its maximum size"
 
-        normalized_idx = idx
+        check_bounds(idx, deque_len + 1)
 
-        if normalized_idx < -deque_len:
-            normalized_idx = 0
-
-        if normalized_idx > deque_len:
-            normalized_idx = deque_len
-
-        if normalized_idx < 0:
-            normalized_idx += deque_len
-
-        if normalized_idx <= deque_len // 2:
-            for i in range(normalized_idx):
+        if idx <= deque_len // 2:
+            for i in range(idx):
                 src = self._physical_index(self._head + i)
                 dst = self._physical_index(src - 1)
                 (self._data + dst).init_pointee_move_from(self._data + src)
             self._head = self._physical_index(self._head - 1)
         else:
-            for i in range(deque_len - normalized_idx):
+            for i in range(deque_len - idx):
                 dst = self._physical_index(self._tail - i)
                 src = self._physical_index(dst - 1)
                 (self._data + dst).init_pointee_move_from(self._data + src)
             self._tail = self._physical_index(self._tail + 1)
 
-        offset = self._physical_index(self._head + normalized_idx)
+        offset = self._physical_index(self._head + idx)
         (self._data + offset).init_pointee_move(value^)
 
         if self._head == self._tail:
             self._realloc(self._capacity << 1)
 
-    fn remove[T: Equatable & Copyable, //](mut self: Deque[T], value: T) raises:
+    def remove(
+        mut self, value: Self.ElementType
+    ) raises where conforms_to(Self.ElementType, Equatable):
         """Removes the first occurrence of the `value`.
-
-        Parameters:
-            T: The type of the elements in the deque.
-                Must implement the `Equatable` trait.
 
         Args:
             value: The value to remove.
@@ -722,10 +690,12 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Raises:
             ValueError: If the value is not found in the deque.
         """
+        ref rhs = trait_downcast[Equatable](value)
         deque_len = len(self)
         for idx in range(deque_len):
             offset = self._physical_index(self._head + idx)
-            if (self._data + offset)[] == value:
+            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
+            if lhs == rhs:
                 (self._data + offset).destroy_pointee()
 
                 if idx < deque_len // 2:
@@ -756,7 +726,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         raise "ValueError: Given element is not in deque"
 
-    fn peek(self) raises -> Self.ElementType:
+    def peek(self) raises -> Self.ElementType:
         """Inspect the last (rightmost) element of the deque without removing it.
 
         Returns:
@@ -770,7 +740,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return (self._data + self._physical_index(self._tail - 1))[].copy()
 
-    fn peekleft(self) raises -> Self.ElementType:
+    def peekleft(self) raises -> Self.ElementType:
         """Inspect the first (leftmost) element of the deque without removing it.
 
         Returns:
@@ -784,7 +754,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return (self._data + self._head)[].copy()
 
-    fn pop(mut self) raises -> Self.ElementType:
+    def pop(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the right side of the deque.
 
         Returns:
@@ -808,7 +778,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return element^
 
-    fn popleft(mut self) raises -> Self.ElementType:
+    def popleft(mut self) raises -> Self.ElementType:
         """Removes and returns the element from the left side of the deque.
 
         Returns:
@@ -832,7 +802,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
 
         return element^
 
-    fn reverse(mut self):
+    def reverse(mut self):
         """Reverses the elements of the deque in-place."""
         last = self._head + len(self) - 1
         for i in range(len(self) // 2):
@@ -842,7 +812,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             (self._data + dst).init_pointee_move_from(self._data + src)
             (self._data + src).init_pointee_move(tmp^)
 
-    fn rotate(mut self, n: Int = 1):
+    def rotate(mut self, n: Int = 1):
         """Rotates the deque by `n` steps.
 
         If `n` is positive, rotates to the right.
@@ -867,7 +837,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
                     self._data + self._tail
                 )
 
-    fn _compute_pop_and_move_counts(
+    def _compute_pop_and_move_counts(
         self, len_self: Int, len_values: Int
     ) -> Tuple[Int, Int, Int, Int, Int]:
         """
@@ -907,7 +877,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         )
 
     @always_inline
-    fn _physical_index(self, logical_index: Int) -> Int:
+    def _physical_index(self, logical_index: Int) -> Int:
         """Calculates the physical index in the circular buffer.
 
         Args:
@@ -919,7 +889,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         return logical_index & (self._capacity - 1)
 
-    fn _prepare_for_new_elements(mut self, n_total: Int, n_retain: Int):
+    def _prepare_for_new_elements(mut self, n_total: Int, n_retain: Int):
         """Prepares the deque’s internal buffer for adding new elements by
         reallocating memory and retaining the specified number of existing elements.
 
@@ -937,7 +907,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             offset = self._physical_index(self._head + i)
             (new_data + i).init_pointee_move_from(self._data + offset)
 
-        if self._data:
+        if self._capacity > 0:
             self._data.free()
 
         self._data = new_data
@@ -945,7 +915,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = n_retain
 
-    fn _realloc(mut self, new_capacity: Int):
+    def _realloc(mut self, new_capacity: Int):
         """Relocates data to a new storage buffer.
 
         Args:
@@ -978,7 +948,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         self._head = 0
         self._tail = deque_len
 
-        if self._data:
+        if self._capacity > 0:
             self._data.free()
         self._data = new_data
         self._capacity = new_capacity
@@ -1009,14 +979,13 @@ struct _DequeIter[
     var index: Int
     var src: Pointer[Deque[Self.T], Self.origin]
 
-    fn __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self.copy()
 
-    fn __next__(
+    def __next__(
         mut self,
     ) raises StopIteration -> ref[Self.origin] Self.Element:
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             if self.index >= len(self.src[]):
                 raise StopIteration()
 
@@ -1030,13 +999,57 @@ struct _DequeIter[
             return self.src[][self.index]
 
     @always_inline
-    fn bounds(self) -> Tuple[Int, Optional[Int]]:
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
         var iter_len: Int
 
-        @parameter
-        if Self.forward:
+        comptime if Self.forward:
             iter_len = len(self.src[]) - self.index
         else:
             iter_len = self.index
 
         return (iter_len, {iter_len})
+
+
+@fieldwise_init
+struct _DequeIterOwned[T: Copyable & ImplicitlyDestructible](
+    IterableOwned, Iterator, Movable
+):
+    """An owning iterator for Deque.
+
+    Parameters:
+        T: The type of the elements in the deque.
+    """
+
+    comptime Element = Self.T
+    comptime IteratorOwnedType = Self
+
+    var _deque: Deque[Self.T]
+    var _index: Int
+
+    @always_inline
+    def __del__(deinit self):
+        # Destroy remaining unconsumed elements at their physical positions.
+        # Note: `_index` tracks how many elements __next__ has consumed;
+        # _head/_tail are never modified, so len(self._deque) stays constant.
+        for i in range(self._index, len(self._deque)):
+            var phys = self._deque._physical_index(self._deque._head + i)
+            (self._deque._data + phys).destroy_pointee()
+        # Zero out head/tail so Deque.__del__ only frees memory.
+        self._deque._head = 0
+        self._deque._tail = 0
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._index >= len(self._deque):
+            raise StopIteration()
+        var phys = self._deque._physical_index(self._deque._head + self._index)
+        self._index += 1
+        return (self._deque._data + phys).take_pointee()
+
+    @always_inline
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = len(self._deque) - self._index
+        return (remaining, {remaining})

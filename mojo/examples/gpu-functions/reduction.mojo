@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from os.atomic import Atomic
-from random import randint
-from sys import has_accelerator, size_of
+from std.math import ceildiv
+from std.atomic import Atomic
+from std.random import randint
+from std.sys import has_accelerator, size_of
 
-from benchmark import (
+from std.benchmark import (
     Bench,
     BenchConfig,
     Bencher,
@@ -24,37 +24,36 @@ from benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from bit import log2_floor
-from gpu import barrier, block_dim, block_idx, grid_dim, thread_idx
-from gpu.primitives import warp
-from gpu.host import DeviceContext, DeviceBuffer
-from gpu.memory import AddressSpace
-from memory import stack_allocation
-from testing import assert_equal
+from std.bit import log2_floor
+from std.gpu import barrier, block_dim, block_idx, thread_idx
+from std.gpu.primitives import warp
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext, DeviceBuffer
+from std.gpu.memory import AddressSpace
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
 # Initialize parameters
 # To achieve high bandwidth increase SIZE to large value
-comptime TPB: UInt = 512
-comptime LOG_TPB = log2_floor(TPB)
+comptime TPB = 512
 comptime BATCH_SIZE = 8  # needs to be power of 2
 comptime SIZE = 1 << 12
-comptime NUM_BLOCKS = UInt(ceildiv(SIZE, Int(TPB * BATCH_SIZE)))
-comptime WARP_SIZE = 32
+comptime NUM_BLOCKS = ceildiv(SIZE, TPB * BATCH_SIZE)
 comptime dtype = DType.int32
 
 
-fn sum_kernel[
+def sum_kernel[
     size: Int, batch_size: Int
 ](
     output: UnsafePointer[Int32, MutAnyOrigin],
     a: UnsafePointer[Int32, MutAnyOrigin],
 ):
     """Efficient reduction of the vector a."""
-    comptime KERNEL_TPB: UInt = 512
+    comptime KERNEL_TPB: Int = 512
     sums = stack_allocation[
-        Int(KERNEL_TPB),
+        KERNEL_TPB,
         Scalar[dtype],
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ]()
 
     global_tid = block_idx.x * block_dim.x + thread_idx.x
@@ -75,8 +74,7 @@ fn sum_kernel[
     active_threads = KERNEL_TPB
     comptime KERNEL_LOG_TPB = log2_floor(KERNEL_TPB)
 
-    @parameter
-    for power in range(1, KERNEL_LOG_TPB - 4):
+    comptime for power in range(1, KERNEL_LOG_TPB - log2_floor(WARP_SIZE) + 1):
         active_threads >>= 1
         if tid < active_threads:
             sums[tid] += sums[tid + active_threads]
@@ -95,10 +93,10 @@ struct SumKernelBenchmarkParams:
     var out_ptr: UnsafePointer[Int32, MutAnyOrigin]
     var a_ptr: UnsafePointer[Int32, MutAnyOrigin]
 
-    fn __init__(
+    def __init__(
         out self,
-        out_ptr: UnsafePointer[mut=True, Int32],
-        a_ptr: UnsafePointer[mut=True, Int32],
+        out_ptr: UnsafePointer[mut=True, Int32, _],
+        a_ptr: UnsafePointer[mut=True, Int32, _],
     ):
         self.out_ptr = out_ptr
         self.a_ptr = a_ptr
@@ -107,12 +105,12 @@ struct SumKernelBenchmarkParams:
 # Benchmark function for sum_kernel
 @parameter
 @always_inline
-fn sum_kernel_benchmark(
+def sum_kernel_benchmark(
     mut b: Bencher, input_data: SumKernelBenchmarkParams
 ) capturing raises:
     @parameter
     @always_inline
-    fn kernel_launch_sum(ctx: DeviceContext) raises:
+    def kernel_launch_sum(ctx: DeviceContext) raises:
         comptime kernel = sum_kernel[SIZE, BATCH_SIZE]
         var out_ptr = input_data.out_ptr
         var a_ptr = input_data.a_ptr
@@ -129,11 +127,8 @@ fn sum_kernel_benchmark(
     b.iter_custom[kernel_launch_sum](bench_ctx)
 
 
-def main():
-    constrained[
-        has_accelerator(),
-        "This example requires a supported GPU",
-    ]()
+def main() raises:
+    comptime assert has_accelerator(), "This example requires a supported GPU"
 
     with DeviceContext() as ctx:
         # Allocate memory on the device
@@ -145,7 +140,7 @@ def main():
 
         # Initialise a with random integers between 0 and 10
         with a.map_to_host() as a_host:
-            randint[dtype](a_host.unsafe_ptr(), SIZE, 0, 10)
+            randint[dtype](a_host.as_span(), low=0, high=10)
 
         # Call the kernel
         ctx.enqueue_function[kernel, kernel](

@@ -10,7 +10,8 @@ If a MAX pipeline produces outputs that don't match the PyTorch reference
 implementation, follow this guide to identify the source of divergence.
 The general procedure is:
 
-1. Run `debug_model` for the pipeline in both frameworks to dump intermediate tensors.
+1. Run `debug_model` for the pipeline in both frameworks to dump intermediate
+   tensors.
 2. Compare the tensor outputs side-by-side to find a suspect layer.
 3. Add fine-grained logging to the suspect layer's intermediate tensors.
 4. Run `debug_model` again to export detailed tensor data.
@@ -262,10 +263,36 @@ reference. This is most common.
 
 Check that weights are loaded and transformed correctly.
 
+### FMA contraction differences
+
+MAX enables FMA (fused multiply-add) contraction by default via the LLVM
+`contract` fastmath flag (set in `KGEN/lib/KGENToLLVM/LLVMLoweringUtils.h`).
+This allows the compiler to fuse a `fmul + fadd` into a single FMA instruction,
+which rounds once instead of twice.
+
+For `bfloat16` operations, this produces results that differ from PyTorch by up
+to 1 ULP because PyTorch rounds after each operation while the FMA keeps the
+intermediate product at full precision. The max error is typically within the
+BF16 ULP range for the input magnitudes (for example, 0.0625 = 2^-4).
+
+This is **by design** — the FMA result is more accurate than PyTorch's
+double-rounding. If you see element-wise differences in `bfloat16`
+multiply-add patterns, verify this is the cause before investigating further:
+
+- Compare both results against a `float64` reference — the MAX result should be
+  closer.
+- Splitting the same ops across separate graphs (forcing intermediate
+  materialization) should match PyTorch exactly, confirming FMA contraction as
+  the source.
+
+> [!NOTE]
+> This does not affect model-level metrics (perplexity, KL divergence, eval
+> scores). Only flag this as a bug if model-level accuracy is degraded.
+
 ### Dtype mismatches
 
-Look for places where dtypes are cast incorrectly. A common issue is
-performing an operation in `float32` when `bfloat16` is expected (or vice versa).
+Look for places where dtypes are cast incorrectly. A common issue is performing
+an operation in `float32` when `bfloat16` is expected (or vice versa).
 
 ### Config discrepancies
 
@@ -297,7 +324,8 @@ The style you set with `set_debug_print_options()` determines where
 - `BINARY_MAX_CHECKPOINT`: Saves `.max` files with dtype/shape metadata
 (recommended for `compare_tensors`)
 
-- `BINARY`: Raw buffer files without metadata (you must track dtype/shape separately)
+- `BINARY`: Raw buffer files without metadata (you must track dtype/shape
+  separately)
 
 For example:
 
@@ -345,7 +373,7 @@ Here's how to use the hooks directly in your code:
 #### MAX `PrintHook`
 
 ```python
-from max.nn.legacy.hooks import PrintHook
+from max.nn.hooks import PrintHook
 
 # Create hook and name layers
 hook = PrintHook()

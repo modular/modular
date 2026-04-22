@@ -13,6 +13,8 @@
 # GENERATED FILE, DO NOT EDIT MANUALLY!
 # ===----------------------------------------------------------------------=== #
 
+"""MAX profiler Python bindings."""
+
 class Trace:
     """
     Context manager for creating profiling spans.
@@ -29,8 +31,8 @@ class Trace:
         Constructs and initializes the underlying Mojo Trace object.
 
         Args:
-            message: name of the span.
-            color: color of the span.
+            message: Name of the span.
+            color: Color of the span.
         """
 
     def __enter__(self) -> Trace:

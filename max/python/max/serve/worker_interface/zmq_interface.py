@@ -102,45 +102,55 @@ class ZmqModelWorkerProxy(
             # this will immediately trigger the finally block, resulting in
             # the request being purged, and returned without result.
             self.request_queue.put_nowait(data)
-            yield out_queue
+            try:
+                yield out_queue
+            except:
+                # tell the model worker we're aborting for some reason
+                self.cancel(req_id)
+                raise
         finally:
             del self.pending_out_queues[req_id]
 
     async def stream(
         self, req_id: RequestID, data: BaseContextType
-    ) -> AsyncIterator[PipelineOutputType]:
+    ) -> AsyncIterator[list[PipelineOutputType]]:
         """
         Asynchronously streams results for a given request ID and input data.
 
-        Opens a channel for the request, yields each result as it becomes available,
+        Opens a channel for the request, drains the queue to build output batches,
         and closes the channel when the stream ends.
 
-        Raises:
-            RuntimeError: If the pipeline execution failed. The error message
-                contains the exception type and message from the scheduler.
+        The yielded lists are guaranteed to be non-empty and ordered.
         """
         with self._open_channel(req_id, data) as queue:
             # queue.get() will wait until an item is available.
-            # This will exit when no result is passed in the SchedulerResult,
-            # the SchedulerResult states that we should stop the stream,
-            # or when an error occurred during pipeline execution.
+            # This will exit when no result is passed in the SchedulerResult.
+            # or the SchedulerResult states that we should stop the stream.
             while True:
                 item = await queue.get()
-
-                # Check for error FIRST - propagate pipeline failures to caller
-                if item.error is not None:
-                    raise RuntimeError(
-                        f"Pipeline error ({item.error.error_type}): "
-                        f"{item.error.error_message}\n\n"
-                        f"Remote traceback:\n{item.error.traceback_str}"
-                    )
-
                 if item.result is None:
                     break
 
-                yield item.result
+                outputs = [item.result]
+                should_stop = item.is_done
+                while True:
+                    try:
+                        item = queue.get_nowait()
+                    except asyncio.QueueEmpty:
+                        break
 
-                if item.is_done:
+                    if item.result is None:
+                        should_stop = True
+                        break
+
+                    outputs.append(item.result)
+                    if item.is_done:
+                        should_stop = True
+                        break
+
+                yield outputs
+
+                if should_stop:
                     break
 
     def cancel(self, req_id: RequestID) -> None:

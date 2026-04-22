@@ -32,31 +32,27 @@ from max.graph import (
     Weight,
     ops,
 )
-from max.nn.legacy.attention.attention_with_rope import _compute_shard_range
-from max.nn.legacy.comm.allreduce import Allreduce
-from max.nn.legacy.embedding import VocabParallelEmbedding
-from max.nn.legacy.float8_config import Float8Config
-from max.nn.legacy.kernels import (
+from max.nn.attention.attention_with_rope import _compute_shard_range
+from max.nn.comm.allreduce import Allreduce
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kernels import (
     MHAMaskVariant,
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
+    rope_split_store_ragged,
 )
-from max.nn.legacy.kv_cache import KVCacheParams, PagedCacheValues
-from max.nn.legacy.layer import LayerList, Module, Shardable
-from max.nn.legacy.linear import MLP, ColumnParallelLinear, Linear
-from max.nn.legacy.norm import RMSNorm
-from max.nn.legacy.rotary_embedding import Llama3RotaryEmbedding
-from max.nn.legacy.transformer import ReturnLogits
-from max.nn.legacy.transformer.distributed_transformer import (
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.layer import LayerList, Module, Shardable
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import RMSNorm
+from max.nn.quant_config import QuantConfig
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
     ShardableCallable,
     forward_sharded_layers,
 )
-from max.pipelines.architectures.internvl.embedding_utils import (
-    merge_multimodal_embeddings,
-)
-from max.pipelines.architectures.internvl.internvl import distribute_value
 from max.pipelines.architectures.llama3.model_config import Llama3Config
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
 
 
 class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
@@ -88,7 +84,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         linear_cls: Callable[..., Linear] = Linear,
         scale: float | None = None,
         has_bias: bool = True,
-        float8_config: Float8Config | None = None,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         """Initializes the Qwen2.5VL attention layer with mrope support.
 
@@ -113,19 +109,15 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
         self.has_bias = has_bias
         self.hidden_size = hidden_size
         self.scale = (
-            scale if scale else math.sqrt(1.0 / self.kv_params.head_dim)
+            scale
+            if scale is not None
+            else math.sqrt(1.0 / self.kv_params.head_dim)
         )
-        self.float8_config = float8_config
+        self.quant_config = quant_config
 
         self.devices = devices or [DeviceRef.CPU()]
 
         self._sharding_strategy: ShardingStrategy | None = None
-
-        if not self.kv_params.cache_strategy.uses_opaque():
-            raise ValueError(
-                f"{self.kv_params.cache_strategy} cache strategy, not supported"
-                " in Attention layer."
-            )
 
         q_weight_dim = self.kv_params.head_dim * num_attention_heads
         kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
@@ -136,7 +128,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.k_proj = linear_cls(
             in_dim=hidden_size,
@@ -144,7 +136,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
         self.v_proj = linear_cls(
             in_dim=hidden_size,
@@ -152,7 +144,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             dtype=dtype,
             device=self.devices[0],
             has_bias=has_bias,
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
         self.o_proj = linear_cls(
@@ -160,7 +152,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             out_dim=hidden_size,
             dtype=dtype,
             device=self.devices[0],
-            float8_config=float8_config,
+            quant_config=quant_config,
         )
 
     @property
@@ -235,32 +227,26 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
             if wqkv_bf16.dtype != DType.bfloat16:
                 wqkv_bf16 = ops.cast(wqkv_bf16, DType.bfloat16)
 
-        # Fused QKV matmul: input and wqkv are both BF16 now.
-        xq = fused_qkv_ragged_matmul(
-            self.kv_params,
-            input=x_in,
-            wqkv=wqkv_bf16,
-            bias=self.wqkv_bias,
+        # QKV matmul: BF16 input x BF16 wqkv.
+        qkv = x_in @ wqkv_bf16.T
+        if self.wqkv_bias is not None:
+            qkv = qkv + self.wqkv_bias
+
+        # Fused rope + split + KV store.
+        freqs_cis = ops.cast(freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
+            kv_params=self.kv_params,
+            qkv=qkv,
             input_row_offsets=input_row_offsets,
+            freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
             n_heads=self.n_heads,
-        )
-
-        # Apply RoPE and flash attention (also in BF16).
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
-        freqs_cis = freqs_cis.to(xq.device)
-        xq = fused_qk_ragged_rope(
-            self.kv_params,
-            xq,
-            input_row_offsets,
-            kv_collection,
-            freqs_cis,
-            layer_idx,
             interleaved=self.rope.interleaved,
             position_ids=position_ids,
             mrope_section=mrope_section,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         attn_out = flash_attention_ragged(
             self.kv_params,
@@ -362,7 +348,7 @@ class Qwen25VLDecoderAttentionWithRope(Module, Shardable):
                 linear_cls=self.o_proj.__class__,
                 scale=self.scale,
                 has_bias=self.has_bias,
-                float8_config=self.float8_config,
+                quant_config=self.quant_config,
             )
 
             # Assign sharded weights
@@ -459,7 +445,7 @@ class Qwen25VLDecoderTransformerBlock(Module):
         return hs
 
 
-class Qwen25VLDecoder(Module):
+class Qwen25VLDecoder(DistributedLogitsPostprocessMixin, Module):
     """Qwen2.5VL decoder model with support for vision-language tasks.
 
     This decoder implements the Qwen2.5VL architecture with:
@@ -508,7 +494,7 @@ class Qwen25VLDecoder(Module):
             Qwen25VLDecoderAttentionWithRope,
             scale=config.attention_multiplier,
             has_bias=config.attention_bias,
-            float8_config=config.float8_config,
+            quant_config=config.quant_config,
         )
 
         layers = [
@@ -529,7 +515,7 @@ class Qwen25VLDecoder(Module):
                     hidden_dim=config.hidden_size,
                     feed_forward_length=config.intermediate_size,
                     devices=config.devices,
-                    float8_config=config.float8_config,
+                    quant_config=config.quant_config,
                 ),
                 attention_norm=create_norm(),
                 mlp_norm=create_norm(),
@@ -539,8 +525,8 @@ class Qwen25VLDecoder(Module):
         ]
 
         embedding_output_dtype = config.dtype
-        if config.float8_config and config.float8_config.embedding_output_dtype:
-            embedding_output_dtype = config.float8_config.embedding_output_dtype
+        if config.quant_config and config.quant_config.embedding_output_dtype:
+            embedding_output_dtype = config.quant_config.embedding_output_dtype
 
         embedding_layer = VocabParallelEmbedding(
             config.vocab_size,
@@ -564,7 +550,6 @@ class Qwen25VLDecoder(Module):
         if config.tie_word_embeddings:
             output.set_shared_weight("weight", embedding_layer.weight)
 
-        super().__init__()
         self.dim = config.hidden_size
         self.n_heads = config.num_attention_heads
         self.layers = LayerList(layers)
@@ -612,7 +597,7 @@ class Qwen25VLDecoder(Module):
         ]
 
         # Create position embeddings shared across the decoder layers.
-        freqs_cis = distribute_value(self.rope.freqs_cis, self.devices)
+        freqs_cis = [self.rope.freqs_cis.to(device) for device in self.devices]
 
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(
@@ -629,76 +614,6 @@ class Qwen25VLDecoder(Module):
                 signal_buffers=signal_buffers,
             )
 
-        # Retrieve a variable number of tokens
-        last_token_indices = [offsets[1:] - 1 for offsets in input_row_offsets]
-        assert h is not None and len(h) == len(last_token_indices)
-        last_token_h = [
-            ops.gather(h_device, indices, axis=0)
-            for h_device, indices in zip(h, last_token_indices, strict=True)
-        ]
-        last_logits = ops.cast(
-            # Take only the device 0 logits to device-to-host transfer.
-            self.lm_head(
-                [
-                    self.norm_shards[i](last_token_h[i])
-                    for i in range(len(last_token_h))
-                ],
-                signal_buffers,
-            )[0],
-            DType.float32,
+        return self._postprocess_logits(
+            h, input_row_offsets, return_n_logits, signal_buffers
         )
-
-        logits = None
-        offsets = None
-
-        if self.return_logits == ReturnLogits.VARIABLE:
-            return_range = ops.range(
-                return_n_logits[0],
-                ops.constant(0, DType.int64, device=self.devices[0]),
-                ops.constant(-1, DType.int64, device=self.devices[0]),
-                out_dim="return_n_logits_range",
-                device=self.devices[0],
-                dtype=DType.int64,
-            )
-
-            last_indices = [
-                ops.reshape(
-                    ops.unsqueeze(row_offset[1:], -1) - return_range,
-                    shape=(-1,),
-                )
-                for row_offset in input_row_offsets
-            ]
-
-            # Gather, normalize, and get logits
-            variable_tokens = [
-                self.norm_shards[i](ops.gather(h_device, indices, axis=0))
-                for i, (h_device, indices) in enumerate(
-                    zip(h, last_indices, strict=True)
-                )
-            ]
-            logits = ops.cast(
-                self.lm_head(variable_tokens, signal_buffers)[0], DType.float32
-            )
-            offsets = ops.range(
-                0,
-                last_indices[0].shape[0] + return_n_logits[0],
-                return_n_logits[0],
-                out_dim="logit_offsets",
-                dtype=DType.int64,
-                device=self.devices[0],
-            )
-        elif self.return_logits == ReturnLogits.ALL:
-            # Apply normalization to all hidden states and get all logits
-            all_normalized = [
-                self.norm_shards[i](h_device) for i, h_device in enumerate(h)
-            ]
-            logits = ops.cast(
-                self.lm_head(all_normalized, signal_buffers)[0], DType.float32
-            )
-            offsets = input_row_offsets[0]
-
-        if offsets is not None:
-            assert logits is not None
-            return (last_logits, logits, offsets)
-        else:
-            return (last_logits,)

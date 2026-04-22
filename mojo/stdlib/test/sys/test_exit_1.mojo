@@ -11,10 +11,10 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import sys
+import std.sys
 
 
-fn main():
+def main():
     # CHECK: Running...
     print("Running...")
-    sys.exit(1)
+    std.sys.exit(1)

@@ -13,14 +13,13 @@
 
 
 # Compiler-parameterized function
-fn repeat[count: Int](msg: String):
-    @parameter
-    for i in range(count):
+def repeat[count: Int](msg: String):
+    comptime for i in range(count):
         print(msg)
 
 
 # Compiler-argumented function
-fn threehello():
+def threehello():
     repeat[3]("Hello 🔥!")
 
 

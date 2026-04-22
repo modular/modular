@@ -11,15 +11,15 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import OwnedKwargsDict
-from os import abort
+from std.collections import OwnedKwargsDict
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import PythonModuleBuilder
+from std.python import Python, PythonObject
+from std.python.bindings import PythonModuleBuilder
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     try:
         var b = PythonModuleBuilder("mojo_module")
 
@@ -30,5 +30,5 @@ fn PyInit_mojo_module() -> PythonObject:
         abort(String("failed to create Python module: ", e))
 
 
-fn noop():
+def noop():
     pass

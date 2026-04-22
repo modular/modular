@@ -11,26 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import LegacyUnsafePointer
+from std.math import ceildiv, isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
-
-from itertools import product
-from layout import IntTuple, LayoutTensor, RuntimeLayout, Layout
-from nn.conv import ConvDirectNHWC, ConvInfoStatic, pack_filter
-from nn.conv_utils import (
+from std.itertools import product
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout
+from layout import lt_to_tt
+from nn.conv.conv import (
+    ConvDirectNHWC,
+    ConvInfoStatic,
+    pack_filter,
+    pack_filter_lt,
+)
+from nn.conv.conv_utils import (
     ConvShape,
     get_direct_conv_micro_kernel_width,
     get_micro_kernel_shape,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
-fn test[
+def test[
     N: Int,
     H: Int,
     W: Int,
@@ -67,12 +70,12 @@ fn test[
         num_groups=num_groups,
     )
 
-    var input_ptr = UnsafePointer[Scalar[type]].alloc(N * H * W * C)
-    var filter_ptr = UnsafePointer[Scalar[type]].alloc(R * S * C * F)
+    var input_ptr = alloc[Scalar[type]](N * H * W * C)
+    var filter_ptr = alloc[Scalar[type]](R * S * C * F)
 
     # output from conv w/ dynamic and static shapes.
-    var output_ptr_static = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
-    var output_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(N * HO * WO * F)
+    var output_ptr_static = alloc[Scalar[type]](N * HO * WO * F)
+    var output_ptr_dynamic = alloc[Scalar[type]](N * HO * WO * F)
 
     rand[type](input_ptr, N * H * W * C)
     rand[type](filter_ptr, R * S * C * F)
@@ -97,7 +100,7 @@ fn test[
     var rounded_F_dynamic = (
         ceildiv(F, micro_kernel_f_size_default) * micro_kernel_f_size_default
     )
-    var packed_filter_ptr_dynamic = UnsafePointer[Scalar[type]].alloc(
+    var packed_filter_ptr_dynamic = alloc[Scalar[type]](
         R * S * C * rounded_F_dynamic
     )
     var packed_filter_dynamic = LayoutTensor[type, layout_5d](
@@ -113,7 +116,7 @@ fn test[
         ),
     )
 
-    pack_filter(filter, packed_filter_dynamic, num_groups)
+    pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter_dynamic), num_groups)
 
     # Conv attributes.
     comptime conv_attr_dynamic = ConvInfoStatic[2]()
@@ -122,9 +125,6 @@ fn test[
         input.layout,  # input shape
         layout_5d,  # filter shape
         layout_4d,  # output shape
-        _,
-        _,
-        _,
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -153,14 +153,14 @@ fn test[
     comptime packed_filter_layout = Layout.row_major(
         num_f_micro_tiles, R, S, C, micro_kernel_f_size
     )
-    var packed_filter_ptr_static = UnsafePointer[Scalar[type]].alloc(
+    var packed_filter_ptr_static = alloc[Scalar[type]](
         R * S * C * rounded_F_static
     )
     var packed_filter_static = LayoutTensor[type, packed_filter_layout](
         packed_filter_ptr_static
     )
 
-    pack_filter[simd_size, micro_kernel_f_size](
+    pack_filter_lt[simd_size, micro_kernel_f_size](
         filter,
         packed_filter_static,
         num_groups,
@@ -170,9 +170,6 @@ fn test[
         Layout.row_major(N, H, W, C),
         packed_filter_layout,
         Layout.row_major(N, HO, WO, F),
-        _,
-        _,
-        _,
         type,  # input type
         type,  # filter type
         type,  # output type
@@ -223,7 +220,7 @@ fn test[
     print("Succeed")
 
 
-def main():
+def main() raises:
     test[
         1,  # N
         14,  # H

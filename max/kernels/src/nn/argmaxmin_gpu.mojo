@@ -12,14 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host import DeviceContext
-from layout._coord import Coord, Idx, coord_to_index_list
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, coord_to_index_list, row_major
 from nn.topk import topk_gpu
 
 
-fn argmaxmin_gpu[
+def argmaxmin_gpu[
     dtype: DType, output_type: DType, largest: Bool
 ](
     ctx: DeviceContext,
@@ -51,7 +49,7 @@ fn argmaxmin_gpu[
         out_vals_shape.flattened_length()
     )
     var out_vals = TileTensor(
-        out_vals_buf.unsafe_ptr(),
+        out_vals_buf,
         row_major(Coord(out_vals_shape)),
     )
 
@@ -60,7 +58,7 @@ fn argmaxmin_gpu[
     _ = out_vals_buf^
 
 
-fn argmax_gpu[
+def argmax_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,
@@ -70,7 +68,7 @@ fn argmax_gpu[
     argmaxmin_gpu[largest=True](ctx, input, output)
 
 
-fn argmin_gpu[
+def argmin_gpu[
     dtype: DType, output_type: DType
 ](
     ctx: DeviceContext,

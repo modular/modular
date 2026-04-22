@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements random number generation for property-based testing."""
 
-from random import random_ui64, seed
+from std.random import random_ui64, seed
 
 
 struct Rng(Movable):
@@ -21,15 +22,15 @@ struct Rng(Movable):
     value provided by the `Strategy` trait.
     """
 
-    @doc_private
-    fn __init__(out self, *, seed: Int):
+    @doc_hidden
+    def __init__(out self, *, seed: Int):
         # TODO: Figure out how to ensure this 'global' seed value is not
         # accidentally overwritten by the user in their test code.
         random.seed(seed)
 
     # TODO: Add playback support.
-    @doc_private
-    fn _next(mut self, max: UInt64 = UInt64.MAX) raises -> UInt64:
+    @doc_hidden
+    def _next(mut self, max: UInt64 = UInt64.MAX) raises -> UInt64:
         """If in playback mode, returns the next value in the history, otherwise
         generates a random value and records it.
 
@@ -50,7 +51,7 @@ struct Rng(Movable):
         """
         return random_ui64(0, max)
 
-    fn _xoshiro_float(mut self) raises -> Float64:
+    def _xoshiro_float(mut self) raises -> Float64:
         """Returns a random `Float64` between `[0.0, 1.0]` using the Xoshiro
         algorithm.
 
@@ -62,7 +63,7 @@ struct Rng(Movable):
         var float64 = Float64(uint64 >> 11) * (2.0**-53)
         return float64
 
-    fn rand_bool(
+    def rand_bool(
         mut self,
         *,
         true_probability: Float64 = 0.5,
@@ -87,7 +88,7 @@ struct Rng(Movable):
         return true_probability > percentage
 
     # TODO: Revisit when we have a better random module.
-    fn rand_scalar[
+    def rand_scalar[
         dtype: DType
     ](
         mut self,
@@ -117,8 +118,7 @@ struct Rng(Movable):
         if min == max:
             return min
 
-        @parameter
-        if dtype == DType.bool:
+        comptime if dtype == DType.bool:
             return rebind[Scalar[dtype]](Scalar[DType.bool](self.rand_bool()))
         elif dtype.is_integral():
             var offset = UInt64(0) - UInt64(Scalar[dtype].MIN)
@@ -132,13 +132,12 @@ struct Rng(Movable):
             var result = Float64(min) * (1.0 - f) + Float64(max) * f
             return Scalar[dtype](result)
         else:
-            constrained[
-                False, "rand_scalar expected bool, integral, or floating point"
-            ]()
-            return 0
+            comptime assert (
+                False
+            ), "rand_scalar expected bool, integral, or floating point"
 
     # TODO (MSTDL-1185): Can remove when UInt and SIMD are unified.
-    fn rand_uint(
+    def rand_uint(
         mut self,
         *,
         min: UInt = UInt.MIN,
@@ -159,7 +158,7 @@ struct Rng(Movable):
         return self.rand_scalar(min=min, max=max)
 
     # TODO (MSTDL-1185): Can remove when Int and SIMD are unified.
-    fn rand_int(
+    def rand_int(
         mut self,
         *,
         min: Int = Int.MIN,

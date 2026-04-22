@@ -23,13 +23,9 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flash_attention_ragged
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import flash_attention_ragged
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
@@ -73,20 +69,16 @@ def max_flash_attention_with_sinks(
         n_kv_heads=num_kv_heads,
         head_dim=head_dim,
         num_layers=num_layers,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[DeviceRef.GPU()],
     )
 
     # Create KV manager
-    max_seq_len = max(
-        input_row_offsets[i + 1] - input_row_offsets[i]
-        for i in range(batch_size)
-    )
     kv_manager = PagedKVCacheManager(
         params=kv_params,
         total_num_pages=8,
         session=session,
+        max_batch_size=128,
     )
 
     # Create contexts for KV cache
@@ -98,7 +90,7 @@ def max_flash_attention_with_sinks(
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         batch.append(context)
 
-    kv_cache_inputs = kv_manager.get_runtime_inputs([batch])[0]
+    kv_cache_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
 
     # Define graph input types
     input_type = TensorType(
@@ -124,7 +116,7 @@ def max_flash_attention_with_sinks(
                 input_type,
                 input_row_offsets_type,
                 sinks_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ],
         ) as g:
             inputs = g.inputs
@@ -138,6 +130,7 @@ def max_flash_attention_with_sinks(
                 cache_lengths=inputs[4].tensor,
                 lookup_table=inputs[5].tensor,
                 max_lengths=inputs[6].tensor,
+                attention_dispatch_metadata=inputs[7].tensor,
             )
 
             # Layer index
@@ -149,12 +142,12 @@ def max_flash_attention_with_sinks(
             # Apply flash attention with sinks
             output = flash_attention_ragged(
                 kv_params,
-                q,
-                input_row_offsets,
-                kv_collection,
-                layer_idx,
-                mask_variant,
-                scale,
+                input=q,
+                input_row_offsets=input_row_offsets,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                mask_variant=mask_variant,
+                scale=scale,
                 local_window_size=sliding_window,
                 sink_weights=sink_weights,
             )
@@ -177,7 +170,7 @@ def max_flash_attention_with_sinks(
         q_tensor,
         offsets_tensor,
         sinks_tensor,
-        *kv_cache_inputs,
+        *kv_cache_inputs.flatten(),
     )[0]
 
     return cast(Buffer, result).to(CPU()).to_numpy()
@@ -216,9 +209,6 @@ def test_flash_attention_ragged_with_sinks(
     input_row_offsets = np.cumsum([0] + seq_lens, dtype=np.int32)
 
     # Generate test inputs
-    # For reference impl, we need padded tensors
-    max_seq_len = max(seq_lens)
-
     q = torch.randn(
         total_seq_len, num_heads, head_dim, dtype=dtype, device=device
     )
@@ -242,7 +232,7 @@ def test_flash_attention_ragged_with_sinks(
         scale,
         mask_variant,
         Accelerator(),
-        sliding_window if sliding_window else -1,
+        sliding_window or -1,
     )
 
     assert np.all(np.isfinite(max_output))

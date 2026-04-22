@@ -13,14 +13,16 @@
 
 from __future__ import annotations
 
+import os
+
 import pytest
 import torch
 from max.driver import CPU, Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import BufferType, DeviceRef, Graph, TensorType, TensorValue
-from max.nn.legacy.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
-from test_common.graph_utils import is_b100_b200, is_h100_h200
+from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
+from test_common.graph_utils import gpu_warp_size
 
 # EP_DATA_READY_FLAG constant from ep_comm.mojo
 EP_DATA_READY_FLAG = 1 << 10  # 1024
@@ -29,7 +31,7 @@ MAX_GPUS_PER_NODE = 8
 
 
 def verify_ep_dispatch_results(
-    results: list,
+    results: list,  # type: ignore[type-arg]
     per_device_inputs_torch: list[torch.Tensor],
     all_topk_ids_torch: list[torch.Tensor],
     atomic_counters: list[Buffer],
@@ -113,10 +115,6 @@ def verify_ep_dispatch_results(
                 )
 
 
-@pytest.mark.skipif(
-    not (is_h100_h200() or is_b100_b200()),
-    reason="NVSHMEM library requires H100 or H200 or B200",
-)
 @pytest.mark.parametrize("n_devices", [4])
 def test_ep_dispatch(n_devices: int) -> None:
     assert n_devices <= accelerator_count(), (
@@ -134,10 +132,10 @@ def test_ep_dispatch(n_devices: int) -> None:
         combine_dtype=DType.bfloat16,
         hidden_size=7168,
         top_k=8,
-        n_experts=min(256, n_devices * 32),
+        n_experts=min(256, n_devices * (1024 // gpu_warp_size())),
         max_tokens_per_rank=128,
         n_gpus_per_node=n_devices,
-        n_nodes=1,
+        n_nodes=int(os.environ.get("SHMEM_TOTAL_NODES", "1")),
     )
     ep_initializer = EPCommInitializer(config)
     ep_initializer.ep_init(session)

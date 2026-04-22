@@ -24,8 +24,8 @@ from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, Shape, TensorType
 from max.graph.weights import WeightData
-from max.nn.legacy import Linear
-from max.pipelines.lib.float8 import parse_float8_config
+from max.nn import Linear
+from max.pipelines.lib.quant import parse_quant_config
 from test_common.graph_utils import is_h100_h200
 from torch.utils.dlpack import from_dlpack
 from transformers.models.llama.configuration_llama import LlamaConfig
@@ -170,15 +170,15 @@ def generate_max_linear_output(
     Returns:
         Output tensor from the linear layer
     """
-    # Parse float8 config for fp4
-    float8_config = parse_float8_config(
+    # Parse quant config for fp4
+    quant_config = parse_quant_config(
         config,
         state_dict,
         DType.uint8,  # uint8 for fp4-e2m1fnX2
     )
 
-    if float8_config is None:
-        raise ValueError("Failed to parse float8 config for FP4")
+    if quant_config is None:
+        raise ValueError("Failed to parse quant config for FP4")
 
     # Get weight shape to determine in_dim and out_dim
     weight_key = f"{layer_name}.weight"
@@ -197,7 +197,7 @@ def generate_max_linear_output(
         dtype=DType.uint8,  # fp4-e2m1fnX2
         device=DeviceRef.GPU(),
         has_bias=False,
-        float8_config=float8_config,
+        quant_config=quant_config,
         name=layer_name,
     )
 
@@ -205,7 +205,6 @@ def generate_max_linear_output(
     linear.load_state_dict(state_dict, override_quantization_encoding=True)
     # Build graph
     device_ref = DeviceRef.GPU()
-    input_seq_len = input_tensor.shape[1]
     hidden_size = input_tensor.shape[2]
 
     input_type = TensorType(

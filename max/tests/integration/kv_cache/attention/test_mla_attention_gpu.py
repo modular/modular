@@ -13,27 +13,19 @@
 """Test pipelines MLA attention layer."""
 
 import numpy as np
-import pytest
-from max.driver import CPU, Accelerator, Buffer, accelerator_api
+from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager
-from max.nn.legacy.attention import MHAMaskVariant
-from max.nn.legacy.kernels import flare_mla_prefill_ragged
-from max.nn.legacy.kv_cache import (
-    KVCacheParams,
-    KVCacheStrategy,
-    PagedCacheValues,
-)
+from max.nn.attention import MHAMaskVariant
+from max.nn.kernels import flare_mla_prefill_ragged
+from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from test_common.context_utils import create_text_context
 
 
-@pytest.mark.skipif(
-    accelerator_api() == "hip", reason="MLA kernel only supports Nvidia GPUs"
-)
 def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
-    cuda = Accelerator()
+    device = Accelerator()
     session = gpu_session
     num_q_heads = 32
     q_head_dim = 192
@@ -44,7 +36,6 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         n_kv_heads=1,
         head_dim=576,
         num_layers=num_layers,
-        cache_strategy=KVCacheStrategy.PAGED,
         page_size=128,
         devices=[DeviceRef.GPU()],
     )
@@ -73,10 +64,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         kv_params,
         total_num_pages=8,
         session=session,
-    )
-
-    blocks_type, cache_lengths_type, lookup_table_type, is_cache_empty_type = (
-        kv_params.get_symbolic_inputs()[0]
+        max_batch_size=128,
     )
 
     def construct() -> Graph:
@@ -87,10 +75,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 input_row_offsets_type,
                 k_buffer_type,
                 v_buffer_type,
-                blocks_type,
-                cache_lengths_type,
-                lookup_table_type,
-                is_cache_empty_type,
+                *kv_params.get_symbolic_inputs().flatten(),
             ],
         ) as g:
             (
@@ -102,6 +87,7 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
                 cache_lengths,
                 lookup_table,
                 is_cache_empty,
+                _attention_dispatch_metadata,
             ) = g.inputs
 
             layer_idx = ops.constant(0, DType.uint32, DeviceRef.CPU())
@@ -146,11 +132,9 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
         input_row_offsets[i] = running_sum
         running_sum += prompt_lens[i]
     input_row_offsets[batch_size] = running_sum
-    input_row_offsets = input_row_offsets.to(cuda)
+    input_row_offsets = input_row_offsets.to(device)
 
-    blocks, cache_lengths, lookup_table_tensor, is_cache_empty_buf = (
-        kv_manager.get_runtime_inputs([batch])[0]
-    )
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
     model = session.load(g)
 
     input_tensor = Buffer.zeros(
@@ -164,14 +148,11 @@ def test_kv_cache_paged_mla_prefill(gpu_session: InferenceSession) -> None:
     )
 
     result = model.execute(
-        input_tensor.to(cuda),
-        input_row_offsets.to(cuda),
-        k_buffer_tensor.to(cuda),
-        v_buffer_tensor.to(cuda),
-        blocks.to(cuda),
-        cache_lengths.to(cuda),
-        lookup_table_tensor.to(cuda),
-        is_cache_empty_buf,
+        input_tensor.to(device),
+        input_row_offsets.to(device),
+        k_buffer_tensor.to(device),
+        v_buffer_tensor.to(device),
+        *(kv_runtime_inputs.inputs[0].flatten()),
     )[0]
     assert isinstance(result, Buffer)
 

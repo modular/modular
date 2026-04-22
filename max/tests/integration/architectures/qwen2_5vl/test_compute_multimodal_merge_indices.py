@@ -22,9 +22,7 @@ from max.interfaces import ImageMetadata, TokenBuffer
 from max.pipelines.architectures.qwen2_5vl.context import (
     Qwen2_5VLTextAndVisionContext,
 )
-from max.pipelines.architectures.qwen2_5vl.util import (
-    compute_multimodal_merge_indices,
-)
+from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
 
 
 def test_compute_multimodal_merge_indices() -> None:

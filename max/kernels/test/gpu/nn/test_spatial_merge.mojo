@@ -11,15 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from layout._coord import Idx
-from layout._layout import row_major
-from layout._tile_tensor import TileTensor
+from std.gpu.host import DeviceContext
+from layout import Idx, TileTensor, row_major
 from nn.spatial_merge import spatial_merge
-from testing import assert_equal
+from std.testing import assert_equal
 
 
-def test_spatial_merge(ctx: DeviceContext):
+def test_spatial_merge(ctx: DeviceContext) raises:
     comptime dtype = DType.float32
     comptime merge_size = 2
     comptime hidden_size = 4
@@ -46,7 +44,7 @@ def test_spatial_merge(ctx: DeviceContext):
     with input_device.map_to_host() as input_host:
         var input_host_tensor = TileTensor(
             input_host,
-            row_major((Idx(total_input_patches), Idx(hidden_size))),
+            row_major(Idx(total_input_patches), Idx(hidden_size)),
         )
         for patch_idx in range(total_input_patches):
             for feat_idx in range(hidden_size):
@@ -66,15 +64,15 @@ def test_spatial_merge(ctx: DeviceContext):
 
     # Create TileTensors for GPU operations
     var input_tensor = TileTensor(
-        input_device.unsafe_ptr(),
-        row_major((Idx(total_input_patches), Idx(hidden_size))),
+        input_device,
+        row_major(Idx(total_input_patches), Idx(hidden_size)),
     )
     var output_tensor = TileTensor(
-        output_device.unsafe_ptr(),
-        row_major((Idx(total_output_patches), Idx(C_out))),
+        output_device,
+        row_major(Idx(total_output_patches), Idx(C_out)),
     )
     var grid_thw_tensor = TileTensor(
-        grid_thw_device.unsafe_ptr(),
+        grid_thw_device,
         row_major[batch_size, 3](),
     )
 
@@ -194,6 +192,6 @@ def test_spatial_merge(ctx: DeviceContext):
                     )
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_spatial_merge(ctx)

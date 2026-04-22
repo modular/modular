@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from python import Python
+from std.python import Python
 
 
-def main():
+def main() raises:
     states = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)
@@ -80,7 +80,7 @@ def main():
     for ref value in values:
         if value % 2 != 0:
             value -= 1
-    print(values.__str__())
+    print(values)
 
     # from python import Python
 

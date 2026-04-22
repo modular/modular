@@ -33,3 +33,38 @@ finally executing it on the GPU:
 ```sh
 pixi run test
 ```
+
+## Loading models with external weights
+
+The `weights_example.c` file demonstrates how to provide model weights at
+runtime using the C API's weights registry. This is the mechanism used when
+a model's weights are stored separately from the compiled graph (for example,
+in safetensors or GGUF files).
+
+The Python script `test_weights_capi.py` builds a graph that references an
+external weight via `ops.constant_external()`, compiles it to a MEF file, and
+then runs the C program. The C program creates a `M_WeightsRegistry` with the
+weight data and passes it to `M_initModel()`.
+
+This example runs on CPU and does not require a GPU.
+
+## Device graph capture and replay
+
+`graph_capture.c` demonstrates using device graph capture (e.g. CUDA graphs) to
+reduce kernel launch overhead for repeated model execution. This technique
+records a model execution into a replayable graph, then replays it with
+near-zero launch overhead on subsequent runs.
+
+The example shows the three key operations:
+
+1. **Capture** (`M_captureModelSync`): Run the model once and record the
+   execution as a device graph. Returns output tensors that are updated
+   in-place on each replay.
+2. **Replay** (`M_replayModelSync`): Re-execute the captured graph using the
+   same input buffers. Results appear in the output tensors from capture.
+3. **Debug verify** (`M_debugVerifyReplayModelSync`): Run eagerly and compare
+   the kernel launch trace against the captured graph to verify correctness.
+
+> [!NOTE]
+> Device graph capture requires a CUDA or HIP GPU. It is not available on
+> Apple GPUs or CPU-only systems.

@@ -5,28 +5,26 @@ package(default_visibility = ["//max:consumers"])
 lit_tests(
     name = "test",
     srcs = glob(["**/*.mojo"]),
-    data = select({
-        "//:amd_gpu": [
-            "@rocshmem//:mpirun",
-            "@rocshmem//:prterun",
-        ],
-        "//conditions:default": [],
-    }),
     env = select({
-        "//:nvidia_gpu": {"MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt"},
+        "//:nvidia_gpu": {
+            "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+        },
         "//:amd_gpu": {
             "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
-            "LD_LIBRARY_PATH": "../+http_archive+rocshmem/lib",
-            "OPAL_PREFIX": "../+http_archive+rocshmem",
-            "ROCSHMEM_MPIRUN": "../+http_archive+rocshmem/bin/mpirun",
             # 8GB symmetric heap for large buffer tests
             "ROCSHMEM_HEAP_SIZE": "8589934592",
+            "ROCSHMEM_BOOTSTRAP_SOCKET_IFNAME": "eno0",
+            # Example config to uncomment for running tests across 2 nodes
+            # set one node SHMEM_NODE_ID: 0, and the other to SHMEM_NODE_ID: 1
+            # Find the SHMEM_SERVER_IP  with e.g. `ip addr show eno0`
+            # "SHMEM_NODE_ID": "0",
+            # "SHMEM_TOTAL_NODES": "2",
+            # "SHMEM_GPUS_PER_NODE": "8",
+            # "SHMEM_SERVER_IP": "10.24.8.111",
+            # "SHMEM_SERVER_PORT": "12345",
         },
         "//conditions:default": {},
     }),
-    exec_properties = {
-        "test.resources:gpu-memory": "20",
-    },
     gpu_constraints = [
         "//:has_4_gpus",
     ],
@@ -37,5 +35,6 @@ lit_tests(
     ],
     tags = [
         "gpu",
+        "requires-network",
     ],
 )

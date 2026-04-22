@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import Dim
-from testing import assert_equal
+from std.gpu.host import Dim
+from std.testing import assert_equal
 
 
-fn test_dim() raises:
+def test_dim() raises:
     print("== test_dim")
 
     assert_equal(String(Dim(4, 1, 2)), "(x=4, y=1, z=2)")
@@ -25,5 +25,5 @@ fn test_dim() raises:
     assert_equal(String(Dim((4, 2, 3))), "(x=4, y=2, z=3)")
 
 
-def main():
+def main() raises:
     test_dim()

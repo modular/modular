@@ -18,17 +18,15 @@ images and other content types using the OpenResponses API content format.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from pydantic import BaseModel, ConfigDict
 
 from .request import RequestID
-from .request.open_responses import OutputImageContent
+from .request.open_responses import OutputContent
 from .status import GenerationStatus
 
 
-@dataclass(kw_only=True)
-class GenerationOutput:
-    """
-    Output container for image generation pipeline operations.
+class GenerationOutput(BaseModel):
+    """Output container for image generation pipeline operations.
 
     This class holds a list of generated images in OpenResponses API format,
     along with request tracking and status information. It implements the
@@ -45,8 +43,8 @@ class GenerationOutput:
         from max.interfaces.status import GenerationStatus
 
         # Convert numpy arrays to OutputImageContent using the factory method
-        img_array1 = np.random.rand(512, 512, 3).astype(np.float32)
-        img_array2 = np.random.rand(512, 512, 3).astype(np.float32)
+        img_array1 = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
+        img_array2 = (np.random.rand(512, 512, 3) * 255).astype(np.uint8)
 
         result = GenerationOutput(
             request_id=RequestID(value="req-123"),
@@ -75,22 +73,23 @@ class GenerationOutput:
             print(f"Generated {len(result.output)} images")
     """
 
+    model_config = ConfigDict(frozen=True)
+
     request_id: RequestID
     """The unique identifier for the generation request."""
 
     final_status: GenerationStatus
     """The final status of the generation process."""
 
-    output: list[OutputImageContent]
-    """List of OutputImageContent objects representing generated images."""
+    output: list[OutputContent]
+    """List of OutputContent objects (text, images, etc.) representing generated content."""
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the pipeline operation has completed.
+        """Indicates whether the pipeline operation has completed.
 
         Returns:
-            bool: True if the generation is done (status is not ACTIVE),
-                  False otherwise.
+            ``True`` if the generation is done (status is not ACTIVE),
+            ``False`` otherwise.
         """
         return self.final_status.is_done

@@ -94,7 +94,7 @@ def build_copy_graph(
     - dst_page_ids: Destination page IDs (rank=1 tensor)
     - layer_idx: Layer index (uint32 scalar)
     """
-    input_types: list[Type] = [
+    input_types: list[Type] = [  # type: ignore[type-arg]
         BufferType(
             DType.float16,
             shape=config.shape,

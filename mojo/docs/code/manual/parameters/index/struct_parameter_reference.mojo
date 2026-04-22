@@ -13,13 +13,13 @@
 
 
 # start-reference-parameter-on-type
-fn on_type():
+def on_type():
     print(SIMD[DType.float32, 2].size)  # prints 2
     # end-reference-parameter-on-type
 
 
 # start-reference-parameter-on-instance
-fn on_instance():
+def on_instance():
     var x = SIMD[DType.int32, 2](4, 8)
     print(x.dtype)  # prints int32
     # end-reference-parameter-on-instance

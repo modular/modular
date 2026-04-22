@@ -12,11 +12,11 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn reference_ptx[M: Int, N: Int, K: Int]() raises -> String:
+def reference_ptx[M: Int, N: Int, K: Int]() raises -> String:
     # When running with Bazel, the PTX files are in the runfiles directory
     # The path is relative to the test binary's location
     var pwd = "max/kernels/test/testdata/"
-    var fname = String(pwd, "matmul_sm100_", M, "x", N, "x", K, ".ptx")
+    var fname = String(t"{pwd}matmul_sm100_{M}x{N}x{K}.ptx")
 
     with open(fname, "r") as f:
         return f.read()

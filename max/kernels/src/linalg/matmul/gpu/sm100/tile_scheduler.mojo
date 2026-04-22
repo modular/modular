@@ -11,33 +11,26 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from memory import LegacyUnsafePointer
+from std.sys import _RegisterPackType, size_of
+from std.sys._assembly import inlined_assembly
 
-comptime UnsafePointer = LegacyUnsafePointer[mut=True, ...]
-from sys import _RegisterPackType, size_of
-from sys._assembly import inlined_assembly
-
-from gpu.primitives.cluster import (
-    block_rank_in_cluster,
-    clusterlaunchcontrol_query_cancel_get_first_ctaid_v4,
-    clusterlaunchcontrol_query_cancel_is_canceled,
+from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from gpu import block_id_in_cluster, block_idx, lane_id, warp_id
-from gpu.memory import fence_async_view_proxy
+from std.gpu import block_id_in_cluster, block_idx, lane_id
+from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
-from utils.static_tuple import StaticTuple
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
+from std.utils.static_tuple import StaticTuple
 
 from ..tile_scheduler import RasterOrder
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -47,15 +40,11 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     var is_valid_tile: Bool
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.m,
@@ -71,12 +60,12 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
 
 struct TileScheduler[
     num_stages: Int,
-    cluster_shape: IndexList[3, element_type = DType.uint32] = Index[
-        dtype = DType.uint32
+    cluster_shape: IndexList[3, element_type=DType.uint32] = Index[
+        dtype=DType.uint32
     ](1, 1, 1),
     rasterize_order: RasterOrder = RasterOrder.AlongM,
     block_swizzle_size: Int = 8,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     comptime cluster_size = Self.cluster_shape[0] * Self.cluster_shape[
         1
     ] * Self.cluster_shape[2]
@@ -90,33 +79,42 @@ struct TileScheduler[
     var log_cluster_dim_k: FastDiv[DType.uint32]
 
     var clc_response: UnsafePointer[
-        UInt128, address_space = AddressSpace.SHARED
+        UInt128,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
     var full_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
     var empty_mbar: UnsafePointer[
-        SharedMemBarrier, address_space = AddressSpace.SHARED
+        SharedMemBarrier,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ]
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         cluster_dim: StaticTuple[Int32, 3],
         clc_response_ptr: UnsafePointer[
-            UInt128, address_space = AddressSpace.SHARED
+            mut=True, UInt128, _, address_space=AddressSpace.SHARED
         ],
         full_mbar_ptr: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED
+            mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
         ],
         empty_mbar_ptr: UnsafePointer[
-            SharedMemBarrier, address_space = AddressSpace.SHARED
+            mut=True, SharedMemBarrier, _, address_space=AddressSpace.SHARED
         ],
     ):
-        constrained[
-            Self.block_swizzle_size in [0, 1, 2, 4, 8],
-            "block_swizzle_size must be 0, 1, 2, 4, or 8",
-        ]()
+        comptime assert Self.block_swizzle_size in [
+            0,
+            1,
+            2,
+            4,
+            8,
+        ], "block_swizzle_size must be 0, 1, 2, 4, or 8"
 
         self.cluster_dim = cluster_dim
         self.log_cluster_dim_m = FastDiv[DType.uint32](Int(cluster_dim[0]))
@@ -128,8 +126,10 @@ struct TileScheduler[
 
     @always_inline
     @staticmethod
-    fn work_info_from_clc_response(
-        result: UnsafePointer[UInt128, address_space = AddressSpace.SHARED],
+    def work_info_from_clc_response(
+        result: UnsafePointer[
+            mut=True, UInt128, _, address_space=AddressSpace.SHARED
+        ],
     ) -> WorkInfo:
         comptime asm = """{
             .reg .pred p1;
@@ -157,7 +157,7 @@ struct TileScheduler[
 
     @always_inline
     @staticmethod
-    fn work_info_from_cluster(
+    def work_info_from_cluster(
         work_info: WorkInfo,
         cluster_dim: StaticTuple[Int32, 3],
         log_cluster_dim_m: FastDiv[DType.uint32],
@@ -175,16 +175,14 @@ struct TileScheduler[
         )
 
         # CLC rasterize along M by default.
-        @parameter
-        if Self.rasterize_order == RasterOrder.AlongM:
+        comptime if Self.rasterize_order == RasterOrder.AlongM:
             new_normalized_m = normalized_m
             new_normalized_n = normalized_n
         else:
             new_normalized_m = linear_cluster_id % log_cluster_dim_m
             new_normalized_n = linear_cluster_id / log_cluster_dim_m
 
-        @parameter
-        if Self.block_swizzle_size != 0:
+        comptime if Self.block_swizzle_size != 0:
             var swizzle_m_size = (
                 FastUInt(cluster_dim[0]) / log_block_swizzle_size
             )
@@ -221,18 +219,18 @@ struct TileScheduler[
         return WorkInfo(
             m=UInt32(
                 Int(new_m_global) * Self.cluster_shape[0]
-                + Int(block_id_in_cluster.x)
+                + block_id_in_cluster.x
             ),
             n=UInt32(
                 Int(new_n_global) * Self.cluster_shape[1]
-                + Int(block_id_in_cluster.y)
+                + block_id_in_cluster.y
             ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
         )
 
     @always_inline
-    fn initial_work_info(self) -> WorkInfo:
+    def initial_work_info(self) -> WorkInfo:
         return self.work_info_from_cluster(
             WorkInfo(
                 UInt32(block_idx.x),
@@ -246,15 +244,14 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn fetch_next_work(
+    def fetch_next_work(
         self,
         work_info: WorkInfo,
         consumer_state: PipelineState[Self.num_stages],
     ) -> WorkInfo:
         # num_stages == 0 implies there is only one wave. Only initial
         # work info is valid, next work info is invalid.
-        @parameter
-        if Self.num_stages == 0:
+        comptime if Self.num_stages == 0:
             return WorkInfo(0, 0, 0, False)
 
         self.full_mbar[consumer_state.index()].wait(consumer_state.phase())
@@ -271,13 +268,13 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn advance_to_next_work(
+    def advance_to_next_work(
         self,
         mut clc_state: PipelineState[Self.num_stages],
     ) -> PipelineState[Self.num_stages]:
         comptime multicast = True if Self.cluster_size > 1 else False
         var lane_id = lane_id()
-        var pred = UInt32(1) if lane_id < UInt(Self.cluster_size) else UInt32(0)
+        var pred = UInt32(1) if lane_id < Self.cluster_size else UInt32(0)
         self.empty_mbar[clc_state.index()].wait(clc_state.phase())
         self.full_mbar[clc_state.index()].arrive_and_expect_bytes(
             Int32(size_of[UInt128]()),

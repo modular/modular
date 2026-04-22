@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand
+from std.random import rand
 
-from testing import TestSuite
+from std.testing import TestSuite
 
 
-fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
+def _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
     var p = alloc[Scalar[dtype]](size)
     rand[dtype](p, size)
     sort(Span[Scalar[dtype], MutAnyOrigin](ptr=p, length=size))
@@ -35,11 +35,11 @@ fn _sort_test[dtype: DType, name: StaticString](size: Int, max: Int) raises:
     p.free()
 
 
-def test_sort_issue_1018():
+def test_sort_issue_1018() raises:
     _sort_test[DType.int8, "int8"](300, 3_000)
     _sort_test[DType.float32, "float32"](3_000, 3_000)
     _sort_test[DType.float64, "float64"](300_000, 3_000_000_000)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

@@ -32,6 +32,8 @@ src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directo
 extend-exclude = [
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
+  "*_pb2.py", # Generated protobuf stubs
+  "*_pb2.pyi", # Generated protobuf stubs
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
@@ -47,10 +49,6 @@ ignore = [
   "B008", # Do not perform function call in argument defaults
   "B017", # Do not assert blind exception: `Exception`
   "B028", # No explicit `stacklevel` keyword argument found
-  "D100", # TODO: Enable missing docstrings in public modules
-  "D101", # TODO: Enable missing docstrings in public classes
-  "D103", # TODO: Enable missing docstrings in public functions
-  "D104", # TODO: Enable missing docstrings in public packages
   "D105", # undocumented-magic-method
   "D107", # Missing docstring in __init__ (constructor args go in class docstring)
   "E402", # TODO: import top of file
@@ -60,7 +58,6 @@ ignore = [
   "F403", # glob imports
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
-  "F841", # TODO: unused variables
   "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
   "RUF010", # Use explicit conversion flag
@@ -92,15 +89,31 @@ convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"] # Ignore unused imports being re-exported
-# Slow rollout of pydocstyle lint:
-# Enable docstring checks only for SDK modules in SDK/lib/API/python/ that currently pass all D rules.
-# To add more modules to this list, test them with:
-#   ./bazelw run //oss/modular/bazel/lint:ruff.check -- --no-cache <file>
-# and verify no errors are reported for that specific file.
-"!max/python/max/{driver/__init__.py,driver/driver.py,driver/tensor.py,dtype/__init__.py,engine/__init__.py,engine/api.py,experimental/__init__.py,experimental/random.py,graph/__init__.py,graph/graph.py,graph/quantization.py,graph/weight.py,interfaces/context.py,interfaces/status.py,interfaces/tokens.py,nn/embedding.py,nn/float8_config.py,nn/linear.py,torch/torch.py}" = ["D"]
+# Enforce pydocstyle only for MAX API:
+# NOTE: Ruff skips all "missing docstring" (D10X) rules for *.pyi files
+"!max/python/max/**/{*.py,*.pyi}" = ["D"]
+# With exceptions for these packages:
+"max/python/max/benchmark/**/*" = ["D"]
+"max/python/max/config/**/*" = ["D"]
+"max/python/max/entrypoints/**/*" = ["D"]
+"max/python/max/kv_cache/connectors/**/*" = ["D"]
+"max/python/max/mlir/**/*" = ["D"]
+"max/python/max/nn/**/*" = ["D"]
+"max/python/max/pipelines/architectures/**/*" = ["D"]
+"max/python/max/pipelines/pipelines.py" = ["D"]
+"max/python/max/serve/**/*" = ["D"]
+"max/python/max/support/**/*" = ["D"]
+# Exclude private packages and modules (NOTE: this allows max/_core/*.pyi files):
+"max/python/max/_core_mojo/**/*" = ["D"]
+"max/python/max/_core_types/**/*" = ["D"]
+"max/python/max/_interpreter_ops/**/*" = ["D"]
+"max/python/max/_mlir/**/*" = ["D"]
+"max/python/max/_core/dialects/**/*" = ["D"]
+"max/python/max/_core/internal/**/*" = ["D"]
+"max/python/max/**/_*.py" = ["D"]
 # Ignore ANN001 (function argument missing type annotation) for auto-generated
 # stubfiles
-"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206"]
+"*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
 # Ignore type annotations for the llm-book tutorial files
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
 # Disable lints which complain about weird unicode characters in files that include
@@ -115,6 +128,7 @@ python_version = "3.10"
 
 check_untyped_defs = true
 warn_unused_ignores = true
+disallow_any_generics = true
 
 follow_imports = "silent"
 follow_imports_for_stubs = true
@@ -134,11 +148,13 @@ module = "absl.*"
 follow_imports = "skip"
 
 [[tool.mypy.overrides]]
-module = "max.*"
-disallow_any_generics = true
+module = "cyclopts.*"
+ignore_missing_imports = true
 
-# TODO: Ideally there would be no exception for max.experimental, but, well, it
-# is experimental...  Hopefully it graduates soon.
 [[tool.mypy.overrides]]
-module = "max.experimental.*"
-disallow_any_generics = false
+module = "lmcache.*"
+follow_imports = "skip"
+
+[tool.pydantic-mypy]
+init_forbid_extra = true
+init_typed = true

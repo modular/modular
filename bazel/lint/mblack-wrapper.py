@@ -40,11 +40,7 @@ def get_changed_files() -> list[str]:
     changed_files = [
         line.lstrip('"').rstrip('"') for line in changed_files_out.splitlines()
     ]
-    return [
-        file
-        for file in changed_files
-        if file.endswith(".mojo") or file.endswith(".🔥")
-    ]
+    return [file for file in changed_files if file.endswith(".mojo")]
 
 
 if __name__ == "__main__":

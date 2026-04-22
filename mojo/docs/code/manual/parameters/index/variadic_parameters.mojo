@@ -12,10 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn sum_params[*values: Int]() -> Int:
-    comptime list = VariadicList(values)
+def sum_params[*values: Int]() -> Int:
     var sum = 0
-    for v in list:
+    for v in values:
         sum += v
     return sum
 

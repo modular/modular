@@ -107,6 +107,9 @@ def test_llguidance_sampling(
     min_top_p = Buffer.from_numpy(
         np.array(sampling_params.top_p, dtype=np.float32)
     )
+    min_p = Buffer.from_numpy(
+        np.array([0.0] * batch_size, dtype=np.float32)
+    ).to(device)
     seed = Buffer.from_numpy(
         np.array([sampling_params.seed] * batch_size, dtype=np.uint64)
     ).to(device)
@@ -131,12 +134,13 @@ def test_llguidance_sampling(
         # Run through Sampler
         _, new_tokens = sampler(
             Buffer.from_dlpack(logits).to(device),
-            generated_tokens,  # This isnt used by the sampler, so we can safely ignore it.
+            generated_tokens,  # This isn't used by the sampler, so we can safely ignore it.
             top_k,
             max_k,
             temperature,
             top_p,
             min_top_p,
+            min_p,
             seed,
             Buffer.from_dlpack(bitmask).to(device),
         )[:2]
@@ -186,6 +190,9 @@ def test_sampling_return_logits(session: InferenceSession) -> None:
     min_top_p = Buffer.from_numpy(
         np.array(sampling_params.top_p, dtype=np.float32)
     )
+    min_p = Buffer.from_numpy(
+        np.array([0.0] * batch_size, dtype=np.float32)
+    ).to(device)
     seed = Buffer.from_numpy(
         np.array([sampling_params.seed] * batch_size, dtype=np.uint64)
     ).to(device)
@@ -205,6 +212,7 @@ def test_sampling_return_logits(session: InferenceSession) -> None:
             temperature,
             top_p,
             min_top_p,
+            min_p,
             seed,
             generated_logits,
         )[:3]
@@ -222,11 +230,6 @@ def test_sampling_return_logits(session: InferenceSession) -> None:
 
 def test_rejection_sampler(session: InferenceSession) -> None:
     device = session.devices[0]
-    sampling_config = SamplingConfig(
-        in_dtype=DType.float32,
-        out_dtype=DType.float32,
-    )
-    sampling_params = SamplingParams(top_k=1, temperature=1.0)
     graph = rejection_sampler(
         device=DeviceRef.from_device(device),
     )
@@ -252,15 +255,6 @@ def test_rejection_sampler(session: InferenceSession) -> None:
     target_logit_offsets = np.arange(
         0, (batch_size + 1) * (num_steps + 1), num_steps + 1
     )
-
-    top_k_np = np.array([sampling_params.top_k] * batch_size, dtype=np.int64)
-    top_k_tensor = Buffer.from_numpy(top_k_np).to(device)
-    max_k_tensor = Buffer.from_numpy(
-        np.array([np.max(top_k_np)], dtype=np.int64)
-    )
-    temperature_tensor = Buffer.from_numpy(
-        np.array([sampling_params.temperature] * batch_size, dtype=np.float32)
-    ).to(device)
 
     first_rejected_token, sampled_tokens = sampler(
         Buffer.from_dlpack(draft_tokens).to(device),
@@ -551,11 +545,14 @@ def test_sampling_with_seed(session: InferenceSession) -> None:
     min_top_p = Buffer.from_numpy(
         np.array(sampling_params.top_p, dtype=np.float32)
     )
+    min_p = Buffer.from_numpy(
+        np.array([0.0] * batch_size, dtype=np.float32)
+    ).to(device)
     seed = Buffer.from_numpy(
         np.array([sampling_params.seed] * batch_size, dtype=np.uint64)
     ).to(device)
 
-    sampler = session.load(graph)
+    session.load(graph)
 
     # Create a random logits vector [1, vocab_size]
     np.random.seed(123)  # Fix seed for generating the same logits across runs
@@ -589,6 +586,7 @@ def test_sampling_with_seed(session: InferenceSession) -> None:
             temperature,
             top_p,
             min_top_p,
+            min_p,
             seed,
         )[:2]
 
@@ -627,6 +625,7 @@ def test_sampling_with_seed(session: InferenceSession) -> None:
         temperature,
         top_p,
         min_top_p,
+        min_p,
         seed_41,
     )[:2]
 
@@ -685,6 +684,11 @@ def test_top_p_sampling(session: InferenceSession) -> None:
             max_k_input = graph.inputs[4].tensor
             temperature_input = graph.inputs[5].tensor
 
+            min_p_zeros = ops.broadcast_to(
+                ops.constant(0.0, dtype=DType.float32, device=device_ref),
+                logits_input.shape[:1],
+            )
+
             # We need to manually create the custom op since topk_fused_sampling
             # doesn't accept seed as tensor
             sampled_tokens = ops.custom(
@@ -699,6 +703,7 @@ def test_top_p_sampling(session: InferenceSession) -> None:
                     ops.constant(
                         1.0, dtype=DType.float32, device=DeviceRef.CPU()
                     ),
+                    min_p_zeros,
                     seed_input,
                     logits_input,
                 ],
@@ -779,6 +784,104 @@ def test_top_p_sampling(session: InferenceSession) -> None:
     assert actual_tokens_1 == expected_tokens_1
 
 
+def test_top_p_zero_returns_argmax(session: InferenceSession) -> None:
+    """Test that top_p=0 always returns the argmax token without hanging.
+
+    The GPU rejection-sampling kernel (TopKTopPSamplingFromProbKernel) uses a
+    while loop that breaks when sum(probs_above_pivot) <= top_p.  With top_p=0
+    the only token that satisfies this is the argmax (sum_above=0), so we must
+    always get token 0.
+
+    vocab_size=128 is chosen so adjusted_max_k=128 >= 75, which routes through
+    TopKTopPSamplingFromProbKernel (the kernel that previously hung).
+    """
+    device = session.devices[0]
+    device_ref = DeviceRef.from_device(device)
+
+    vocab_size = 128
+    top_k = vocab_size
+    num_trials = 20
+
+    # Token 0 has a logit much larger than all others — it is the clear argmax.
+    logits_np = np.zeros((1, vocab_size), dtype=np.float32)
+    logits_np[0, 0] = 10.0
+
+    logits_type = TensorType(DType.float32, [1, vocab_size], device=device_ref)
+    seed_type = TensorType(DType.uint64, [1], device=device_ref)
+    top_p_type = TensorType(DType.float32, [1], device=device_ref)
+    top_k_type = TensorType(DType.int64, [1], device=device_ref)
+    max_k_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
+    temperature_type = TensorType(DType.float32, [1], device=device_ref)
+    min_top_p_type = TensorType(DType.float32, [], device=DeviceRef.CPU())
+
+    with Graph(
+        "top_p_zero_sampling",
+        input_types=(
+            logits_type,
+            seed_type,
+            top_p_type,
+            top_k_type,
+            max_k_type,
+            temperature_type,
+            min_top_p_type,
+        ),
+    ) as graph:
+        min_p_zeros = ops.broadcast_to(
+            ops.constant(0.0, dtype=DType.float32, device=device_ref),
+            [1],
+        )
+        sampled_tokens = ops.custom(
+            "sampler.fused_token_sampling",
+            device=device_ref,
+            values=[
+                graph.inputs[3].tensor,  # top_k
+                graph.inputs[4].tensor,  # max_k
+                graph.inputs[5].tensor,  # temperature
+                graph.inputs[2].tensor,  # top_p
+                graph.inputs[6].tensor,  # min_top_p
+                min_p_zeros,  # min_p
+                graph.inputs[1].tensor,  # seed
+                graph.inputs[0].tensor,  # logits
+            ],
+            out_types=[
+                TensorType(dtype=DType.int64, shape=[1, 1], device=device_ref)
+            ],
+        )[0].tensor
+        graph.output(sampled_tokens)
+
+    sampler = session.load(graph)
+
+    logits_tensor = Buffer.from_dlpack(logits_np).to(device)
+    top_k_np = np.array([top_k], dtype=np.int64)
+    top_k_tensor = Buffer.from_numpy(top_k_np).to(device)
+    max_k = Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
+    top_p_tensor = Buffer.from_numpy(np.array([0.0], dtype=np.float32)).to(
+        device
+    )
+    min_top_p = Buffer.from_numpy(np.array(0.0, dtype=np.float32))
+    temperature = Buffer.from_numpy(np.array([1.0], dtype=np.float32)).to(
+        device
+    )
+
+    for seed in range(num_trials):
+        seed_tensor = Buffer.from_numpy(np.array([seed], dtype=np.uint64)).to(
+            device
+        )
+        tokens = sampler(
+            logits_tensor,
+            seed_tensor,
+            top_p_tensor,
+            top_k_tensor,
+            max_k,
+            temperature,
+            min_top_p,
+        )[0]
+        assert isinstance(tokens, Buffer)
+        assert tokens.to_numpy()[0, 0] == 0, (
+            f"top_p=0 should always return argmax (token 0), got {tokens.to_numpy()[0, 0]}"
+        )
+
+
 def test_batch_sampling_arguments(session: InferenceSession) -> None:
     device = session.devices[0]
     device_ref = DeviceRef.from_device(device)
@@ -797,6 +900,9 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
         dtype=DType.int64,
         device=device,
     )
+    min_p = Buffer.from_numpy(
+        np.array([0.0] * batch_size, dtype=np.float32)
+    ).to(device)
 
     num_trials = 100
 
@@ -833,6 +939,7 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
                 temperature_tensor,
                 top_p_tensor,
                 min_top_p_tensor,
+                min_p,
                 seed_tensor,
             )[0]
             assert isinstance(tokens, Buffer)
@@ -845,7 +952,7 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
         for i in range(batch_size - 1):
             assert set(batch_sampled_tokens[i]) == expected_tokens[i]
 
-        # Seed doesnt change, so it only samples 1 token
+        # Seed doesn't change, so it only samples 1 token
         assert len(set(batch_sampled_tokens[batch_size - 1])) == 1
 
     def test_top_k_sampling() -> None:
@@ -879,6 +986,7 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
                 temperature_tensor,
                 top_p_tensor,
                 min_top_p_tensor,
+                min_p,
                 seed_tensor,
             )[0]
             assert isinstance(tokens, Buffer)
@@ -923,6 +1031,7 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
                 temperature_tensor,
                 top_p_tensor,
                 min_top_p_tensor,
+                min_p,
                 seed_tensor,
             )[0]
             assert isinstance(tokens, Buffer)
@@ -939,6 +1048,168 @@ def test_batch_sampling_arguments(session: InferenceSession) -> None:
     test_top_p_sampling()
     test_top_k_sampling()
     test_temperature_sampling()
+
+
+@pytest.mark.parametrize("vocab_size", [8, 128])
+def test_min_p_filtering(session: InferenceSession, vocab_size: int) -> None:
+    """Test that min_p correctly masks out low-probability tokens.
+
+    Parametrized over small (8) and large (128) vocab sizes to exercise
+    both the legacy topk_gpu (< 64) and the dual-pivot sampling (>= 64)
+    code paths inside ``fused_token_sampling_gpu``.
+
+    Test 1: min_p=0.0 — no filtering, all tokens are candidates.
+    Test 2: min_p=0.5 with a dominant token — only the dominant token
+            survives (its prob is >> 0.5 * max_prob).
+    Test 3: min_p=0.5 with flatter logits — several tokens survive.
+    """
+    device = session.devices[0]
+    device_ref = DeviceRef.from_device(device)
+
+    num_trials = 100
+
+    # Token 0 dominates: softmax([5, 0, …]) → prob_0 >> rest.
+    logits_np = np.zeros((1, vocab_size), dtype=np.float32)
+    logits_np[0, 0] = 5.0
+
+    logits_type = TensorType(DType.float32, [1, vocab_size], device=device_ref)
+    seed_type = TensorType(DType.uint64, [1], device=device_ref)
+    min_p_type = TensorType(DType.float32, [1], device=device_ref)
+    top_k_type = TensorType(DType.int64, [1], device=device_ref)
+    max_k_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
+    temperature_type = TensorType(DType.float32, [1], device=device_ref)
+
+    with Graph(
+        "min_p_filtering",
+        input_types=(
+            logits_type,
+            seed_type,
+            min_p_type,
+            top_k_type,
+            max_k_type,
+            temperature_type,
+        ),
+    ) as graph:
+        logits_input = graph.inputs[0].tensor
+        seed_input = graph.inputs[1].tensor
+        min_p_input = graph.inputs[2].tensor
+        top_k_input = graph.inputs[3].tensor
+        max_k_input = graph.inputs[4].tensor
+        temperature_input = graph.inputs[5].tensor
+
+        top_p_ones = ops.broadcast_to(
+            ops.constant(1.0, dtype=DType.float32, device=device_ref),
+            [1],
+        )
+        sampled_tokens = ops.custom(
+            "sampler.fused_token_sampling",
+            device=device_ref,
+            values=[
+                top_k_input,
+                max_k_input,
+                temperature_input,
+                top_p_ones,
+                ops.constant(1.0, dtype=DType.float32, device=DeviceRef.CPU()),
+                min_p_input,
+                seed_input,
+                logits_input,
+            ],
+            out_types=[
+                TensorType(dtype=DType.int64, shape=[1, 1], device=device_ref)
+            ],
+        )[0].tensor
+
+        graph.output(sampled_tokens)
+
+    sampler = session.load(graph)
+
+    logits_tensor = Buffer.from_dlpack(logits_np).to(device)
+    top_k_np = np.array([vocab_size], dtype=np.int64)
+    top_k_tensor = Buffer.from_numpy(top_k_np).to(device)
+    max_k = Buffer.from_numpy(np.array(np.max(top_k_np), dtype=np.int64))
+    temperature = Buffer.from_numpy(np.array([1.0], dtype=np.float32)).to(
+        device
+    )
+
+    # Test 1: min_p=0.0 — no filtering, all tokens are candidates.
+    min_p_tensor = Buffer.from_numpy(np.array([0.0], dtype=np.float32)).to(
+        device
+    )
+    sampled_tokens_no_filter: list[int] = []
+    for seed_val in range(num_trials):
+        seed_tensor = Buffer.from_numpy(
+            np.array([seed_val], dtype=np.uint64)
+        ).to(device)
+        tokens = sampler(
+            logits_tensor,
+            seed_tensor,
+            min_p_tensor,
+            top_k_tensor,
+            max_k,
+            temperature,
+        )[0]
+        assert isinstance(tokens, Buffer)
+        sampled_tokens_no_filter.append(tokens.to_numpy()[0, 0].item())
+
+    # Token 0 dominates, but with min_p=0.0 we should still see it.
+    assert 0 in set(sampled_tokens_no_filter)
+
+    # Test 2: min_p=0.5 — only token 0 has prob >= 0.5 * max_prob.
+    # max_prob ≈ 0.54, threshold ≈ 0.27, all other tokens ≈ 0.0036.
+    min_p_tensor = Buffer.from_numpy(np.array([0.5], dtype=np.float32)).to(
+        device
+    )
+    sampled_tokens_filtered: list[int] = []
+    for seed_val in range(num_trials):
+        seed_tensor = Buffer.from_numpy(
+            np.array([seed_val], dtype=np.uint64)
+        ).to(device)
+        tokens = sampler(
+            logits_tensor,
+            seed_tensor,
+            min_p_tensor,
+            top_k_tensor,
+            max_k,
+            temperature,
+        )[0]
+        assert isinstance(tokens, Buffer)
+        sampled_tokens_filtered.append(tokens.to_numpy()[0, 0].item())
+
+    assert set(sampled_tokens_filtered) == {0}
+
+    # Test 3: Flatter logits so more tokens survive.
+    # Top-3 logits are close together, rest are 0.  After softmax the
+    # top-3 probs are well above 0.5 * max_prob while the rest fall below.
+    flat_logits_np = np.zeros((1, vocab_size), dtype=np.float32)
+    flat_logits_np[0, 0] = 3.0
+    flat_logits_np[0, 1] = 2.9
+    flat_logits_np[0, 2] = 2.8
+    flat_logits_tensor = Buffer.from_dlpack(flat_logits_np).to(device)
+
+    min_p_tensor = Buffer.from_numpy(np.array([0.5], dtype=np.float32)).to(
+        device
+    )
+    sampled_tokens_flat: list[int] = []
+    for seed_val in range(num_trials):
+        seed_tensor = Buffer.from_numpy(
+            np.array([seed_val], dtype=np.uint64)
+        ).to(device)
+        tokens = sampler(
+            flat_logits_tensor,
+            seed_tensor,
+            min_p_tensor,
+            top_k_tensor,
+            max_k,
+            temperature,
+        )[0]
+        assert isinstance(tokens, Buffer)
+        sampled_tokens_flat.append(tokens.to_numpy()[0, 0].item())
+
+    # Only tokens 0, 1, 2 should be sampled.
+    assert set(sampled_tokens_flat) <= {0, 1, 2}
+    assert len(set(sampled_tokens_flat)) >= 2, (
+        "Expected at least 2 distinct tokens from {0,1,2}"
+    )
 
 
 def rejection_sampler_reference(  # noqa: ANN201

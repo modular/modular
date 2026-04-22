@@ -12,12 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from asyncrt_test_utils import create_test_device_context
-from gpu.host import DeviceContext
-from gpu.host._amdgpu_hip import HIP, hipDevice_t
-from testing import TestSuite
+from std.gpu.host import DeviceContext
+from std.gpu.host._amdgpu_hip import HIP, hipDevice_t
+from std.testing import TestSuite
 
 
-fn _run_hip_context(ctx: DeviceContext) raises:
+def _run_hip_context(ctx: DeviceContext) raises:
     print("-")
     print("_run_hip_context()")
 
@@ -25,7 +25,7 @@ fn _run_hip_context(ctx: DeviceContext) raises:
     print("hipDevice_t: " + String(hip_ctx))
 
 
-fn _run_hip_stream(ctx: DeviceContext) raises:
+def _run_hip_stream(ctx: DeviceContext) raises:
     print("-")
     print("_run_hip_stream()")
 
@@ -37,15 +37,15 @@ fn _run_hip_stream(ctx: DeviceContext) raises:
     print("hipStream_t: " + String(hip_stream))
 
 
-def test_hip_context():
+def test_hip_context() raises:
     var ctx = create_test_device_context()
     _run_hip_context(ctx)
 
 
-def test_hip_stream():
+def test_hip_stream() raises:
     var ctx = create_test_device_context()
     _run_hip_stream(ctx)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

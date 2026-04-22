@@ -11,11 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_false, assert_not_equal, assert_true
-from testing import TestSuite
+from test_utils import check_write_to
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
+from std.testing import TestSuite
 
 
-def test_char_validity():
+def test_char_validity() raises:
     # Check that basic unchecked constructor behaves as expected.
     var c1 = Codepoint(unsafe_unchecked_codepoint=32)
     assert_equal(c1._scalar_value, 32)
@@ -41,7 +47,7 @@ def test_char_validity():
     assert_false(Codepoint.from_u32(0x10FFFF + 1))
 
 
-def test_char_from_u8():
+def test_char_from_u8() raises:
     var c1 = Codepoint(UInt8(0))
     assert_true(c1.is_ascii())
 
@@ -50,7 +56,7 @@ def test_char_from_u8():
     assert_false(c2.is_ascii())
 
 
-def test_char_comparison():
+def test_char_comparison() raises:
     assert_equal(Codepoint(0), Codepoint(0))
     assert_not_equal(Codepoint(0), Codepoint(1))
 
@@ -71,7 +77,7 @@ def test_char_comparison():
     assert_false(Codepoint.__gt__(Codepoint(1), Codepoint(1)))
 
 
-def test_char_formatting():
+def test_char_formatting() raises:
     assert_equal(String(Codepoint(0)), "\0")
     assert_equal(String(Codepoint(32)), " ")
     assert_equal(String(Codepoint(97)), "a")
@@ -79,14 +85,22 @@ def test_char_formatting():
     assert_equal(String(Codepoint.from_u32(0x1F642).value()), "🙂")
 
 
-def test_char_writable():
-    var c1 = Codepoint(97)  # 'a'
-    var buffer = String()
-    buffer.write(c1)
-    assert_equal(buffer, String("a"))
+def test_write_to() raises:
+    check_write_to(Codepoint(97), expected="a", is_repr=False)
+    check_write_to(Codepoint(32), expected=" ", is_repr=False)
 
 
-def test_char_properties():
+def test_write_repr_to() raises:
+    check_write_to(Codepoint(97), expected="Codepoint(97)", is_repr=True)
+    check_write_to(Codepoint(0), expected="Codepoint(0)", is_repr=True)
+    check_write_to(
+        Codepoint.from_u32(0x1F642).value(),
+        expected="Codepoint(128578)",
+        is_repr=True,
+    )
+
+
+def test_char_properties() raises:
     assert_true(Codepoint.from_u32(0).value().is_ascii())
     # Last ASCII codepoint.
     assert_true(
@@ -98,7 +112,7 @@ def test_char_properties():
     assert_false(Codepoint.from_u32(0b1111_1111).value().is_ascii())
 
 
-def test_char_is_posix_space():
+def test_char_is_posix_space() raises:
     # checking true cases
     assert_true(Codepoint.ord(" ").is_posix_space())
     assert_true(Codepoint.ord("\n").is_posix_space())
@@ -120,7 +134,7 @@ def test_char_is_posix_space():
     assert_false(Codepoint.ord(".").is_posix_space())
 
 
-def test_char_is_lower():
+def test_char_is_lower() raises:
     assert_true(Codepoint.ord("a").is_ascii_lower())
     assert_true(Codepoint.ord("b").is_ascii_lower())
     assert_true(Codepoint.ord("y").is_ascii_lower())
@@ -137,7 +151,7 @@ def test_char_is_lower():
     assert_false(Codepoint.ord("0").is_ascii_lower())
 
 
-def test_char_is_upper():
+def test_char_is_upper() raises:
     assert_true(Codepoint.ord("A").is_ascii_upper())
     assert_true(Codepoint.ord("B").is_ascii_upper())
     assert_true(Codepoint.ord("Y").is_ascii_upper())
@@ -154,7 +168,7 @@ def test_char_is_upper():
     assert_false(Codepoint.ord("0").is_ascii_upper())
 
 
-def test_char_is_digit():
+def test_char_is_digit() raises:
     assert_true(Codepoint.ord("1").is_ascii_digit())
     assert_false(Codepoint.ord("g").is_ascii_digit())
 
@@ -162,7 +176,7 @@ def test_char_is_digit():
     assert_false(Codepoint.ord("६").is_ascii_digit())
 
 
-def test_char_is_printable():
+def test_char_is_printable() raises:
     assert_true(Codepoint.ord("a").is_ascii_printable())
     assert_false(Codepoint.ord("\n").is_ascii_printable())
     assert_false(Codepoint.ord("\t").is_ascii_printable())
@@ -228,7 +242,7 @@ comptime SIGNIFICANT_CODEPOINTS: List[Tuple[Int, List[Byte]]] = [
 ]
 
 
-fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
+def assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     var char_opt = Codepoint.from_u32(codepoint)
     var char = char_opt.value()
 
@@ -259,13 +273,13 @@ fn assert_utf8_bytes(codepoint: UInt32, var expected: List[Byte]) raises:
     )
 
 
-def test_char_utf8_encoding():
+def test_char_utf8_encoding() raises:
     for elements in materialize[SIGNIFICANT_CODEPOINTS]():
         (var codepoint), (ref expected_utf8) = elements
         assert_utf8_bytes(UInt32(codepoint), expected_utf8.copy())
 
 
-def test_char_utf8_byte_length():
+def test_char_utf8_byte_length() raises:
     for elements in materialize[SIGNIFICANT_CODEPOINTS]():
         (var codepoint), (ref expected_utf8) = elements
         var computed_len = (
@@ -275,7 +289,7 @@ def test_char_utf8_byte_length():
         assert_equal(computed_len, len(expected_utf8))
 
 
-def test_char_comptime():
+def test_char_comptime() raises:
     comptime c1 = Codepoint.from_u32(32).value()
 
     # Test that `utf8_byte_length()` works at compile time.
@@ -283,5 +297,5 @@ def test_char_comptime():
     assert_equal(c1_bytes, 1)
 
 
-def main():
+def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

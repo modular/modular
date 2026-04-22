@@ -16,7 +16,7 @@ from __future__ import annotations
 
 from max.dtype import DType
 from max.graph import TensorValue
-from max.nn.legacy import Module, RMSNorm
+from max.nn import Module, RMSNorm
 
 
 class RMSNormFused(Module):

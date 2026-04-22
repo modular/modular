@@ -11,45 +11,40 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from sys import argv
+from std.math import ceildiv, isclose
+from std.sys import argv
 
-from std.builtin.variadics import Variadic
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu import block_idx, thread_idx, warp_id, global_idx, lane_id
-from gpu.memory import async_copy_wait_all
-from gpu.sync import barrier
-from memory import alloc
-from testing import assert_almost_equal
-from utils import Index
-from utils.numerics import get_accum_type
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, global_idx, warp_id
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.sync import barrier
+from std.memory import alloc
+from std.testing import assert_almost_equal
+from std.utils.numerics import get_accum_type
 
-from layout.layout_tensor import (
+from layout import (
+    Idx,
     Layout,
+    TensorLayout,
+    TileTensor,
+    row_major,
+    stack_allocation,
+)
+from layout.layout_tensor import (
     copy_sram_to_local,
     copy_dram_to_sram_async,
     copy_local_to_dram,
 )
 
-from layout._tile_tensor import TileTensor, stack_allocation
-from layout._layout import TensorLayout, row_major
-from layout._coord import (
-    Coord,
-    coord,
-    Idx,
-    ComptimeInt,
-)
 
-
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn gemm_kernel[
+def gemm_kernel[
     c_dtype: DType,
     CLayoutType: TensorLayout,
     a_dtype: DType,
@@ -66,8 +61,8 @@ fn gemm_kernel[
     TN: Int where TN > -1,
 ](
     mat_c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
-    mat_a: TileTensor[a_dtype, ALayoutType, MutExternalOrigin],
-    mat_b: TileTensor[b_dtype, BLayoutType, MutExternalOrigin],
+    mat_a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
+    mat_b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
 ) where (
     mat_a.rank == 2
     and mat_b.rank == 2
@@ -80,58 +75,53 @@ fn gemm_kernel[
 
     var a_tile_sram = stack_allocation[
         mat_a.dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](row_major[BM, BK]())
 
     var b_tile_sram = stack_allocation[
         mat_b.dtype,
-        address_space = AddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
     ](row_major[BK, BN]())
 
     var n_warp_n = BN // WN
-    var warp_m = Int(warp_id()) // n_warp_n
-    var warp_n = Int(warp_id()) % n_warp_n
+    var warp_m = warp_id() // n_warp_n
+    var warp_n = warp_id() % n_warp_n
 
     # Allocate register tiles.
     var a_reg = stack_allocation[
         mat_a.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](
         row_major[TM]()
     )  # TM elements for M-dimension vector
     var b_reg = stack_allocation[
         mat_b.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](
         row_major[TN]()
     )  # TN elements for N-dimension vector
     var c_reg = stack_allocation[
         mat_c.dtype,
-        address_space = AddressSpace.LOCAL,
+        address_space=AddressSpace.LOCAL,
     ](row_major[TM, TN]()).fill(0)
 
     comptime warp_layout = row_major[8, 4]()
 
     for k_i in range(ceildiv(K, Scalar[mat_a.linear_idx_type](BK))):
-        var a_tile_dram = mat_a.tile[BM, BK](
-            (Idx(Int(block_idx.y)), Idx(Int(k_i)))
-        )
+        var a_tile_dram = mat_a.tile[BM, BK]((Idx(block_idx.y), Idx(Int(k_i))))
         copy_dram_to_sram_async[
-            thread_layout = Layout.row_major(NUM_THREADS // BK, BK)
+            thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram.to_layout_tensor(), a_tile_dram.to_layout_tensor())
 
-        var b_tile_dram = mat_b.tile[BK, BN](
-            (Idx(Int(k_i)), Idx(Int(block_idx.x)))
-        )
+        var b_tile_dram = mat_b.tile[BK, BN]((Idx(Int(k_i)), Idx(block_idx.x)))
         copy_dram_to_sram_async[
-            thread_layout = Layout.row_major(NUM_THREADS // BN, BN)
+            thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
         ](b_tile_sram.to_layout_tensor(), b_tile_dram.to_layout_tensor())
 
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
+        comptime for k_j in range(BK):  # Renamed to avoid shadowing outer k_i
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](
                 (Idx(warp_m), Idx(0))
             ).slice[:, k_j : k_j + 1]()
@@ -139,27 +129,27 @@ fn gemm_kernel[
             var b_smem_warp_row = b_tile_sram.tile[BK, WN](
                 (Idx[0](), Idx(warp_n))
             ).slice[k_j : k_j + 1, :]()
-            copy_sram_to_local[
-                src_warp_layout = warp_layout.to_layout(), axis=0
-            ](a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor())
-            copy_sram_to_local[
-                src_warp_layout = warp_layout.to_layout(), axis=1
-            ](b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor())
+            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=0](
+                a_reg.to_layout_tensor(), a_smem_warp_row.to_layout_tensor()
+            )
+            copy_sram_to_local[src_warp_layout=warp_layout.to_layout(), axis=1](
+                b_reg.to_layout_tensor(), b_smem_warp_row.to_layout_tensor()
+            )
             outer_product_acc(c_reg, a_reg, b_reg)
 
         # Otherwise a data race, faster threads will modify shared memory.
         barrier()
 
     var c_warp_tile = mat_c.tile[BM, BN](
-        (Idx(Int(block_idx.y)), Idx(Int(block_idx.x)))
+        (Idx(block_idx.y), Idx(block_idx.x))
     ).tile[WM, WN]((Idx(warp_m), Idx(warp_n)))
 
-    copy_local_to_dram[dst_thread_layout = warp_layout.to_layout()](
+    copy_local_to_dram[dst_thread_layout=warp_layout.to_layout()](
         c_warp_tile.to_layout_tensor(), c_reg.to_layout_tensor()
     )
 
 
-fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime NUM_THREADS = 256
     comptime BM = 64
     comptime BN = 64
@@ -192,9 +182,9 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = TileTensor(a_device.unsafe_ptr(), row_major[M, K]())
-    var mat_b = TileTensor(b_device.unsafe_ptr(), row_major[K, N]())
-    var mat_c = TileTensor(c_device.unsafe_ptr(), row_major[M, N]())
+    var mat_a = TileTensor(a_device, row_major[M, K]())
+    var mat_b = TileTensor(b_device, row_major[K, N]())
+    var mat_c = TileTensor(c_device, row_major[M, N]())
 
     comptime kernel = gemm_kernel[
         DType.float32,
@@ -215,15 +205,15 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[kernel](
         mat_c,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major[M, N]())
+    var c_tensor_ref = TileTensor(c_device_ref, row_major[M, N]())
 
     # Naive gemm.
     comptime BLOCK_DIM = 16
@@ -239,8 +229,8 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         M,
         N,
         K,
@@ -265,21 +255,21 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
+        def run_func(ctx: DeviceContext) raises:
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
-                mat_a,
-                mat_b,
+                mat_a.as_immut(),
+                mat_b.as_immut(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
 
         # Warmup
-        for i in range(nwarmup):
+        for _i in range(nwarmup):
             ctx.enqueue_function_experimental[kernel](
                 mat_c,
-                mat_a,
-                mat_b,
+                mat_a.as_immut(),
+                mat_b.as_immut(),
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
@@ -300,7 +290,7 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     b_host.free()
 
 
-fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
+def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     """Minimal debug test with small dimensions to isolate bugs.
 
     Uses single block (64x64) and single K-tile (16) for easier debugging.
@@ -339,9 +329,9 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = TileTensor(a_device.unsafe_ptr(), row_major[M, K]())
-    var mat_b = TileTensor(b_device.unsafe_ptr(), row_major[K, N]())
-    var mat_c = TileTensor(c_device.unsafe_ptr(), row_major[M, N]())
+    var mat_a = TileTensor(a_device, row_major[M, K]())
+    var mat_b = TileTensor(b_device, row_major[K, N]())
+    var mat_c = TileTensor(c_device, row_major[M, N]())
 
     comptime kernel = gemm_kernel[
         DType.float32,
@@ -362,15 +352,15 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[kernel](
         mat_c,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_tensor_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major[M, N]())
+    var c_tensor_ref = TileTensor(c_device_ref, row_major[M, N]())
 
     # Naive gemm for reference
     comptime BLOCK_DIM = 16
@@ -386,8 +376,8 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
 
     ctx.enqueue_function_experimental[gemm_naive](
         c_tensor_ref,
-        mat_a,
-        mat_b,
+        mat_a.as_immut(),
+        mat_b.as_immut(),
         M,
         N,
         K,
@@ -479,7 +469,7 @@ fn test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # Run minimal test first for debugging
         var run_minimal = False
@@ -496,7 +486,7 @@ def main():
             test_gemm_kernel_dynamic(ctx)
 
 
-fn matmul_kernel_naive[
+def matmul_kernel_naive[
     c_dtype: DType,
     CLayoutType: TensorLayout,
     a_dtype: DType,
@@ -508,22 +498,21 @@ fn matmul_kernel_naive[
     s_type: DType = get_accum_type[c_dtype](),
 ](
     c: TileTensor[c_dtype, CLayoutType, MutExternalOrigin],
-    a: TileTensor[a_dtype, ALayoutType, MutExternalOrigin],
-    b: TileTensor[b_dtype, BLayoutType, MutExternalOrigin],
+    a: TileTensor[a_dtype, ALayoutType, ImmutExternalOrigin],
+    b: TileTensor[b_dtype, BLayoutType, ImmutExternalOrigin],
     m: Int,
     n: Int,
     k: Int,
-) where (c.rank == 2 and a.rank == 2 and b.rank == 2):
-    var x = Int(global_idx.x)
-    var y = Int(global_idx.y)
+) where (c.flat_rank == 2 and a.flat_rank == 2 and b.flat_rank == 2):
+    var x = global_idx.x
+    var y = global_idx.y
 
     if x >= m or y >= n:
         return
 
     var accum = Scalar[s_type]()
 
-    @parameter
-    if transpose_b:
+    comptime if transpose_b:
         for i in range(k):
             accum += rebind[Scalar[s_type]](a[x, i].cast[s_type]()) * rebind[
                 Scalar[s_type]
@@ -535,15 +524,16 @@ fn matmul_kernel_naive[
                 Scalar[s_type]
             ](b[i, y].cast[s_type]())
 
+    comptime assert c.flat_rank >= 2
     c[(Idx(x), Idx(y))] = accum.cast[c.dtype]()
 
 
 @always_inline
-fn outer_product_acc(
+def outer_product_acc(
     res: TileTensor[mut=True, ...],
     lhs: TileTensor,
     rhs: TileTensor,
-) where lhs.rank == 1 and rhs.rank == 1:
+) where lhs.flat_rank == 1 and rhs.flat_rank == 1:
     """Updates result tensor with the outer product of two vectors.
 
     Computes `res += outer(lhs, rhs)` where `lhs` and `rhs` are vectors and
@@ -564,17 +554,16 @@ fn outer_product_acc(
 
     comptime assert lhs.element_size == res.element_size
     comptime assert lhs.element_size == rhs.element_size
-    comptime assert res.rank == 2
+    comptime assert res.flat_rank == 2
+    comptime assert lhs.flat_rank >= 1
+    comptime assert rhs.flat_rank >= 1
 
     comptime dtype = res.dtype
     comptime M = res.static_shape[0]
     comptime N = res.static_shape[1]
 
-    @parameter
-    for i in range(M):
-
-        @parameter
-        for j in range(N):
+    comptime for i in range(M):
+        comptime for j in range(N):
             res[i, j] += rebind[res.ElementType](
                 (lhs[(Idx[i](),)]).cast[dtype]()
             ) * rebind[res.ElementType](rhs[(Idx[j](),)].cast[dtype]())

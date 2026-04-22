@@ -31,10 +31,11 @@ Note that if you're running this script inside bazel, only available for max-ci,
 then the virtualenvs are not needed.
 """
 
+import csv
 import json
 import logging
 import os
-import signal
+import shlex
 import sys
 import time
 from collections.abc import Mapping, Sequence
@@ -42,12 +43,13 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import Popen, TimeoutExpired, check_call, check_output
+from subprocess import DEVNULL, check_call, check_output
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, TypedDict
 
 import click
 import requests
+from inference_server_harness import start_server
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -73,9 +75,184 @@ EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
 
-def is_deepseek(model: str) -> bool:
-    """Temporary workaround for large DeepSeek models."""
-    return "deepseek" in model and "lite" not in model
+class ModelAlias(TypedDict):
+    hf_model_path: str
+    max_serve_args: str
+
+
+# Maps alias model names to their real HuggingFace model path and extra
+# MAX serve args. Aliases let the same weights be tested under different
+# configurations while keeping results separate in dashboards.
+# max_serve_args are only applied to MAX frameworks, not vllm/sglang.
+MODEL_ALIASES: dict[str, ModelAlias] = {
+    "google/gemma-4-26B-A4B-it__no_dgc": {
+        "hf_model_path": "google/gemma-4-26B-A4B-it",
+        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
+    },
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "meta-llama/Llama-3.2-1B-Instruct__modulev3": {
+        "hf_model_path": "meta-llama/Llama-3.2-1B-Instruct",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "unsloth/gpt-oss-20b-BF16__modulev3": {
+        "hf_model_path": "unsloth/gpt-oss-20b-BF16",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "microsoft/Phi-3.5-mini-instruct__modulev3": {
+        "hf_model_path": "microsoft/Phi-3.5-mini-instruct",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "microsoft/phi-4__modulev3": {
+        "hf_model_path": "microsoft/phi-4",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "google/gemma-3-4b-it__modulev3": {
+        "hf_model_path": "google/gemma-3-4b-it",
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
+        "max_serve_args": "--kv-cache-format float8_e4m3fn",
+    },
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
+        "max_serve_args": "--data-parallel-degree 1",
+    },
+    "nvidia/Kimi-K2.5-NVFP4__with_vision": {  # MODELS-1066
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
+    },
+    "nvidia/Kimi-K2.5-NVFP4__no_vision": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
+    },
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "max_serve_args": (
+            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--speculative-method eagle"
+        ),
+    },
+    # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": {
+        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+        "max_serve_args": (
+            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1"
+        ),
+    },
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 3"
+        ),
+    },
+    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
+        "max_serve_args": (
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 1"
+        ),
+    },
+    "nvidia/Kimi-K2.5-NVFP4__eagle": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 3 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
+    # Kimi Eagle + CUDA Graph only works when num_speculative_tokens == 1
+    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
+    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--draft-data-parallel-degree 8 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 1 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
+    "nvidia/Kimi-K2.5-NVFP4__eagle_tp": {
+        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
+        "max_serve_args": (
+            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
+            "--draft-trust-remote-code "
+            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
+            "--data-parallel-degree 1 "
+            "--draft-data-parallel-degree 1 "
+            "--draft-quantization-encoding bfloat16 "
+            "--speculative-method eagle "
+            "--num-speculative-tokens 3 "
+            "--kv-cache-format float8_e4m3fn "
+            "--device-memory-utilization 0.75 "
+            "--max-batch-input-tokens 4096 "
+            "--max-length 163840 "
+            "--max-num-steps 1"
+        ),
+    },
+}
+
+
+# TODO Refactor this to a model list/matrix specifying type of model
+def is_vision_model(model: str) -> bool:
+    """Check if the model supports vision tasks."""
+    model = model.casefold()
+    if any(
+        kw in model for kw in ("no_vision", "__eagle", "__mtp", "gemma-3-1b")
+    ):
+        return False
+    return any(
+        kw in model
+        for kw in (
+            "gemma-3",
+            "gemma-4",
+            "idefics",
+            "internvl",
+            "kimi-k2",
+            "kimi-vl",
+            "olmocr",
+            "pixtral",
+            "qwen2.5-vl",
+            "qwen3-vl",
+            "vision",
+        )
+    )
+
+
+def is_huge_moe(model: str) -> bool:
+    """Large MoE models that need expert parallelism instead of tensor parallelism."""
+    model = model.casefold()
+    if "deepseek" in model and "lite" not in model:
+        return True
+    return any(x in model for x in ["minimax-m", "kimi-k", "qwen3-235b"])
 
 
 def validate_hf_token() -> None:
@@ -90,14 +267,32 @@ def _inside_bazel() -> bool:
     return os.getenv("BUILD_WORKSPACE_DIRECTORY") is not None
 
 
-def test_single_request(model: str, task: str) -> None:
+@cache
+def _load_hf_repo_lock() -> dict[str, str]:
+    """Read hf-repo-lock.tsv, return {lowercase_repo: revision} mapping."""
+    tsv = Path(__file__).resolve().parent.parent.parent / "hf-repo-lock.tsv"
+    if not tsv.exists():
+        logger.warning("hf-repo-lock.tsv not found, skipping revision pinning")
+        return {}
+    db = {}
+    with open(tsv) as f:
+        for row in csv.DictReader(f, dialect="excel-tab"):
+            db[row["hf_repo"].lower()] = row["revision"]
+    return db
+
+
+def test_single_request(model: str, task: str, disable_timeouts: bool) -> None:
     is_vision = task == VISION_TASK
     m = [IMAGE_PROMPT if is_vision else TEXT_PROMPT]
 
+    # Initial req can be slow for huge models
+    connect_timeout, read_timeout = (
+        (None, None) if disable_timeouts else (30, 180)
+    )
     r = requests.post(
         URL,
         json={"model": model, "messages": m, "max_tokens": 8},
-        timeout=(30, 180),  # Initial req can be slow for huge models
+        timeout=(connect_timeout, read_timeout),
     )
     r.raise_for_status()
     resp = r.json()["choices"][0]["message"]["content"]
@@ -109,39 +304,57 @@ def get_gpu_name_and_count() -> tuple[str, int]:
     """Returns the name and number of the available GPUs, e.g. ('MI300', 2)"""
     amd = ["amd-smi", "static", "--json"]
     nv = ["nvidia-smi", "--query-gpu=name", "--format=csv,noheader"]
-    try:
-        result = check_output(amd, text=True)
+    try:  # AMD path
+        env = os.environ.copy()
+        if _inside_bazel():
+            # Workaround to make amd-smi work inside bazel.
+            for k in list(env):
+                if k.startswith("PYTHON") or "RUNFILES" in k:
+                    del env[k]
+        result = check_output(amd, text=True, stderr=DEVNULL, env=env)
         data = json.loads(result.strip())["gpu_data"]
         return data[0]["asic"]["market_name"], len(data)
-    except:
-        try:
-            lines = check_output(nv, text=True).strip().split("\n")
+    except Exception:
+        try:  # Nvidia path
+            lines = (
+                check_output(nv, text=True, stderr=DEVNULL).strip().split("\n")
+            )
             return lines[0].strip(), len(lines)
-        except:
+        except Exception:
             logger.warning("nvidia-smi and amd-smi both failed")
             return "N/A", 0
 
 
-def server_is_ready() -> bool:
-    health_url = "http://127.0.0.1:8000/health"
-    try:
-        return requests.get(health_url, timeout=1).status_code == 200
-    except requests.exceptions.RequestException:
-        return False
-
-
-def get_server_cmd(framework: str, model: str) -> list[str]:
+def get_server_cmd(
+    framework: str,
+    model: str,
+    *,
+    serve_extra_args: str = "",
+) -> list[str]:
     gpu_model, gpu_count = get_gpu_name_and_count()
     sglang_backend = "triton" if "b200" in gpu_model.lower() else "fa3"
     SGLANG = f"sglang.launch_server --attention-backend {sglang_backend} --mem-fraction-static 0.8"
     # limit-mm-per-prompt.video is for InternVL3 on B200
-    VLLM = "vllm.entrypoints.openai.api_server --max-model-len 16384 --limit-mm-per-prompt.video 0"
+    VLLM = "vllm.entrypoints.openai.api_server --max-model-len auto --limit-mm-per-prompt.video 0"
     MAX = "max.entrypoints.pipelines serve"
 
-    is_huge_model = is_deepseek(model)
+    is_huge_model = is_huge_moe(model)
     if is_huge_model and framework != "sglang":
-        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --data-parallel-degree {gpu_count} --max-batch-input-tokens 1024"
-        VLLM += f" --enable-chunked-prefill --gpu-memory-utilization 0.8 --data-parallel-size={gpu_count} --enable-expert-parallel"
+        MAX += f" --device-memory-utilization 0.8 --devices gpu:{','.join(str(i) for i in range(gpu_count))} --ep-size {gpu_count} --max-batch-input-tokens 1024"
+        VLLM += " --enable-chunked-prefill --gpu-memory-utilization 0.8 --enable-expert-parallel"
+        # resolve attention parallelism strategy
+        if "--data-parallel-degree 1" not in serve_extra_args:
+            # default to DP Attn + EP MoE strategy
+            MAX += f" --data-parallel-degree {gpu_count}"
+            VLLM += f" --data-parallel-size={gpu_count}"
+        else:
+            # TP Attn + EP MoE strategy
+            VLLM += f" --tensor-parallel-size={gpu_count}"
+
+        # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
+        if "minimax-m2" in model:
+            os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
+            VLLM += " --attention-backend FLASH_ATTN"
         # Have not been successful in getting SGLang to work with R1 yet
     elif gpu_count > 1:
         MAX += f" --devices gpu:{','.join(str(i) for i in range(gpu_count))}"
@@ -168,6 +381,28 @@ def get_server_cmd(framework: str, model: str) -> list[str]:
     if "gpt-oss" in model and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
+    revision = _load_hf_repo_lock().get(model.casefold())
+    if revision:
+        if framework in ("max", "max-ci"):
+            cmd += [
+                "--huggingface-model-revision",
+                revision,
+                "--huggingface-weight-revision",
+                revision,
+            ]
+        else:  # vllm, sglang
+            cmd += ["--revision", revision]
+        logger.info(f"Pinned to revision {revision[:12]}")
+    else:
+        logger.warning(f"No locked revision for {model}")
+
+    if serve_extra_args:
+        if framework in ["max-ci", "max"]:
+            cmd += shlex.split(serve_extra_args)
+        else:
+            logger.warning(
+                "Ignoring --serve-extra-args for framework %s", framework
+            )
     return cmd
 
 
@@ -176,7 +411,12 @@ def safe_model_name(model: str) -> str:
 
 
 def call_eval(
-    model: str, task: str, *, max_concurrent: int, num_questions: int
+    model: str,
+    task: str,
+    *,
+    max_concurrent: int,
+    num_questions: int,
+    disable_timeouts: bool,
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
@@ -184,9 +424,12 @@ def call_eval(
         for kw in (
             "academic-ds",
             "deepseek-r1",
+            "deepseek-v3",
+            "gemma-4",
             "gpt-oss",
             "internvl3_5",
             "qwen3",
+            "kimi-k2.5",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
@@ -200,6 +443,15 @@ def call_eval(
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
 
+    model_args: dict[str, str] = {
+        "model": model,
+        "base_url": URL,
+        "num_concurrent": str(max_concurrent),
+        "max_retries": "1",
+    }
+    if disable_timeouts:
+        model_args["timeout"] = "86400"
+
     include_path = str(Path(__file__).parent.resolve() / "tasks")
     with TemporaryDirectory() as tempdir:
         eval_cmd = [
@@ -207,7 +459,7 @@ def call_eval(
             f"--tasks={task}",
             "--model=local-chat-completions",
             "--log_samples",
-            f"--model_args=model={model},base_url={URL},num_concurrent={max_concurrent},max_retries=1",
+            f"--model_args={','.join(f'{k}={v}' for k, v in model_args.items())}",
             "--apply_chat_template",
             f"--output_path={tempdir}",
             f"--limit={num_questions}",
@@ -219,7 +471,7 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        check_call(args, timeout=600)
+        check_call(args, timeout=None if disable_timeouts else 600)
 
         return parse_eval_results(Path(tempdir))
 
@@ -239,26 +491,6 @@ def write_github_output(key: str, value: str) -> None:
     if path:
         with open(path, "a") as f:
             f.write(f"{key}={value}\n")
-
-
-def gracefully_stop_process(process: Popen[bytes]) -> None:
-    start_time = time.time()
-    process.send_signal(signal.SIGINT)
-    try:
-        process.wait(25)
-        shutdown_seconds = int(time.time() - start_time)
-        logger.info(f"Server shutdown took {shutdown_seconds} seconds")
-    except TimeoutExpired:
-        logger.warning("Server did not stop after ctrl-c, trying SIGTERM")
-        try:
-            os.killpg(os.getpgid(process.pid), signal.SIGTERM)
-            process.wait(5)
-        except ProcessLookupError:
-            pass
-        except TimeoutExpired:
-            logger.warning("Process did not terminate gracefully, forcing kill")
-            os.killpg(os.getpgid(process.pid), signal.SIGKILL)
-            process.wait(5)
 
 
 @dataclass
@@ -339,34 +571,6 @@ def print_samples(samples: EvalSamples, print_cot: bool) -> None:
         logger.info(f"{status} {extracted}")
 
 
-def start_server(cmd: list[str], timeout: int) -> tuple[Popen[bytes], float]:
-    env = os.environ.copy()
-
-    if not _inside_bazel():
-        # SGLang depends on ninja which is in the serve environment
-        env["PYTHONSAFEPATH"] = "1"  # Avoids root dir `max` shadowing
-        venv_bin = os.path.abspath(".venv-serve/bin")
-        prev_path = env.get("PATH")
-        env["PATH"] = f"{venv_bin}:{prev_path}" if prev_path else venv_bin
-
-    start = time.monotonic()
-    proc = Popen(cmd, start_new_session=True, env=env)
-    try:
-        deadline = start + timeout
-        while time.monotonic() < deadline:
-            if server_is_ready():
-                break
-            if proc.poll() is not None:
-                raise RuntimeError("Server process terminated unexpectedly")
-            time.sleep(0.5)
-        else:
-            raise TimeoutError(f"Server did not start in {timeout} seconds")
-        return proc, time.monotonic() - start
-    except:
-        gracefully_stop_process(proc)
-        raise
-
-
 def write_results(
     path: Path,
     summary: list[EvalSummary],
@@ -431,6 +635,21 @@ def write_results(
     default=320,
     help="Number of questions to ask the model",
 )
+@click.option(
+    "--serve-extra-args",
+    type=str,
+    default="",
+    help=(
+        "Extra args appended to MAX serve command, for example: "
+        '"--device-graph-capture --max-batch-size=16"'
+    ),
+)
+@click.option(
+    "--disable-timeouts",
+    is_flag=True,
+    default=False,
+    help="Disable all timeouts. Useful when debugging hangs.",
+)
 def smoke_test(
     hf_model_path: str,
     framework: str,
@@ -439,9 +658,11 @@ def smoke_test(
     print_cot: bool,
     max_concurrent: int,
     num_questions: int,
+    serve_extra_args: str,
+    disable_timeouts: bool,
 ) -> None:
     """
-    Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
+    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
 
     This command asks 320 questions against the model behind the given hf_model_path.
     It runs the provided framework (defaulting to MAX serve) in the background,
@@ -461,71 +682,69 @@ def smoke_test(
     if output_path and build_workspace and not output_path.is_absolute():
         output_path = Path(build_workspace) / output_path
 
-    model = hf_model_path.lower().strip()
-    cmd = get_server_cmd(framework, model)
-
-    # TODO Refactor this to a model list/matrix specifying type of model
-    is_vision_model = any(
-        kw in model
-        for kw in (
-            "gemma-3",
-            "idefics",
-            "internvl",
-            "olmocr",
-            "pixtral",
-            "qwen2.5-vl",
-            "qwen3-vl",
-            "vision",
+    model = hf_model_path.strip().casefold()
+    model_aliases_lowercase = {
+        k.casefold(): v for k, v in MODEL_ALIASES.items()
+    }
+    alias = model_aliases_lowercase.get(model)
+    hf_model_path = (alias["hf_model_path"] if alias else model).casefold()
+    if alias and framework in ["max-ci", "max"]:
+        serve_extra_args = (
+            f"{serve_extra_args} {alias['max_serve_args']}".strip()
         )
+    cmd = get_server_cmd(
+        framework,
+        hf_model_path,
+        serve_extra_args=serve_extra_args,
     )
-    # 1b is non-vision
-    if "gemma-3-1b" in model:
-        is_vision_model = False
 
     tasks = [TEXT_TASK]
-    if is_vision_model:
+    if is_vision_model(model):
         tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
     results = []
     all_samples = []
-    timeout = 900
-    if is_deepseek(model):
-        timeout = 1800
+    if disable_timeouts:
+        timeout = sys.maxsize
+    elif is_huge_moe(hf_model_path):
+        # TODO(GEX-3508): Reduce timeout once model build time is optimized
+        timeout = 2700
+    else:
+        timeout = 900
 
-    server_process, startup_time = start_server(cmd, timeout)
-    try:
-        logger.info(f"Server started in {startup_time:.2f} seconds")
-        write_github_output("startup_time", f"{startup_time:.2f}")
+    with start_server(cmd, timeout) as server:
+        logger.info(f"Server started in {server.startup_time:.2f} seconds")
+        write_github_output("startup_time", f"{server.startup_time:.2f}")
 
         for task in tasks:
-            test_single_request(model, task)
+            test_single_request(
+                hf_model_path, task, disable_timeouts=disable_timeouts
+            )
             result, samples = call_eval(
-                model,
+                hf_model_path,
                 task,
                 max_concurrent=max_concurrent,
                 num_questions=num_questions,
+                disable_timeouts=disable_timeouts,
             )
             if print_responses:
                 print_samples(samples, print_cot)
 
             results.append(result)
             all_samples.append(samples)
-    finally:
-        try:
-            gracefully_stop_process(server_process)
-        except Exception:
-            logger.exception(f"Failed to shutdown {framework.upper()}")
 
     if results:
-        summary = build_eval_summary(results, startup_time_seconds=startup_time)
+        summary = build_eval_summary(
+            results, startup_time_seconds=server.startup_time
+        )
 
         if output_path is not None:
             path = output_path / safe_model_name(model)
             path.mkdir(parents=True, exist_ok=True)
             write_results(path, summary, results, all_samples, tasks)
 
-            logger.info(pformat(summary, indent=2))
+        logger.info(pformat(summary, indent=2))
 
 
 if __name__ == "__main__":

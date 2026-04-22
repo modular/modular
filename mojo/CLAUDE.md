@@ -64,7 +64,8 @@ Tests are run with `-D ASSERT=all` by default.
 
 ### Running Benchmarks
 
-Read the `mojo/stdlib/benchmarks/README.md` for details on how to run benchmarks.
+Read the `mojo/stdlib/benchmarks/README.md` for details on how to run
+benchmarks.
 
 ### Code Formatting
 
@@ -166,7 +167,8 @@ least one simple code example.
 
 - **First sentence**: Start with a present tense verb describing what the
   function/struct does (for example, "Gets", "Converts", "Stores").
-- **Code font**: Use backticks for all API names (for example, `Int`, `append()`).
+- **Code font**: Use backticks for all API names (for example, `Int`,
+  `append()`).
 - **End with periods**: All sentences and sentence fragments end with periods.
 - **No markdown headings**: Instead use an introductory phrase ending with a
   colon (for example, "Examples:", "Performance tips:").

@@ -11,33 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block_idx, grid_dim, thread_idx
+from std.gpu import block_idx, grid_dim
 
-from utils.fast_div import FastDiv
-from utils.index import Index, IndexList
+from std.utils.fast_div import FastDiv
+from std.utils.index import Index, IndexList
 from layout import Layout, LayoutTensor
 
 
 @fieldwise_init
-struct RasterOrder(TrivialRegisterType):
+struct RasterOrder(TrivialRegisterPassable):
     var _value: Int32
 
     comptime AlongN = Self(0)
     comptime AlongM = Self(1)
 
     @always_inline
-    fn __eq__(self, other: Self) -> Bool:
+    def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
     @always_inline
-    fn __ne__(self, other: Self) -> Bool:
+    def __ne__(self, other: Self) -> Bool:
         return self._value != other._value
 
 
 @fieldwise_init
-struct WorkInfo(Stringable, TrivialRegisterType, Writable):
+struct WorkInfo(TrivialRegisterPassable, Writable):
     # Coordinates in output matrix
     var m: UInt32
     var n: UInt32
@@ -46,7 +46,7 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
     var terminate: Bool
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
     ):
         self.m = 0
@@ -55,19 +55,15 @@ struct WorkInfo(Stringable, TrivialRegisterType, Writable):
         self.terminate = False
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.is_valid_tile
 
     @always_inline
-    fn is_done(self) -> Bool:
+    def is_done(self) -> Bool:
         return self.terminate
 
     @no_inline
-    fn __str__(self) -> String:
-        return String.write(self)
-
-    @no_inline
-    fn write_to(self, mut writer: Some[Writer]):
+    def write_to(self, mut writer: Some[Writer]):
         writer.write(
             "(",
             self.m,
@@ -101,10 +97,10 @@ struct TileScheduler[
     cta_group: Int = 1,
     swizzle: Bool = False,
     swapAB: Bool = True,
-](TrivialRegisterType):
+](TrivialRegisterPassable):
     var num_active_experts: Int
     var group_offsets: LayoutTensor[
-        DType.uint32, Self.offsets_layout, MutAnyOrigin
+        DType.uint32, Self.offsets_layout, ImmutAnyOrigin
     ]
     var current_iter: Int32  # Tracks the scheduler's progress across kernel launches
     var current_group_idx: UInt32
@@ -125,11 +121,11 @@ struct TileScheduler[
     comptime kNum1DBlocksPerGroup: UInt32 = 16
 
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         num_active_experts: Int,
         group_offsets: LayoutTensor[
-            DType.uint32, Self.offsets_layout, MutAnyOrigin
+            DType.uint32, Self.offsets_layout, ImmutAnyOrigin
         ],
     ):
         comptime assert (
@@ -166,7 +162,7 @@ struct TileScheduler[
         self.block_idx_start = 0
 
     @always_inline
-    fn fetch_next_work(mut self) -> WorkInfo:
+    def fetch_next_work(mut self) -> WorkInfo:
         self.current_iter += 1
         var next_block_idx = UInt32(self.current_iter) * UInt32(
             grid_dim.x
@@ -240,7 +236,7 @@ struct TileScheduler[
         )
 
     @always_inline
-    fn _get_swizzled_block_idx(
+    def _get_swizzled_block_idx(
         self,
         num_n_blocks: UInt32,
         _block_idx: UInt32,

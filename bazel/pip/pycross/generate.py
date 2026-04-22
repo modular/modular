@@ -28,13 +28,36 @@ _TORCH_PACKAGES = {
     "triton",  # pytorch-triton-rocm was renamed to triton
 }
 
-_ALLOWED_DUPLICATE_PACKAGES = _TORCH_PACKAGES | {
-    "numpy",
-    "scipy",
+# Force the @multiple label, mainly for adding extra constraints to targets
+_FORCE_MULTIPLE = {
+    "sglang",
+    "vllm",
 }
 
+_ALLOWED_DUPLICATE_PACKAGES = (
+    _TORCH_PACKAGES
+    | _FORCE_MULTIPLE
+    | {
+        # Split based on Python versions
+        "numpy",
+        "scipy",
+        # Unresolvable conflicts between dependency groups.
+        # Only add these here if they are not globally
+        # resolvable in `override-dependencies` (i.e. we
+        # are required to diverge).
+        "llguidance",  # We use >1.0, sglang pins to 0.7.30
+        "nvidia-nvshmem-cu12",  # Differs between torch 2.9.1 and 2.10.0 for cuda
+        "outlines-core",  # Conflicts between vllm and sglang
+        "vllm",
+        "sglang",
+    }
+)
 
-def _should_ignore(package: dict[str, Any]) -> bool:
+
+def _should_ignore(
+    package: dict[str, Any],
+    cpu_versions: set[tuple[str, str]],
+) -> bool:
     # Ignores pypi torch versions because uv is too aggressive about pulling
     # those in even though a group will always be specified.
     registry = package["source"].get("registry", "")
@@ -44,15 +67,18 @@ def _should_ignore(package: dict[str, Any]) -> bool:
             # Ignore torch versions from pypi that should not be in the lockfile
             "https://pypi.org/simple" in registry
             or (
-                # Ignore torch versions that are not GPU specific but are from
-                # a GPU registry (except cuda registries which use plain versions)
-                "+" not in package["version"] and "cpu" not in registry
+                # Ignore plain-versioned torch packages from non-cpu registries
+                # only if the same version is already available from the cpu
+                # registry (avoid dropping versions that only exist in cu128).
+                "+" not in package["version"]
+                and "cpu" not in registry
+                and (package["name"], package["version"]) in cpu_versions
             )
         )
     )
 
 
-def _get_direct_deps(data: dict) -> set[str]:
+def _get_direct_deps(data: dict) -> set[str]:  # type: ignore[type-arg]
     direct_deps = set()
 
     for package in data["package"]:
@@ -72,19 +98,30 @@ def _main(uv_lock: str, output_path: str) -> None:
     with open(uv_lock, "rb") as f:
         data = tomllib.load(f)
 
+    # Collect plain-versioned torch packages available from the cpu registry so
+    # we can deduplicate non-cpu registry entries that resolve to the same version.
+    cpu_versions = {
+        (pkg["name"], pkg["version"])
+        for pkg in data["package"]
+        if pkg["name"] in _TORCH_PACKAGES
+        and "cpu" in pkg["source"].get("registry", "")
+        and "+" not in pkg["version"]
+    }
+
     package_names = set()
     duplicate_packages = set()
 
     all_versions = {}
     for package in data["package"]:
-        if _should_ignore(package):
+        if _should_ignore(package, cpu_versions):
             continue
 
-        all_versions[package["name"]] = package["version"]
-        if package["name"] in package_names:
-            duplicate_packages.add(package["name"])
-            all_versions[package["name"]] = "multiple"
-        package_names.add(package["name"])
+        name = package["name"]
+        all_versions[name] = package["version"]
+        if name in package_names or name in _FORCE_MULTIPLE:
+            duplicate_packages.add(name)
+            all_versions[name] = "multiple"
+        package_names.add(name)
 
     unexpected_duplicates = duplicate_packages - _ALLOWED_DUPLICATE_PACKAGES
     if unexpected_duplicates:
@@ -96,7 +133,7 @@ def _main(uv_lock: str, output_path: str) -> None:
     targets = ""
     all_downloads = set()
     for package in data["package"]:
-        if _should_ignore(package):
+        if _should_ignore(package, cpu_versions):
             continue
 
         pkg, downloads = Package(package, all_versions).render()

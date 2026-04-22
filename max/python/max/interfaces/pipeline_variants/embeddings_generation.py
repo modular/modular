@@ -71,6 +71,8 @@ EmbeddingsGenerationContextType = TypeVar(
 
 @dataclass(frozen=True)
 class EmbeddingsGenerationInputs(PipelineInputs):
+    """Batched inputs for an embeddings generation pipeline step."""
+
     batches: list[dict[RequestID, EmbeddingsContext]]
 
     @property
@@ -80,8 +82,7 @@ class EmbeddingsGenerationInputs(PipelineInputs):
 
 
 class EmbeddingsGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
-    """
-    Response structure for embedding generation.
+    """Response structure for embedding generation.
 
     Configuration:
         embeddings: The generated embeddings as a NumPy array.
@@ -92,11 +93,10 @@ class EmbeddingsGenerationOutput(msgspec.Struct, tag=True, omit_defaults=True):
 
     @property
     def is_done(self) -> bool:
-        """
-        Indicates whether the embedding generation process is complete.
+        """Indicates whether the embedding generation process is complete.
 
         Returns:
-            bool: Always True, as embedding generation is a single-step operation.
+            Always ``True``, as embedding generation is a single-step operation.
         """
         return True
 

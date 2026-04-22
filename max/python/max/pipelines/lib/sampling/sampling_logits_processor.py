@@ -22,11 +22,13 @@ from typing import TYPE_CHECKING, Any
 
 import numpy as np
 import numpy.typing as npt
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DeviceEvent, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import Model
 from max.interfaces import BatchProcessorInputs, TextGenerationContextType
+from max.pipelines.core import TextContext
 from max.profiler import Tracer, traced
+from typing_extensions import Self
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -52,17 +54,28 @@ class FrequencyData:
 def to_pinned_host_buffer(
     values: Sequence[Any], device: Device, dtype: DType = DType.float32
 ) -> Buffer:
-    pinned = not device.is_host
+    """Copies a sequence of values into a buffer, pinned when device is not host.
 
-    buffer = Buffer(
-        shape=(len(values),),
-        dtype=dtype,
-        device=device,
-        pinned=pinned,
-    )
+    Args:
+        values: Values to copy into the buffer.
+        device: Target device (buffer is pinned if this is a non-host device).
+        dtype: Buffer dtype. Defaults to float32.
 
-    if pinned:
-        buffer.disable_auto_sync()
+    Returns:
+        A buffer containing the values, with pinning if applicable.
+    """
+    if device.is_host:
+        buffer = Buffer(
+            shape=(len(values),),
+            dtype=dtype,
+            device=device,
+        )
+    else:
+        buffer = DevicePinnedBuffer(
+            shape=(len(values),),
+            dtype=dtype,
+            device=device,
+        )
 
     buffer_np = buffer.to_numpy()
     buffer_np[:] = values
@@ -88,6 +101,7 @@ class FusedSamplingProcessor:
         device: Device,
         bitmask: npt.NDArray[np.int32] | None = None,
         vocab_size: int | None = None,
+        pinned_new_tokens: Buffer | None = None,
     ):
         self.sampler = sampler
         self.batch_size = len(context_batch)
@@ -95,128 +109,88 @@ class FusedSamplingProcessor:
         self.bitmask = bitmask
         self.vocab_size = vocab_size
 
-        # If a structured decoding bitmask was provided, unpack packed-int masks once.
-        self.tensor_bitmask: Buffer | None
+        # If a structured decoding bitmask was provided, unpack packed-int masks
+        # and store in pinned memory for efficient per-step updates.
+        self.tensor_bitmask: Buffer | None = None
+        self._pinned_bitmask: Buffer | None = None
+
+        # Event to track D2H token copy completion. All transfers happen on the
+        # default stream; we use events for fine-grained synchronization.
+        self._d2h_copy_event: DeviceEvent | None = None
+
+        # Pre-allocated pinned buffer for D2H token copy (optional).
+        self._pinned_new_tokens = pinned_new_tokens
+
         if (
             self.bitmask is not None
             and self.vocab_size is not None
             and self.bitmask.shape[1] != self.vocab_size
         ):
-            # TODO: migrate bitmask to pinned memory
+            # Unpack packed-int masks to boolean format
             bits = 2 ** np.arange(32, dtype=np.int32)
-            self.bitmask = (self.bitmask[..., np.newaxis] & bits) != 0
-            self.bitmask = self.bitmask.reshape(self.batch_size, -1).astype(
-                np.bool_
-            )
-            self.tensor_bitmask = Buffer.from_numpy(self.bitmask).to(
-                self.device
-            )
-        else:
-            self.tensor_bitmask = None
+            unpacked = (self.bitmask[..., np.newaxis] & bits) != 0
+            unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
+
+            # Allocate pinned bitmask buffer per-batch (actual_batch_size x vocab_size).
+            # This is smaller than pre-allocating max_batch_size x vocab_size.
+            if device.is_host:
+                # Host device case - no pinned memory needed
+                self._pinned_bitmask = Buffer(
+                    shape=unpacked.shape,
+                    dtype=DType.bool,
+                    device=device,
+                )
+            else:
+                # GPU - allocate pinned memory for faster H2D transfer
+                self._pinned_bitmask = DevicePinnedBuffer(
+                    shape=unpacked.shape,
+                    dtype=DType.bool,
+                    device=device,
+                )
+            self._pinned_bitmask.to_numpy()[:] = unpacked
+            self.tensor_bitmask = self._pinned_bitmask.to(self.device)
 
         batch_size = len(context_batch)
 
         # Allocate input and output tensors on pinned memory for faster async
         # h2d and d2h transfer speeds. If model is on host, then fall back to
         # normal pageable memory.
-        pinned = not device.is_host
 
         # generated_tokens is a tensor of shape (batch_size, 0)
-        self.generated_tokens = Buffer(
-            shape=(batch_size, 0),
-            dtype=DType.int64,
-            device=device,
-            pinned=pinned,
-        )
-        if pinned:
-            self.generated_tokens.disable_auto_sync()
+        if device.is_host:
+            self.generated_tokens = Buffer(
+                shape=(batch_size, 0),
+                dtype=DType.int64,
+                device=device,
+            )
+        else:
+            self.generated_tokens = DevicePinnedBuffer(
+                shape=(batch_size, 0),
+                dtype=DType.int64,
+                device=device,
+            )
 
-        temperature_host = to_pinned_host_buffer(
-            [context.sampling_params.temperature for context in context_batch],
-            device=device,
-        )
-        self.temperature = temperature_host.to(device)
-
-        # top_k is a tensor of shape (batch_size,)
-        top_k_host = to_pinned_host_buffer(
-            [context.sampling_params.top_k for context in context_batch],
-            device=device,
-            dtype=DType.int64,
-        )
-        self.top_k = top_k_host.to(device)
-
-        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
-        # is not copied to the device.
-        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
-        self.max_k = Buffer.from_numpy(max_k_np)
-
-        # top_p is a tensor of shape (batch_size,)
-        top_p_host = to_pinned_host_buffer(
-            [context.sampling_params.top_p for context in context_batch],
-            device=device,
-        )
-        self.top_p = top_p_host.to(device)
-
-        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
-        # is not copied to the device.
-        min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
-        self.min_top_p = Buffer.from_numpy(min_top_p_np)
-
-        # seed is a tensor of shape (batch_size,)
-        seed_host = to_pinned_host_buffer(
-            [
-                context.sampling_params.seed + len(context.tokens)
-                for context in context_batch
-            ],
-            device=device,
-            dtype=DType.uint64,
-        )
-        self.seed = seed_host.to(device)
+        self.sampler_inputs = SamplerInputs.create(context_batch, device)
 
         self.frequency_data: list[FrequencyData] | None = None
         self.frequency_penalty: Buffer | None = None
         self.presence_penalty: Buffer | None = None
         self.repetition_penalty: Buffer | None = None
 
+        self.penalty_inputs: PenaltyInputs | None = None
         if pipeline_config.sampling.enable_penalties:
-            # TODO: migrate penalties to pinned memory
-            self.frequency_data = [
-                _build_token_frequency_csr(context_batch, num_steps, device),
-                _build_token_frequency_csr(
-                    context_batch, num_steps, device, include_prompt=True
-                ),
-            ]
-
-            self.frequency_penalty = Buffer.from_numpy(
-                np.array(
-                    [
-                        context.sampling_params.frequency_penalty
-                        for context in context_batch
-                    ],
-                    dtype=np.float32,
-                )
-            ).to(device)
-            self.presence_penalty = Buffer.from_numpy(
-                np.array(
-                    [
-                        context.sampling_params.presence_penalty
-                        for context in context_batch
-                    ],
-                    dtype=np.float32,
-                )
-            ).to(device)
-            self.repetition_penalty = Buffer.from_numpy(
-                np.array(
-                    [
-                        context.sampling_params.repetition_penalty
-                        for context in context_batch
-                    ],
-                    dtype=np.float32,
-                )
-            ).to(device)
-
+            self.penalty_inputs = PenaltyInputs.create(
+                context_batch, device, num_steps
+            )
         else:
-            _check_need_penalties(context_batch)
+            needs_penalties = any(
+                context.sampling_params.needs_penalties
+                for context in context_batch
+            )
+            if needs_penalties:
+                logger.warning(
+                    "Penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
+                )
 
         self.min_tokens_masks = _build_min_tokens_masks(
             context_batch,
@@ -228,6 +202,7 @@ class FusedSamplingProcessor:
         self.step_counter = 0
 
     def __call__(self, inputs: BatchProcessorInputs) -> None:
+        """Processes the batch logits and updates generated tokens and seed."""
         logits = inputs.logits
         logit_offsets = inputs.logit_offsets
 
@@ -235,21 +210,13 @@ class FusedSamplingProcessor:
             self.sampler,
             logits,
             self.generated_tokens,
-            self.top_k,
-            self.max_k,
-            self.temperature,
-            self.top_p,
-            self.min_top_p,
-            self.seed,
+            self.sampler_inputs,
             logit_offsets=logit_offsets,
             bitmask=self.tensor_bitmask,
-            frequency_data=self.frequency_data,
             min_tokens_mask=self.min_tokens_masks[self.step_counter]
             if self.min_tokens_masks
             else None,
-            frequency_penalty=self.frequency_penalty,
-            presence_penalty=self.presence_penalty,
-            repetition_penalty=self.repetition_penalty,
+            penalty_inputs=self.penalty_inputs,
         )
 
         assert isinstance(new_tokens, Buffer)
@@ -262,19 +229,78 @@ class FusedSamplingProcessor:
 
         self.step_counter += 1
 
+    def update_bitmask(self, packed_bitmask: npt.NDArray[np.int32]) -> None:
+        """Update the GPU bitmask with new FSM state for multi-step execution.
 
-def _check_need_penalties(batch: list[TextGenerationContextType]) -> None:
-    """Check if the batch has penalties, but enable_penalties is False."""
-    for context in batch:
+        This method unpacks the packed-int bitmask from llguidance, copies it
+        to the pinned host buffer, and transfers it to the GPU. This enables
+        multi-step execution with guided decoding by keeping the bitmask
+        synchronized with the FSM state after each token is sampled.
+
+        Args:
+            packed_bitmask: Packed int32 bitmask from
+                llguidance.numpy.allocate_token_bitmask. Shape is
+                [batch_size, ceil(vocab_size/32)].
+        """
         if (
-            context.sampling_params.frequency_penalty != 0.0
-            or context.sampling_params.presence_penalty != 0.0
-            or context.sampling_params.repetition_penalty != 1.0
+            self.tensor_bitmask is None
+            or self._pinned_bitmask is None
+            or self.vocab_size is None
         ):
-            logger.warning(
-                "penalties are provided in the request, but the model was not configured with enable_penalties=True, ignoring"
-            )
             return
+
+        # Unpack packed-int format to boolean
+        bits = 2 ** np.arange(32, dtype=np.int32)
+        unpacked = (packed_bitmask[..., np.newaxis] & bits) != 0
+        unpacked = unpacked.reshape(self.batch_size, -1).astype(np.bool_)
+
+        # Copy to pinned buffer
+        self._pinned_bitmask.to_numpy()[:] = unpacked
+
+        # Transfer to GPU on the default stream. The H2D copy will complete
+        # before subsequent GPU operations (like sampling) that use the bitmask.
+        self.tensor_bitmask.inplace_copy_from(self._pinned_bitmask)
+
+    def start_async_token_copy(self) -> None:
+        """Start D2H copy of new_tokens to pinned buffer on the default stream.
+
+        The copy happens on the default stream after sampling completes. We record
+        an event after the copy so get_new_tokens_numpy() can wait for just the
+        copy without waiting for subsequent GPU operations (like the next forward
+        pass).
+        """
+        if self.new_tokens is None or self._pinned_new_tokens is None:
+            return
+
+        # Copy tokens to pinned buffer on default stream (after sampling)
+        self._pinned_new_tokens.inplace_copy_from(self.new_tokens)
+
+        # Record event after copy so we can wait for it specifically
+        self._d2h_copy_event = self.device.default_stream.record_event()
+
+    def get_new_tokens_numpy(self) -> npt.NDArray[np.int64]:
+        """Wait for D2H copy and return the new tokens as numpy array.
+
+        If async copy was started via start_async_token_copy(), this waits for
+        the copy event. Otherwise, falls back to synchronous copy.
+
+        Returns:
+            Numpy array of the new tokens with shape (batch_size,).
+        """
+        assert self.new_tokens is not None
+
+        if self._d2h_copy_event is not None:
+            # Wait for the D2H copy to complete (not the entire stream)
+            self._d2h_copy_event.synchronize()
+            self._d2h_copy_event = None
+            assert self._pinned_new_tokens is not None
+            assert self._pinned_new_tokens.pinned
+            # Slice numpy result to batch_size (pinned buffer may be larger)
+            with Tracer("pinned_new_tokens_to_numpy"):
+                return self._pinned_new_tokens.to_numpy()[: self.batch_size]
+
+        # Fallback: synchronous copy (host device or no async copy started)
+        return self.new_tokens.to_numpy()
 
 
 @traced
@@ -284,7 +310,8 @@ def _build_token_frequency_csr(
     device: Device,
     include_prompt: bool = False,
 ) -> FrequencyData:
-    """Build a CSR matrix of token frequency in the batch.
+    """Builds a CSR matrix of token frequency in the batch.
+
     The original matrix is (batch_size, vocab_size), where each element is
     the number of times a token appears in the batch.
 
@@ -389,44 +416,24 @@ def _sample_logits(
     sampler: Model,
     logits: Buffer,
     prev_tokens: Buffer,
-    top_k: Buffer,
-    max_k: Buffer,
-    temperature: Buffer,
-    top_p: Buffer,
-    min_top_p: Buffer,
-    seed: Buffer,
+    sampler_inputs: SamplerInputs,
     *,
     logit_offsets: Buffer | None = None,
     bitmask: Buffer | None = None,
-    frequency_data: Sequence[FrequencyData] | None = None,
     min_tokens_mask: Buffer | None = None,
-    frequency_penalty: Buffer | None = None,
-    presence_penalty: Buffer | None = None,
-    repetition_penalty: Buffer | None = None,
+    penalty_inputs: PenaltyInputs | None = None,
 ) -> tuple[Buffer, Buffer, Buffer]:
     opt_inputs = [logit_offsets, bitmask]
 
     base_inputs = [
         logits,
         prev_tokens,
-        top_k,
-        max_k,
-        temperature,
-        top_p,
-        min_top_p,
-        seed,
+        *sampler_inputs.as_list(),
     ]
 
     # Add frequency data if provided
-    if frequency_data:
-        for freq_data in frequency_data:
-            opt_inputs.extend([freq_data.data, freq_data.offsets])
-        assert frequency_penalty is not None
-        assert presence_penalty is not None
-        assert repetition_penalty is not None
-        opt_inputs.extend(
-            [frequency_penalty, presence_penalty, repetition_penalty]
-        )
+    if penalty_inputs:
+        opt_inputs.extend(penalty_inputs.as_list())
 
     if min_tokens_mask:
         opt_inputs.append(min_tokens_mask)
@@ -442,3 +449,182 @@ def _sample_logits(
     assert isinstance(generated_tokens, Buffer)
     assert isinstance(new_seed, Buffer)
     return (tokens, generated_tokens, new_seed)
+
+
+@dataclass
+class PenaltyInputs:
+    """Container for penalty inputs."""
+
+    frequency_data: list[FrequencyData]
+    frequency_penalty: Buffer
+    presence_penalty: Buffer
+    repetition_penalty: Buffer
+
+    def as_list(self) -> list[Buffer]:
+        """Returns the penalty inputs as a list of buffers."""
+        buffers = []
+        for fd in self.frequency_data:
+            buffers.extend([fd.data, fd.offsets])
+        buffers.extend(
+            [
+                self.frequency_penalty,
+                self.presence_penalty,
+                self.repetition_penalty,
+            ]
+        )
+        return buffers
+
+    @classmethod
+    def create(
+        cls,
+        batch: list[TextContext],
+        device: Device,
+        num_steps: int = 1,
+    ) -> Self:
+        """Create penalty input tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
+            num_steps: Number of generation steps for frequency CSR padding.
+
+        Returns:
+            PenaltyInputs containing the penalty input tensors
+        """
+        frequency_data = [
+            _build_token_frequency_csr(batch, num_steps, device),
+            _build_token_frequency_csr(
+                batch, num_steps, device, include_prompt=True
+            ),
+        ]
+
+        frequency_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.frequency_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+        presence_penalty = Buffer.from_numpy(
+            np.array(
+                [context.sampling_params.presence_penalty for context in batch],
+                dtype=np.float32,
+            )
+        ).to(device)
+        repetition_penalty = Buffer.from_numpy(
+            np.array(
+                [
+                    context.sampling_params.repetition_penalty
+                    for context in batch
+                ],
+                dtype=np.float32,
+            )
+        ).to(device)
+
+        return cls(
+            frequency_data=frequency_data,
+            frequency_penalty=frequency_penalty,
+            presence_penalty=presence_penalty,
+            repetition_penalty=repetition_penalty,
+        )
+
+
+@dataclass
+class SamplerInputs:
+    """Container for sampler inputs."""
+
+    top_k: Buffer
+    max_k: Buffer
+    temperature: Buffer
+    top_p: Buffer
+    min_top_p: Buffer
+    min_p: Buffer
+    seed: Buffer
+
+    def as_list(self) -> list[Buffer]:
+        """Returns the sampler inputs as a list of buffers."""
+        return [
+            self.top_k,
+            self.max_k,
+            self.temperature,
+            self.top_p,
+            self.min_top_p,
+            self.min_p,
+            self.seed,
+        ]
+
+    @classmethod
+    def create(
+        cls,
+        batch: list[TextContext],
+        device: Device,
+    ) -> Self:
+        """Create sampling parameter tensors from context batch.
+
+        Args:
+            batch: List of context objects containing sampling parameters.
+            device: Device to place the tensors on.
+
+        Returns:
+            SamplerInputs containing the sampling parameter tensors.
+        """
+        temperature_host = to_pinned_host_buffer(
+            [context.sampling_params.temperature for context in batch],
+            device=device,
+        )
+        temperature = temperature_host.to(device)
+
+        # top_k is a tensor of shape (batch_size,)
+        top_k_host = to_pinned_host_buffer(
+            [context.sampling_params.top_k for context in batch],
+            device=device,
+            dtype=DType.int64,
+        )
+        top_k = top_k_host.to(device)
+
+        # max_k is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
+        max_k_np = np.array(np.max(top_k_host.to_numpy()), dtype=np.int64)
+        max_k = Buffer.from_numpy(max_k_np)
+
+        # top_p is a tensor of shape (batch_size,)
+        top_p_host = to_pinned_host_buffer(
+            [context.sampling_params.top_p for context in batch],
+            device=device,
+        )
+        top_p = top_p_host.to(device)
+
+        # min_top_p is a scalar 0-d tensor. It does not need to be pinned since it
+        # is not copied to the device.
+        min_top_p_np = np.array(np.min(top_p_host.to_numpy()), dtype=np.float32)
+        min_top_p = Buffer.from_numpy(min_top_p_np)
+
+        # min_p is a tensor of shape (batch_size,)
+        min_p_host = to_pinned_host_buffer(
+            [context.sampling_params.min_p for context in batch],
+            device=device,
+        )
+        min_p = min_p_host.to(device)
+
+        # seed is a tensor of shape (batch_size,)
+        seed_host = to_pinned_host_buffer(
+            [
+                context.sampling_params.seed + len(context.tokens)
+                for context in batch
+            ],
+            device=device,
+            dtype=DType.uint64,
+        )
+        seed = seed_host.to(device)
+
+        return cls(
+            top_k=top_k,
+            max_k=max_k,
+            temperature=temperature,
+            top_p=top_p,
+            min_top_p=min_top_p,
+            min_p=min_p,
+            seed=seed,
+        )

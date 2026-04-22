@@ -18,7 +18,7 @@ The `keep()` and `black_box()` functions provide hints to the compiler from
 overly optimizing away code being benchmarked.
 """
 
-from sys._assembly import inlined_assembly
+from std.sys._assembly import inlined_assembly
 
 # ===-----------------------------------------------------------------------===#
 # keep
@@ -26,7 +26,7 @@ from sys._assembly import inlined_assembly
 
 
 @always_inline
-fn keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
+def keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
     """Provides a hint to the compiler to not optimize the variable use away.
 
     This is useful in benchmarking to avoid the compiler not deleting the
@@ -55,7 +55,7 @@ fn keep[T: AnyType, origin: Origin, //](ref[origin] value: T):
 
 
 @always_inline
-fn black_box[
+def black_box[
     T: AnyType, origin: Origin, //
 ](ref[origin] value: T) -> ref[origin] T:
     """Prevents the compiler from optimizing away computations or values.
@@ -92,29 +92,29 @@ fn black_box[
     Examples:
 
     ```mojo
-    fn benchmark_contains():
+    def benchmark_contains():
         var haystack = "abcdefghijklmnopqrstuvwxyz"
         var needle = "lmnop"
 
         for _ in range(100):
-            _ = haystack.contains(needle)
+            _ = needle in haystack
     ```
 
     In the above example, the compiler/LLVM may make optimizations like:
-        - `needle` and `haystack` are constant, it may move the call to
-          `contains` outside the loop and delete the loop.
-        - `needle` and `haystack` have values known at compile time, and
-          `contains` is always `True`, replace the call to `contains` with a
-          constant `True`.
-        - Since the result of `contains` is unused, it may delete the function
-          call entirely.
+        - `needle` and `haystack` are constant, it may move the `in` check
+          outside the loop and delete the loop.
+        - `needle` and `haystack` have values known at compile time, and the
+          result is always `True`, replace the `in` check with a constant
+          `True`.
+        - Since the result of the `in` check is unused, it may delete the
+          operation entirely.
 
     To prevent said optimizations, you can use `black_box` (and `keep`):
 
     ```mojo
-    from benchmark import keep, black_box
+    from std.benchmark import keep, black_box
 
-    fn benchmark_contains():
+    def benchmark_contains():
         var haystack = "abcdefghijklmnopqrstuvwxyz"
         var needle = "lmnop"
 
@@ -122,12 +122,12 @@ fn black_box[
             # black_box:
             # Prevent the compiler from making assumptions about the input
             # values.
-            var found_at = black_box(haystack).contains(black_box(needle))
+            var found = black_box(needle) in black_box(haystack)
 
             # keep:
-            # Prevent the compiler from removing the call to `contains` even
+            # Prevent the compiler from removing the `in` check even
             # though the result is unused.
-            keep(found_at)
+            keep(found)
     ```
     """
     keep(value)
@@ -135,7 +135,7 @@ fn black_box[
 
 
 @always_inline
-fn black_box[T: Movable, //](*, var take: T) -> T:
+def black_box[T: Movable, //](*, var take: T) -> T:
     """Prevents the compiler from optimizing away computations or values.
 
     Unlike `black_box(ref T)`, this function takes an owned value and return the

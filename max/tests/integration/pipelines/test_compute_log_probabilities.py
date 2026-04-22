@@ -81,7 +81,6 @@ def test_compute_log_probabilities(cpu_device: CPU, cpu_model: Model) -> None:
         dtype=np.float32,
     )
     batch_tokens = np.array([0, 1, 4])
-    get_logits_and_samples = lambda x, y: (batch_logits, batch_tokens)
     batch_echo = [True]  # Value doesn't matter
 
     log_probs = log_softmax(batch_logits, axis=-1)

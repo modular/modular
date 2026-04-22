@@ -20,8 +20,8 @@ from unittest.mock import NonCallableMock, patch
 import numpy as np
 from max.driver import CPU
 from max.dtype import DType
+from max.pipelines.lib.config.lora_config import LoRAConfig
 from max.pipelines.lib.lora import LoRAManager, LoRARequestProcessor
-from max.pipelines.lib.lora_config import LoRAConfig
 
 
 class MockTextContext:
@@ -38,9 +38,9 @@ class MockLoRAModel:
     def __init__(self, name: str, rank: int):
         self.name = name
         self.rank = rank
-        self._lora_A: dict = {}
-        self._lora_B: dict = {}
-        self._lora_bias: dict = {}
+        self._lora_A: dict = {}  # type: ignore[type-arg]
+        self._lora_B: dict = {}  # type: ignore[type-arg]
+        self._lora_bias: dict = {}  # type: ignore[type-arg]
 
     def get(self, key: str) -> None:
         return None

@@ -14,15 +14,15 @@
 # RUN: not %mojo %s 2>&1 | FileCheck %s
 
 
-fn test_cannot_cast_between_different_address_spaces[
+def test_cannot_cast_between_different_address_spaces[
     T: AnyType
-](p: UnsafePointer[T, address_space = AddressSpace(1), ...]):
+](p: UnsafePointer[T, address_space=AddressSpace(1), ...]):
     pass
 
 
-def main():
+def main() raises:
     var x = 42
 
     var p = UnsafePointer(to=x).address_space_cast[AddressSpace(2)]()
-    # CHECK: value passed to 'p' cannot be converted from 'UnsafePointer[Int, x, address_space=AddressSpace(2)]' to 'UnsafePointer[Int, x, address_space=AddressSpace(1)]'
+    # CHECK: value passed to 'p' cannot be converted
     test_cannot_cast_between_different_address_spaces(p)

@@ -11,17 +11,17 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, exp, inf, log
+from std.math import ceildiv, exp, inf, log
 
-from algorithm.functional import parallelize
+from std.algorithm.functional import parallelize
 from compiler_internal import register
-from gpu import global_idx
-from gpu.host.info import is_cpu, is_gpu
+from std.gpu import global_idx
+from std.gpu.host.info import is_cpu, is_gpu
 from nn._ragged_utils import get_batch_from_row_offsets
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, OutputTensor
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
@@ -29,22 +29,21 @@ struct FixedHeightMinHeap[k_dtype: DType, v_dtype: DType, levels: Int]:
     var k_array: InlineArray[Scalar[Self.k_dtype], Self.num_elements]
     var v_array: InlineArray[Scalar[Self.v_dtype], Self.num_elements]
 
-    fn __init__(
+    def __init__(
         out self, *, fill_k: Scalar[Self.k_dtype], fill_v: Scalar[Self.v_dtype]
     ):
-        self.k_array = InlineArray[size = Self.num_elements](fill=fill_k)
-        self.v_array = InlineArray[size = Self.num_elements](fill=fill_v)
+        self.k_array = InlineArray[size=Self.num_elements](fill=fill_k)
+        self.v_array = InlineArray[size=Self.num_elements](fill=fill_v)
 
     @always_inline
-    fn swap(mut self, a: Int, b: Int) -> None:
+    def swap(mut self, a: Int, b: Int) -> None:
         self.k_array[a], self.k_array[b] = self.k_array[b], self.k_array[a]
         self.v_array[a], self.v_array[b] = self.v_array[b], self.v_array[a]
 
-    fn heap_down(mut self) -> None:
+    def heap_down(mut self) -> None:
         var current_index = 0
 
-        @parameter
-        for level in range(Self.levels - 1):
+        comptime for level in range(Self.levels - 1):
             # Must ensure:
             # arr[cur] < arr[left] && arr[cur] < arr[right]
             var left_index = current_index * 2 + 1
@@ -67,22 +66,22 @@ comptime token_dtype = DType.uint32
 comptime offset_dtype = DType.uint32
 
 
-fn compute_log_probabilities_1tok[
+def compute_log_probabilities_1tok[
     target: StaticString, levels: Int
 ](
     output_token_index: Int,
-    lp_logits: OutputTensor[dtype=logit_dtype, rank=2],
-    lp_tokens: OutputTensor[dtype=token_dtype, rank=2],
-    logits: InputTensor[dtype=logit_dtype, rank=2],
-    tokens: InputTensor[dtype=token_dtype, rank=1],
-    sampled_tokens: InputTensor[dtype=token_dtype, rank=1],
-    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1],
+    lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
+    lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
+    logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+    tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+    sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+    logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+    lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
 ) -> None:
     var vocab_size = logits.shape()[1]
     var batch_index = get_batch_from_row_offsets(
-        lp_output_offsets.to_layout_tensor(), output_token_index
+        lp_output_offsets.to_tile_tensor[DType.int64](), output_token_index
     )
     var reverse_index_in_seq = (
         lp_output_offsets[batch_index + 1] - UInt32(output_token_index) - 1
@@ -107,8 +106,7 @@ fn compute_log_probabilities_1tok[
 
     var post_heap_idx: Int
 
-    @parameter
-    if levels <= 0:
+    comptime if levels <= 0:
         post_heap_idx = 0
     else:
         var heap = FixedHeightMinHeap[token_dtype, logit_dtype, levels](
@@ -133,18 +131,18 @@ fn compute_log_probabilities_1tok[
 @register("compute_log_probabilities_ragged")
 struct LogProbabilitiesRagged:
     @staticmethod
-    fn execute[
+    def execute[
         target: StaticString, levels: Int
     ](
-        lp_logits: OutputTensor[dtype=logit_dtype, rank=2],
-        lp_tokens: OutputTensor[dtype=token_dtype, rank=2],
-        logits: InputTensor[dtype=logit_dtype, rank=2],
-        tokens: InputTensor[dtype=token_dtype, rank=1],
-        sampled_tokens: InputTensor[dtype=token_dtype, rank=1],
-        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1],
+        lp_logits: OutputTensor[dtype=logit_dtype, rank=2, ...],
+        lp_tokens: OutputTensor[dtype=token_dtype, rank=2, ...],
+        logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+        tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
         ctx: DeviceContextPtr,
     ) raises -> None:
         var num_output_tokens = lp_logits.shape()[0]
@@ -155,11 +153,10 @@ struct LogProbabilitiesRagged:
         if lp_tokens.shape()[1] != 2**levels:
             raise Error("Axis 1 of lp_tokens inconsistent with level setting")
 
-        @parameter
-        if is_cpu[target]():
+        comptime if is_cpu[target]():
 
             @parameter
-            fn lp_idx_kernel(output_token_index: Int) -> None:
+            def lp_idx_kernel(output_token_index: Int) -> None:
                 compute_log_probabilities_1tok[target, levels](
                     output_token_index=output_token_index,
                     lp_logits=lp_logits,
@@ -172,16 +169,19 @@ struct LogProbabilitiesRagged:
                     lp_output_offsets=lp_output_offsets,
                 )
 
-            parallelize[lp_idx_kernel](num_output_tokens)
+            parallelize[lp_idx_kernel](
+                num_output_tokens, ctx=ctx.get_optional_device_context()
+            )
         elif is_gpu[target]():
 
             @parameter
             @__copy_capture(num_output_tokens)
-            fn raw_lp_kernel():
+            @__name(t"log_probabilities_l{levels}", mangle=True)
+            def raw_lp_kernel():
                 var output_token_index = global_idx.x
-                if output_token_index < UInt(num_output_tokens):
+                if output_token_index < num_output_tokens:
                     compute_log_probabilities_1tok[target, levels](
-                        output_token_index=Int(output_token_index),
+                        output_token_index=output_token_index,
                         lp_logits=lp_logits,
                         lp_tokens=lp_tokens,
                         logits=logits,
@@ -200,19 +200,19 @@ struct LogProbabilitiesRagged:
                 block_dim=block_size,
             )
         else:
-            constrained[False, "unsupported target"]()
+            comptime assert False, "unsupported target"
 
     @staticmethod
-    fn shape[
+    def shape[
         levels: Int
     ](
-        logits: InputTensor[dtype=logit_dtype, rank=2],
-        tokens: InputTensor[dtype=token_dtype, rank=1],
-        sampled_tokens: InputTensor[dtype=token_dtype, rank=1],
-        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1],
-        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1],
+        logits: InputTensor[dtype=logit_dtype, rank=2, ...],
+        tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        sampled_tokens: InputTensor[dtype=token_dtype, rank=1, ...],
+        logit_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        token_row_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets: InputTensor[dtype=offset_dtype, rank=1, ...],
+        lp_output_offsets_host: InputTensor[dtype=offset_dtype, rank=1, ...],
     ) -> IndexList[2]:
         return IndexList[2](
             Int(lp_output_offsets_host[lp_output_offsets_host.shape()[0] - 1]),
