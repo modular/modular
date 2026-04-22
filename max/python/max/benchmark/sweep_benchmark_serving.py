@@ -80,12 +80,15 @@ def _build_sweep_result(
 
 def parse_args(
     args: Sequence[str] | None = None,
+    *,
+    app_name: str = "sweep-benchmark-serving",
+    description: str = DESCRIPTION,
 ) -> ServingBenchmarkConfig:
     """Parse command line arguments into a ServingBenchmarkConfig."""
     return _parse_serving_args(
         args,
-        app_name="sweep-benchmark-serving",
-        description=DESCRIPTION,
+        app_name=app_name,
+        description=description,
     )
 
 
@@ -93,6 +96,8 @@ def main(
     args: Sequence[str] | None = None,
     *,
     uploader: SweepUploader | None = None,
+    app_name: str = "sweep-benchmark-serving",
+    description: str = DESCRIPTION,
 ) -> None:
     """CLI entry point.
 
@@ -103,9 +108,11 @@ def main(
             ``--upload-results`` is set and the run is not a dry run.
             Intentionally not wired by default so this module has no
             hard dependency on any specific result-ingestion backend.
+        app_name: Name shown in ``--help`` output.
+        description: Description shown in ``--help`` output.
     """
     try:
-        config = parse_args(args)
+        config = parse_args(args, app_name=app_name, description=description)
     except SystemExit as e:
         if e.code == 0:
             return

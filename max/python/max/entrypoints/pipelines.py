@@ -499,24 +499,12 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # args = ctx.params.get("args", [])
 
     # Import lazily to avoid importing benchmark modules at module load time.
-    from max.benchmark.benchmark_serving import (
-        main_with_parsed_args,
-    )
-    from max.benchmark.benchmark_serving import (
-        parse_args as benchmark_parse_args,
-    )
+    from max.benchmark.sweep_benchmark_serving import main as sweep_main
 
     logger.debug("Running benchmark subcommand with args: %s", args)
     try:
-        parsed_args = benchmark_parse_args(
-            args=args,
-            app_name="max-benchmark",
-        )
-
-        # Run the benchmark — consume the iterator to drive execution.
         click.echo("Starting benchmark...")
-        for _ in main_with_parsed_args(parsed_args):
-            pass
+        sweep_main(args, app_name="max-benchmark")
         click.echo("Benchmark completed successfully!")
     except SystemExit as e:
         # cyclopts calls sys.exit() for help and errors, we need to handle this
