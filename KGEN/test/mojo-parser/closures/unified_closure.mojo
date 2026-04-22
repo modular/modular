@@ -24,8 +24,9 @@
 # CHECK-NEXT: copy :
 # CHECK:  lit.struct.field field0 : !kgen.param<:[[IMPL_PARENT]] impl>
 # CHECK: lit.fn @"__call__({{.*}})"[mut *"[[L0:.*]]`"](%0[*""]: !lit.ref<!lit.struct<[[T:#.*]] <:[[IMPL_PARENT]] impl, :origin.set origin_set>>, mut *"[[L0]]`"> read_mem, |, %y: [[INT]]) capturing -> [[INT]]
-# CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
-# CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]>: #kgen.get_witness<:[[IMPL_PARENT]] impl, "def(y: Int) -> Int", "__call__{{.*}}">][mut *"[[L0]]`"->field0]([[CLOSURE]], %y)
+# CHECK-NEXT:  [[FIELD:%.*]] = lit.ref.struct.ger %{{.*}}[field0]
+# CHECK-NEXT:  [[CLOSURE:%.*]] = lit.ref.immut [[FIELD]]
+# CHECK-NEXT:  [[RES:%.*]] = lit.call[!lit.generator<[1](!lit.ref<:[[IMPL_PARENT]] impl, mut *[0,0]> read_mem, |, "y": [[INT]]) capturing -> [[INT]]>: #kgen.get_witness<:[[IMPL_PARENT]] impl, "def(y: Int) -> Int", "__call__{{.*}}">][muttoimm *"[[L0]]`"->field0]([[CLOSURE]], %y)
 # CHECK-NEXT:  lit.return [[RES]]
 # CHECK-NEXT:  lit.end_fn
 # CHECK-NEXT: }
@@ -117,10 +118,11 @@ def make_closure(x: Int) -> Int:
 # CHECK: lit.struct.field field0 : !kgen.param<:[[TRAIT]] impl>
 
 # CHECK-NEXT: lit.fn @"__call__{{.*}}"<{{.*}}, lt: !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *"lt._mlir_origin`2x">>>[
-# CHECK-NEXT: [[V1:%.*]] = lit.ref.struct.ger %0[field0]
+# CHECK-NEXT: [[FIELD:%.*]] = lit.ref.struct.ger %0[field0]
+# CHECK-NEXT: [[V1:%.*]] = lit.ref.immut [[FIELD]]
 # CHECK-NEXT: [[V2:%.*]] = lit.call[!lit.generator<[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none>:
 # CHECK-SAME: bind_params(:!lit.generator<<{{.*}}"lt": !lit.struct<#Origin <:!Bool {:i1 1}, :origin<1> *(0,0)>>>[2](!lit.ref<:[[TRAIT]] impl, mut *[0,0]> read_mem, |, "a": !lit.ref<!String, {{.*}}>, "b": !lit.ref<!String, imm *[0,1]> read_mem) capturing -> !kgen.none
-# CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "def[{{.*}}](a: ref[lt] String, b: String) -> None", "__call__{{.*}}">{{.*}}]([[V1]], %a, %b)
+# CHECK-SAME:> #kgen.get_witness<:[[TRAIT]] impl, "def[{{.*}}](a: ref[lt] String, b: String) -> None", "__call__{{.*}}">{{.*}}][muttoimm *{{.*}}->field0, {{.*}}]([[V1]], %a, %b)
 # CHECK-NEXT: lit.return [[V2]] : !kgen.none
 # CHECK-NEXT: lit.end_fn
 
@@ -1602,7 +1604,7 @@ def trigger[func: def(Int) capturing -> Int, xx:Int]() -> Int:
 # CHECK-LABEL: lit.struct.decl @"def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"
 # CHECK: lit.alias.decl dtype: !DType = <__capture_dtype>
 # CHECK: lit.fn @"__call__[::Int,::DType](unified_closure::def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
-# CHECK: {{.*}} = lit.call[!lit.generator<() -> !lit.struct<#SIMD <:!DType _dtype, :!Int simd_width>>>: bind_params(:!lit.generator<<"dtype": !DType, +, "simd_width": !Int>() -> !lit.struct<#SIMD <:!DType *(0,0), :!Int *(0,1)>>> Impl, :!DType _dtype, :!Int simd_width)]()
+# CHECK: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD <:!DType _dtype, :!Int simd_width>>>: bind_params(:!lit.generator<<"dtype": !DType, +, "simd_width": !Int>() -> !lit.struct<#SIMD <:!DType *(0,0), :!Int *(0,1)>>> Impl, :!DType _dtype, :!Int simd_width)]()
 # CHECK: kgen.witness "dtype" : !DType = __capture_dtype
 
 # CHECK-LABEL: lit.fn @"trigger[::Int,::DType]()"

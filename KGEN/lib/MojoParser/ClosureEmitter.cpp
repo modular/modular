@@ -80,51 +80,65 @@ static LogicalResult emitForwardingCall(ImplicitLocOpBuilder &builder,
                                         ASTDecl &declScope, TypedAttr callee,
                                         FnTypeGeneratorType calleeSig,
                                         Type resultType,
-                                        ArrayRef<TypedAttr> implicitOrigins,
                                         ArrayRef<Value> arguments) {
+  IREmitter emitter(declScope, builder);
+  // We are forwarding the call in a synthetic function, pushing the debug
+  // scope with the synthetic function scope.
+  DebugInfo::DIBuilder::ScopeGuard diScopeGuard;
+  if (declScope.getShared().diBuilder) {
+    auto fnOp = cast<FnOp>(builder.getInsertionBlock()->getParentOp());
+    diScopeGuard =
+        declScope.getShared().diBuilder->pushScopeGuard(fnOp.getLocScope());
+  }
+
+  SyntheticNode syntheticExpr(declScope.getLoc());
+  CallOperands callOperands(CallSyntax::kMethodCall, &syntheticExpr);
+  for (auto [bbArg, convention, pog] :
+       llvm::zip_equal(arguments, calleeSig.getArgConventions(),
+                       calleeSig.getArgListAttrs().getPogs())) {
+    if (convention == ArgConvention::ByRefResult ||
+        convention == ArgConvention::ByRefError)
+      continue;
+
+    AnyValue argValue = [&]() -> AnyValue {
+      if (convention == ArgConvention::ReadReg)
+        return SRValue(bbArg);
+      // Forward the moved argument.
+      if (convention == ArgConvention::OwnedMem ||
+          convention == ArgConvention::DeinitMem)
+        return MRValue(bbArg);
+      return CValue::getMValueForRef(bbArg);
+    }();
+
+    if (pog.getPassingKind() == PassingKind::KwOnly)
+      callOperands.addKeyword(pog.getName(), {argValue, &syntheticExpr});
+    else if (pog.isPosVarArg() || pog.isPack())
+      callOperands.addUnpackedPositional({argValue, &syntheticExpr});
+    else
+      callOperands.add({argValue, &syntheticExpr});
+  }
+
+  ValueDest dest(EC_ReturnValue);
+  if (!calleeSig.isAsync() && calleeSig.hasMemoryOnlyResult())
+    dest = ValueDest(MLValue(arguments.back()), EC_ReturnValue);
+
+  CValue callResult = emitter.emitCallUnchecked(callee, callOperands, dest);
+  assert(callResult && "call should have succeeded");
   if (!calleeSig.isAsync()) {
-    Value result =
-        LIT::CallOp::create(builder, TypeRange(calleeSig.getResultType()),
-                            callee, implicitOrigins, arguments)
-            .getResult(0);
-    if (result.getType() != resultType)
-      result = RebindOp::create(builder, resultType, result);
-    IREmitter::emitNormalReturn(builder, result);
+    auto regRet = callResult.getIfSRValue();
+    if (regRet && resultType != regRet.getType())
+      regRet = RebindOp::create(builder, resultType, regRet);
+
+    IREmitter::emitNormalReturn(builder, regRet);
     return success();
   }
 
-  size_t numAsyncReturnSlots = calleeSig.getNumAsyncReturnSlots();
-  ArrayRef<Value> visibleArguments = arguments.drop_back(numAsyncReturnSlots);
-  ArrayRef<TypedAttr> visibleOrigins =
-      implicitOrigins.drop_back(numAsyncReturnSlots);
-
-  auto asyncCall = LIT::AsyncCallOp::create(builder, builder.getLoc(), callee,
-                                            visibleOrigins, visibleArguments);
-  SyntheticNode syntheticExpr(declScope.getLoc());
-  IREmitter emitter(declScope, builder);
-  ASTType coroutineType = getBoundCoroutineType(
-      declScope, &syntheticExpr, calleeSig,
-      computeArgumentsOrigin(asyncCall,
-                             declScope.getShared().cachedOriginFinder));
-  if (!coroutineType)
-    return failure();
-  ValueDest coroutineDest(coroutineType, EC_SynthesizedMethod);
-  CValue coroutine = materializeAsyncCallAsCoroutine(
-      emitter, asyncCall, &syntheticExpr, calleeSig, coroutineDest);
-  if (!coroutine)
-    return failure();
-
-  auto currentFn = getBlockParentOfType<FnOp>(builder.getInsertionBlock());
-  assert(currentFn && currentFn.getFuncTypeGenerator().isAsync() &&
-         currentFn.getFuncTypeGenerator().hasMemoryOnlyResult() &&
-         "async forwarding wrapper must have a result slot");
-
-  ValueDest awaitDest(MLValue(currentFn.getArguments().back()),
-                      EC_SynthesizedMethod);
+  // Handle async calls.
+  ValueDest awaitDest(MLValue(arguments.back()), EC_SynthesizedMethod);
   if (!emitter.emitNamedMethodCall(
           "__await__",
           CallOperands(CallSyntax::kMethodCallSynthetic, &syntheticExpr,
-                       {{coroutine, &syntheticExpr}}),
+                       {{callResult, &syntheticExpr}}),
           awaitDest))
     return failure();
 
@@ -416,12 +430,8 @@ static void getUnwrappedOperands(
     ImplicitLocOpBuilder &b, FnOp op, Type wrapperType,
     StructFieldOp wrappedField,
     llvm::SmallDenseSet<StringRef> const &explicitParameters,
-    SmallVector<Value> &operands, SmallVector<TypedAttr> &origins,
+    SmallVector<Value> &operands,
     std::optional<std::function<Value(Value)>> transform = {}) {
-  MLIRContext *ctx = b.getContext();
-  // If we map a value to its field, save the lifetime name so we can map the
-  // origins as well.
-  DenseMap<StringRef, StringAttr> originToField;
   for (Value arg : op.getBodyRegion().front().getArguments()) {
     // replace wrapper type with impl type
     RefType refType = dyn_cast<RefType>(arg.getType());
@@ -434,40 +444,14 @@ static void getUnwrappedOperands(
     }
 
     if (refType.getElementType() == wrapperType) {
-      ParamDeclRefAttr originReference =
-          dyn_cast<ParamDeclRefAttr>(refType.getOrigin());
-      assert(originReference && "There should not be parameter expressions "
-                                "in the signature of wrapper functions");
       operands.push_back(
           RefStructGEROp::create(b, arg, wrappedField)->getResults().front());
-      originToField[originReference.getName().getValue()] =
-          wrappedField.getNameAttr();
     } else {
       if (transform.has_value())
         operands.push_back((*transform)(arg));
       else
         operands.push_back(arg);
     }
-  }
-
-  // Since this is a wrapper we know all the origins of the function must be
-  // bound to the single call op in the body.
-  SmallVector<ParamDeclAttr> allParams = op.collectAllParams(true);
-  for (ParamDeclAttr param : allParams) {
-    if (explicitParameters.contains(param.getName().getValue()))
-      continue;
-    auto originType = dyn_cast<OriginType>(param.getType());
-    if (!originType)
-      continue;
-    ParamDeclRefAttr originRef =
-        ParamDeclRefAttr::get(param.getName(), param.getType());
-    TypedAttr originArg;
-    auto ptr = originToField.find(originRef.getName().getValue());
-    if (ptr != originToField.end())
-      originArg = OriginFieldAttr::get(ctx, originRef, ptr->second, originType);
-    else
-      originArg = originRef;
-    origins.push_back(originArg);
   }
 }
 
@@ -955,7 +939,8 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     }
     StringAttr parentName = closureParent.getFullSymbolName(moduleDecl);
     getUnwrappedOperands(b, op, wrapperType, wrappedField, explicitParameters,
-                         operands, origins, rebindToSelfTypes);
+                         operands, rebindToSelfTypes);
+
     TypedAttr symbol = GetWitnessAttr::get(
         ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
         parentName, traitFnOp.getSymNameAttr(), implCallSig);
@@ -963,7 +948,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
         BindParamsAttr::get(symbol, paramArgs, &shared.getEvaluationContext());
     auto calleeSig = cast<FnTypeGeneratorType>(boundSymbol.getType());
     if (failed(emitForwardingCall(b, structDecl, boundSymbol, calleeSig, result,
-                                  origins, operands)))
+                                  operands)))
       return {};
     return op;
   };
@@ -1080,13 +1065,13 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
       ctx, ParamDeclRefAttr::get(implType.getName(), implType.getType()),
       moveParentStrAttr, moveFn.getSymNameAttr(), moveSignature);
   SmallVector<Value> operands;
-  SmallVector<TypedAttr> origins;
   llvm::SmallDenseSet<StringRef> explicitParameters;
   getUnwrappedOperands(b, initFnOp, refSelfType.getElementType(), wrappedField,
-                       explicitParameters, operands, origins);
-  LIT::CallOp::create(b, moveSignature.getResultType(), moveSymbol, origins,
-                      operands);
-  IREmitter::emitNormalReturn(b);
+                       explicitParameters, operands);
+  LogicalResult result =
+      emitForwardingCall(b, structDecl, moveSymbol, moveSignature,
+                         moveSignature.getResultType(), operands);
+  assert(succeeded(result) && "move call should have succeeded");
   declOp.setCanonicalTrait(traitType);
 
   if (typeConvention == TypeConvention::RegisterPassableTrivial)
@@ -1327,16 +1312,9 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
     // Ignore the self field and pass the other arguments as-is.
     llvm::append_range(arguments,
                        callMethod.getBody()->getArguments().drop_front());
-
-    SmallVector<TypedAttr> implicitOrigins;
-    for (auto [arg, conv] : llvm::zip(
-             arguments,
-             cast<FnTypeGeneratorType>(callee.getType()).getArgConventions()))
-      if (hasImplicitOrigin(conv))
-        implicitOrigins.push_back(cast<RefType>(arg.getType()).getOrigin());
     auto calleeSig = cast<FnTypeGeneratorType>(callee.getType());
     if (failed(emitForwardingCall(builder, structDecl, callee, calleeSig,
-                                  result, implicitOrigins, arguments)))
+                                  result, arguments)))
       return {};
   }
 
