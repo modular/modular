@@ -353,7 +353,7 @@ def ClosureMethodAttr : DialectAttribute<(attr
 )>;
 
 def ConstraintAttr : DialectAttribute<(attr
-  TypedAttr:$prop,
+  TypedAttr:$proposition,
   ConcreteAttribute<"LocationAttr">:$loc
 )> {
   let cBuilder = "get<$_resultType>(context, $_args)";
@@ -506,6 +506,7 @@ def ToStringDeferredAttr : DialectAttribute<(attr
 
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
+    ConstraintAttr,
     ParameterExprArrayAttr,
     ParamDeclAttr,
     ParamDeclArrayAttr,
