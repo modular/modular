@@ -28,8 +28,8 @@ _PLATFORMS = [
     rebuild_wheel(
         name = "module_platlib_" + platform,
         base_url = BASE_URL,
-        max_version = PACKAGE_VERSION,
-        mojo_version = PACKAGE_VERSION,
+        max_version = MAX_PACKAGE_VERSION,
+        mojo_version = MOJO_PACKAGE_VERSION,
         platform = platform,
     )
     for platform in _PLATFORMS
