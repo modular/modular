@@ -27,6 +27,7 @@ from std.gpu import (
     WARP_SIZE,
     barrier,
     block_idx,
+    warp_id,
     lane_id,
     thread_idx,
 )
@@ -1267,8 +1268,8 @@ def single_group_router_kernel[
 
     var token_idx = Int(block_idx.x)
     var tid = Int(thread_idx.x)
-    var warp_id = tid // WARP_SIZE
-    var lane_id = tid % WARP_SIZE
+    var warp_id = warp_id()
+    var lane_id = lane_id()
 
     var shared_mem = stack_allocation[
         total_smem,
@@ -1459,5 +1460,5 @@ def single_group_router[
             routed_scaling_factor,
             grid_dim=expert_scores.dim(0),
             block_dim=num_threads,
-            attributes=pdl_launch_attributes(),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
         )
