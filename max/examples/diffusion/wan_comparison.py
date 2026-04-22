@@ -506,11 +506,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Skip saving generated video frames to disk.",
     )
     parser.add_argument(
-        "--save-mp4",
-        action="store_true",
-        help="Save output as MP4 video (requires imageio[ffmpeg]).",
-    )
-    parser.add_argument(
         "--model-override",
         type=str,
         action="append",
@@ -562,24 +557,8 @@ def _truncate_prompt(prompt: str, max_len: int = 40) -> str:
     return prompt[: max_len - 1] + "…"
 
 
-def _save_frames(
-    frames: np.ndarray,
-    output_dir: str,
-    prefix: str,
-    max_saved: int = 8,
-) -> list[str]:
-    """Save a subset of video frames as PNG images.
-
-    Args:
-        frames: Video frames as numpy array, shape (T, H, W, C) or (T, C, H, W).
-        output_dir: Directory to save frames in.
-        prefix: Filename prefix for saved frames.
-        max_saved: Maximum number of frames to save (evenly spaced).
-
-    Returns:
-        List of saved file paths.
-    """
-    os.makedirs(output_dir, exist_ok=True)
+def _normalize_frames(frames: np.ndarray) -> np.ndarray:
+    """Normalize frames to (T, H, W, C) uint8."""
     if frames.ndim == 5:
         # (B, C, T, H, W) -> take first batch element -> (C, T, H, W)
         frames = frames[0]
@@ -589,73 +568,48 @@ def _save_frames(
     if frames.ndim == 4 and frames.shape[-1] in (1, 3):
         pass  # already (T, H, W, C)
     elif frames.ndim == 4 and frames.shape[0] in (1, 3):
-        # (C, T, H, W) -> (T, H, W, C)
-        frames = np.transpose(frames, (1, 2, 3, 0))
-    elif frames.ndim == 4:
-        # (T, C, H, W) -> (T, H, W, C)
-        frames = np.transpose(frames, (0, 2, 3, 1))
-
-    num_frames = frames.shape[0]
-    indices = np.linspace(
-        0, num_frames - 1, min(max_saved, num_frames), dtype=int
-    )
-    saved = []
-    for idx in indices:
-        frame = frames[idx]
-        # Normalize to [0, 255] if needed.
-        if frame.dtype == np.float32 or frame.dtype == np.float64:
-            frame = np.clip(frame * 255.0, 0, 255).astype(np.uint8)
-        elif frame.dtype == np.float16:
-            frame = np.clip(frame.astype(np.float32) * 255.0, 0, 255).astype(
-                np.uint8
-            )
-        # Handle single-channel by squeezing.
-        if frame.ndim == 3 and frame.shape[-1] == 1:
-            frame = frame.squeeze(-1)
-        img = Image.fromarray(frame)
-        fname = f"{prefix}_frame{idx:04d}.png"
-        path = os.path.join(output_dir, fname)
-        img.save(path)
-        saved.append(fname)
-    return saved
-
-
-def _save_video(
-    frames: np.ndarray,
-    output_dir: str,
-    prefix: str,
-    fps: int = 16,
-) -> str:
-    """Save video frames as an MP4 file using PyAV.
-
-    Args:
-        frames: Video frames, shape (T, H, W, C) or (T, C, H, W) uint8/float.
-        output_dir: Directory to save the video in.
-        prefix: Filename prefix.
-        fps: Frames per second for the output video.
-
-    Returns:
-        The saved filename.
-    """
-    import av
-
-    os.makedirs(output_dir, exist_ok=True)
-    if frames.ndim == 5:
-        frames = frames[0]
-    if frames.ndim == 4 and frames.shape[-1] in (1, 3):
-        pass  # already (T, H, W, C)
-    elif frames.ndim == 4 and frames.shape[0] in (1, 3):
         frames = np.transpose(frames, (1, 2, 3, 0))
     elif frames.ndim == 4:
         frames = np.transpose(frames, (0, 2, 3, 1))
 
-    # Normalize to uint8 if needed.
     if frames.dtype in (np.float32, np.float64):
         frames = np.clip(frames * 255.0, 0, 255).astype(np.uint8)
     elif frames.dtype == np.float16:
         frames = np.clip(frames.astype(np.float32) * 255.0, 0, 255).astype(
             np.uint8
         )
+    return frames
+
+
+def _save_output(
+    frames: np.ndarray,
+    output_dir: str,
+    prefix: str,
+    fps: int = 16,
+) -> str:
+    """Save frames as a PNG (single frame) or MP4 (multiple frames).
+
+    Args:
+        frames: Video frames, shape (T, H, W, C) or (T, C, H, W) uint8/float.
+        output_dir: Directory to save the output in.
+        prefix: Filename prefix.
+        fps: Frames per second for the output video (multi-frame only).
+
+    Returns:
+        The saved filename.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    frames = _normalize_frames(frames)
+
+    if frames.shape[0] == 1:
+        frame = frames[0]
+        if frame.ndim == 3 and frame.shape[-1] == 1:
+            frame = frame.squeeze(-1)
+        fname = f"{prefix}.png"
+        Image.fromarray(frame).save(os.path.join(output_dir, fname))
+        return fname
+
+    import av
 
     fname = f"{prefix}.mp4"
     path = os.path.join(output_dir, fname)
@@ -859,15 +813,8 @@ def run_diffusers(
                         f"iter{i}_torch_{req.width}x{req.height}"
                         f"_{req.num_frames}f_{req.num_inference_steps}s"
                     )
-                    if args.save_mp4 and req.num_frames > 1:
-                        fname = _save_video(frames, output_dir, prefix)
-                        print(f"    saved video: {fname}")
-                    else:
-                        saved = _save_frames(frames, output_dir, prefix)
-                        print(
-                            f"    saved {len(saved)} frames:"
-                            f" {saved[0]} ... {saved[-1]}"
-                        )
+                    fname = _save_output(frames, output_dir, prefix)
+                    print(f"    saved: {fname}")
                 except Exception as e:
                     print(f"    WARNING: Failed to save output: {e}")
         except Exception as e:
@@ -1141,15 +1088,8 @@ def run_max(
                             f"_{req.num_frames}f_{req.num_inference_steps}s"
                         )
                         stacked = np.stack(frames)
-                        if args.save_mp4:
-                            fname = _save_video(stacked, output_dir, prefix)
-                            print(f"    saved video: {fname}")
-                        else:
-                            saved = _save_frames(stacked, output_dir, prefix)
-                            print(
-                                f"    saved {len(saved)} frames:"
-                                f" {saved[0]} ... {saved[-1]}"
-                            )
+                        fname = _save_output(stacked, output_dir, prefix)
+                        print(f"    saved: {fname}")
         except Exception as e:
             error_msg = str(e)
             mem_at_error = GPUMemorySnapshot.capture_nvidia_smi()
