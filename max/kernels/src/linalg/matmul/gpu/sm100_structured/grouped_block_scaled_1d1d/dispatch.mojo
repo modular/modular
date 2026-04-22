@@ -21,22 +21,25 @@ num_pipeline_stages directly (for ablation studies and benchmarking).
 When `override=False` (default), ignores those parameters and selects
 from the tuning table based on (N, K) and `estimated_total_m`.
 
-NVFP4 three regimes keyed on avg_m = estimated_total_m / num_active_experts:
+NVFP4 routing (B200-tuned via ablation):
 
-  Decode (avg_m <= 8):
-  - N=4096, K=7168:  AB_swapped=True, mma_bn=8, cta_group=1, stages=6
-  - N=7168, K=2048:  AB_swapped=True, mma_bn=8, cta_group=1, stages=4
-  - Default:         AB_swapped=True, mma_bn=8, cta_group=1, stages=auto
+  (N=512, K=7168) Kimi K2.5 TP=8 up-proj: shape-specific 2-branch override.
+    Phase-2 ablation showed regime classifier picks suboptimal
+    (mma_bn, cta_group) here; all regimes converge on cta_group=2, stages=6,
+    with mma_bn=64 for decode (avg_m <= 8) and mma_bn=128 otherwise.
 
-  Small prefill (8 < avg_m <= 64):
-  - N=4096, K=7168:  AB_swapped=True, mma_bn=64, cta_group=2, stages=6
-  - N=7168, K=2048:  AB_swapped=True, mma_bn=64, cta_group=2, stages=6
-  - Default:         AB_swapped=True, mma_bn=64, cta_group=2, stages=auto
+  Other shapes: three-regime classifier keyed on
+  avg_m = estimated_total_m / num_active_experts.
 
-  Large prefill (avg_m > 64):
-  - N=4096, K=7168:  AB_swapped=True, mma_bn=128, cta_group=2, stages=7
-  - N=7168, K=2048:  AB_swapped=True, mma_bn=128, cta_group=2, stages=6
-  - Default:         AB_swapped=True, mma_bn=128, cta_group=2, stages=auto
+    Decode (avg_m <= 8):           AB_swapped=True, mma_bn=8,  cta_group=1
+    Small prefill (avg_m <= 64):   AB_swapped=True, mma_bn=64, cta_group=2
+    Large prefill (avg_m > 64):    AB_swapped=True, mma_bn=128, cta_group=2
+
+  Tuned stages per (N, K) live at the three `_dispatch_regime` call sites:
+    (N=4096, K=7168) DeepSeek-V3 up-proj,
+    (N=7168, K=2048) DeepSeek-V3 down-proj,
+    (N=7168, K=256) Kimi K2.5 TP=8 down-proj (large prefill only).
+  Unknown shapes fall through to stages=auto.
 """
 
 from std.collections import Optional
@@ -49,6 +52,14 @@ from layout import TileTensor
 from linalg.fp4_utils import NVFP4_SF_DTYPE, MXFP4_SF_DTYPE, MXFP8_SF_DTYPE
 from ..structured_kernels.config import BlockScaledMatmulConfig, GEMMKind
 from .grouped_1d1d_matmul import grouped_matmul_block_scaled
+
+
+# Regime thresholds on avg_m = estimated_total_m / num_active_experts. Rows
+# (avg_m <= DECODE_AVG_M) pick the decode config; rows in
+# (DECODE_AVG_M, SMALL_PREFILL_AVG_M] pick small prefill; rest pick large
+# prefill. Tuned on B200 NVFP4 traffic; don't change without a new ablation.
+comptime DECODE_AVG_M = 8
+comptime SMALL_PREFILL_AVG_M = 64
 
 
 def _scaling_kind[a_type: DType, scales_dtype: DType]() -> UMMAKind:
@@ -138,8 +149,9 @@ def _dispatch_regime[
     K: Int,
     mma_bn: Int,
     cta_group: Int,
-    stages_up_proj: Optional[Int],
-    stages_down_proj: Optional[Int],
+    stages_4096_7168: Optional[Int],
+    stages_7168_2048: Optional[Int],
+    stages_7168_256: Optional[Int],
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -157,60 +169,32 @@ def _dispatch_regime[
 
     Uses tuned stages for known (N, K) shapes, auto-computes for others.
     """
-    comptime if N == 4096 and K == 7168:
-        _launch_grouped_block_scaled[
-            transpose_b,
-            True,
-            mma_bn,
-            cta_group,
-            num_pipeline_stages=stages_up_proj,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
+    comptime stages = (
+        stages_4096_7168 if (N == 4096 and K == 7168) else stages_7168_2048 if (
+            N == 7168 and K == 2048
+        ) else stages_7168_256 if (N == 7168 and K == 256) else Optional[Int](
+            None
         )
-    elif N == 7168 and K == 2048:
-        _launch_grouped_block_scaled[
-            transpose_b,
-            True,
-            mma_bn,
-            cta_group,
-            num_pipeline_stages=stages_down_proj,
-        ](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-        )
-    else:
-        _launch_grouped_block_scaled[transpose_b, True, mma_bn, cta_group](
-            c,
-            a,
-            b,
-            a_scales,
-            b_scales,
-            a_offsets,
-            a_scale_offsets,
-            expert_ids,
-            expert_scales,
-            num_active_experts,
-            ctx,
-        )
+    )
+    _launch_grouped_block_scaled[
+        transpose_b,
+        True,
+        mma_bn,
+        cta_group,
+        num_pipeline_stages=stages,
+    ](
+        c,
+        a,
+        b,
+        a_scales,
+        b_scales,
+        a_offsets,
+        a_scale_offsets,
+        expert_ids,
+        expert_scales,
+        num_active_experts,
+        ctx,
+    )
 
 
 def grouped_matmul_nvfp4_dispatch[
@@ -299,76 +283,122 @@ def grouped_matmul_nvfp4_dispatch[
         comptime packed_K = type_of(a).static_shape[1]
         comptime K = packed_K * 2  # NVFP4: 2 values per byte
 
-        # Three regimes based on avg_m = estimated_total_m / num_active_experts:
-        #   avg_m <= 8:      decode       (1SM, mma_bn=8)
-        #   8 < avg_m <= 64: small prefill (2SM, mma_bn=64)
-        #   avg_m > 64:      large prefill (2SM, mma_bn=128)
-        if estimated_total_m <= num_active_experts * 8:
-            _dispatch_regime[
-                transpose_b,
-                N,
-                K,
-                mma_bn=8,
-                cta_group=1,
-                stages_up_proj=6,
-                stages_down_proj=4,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                a_offsets,
-                a_scale_offsets,
-                expert_ids,
-                expert_scales,
-                num_active_experts,
-                ctx,
-            )
-        elif estimated_total_m <= num_active_experts * 64:
-            _dispatch_regime[
-                transpose_b,
-                N,
-                K,
-                mma_bn=64,
-                cta_group=2,
-                stages_up_proj=6,
-                stages_down_proj=6,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                a_offsets,
-                a_scale_offsets,
-                expert_ids,
-                expert_scales,
-                num_active_experts,
-                ctx,
-            )
+        # Kimi K2.5 TP=8 up-proj: (N=512, K=7168) has an unusually small N
+        # dimension, so the global-ablation winner for both (mma_bn, cta_group)
+        # and stages differs from the regime-default classifier. All three
+        # regimes converge on cta_group=2, stages=6; only mma_bn changes with
+        # decode vs prefill.
+        comptime if N == 512 and K == 7168:
+            if estimated_total_m <= num_active_experts * DECODE_AVG_M:
+                _launch_grouped_block_scaled[
+                    transpose_b,
+                    True,
+                    64,
+                    2,
+                    num_pipeline_stages=6,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    a_scale_offsets,
+                    expert_ids,
+                    expert_scales,
+                    num_active_experts,
+                    ctx,
+                )
+            else:
+                _launch_grouped_block_scaled[
+                    transpose_b,
+                    True,
+                    128,
+                    2,
+                    num_pipeline_stages=6,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    a_scale_offsets,
+                    expert_ids,
+                    expert_scales,
+                    num_active_experts,
+                    ctx,
+                )
         else:
-            _dispatch_regime[
-                transpose_b,
-                N,
-                K,
-                mma_bn=128,
-                cta_group=2,
-                stages_up_proj=7,
-                stages_down_proj=6,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                a_offsets,
-                a_scale_offsets,
-                expert_ids,
-                expert_scales,
-                num_active_experts,
-                ctx,
-            )
+            if estimated_total_m <= num_active_experts * DECODE_AVG_M:
+                _dispatch_regime[
+                    transpose_b,
+                    N,
+                    K,
+                    mma_bn=8,
+                    cta_group=1,
+                    stages_4096_7168=6,
+                    stages_7168_2048=4,
+                    stages_7168_256=None,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    a_scale_offsets,
+                    expert_ids,
+                    expert_scales,
+                    num_active_experts,
+                    ctx,
+                )
+            elif estimated_total_m <= num_active_experts * SMALL_PREFILL_AVG_M:
+                _dispatch_regime[
+                    transpose_b,
+                    N,
+                    K,
+                    mma_bn=64,
+                    cta_group=2,
+                    stages_4096_7168=6,
+                    stages_7168_2048=6,
+                    stages_7168_256=None,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    a_scale_offsets,
+                    expert_ids,
+                    expert_scales,
+                    num_active_experts,
+                    ctx,
+                )
+            else:
+                _dispatch_regime[
+                    transpose_b,
+                    N,
+                    K,
+                    mma_bn=128,
+                    cta_group=2,
+                    stages_4096_7168=7,
+                    stages_7168_2048=6,
+                    stages_7168_256=6,
+                ](
+                    c,
+                    a,
+                    b,
+                    a_scales,
+                    b_scales,
+                    a_offsets,
+                    a_scale_offsets,
+                    expert_ids,
+                    expert_scales,
+                    num_active_experts,
+                    ctx,
+                )
 
 
 def grouped_matmul_block_scaled_sm100_dispatch[
