@@ -8680,6 +8680,34 @@ struct Struct_moe_create_indices:
         )
 
 
+@compiler.register("mo.moe.create.indices.with.scales.offset")
+struct Struct_moe_create_indices_with_scales_offset:
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        moe_create_indices[target=target](
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
+            context,
+            scales_offset_p=scales_offset._ptr,
+        )
+
+
 @compiler.register("mo.moe.router.group.limited")
 struct Struct_moe_router_group_limited:
     @always_inline

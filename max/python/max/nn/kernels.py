@@ -30,6 +30,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     Value,
     ops,
 )
@@ -3585,7 +3586,10 @@ def rms_norm_value_cache(
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,
-) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    *,
+    needs_scales_offset: bool = False,
+    scales_alignment: int = 128,
+) -> tuple[TensorValue, ...]:
     """Creates indices for the MoE layer.
 
     Args:
@@ -3603,37 +3607,53 @@ def moe_create_indices(
         - expert_usage_stats: The maximum number of tokens assigned to any expert,
             and the number of active experts.
     """
+
+    op_name = "mo.moe.create.indices"
+    if needs_scales_offset:
+        op_name += ".with.scales.offset"
+
+    out_types: list[Type[Any]] = [
+        TensorType(
+            dtype=DType.uint32,
+            shape=[topk_ids.shape[0]],
+            device=topk_ids.device,
+        ),  # token_expert_order
+        TensorType(
+            dtype=DType.uint32,
+            shape=[num_local_experts + 1],
+            device=topk_ids.device,
+        ),  # expert_start_indices
+        TensorType(
+            dtype=DType.uint32,
+            shape=[topk_ids.shape[0]],
+            device=topk_ids.device,
+        ),  # restore_token_order
+        TensorType(
+            dtype=DType.int32,
+            shape=[num_local_experts],
+            device=topk_ids.device,
+        ),  # expert_ids
+        TensorType(
+            dtype=DType.uint32, shape=[2], device=topk_ids.device
+        ),  # expert_usage_stats
+    ]
+
+    if needs_scales_offset:
+        out_types.append(
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts],
+                device=topk_ids.device,
+            ),
+        )
+
     results = ops.custom(
-        "mo.moe.create.indices",
+        op_name,
         device=topk_ids.device,
         values=[
             topk_ids,
         ],
-        out_types=[
-            TensorType(
-                dtype=DType.uint32,
-                shape=[topk_ids.shape[0]],
-                device=topk_ids.device,
-            ),  # token_expert_order
-            TensorType(
-                dtype=DType.uint32,
-                shape=[num_local_experts + 1],
-                device=topk_ids.device,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.uint32,
-                shape=[topk_ids.shape[0]],
-                device=topk_ids.device,
-            ),  # restore_token_order
-            TensorType(
-                dtype=DType.int32,
-                shape=[num_local_experts],
-                device=topk_ids.device,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.uint32, shape=[2], device=topk_ids.device
-            ),  # expert_usage_stats
-        ],
+        out_types=out_types,
     )
 
     return (
@@ -3642,6 +3662,7 @@ def moe_create_indices(
         results[2].tensor,
         results[3].tensor,
         results[4].tensor,
+        *([results[5].tensor] if needs_scales_offset else []),
     )
 
 

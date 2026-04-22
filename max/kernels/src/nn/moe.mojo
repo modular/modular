@@ -388,28 +388,35 @@ def _count_expert_tokens[
 
 @always_inline
 def _get_index_and_offset(
-    lock: TileTensor[mut=True, DType.uint32, ...],
-    total_writes: UInt64,
-) -> Tuple[UInt32, UInt32]:
-    var expert_idx_and_offsets: UInt32 = 0
+    lock: TileTensor[mut=True, DType.uint64, ...],
+    total_writes: UInt32,
+    aligned_total_writes: UInt32,
+) -> Tuple[UInt32, UInt32, UInt32]:
+    var expert_idx_and_offsets: UInt64 = 0
 
     # in order to write back to gmem we need to know the current available offset
     # so we use atomics to get the next available offset
 
     if thread_idx.x == 0:
-        # Pack expert index (8 bits) and offset (24 bits) into single atomic update
-        # Upper 8 bits: expert counter (which expert slot to use)
-        # Lower 24 bits: offset in token_expert_order array
+        # Pack expert index (12 bits), current total writes (26 bits), and
+        # aligned total writes (26 bits) into single atomic update
+        # Upper 12 bits: expert counter (which expert slot to use)
+        # Middle 26 bits: current total writes
+        # Lower 26 bits: aligned total writes
         expert_idx_and_offsets = Atomic.fetch_add(
-            lock.ptr, UInt32(total_writes) | 0x01000000
+            lock.ptr,
+            (UInt64(1) << 52)
+            | (UInt64(total_writes) << 26)
+            | UInt64(aligned_total_writes),
         )
 
     # Broadcast the atomic result to all threads in the warp
     expert_idx_and_offsets = warp.broadcast(expert_idx_and_offsets)
-    var expert_idx = expert_idx_and_offsets >> 24
-    var base_g_offset = expert_idx_and_offsets & 0x00FFFFFF
+    var expert_idx = UInt32(expert_idx_and_offsets >> 52)
+    var base_g_offset = UInt32(expert_idx_and_offsets >> 26) & 0x03FFFFFF
+    var aligned_g_offset = UInt32(expert_idx_and_offsets) & 0x03FFFFFF
 
-    return expert_idx, base_g_offset
+    return expert_idx, base_g_offset, aligned_g_offset
 
 
 @always_inline
@@ -586,11 +593,12 @@ def moe_create_indices_bucket_group_kernel[
     TopkIdsLayoutType: TensorLayout,
     num_threads: Int = WARP_SIZE,
     expected_count: Int = 8192,
+    _scale_alignment: UInt32 = 128,
 ](
     token_expert_order: TileTensor[
         mut=True, DType.uint32, TokenExpertOrderLayoutType, MutAnyOrigin
     ],
-    lock: TileTensor[DType.uint32, LockLayoutType, MutAnyOrigin],
+    lock: TileTensor[DType.uint64, LockLayoutType, MutAnyOrigin],
     expert_start_indices: TileTensor[
         mut=True, DType.uint32, ExpertStartIndicesLayoutType, MutAnyOrigin
     ],
@@ -604,6 +612,7 @@ def moe_create_indices_bucket_group_kernel[
         mut=True, DType.uint32, ExpertUsageStatsLayoutType, MutAnyOrigin
     ],
     topk_ids: TileTensor[input_type, TopkIdsLayoutType, MutAnyOrigin],
+    scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]],
 ):
     """Create indices for MoE routing using bucket sort algorithm.
 
@@ -672,22 +681,31 @@ def moe_create_indices_bucket_group_kernel[
         topk_ids, smem, bucket_group_params
     )
 
+    var aligned_total_writes = align_up(UInt32(total_writes), _scale_alignment)
+
+    var expert_idx, g_offset, aligned_g_offset = _get_index_and_offset(
+        lock, UInt32(total_writes), aligned_total_writes
+    )
+
+    if scales_offset_p:
+        var _ptr = scales_offset_p.value()
+        _ptr[expert_idx] = (
+            aligned_g_offset // _scale_alignment - g_offset // _scale_alignment
+        )
+
+    # Record which expert is active at this index
+    # this signals this expert is being used
+    expert_ids[expert_idx] = Int32(bucket_group_params.expert)
+
+    # Store the ending index for this expert (start of next expert)
+    # NOTE: expert_start_indices must be zero-initialized for this to work correctly
+    expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
+
+    # First expert always starts at index 0
+    if expert_idx == 0:
+        expert_start_indices[expert_idx] = 0
+
     if total_writes > 0:
-        # Copy all tokens in shared memory back to global memory
-        var expert_idx, g_offset = _get_index_and_offset(lock, total_writes)
-
-        # Record which expert is active at this index
-        # this signals this expert is being used
-        expert_ids[expert_idx] = Int32(bucket_group_params.expert)
-
-        # Store the ending index for this expert (start of next expert)
-        # NOTE: expert_start_indices must be zero-initialized for this to work correctly
-        expert_start_indices[expert_idx + 1] = g_offset + UInt32(total_writes)
-
-        # First expert always starts at index 0
-        if expert_idx == 0:
-            expert_start_indices[expert_idx] = 0
-
         # Copy all tokens in shared memory back to global memory
         _copy_tokens_smem_to_gmem[expected_count](
             token_expert_order,
@@ -710,12 +728,12 @@ def moe_create_indices_bucket_group_kernel[
                 bucket_group_params,
             )
 
-        # update expert_usage_stats
-        if thread_idx.x == 0:
-            _ = Atomic.fetch_add(expert_usage_stats.ptr + 1, 1)
+    # update expert_usage_stats.
+    if thread_idx.x == 0:
+        _ = Atomic.fetch_add(expert_usage_stats.ptr + 1, 1)
 
-            # NOTE: must be zero initialized otherwise atomic max will not work
-            _ = Atomic.max(expert_usage_stats.ptr, UInt32(total_writes))
+        # NOTE: must be zero initialized otherwise atomic max will not work
+        _ = Atomic.max(expert_usage_stats.ptr, UInt32(total_writes))
 
 
 @always_inline
@@ -732,6 +750,7 @@ def moe_create_indices[
     expert_usage_stats: TileTensor[mut=True, DType.uint32, ...],
     topk_ids: TileTensor[input_type, ...],
     context: DeviceContextPtr,
+    scales_offset_p: Optional[UnsafePointer[UInt32, MutAnyOrigin]] = None,
 ) raises:
     comptime assert is_gpu[
         target
@@ -742,8 +761,24 @@ def moe_create_indices[
     with Trace[TraceLevel.OP, target=target](
         "mo.moe.create_indices", task_id=Int(context.get_device_context().id())
     ):
-        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint32](1)
-        lock_buffer.enqueue_fill(0)
+        var lock_buffer = cuda_ctx.enqueue_create_buffer[DType.uint64](1)
+
+        def fill_zero_kernel(
+            lock_ptr: UnsafePointer[UInt64, MutAnyOrigin],
+            expert_usage_stats_ptr: UnsafePointer[UInt32, MutAnyOrigin],
+        ):
+            lock_ptr.store(0)
+            expert_usage_stats_ptr.store(0)
+            expert_usage_stats_ptr.store(1, 0)
+
+        cuda_ctx.enqueue_function[fill_zero_kernel, fill_zero_kernel](
+            lock_buffer,
+            expert_usage_stats.ptr,
+            grid_dim=(1,),
+            block_dim=(1,),
+            attributes=pdl_launch_attributes(PDLLevel(1)),
+        )
+
         var lock = TileTensor(lock_buffer, row_major[1]())
 
         var topk_2D = TileTensor(
@@ -752,15 +787,6 @@ def moe_create_indices[
         )
 
         var num_experts = expert_ids.dim(0)
-
-        var expert_usage_stats_host = cuda_ctx.enqueue_create_host_buffer[
-            DType.uint32
-        ](2)
-        expert_usage_stats_host.enqueue_fill(0)
-        cuda_ctx.enqueue_copy[DType.uint32](
-            expert_usage_stats.ptr,
-            expert_usage_stats_host,
-        )
 
         comptime kernel = moe_create_indices_bucket_group_kernel[
             input_type,
@@ -782,12 +808,10 @@ def moe_create_indices[
             expert_ids,
             expert_usage_stats,
             topk_2D,
+            scales_offset_p,
             grid_dim=(num_experts),
             block_dim=(WARP_SIZE),
         )
-
-        _ = lock_buffer^
-        _ = expert_usage_stats_host^
 
 
 # Function to perform warp-level sorting
