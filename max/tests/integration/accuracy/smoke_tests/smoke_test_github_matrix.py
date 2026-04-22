@@ -143,7 +143,7 @@ def parse_override(raw: str | None) -> list[str]:
     if not raw:
         return []
     parts = re.split(r"[, \n\r]+", raw)
-    return [p.strip().lower() for p in parts if p.strip()]
+    return [p.strip() for p in parts if p.strip()]
 
 
 @click.command()
@@ -194,7 +194,7 @@ def main(
             if ignore_exclusions or not excluded(framework, gpu, model):
                 job.append(
                     {
-                        "model": model.lower(),
+                        "model": model,
                         "runs_on": RUNNERS[gpu],
                         "display_name": f"{gpu} - {model}",
                     }

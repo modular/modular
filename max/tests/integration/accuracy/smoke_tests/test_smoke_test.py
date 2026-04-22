@@ -19,6 +19,16 @@ def test_hf_repo_lock_tsv_reachable() -> None:
     assert len(load_db()) > 0, "hf-repo-lock.tsv not found or empty"
 
 
+def test_model_aliases_are_valid() -> None:
+    for alias, config in MODEL_ALIASES.items():
+        assert "hf_model_path" in config, (
+            f"Model alias {alias!r} must contain 'hf_model_path'"
+        )
+        assert "max_serve_args" in config, (
+            f"Model alias {alias!r} must contain 'max_serve_args'"
+        )
+
+
 def test_model_aliases_contain_exactly_one_double_underscore() -> None:
     for alias in MODEL_ALIASES:
         count = alias.count("__")
