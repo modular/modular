@@ -171,11 +171,10 @@ protected:
 // IREvaluatorContext
 //===----------------------------------------------------------------------===//
 
-class IREvaluatorContext {
+class IREvaluatorContext : public ParameterEvaluationContext {
 public:
   IREvaluatorContext(EnvAttr env, MLIRContext *mlirCtx,
                      InterpreterState *state);
-  virtual ~IREvaluatorContext() = default;
 
 protected:
   /// Evaluate an apply-like operator.
@@ -227,13 +226,6 @@ protected:
   /// a struct type.
   StringAttr getBaseTypeName(TypedAttr typeRef);
 
-  /// Shared implementation for evaluating the generator's linkageName
-  /// expression. `evalCtx` must be the calling subclass instance (which
-  /// inherits from both IREvaluatorContext and ParameterEvaluationContext).
-  FailureOr<TypedAttr>
-  evaluateLinkageNameImpl(GeneratorOp gen, SymbolConstantAttr symbol,
-                          ParameterEvaluationContext &evalCtx);
-
 private:
   MLIRContext *mlirCtx = nullptr;
 
@@ -248,20 +240,6 @@ private:
              TargetInfoAttr, EmitAs, EmissionOptions emissionOptions) = 0;
 
   virtual ImplNodeBase *getParentNode() = 0;
-
-  /// Resolve the linkageName of @p gen to a concrete string for the given
-  /// symbol instantiation.
-  ///
-  /// Precondition: @p gen must have a linkageName attribute. Call this only
-  /// when gen.getLinkageNameAttr() is non-null.
-  ///
-  /// Returns:
-  ///   - failure()          — linkage name could not be resolved
-  ///   - success(null)      — not ready yet; a blocker has been registered
-  ///                          and the caller should retry
-  ///   - success(TypedAttr) — the resolved linkage name expression
-  virtual FailureOr<TypedAttr>
-  evaluateLinkageName(GeneratorOp gen, SymbolConstantAttr symbol) = 0;
 };
 
 //===----------------------------------------------------------------------===//

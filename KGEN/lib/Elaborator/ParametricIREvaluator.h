@@ -36,8 +36,7 @@ struct ParametricExpansionGraph;
 /// Uses the base class for common struct reflection operations and provides
 /// elaboration-specific handling for ParamOperatorAttr, GetLinkageNameAttr,
 /// etc.
-class ParametricIREvaluator : public ParameterEvaluationContext,
-                              public IREvaluatorContext,
+class ParametricIREvaluator : public IREvaluatorContext,
                               public ParametricIRInterpreter {
 public:
   /// Construct the IR evaluator with a symbol table for evaluating symbolic
@@ -241,9 +240,6 @@ private:
   void addDeferredFunction(OwningOpRef<FuncOp> func) override;
 
   ImplNodeBase *getParentNode() override;
-
-  FailureOr<TypedAttr> evaluateLinkageName(GeneratorOp gen,
-                                           SymbolConstantAttr symbol) override;
 
   /// A reference to the elaborator instance. The elaborator is invoked to
   /// concretize symbol constants prior to interpreting them.
