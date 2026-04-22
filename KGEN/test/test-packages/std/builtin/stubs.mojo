@@ -781,7 +781,13 @@ struct Slice(TrivialRegisterPassable):
         T0: TrivialRegisterPassable,
         T1: TrivialRegisterPassable,
         T2: TrivialRegisterPassable,
-    ](out self, start: T0, end: T1, step: T2, __slice_literal__: () = ()):
+    ](
+        out self,
+        start: T0,
+        end: T1,
+        step: T2,
+        __slice_literal__: NoneType = None,
+    ):
         pass
 
 
@@ -816,7 +822,7 @@ struct List[T: Copyable](Copyable, Iterable):
     def __init__(out self):
         pass
 
-    def __init__(out self, var *elements: Self.T, __list_literal__: ()):
+    def __init__(out self, var *elements: Self.T, __list_literal__: NoneType):
         pass
 
     def append(mut self, var value: Self.T):
@@ -834,7 +840,7 @@ struct List[T: Copyable](Copyable, Iterable):
 
 
 struct Set[T: AnyType]:
-    def __init__(out self, *elements: Self.T, __set_literal__: () = ()):
+    def __init__(out self, *elements: Self.T, __set_literal__: NoneType = None):
         pass
 
     def add(mut self, var value: Self.T):
@@ -851,7 +857,7 @@ struct Dict[
         out self,
         var keys: List[Self.K],
         var values: List[Self.V],
-        __dict_literal__: (),
+        __dict_literal__: NoneType,
     ):
         pass
 
