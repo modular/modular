@@ -33,7 +33,7 @@ comptime elementwise_epilogue_type = def[rank: Int](
 ) capturing -> None
 
 comptime elementwise_simd_epilogue_type = def[
-    dtype: DType, rank: Int, width: Int
+    dtype: DType, rank: Int, width: SIMDSize
 ](IndexList[rank], SIMD[dtype, width]) capturing -> None
 
 

@@ -24,7 +24,7 @@ from max.graph.weights import WeightData
 from max.nn.kv_cache import KVCacheParams
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig, PipelineConfig
-from transformers.models.auto.configuration_auto import AutoConfig
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 from ..llama3.model_config import Llama3Config

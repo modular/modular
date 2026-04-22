@@ -270,7 +270,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={
             "group": "Request Configuration",
             "group_description": "Parameters controlling request concurrency and processing",
-            "sweepable_type": "int",
         },
     )
 
@@ -422,7 +421,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={
             "group": "Traffic Control",
             "group_description": "Parameters controlling request rate and traffic patterns",
-            "sweepable_type": "float",
         },
     )
 
@@ -594,6 +592,19 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
     collect_server_stats: bool = Field(
         default=True,
         description="Enable server stats collection for serving benchmarks.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    # `dict[str, str]` (not `Mapping`) so cyclopts 3.24 accepts the
+    # `--metrics-urls.<label>=<url>` syntax for nested keys.
+    metrics_urls: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Explicit Prometheus metrics endpoint URLs, keyed by label "
+            "(e.g. '--metrics-urls.orchestrator=http://host:8001/metrics "
+            "--metrics-urls.engine-0=http://host2:8001/metrics'). "
+            "When empty, a single endpoint is auto-derived from --host/--port."
+        ),
         json_schema_extra={"group": "Control Flags"},
     )
 

@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 import re
+import sys
 import warnings
 
 import numpy as np
@@ -22,6 +23,14 @@ from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph import DevicePlacementPolicy, DeviceRef, Graph, TensorType, ops
+
+# TODO(GEX-3550): creating a device-resident `Tensor` on the Apple GPU
+# (Metal) hangs indefinitely on BuildBuddy macOS workers, so the two tests
+# below that exercise that code path time out the whole target.
+_SKIP_APPLE_GPU = pytest.mark.skipif(
+    accelerator_count() == 0 or sys.platform == "darwin",
+    reason="requires at least 1 non-Apple GPU",
+)
 
 
 def test_constant_from_numpy() -> None:
@@ -162,7 +171,7 @@ def test_constant_external(name: str, type: TensorType) -> None:
         assert weight.type == type
 
 
-@pytest.mark.skipif(accelerator_count() == 0, reason="requires at least 1 GPU")
+@_SKIP_APPLE_GPU
 def test_constant_from_gpu_buffer_warns() -> None:
     """ops.constant warns and copies to CPU for device-resident data."""
     gpu_tensor = Tensor(
@@ -179,7 +188,7 @@ def test_constant_from_gpu_buffer_warns() -> None:
         graph.output(result)
 
 
-@pytest.mark.skipif(accelerator_count() == 0, reason="requires at least 1 GPU")
+@_SKIP_APPLE_GPU
 def test_constant_from_gpu_buffer_error_policy() -> None:
     """ops.constant raises ValueError under strict device placement."""
     gpu_tensor = Tensor(

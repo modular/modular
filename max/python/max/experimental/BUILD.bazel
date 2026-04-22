@@ -8,13 +8,12 @@ modular_py_library(
         "__init__.py",
         "_passes.py",
         "_tensor_repr.py",
-        "functional.py",
         "random.py",
         "realization_context.py",
         "support.py",
         "tensor.py",
     ] + glob([
-        "distributed_functional/**/*.py",
+        "functional/**/*.py",
         "sharding/**/*.py",
     ]),
     # engine is used via engine.api.InferenceSession in realization_context.py
@@ -33,6 +32,5 @@ modular_py_library(
         "//max/python/max/graph",
         requirement("numpy"),
         requirement("rich"),
-        requirement("typing-extensions"),
     ],
 )
