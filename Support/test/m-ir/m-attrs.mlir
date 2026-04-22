@@ -59,3 +59,12 @@
 
 // CHECK: #M.inout_sig<"ii.mo">
 "some.op"() {a = #M.inout_sig<"ii.mo">} : () -> ()
+
+// CHECK: #M<symbols[]>
+"some.op"() {a = #M<symbols[]>} : () -> ()
+
+// CHECK: #M<symbols[@m_symbols_bytecode::@inner]>
+module @m_symbols_bytecode {
+  "some.op"() {a = #M<symbols[@m_symbols_bytecode::@inner]>} : () -> ()
+  func.func @inner() { return }
+}

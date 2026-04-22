@@ -247,3 +247,20 @@ kgen.generator @test_origin<x: i1>() {
   kgen.param.constant: origin<0> = <rebind(:i1 x)>
   kgen.return
 }
+
+// CHECK-LABEL: "deprecation.attrs"
+// CHECK-SAME: d0 = #lit.deprecation<"use new_func instead">
+// CHECK-SAME: d1 = #lit.deprecation<"old is deprecated", "new_func">
+"deprecation.attrs"() {
+  d0 = #lit.deprecation<"use new_func instead">,
+  d1 = #lit.deprecation<"old is deprecated", "new_func">
+} : () -> ()
+
+// CHECK-LABEL: kgen.generator @bytecode_lit_extra_types
+kgen.generator @bytecode_lit_extra_types() {
+  // CHECK: kgen.param.declare magic_def: type = <!lit.magic.__mlir_deferred_attr>
+  kgen.param.declare magic_def: type = <!lit.magic.__mlir_deferred_attr>
+  // CHECK: kgen.param.declare nl_wild: type = <!lit.name_lookup_arg_wildcard>
+  kgen.param.declare nl_wild: type = <!lit.name_lookup_arg_wildcard>
+  kgen.return
+}

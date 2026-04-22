@@ -35,6 +35,10 @@ def StringArrayAttr : DialectAttribute<(attr
   StringAttrArray:$value
 )>;
 
+def SymbolRefArrayAttr : DialectAttribute<(attr
+  ConcreteAttrArray<"SymbolRefAttr">:$value
+)>;
+
 def TypeArrayAttr : DialectAttribute<(attr
   TypeArray:$value
 )>;
@@ -110,7 +114,8 @@ def MDialectAttributes : DialectAttributes<"M"> {
     ArrayElementsAttr,
     AlignedBytesAttr,
     MultiLineStringAttr,
-    TargetInfoAttr
+    TargetInfoAttr,
+    SymbolRefArrayAttr
   ];
 }
 

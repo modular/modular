@@ -55,10 +55,6 @@ def CmpPredicateAttr : DialectAttribute<(attr
   EnumAttr<"CmpPredicate">:$value
 )>;
 
-def NormalizedCmpPredicateAttr : DialectAttribute<(attr
-  EnumAttr<"NormalizedCmpPredicate">:$value
-)>;
-
 def AtomicOrderingAttr : DialectAttribute<(attr
   EnumAttr<"AtomicOrdering">:$value
 )>;
@@ -102,12 +98,15 @@ def IntLiteralConvertAttr : DialectAttribute<(attr
   TypedAttr:$input
 )>;
 
-def IntLiteralBinOpAttr : DialectAttribute<(attr
-  Type:$type,
+def IntLiteralBinAttr : DialectAttribute<(attr
   TypedAttr:$lhs, TypedAttr:$rhs,
-  ConcreteAttribute<"IntLiteralBinKindAttr">:$kind
+  ConcreteAttribute<"IntLiteralBinKindAttr">:$oper
 )>;
 
+def IntLiteralCmpAttr : DialectAttribute<(attr
+  ConcreteAttribute<"IntLiteralCmpPredAttr">:$pred,
+  TypedAttr:$lhs, TypedAttr:$rhs
+)>;
 
 def IntLiteralCmpPredAttr : DialectAttribute<(attr
   EnumAttr<"IntLiteralCmpPred">:$value
@@ -132,6 +131,40 @@ def FloatLiteralBinKindAttr : DialectAttribute<(attr
 
 def FloatLiteralCmpPredAttr : DialectAttribute<(attr
   EnumAttr<"FloatLiteralCmpPred">:$value
+)>;
+
+def FloatLiteralIsaAttr : DialectAttribute<(attr
+  ConcreteAttribute<"FloatLiteralSpecialValuesAttr">:$kind,
+  TypedAttr:$input
+)>;
+
+def FloatLiteralConvertAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$input
+)>;
+
+def IntToFloatLiteralAttr : DialectAttribute<(attr TypedAttr:$input)>;
+
+def FloatToIntLiteralAttr : DialectAttribute<(attr TypedAttr:$input)>;
+
+def FloatLiteralBinAttr : DialectAttribute<(attr
+  TypedAttr:$lhs, TypedAttr:$rhs,
+  ConcreteAttribute<"FloatLiteralBinKindAttr">:$oper
+)>;
+
+def FloatLiteralCmpAttr : DialectAttribute<(attr
+  ConcreteAttribute<"FloatLiteralCmpPredAttr">:$pred,
+  TypedAttr:$lhs, TypedAttr:$rhs
+)>;
+
+def StringSizeAttr : DialectAttribute<(attr TypedAttr:$str)>;
+
+def StringConcatAttr : DialectAttribute<(attr
+  TypedAttr:$lhs, TypedAttr:$rhs
+)>;
+
+def GlobalAllocAddressSpaceAttr : DialectAttribute<(attr
+  EnumAttr<"GlobalAllocAddressSpace">:$value
 )>;
 
 def SIMDAndAttr : DialectAttribute<(attr TypedAttr:$lhs, TypedAttr:$rhs)>;
@@ -238,6 +271,19 @@ def POPDialectAttributes : DialectAttributes<"pop"> {
     SIMDReduceOrAttr,
     SIMDReduceAndAttr,
     VariadicToArrayAttr,
+
+    IntLiteralConvertAttr,
+    IntLiteralBinAttr,
+    IntLiteralCmpAttr,
+    FloatLiteralIsaAttr,
+    FloatLiteralConvertAttr,
+    IntToFloatLiteralAttr,
+    FloatToIntLiteralAttr,
+    FloatLiteralBinAttr,
+    FloatLiteralCmpAttr,
+    StringSizeAttr,
+    StringConcatAttr,
+    GlobalAllocAddressSpaceAttr,
   ];
 }
 

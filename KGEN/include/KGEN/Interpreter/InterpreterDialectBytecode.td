@@ -58,8 +58,14 @@ def SymbolArrayAttr : DialectAttribute<(attr
 )>;
 
 def MemoryModelAttr : DialectAttribute<(attr
-   MemorySpaceAttr:$memory,
-   SymbolArrayAttr: $symbols
+  MemorySpaceAttr:$memory,
+  SymbolArrayAttr:$symbols
+)>;
+
+def CoordinateAttr : DialectAttribute<(attr
+  VarInt:$offset,
+  VarInt:$refSlot,
+  Type:$type
 )>;
 
 def MemRefAttr : DialectAttribute<(attr
@@ -92,7 +98,10 @@ def InterpreterDialectAttributes : DialectAttributes<"interp"> {
     MemorySpaceAttr,
     MemRefAttr,
     StoreToMemAttr,
-    UninitMemAttr
+    UninitMemAttr,
+    MemoryModelAttr,
+    SymbolArrayAttr,
+    CoordinateAttr,
   ];
 }
 
