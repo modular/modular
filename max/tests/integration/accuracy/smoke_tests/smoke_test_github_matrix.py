@@ -118,6 +118,8 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"8xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep_1_draft_token": NON_XL | {"8xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__eagle": NON_XL | {"8xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": NON_XL | {"8xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
