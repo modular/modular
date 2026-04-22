@@ -207,8 +207,8 @@ def moe_weights_fp8() -> dict[str, torch.Tensor]:
 
 
 @pytest.fixture
-def moe_weights_fp4() -> dict[str, torch.Tensor]:
-    """Generate FP4 weights on GPU for fast random number generation."""
+def moe_weights_nvfp4() -> dict[str, torch.Tensor]:
+    """Generate NVFP4 weights on GPU for fast random number generation."""
     torch.manual_seed(42)
     device = "cuda:0" if torch.cuda.is_available() else "cpu"
 
@@ -298,6 +298,91 @@ def moe_weights_fp4() -> dict[str, torch.Tensor]:
         MOE_DIM,
         HIDDEN_DIM,
         weight_scale_2=shared_gate_up_scale_2,
+    )
+    _add_fp4_proj(
+        moe_weights,
+        "shared_experts.down_proj",
+        HIDDEN_DIM,
+        MOE_DIM,
+    )
+
+    return moe_weights
+
+
+@pytest.fixture
+def moe_weights_mxfp4() -> dict[str, torch.Tensor]:
+    """Generate MXFP4 weights on GPU for fast random number generation."""
+    torch.manual_seed(42)
+    device = "cuda:0" if torch.cuda.is_available() else "cpu"
+
+    def _add_fp4_proj(
+        moe_weights: dict[str, torch.Tensor],
+        prefix: str,
+        out_dim: int,
+        in_dim: int,
+    ) -> None:
+        weight = torch.randint(
+            0,
+            256,
+            (out_dim, in_dim // 2),
+            dtype=torch.uint8,
+            device=device,
+        )
+        weight_scale = (
+            # torch.rand(
+            torch.ones(
+                out_dim,
+                weight.shape[1] // 16,
+                dtype=torch.float32,
+                device=device,
+            )
+            * WEIGHTS_STDDEV
+        ).to(torch.float8_e8m0fnu)
+
+        moe_weights[f"{prefix}.weight"] = weight
+        moe_weights[f"{prefix}.weight_scale"] = weight_scale
+
+    moe_weights = {}
+
+    # Gate weights for router
+    moe_weights["gate.gate_score.weight"] = (
+        torch.randn(
+            NUM_EXPERTS, HIDDEN_DIM, dtype=torch.bfloat16, device=device
+        )
+        * 1e-3
+    )
+
+    for expert_idx in range(NUM_EXPERTS):
+        _add_fp4_proj(
+            moe_weights,
+            f"experts.{expert_idx}.gate_proj",
+            MOE_DIM,
+            HIDDEN_DIM,
+        )
+        _add_fp4_proj(
+            moe_weights,
+            f"experts.{expert_idx}.up_proj",
+            MOE_DIM,
+            HIDDEN_DIM,
+        )
+        _add_fp4_proj(
+            moe_weights,
+            f"experts.{expert_idx}.down_proj",
+            HIDDEN_DIM,
+            MOE_DIM,
+        )
+
+    _add_fp4_proj(
+        moe_weights,
+        "shared_experts.gate_proj",
+        MOE_DIM,
+        HIDDEN_DIM,
+    )
+    _add_fp4_proj(
+        moe_weights,
+        "shared_experts.up_proj",
+        MOE_DIM,
+        HIDDEN_DIM,
     )
     _add_fp4_proj(
         moe_weights,

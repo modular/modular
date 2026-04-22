@@ -18,7 +18,7 @@ import logging
 from typing import Literal
 
 from max.config import ConfigFileModel
-from pydantic import Field
+from pydantic import Field, field_validator
 
 logger = logging.getLogger("max.pipelines")
 
@@ -51,6 +51,29 @@ class SpeculativeConfig(ConfigFileModel):
             " 'residual' for standalone."
         ),
     )
+
+    synthetic_acceptance_rate: float | None = Field(
+        default=None,
+        description=(
+            "Synthetic acceptance rate for benchmarking (0.0 to 1.0). "
+            "When set, the rejection sampler bypasses the real "
+            "draft/target comparison and accepts each draft position "
+            "with a calibrated probability so the mean joint acceptance "
+            "across num_speculative_tokens positions matches this value."
+        ),
+    )
+
+    @field_validator("synthetic_acceptance_rate")
+    @classmethod
+    def _validate_synthetic_acceptance_rate(
+        cls, v: float | None
+    ) -> float | None:
+        if v is not None and not (0.0 <= v <= 1.0):
+            raise ValueError(
+                "synthetic_acceptance_rate must be between 0.0 and 1.0,"
+                f" got {v}"
+            )
+        return v
 
     _config_file_section_name: str = "speculative_config"
 
