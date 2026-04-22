@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,22 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from sys.info import align_of, size_of
+from std.math import ceildiv
+from std.sys.info import align_of, size_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
 from quantization import Q4sym
-from testing import assert_true
+from std.testing import assert_true
+from layout import TileTensor, row_major
 
-from utils import IndexList
+from std.utils import IndexList
 
 
-fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
+def _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var uniform = SIMD[DType.float32, group_size]()
     for i in range(group_size):
-        uniform[i] = i
-    uniform -= group_size // 2
+        uniform[i] = Float32(i)
+    uniform -= Float32(group_size // 2)
 
     var skew_pos = uniform + 30
     var skew_neg = uniform - 30
@@ -35,7 +34,7 @@ fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     var big_range = uniform * 1000
     var unitary = SIMD[DType.float32, group_size](1.0)
 
-    fn run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
+    def run_fake_quant(input_vec: SIMD[DType.float32, group_size]) -> Bool:
         var packed_result = Q4sym[group_size, DType.float32](input_vec)
         var decoded_result = packed_result.decode_fully()
         print("input_vec        :", input_vec)
@@ -66,7 +65,7 @@ fn _run_test_quant[group_size: Int, tolerance: Float32]() -> Bool:
     return allPass
 
 
-fn test_fake_quant_error[l2_tolerance: Float32]() raises:
+def test_fake_quant_error[l2_tolerance: Float32]() raises:
     # Tests round-trippability of encoding/decoding groups of numbers
     print("------------test_fake_quant_error------------")
     print("********** GROUP SIZE 08 **********")
@@ -89,7 +88,7 @@ fn test_fake_quant_error[l2_tolerance: Float32]() raises:
     assert_true(g32_result)
 
 
-fn test_alignment_and_size():
+def test_alignment_and_size():
     # Tests the total size and alignment of structs is as expected
     print("-------test_alignment_and_size-------")
     print("StructType, size_of, Alignment")
@@ -113,26 +112,26 @@ fn test_alignment_and_size():
     # - 8 // 2 = 4 bytes for the low bits
     # 2 + 4 = 6
     # Bits per weight: (8 * 6) / 8 = 6bpw
-    constrained[size_of[Q4sym[8]]() == 6]()
+    comptime assert size_of[Q4sym[8]]() == 6
 
     # Calculation for group size 16:
     # - 2 bytes for fp16 scale
     # - 16 // 2 = 8 bytes for the low bits
     # 2 + 8 = 10
     # Bits per weight: (8 * 10) / 16 = 5bpw
-    constrained[size_of[Q4sym[16]]() == 10]()
+    comptime assert size_of[Q4sym[16]]() == 10
 
     # Calculation for group size 32:
     # - 2 bytes for fp16 scale
     # - 32 // 2 = 16 bytes for the low bits
     # 2 + 16 = 18
     # Bits per weight: (8 * 18) / 32 = 4.5bpw
-    constrained[size_of[Q4sym[32]]() == 18]()
+    comptime assert size_of[Q4sym[32]]() == 18
     print("-------end test_alignment_and_size-------")
     print()
 
 
-fn _read_write_to_tensors[
+def _read_write_to_tensors[
     group_size: Int,
     rtol: Float32,
     atol: Float32,
@@ -147,53 +146,49 @@ fn _read_write_to_tensors[
     var data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var data_matrix = NDBuffer[DType.float32, rank, _, DimList(num_elements)](
-        data_matrix_backing.unsafe_ptr()
-    )
+    var data_matrix = TileTensor(data_matrix_backing, row_major[num_elements]())
     for i in range(num_elements):
-        data_matrix[i] = i
+        data_matrix[i] = Float32(i)
 
     # Tensor to store the packed data
-    constrained[num_elements % group_size == 0]()
-    alias num_blocks = ceildiv(num_elements, group_size)
-    alias block_size = size_of[Q4sym[group_size]]()
+    comptime assert num_elements % group_size == 0
+    comptime num_blocks = ceildiv(num_elements, group_size)
+    comptime block_size = size_of[Q4sym[group_size]]()
     var packed_blob_backing = InlineArray[UInt8, num_blocks * block_size](
         uninitialized=True
     )
-    var packed_blob = NDBuffer[
-        DType.uint8, rank, _, DimList(num_blocks * block_size)
-    ](packed_blob_backing.unsafe_ptr())
+    var packed_blob = TileTensor(
+        packed_blob_backing, row_major[num_blocks * block_size]()
+    )
 
     # Tensor to store the dequantized data
     var out_data_matrix_backing = InlineArray[Float32, num_elements](
         uninitialized=True
     )
-    var out_data_matrix = NDBuffer[DType.float32, 1, _, DimList(num_elements)](
-        out_data_matrix_backing.unsafe_ptr()
+    var out_data_matrix = TileTensor(
+        out_data_matrix_backing, row_major[num_elements]()
     )
     for i in range(num_elements):
-        out_data_matrix[i] = 0
+        out_data_matrix[i] = Float32(0)
 
-    var rebound_data_matrix = rebind[
-        NDBuffer[DType.float32, rank, data_matrix.origin]
-    ](data_matrix)
-    var rebound_packed_block = rebind[
-        NDBuffer[DType.uint8, rank, packed_blob.origin]
-    ](packed_blob)
-    var rebound_out_data_matrix = rebind[
-        NDBuffer[DType.float32, rank, out_data_matrix.origin]
-    ](out_data_matrix)
-
-    Q4sym[group_size, DType.float32].quantize_and_write_to_tensor[rank](
-        rebound_data_matrix,
-        rebound_packed_block,
-        IndexList[rank](num_elements),
+    Q4sym[group_size, DType.float32].quantize_and_write_to_tensor(
+        data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
+        packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
+        IndexList[
+            type_of(
+                data_matrix.make_dynamic[DType.int64]().to_layout_tensor()
+            ).rank
+        ](num_elements),
     )
 
     Q4sym[group_size, DType.float32].dequantize_and_write_to_tensor(
-        rebound_packed_block,
-        rebound_out_data_matrix,
-        IndexList[rank](num_elements),
+        packed_blob.make_dynamic[DType.int64]().to_layout_tensor(),
+        out_data_matrix.make_dynamic[DType.int64]().to_layout_tensor(),
+        IndexList[
+            type_of(
+                out_data_matrix.make_dynamic[DType.int64]().to_layout_tensor()
+            ).rank
+        ](num_elements),
     )
 
     var allClose: Bool = True
@@ -215,7 +210,7 @@ fn _read_write_to_tensors[
     return allClose
 
 
-fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
+def test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print("------------test_read_write_to_tensors------------")
 
     print("********** GROUP SIZE 08 **********")
@@ -240,8 +235,8 @@ fn test_read_write_to_tensors[rtol: FloatLiteral, atol: FloatLiteral]() raises:
     print()
 
 
-fn main() raises:
-    alias l2_tolerance = 0.1
+def main() raises:
+    comptime l2_tolerance = 0.1
 
     test_fake_quant_error[l2_tolerance]()
 

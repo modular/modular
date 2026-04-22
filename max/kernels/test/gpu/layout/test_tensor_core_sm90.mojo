@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,39 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu.mma import mma
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import mma
 from layout import Layout, LayoutTensor
 from layout._utils import ManagedLayoutTensor
 from layout.tensor_core import TensorCore
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-fn arange(tensor: LayoutTensor):
-    @parameter
-    for i in range(tensor.shape[0]()):
-
-        @parameter
-        for j in range(tensor.shape[1]()):
-            tensor[i, j] = i + j
+def arange(tensor: LayoutTensor[mut=True, ...]):
+    comptime for i in range(tensor.shape[0]()):
+        comptime for j in range(tensor.shape[1]()):
+            tensor[i, j] = Scalar[tensor.dtype](i + j)
 
 
-fn load_and_mma_16x8x32[
+def load_and_mma_16x8x32[
     out_type: DType,
     in_type: DType,
     layout_c: Layout,
     layout_a: Layout,
     layout_b: Layout,
 ](
-    mat_c: LayoutTensor[out_type, layout_c, MutableAnyOrigin],
-    mat_a: LayoutTensor[in_type, layout_a, MutableAnyOrigin],
-    mat_b: LayoutTensor[in_type, layout_b, MutableAnyOrigin],
+    mat_c: LayoutTensor[mut=True, out_type, layout_c, MutAnyOrigin],
+    mat_a: LayoutTensor[in_type, layout_a, MutAnyOrigin],
+    mat_b: LayoutTensor[in_type, layout_b, MutAnyOrigin],
 ):
-    constrained[
-        in_type is DType.float8_e4m3fn or in_type is DType.float8_e5m2,
-        "This kernel only supports E4M3 and E5M2 combinations",
-    ]()
+    comptime assert (
+        in_type == DType.float8_e4m3fn or in_type == DType.float8_e5m2
+    ), "This kernel only supports E4M3 and E5M2 combinations"
 
     mma = TensorCore[DType.float32, in_type, IndexList[3](16, 8, 32), False]()
     var a_reg_tile = mma.load_a(mat_a)
@@ -70,13 +66,13 @@ fn load_and_mma_16x8x32[
 # CHECK: 16838.0 17754.0 18610.0 19426.0 20392.0 21318.0 22172.0 23162.0
 # CHECK: 17295.0 18246.0 19149.0 19992.0 20971.0 21924.0 22837.0 23854.0
 # CHECK: 17864.0 18831.0 19768.0 20657.0 21678.0 22643.0 23582.0 24673.0
-def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
+def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_e4m3_e4m3_f32_16x8x32")
-    alias M = 16
-    alias N = 8
-    alias K = 32
-    alias in_type = DType.float8_e4m3fn
-    alias out_type = DType.float32
+    comptime M = 16
+    comptime N = 8
+    comptime K = 32
+    comptime in_type = DType.float8_e4m3fn
+    comptime out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
         in_type,
         Layout.row_major(M, K),
@@ -94,7 +90,7 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
     ](ctx)
     _ = mat_c.tensor().fill(0)
 
-    alias load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
+    comptime load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
         in_type,
         mat_c.layout,
@@ -102,7 +98,9 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
         mat_b.layout,
     ]
 
-    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
+    ctx.enqueue_function_experimental[
+        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn
+    ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -133,13 +131,13 @@ def test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx: DeviceContext):
 # 16778.0 17684.0 18554.0 19380.0 20158.0 20912.0 21986.0 22940.0
 # 17392.0 18314.0 19208.0 20066.0 20880.0 21646.0 22772.0 23834.0
 # 17964.0 18928.0 19836.0 20716.0 21560.0 22360.0 23496.0 24608.0
-def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
+def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_e5m2_e5m2_f32_16x8x32")
-    alias M = 16
-    alias N = 8
-    alias K = 32
-    alias in_type = DType.float8_e5m2
-    alias out_type = DType.float32
+    comptime M = 16
+    comptime N = 8
+    comptime K = 32
+    comptime in_type = DType.float8_e5m2
+    comptime out_type = DType.float32
     var mat_a = ManagedLayoutTensor[
         in_type,
         Layout.row_major(M, K),
@@ -157,7 +155,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     ](ctx)
     _ = mat_c.tensor().fill(0)
 
-    alias load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
+    comptime load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn = load_and_mma_16x8x32[
         out_type,
         in_type,
         mat_c.layout,
@@ -165,7 +163,9 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
         mat_b.layout,
     ]
 
-    ctx.enqueue_function[load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn](
+    ctx.enqueue_function_experimental[
+        load_and_mma_e4m3_e4m3_f32_16x8x32_kernel_fn
+    ](
         mat_c.device_tensor(),
         mat_a.device_tensor(),
         mat_b.device_tensor(),
@@ -179,7 +179,7 @@ def test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx: DeviceContext):
     _ = mat_c^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_e4m3_e4m3_f32_16x8x32(ctx)
         test_load_and_mma_e5m2_e5m2_f32_16x8x32(ctx)

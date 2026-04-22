@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import erf
-from random import randn, seed
+from std.math import erf
+from std.random import randn, seed
 
 from test_utils import compare, libm_call
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 
-def test_erf_float32():
+def test_erf_float32() raises:
     assert_equal(erf(Float32(0)), 0.0)
     assert_almost_equal(erf(SIMD[DType.float32, 2](2)), 0.995322)
     assert_almost_equal(erf(Float32(0.1)), 0.112462)
@@ -27,7 +27,7 @@ def test_erf_float32():
     assert_almost_equal(erf(Float32(-2)), -0.995322)
 
 
-def test_erf_float64():
+def test_erf_float64() raises:
     assert_equal(erf(Float64(0)), 0.0)
     assert_almost_equal(erf(SIMD[DType.float64, 2](2)), 0.995322)
     assert_almost_equal(erf(Float64(0.1)), 0.112462)
@@ -36,20 +36,20 @@ def test_erf_float64():
     assert_almost_equal(erf(Float64(-2)), -0.995322)
 
 
-def test_erf_libm():
+def test_erf_libm() raises:
     seed(0)
     var N = 8192
-    alias test_dtype = DType.float32
+    comptime test_dtype = DType.float32
 
     # generate input values and write them to file
-    var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var x32 = alloc[Scalar[test_dtype]](N)
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # math.erf result
     ####################
-    var y32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var y32 = alloc[Scalar[test_dtype]](N)
     for i in range(N):
         y32[i] = erf(x32[i])  # math.erf
 
@@ -57,12 +57,12 @@ def test_erf_libm():
     ## libm erf result
     ####################
     @always_inline
-    fn erf_libm[
-        dtype: DType, simd_width: Int
+    def erf_libm[
+        dtype: DType, simd_width: SIMDSize
     ](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
         return libm_call["erff", "err"](arg)
 
-    var libm_out = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var libm_out = alloc[Scalar[test_dtype]](N)
     for i in range(N):
         libm_out[i] = erf_libm(x32[i])
 
@@ -82,7 +82,5 @@ def test_erf_libm():
     libm_out.free()
 
 
-def main():
-    test_erf_float32()
-    test_erf_float64()
-    test_erf_libm()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

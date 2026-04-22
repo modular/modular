@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import get_errno, set_errno, ErrNo
-from sys.info import CompilationTarget
-from os.path import realpath
-from testing import assert_raises, assert_equal
+from std.os.path import realpath
+from std.ffi import ErrNo, RTLD, get_errno, set_errno
+from std.sys.info import CompilationTarget
 
-alias error_message_linux: List[Tuple[ErrNo, String]] = [
+from std.testing import assert_equal, assert_raises
+from std.testing import TestSuite
+
+comptime error_message_linux: List[Tuple[ErrNo, String]] = [
     (ErrNo.SUCCESS, "Success"),
     (ErrNo.EPERM, "Operation not permitted"),
     (ErrNo.ENOENT, "No such file or directory"),
@@ -153,7 +155,7 @@ alias error_message_linux: List[Tuple[ErrNo, String]] = [
 ]
 
 
-alias error_message_macos: List[Tuple[ErrNo, String]] = [
+comptime error_message_macos: List[Tuple[ErrNo, String]] = [
     (ErrNo.EPERM, "Operation not permitted"),
     (ErrNo.ENOENT, "No such file or directory"),
     (ErrNo.ESRCH, "No such process"),
@@ -264,27 +266,25 @@ alias error_message_macos: List[Tuple[ErrNo, String]] = [
 ]
 
 
-def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]():
-    @parameter
-    for i in range(len(error_message)):
-        errno, msg = error_message[i]
+def _test_errno_message[error_message: List[Tuple[ErrNo, String]]]() raises:
+    comptime for i in range(len(error_message)):
+        errno, msg = materialize[error_message[i]]()
         set_errno(errno)
         assert_equal(get_errno(), errno)
         assert_equal(String(errno), msg)
     set_errno(ErrNo.SUCCESS)
 
 
-def test_errno_message():
-    @parameter
-    if CompilationTarget.is_linux():
+def test_errno_message() raises:
+    comptime if CompilationTarget.is_linux():
         _test_errno_message[error_message_linux]()
     elif CompilationTarget.is_macos():
         _test_errno_message[error_message_macos]()
     else:
-        constrained[False, "test not implemented for the platform"]()
+        comptime assert False, "test not implemented for the platform"
 
 
-def test_errno():
+def test_errno() raises:
     # test it raises the correct libc error
     with assert_raises(contains=String(ErrNo.ENOENT)):
         _ = realpath("does/not/exist")
@@ -303,6 +303,18 @@ def test_errno():
         raise Error("Failed to set errno to EPERM")
 
 
-def main():
-    test_errno()
-    test_errno_message()
+def test_rtld_flags() raises:
+    assert_equal(RTLD.LAZY, 1)
+    assert_equal(RTLD.NOW, 2)
+    comptime if CompilationTarget.is_linux():
+        assert_equal(RTLD.LOCAL, 0)
+        assert_equal(RTLD.GLOBAL, 256)
+        assert_equal(RTLD.NODELETE, 4096)
+    elif CompilationTarget.is_macos():
+        assert_equal(RTLD.LOCAL, 4)
+        assert_equal(RTLD.GLOBAL, 8)
+        assert_equal(RTLD.NODELETE, 128)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,97 +11,138 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import random_float64
+from std.random import random_float64
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer
+from std.gpu.host import DeviceContext
+from layout import Coord, TileTensor, row_major
 from nn.argmaxmin import argmax, argmin
 from nn.argmaxmin_gpu import argmax_gpu, argmin_gpu
-from testing import assert_equal
+from std.testing import assert_equal
+from std.utils.index import IndexList
 
 
-fn test_argmaxmin_gpu[
+def test_argmaxmin_gpu[
     dtype: DType,
     output_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        mut NDBuffer[mut=True, dtype, rank]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
     largest: Bool = True,
     rank: Int = 2,
 ](
     ctx: DeviceContext, N: Int, batch_size: Int = 12, num_batches: Int = 6
 ) raises:
     # Instantiate data in host memory
-    var in_shape: DimList
-    var out_shape: DimList
+    var in_shape: IndexList[rank]
+    var out_shape: IndexList[rank]
 
-    @parameter
-    if rank == 1:
-        out_shape = DimList(1)
-        in_shape = DimList(N)
+    comptime if rank == 1:
+        out_shape = IndexList[rank](1)
+        in_shape = IndexList[rank](N)
     elif rank == 2:
-        out_shape = DimList(batch_size, 1)
-        in_shape = DimList(batch_size, N)
+        out_shape = IndexList[rank](batch_size, 1)
+        in_shape = IndexList[rank](batch_size, N)
     elif rank == 3:
-        out_shape = DimList(num_batches, batch_size, 1)
-        in_shape = DimList(num_batches, batch_size, N)
+        out_shape = IndexList[rank](num_batches, batch_size, 1)
+        in_shape = IndexList[rank](num_batches, batch_size, N)
     else:
         raise Error("Test case doesn't support rank above 3 (just add it)")
 
-    var in_buffer = HostNDBuffer[dtype, rank](in_shape)
-    var out_idxs = HostNDBuffer[output_type, rank](out_shape)
+    # Compute sizes
+    var in_size = 1
+    var out_size = 1
+    for i in range(rank):
+        in_size *= in_shape[i]
+        out_size *= out_shape[i]
+
+    # Allocate host memory
+    var in_host_ptr = alloc[Scalar[dtype]](in_size)
+    var in_host = TileTensor(
+        in_host_ptr,
+        row_major(Coord(in_shape)),
+    )
+    var out_idxs_host_ptr = alloc[Scalar[output_type]](out_size)
+    var _out_idxs_host = TileTensor(
+        out_idxs_host_ptr,
+        row_major(Coord(out_shape)),
+    )
 
     # Fill the buffer with consecutive values
-    fill_fn(in_buffer.tensor)
+    fill_fn[rank](in_host)
 
-    var device_in = DeviceNDBuffer[dtype, rank](in_shape, ctx=ctx)
-    var device_out_idxs = DeviceNDBuffer[output_type, rank](out_shape, ctx=ctx)
+    # Allocate device buffers
+    var device_in = ctx.enqueue_create_buffer[dtype](in_size)
+    var device_out_idxs = ctx.enqueue_create_buffer[output_type](out_size)
 
-    ctx.enqueue_copy(device_in.buffer, in_buffer.tensor.data)
+    ctx.enqueue_copy(device_in, in_host_ptr)
 
-    @parameter
-    if largest:
-        argmax_gpu(ctx, device_in.tensor, device_out_idxs.tensor)
+    # Create device TileTensors
+    var device_in_tensor = TileTensor(
+        device_in,
+        row_major(Coord(in_shape)),
+    )
+    var device_out_tensor = TileTensor(
+        device_out_idxs,
+        row_major(Coord(out_shape)),
+    )
+
+    comptime if largest:
+        argmax_gpu(
+            ctx,
+            device_in_tensor,
+            device_out_tensor,
+        )
     else:
-        argmin_gpu(ctx, device_in.tensor, device_out_idxs.tensor)
+        argmin_gpu(
+            ctx,
+            device_in_tensor,
+            device_out_tensor,
+        )
 
-    ctx.enqueue_copy(out_idxs.tensor.data, device_out_idxs.buffer)
+    ctx.enqueue_copy(out_idxs_host_ptr, device_out_idxs)
     ctx.synchronize()
 
     # Test for correctness against CPU reference
-    var out_idxs_cpu = HostNDBuffer[DType.int64, rank](out_shape)
+    var out_idxs_cpu_ptr = alloc[Scalar[DType.int64]](out_size)
+    var out_idxs_cpu = TileTensor(
+        out_idxs_cpu_ptr,
+        row_major(Coord(out_shape)),
+    )
 
-    @parameter
-    if largest:
+    comptime if largest:
         argmax(
-            in_buffer.to_layout_tensor(),
+            in_host,
             rank - 1,
-            out_idxs_cpu.to_layout_tensor(),
+            out_idxs_cpu,
         )
     else:
         argmin(
-            in_buffer.to_layout_tensor(),
+            in_host,
             rank - 1,
-            out_idxs_cpu.to_layout_tensor(),
+            out_idxs_cpu,
         )
 
-    for i in range(out_idxs_cpu.tensor.num_elements()):
+    for i in range(out_size):
         assert_equal(
-            out_idxs.tensor.data[i],
-            out_idxs_cpu.tensor.data[i].cast[output_type](),
+            out_idxs_host_ptr[i],
+            out_idxs_cpu_ptr[i].cast[output_type](),
         )
 
-    _ = device_in
-    _ = device_out_idxs
+    # Cleanup host memory
+    in_host_ptr.free()
+    out_idxs_host_ptr.free()
+    out_idxs_cpu_ptr.free()
+
+    # Cleanup device buffers
+    _ = device_in^
+    _ = device_out_idxs^
 
 
-fn _test_argmaxmin_gpu_helper_2[
+def _test_argmaxmin_gpu_helper_2[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        mut NDBuffer[mut=True, dtype, rank]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
     largest: Bool,
 ](ctx: DeviceContext) raises:
     test_argmaxmin_gpu[
@@ -115,11 +156,11 @@ fn _test_argmaxmin_gpu_helper_2[
     ](ctx, N=1024, batch_size=12, num_batches=10)
 
 
-fn test_argmaxmin_gpu_helper[
+def test_argmaxmin_gpu_helper[
     idx_type: DType,
-    fill_fn: fn[rank: Int, dtype: DType] (
-        mut NDBuffer[mut=True, dtype, rank]
-    ) capturing [_] -> None,
+    fill_fn: def[rank: Int, dtype: DType](
+        TileTensor[mut=True, dtype, ...]
+    ) capturing[_] -> None,
 ](ctx: DeviceContext) raises:
     # argmax
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=True](ctx)
@@ -128,21 +169,21 @@ fn test_argmaxmin_gpu_helper[
     _test_argmaxmin_gpu_helper_2[idx_type, fill_fn, largest=False](ctx)
 
 
-def main():
+def main() raises:
     @parameter
-    fn fill_random[
+    def fill_random[
         rank: Int, dtype: DType
-    ](mut buffer: NDBuffer[mut=True, dtype, rank]):
-        alias min_val = -1e9
-        alias max_val = 1e9
+    ](buffer: TileTensor[mut=True, dtype, ...]):
+        comptime min_val = -1e9
+        comptime max_val = 1e9
         var total_elements = buffer.num_elements()
         for i in range(total_elements):
             var random_value = random_float64(min_val, max_val)
-            buffer.data[i] = random_value.cast[dtype]()
+            buffer.raw_store(i, random_value.cast[dtype]())
 
     with DeviceContext() as ctx:  # argmax tests
         # index
-        test_argmaxmin_gpu_helper[DType.index, fill_random](ctx)
+        test_argmaxmin_gpu_helper[DType.int, fill_random](ctx)
 
         # int64
         test_argmaxmin_gpu_helper[DType.int64, fill_random](ctx)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,58 +11,68 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle
-from gpu.id import block_idx, thread_idx
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu import block_idx, thread_idx
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
 from layout._utils import ManagedLayoutTensor
 from layout.swizzle import make_swizzle
-from layout.tma_async import SharedMemBarrier, TMATensorTile, create_tma_tile
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
+from layout.tma_async import (
+    SharedMemBarrier,
+    TMATensorTile,
+    _idx_product,
+    create_tensor_tile,
+)
+from std.memory import stack_allocation
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(tma_tile, `nvvm.grid_constant`)
-fn tma_swizzle_load_kernel[
+def tma_swizzle_load_kernel[
     dtype: DType,
     layout: Layout,
-    tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
 ](
-    dst: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    tma_tile: TMATensorTile[dtype, tile_layout, desc_layout],
+    dst: LayoutTensor[dtype, layout, MutAnyOrigin],
+    tma_tile: TMATensorTile[dtype, tile_rank, tile_shape, desc_shape],
 ):
-    alias tileM = tile_layout.shape[0].value()
-    alias tileN = tile_layout.shape[1].value()
-    alias expected_bytes = tile_layout.size() * size_of[dtype]()
+    comptime tileM = tile_shape[0]
+    comptime tileN = tile_shape[1]
+    comptime expected_bytes = _idx_product[tile_rank, tile_shape]() * size_of[
+        dtype
+    ]()
 
+    comptime __tile_layout = Layout.row_major(tileM, tileN)
     tile = LayoutTensor[
         dtype,
-        tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        __tile_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
+        mbar[0].expect_bytes(Int32(expected_bytes))
         tma_tile.async_copy(
-            tile, mbar[0], (block_idx.x * tileN, block_idx.y * tileM)
+            tile,
+            mbar[0],
+            (block_idx.x * tileN, block_idx.y * tileM),
         )
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -80,55 +90,56 @@ def test_tma_swizzle[
     tile_shape: IndexList[2],
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     is_k_major: Bool = True,
-](ctx: DeviceContext):
-    constrained[
-        shape == tile_shape, "Only support same shape and tile shape."
-    ]()
+](ctx: DeviceContext) raises:
+    comptime assert (
+        shape == tile_shape
+    ), "Only support same shape and tile shape."
 
-    alias layout = Layout.row_major(shape[0], shape[1])
+    comptime layout = Layout.row_major(shape[0], shape[1])
     var src = ManagedLayoutTensor[dtype, layout](ctx)
     var dst = ManagedLayoutTensor[dtype, layout](ctx)
 
-    @parameter
-    if dtype is DType.float8_e4m3fn:
+    comptime if dtype == DType.float8_e4m3fn:
         random(src.tensor[update=False]())
         random(dst.tensor[update=False]())
     else:
         arange(src.tensor[update=False](), 0)
         arange(dst.tensor[update=False](), 0)
 
-    var tma_tensor = create_tma_tile[
-        dtype,
-        2,
+    var tma_tensor = create_tensor_tile[
         tile_shape,
         swizzle_mode=swizzle_mode,
-        is_k_major=is_k_major,
     ](ctx, src.device_tensor())
 
     # print test info
-    alias use_multiple_loads = (
-        tma_tensor.layout.size() > tma_tensor.desc_layout.size()
+    comptime use_multiple_loads = (
+        _idx_product[type_of(tma_tensor).rank, type_of(tma_tensor).tile_shape]()
+        > _idx_product[
+            type_of(tma_tensor).rank, type_of(tma_tensor).desc_shape
+        ]()
     )
-    alias test_name = "test " + String(dtype) + (
+    comptime test_name = "test " + String(dtype) + (
         " multiple " if use_multiple_loads else " single "
     ) + "tma w/ " + String(swizzle_mode) + " k-major " + String(is_k_major)
     print(test_name)
 
     # Descriptor tile is the copy per tma instruction. One load could have multiple tma copies.
-    alias descM = __type_of(tma_tensor).desc_layout.shape[0].value()
-    alias descN = __type_of(tma_tensor).desc_layout.shape[1].value()
-    alias desc_tile_size = descM * descN
+    comptime descM = type_of(tma_tensor).desc_shape[0]
+    comptime descN = type_of(tma_tensor).desc_shape[1]
+    comptime desc_tile_size = descM * descN
+    comptime __desc_layout = Layout.row_major(descM, descN)
     desc_tile = LayoutTensor[
-        dtype, __type_of(tma_tensor).desc_layout, MutableAnyOrigin
+        dtype, __desc_layout, MutAnyOrigin
     ].stack_allocation()
 
-    alias kernel = tma_swizzle_load_kernel[
-        __type_of(tma_tensor).dtype,
+    comptime kernel = tma_swizzle_load_kernel[
+        type_of(tma_tensor).dtype,
         layout,
-        __type_of(tma_tensor).layout,
-        __type_of(tma_tensor).desc_layout,
+        type_of(tma_tensor).rank,
+        type_of(tma_tensor).tile_shape,
+        type_of(tma_tensor).desc_shape,
     ]
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(shape[1] // tile_shape[1], shape[0] // tile_shape[0]),
@@ -138,7 +149,7 @@ def test_tma_swizzle[
     src_host = src.tensor()
     dst_host = dst.tensor()
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dst_tile_ptr = dst_host.ptr
     for desc_tile_m in range(shape[0] // descM):
@@ -165,150 +176,150 @@ def test_tma_swizzle[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_swizzle_bf16")
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 64),
-            tile_shape = Index(8, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(8, 64),
+            tile_shape=Index(8, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 128),
-            tile_shape = Index(8, 128),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(8, 128),
+            tile_shape=Index(8, 128),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 32),
-            tile_shape = Index(8, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            shape=Index(8, 32),
+            tile_shape=Index(8, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 64),
-            tile_shape = Index(8, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            shape=Index(8, 64),
+            tile_shape=Index(8, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 16),
-            tile_shape = Index(8, 16),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            shape=Index(8, 16),
+            tile_shape=Index(8, 16),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 32),
-            tile_shape = Index(8, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            shape=Index(8, 32),
+            tile_shape=Index(8, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 16),
-            tile_shape = Index(8, 16),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            shape=Index(8, 16),
+            tile_shape=Index(8, 16),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(8, 32),
-            tile_shape = Index(8, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            shape=Index(8, 32),
+            tile_shape=Index(8, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(16, 64),
-            tile_shape = Index(16, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(16, 64),
+            tile_shape=Index(16, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
             is_k_major=False,
         ](ctx)
 
         test_tma_swizzle[
             DType.bfloat16,
-            shape = Index(16, 128),
-            tile_shape = Index(16, 128),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(16, 128),
+            tile_shape=Index(16, 128),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
             is_k_major=False,
         ](ctx)
 
         print("test_tma_swizzle_f8e4m3fn")
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 128),
-            tile_shape = Index(8, 128),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(8, 128),
+            tile_shape=Index(8, 128),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 256),
-            tile_shape = Index(8, 256),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(8, 256),
+            tile_shape=Index(8, 256),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 64),
-            tile_shape = Index(8, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            shape=Index(8, 64),
+            tile_shape=Index(8, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 128),
-            tile_shape = Index(8, 128),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            shape=Index(8, 128),
+            tile_shape=Index(8, 128),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 32),
-            tile_shape = Index(8, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            shape=Index(8, 32),
+            tile_shape=Index(8, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 64),
-            tile_shape = Index(8, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            shape=Index(8, 64),
+            tile_shape=Index(8, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 16),
-            tile_shape = Index(8, 16),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            shape=Index(8, 16),
+            tile_shape=Index(8, 16),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(8, 32),
-            tile_shape = Index(8, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            shape=Index(8, 32),
+            tile_shape=Index(8, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(16, 128),
-            tile_shape = Index(16, 128),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(16, 128),
+            tile_shape=Index(16, 128),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
             is_k_major=False,
         ](ctx)
 
         test_tma_swizzle[
             DType.float8_e4m3fn,
-            shape = Index(16, 256),
-            tile_shape = Index(16, 256),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            shape=Index(16, 256),
+            tile_shape=Index(16, 256),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
             is_k_major=False,
         ](ctx)

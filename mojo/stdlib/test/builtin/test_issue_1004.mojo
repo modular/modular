@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,15 +12,19 @@
 # ===----------------------------------------------------------------------=== #
 # Test for https://github.com/modular/modular/issues/1004
 
-from testing import assert_equal
+from std.testing import assert_equal, TestSuite
 
 
-fn foo(x: String) raises:
+def foo(x: String) raises:
     raise Error("Failed on: " + x)
 
 
-def main():
+def test_issue_1004() raises:
     try:
         foo("Hello")
     except e:
         assert_equal(String(e), "Failed on: Hello")
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

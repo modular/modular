@@ -1,4 +1,4 @@
-<!-- markdownlint-disable -->
+<!-- rumdl-disable -->
 {% import 'macros.jinja' as macros %}
 {# Print YAML front matter #}
 {% macro print_front_matter(decl) %}
@@ -9,6 +9,8 @@ title: {{ decl.name }}
 version: {{ decl.version }}
 {% if decl.packages or decl.modules %}type: package
 {% else %}type: module
+{% if decl.module_name %}module_name: {{ decl.module_name }}
+{% endif %}
 namespace: {{ decl.namespace }}
 {% endif %}
 {% if decl.packages and not decl.modules %}sidebar_position: 1
@@ -18,7 +20,7 @@ description: {% if decl.summary
   %}"{{ macros.escape_quotes(decl.summary) }}"
   {% else %}"Mojo {%
     if decl.packages or decl.modules %}package{% else %}module{%
-    endif %} `{{ decl.namespace }}.{{ decl.name }}` documentation"
+    endif %} {{ decl.namespace }}.{{ decl.name }} documentation"
   {% endif %}
 ---
 
@@ -49,16 +51,28 @@ description: {% if decl.summary
 
 {% if decl.aliases %}
 
-## Aliases
+## `comptime` values
 
 {% for alias in decl.aliases | sort(attribute='name') -%}
 
+{# Extra div to flex align stability marker. #}
+<div class='mojo-alias-header'>
+
 ###  `{{ alias.name }}`
+
+{{ macros.stability_marker(alias, header=True) }}
+
+</div>
 
 <div class='mojo-alias-detail'>
 <div class="mojo-alias-sig">
 
-`{{ alias.signature }} = {{ alias.value }}`
+{# For values that could contain IR (signatures, types, values), use #}
+{# double backticks to preserve literal backticks. #}
+{# Spaces between the double-backticks and content need to be balanced, #}
+{# so we either add them manually (as here) or use pad_backticks filter. #}
+
+`` {{ alias.signature }} = {{ alias.value }} ``
 
 </div>
 
@@ -70,6 +84,7 @@ description: {% if decl.summary
 {{alias.description | indent(2, True, False)}}
 {% endif %}
 {% if alias.deprecated %}
+
 **Deprecated:** {{ alias.deprecated }}
 {% endif %}
 
@@ -80,6 +95,7 @@ description: {% if decl.summary
 {% for param in alias.parameters -%}
 *   ​<b>{{ param.name }}</b> ({% if param.traits -%}
         {%- for trait in param.traits -%}
+            {# Trait names should never contain backticks, so no double backticks here. #}
             {%- if trait.path -%}
                 [`{{ trait.type }}`]({{ api_path }}{{ trait.path }})
             {%- else -%}
@@ -89,9 +105,9 @@ description: {% if decl.summary
         {%- endfor -%}
     {%- else -%}
         {%- if param.path -%}
-            [`{{ param.type }}`]({{ api_path }}{{ param.path }})
+            [``{{ param.type | pad_backticks }}``]({{ api_path }}{{ param.path }})
         {%- else -%}
-            `{{ param.type }}`
+            ``{{ param.type | pad_backticks }}``
         {%- endif -%}
     {%- endif %}): {{ param.description }}
 {% endfor %}

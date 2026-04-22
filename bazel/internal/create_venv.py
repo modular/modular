@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -21,6 +21,11 @@ from typing import Any
 _PEP_491_SHEBANG = b"#!python"
 
 
+def _is_shared_lib(p: Path) -> bool:
+    # Linux: libfoo.so or libfoo.so.N[.M]; macOS: libfoo.dylib
+    return p.suffix in (".dylib", ".so") or ".so." in p.name
+
+
 def _write_pth(site_packages: Path, imports: list[str]) -> None:
     pth_imports = []
     for imp in imports:
@@ -36,7 +41,10 @@ def _write_pth(site_packages: Path, imports: list[str]) -> None:
     )
 
 
-def _create_symlink(src: Path, dest: Path) -> None:
+def _create_symlink(src: Path, dest: Path, overwrite: bool = False) -> None:
+    if overwrite:
+        dest.unlink(missing_ok=True)
+
     # NOTE: Ignore duplicate files that would end up in the same place. First one wins.
     if dest.exists():
         return
@@ -81,7 +89,7 @@ def _symlink_files(
                     destination = venv_path / dependency_base_dir
                     contents = path.read_bytes()
                     if path.read_bytes().startswith(_PEP_491_SHEBANG):
-                        shebang = f"#!{venv_path / 'bin' / 'python3'}".encode()
+                        shebang = f"#!{venv_path / 'bin/python3'}".encode()
                         contents = shebang + contents[len(_PEP_491_SHEBANG) :]
                         destination.write_bytes(contents)
                         destination.chmod(0o755)
@@ -103,14 +111,16 @@ def _symlink_files(
             f"error: data_files cannot be directories: '{src}'"
         )
         if src.suffix == ".mojopkg":
-            _create_symlink(src, venv_path / "lib" / "mojo" / src.name)
-        elif src.suffix in (".dylib", ".so"):
+            _create_symlink(src, venv_path / "lib/mojo" / src.name)
+        elif _is_shared_lib(src):
             _create_symlink(src, venv_path / "lib" / src.name)
         elif src.read_bytes().startswith(b"#!/usr/bin/env python3"):
             # Skip py_binary data dependency
             continue
         else:
             _create_symlink(src, venv_path / "bin" / src.name)
+            if src.name == "mojo-compiler-only":
+                _create_symlink(src, venv_path / "bin/mojo")
 
 
 def _create_venv(manifest: dict[str, Any], venv_path: Path) -> None:
@@ -130,8 +140,10 @@ def _create_venv(manifest: dict[str, Any], venv_path: Path) -> None:
 
     _write_pth(site_packages, manifest["imports"])
     _symlink_files(venv_path, site_packages, manifest)
+    short_venv_path = Path(os.environ["BUILD_WORKSPACE_DIRECTORY"]) / ".venv"
+    _create_symlink(venv_path, short_venv_path, overwrite=True)
     print(
-        f"Created virtual environment at:\n\n{venv_path}\n\nActivate it with:\n\nsource {venv_path / 'bin' / 'activate'}\n"
+        f"Created virtual environment at:\n\n{venv_path}\n\nActivate it with:\n\nsource {venv_path / 'bin/activate'}\n\nOr:\n\nsource {short_venv_path / 'bin/activate'}\n"
     )
 
 

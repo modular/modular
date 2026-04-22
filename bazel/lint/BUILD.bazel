@@ -1,48 +1,30 @@
-load("@aspect_bazel_lib//lib:directory_path.bzl", "directory_path")
-load("@aspect_rules_js//js:defs.bzl", "js_binary")
-load("@npm//:defs.bzl", "npm_link_all_packages")
+load("@buildifier_prebuilt//:rules.bzl", "buildifier")
 load("@rules_multirun//:defs.bzl", "command", "multirun")
 load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
-load("//bazel:api.bzl", "mojo_binary")
+load("//bazel:api.bzl", "modular_py_binary", "mojo_binary")
 
-exports_files(["mblack-wrapper.py"])
+package(default_visibility = ["//visibility:public"])
 
-npm_link_all_packages(
-    name = "node_modules",
+_BUILDIFIER_IGNORES = [
+    "./.derived/*",
+    "./.git/*",
+    "./CloudInfra/go/pkg/*",
+    "./third-party/llvm-project/*",
+    "./oss/max-llm-book/.pixi/*",
+]
+
+buildifier(
+    name = "buildifier.check",
+    exclude_patterns = _BUILDIFIER_IGNORES,
+    lint_mode = "warn",
+    mode = "diff",
 )
 
-directory_path(
-    name = "entry_point",
-    directory = ":node_modules/markdownlint-cli/dir",
-    path = "markdownlint.js",
-)
-
-js_binary(
-    name = "markdownlint",
-    data = [
-        ":node_modules/deep-extend",
-        ":node_modules/markdownlint-cli",
-    ],
-    entry_point = ":entry_point",
-)
-
-sh_binary(
-    name = "markdownlint-wrapper",
-    srcs = ["markdownlint-wrapper.sh"],
-    data = [":markdownlint"],
-)
-
-command(
-    name = "markdownlint.check",
-    command = "markdownlint-wrapper",
-    visibility = ["//visibility:public"],
-)
-
-command(
-    name = "markdownlint.fix",
-    arguments = ["--fix"],
-    command = "markdownlint-wrapper",
-    visibility = ["//visibility:public"],
+buildifier(
+    name = "buildifier.fix",
+    exclude_patterns = _BUILDIFIER_IGNORES,
+    lint_mode = "fix",
+    mode = "fix",
 )
 
 sh_binary(
@@ -53,21 +35,61 @@ sh_binary(
         "//:linux_aarch64": ["@ruff-aarch64-unknown-linux-gnu//:ruff"],
         "@platforms//os:macos": ["@ruff-aarch64-apple-darwin//:ruff"],
     }),
-    visibility = ["//visibility:public"],
 )
 
 command(
     name = "ruff.check",
     arguments = ["check"],
     command = ":ruff-wrapper",
-    visibility = ["//visibility:public"],
 )
 
 command(
     name = "ruff.fix",
     arguments = ["fix"],
     command = ":ruff-wrapper",
-    visibility = ["//visibility:public"],
+)
+
+alias(
+    name = "rumdl",
+    actual = select({
+        "//:linux_x86_64": "@rumdl-x86_64-unknown-linux-musl//:rumdl",
+        "//:linux_aarch64": "@rumdl-aarch64-unknown-linux-musl//:rumdl",
+        "@platforms//os:macos": "@rumdl-aarch64-apple-darwin//:rumdl",
+    }),
+    tags = ["maybe-unused"],  # TODO: Remove when used
+)
+
+command(
+    name = "rumdl.check",
+    arguments = [
+        "check",
+        ".",
+        "--config",
+        "$(location :.rumdl.toml)",
+    ],
+    command = ":rumdl",
+    data = [":.rumdl.toml"],
+    run_from_workspace_root = True,
+)
+
+command(
+    name = "rumdl.fix",
+    arguments = [
+        "fmt",
+        ".",
+        "--config",
+        "$(location :.rumdl.toml)",
+    ],
+    command = ":rumdl",
+    data = [":.rumdl.toml"],
+    run_from_workspace_root = True,
+)
+
+modular_py_binary(
+    name = "mblack-wrapper",
+    srcs = ["mblack-wrapper.py"],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = ["@mblack"],
 )
 
 command(
@@ -78,8 +100,7 @@ command(
         "--diff",
         ".",
     ],
-    command = "@mblack",
-    visibility = ["//visibility:public"],
+    command = ":mblack-wrapper",
 )
 
 command(
@@ -88,14 +109,22 @@ command(
         "--quiet",
         ".",
     ],
-    command = "@mblack",
-    visibility = ["//visibility:public"],
+    command = ":mblack-wrapper",
+)
+
+command(
+    name = "mblack.fix-fast",
+    arguments = [
+        "--quiet",
+    ],
+    command = ":mblack-wrapper",
+    environment = {"FAST": "1"},
 )
 
 mojo_binary(
     name = "check_licenses",
     srcs = [":check_licenses.mojo"],
-    deps = ["@mojo//:stdlib"],
+    deps = ["@mojo//:std"],
 )
 
 command(
@@ -111,28 +140,73 @@ command(
     run_from_workspace_root = True,
 )
 
+alias(
+    name = "shellcheck",
+    actual = select({
+        "//:linux_x86_64": "@shellcheck-linux.x86_64//:shellcheck",
+        "//:linux_aarch64": "@shellcheck-linux.aarch64//:shellcheck",
+        "@platforms//os:macos": "@shellcheck-darwin.aarch64//:shellcheck",
+    }),
+)
+
+sh_binary(
+    name = "shellcheck-wrapper",
+    srcs = ["shellcheck-wrapper.sh"],
+    data = [":shellcheck"],
+)
+
+command(
+    name = "shellcheck.check",
+    command = ":shellcheck-wrapper",
+)
+
 multirun(
     name = "lint",
     buffer_output = True,
     commands = [
+        ":buildifier.check",
         ":check_licenses.check",
-        ":markdownlint.check",
         ":mblack.check",
         ":ruff.check",
+        ":rumdl.check",
+        ":shellcheck.check",
     ],
     jobs = 0,
-    visibility = ["//visibility:public"],
+)
+
+COMMON_FIX_COMMANDS = [
+    ":buildifier.fix",
+    ":check_licenses.fix",
+    ":ruff.fix",
+    ":rumdl.fix",
+]
+
+multirun(
+    name = "fix-fast",
+    buffer_output = True,
+    commands = COMMON_FIX_COMMANDS + [
+        ":mblack.fix-fast",
+    ],
+    jobs = 0,
 )
 
 multirun(
     name = "fix",
     buffer_output = True,
-    commands = [
-        ":check_licenses.fix",
-        ":markdownlint.fix",
+    commands = COMMON_FIX_COMMANDS + [
         ":mblack.fix",
-        ":ruff.fix",
     ],
     jobs = 0,
-    visibility = ["//visibility:public"],
+)
+
+sh_binary(
+    name = "format",
+    srcs = ["format-wrapper.sh"],
+    data = ["//bazel/lint:fix"],
+)
+
+sh_binary(
+    name = "format-fast",
+    srcs = ["format-fast-wrapper.sh"],
+    data = ["//bazel/lint:fix-fast"],
 )

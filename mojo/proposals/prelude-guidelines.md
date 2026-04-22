@@ -1,8 +1,10 @@
 # What goes in the Mojo prelude (and why)?
 
+**Status**: Implemented (living policy document).
+
 Author: Connor Gray, Laszlo Kindrat, Joe Loser
+
 Date: July 15, 2025
-Status: Living policy document.
 
 ## Background
 
@@ -36,20 +38,21 @@ including a particular item.
       structures. They are typically fundamental in many other languages, often
       with built-in syntax.
 - **Present in the Python prelude.**
-  - The item appears in the [Python ‘builtin’ module](https://docs.python.org/3/library/builtins.html).
+  - The item appears in the
+    [Python ‘builtin’ module](https://docs.python.org/3/library/builtins.html).
     We include it in our prelude for better compatibility.
   - *Examples:*
     - `all`, `divmod`, `repr`, `str`
-    - `Representable`, `Absable` — these traits are included because they back
+    - `Writable`, `Absable` — these traits are included because they back
       Python prelude functions.
 - **Used with language syntax or fundamental semantics.**
   - The type is fundamental to effective usage of syntax in the language.
   - *Examples:*
     - `Pointer`
     - `Slice` — necessary for a type to implement `[a..b]` `__getitem__` syntax.
-    - `Origin`, `ImmutableOrigin`, `MutableAnyOrigin` — necessary to use the
+    - `Origin`, `ImmutableOrigin`, `MutAnyOrigin` — necessary to use the
       `ref [lifetime] foo: T` syntax.
-    - `EqualityComparable`, `Comparable` — necessary in generic programming to
+    - `Equatable`, `Comparable` — necessary in generic programming to
       require a type supports `==` syntax, or to write a conditional conformance
       implementation of `__eq__` for a parameterized type.
 - **Convenience to encourage use.**
@@ -88,7 +91,7 @@ prelude include:
   - *Examples:* `bitcast`, `simd_width_of`, `external_call`
 - **Language machinery**
   - *Examples:*
-    - `VariadicListMem`, `VariadicPack`
+    - `VariadicList`, `VariadicPack`
       - Note that although we aim to remove these from the prelude eventually,
         they may stay for some time due to missing language features (e.g. kwarg
         splatting) that would eventually obsolete them.

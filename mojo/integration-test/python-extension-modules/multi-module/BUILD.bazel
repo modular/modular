@@ -1,5 +1,6 @@
-load("@rules_mojo//mojo:mojo_shared_library.bzl", "mojo_shared_library")
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "mojo_shared_library")
+
+package(default_visibility = ["//visibility:private"])
 
 mojo_shared_library(
     name = "mojo_module_a",
@@ -16,7 +17,7 @@ mojo_shared_library(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
@@ -35,15 +36,14 @@ mojo_shared_library(
         "//conditions:default": [],
     }),
     deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
 )
 
 modular_py_test(
     name = "main",
     srcs = ["test_module.py"],
-    tags = ["no-mypy"],  # Fails to find mojo_module.so
-    deps = [
+    data = [
         ":mojo_module_a",
         ":mojo_module_b",
     ],

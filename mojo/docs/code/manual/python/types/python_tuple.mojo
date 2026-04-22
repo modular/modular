@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
+# start-python-tuple-example
+from std.python import Python
 
 
-def main():
+def main() raises:
     py_tuple = Python.tuple("cat", 2, 3.1415, "cat")
     n = py_tuple[2]
     print("n =", n)
     print("Number of cats:", py_tuple.count("cat"))
+    # end-python-tuple-example

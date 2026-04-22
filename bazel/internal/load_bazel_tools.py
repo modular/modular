@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -29,6 +29,11 @@ from lit.llvm.subst import ToolSubst
 from python.runfiles import runfiles
 
 _R = runfiles.Create()
+
+if os.getenv("MODULAR_PYTEST_DEBUG") == "1":
+    raise SystemExit(
+        "\033[31mERROR\033[0m: 'bd' doesn't support lit tests, instead us 'br install' and manually debug the RUN command"
+    )
 
 # llvm_config.config.substitutions = substitutions_before
 for index, pair in enumerate(llvm_config.config.substitutions):
@@ -135,10 +140,8 @@ for substitution, command in custom_substitutions.items():
 
 new_system_libs = []
 for arg in os.environ.get("MODULAR_MOJO_MAX_SYSTEM_LIBS", "").split(","):
-    if arg.startswith("--sysroot=external/"):
-        arg = "--sysroot=" + os.path.abspath(
-            os.path.join("..", arg[len("--sysroot=external/") :])
-        )
+    if arg.startswith("--sysroot="):
+        arg = "--sysroot=" + os.path.abspath(arg[len("--sysroot=") :])
     new_system_libs.append(arg)
 
 
@@ -220,8 +223,12 @@ for key in sorted(os.environ.keys()):
             new_options = []
             for option in value.split(","):
                 option_key, option_value = option.split("=", 1)
-                if os.path.exists(option_value):
+                if option_key == "suppressions":
                     option_value = os.path.abspath(option_value)
+                    if not os.path.exists(option_value):
+                        raise FileNotFoundError(
+                            f"ASAN/LSAN suppressions file not found: {option_value}"
+                        )
                 new_options.append(f"{option_key}={option_value}")
             value = ",".join(new_options)
         elif os.path.exists(value):

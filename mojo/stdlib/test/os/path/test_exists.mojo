@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,16 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os.path import exists, lexists
-from pathlib import Path, cwd
+from std.os.path import exists, lexists
+from std.pathlib import Path, cwd
 
-from builtin._location import __source_location
-from testing import assert_false, assert_true
+from std.reflection import source_location
+from std.testing import TestSuite, assert_false, assert_true
 
 
-def main():
-    assert_true(exists(__source_location().file_name))
-    assert_true(lexists(__source_location().file_name))
+def test_exists() raises:
+    assert_true(exists(source_location().file_name()))
+    assert_true(lexists(source_location().file_name()))
 
     assert_false(exists("this/file/does/not/exist"))
     assert_false(lexists("this/file/does/not/exist"))
@@ -30,3 +30,7 @@ def main():
 
     assert_true(exists(Path()))
     assert_true(lexists(Path()))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,18 +1,25 @@
-load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "modular_versioned_expand_template", "mojo_filecheck_test", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
 
 _FILECHECK_TESTS = [
     "test_exit_1.mojo",
 ]
 
 _LIT_TESTS = [
-    "test_invalid_paramenv.mojo",
+    "test_c_types_32bit.mojo",
+    "test_compile_sanitize_address.mojo",
 ]
 
 _PLATFORM_CONSTRAINTS = {
     "test_aarch64_target.mojo": ["@platforms//os:macos"],  # TODO (17471): Not all aarch64 have neon, so we need to guard against that, for now just require Apple Silicon.
     "test_linux_target.mojo": ["@platforms//os:linux"],
     "test_macos_target.mojo": ["@platforms//os:macos"],
-    "test_windows_target.mojo": ["@platforms//:incompatible"],
+    # TODO(MSTDL-1965): Fix this ASAN issue.
+    "test_compile_debug.mojo": select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 }
 
 _MOJO_COMPILE_OPTS = {
@@ -23,22 +30,6 @@ _MOJO_COMPILE_OPTS = {
     "test_build_info_debug.mojo": [
         "-D",
         "BUILD_TYPE=debug",
-    ],
-    "test_paramenv.mojo": [
-        "-D",
-        "bar=99",
-        "-D",
-        "baz=hello",
-        "-D",
-        "foo=11",
-        "-D",
-        "my_true=True",
-        "-D",
-        "my_false=false",
-        "-D",
-        "my_on=on",
-        "-D",
-        "my_off=off",
     ],
     "test_compile_debug.mojo": [
         "-O0",
@@ -62,7 +53,7 @@ _EXPECT_FAIL = [
         expect_fail = src in _EXPECT_FAIL,
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -79,7 +70,7 @@ _EXPECT_FAIL = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -89,12 +80,28 @@ _EXPECT_FAIL = [
     )
 ]
 
+modular_versioned_expand_template(
+    name = "test_mojo_version_generated",
+    out = "test_mojo_version.mojo",
+    substitutions = {},
+    template = "test_mojo_version.mojo.tmpl",
+)
+
+mojo_test(
+    name = "test_mojo_version.mojo.test",
+    srcs = [":test_mojo_version_generated"],
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
+
 lit_tests(
     name = "lit_tests",
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

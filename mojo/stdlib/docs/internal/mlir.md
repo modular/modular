@@ -11,13 +11,14 @@ WE FIND IT CONVENIENT TO DO SO WITHOUT WARNING OR NOTICE**.
 
 ### `always_inline("builtin")` vs `always_inline("nodebug")`
 
-From: [Chris on Discord](https://discord.com/channels/1087530497313357884/1339917438372020264)
+From:
+[Chris on Discord](https://discord.com/channels/1087530497313357884/1339917438372020264)
 
 `always_inline("builtin")` is the same as `always_inline("nodebug")` but affects
 how tagged methods are handled when they are called in parameter expressions.
-For example, consider: `fn thing[a: Int, b: Int](x: T[a], y: T[b]) -> T[a+b]:
+For example, consider: `def thing[a: Int, b: Int](x: T[a], y: T[b]) -> T[a+b]:
 ...` This is a dependent type, and the return type is represented internally to
-the compiler in a completely symbolic way as `T[Int.add(a, b)]`.  This is the
+the compiler in a completely symbolic way as `T[Int.add(a, b)]`. This is the
 core of how Mojo supports arbitrary comptime evaluation of things. That said,
 when you get to the caller site, you often know what a and b are; `value =
 thing(someT3, someT17)`, and in this case, "it is obvious" that value should
@@ -28,7 +29,7 @@ obvious cases, which massively undermines dependent type support.
 
 To address this, early on, an engineer added a horrible hack to rewrite the
 comptime interpreter a bunch to see if it could go fold and simplify
-expressions.  This solves this case, e.g. var value : `T[20] = thing(someT3,
+expressions. This solves this case, e.g. var value : `T[20] = thing(someT3,
 someT17)` works... but it is really inexpensive in compile time and introduces a
 significant layering problem: the comptime interpreter isn't supposed to run on
 the intermediate IR the parser is producing - that IR doesn't have destructors

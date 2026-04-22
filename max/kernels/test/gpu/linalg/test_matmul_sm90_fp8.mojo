@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,25 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import linalg.vendor_blas
-from gpu.host import DeviceContext
-from internal_utils._utils import dynamic, static
-from linalg.matmul_sm90_testbed import test_matmul_sm90
-from linalg.matmul_tile_scheduler import MatmulSchedule
-from utils.index import Index
+import linalg.matmul.vendor.blas as vendor_blas
+from std.gpu.host import DeviceContext
+from linalg.matmul.gpu.sm90.testbed import test_matmul_sm90
+from linalg.matmul.gpu.tile_scheduler import MatmulSchedule
+
+from std.utils.index import Index
+
+from layout import Idx
 
 # Helper to calculate block_tile_shape based on dtype and wgmma_n
-alias block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
+comptime block_tile_shape[wgmma_n: Int, a_dtype: DType] = Index(
     128, wgmma_n, 128
-) if a_dtype is DType.float8_e4m3fn else Index(128, wgmma_n, 64)
+) if a_dtype == DType.float8_e4m3fn else Index(128, wgmma_n, 64)
 
 # Helper to calculate wgmma_shape based on dtype and wgmma_n
-alias wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
+comptime wgmma_shape[wgmma_n: Int, a_dtype: DType] = Index(
     64, wgmma_n, 32
-) if a_dtype is DType.float8_e4m3fn else Index(64, wgmma_n, 16)
+) if a_dtype == DType.float8_e4m3fn else Index(64, wgmma_n, 16)
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         # NOTE: please note that cublaslt handle should be used for fp8-e4m3fn and cublas handle for bfloat16
         # because cublas does not support float8-e4m3fn. Also, fp8 tests should be run first and then bfloat16 tests
@@ -45,14 +47,14 @@ fn main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            grid_shape = Index(32, 4),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(32, 4),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[2560](),
-            static[8192](),
+            Idx[512](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -65,14 +67,14 @@ fn main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            grid_shape = Index(10, 13),
-            schedule = MatmulSchedule.TILE2D,
+            grid_shape=Index(10, 13),
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[8192](),
-            static[2560](),
-            static[8192](),
+            Idx[8192](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -85,13 +87,13 @@ fn main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[4096](),
-            static[2560](),
-            static[8192](),
+            Idx[4096](),
+            Idx[2560](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -104,13 +106,13 @@ fn main() raises:
             num_consumer=2,
             partitioned_multicast=False,
             num_pipeline_stages=6,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[8192](),
-            static[2048](),
+            Idx[512](),
+            Idx[8192](),
+            Idx[2048](),
         )
 
         test_matmul_sm90[
@@ -123,13 +125,13 @@ fn main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[14336](),
-            static[8192](),
+            Idx[512](),
+            Idx[14336](),
+            Idx[8192](),
         )
 
         test_matmul_sm90[
@@ -142,13 +144,13 @@ fn main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[4096](),
-            static[8192](),
-            static[7168](),
+            Idx[4096](),
+            Idx[8192](),
+            Idx[7168](),
         )
 
         test_matmul_sm90[
@@ -161,13 +163,13 @@ fn main() raises:
             num_consumer=2,
             num_pipeline_stages=6,
             partitioned_multicast=False,
-            schedule = MatmulSchedule.TILE2D,
+            schedule=MatmulSchedule.TILE2D,
             measure_threshold=0.001,
         ](
             ctx,
-            static[512](),
-            static[8192](),
-            static[7168](),
+            Idx[512](),
+            Idx[8192](),
+            Idx[7168](),
         )
 
         test_matmul_sm90[
@@ -181,9 +183,9 @@ fn main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            dynamic(199),
-            static[512](),
-            static[1024](),
+            Idx(Int(199)),
+            Idx[512](),
+            Idx[1024](),
         )
 
         test_matmul_sm90[
@@ -197,9 +199,9 @@ fn main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            dynamic(200),
-            static[256](),
-            static[256](),
+            Idx(Int(200)),
+            Idx[256](),
+            Idx[256](),
         )
 
         test_matmul_sm90[
@@ -214,7 +216,7 @@ fn main() raises:
             measure_threshold=0.001,
         ](
             ctx,
-            dynamic(201),
-            static[384](),
-            static[256](),
+            Idx(Int(201)),
+            Idx[384](),
+            Idx[256](),
         )

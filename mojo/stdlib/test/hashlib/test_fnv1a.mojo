@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib._fnv1a import Fnv1a
-from testing import assert_equal
-from memory import memset_zero
+from std.hashlib._fnv1a import Fnv1a
+
+from std.memory import memset_zero
 from test_utils import (
-    gen_word_pairs,
     assert_dif_hashes,
     assert_fill_factor,
+    gen_word_pairs,
     words_ar,
     words_el,
     words_en,
@@ -26,62 +26,63 @@ from test_utils import (
     words_pl,
     words_ru,
 )
+from std.testing import assert_equal, TestSuite
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     assert_equal(
-        hash[HasherType=Fnv1a]("a"),
-        hash[HasherType=Fnv1a]("a"),
+        hash[Fnv1a]("a"),
+        hash[Fnv1a]("a"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a]("b"),
-        hash[HasherType=Fnv1a]("b"),
-    )
-
-    assert_equal(
-        hash[HasherType=Fnv1a]("c"),
-        hash[HasherType=Fnv1a]("c"),
+        hash[Fnv1a]("b"),
+        hash[Fnv1a]("b"),
     )
 
     assert_equal(
-        hash[HasherType=Fnv1a]("d"),
-        hash[HasherType=Fnv1a]("d"),
+        hash[Fnv1a]("c"),
+        hash[Fnv1a]("c"),
+    )
+
+    assert_equal(
+        hash[Fnv1a]("d"),
+        hash[Fnv1a]("d"),
     )
     assert_equal(
-        hash[HasherType=Fnv1a]("d"),
-        hash[HasherType=Fnv1a]("d"),
+        hash[Fnv1a]("d"),
+        hash[Fnv1a]("d"),
     )
 
 
-def test_avalanche():
+def test_avalanche() raises:
     # test that values which differ just in one bit,
-    # produce significatly different hash values
+    # produce significantly different hash values
     var buffer = InlineArray[UInt8, 256](fill=0)
     var hashes = List[UInt64]()
-    hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+    hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     for i in range(256):
         memset_zero(buffer.unsafe_ptr(), 256)
         var v = 1 << (i & 7)
-        buffer[i >> 3] = v
-        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), 256))
+        buffer[i >> 3] = UInt8(v)
+        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), 256))
 
     assert_dif_hashes(hashes, 15)
 
 
-def test_trailing_zeros():
+def test_trailing_zeros() raises:
     # checks that a value with different amount of trailing zeros,
     # results in significantly different hash values
     var buffer = InlineArray[UInt8, 8](fill=0)
     buffer[0] = 23
     var hashes = List[UInt64]()
     for i in range(1, 9):
-        hashes.append(hash[HasherType=Fnv1a](buffer.unsafe_ptr(), i))
+        hashes.append(hash[Fnv1a](buffer.unsafe_ptr(), i))
 
     assert_dif_hashes(hashes, 21)
 
 
-def test_fill_factor():
+def test_fill_factor() raises:
     words = gen_word_pairs[words_ar]()
     assert_fill_factor["AR", Fnv1a](words, len(words), 0.63)
     assert_fill_factor["AR", Fnv1a](words, len(words) // 2, 0.86)
@@ -125,39 +126,39 @@ def test_fill_factor():
     assert_fill_factor["RU", Fnv1a](words, len(words) // 14, 1.0)
 
 
-def test_hash_simd_values():
-    fn hash(value: SIMD) -> UInt64:
+def test_hash_simd_values() raises:
+    def hash(value: SIMD) -> UInt64:
         hasher = Fnv1a()
         hasher._update_with_simd(value)
         return hasher^.finish()
 
-    assert_equal(hash(SIMD[DType.float16, 1](1.5)), 12636464265834235359)
-    assert_equal(hash(SIMD[DType.float32, 1](1.5)), 8026467504136239071)
-    assert_equal(hash(SIMD[DType.float64, 1](1.5)), 15000291120250992607)
-    assert_equal(hash(SIMD[DType.float16, 1](1)), 12637027215787879391)
-    assert_equal(hash(SIMD[DType.float32, 1](1)), 3414781483884328927)
-    assert_equal(hash(SIMD[DType.float64, 1](1)), 14020758201297909727)
+    assert_equal(hash(Float16(1.5)), 12636464265834235359)
+    assert_equal(hash(Float32(1.5)), 8026467504136239071)
+    assert_equal(hash(Float64(1.5)), 15000291120250992607)
+    assert_equal(hash(Float16(1)), 12637027215787879391)
+    assert_equal(hash(Float32(1)), 3414781483884328927)
+    assert_equal(hash(Float64(1)), 14020758201297909727)
 
-    assert_equal(hash(SIMD[DType.bool, 1](True)), 12638152016183539244)
-    assert_equal(hash(SIMD[DType.int8, 1](1)), 12638152016183539244)
-    assert_equal(hash(SIMD[DType.int16, 1](1)), 12638152016183539244)
-    assert_equal(hash(SIMD[DType.int32, 1](1)), 12638152016183539244)
-    assert_equal(hash(SIMD[DType.int64, 1](1)), 12638152016183539244)
-    assert_equal(hash(SIMD[DType.int128, 1](1)), 589727492704079044)
+    assert_equal(hash(Scalar[DType.bool](True)), 12638152016183539244)
+    assert_equal(hash(Int8(1)), 12638152016183539244)
+    assert_equal(hash(Int16(1)), 12638152016183539244)
+    assert_equal(hash(Int32(1)), 12638152016183539244)
+    assert_equal(hash(Int64(1)), 12638152016183539244)
+    assert_equal(hash(Int128(1)), 589727492704079044)
     assert_equal(hash(SIMD[DType.int64, 2](1, 0)), 589727492704079044)
-    assert_equal(hash(SIMD[DType.int256, 1](1)), 12478008331234465636)
+    assert_equal(hash(Int256(1)), 12478008331234465636)
     assert_equal(hash(SIMD[DType.int64, 4](1, 0, 0, 0)), 12478008331234465636)
 
-    assert_equal(hash(SIMD[DType.int8, 1](-1)), 12638352127299873646)
-    assert_equal(hash(SIMD[DType.int16, 1](-1)), 12690424998011946606)
-    assert_equal(hash(SIMD[DType.int32, 1](-1)), 7718450949043144302)
-    assert_equal(hash(SIMD[DType.int64, 1](-1)), 5808589858502755950)
-    assert_equal(hash(SIMD[DType.int128, 1](-1)), 591639543425159523)
+    assert_equal(hash(Int8(-1)), 12638352127299873646)
+    assert_equal(hash(Int16(-1)), 12690424998011946606)
+    assert_equal(hash(Int32(-1)), 7718450949043144302)
+    assert_equal(hash(Int64(-1)), 5808589858502755950)
+    assert_equal(hash(Int128(-1)), 591639543425159523)
     assert_equal(hash(SIMD[DType.int64, 2](-1)), 591639543425159523)
-    assert_equal(hash(SIMD[DType.int256, 1](-1)), 16463485165778154321)
+    assert_equal(hash(Int256(-1)), 16463485165778154321)
     assert_equal(hash(SIMD[DType.int64, 4](-1)), 16463485165778154321)
 
-    assert_equal(hash(SIMD[DType.int8, 1](0)), 12638153115695167455)
+    assert_equal(hash(Int8(0)), 12638153115695167455)
     assert_equal(hash(SIMD[DType.int8, 2](0)), 590684067820433389)
     assert_equal(hash(SIMD[DType.int8, 4](0)), 5558979605539197941)
     assert_equal(hash(SIMD[DType.int8, 8](0)), 12161962213042174405)
@@ -165,7 +166,7 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int8, 32](0)), 901300984310592933)
     assert_equal(hash(SIMD[DType.int8, 64](0)), 13380826962402805797)
 
-    assert_equal(hash(SIMD[DType.int32, 1](0)), 12638153115695167455)
+    assert_equal(hash(Int32(0)), 12638153115695167455)
     assert_equal(hash(SIMD[DType.int32, 2](0)), 590684067820433389)
     assert_equal(hash(SIMD[DType.int32, 4](0)), 5558979605539197941)
     assert_equal(hash(SIMD[DType.int32, 8](0)), 12161962213042174405)
@@ -174,15 +175,10 @@ def test_hash_simd_values():
     assert_equal(hash(SIMD[DType.int32, 64](0)), 13380826962402805797)
 
 
-def test_hash_at_compile_time():
-    alias h = hash[HasherType=Fnv1a]("hello")
+def test_hash_at_compile_time() raises:
+    comptime h = hash[Fnv1a]("hello")
     assert_equal(h, 11831194018420276491)
 
 
-def main():
-    test_hash_byte_array()
-    test_avalanche()
-    test_trailing_zeros()
-    test_fill_factor()
-    test_hash_simd_values()
-    test_hash_at_compile_time()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

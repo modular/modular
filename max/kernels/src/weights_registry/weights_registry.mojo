@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,15 +13,22 @@
 
 
 @fieldwise_init
-struct WeightsRegistry(Copyable, Movable):
+struct WeightsRegistry(ImplicitlyCopyable):
     """Bag of weights where names[i] names a weight with data weights[i]."""
 
-    var names: List[String]
-    var weights: List[OpaquePointer]
+    var dict: Dict[String, OpaquePointer[MutAnyOrigin]]
 
-    def __getitem__(self, name: String) -> OpaquePointer:
-        for i in range(len(self.names)):
-            if self.names[i] == name:
-                return self.weights[i]
+    def __init__(out self, *, copy: Self):
+        """Copy an existing weights registry.
+
+        Args:
+            copy: The existing weights registry.
+        """
+        self.dict = copy.dict.copy()
+
+    def __getitem__(self, name: String) raises -> OpaquePointer[MutAnyOrigin]:
+        var lookup = self.dict.get(name)
+        if lookup:
+            return lookup.value()
 
         raise Error("no weight called " + name + " in weights registry")

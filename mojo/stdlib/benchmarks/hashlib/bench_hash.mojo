@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,15 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from hashlib import Hasher
-from hashlib._ahash import AHasher
-from hashlib._fnv1a import Fnv1a
-from hashlib._djbx33a import DJBX33A
+from std.hashlib import Hasher
+from std.hashlib._ahash import AHasher
+from std.hashlib._fnv1a import Fnv1a
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, keep
 
 # Source: https://www.101languages.net/arabic/most-common-arabic-words/
-alias words_ar: String = """
+comptime words_ar: String = """
 لا, من, هذا, أن, في, أنا, على, ما, هل,
  يا, و, لقد, ذلك, ماذا, أنت, هنا, لم, إلى, نعم, كان, هو, ان, هذه, هناك, عن, فى, كل, ليس, فقط, كنت, الآن, يجب, انا,
  لك, مع, شيء, لكن, لن, الذي, حسنا, كيف, سوف, هيا, نحن, إنه, ـ, أجل, لماذا, إذا, عندما, انه, كذلك, لي, الى, بعد, انت,
@@ -85,7 +84,7 @@ alias words_ar: String = """
 """
 
 # Source: https://github.com/tkaitchuck/ahash/blob/7d5c661a74b12d5bc5448b0b83fdb429190db1a3/tests/map_tests.rs#L9
-alias words_en: String = """
+comptime words_en: String = """
     a, ability, able, about, above, accept, according, account, across, act, action,
     activity, actually, add, address, administration, admit, adult, affect, after,
     again, against, age, agency, agent, ago, agree, agreement, ahead, air, all,
@@ -185,7 +184,7 @@ alias words_en: String = """
     yet, you, young, your, yourself"""
 
 # Source: https://www.101languages.net/hebrew/most-common-hebrew-words/
-alias words_he: String = """
+comptime words_he: String = """
 לא , את , אני , זה , אתה ,
  מה , הוא , לי, על, כן, לך, של, יש , בסדר , אבל , כל , שלי , טוב , עם, היא, אם, רוצה,
  שלך, היה, אנחנו, הם, אותך, יודע, אז, רק, אותו, יכול, אותי, יותר, הזה, אל, כאן, או,
@@ -257,7 +256,7 @@ alias words_he: String = """
 """
 
 # Source: https://www.101languages.net/latvian/most-common-latvian-words/
-alias words_lv: String = """
+comptime words_lv: String = """
     ir, es, un, tu, tas, ka, man, to, vai, ko, ar, kas, par, tā, kā, viņš, uz, no, tev,
     mēs, nav, jūs, bet, labi, jā, lai, nē, mani, ja, bija, viņa, esmu, viņu, tevi, esi,
     mums, tad, tikai, ne, viņi, kad, jums, arī, viss, nu, kur, pie, jau, tik, tur, te, vēl,
@@ -340,7 +339,7 @@ alias words_lv: String = """
 """
 
 # Source: https://www.101languages.net/polish/most-common-polish-words/
-alias words_pl: String = """
+comptime words_pl: String = """
 nie, to, się, w, na, i, z, co, jest, że, do, tak, jak, o, mnie, a, ale, mi, za, ja, ci, tu, ty, czy,
 tym, go, tego, tylko, jestem, po, cię, ma, już, mam, jesteś, może, pan, dla, coś, dobrze, wiem, jeśli,
 teraz, proszę, od, wszystko, tam, więc, masz, nic, on, być, gdzie, będzie, są, ten, mogę, ciebie,
@@ -415,7 +414,7 @@ proste, zacząć, myśl, wstawaj, rany, prawdziwe, takiej, jakiegoś, umrzeć, z
 """
 
 # Source: https://www.101languages.net/greek/most-common-greek-words/
-alias words_el: String = """
+comptime words_el: String = """
     να, το, δεν, θα, είναι, και, μου, με, ο, για, την, σου, τα, τον, η, τι, σε, που, του, αυτό, στο, ότι,
     από, τη, της, ναι, σας, ένα, εδώ, τους, αν, όχι, μια, μας, είσαι, αλλά, κι, οι, πρέπει, είμαι, ήταν,
     πολύ, στην, δε, γιατί, εγώ, τώρα, πως, εντάξει, τις, κάτι, ξέρω, μην, έχει, έχω, εσύ, θέλω, καλά,
@@ -493,7 +492,7 @@ alias words_el: String = """
 """
 
 # Source: https://www.101languages.net/russian/most-common-russian-words/
-alias words_ru: String = """
+comptime words_ru: String = """
 я, не, что, в, и, ты, это, на, с, он, вы, как, мы, да, а, мне, меня, у, нет, так, но, то, все, тебя, его,
 за, о, она, тебе, если, они, бы, же, ну, здесь, к, из, есть, чтобы, для, хорошо, когда, вас, только, по,
 вот, просто, был, знаю, нас, всё, было, от, может, кто, вам, очень, их, там, будет, уже, почему, еще,
@@ -569,7 +568,7 @@ you, утра, боль, хорошие, пришёл, открой, брось,
 """
 
 
-fn gen_word_pairs[words: String = words_en]() -> List[String]:
+def gen_word_pairs[words: String = words_en]() -> List[String]:
     var result = List[String]()
     var list = words.split(",")
     for w in list:
@@ -577,32 +576,32 @@ fn gen_word_pairs[words: String = words_en]() -> List[String]:
         for w in list:
             var w2 = w.strip()
             result.append(w1 + " " + w2)
-    return result
+    return result^
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
+def bench_small_keys[s: String, HasherType: Hasher](mut b: Bencher) raises:
     var words = gen_word_pairs[s]()
 
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         for w in words:
-            var h = hash[HasherType=HasherType](w)
+            var h = hash[HasherType](w)
             keep(h)
 
     b.iter[call_fn]()
 
 
 @parameter
-fn bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
+def bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
-        var h = hash[HasherType=HasherType](s)
+    def call_fn():
+        var h = hash[HasherType](s)
         keep(h)
 
     b.iter[call_fn]()
@@ -611,16 +610,13 @@ fn bench_long_key[s: String, HasherType: Hasher](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[
         bench_small_keys[words_ar, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_small_keys_ar"))
     m.bench_function[bench_small_keys[words_ar, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_ar")
-    )
-    m.bench_function[bench_small_keys[words_ar, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_ar")
     )
 
     m.bench_function[
@@ -629,18 +625,12 @@ def main():
     m.bench_function[bench_long_key[words_ar, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_ar")
     )
-    m.bench_function[bench_long_key[words_ar, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_ar")
-    )
 
     m.bench_function[
         bench_small_keys[words_el, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_small_keys_el"))
     m.bench_function[bench_small_keys[words_el, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_el")
-    )
-    m.bench_function[bench_small_keys[words_el, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_el")
     )
 
     m.bench_function[
@@ -649,18 +639,12 @@ def main():
     m.bench_function[bench_long_key[words_el, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_el")
     )
-    m.bench_function[bench_long_key[words_el, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_el")
-    )
 
     m.bench_function[
         bench_small_keys[words_en, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_small_keys_en"))
     m.bench_function[bench_small_keys[words_en, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_en")
-    )
-    m.bench_function[bench_small_keys[words_en, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_en")
     )
 
     m.bench_function[
@@ -669,18 +653,12 @@ def main():
     m.bench_function[bench_long_key[words_en, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_en")
     )
-    m.bench_function[bench_long_key[words_en, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_en")
-    )
 
     m.bench_function[
         bench_small_keys[words_he, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_small_keys_he"))
     m.bench_function[bench_small_keys[words_he, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_he")
-    )
-    m.bench_function[bench_small_keys[words_he, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_he")
     )
 
     m.bench_function[
@@ -689,18 +667,12 @@ def main():
     m.bench_function[bench_long_key[words_he, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_he")
     )
-    m.bench_function[bench_long_key[words_he, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_he")
-    )
 
     m.bench_function[
         bench_small_keys[words_lv, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_small_keys_lv"))
     m.bench_function[bench_small_keys[words_lv, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_lv")
-    )
-    m.bench_function[bench_small_keys[words_lv, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_lv")
     )
 
     m.bench_function[
@@ -709,18 +681,12 @@ def main():
     m.bench_function[bench_long_key[words_lv, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_lv")
     )
-    m.bench_function[bench_long_key[words_lv, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_lv")
-    )
 
     m.bench_function[
         bench_small_keys[words_pl, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_small_keys_pl"))
     m.bench_function[bench_small_keys[words_pl, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_pl")
-    )
-    m.bench_function[bench_small_keys[words_pl, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_pl")
     )
 
     m.bench_function[
@@ -729,9 +695,6 @@ def main():
     m.bench_function[bench_long_key[words_pl, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_pl")
     )
-    m.bench_function[bench_long_key[words_pl, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_pl")
-    )
 
     m.bench_function[
         bench_small_keys[words_ru, AHasher[SIMD[DType.uint64, 4](0)]]
@@ -739,18 +702,12 @@ def main():
     m.bench_function[bench_small_keys[words_ru, Fnv1a]](
         BenchId("bench_fnv1a_small_keys_ru")
     )
-    m.bench_function[bench_small_keys[words_ru, DJBX33A]](
-        BenchId("bench_djbx33a_small_keys_ru")
-    )
 
     m.bench_function[
         bench_long_key[words_ru, AHasher[SIMD[DType.uint64, 4](0)]]
     ](BenchId("bench_ahash_long_keys_ru"))
     m.bench_function[bench_long_key[words_ru, Fnv1a]](
         BenchId("bench_fnv1a_long_keys_ru")
-    )
-    m.bench_function[bench_long_key[words_ru, DJBX33A]](
-        BenchId("bench_djbx33a_long_keys_ru")
     )
 
     m.dump_report()

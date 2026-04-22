@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from algorithm import map
-from buffer import NDBuffer
+from std.algorithm import map
+from std.testing import assert_equal
+from std.testing import TestSuite
 
-from testing import assert_equal
 
-
-def test_map():
-    var vector_stack = InlineArray[Float32, 5](1.0, 2.0, 3.0, 4.0, 5.0)
-    var vector = NDBuffer[DType.float32, 1, _, 5](vector_stack)
+def test_map() raises:
+    var vector_stack: InlineArray[Float32, 5] = [1.0, 2.0, 3.0, 4.0, 5.0]
+    var vector = Span(vector_stack)
 
     @parameter
     @__copy_capture(vector)
-    fn add_two(idx: Int):
+    def add_two(idx: Int):
         vector[idx] = vector[idx] + 2
 
     map[add_two](len(vector))
@@ -36,7 +35,7 @@ def test_map():
 
     @parameter
     @__copy_capture(vector)
-    fn add(idx: Int):
+    def add(idx: Int):
         vector[idx] = vector[idx] + vector[idx]
 
     map[add](len(vector))
@@ -48,5 +47,5 @@ def test_map():
     assert_equal(vector[4], 14.0)
 
 
-def main():
-    test_map()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

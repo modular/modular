@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -33,7 +33,7 @@ def my_fn3(mt: MyType[_, _, _, _]):
 
 
 # Partially-bound with omitted parameters
-def my_fn4(mt: MyType["Hi there!"]):
+def my_fn4(mt: MyType["Hi there!", ...]):
     pass
 
 
@@ -43,18 +43,35 @@ def my_fn5(mt: MyType):
 
 
 @fieldwise_init
+struct MyComplicatedType[a: Int = 7, /, b: Int = 8, *, c: Int, d: Int = 9]:
+    pass
+
+
+def my_func1(t: MyComplicatedType):
+    pass
+
+
+def my_func2(t: MyComplicatedType[1, ...]):
+    pass
+
+
+def my_func3(t: MyComplicatedType[1, 8, c=_, d=9]):
+    pass
+
+
+@fieldwise_init
 struct KeyWordStruct[pos_or_kw: Int, *, kw_only: Int = 10]:
     pass
 
 
 # Unbind both pos_or_kw and kw_only parameters
-fn use_kw_struct(k: KeyWordStruct[**_]):
+def use_kw_struct(k: KeyWordStruct[...]):
     pass
 
 
 def main():
     # start-partially-bound-example
-    alias StringKeyDict = Dict[String, _]
+    comptime StringKeyDict = Dict[String, _]
     var b: StringKeyDict[UInt8] = {"answer": 42}
     # end-partially-bound-example
     _ = b^

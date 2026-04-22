@@ -1,29 +1,47 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _DATA = [
     "test_file_dummy_input.txt",
 ]
+
+_NO_ASAN = [
+    "test_simd.mojo",  # Takes too long to compile with ASAN
+]
+
+_PLATFORM_CONSTRAINTS = {
+    src: select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    })
+    for src in _NO_ASAN
+}
 
 _FILECHECK_TESTS = [
     "test_debug_assert.mojo",
     "test_debug_assert_compile_time.mojo",
     "test_debug_assert_default_error.mojo",
+    "test_debug_assert_location.mojo",
     "test_debug_assert_mode_all.mojo",
     "test_debug_assert_mode_all_error.mojo",
     "test_debug_assert_mode_none.mojo",
     "test_debug_assert_warning.mojo",
     "test_range_out_of_bounds.mojo",
-    "test_range_uint_reverse_range_bad.mojo",
-    "test_rebind.mojo",
-    "test_sort_issue_1018.mojo",
 ]
 
 _LIT_TESTS = [
+    "test_bool_indexer_compile_fail.mojo",
+    "test_default_equatable_compile_fail.mojo",
+    "test_default_hashable_compile_fail.mojo",
+    "test_default_writable_compile_fail.mojo",
+    "test_format_compile_fail.mojo",
+    "test_format_float_lut_optimization.mojo",
+    "test_global_constant_compile_fail.mojo",
     "test_issue_3908.mojo",
     "test_print_long_string.mojo",
     "test_print_stderr.mojo",
     "test_stdin.mojo",
-    "test_uint_error.mojo",
 ]
 
 _MOJO_COMPILE_OPTS = {
@@ -45,8 +63,8 @@ _DISABLED_ASSERTIONS = [
 _EXPECT_CRASH = [
     "test_range_out_of_bounds.mojo",
     "test_debug_assert_default_error.mojo",
-    "test_range_uint_reverse_range_bad.mojo",
     "test_debug_assert_mode_all_error.mojo",
+    "test_debug_assert_location.mojo",
 ]
 
 [
@@ -59,8 +77,9 @@ _EXPECT_CRASH = [
         ] + _MOJO_COMPILE_OPTS.get(src, []),
         enable_assertions = src not in _DISABLED_ASSERTIONS,
         expect_crash = src in _EXPECT_CRASH,
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -76,8 +95,9 @@ _EXPECT_CRASH = [
             "full",
         ],
         data = _DATA + [src],  # NOTE: some tests attempt to read their source files
+        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -92,7 +112,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

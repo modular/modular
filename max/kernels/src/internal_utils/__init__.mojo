@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,31 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from ._cache_busting import CacheBustingBuffer, CACHE_BUST_BYTES
 from ._measure import correlation, cosine, kl_div
-from ._testing import assert_almost_equal, assert_equal, assert_with_measure
-from ._utils import (
-    DeviceNDBuffer,
-    HostNDBuffer,
-    Mode,
-    TestTensor,
-    arange,
-    arg_parse,
-    array_equal,
-    bench_compile_time,
-    env_get_shape,
-    fill,
-    int_list_to_tuple,
-    ndbuffer_to_str,
-    parse_shape,
-    random,
-    update_bench_config_args,
-    zero,
-    Timer,
-    initialize,
-    InitializationType,
-    init_vector_launch,
+from ._testing import (
+    assert_almost_equal,
+    assert_equal,
+    assert_with_measure,
+    pytorch_like_tolerances_for,
 )
-
-from .dispatch_utils import TuningConfig, Table
-from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia
+from ._utils import (
+    InitializationType,
+    Mode,
+    Timer,
+    arg_parse,
+    bench_compile_time,
+    get_defined_shape,
+    human_readable_size,
+    init_vector_launch,
+    int_list_to_tuple,
+    parse_shape,
+    update_bench_config_args,
+)
 from .amd_configs import TuningConfigAMD, TuningTableAMD
+from .dispatch_utils import Table, TuningConfig
+from .nvidia_configs import TuningConfigNvidia, TuningTableNvidia

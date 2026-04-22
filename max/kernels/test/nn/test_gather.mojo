@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,73 +16,66 @@
 # compilation. The test can also be used to check the assembly to see
 # if compiler generates proper SIMD instructions and unrolling.
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import TileTensor, row_major
 from nn.gather_scatter import gather
-
-from utils.index import IndexList
 
 
 # CHECK-LABEL: test_gather
-fn test_gather() raises:
+def test_gather() raises:
     print("== test_gather")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
+    def _test_gather[indices_type: DType]() raises:
+        comptime num_rows = 16
+        comptime row_size = 4
 
         # Setup input.
-        var input = NDBuffer[
-            DType.float32,
-            2,
-            MutableAnyOrigin,
-            DimList(num_rows, row_size),
-        ].stack_allocation[alignment=64]()
+        var input_stack = InlineArray[Float32, num_rows * row_size](
+            uninitialized=True
+        )
+        var input = TileTensor(input_stack, row_major[num_rows, row_size]())
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[2](i, j)] = Float32(i)
+                input[i, j] = Float32(i)
 
         # Setup indices.
-        alias num_indices = 16
-        var indices = NDBuffer[
-            indices_type,
-            1,
-            MutableAnyOrigin,
-            DimList(num_indices),
-        ].stack_allocation[alignment=64]()
+        comptime num_indices = 16
+        var indices_stack = InlineArray[Scalar[indices_type], num_indices](
+            uninitialized=True
+        )
+        var indices = TileTensor(indices_stack, row_major[num_indices]())
 
         for i in range(num_indices):
-            indices[IndexList[1](i)] = i // 2
+            indices[i] = Scalar[indices_type](i // 2)
         indices[0] = -1
         indices[1] = -num_rows
 
         # create output
-        var output = NDBuffer[
-            DType.float32,
-            2,
-            MutableAnyOrigin,
-            DimList(num_indices, row_size),
-        ].stack_allocation[alignment=64]()
-
-        # Test gather
-        alias simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
-
-        gather[axis=0](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            indices.make_dims_unknown(),
+        var output_stack = InlineArray[Float32, num_indices * row_size](
+            uninitialized=True
+        )
+        var output = TileTensor(
+            output_stack, row_major[num_indices, row_size]()
         )
 
-        print(output[IndexList[2](0, 0)])
-        print(output[IndexList[2](1, 0)])
-        print(output[IndexList[2](2, 0)])
-        print(output[IndexList[2](6, 0)])
-        print(output[IndexList[2](15, 0)])
+        # Test gather
+        comptime simd_width = simd_width_of[__mlir_type.`!pop.scalar<f32>`]()
+
+        gather[axis=0](
+            output.make_dynamic[DType.int64](),
+            input.make_dynamic[DType.int64](),
+            indices.make_dynamic[DType.int64](),
+        )
+
+        print(output[0, 0])
+        print(output[1, 0])
+        print(output[2, 0])
+        print(output[6, 0])
+        print(output[15, 0])
 
     # CHECK: 15.0
     # CHECK: 0.0
@@ -97,60 +90,56 @@ fn test_gather() raises:
     _test_gather[DType.int64]()
 
 
-fn test_gather_3d() raises:
+def test_gather_3d() raises:
     print("== test_gather_3d\n")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
+    def _test_gather[indices_type: DType]() raises:
+        comptime num_rows = 16
+        comptime row_size = 4
 
         # Setup input.
-        var input = NDBuffer[
-            DType.float32,
-            3,
-            MutableAnyOrigin,
-            DimList(num_rows, row_size, 1),
-        ].stack_allocation[alignment=64]()
+        var input_stack = InlineArray[Float32, num_rows * row_size * 1](
+            uninitialized=True
+        )
+        var input = TileTensor(input_stack, row_major[num_rows, row_size, 1]())
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[3](i, j, 0)] = Float32(i)
+                input[i, j, 0] = Float32(i)
 
         # Setup indices.
-        alias num_indices = 16
-        var indices = NDBuffer[
-            indices_type,
-            2,
-            MutableAnyOrigin,
-            DimList(num_indices, 1),
-        ].stack_allocation[alignment=64]()
+        comptime num_indices = 16
+        var indices_stack = InlineArray[Scalar[indices_type], num_indices * 1](
+            uninitialized=True
+        )
+        var indices = TileTensor(indices_stack, row_major[num_indices, 1]())
 
         for i in range(num_indices):
-            indices[IndexList[2](i, 0)] = i // 2
+            indices[i, 0] = Scalar[indices_type](i // 2)
 
         # create output
-        var output = NDBuffer[
-            DType.float32,
-            4,
-            MutableAnyOrigin,
-            DimList(num_indices, 1, row_size, 1),
-        ].stack_allocation[alignment=64]()
-
-        # Test gather
-        alias simd_width = simd_width_of[DType.float32]()
-
-        gather[axis=0](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            indices.make_dims_unknown(),
+        var output_stack = InlineArray[Float32, num_indices * 1 * row_size * 1](
+            uninitialized=True
+        )
+        var output = TileTensor(
+            output_stack, row_major[num_indices, 1, row_size, 1]()
         )
 
-        print(output[IndexList[4](0, 0, 0, 0)])
-        print(output[IndexList[4](2, 0, 0, 0)])
-        print(output[IndexList[4](6, 0, 0, 0)])
-        print(output[IndexList[4](15, 0, 0, 0)])
+        # Test gather
+        comptime simd_width = simd_width_of[DType.float32]()
+
+        gather[axis=0](
+            output.make_dynamic[DType.int64](),
+            input.make_dynamic[DType.int64](),
+            indices.make_dynamic[DType.int64](),
+        )
+
+        print(output[0, 0, 0, 0])
+        print(output[2, 0, 0, 0])
+        print(output[6, 0, 0, 0])
+        print(output[15, 0, 0, 0])
 
     # CHECK: 0.0
     # CHECK-NEXT: 1.0
@@ -165,33 +154,25 @@ fn test_gather_3d() raises:
 
 
 # CHECK-LABEL: test_gather_empty_indices
-fn test_gather_empty_indices() raises:
+def test_gather_empty_indices() raises:
     print("== test_gather_empty_indices")
 
     @always_inline
     @parameter
-    fn _test_gather[indices_type: DType]() raises:
-        alias num_rows = 16
-        alias row_size = 4
-        alias input_size = 64
-        alias num_indices = 0
-        alias indices_size = 0
-        alias output_size = 0
+    def _test_gather[indices_type: DType]() raises:
+        comptime num_rows = 16
+        comptime row_size = 4
+        comptime num_indices = 0
 
         # Setup input.
         var input_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var input = NDBuffer[
-            DType.float32,
-            2,
-            _,
-            DimList(num_rows, row_size),
-        ](input_stack)
+        var input = TileTensor(input_stack, row_major[num_rows, row_size]())
 
         for i in range(num_rows):
             for j in range(row_size):
-                input[IndexList[2](i, j)] = Float32(i)
+                input[i, j] = Float32(i)
 
         # Setup indices.
         # There isn't a way to represent a stack size of 0 with InlineArray
@@ -199,35 +180,33 @@ fn test_gather_empty_indices() raises:
         var indices_stack = InlineArray[Scalar[indices_type], 1](
             uninitialized=True
         )
-        var indices = NDBuffer[indices_type, 1, _, DimList(num_indices)](
-            indices_stack
-        )
+        var indices = TileTensor(indices_stack, row_major[num_indices]())
 
         for i in range(num_indices):
-            indices[IndexList[1](i)] = i // 2
+            indices[i] = Scalar[indices_type](i // 2)
 
         # create output
         var output_stack = InlineArray[Float32, num_rows * row_size](
             uninitialized=True
         )
-        var output = NDBuffer[
-            DType.float32, 2, _, DimList(num_indices, row_size)
-        ](output_stack)
+        var output = TileTensor(
+            output_stack, row_major[num_indices, row_size]()
+        )
 
         # Test gather
-        alias simd_width = simd_width_of[DType.float32]()
+        comptime simd_width = simd_width_of[DType.float32]()
 
         gather[axis=0](
-            output.make_dims_unknown(),
-            input.make_dims_unknown(),
-            indices.make_dims_unknown(),
+            output.make_dynamic[DType.int64](),
+            input.make_dynamic[DType.int64](),
+            indices.make_dynamic[DType.int64](),
         )
 
     _test_gather[DType.int32]()
     _test_gather[DType.int64]()
 
 
-fn main() raises:
+def main() raises:
     test_gather()
     test_gather_3d()
     test_gather_empty_indices()

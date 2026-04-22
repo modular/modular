@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from io.io import _printf
-from gpu.host import DeviceContext
-from gpu.id import thread_idx
-from gpu.mma import mma
+from std.io.io import _printf
+
+from std.gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.compute.mma import mma
 
 
-fn mma_sync_16x8x32_E4M3():
+def mma_sync_16x8x32_E4M3():
     a = SIMD[DType.float8_e4m3fn, 16](1.0)
     b = SIMD[DType.float8_e4m3fn, 8](2.0)
     c = SIMD[DType.float32, 4](0.0)
@@ -33,16 +34,17 @@ fn mma_sync_16x8x32_E4M3():
     )
 
 
-def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext):
+def test_mma_sync_16x8x32_E4M3(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E4M3")
-    ctx.enqueue_function[mma_sync_16x8x32_E4M3](
+    comptime kernel = mma_sync_16x8x32_E4M3
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(1),
         block_dim=(32),
     )
     ctx.synchronize()
 
 
-fn mma_sync_16x8x32_E4M2():
+def mma_sync_16x8x32_E4M2():
     a = SIMD[DType.float8_e5m2, 16](2.0)
     b = SIMD[DType.float8_e5m2, 8](3.0)
     c = SIMD[DType.float32, 4](0.0)
@@ -58,16 +60,17 @@ fn mma_sync_16x8x32_E4M2():
     )
 
 
-def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext):
+def test_mma_sync_16x8x32_E5M2(ctx: DeviceContext) raises:
     print("== test_mma_sync_16x8x32_E5M2")
-    ctx.enqueue_function[mma_sync_16x8x32_E4M2](
+    comptime kernel = mma_sync_16x8x32_E4M2
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=(1),
         block_dim=(32),
     )
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-LABEL: test_mma_sync_16x8x32_E4M3
         # CHECK-DAG: thread 0 : 64 64 64 64

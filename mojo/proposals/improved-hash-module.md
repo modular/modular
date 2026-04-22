@@ -1,4 +1,6 @@
-# Improve hash module
+# Improve Hash Module
+
+**Status**: Implemented.
 
 Current implementation of the hash module in standard library reflex the
 implementation of the Python hash module, which by itself is a good idea,
@@ -17,10 +19,13 @@ trait Hashable:
 Which implies that a developer, who writes a new hashable struct needs
 to return an `Int`.
 
-- This API does not provide guidance to how this `Int` value needs to be computed
+- This API does not provide guidance to how this `Int` value needs to be
+  computed
 - It is impossible to exchange hashing algorithms on demand
-- `Int` as a type is variable length (based on the CPU arch), which might cause issues
-- Such trait design follows the call return principle which, when applied on complex
+- `Int` as a type is variable length (based on the CPU arch), which might cause
+  issues
+- Such trait design follows the call return principle which, when applied on
+  complex
 types, will lead to unnecessary computations and memory allocations
 
 ## Example
@@ -42,11 +47,12 @@ struct Person(Hashable):
         # How to combine a hash of hashes ???
 ```
 
-As you can see above we, computed hashes for all of the struct fields,
-but we are uncertain how to combine those values in a way which produces
-a good (non compromised) hash value. Python [docs](https://docs.python.org/3/reference/datamodel.html#object.__hash__)
-suggest to pack fields into a tuple and hash the tuple, but this is not
-possible at this point in time in Mojo.
+As you can see above we, computed hashes for all of the struct fields, but we
+are uncertain how to combine those values in a way which produces a good (non
+compromised) hash value. Python
+[docs](https://docs.python.org/3/reference/datamodel.html#object.__hash__)
+suggest to pack fields into a tuple and hash the tuple, but this is not possible
+at this point in time in Mojo.
 
 ## Proposal
 
@@ -55,9 +61,9 @@ trait, we need to apply following steps.
 
 ## Introduce a `Hasher` trait
 
-By introducing a `Hasher` trait we define an abstraction for the hashing algorithm
-itself, which allows streaming creation of the hash value. Below is a possible API
-of the `Hashable` trait.
+By introducing a `Hasher` trait we define an abstraction for the hashing
+algorithm itself, which allows streaming creation of the hash value. Below is a
+possible API of the `Hashable` trait.
 
 ```mojo
 trait Hasher:
@@ -66,7 +72,7 @@ trait Hasher:
         """Expects a no argument instantiation."""
         ...
     fn _update_with_bytes(mut self, bytes: DTypePointer[DType.uint8], n: Int):
-        """Conribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
+        """Contribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
         ...
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """Contribute to the hash value with a compile time know fix size value. Used inside of std lib to avoid runtime branching."""
@@ -164,7 +170,7 @@ trait Hasher:
         """Expects a no argument instantiation."""
         ...
     fn _update_with_bytes(mut self, bytes: DTypePointer[DType.uint8], n: Int):
-        """Conribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
+        """Contribute to the hash value based on a sequence of bytes. Use only for complex types which are not just a composition of Hashable types."""
         ...
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """Contribute to the hash value with a compile time know fix size value. Used inside of std lib to avoid runtime branching."""
@@ -252,7 +258,7 @@ struct DJBX33A_Hasher[custom_secret: UInt64 = 0](Hasher):
     @always_inline
     fn _update_with_simd[dt: DType, size: Int](mut self, value: SIMD[dt, size]):
         """The algorithm is not optimal."""
-        alias size_in_bytes = size * dt.size_of()
+        alias size_in_bytes = size * size_of[dt]()
         var bytes = bitcast[DType.uint8, size_in_bytes](value)
         @parameter
         for i in range(size_in_bytes):
@@ -266,7 +272,7 @@ struct DJBX33A_Hasher[custom_secret: UInt64 = 0](Hasher):
     fn _finish[dt: DType = DType.uint64](owned self) -> Scalar[dt]:
         return (self.hash_data ^ self.secret).cast[dt]()
 
-fn main() raises:
+def main():
     var p = Person("Maxim", 43)
     print(p.name.value, p.age.value)
 
@@ -287,8 +293,8 @@ fn main() raises:
 
 ## Compiler limitations
 
-Current compiler does not allow parameters on trait definition.
-A parameterization on Hasher trait for for hash value dtype would be
-beneficial as a hashing algorithm might differ.
-For example in [Fowler–Noll–Vo hash function](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV_hash_parameters)
+Current compiler does not allow parameters on trait definition. A
+parameterization on Hasher trait for hash value dtype would be beneficial as a
+hashing algorithm might differ. For example in
+[Fowler–Noll–Vo hash function](https://en.wikipedia.org/wiki/Fowler–Noll–Vo_hash_function#FNV_hash_parameters)
 parameters prime and offset basis depend on hash value width.

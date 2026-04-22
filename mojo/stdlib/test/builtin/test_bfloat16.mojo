@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,13 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import randn_float64
-from sys import CompilationTarget
+from std.random import randn_float64
+from std.sys import CompilationTarget
 
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal, TestSuite
 
 
-def test_methods():
+def test_methods() raises:
     assert_equal(BFloat16(4.4), 4.4)
     assert_equal(BFloat16(4.4) * 0.5, 2.2)
     assert_equal(BFloat16(4.4) / 0.5, 8.8)
@@ -34,7 +34,7 @@ def test_methods():
     assert_almost_equal(BFloat16(2.0), 2.0)
 
 
-def test_bf_primitives():
+def test_bf_primitives() raises:
     # we have to use dynamic values, otherwise these get evaled at compile time.
     var a = randn_float64().cast[DType.bfloat16]()
     var b = randn_float64().cast[DType.bfloat16]()
@@ -53,13 +53,13 @@ def test_bf_primitives():
     assert_equal(a >= b, a_hp >= b_hp)
 
 
-def check_float64_values():
+def check_float64_values() raises:
     # These ugly things are required because SIMD rejects construction of
     # BFloat16 values on ARM systems.
     assert_equal(
         Float64(
             mlir_value=__mlir_op.`pop.cast`[
-                _type = __mlir_type[`!pop.scalar<f64>`]
+                _type=__mlir_type[`!pop.scalar<f64>`]
             ](
                 __mlir_attr.`#pop.simd<"33"> : !pop.scalar<bf16>`,
             )
@@ -71,7 +71,7 @@ def check_float64_values():
         String(
             Float64(
                 mlir_value=__mlir_op.`pop.cast`[
-                    _type = __mlir_type[`!pop.scalar<f64>`]
+                    _type=__mlir_type[`!pop.scalar<f64>`]
                 ](
                     __mlir_attr.`#pop.simd<"nan"> : !pop.scalar<bf16>`,
                 )
@@ -81,12 +81,5 @@ def check_float64_values():
     )
 
 
-def main():
-    check_float64_values()
-
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_methods()
-
-        test_bf_primitives()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

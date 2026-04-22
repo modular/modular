@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,6 +14,6 @@
 # RUN: wc -c %t | FileCheck %s
 
 
-fn main():
+def main():
     # CHECK: 536870913
     print("*" * 0x2000_0000)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,43 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import std.time
+
 from conditional_context_mgr import ConditionalTimer, flaky_identity
-from testing import assert_raises
-import time
+from std.testing import assert_raises, TestSuite
 
 
-def test_conditional_timer_no_error():
+def test_conditional_timer_no_error() raises:
     with ConditionalTimer():
         print("Beginning no-error execution")
-        time.sleep(0.1)
+        std.time.sleep(0.1)
         i = 1
         _ = flaky_identity(i)
         print("Ending no-error execution")
 
 
-def test_conditional_timer_suppressed_error():
+def test_conditional_timer_suppressed_error() raises:
     i = 2
     with assert_raises(contains="just a warning"):
         _ = flaky_identity(i)
 
     with ConditionalTimer():
         print("Beginning no-error execution")
-        time.sleep(0.1)
+        std.time.sleep(0.1)
         _ = flaky_identity(i)
         print("Ending no-error execution")
 
 
-def test_conditional_timer_propagated_error():
+def test_conditional_timer_propagated_error() raises:
     with assert_raises(contains="really bad"):
         with ConditionalTimer():
             print("Beginning propagated error execution")
-            time.sleep(0.1)
+            std.time.sleep(0.1)
             i = 4
             _ = flaky_identity(i)
             # We should not reach this line
 
 
-def main():
-    test_conditional_timer_no_error()
-    test_conditional_timer_suppressed_error()
-    test_conditional_timer_propagated_error()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

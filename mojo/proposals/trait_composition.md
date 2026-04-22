@@ -1,5 +1,7 @@
 # Trait Composition
 
+**Status**: Implemented.
+
 ## Motivation
 
 Implicit conformance currently serves as a workaround for trait composition in
@@ -10,10 +12,10 @@ and facilitate the future removal of implicit conformance.
   specifying multiple type bounds. For example:
 
   ```mojo
-  trait _CopyableGreaterThanComparable(Copyable, GreaterThanComparable):
+  trait _CopyableComparable(Copyable, Comparable):
       ...
 
-  fn max[T: _CopyableGreaterThanComparable](x: T, *ys: T) -> T:
+  fn max[T: _CopyableComparable](x: T, *ys: T) -> T:
   ```
 
 - In a survey conducted on March 11, 2025, out of 161 instances of implicit
@@ -212,10 +214,9 @@ The following rules govern constraint satisfiability:
   register passability constraints from its members:
 
   ```mojo
-  @register_passable
-  trait T1: ...
-  @register_passable("trivial")
-  trait T2: ...
+  trait T1(RegisterPassable): ...
+
+  trait T2(TrivialRegisterPassable): ...
 
   T1 & T2  # struct must be register-passable-trivial.
   ```
@@ -235,7 +236,8 @@ declarations.
 A declaration can inherit from other declarations according to the following
 rules:
 
-- **[Inheritance]** A declaration T1 inherits from another declaration R1 if either:
+- **[Inheritance]** A declaration T1 inherits from another declaration R1 if
+  either:
   - T1 is explicitly declared (and verified) to inherit from R1, or
   - There exists an intermediate declaration M1 where T1 inherits from M1, and
     M1 inherits from R1:

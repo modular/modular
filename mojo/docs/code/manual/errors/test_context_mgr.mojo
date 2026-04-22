@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,27 +10,27 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+import std.time
+
 from context_mgr import Timer
-from testing import assert_raises
-import time
+from std.testing import assert_raises, TestSuite
 
 
-def test_timer_no_error():
+def test_timer_no_error() raises:
     with Timer():
         print("Beginning no-error execution")
-        time.sleep(0.1)
+        std.time.sleep(0.1)
         print("Ending no-error execution")
 
 
-def test_timer_error():
+def test_timer_error() raises:
     with assert_raises(contains="simulated error"):
         with Timer():
             print("Beginning error execution")
-            time.sleep(0.1)
+            std.time.sleep(0.1)
             raise "simulated error"
             # We should not reach this line
 
 
-def main():
-    test_timer_no_error()
-    test_timer_error()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

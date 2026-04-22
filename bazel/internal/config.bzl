@@ -1,13 +1,56 @@
 """Private bazel configuration used internally by rules and macros."""
 
+load("@bazel_skylib//lib:paths.bzl", "paths")
+load("@module_versions//:config.bzl", "DEFAULT_PYTHON_VERSION", "DEFAULT_PYTHON_VERSION_UNDERBAR")
 load("@with_cfg.bzl//with_cfg/private:select.bzl", "decompose_select_elements")  # buildifier: disable=bzl-visibility
-load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")  # buildifier: disable=bzl-visibility
+load("//bazel:config.bzl", "DEFAULT_GPU_MEMORY")
 
 GPU_TEST_ENV = {
-    "ASAN_OPTIONS": "$(GPU_ASAN_OPTIONS),suppressions=$(execpath //bazel/internal:asan-suppressions.txt)",
     "GPU_ENV_DO_NOT_USE": "$(GPU_CACHE_ENV)",
-    "LSAN_OPTIONS": "suppressions=$(execpath //bazel/internal:lsan-suppressions.txt)",
 }
+
+RUNTIME_SANITIZER_DATA = select({
+    "@//:asan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "@//:asan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so"],
+    "//conditions:default": [],
+}) + select({
+    "@//:asan": ["@//bazel/internal:lsan-suppressions.txt"],
+    "//conditions:default": [],
+})
+
+def runtime_sanitizer_env(*, preload = True, location_specifier = "location"):
+    env = select({
+        "@//:asan": {
+            "LSAN_OPTIONS": "suppressions=$({} @//bazel/internal:lsan-suppressions.txt)".format(location_specifier),
+        },
+        "//conditions:default": {},
+    })
+    if preload:
+        env |= select({
+            "@//:asan_linux_x86_64": {
+                "LD_PRELOAD": "$({} @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+            },
+            "@//:asan_linux_aarch64": {
+                "LD_PRELOAD": "$({} @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.asan.so)".format(location_specifier),
+            },
+            "//conditions:default": {},
+        })
+    return env
+
+def python_version_name(name, python_version):
+    if python_version in (DEFAULT_PYTHON_VERSION_UNDERBAR, DEFAULT_PYTHON_VERSION):
+        return name
+    return "{}_{}".format(name, python_version)
+
+def python_version_tags(python_version):
+    tags = ["python-binding-library"]
+    if python_version != DEFAULT_PYTHON_VERSION_UNDERBAR:
+        tags.extend([
+            "no-clang-tidy",
+            "no-compile-commands",
+            "no-mypy",
+        ])
+    return tags
 
 def _get_all_constraints(constraints):
     """Extract all possible constraints from the target's 'target_compatible_with'.
@@ -36,8 +79,7 @@ def validate_gpu_tags(tags, target_compatible_with):
         tags: The target's 'tags'
         target_compatible_with: The target's 'target_compatible_with'
     """
-    has_tag = "gpu" in tags
-    if has_tag:
+    if "gpu" in tags:
         return
 
     has_gpu_constraints = any([
@@ -84,7 +126,7 @@ def get_default_test_env(exec_properties):
         A dictionary that should be added to the test target's 'env'
     """
 
-    # TODO(MOTO-1278): 0.6 accounts for unknown overhead
+    # TODO(MOTO-1512): 0.6 accounts for unknown overhead
     gpu_memory_limit = float(exec_properties.get("test.resources:gpu-memory", DEFAULT_GPU_MEMORY))
     adjusted_gpu_memory_limit = gpu_memory_limit - 0.6
     if adjusted_gpu_memory_limit < 0.0:
@@ -92,15 +134,78 @@ def get_default_test_env(exec_properties):
 
     return select({
         "@//:has_gpu": {
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_ONLY": "true",
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
-            "MODULAR_DEVICE_CONTEXT_BUFFER_CACHE_CHUNK_PERCENT": "100",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "true",
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_SIZE": "{}".format(int(adjusted_gpu_memory_limit * 1073741824.0)),
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_CHUNK_PERCENT": "100",
+        },
+        "//conditions:default": {},
+    }) | select({
+        # On macOS, the Metal memory manager is disabled on BuildBuddy remote
+        # workers (max_cache_size=0), so MEMORY_MANAGER_ONLY must be false to
+        # allow fallthrough to direct device allocation.
+        "@platforms//os:macos": {
+            "MODULAR_DEVICE_CONTEXT_MEMORY_MANAGER_ONLY": "false",
         },
         "//conditions:default": {},
     })
 
+_TOOLS = {}
+
 def env_for_available_tools(
         *,
-        location_specifier = "rootpath",  # buildifier: disable=unused-variable
-        os = "unknown"):  # buildifier: disable=unused-variable
-    return {}
+        location_specifier = "rootpath",
+        os = "unknown"):
+    """Get a dictionary of env vars for looking up known tools.
+
+    NOTE: This returns values regardless of if the current dependency tree
+    contains the given tools. If a tool is missing that means it should be
+    added to data.
+
+    Args:
+        location_specifier: The variant of $(location) that we try to emulate with the produced path
+        os: Either 'unknown' for macros, or 'linux', or 'macos'
+
+    Returns:
+        A dictionary of env vars to be added to a rule that expects to lookup tools
+    """
+
+    if location_specifier not in (("execpath", "rootpath")):
+        fail("Unsupported location_specifier: {}".format(location_specifier))
+    if os not in (("unknown", "linux_aarch64", "linux_x86_64", "macos")):
+        fail("Unsupported os: {}".format(os))
+
+    def build_path(label, format_name):
+        if location_specifier == "execpath":
+            return paths.join("$(BINDIR)", label.workspace_root, label.package, format_name(label.name))
+        else:
+            return paths.join(label.workspace_root, label.package, format_name(label.name)).replace("external/", "../")
+
+    env = {}
+    for label, key in _TOOLS.items():
+        env[key] = build_path(label, lambda x: x)
+
+    os_specifics = select({
+        "@platforms//os:linux": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x)},
+        "@platforms//os:macos": {"LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x)},
+    }) | select({
+        "@//:linux_aarch64": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x)},
+        "@//:linux_x86_64": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x)},
+        "@platforms//os:macos": {"MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x)},
+    })
+    if os == "linux_x86_64":
+        os_specifics = {
+            "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
+            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_x86_64//:modular"), lambda x: x),
+        }
+    elif os == "linux_aarch64":
+        os_specifics = {
+            "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:lldb-server"), lambda x: x),
+            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_linux_aarch64//:modular"), lambda x: x),
+        }
+    elif os == "macos":
+        os_specifics = {
+            "LLDB_DEBUGSERVER_PATH": build_path(Label("@llvm-project//lldb:debugserver"), lambda x: x),
+            "MODULAR_MOJO_MAX_PACKAGE_ROOT": build_path(Label("@@+rebuild_wheel+module_platlib_macos_arm64//:modular"), lambda x: x),
+        }
+
+    return env | os_specifics

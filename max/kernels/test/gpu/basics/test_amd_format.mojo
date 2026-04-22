@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,65 +11,57 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from builtin._format_float import _write_float
-from builtin.simd import Float8_e4m3fn, Float8_e5m2
-from gpu.host import DeviceContext
-from memory import memcmp, memcpy
+from std.builtin._format_float import _write_float
+from std.builtin.simd import Float8_e4m3fn, Float8_e5m2
+from std.gpu.host import DeviceContext
+from std.memory import memcmp, memcpy
 
 
 struct Buffer[capacity: Int](Defaultable, Writer):
-    var data: InlineArray[UInt8, capacity]
+    var data: InlineArray[UInt8, Self.capacity]
     var pos: Int
 
-    fn __init__(out self):
-        self.data = InlineArray[UInt8, capacity](fill=0)
+    def __init__(out self):
+        self.data = InlineArray[UInt8, Self.capacity](fill=0)
         self.pos = 0
 
-    fn write_bytes(mut self, bytes: Span[Byte, _]):
-        len_bytes = len(bytes)
+    def write_string(mut self, string: StringSlice):
+        len_bytes = string.byte_length()
         # If empty then return
         if len_bytes == 0:
             return
         # Continue writing to buffer
-        memcpy(self.data.unsafe_ptr() + self.pos, bytes.unsafe_ptr(), len_bytes)
+        memcpy(
+            dest=self.data.unsafe_ptr() + self.pos,
+            src=string.unsafe_ptr(),
+            count=len_bytes,
+        )
         self.pos += len_bytes
 
-    fn write[*Ts: Writable](mut self, *args: *Ts):
-        """Write a sequence of Writable arguments to the provided Writer.
 
-        Parameters:
-            Ts: Types of the provided argument sequence.
-
-        Args:
-            args: Sequence of arguments to write to this Writer.
-        """
-
-        @parameter
-        for i in range(args.__len__()):
-            args[i].write_to(self)
-
-
-fn check_float[dtype: DType, //, expected: StaticString](f8: Scalar[dtype]):
-    var f8_str = Buffer[len(expected)]()
+def check_float[
+    dtype: DType, //, expected: StaticString
+](f8: Scalar[dtype]) where dtype.is_floating_point():
+    var f8_str = Buffer[expected.byte_length()]()
     _write_float(f8_str, f8)
     var res = memcmp(
-        expected.unsafe_ptr(), f8_str.data.unsafe_ptr(), len(expected)
+        expected.unsafe_ptr(), f8_str.data.unsafe_ptr(), expected.byte_length()
     )
     if res != 0:
         abort()
 
 
-fn check_8e5m2[expected: StaticString](f8: Float8_e5m2):
+def check_8e5m2[expected: StaticString](f8: Float8_e5m2):
     check_float[expected](f8)
 
 
-fn check_8e4m3[expected: StaticString](f8: Float8_e4m3fn):
+def check_8e4m3[expected: StaticString](f8: Float8_e4m3fn):
     check_float[expected](f8)
 
 
-fn test_format_float8_e5m2():
+def test_format_float8_e5m2():
     check_8e5m2["0.0"](0)
     check_8e5m2["0.125"](0.125)
     check_8e5m2["1.25"](1.25)
@@ -82,7 +74,7 @@ fn test_format_float8_e5m2():
     check_8e5m2["-0.0"](FloatLiteral.negative_zero)
 
 
-fn test_format_float8_e4m3fn():
+def test_format_float8_e4m3fn():
     check_8e4m3["0.0"](0)
     check_8e4m3["0.001953125"](0.001953125)
     check_8e4m3["-0.01953125"](-0.01953125)
@@ -96,11 +88,13 @@ fn test_format_float8_e4m3fn():
     check_8e4m3["-104.0"](-104)
 
 
-def main():
+def main() raises:
     # TODO(KERN-1259): Add tests for fnuz types when they're working
     with DeviceContext() as ctx:
         print("== test_format_float8_e5m2")
-        ctx.enqueue_function[test_format_float8_e5m2](grid_dim=1, block_dim=1)
+        comptime kernel_0 = test_format_float8_e5m2
+        ctx.enqueue_function_experimental[kernel_0](grid_dim=1, block_dim=1)
 
         print("== test_format_float8_e4m3fn")
-        ctx.enqueue_function[test_format_float8_e4m3fn](grid_dim=1, block_dim=1)
+        comptime kernel_1 = test_format_float8_e4m3fn
+        ctx.enqueue_function_experimental[kernel_1](grid_dim=1, block_dim=1)

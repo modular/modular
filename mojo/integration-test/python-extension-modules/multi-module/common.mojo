@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,48 +11,47 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import PythonObject
-from os import abort
+from std.os import abort
+from std.python import PythonObject
 
 
-struct TestStruct(Defaultable, Movable, Representable):
+struct TestStruct(Defaultable, Movable, Writable):
     var a: Int
     var b: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.a = 0
         self.b = 0
 
-    fn __init__(out self, a: Int, b: Int):
+    def __init__(out self, a: Int, b: Int):
         self.a = a
         self.b = b
 
-    fn print(self) -> None:
+    def print(self) -> None:
         print(self.a, self.b)
 
-    fn __repr__(self: TestStruct) -> String:
-        return String("TestStruct(", self.a, ", ", self.b, ")")
-
     @staticmethod
-    fn set_a(py_self: PythonObject, a: PythonObject):
+    def set_a(py_self: PythonObject, a: PythonObject):
         try:
-            Self._get_self_ptr(py_self)[].a = Int(a)
+            Self._get_self_ptr(py_self)[].a = Int(py=a)
         except e:
             abort(String("failed to set a: ", a))
 
     @staticmethod
-    fn set_b(py_self: PythonObject, b: PythonObject):
+    def set_b(py_self: PythonObject, b: PythonObject):
         try:
-            Self._get_self_ptr(py_self)[].b = Int(b)
+            Self._get_self_ptr(py_self)[].b = Int(py=b)
         except e:
             abort(String("failed to set b: ", b))
 
     @staticmethod
-    fn _get_self_ptr(py_self: PythonObject) -> UnsafePointer[Self]:
+    def _get_self_ptr(
+        py_self: PythonObject,
+    ) -> UnsafePointer[Self, MutAnyOrigin]:
         try:
             return py_self.downcast_value_ptr[Self]()
         except e:
-            return abort[UnsafePointer[Self]](
+            abort(
                 String(
                     (
                         "Python method receiver object did not have the"

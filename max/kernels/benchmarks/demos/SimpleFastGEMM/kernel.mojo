@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,71 +13,73 @@
 
 # Meant to be run on an AVX512 system
 
-from sys import prefetch
-from sys.intrinsics import PrefetchOptions
-
-from buffer import NDBuffer
-from buffer.dimlist import Dim
-
-alias mr = 6
-alias nr = 64
-
-alias simd_size = 16
+from std.sys import prefetch
+from std.sys.intrinsics import PrefetchOptions
 
 
-fn kernel6x4(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+comptime mr = 6
+comptime nr = 64
+
+comptime simd_size = 16
+
+
+def kernel6x4(
+    a_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     n: Int,
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[DType.float32, 1, _, Dim()](a_ptr, mr * k)
-    var b = NDBuffer[DType.float32, 1, _, Dim()](b_ptr, kc * nr)
-    var c = NDBuffer[DType.float32, 1, _, Dim()](c_ptr, mr * n)
-
-    var cv0 = c.load[width=simd_size](n * 0 + simd_size * 0)
-    var cv1 = c.load[width=simd_size](n * 0 + simd_size * 1)
-    var cv2 = c.load[width=simd_size](n * 0 + simd_size * 2)
-    var cv3 = c.load[width=simd_size](n * 0 + simd_size * 3)
-    var cv4 = c.load[width=simd_size](n * 1 + simd_size * 0)
-    var cv5 = c.load[width=simd_size](n * 1 + simd_size * 1)
-    var cv6 = c.load[width=simd_size](n * 1 + simd_size * 2)
-    var cv7 = c.load[width=simd_size](n * 1 + simd_size * 3)
-    var cv8 = c.load[width=simd_size](n * 2 + simd_size * 0)
-    var cv9 = c.load[width=simd_size](n * 2 + simd_size * 1)
-    var cv10 = c.load[width=simd_size](n * 2 + simd_size * 2)
-    var cv11 = c.load[width=simd_size](n * 2 + simd_size * 3)
-    var cv12 = c.load[width=simd_size](n * 3 + simd_size * 0)
-    var cv13 = c.load[width=simd_size](n * 3 + simd_size * 1)
-    var cv14 = c.load[width=simd_size](n * 3 + simd_size * 2)
-    var cv15 = c.load[width=simd_size](n * 3 + simd_size * 3)
-    var cv16 = c.load[width=simd_size](n * 4 + simd_size * 0)
-    var cv17 = c.load[width=simd_size](n * 4 + simd_size * 1)
-    var cv18 = c.load[width=simd_size](n * 4 + simd_size * 2)
-    var cv19 = c.load[width=simd_size](n * 4 + simd_size * 3)
-    var cv20 = c.load[width=simd_size](n * 5 + simd_size * 0)
-    var cv21 = c.load[width=simd_size](n * 5 + simd_size * 1)
-    var cv22 = c.load[width=simd_size](n * 5 + simd_size * 2)
-    var cv23 = c.load[width=simd_size](n * 5 + simd_size * 3)
+    var cv0 = c_ptr.load[width=simd_size](n * 0 + simd_size * 0)
+    var cv1 = c_ptr.load[width=simd_size](n * 0 + simd_size * 1)
+    var cv2 = c_ptr.load[width=simd_size](n * 0 + simd_size * 2)
+    var cv3 = c_ptr.load[width=simd_size](n * 0 + simd_size * 3)
+    var cv4 = c_ptr.load[width=simd_size](n * 1 + simd_size * 0)
+    var cv5 = c_ptr.load[width=simd_size](n * 1 + simd_size * 1)
+    var cv6 = c_ptr.load[width=simd_size](n * 1 + simd_size * 2)
+    var cv7 = c_ptr.load[width=simd_size](n * 1 + simd_size * 3)
+    var cv8 = c_ptr.load[width=simd_size](n * 2 + simd_size * 0)
+    var cv9 = c_ptr.load[width=simd_size](n * 2 + simd_size * 1)
+    var cv10 = c_ptr.load[width=simd_size](n * 2 + simd_size * 2)
+    var cv11 = c_ptr.load[width=simd_size](n * 2 + simd_size * 3)
+    var cv12 = c_ptr.load[width=simd_size](n * 3 + simd_size * 0)
+    var cv13 = c_ptr.load[width=simd_size](n * 3 + simd_size * 1)
+    var cv14 = c_ptr.load[width=simd_size](n * 3 + simd_size * 2)
+    var cv15 = c_ptr.load[width=simd_size](n * 3 + simd_size * 3)
+    var cv16 = c_ptr.load[width=simd_size](n * 4 + simd_size * 0)
+    var cv17 = c_ptr.load[width=simd_size](n * 4 + simd_size * 1)
+    var cv18 = c_ptr.load[width=simd_size](n * 4 + simd_size * 2)
+    var cv19 = c_ptr.load[width=simd_size](n * 4 + simd_size * 3)
+    var cv20 = c_ptr.load[width=simd_size](n * 5 + simd_size * 0)
+    var cv21 = c_ptr.load[width=simd_size](n * 5 + simd_size * 1)
+    var cv22 = c_ptr.load[width=simd_size](n * 5 + simd_size * 2)
+    var cv23 = c_ptr.load[width=simd_size](n * 5 + simd_size * 3)
 
     for pr in range(kc):
-        var bv0 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 0)
-        var bv1 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 1)
-        var bv2 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 2)
-        var bv3 = b.load[width=simd_size](4 * simd_size * pr + simd_size * 3)
-        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 16)
+        var bv0 = b_ptr.load[width=simd_size](
+            4 * simd_size * pr + simd_size * 0
+        )
+        var bv1 = b_ptr.load[width=simd_size](
+            4 * simd_size * pr + simd_size * 1
+        )
+        var bv2 = b_ptr.load[width=simd_size](
+            4 * simd_size * pr + simd_size * 2
+        )
+        var bv3 = b_ptr.load[width=simd_size](
+            4 * simd_size * pr + simd_size * 3
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 17)
+            b_ptr + 4 * simd_size * pr + simd_size * 16
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 18)
+            b_ptr + 4 * simd_size * pr + simd_size * 17
         )
         prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
-            b_ptr.offset(4 * simd_size * pr + simd_size * 19)
+            b_ptr + 4 * simd_size * pr + simd_size * 18
+        )
+        prefetch[PrefetchOptions().for_read().high_locality().to_data_cache()](
+            b_ptr + 4 * simd_size * pr + simd_size * 19
         )
 
         var av = a_ptr[0 * k + pr].cast[DType.float32]()
@@ -116,45 +118,41 @@ fn kernel6x4(
         cv22 += av * bv2
         cv23 += av * bv3
 
-    c.store[width=simd_size](n * 0 + simd_size * 0, cv0)
-    c.store[width=simd_size](n * 0 + simd_size * 1, cv1)
-    c.store[width=simd_size](n * 0 + simd_size * 2, cv2)
-    c.store[width=simd_size](n * 0 + simd_size * 3, cv3)
-    c.store[width=simd_size](n * 1 + simd_size * 0, cv4)
-    c.store[width=simd_size](n * 1 + simd_size * 1, cv5)
-    c.store[width=simd_size](n * 1 + simd_size * 2, cv6)
-    c.store[width=simd_size](n * 1 + simd_size * 3, cv7)
-    c.store[width=simd_size](n * 2 + simd_size * 0, cv8)
-    c.store[width=simd_size](n * 2 + simd_size * 1, cv9)
-    c.store[width=simd_size](n * 2 + simd_size * 2, cv10)
-    c.store[width=simd_size](n * 2 + simd_size * 3, cv11)
-    c.store[width=simd_size](n * 3 + simd_size * 0, cv12)
-    c.store[width=simd_size](n * 3 + simd_size * 1, cv13)
-    c.store[width=simd_size](n * 3 + simd_size * 2, cv14)
-    c.store[width=simd_size](n * 3 + simd_size * 3, cv15)
-    c.store[width=simd_size](n * 4 + simd_size * 0, cv16)
-    c.store[width=simd_size](n * 4 + simd_size * 1, cv17)
-    c.store[width=simd_size](n * 4 + simd_size * 2, cv18)
-    c.store[width=simd_size](n * 4 + simd_size * 3, cv19)
-    c.store[width=simd_size](n * 5 + simd_size * 0, cv20)
-    c.store[width=simd_size](n * 5 + simd_size * 1, cv21)
-    c.store[width=simd_size](n * 5 + simd_size * 2, cv22)
-    c.store[width=simd_size](n * 5 + simd_size * 3, cv23)
+    c_ptr.store[width=simd_size](n * 0 + simd_size * 0, cv0)
+    c_ptr.store[width=simd_size](n * 0 + simd_size * 1, cv1)
+    c_ptr.store[width=simd_size](n * 0 + simd_size * 2, cv2)
+    c_ptr.store[width=simd_size](n * 0 + simd_size * 3, cv3)
+    c_ptr.store[width=simd_size](n * 1 + simd_size * 0, cv4)
+    c_ptr.store[width=simd_size](n * 1 + simd_size * 1, cv5)
+    c_ptr.store[width=simd_size](n * 1 + simd_size * 2, cv6)
+    c_ptr.store[width=simd_size](n * 1 + simd_size * 3, cv7)
+    c_ptr.store[width=simd_size](n * 2 + simd_size * 0, cv8)
+    c_ptr.store[width=simd_size](n * 2 + simd_size * 1, cv9)
+    c_ptr.store[width=simd_size](n * 2 + simd_size * 2, cv10)
+    c_ptr.store[width=simd_size](n * 2 + simd_size * 3, cv11)
+    c_ptr.store[width=simd_size](n * 3 + simd_size * 0, cv12)
+    c_ptr.store[width=simd_size](n * 3 + simd_size * 1, cv13)
+    c_ptr.store[width=simd_size](n * 3 + simd_size * 2, cv14)
+    c_ptr.store[width=simd_size](n * 3 + simd_size * 3, cv15)
+    c_ptr.store[width=simd_size](n * 4 + simd_size * 0, cv16)
+    c_ptr.store[width=simd_size](n * 4 + simd_size * 1, cv17)
+    c_ptr.store[width=simd_size](n * 4 + simd_size * 2, cv18)
+    c_ptr.store[width=simd_size](n * 4 + simd_size * 3, cv19)
+    c_ptr.store[width=simd_size](n * 5 + simd_size * 0, cv20)
+    c_ptr.store[width=simd_size](n * 5 + simd_size * 1, cv21)
+    c_ptr.store[width=simd_size](n * 5 + simd_size * 2, cv22)
+    c_ptr.store[width=simd_size](n * 5 + simd_size * 3, cv23)
 
 
-fn kernel6x4_naive(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+def kernel6x4_naive(
+    a_ptr: UnsafePointer[Float32, _],
+    b_ptr: UnsafePointer[Float32, _],
+    c_ptr: UnsafePointer[mut=True, Float32, _],
     n: Int,
     k: Int,
     kc: Int,
 ):
-    var a = NDBuffer[DType.float32, 1, _, Dim()](a_ptr, mr * k)
-    var b = NDBuffer[DType.float32, 1, _, Dim()](b_ptr, kc * nr)
-    var c = NDBuffer[DType.float32, 1, _, Dim()](c_ptr, mr * n)
-
     for ir in range(mr):
         for jr in range(nr):
             for p in range(kc):
-                c[ir * n + jr] += a[ir * k + p] * b[p * nr + jr]
+                c_ptr[ir * n + jr] += a_ptr[ir * k + p] * b_ptr[p * nr + jr]

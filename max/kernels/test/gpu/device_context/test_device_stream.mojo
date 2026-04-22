@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import global_idx
-from gpu.host import DeviceContext, DeviceStream, DeviceBuffer
-from testing import (
-    assert_true,
-    assert_false,
-    assert_equal,
-    assert_not_equal,
-    assert_raises,
-)
+from std.math import ceildiv
+from std.gpu import global_idx
+from std.gpu.host import DeviceBuffer, DeviceContext, DeviceStream
+from std.testing import assert_equal, assert_true
 
 
 # Simple kernel for testing stream execution
-fn simple_kernel(
-    input: UnsafePointer[Float32],
-    output: UnsafePointer[Float32],
+def simple_kernel(
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
+    output: UnsafePointer[Float32, MutAnyOrigin],
     len: Int,
     multiplier: Float32,
 ):
@@ -36,7 +31,7 @@ fn simple_kernel(
     output[tid] = input[tid] * multiplier
 
 
-def test_stream_priority_range(ctx: DeviceContext):
+def test_stream_priority_range(ctx: DeviceContext) raises:
     print("Test that stream_priority_range() returns a valid priority range.")
     var priority_range = ctx.stream_priority_range()
 
@@ -48,7 +43,7 @@ def test_stream_priority_range(ctx: DeviceContext):
     )
 
 
-def test_create_stream_default(ctx: DeviceContext):
+def test_create_stream_default(ctx: DeviceContext) raises:
     print("Test creating a stream with default parameters (blocking=True).")
     var stream = ctx.create_stream()
 
@@ -56,12 +51,12 @@ def test_create_stream_default(ctx: DeviceContext):
     stream.synchronize()
 
 
-def test_create_stream_with_priority(ctx: DeviceContext):
+def test_create_stream_with_priority(ctx: DeviceContext) raises:
     print("Test creating streams with different priority values.")
     var priority_range = ctx.stream_priority_range()
 
-    alias length = 256
-    alias multiplier = Float32(2.5)
+    comptime length = 256
+    comptime multiplier = Float32(2.5)
 
     # Create host and device buffers
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -81,24 +76,22 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     ctx.synchronize()
 
     # Test with lowest priority stream
-    var low_priority_stream = ctx.create_stream(
-        priority=priority_range.least, blocking=True
-    )
-    var func = ctx.compile_function[simple_kernel]()
+    var low_priority_stream = ctx.create_stream(priority=priority_range.least)
+    var func = ctx.compile_function_experimental[simple_kernel]()
     low_priority_stream.enqueue_function(
         func,
         input_device,
         output_device_low,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     low_priority_stream.synchronize()
 
     # Test with highest priority stream
     var high_priority_stream = ctx.create_stream(
-        priority=priority_range.greatest, blocking=False
+        priority=priority_range.greatest
     )
     high_priority_stream.enqueue_function(
         func,
@@ -106,7 +99,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
         output_device_high,
         length,
         multiplier,
-        grid_dim=((length + 31) // 32),
+        grid_dim=ceildiv(length, 32),
         block_dim=32,
     )
     high_priority_stream.synchronize()
@@ -125,9 +118,7 @@ def test_create_stream_with_priority(ctx: DeviceContext):
     # Test with middle priority (if range allows)
     if priority_range.least < priority_range.greatest:
         var mid_priority = (priority_range.least + priority_range.greatest) // 2
-        var mid_priority_stream = ctx.create_stream(
-            priority=mid_priority, blocking=True
-        )
+        var mid_priority_stream = ctx.create_stream(priority=mid_priority)
         var output_device_mid = ctx.enqueue_create_buffer[DType.float32](length)
         mid_priority_stream.enqueue_function(
             func,
@@ -135,21 +126,21 @@ def test_create_stream_with_priority(ctx: DeviceContext):
             output_device_mid,
             length,
             multiplier,
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
         mid_priority_stream.synchronize()
 
 
-def test_multiple_priority_streams(ctx: DeviceContext):
+def test_multiple_priority_streams(ctx: DeviceContext) raises:
     print(
         "Test creating multiple streams with different priorities and"
         " concurrent kernel execution."
     )
     var priority_range = ctx.stream_priority_range()
 
-    alias length = 512
-    alias num_kernels = 4
+    comptime length = 512
+    comptime num_kernels = 4
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -190,7 +181,7 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             current_priority += step
             multiplier_val += Float32(0.5)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
 
     # Launch kernels concurrently on all streams
     for i in range(len(streams)):
@@ -200,7 +191,7 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             output_devices[i],
             length,
             multipliers[i],
-            grid_dim=((length + 31) // 32),
+            grid_dim=ceildiv(length, 32),
             block_dim=32,
         )
 
@@ -220,7 +211,7 @@ def test_multiple_priority_streams(ctx: DeviceContext):
             assert_equal(output_host[i], expected)
 
 
-def test_concurrent_priority_streams(ctx: DeviceContext):
+def test_concurrent_priority_streams(ctx: DeviceContext) raises:
     print("Test concurrent execution on streams with different priorities.")
     var priority_range = ctx.stream_priority_range()
 
@@ -231,8 +222,8 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         )
         return
 
-    alias length = 1024
-    alias iterations = 10
+    comptime length = 1024
+    comptime iterations = 10
 
     # Create input data
     var input_host = ctx.enqueue_create_host_buffer[DType.float32](length)
@@ -245,16 +236,14 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
 
     # Create high and low priority streams
     var high_priority_stream = ctx.create_stream(
-        priority=priority_range.greatest, blocking=False
+        priority=priority_range.greatest
     )
-    var low_priority_stream = ctx.create_stream(
-        priority=priority_range.least, blocking=False
-    )
+    var low_priority_stream = ctx.create_stream(priority=priority_range.least)
 
     var high_output_device = ctx.enqueue_create_buffer[DType.float32](length)
     var low_output_device = ctx.enqueue_create_buffer[DType.float32](length)
 
-    var func = ctx.compile_function[simple_kernel]()
+    var func = ctx.compile_function_experimental[simple_kernel]()
     # Launch multiple kernels on both streams to test priority behavior
     for i in range(iterations):
         # Launch on low priority stream first
@@ -263,7 +252,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
             input_device,
             low_output_device,
             length,
-            Float32(1.0 + i),
+            Float32(1.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
         )
@@ -274,7 +263,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
             input_device,
             high_output_device,
             length,
-            Float32(2.0 + i),
+            Float32(2.0 + Float64(i)),
             grid_dim=((length + 63) // 64),
             block_dim=64,
         )
@@ -301,7 +290,7 @@ def test_concurrent_priority_streams(ctx: DeviceContext):
         assert_equal(low_output_host[i], expected_low_val)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_stream_priority_range(ctx)
         test_create_stream_default(ctx)

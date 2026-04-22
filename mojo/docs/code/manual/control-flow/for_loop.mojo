@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,10 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-from python import Python
+from std.python import Python
 
 
-def main():
+def main() raises:
     states = [String("California"), "Hawaii", "Oregon"]
     for state in states:
         print(state)
@@ -28,7 +28,7 @@ def main():
         "Oregon": "Salem",
     }
 
-    for state in capitals:
+    for var state in capitals:
         print(capitals[state] + ", " + state)
 
     for item in capitals.items():
@@ -80,7 +80,7 @@ def main():
     for ref value in values:
         if value % 2 != 0:
             value -= 1
-    print(values.__str__())
+    print(values)
 
     # from python import Python
 

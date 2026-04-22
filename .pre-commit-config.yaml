@@ -1,5 +1,5 @@
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -14,31 +14,10 @@
 repos:
   - repo: local
     hooks:
-      - id: mojo-format
-        name: mojo-format
-        entry: mojo format
+      - id: format
+        name: format
+        entry: ./bazelw run format
         language: system
-        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
+        files: '\.(mojo|py|mdx?)$'
         stages: [pre-commit]
-      - id: check-docstrings
-        name: check-docstrings
-        entry: python3 ./mojo/stdlib/scripts/check-docstrings.py
-        language: system
         pass_filenames: false
-        stages: [pre-commit]
-      - id: check-license
-        name: check-license
-        entry: mojo bazel/lint/check_licenses.mojo
-        language: system
-        files: '^(mojo|examples/mojo).*\.(mojo|🔥|py)$'
-        stages: [pre-commit]
-  - repo: https://github.com/igorshubovych/markdownlint-cli
-    rev: v0.40.0
-    hooks:
-      - id: markdownlint
-        args: ["--config", "mojo/stdlib/scripts/.markdownlint.yaml", "--fix"]
-  - repo: https://github.com/keith/pre-commit-buildifier
-    rev: 8.2.0
-    hooks:
-    -   id: buildifier
-    -   id: buildifier-lint

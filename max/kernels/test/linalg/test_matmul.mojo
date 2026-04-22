@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -15,96 +15,79 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from linalg.matmul import _matmul_cpu, matmul
+from layout import Coord, Idx, TileTensor
+from layout.tile_layout import row_major
+from linalg.matmul import matmul
+from linalg.matmul.cpu import matmul as _matmul_cpu
 from linalg.packing import (
-    _pack_b_ndbuffer_impl,
-    _pack_matmul_b_shape_func_impl,
     pack_b_ndbuffer,
     pack_matmul_b_shape_func,
 )
-from testing import assert_almost_equal, assert_equal
-
-from utils.index import Index, IndexList
-
-alias alignment = 64
+from std.testing import assert_almost_equal, assert_equal
 
 
-fn gemm_naive[](
-    a: NDBuffer,
-    b: NDBuffer,
-    c: NDBuffer[mut=True, *_],
+comptime alignment = 64
+
+
+def gemm_naive[
+    a_type: DType, b_type: DType, c_type: DType
+](
+    a: TileTensor[mut=False, a_type, ...],
+    b: TileTensor[mut=False, b_type, ...],
+    c: TileTensor[mut=True, c_type, ...],
     m: Int,
     n: Int,
     k: Int,
 ):
+    comptime assert a.rank == 2 and a.flat_rank == 2
+    comptime assert b.rank == 2 and b.flat_rank == 2
+    comptime assert c.rank == 2 and c.flat_rank == 2
     for i in range(m):
         for p in range(k):
             for j in range(n):
-                var a_val = a[i, p].cast[c.type]()
-                var b_val = b[p, j].cast[c.type]()
-                c[i, j] += a_val * b_val
+                var cur = rebind[Scalar[c_type]](c[i, j])
+                var av = rebind[Scalar[c_type]](a[i, p].cast[c_type]())
+                var bv = rebind[Scalar[c_type]](b[p, j].cast[c_type]())
+                c[i, j] = cur + av * bv
 
 
 def test_matmul[
     a_type: DType,
-    a_shape: DimList,
     b_type: DType,
-    b_shape: DimList,
     c_type: DType,
-    c_shape: DimList,
     transpose_b: Bool,
     b_packed: Bool,
     saturated: Bool,
-](m: Int, n: Int, k: Int, kernel_type_m: Int):
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(k * n)
-    var b = NDBuffer[b_type, 2, _, b_shape](b_ptr, Index(k, n))
+](m: Int, n: Int, k: Int, kernel_type_m: Int) raises:
+    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_ptr = alloc[Scalar[b_type],](k * n, alignment=alignment)
+    var b = TileTensor(b_ptr.as_any_origin(), row_major(Coord(Idx(k), Idx(n))))
 
-    var padded_n_k = IndexList[2]()
-    if kernel_type_m != 0:
-        padded_n_k = _pack_matmul_b_shape_func_impl[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
-            True,
-        ](b, kernel_type_m)
-    else:
-        padded_n_k = pack_matmul_b_shape_func[
-            a_type,
-            a_shape,
-            b_type,
-            b_shape,
-            c_type,
-            c_shape,
-            transpose_b,
-            True,
-        ](b)
+    var padded_n_k = pack_matmul_b_shape_func[
+        a_type,
+        c_type,
+        transpose_b,
+    ](b, kernel_type_m)
 
     var padded_n = padded_n_k[1] if b_packed else n
     var padded_k = padded_n_k[0] if b_packed else k
 
-    var bp_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
-        padded_k * padded_n
+    var bp_ptr = alloc[Scalar[b_type],](
+        padded_k * padded_n, alignment=alignment
     )
-    var c0_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
-    var c1_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
+    var c0_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var c1_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
 
-    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
-
-    var bp = NDBuffer[b_type, 2, _, DimList.create_unknown[2]()](
-        bp_ptr, Index(padded_k, padded_n)
+    var a = TileTensor(a_ptr.as_any_origin(), row_major(Coord(Idx(m), Idx(k))))
+    var bp = TileTensor(
+        bp_ptr.as_any_origin(), row_major(Coord(Idx(padded_k), Idx(padded_n)))
     )
-    var c = NDBuffer[c_type, 2, _, c_shape](c0_ptr, Index(m, n))
-
-    var golden = NDBuffer[c_type, 2, _, c_shape](c1_ptr, Index(m, n))
+    var c = TileTensor(c0_ptr.as_any_origin(), row_major(Coord(Idx(m), Idx(n))))
+    var golden = TileTensor(
+        c1_ptr.as_any_origin(), row_major(Coord(Idx(m), Idx(n)))
+    )
 
     # saturated VNNI only has a range [0,127] for the input a
     var vnni_range: Int = 128 if saturated else 256
@@ -112,55 +95,37 @@ def test_matmul[
     for i in range(m):
         for p in range(k):
             # uint8 but limited to [0,127]
-            a[IndexList[2]((i, p))] = cnt % vnni_range
+            a[i, p] = Scalar[a_type](cnt % vnni_range)
             cnt += 1
 
     cnt = 0
     for p in range(k):
         for j in range(n):
             # int8 [-128, 127]
-            b[IndexList[2]((p, j))] = cnt % 256 - 128
-            bp[IndexList[2]((p, j))] = b[IndexList[2]((p, j))]
+            b[p, j] = Scalar[b_type](cnt % 256 - 128)
+            bp[p, j] = b[p, j]
             cnt += 1
 
     for i in range(m):
         for j in range(n):
-            c[IndexList[2]((i, j))] = 0
-            golden[IndexList[2]((i, j))] = c[IndexList[2]((i, j))]
+            c[i, j] = 0
+            golden[i, j] = c[i, j]
 
-    @parameter
-    if b_packed:
-        if kernel_type_m != 0:
-            _pack_b_ndbuffer_impl[
-                a_type, a_shape, b_type, b_shape, c_type, c_shape, transpose_b
-            ](b, bp, kernel_type_m)
-        else:
-            pack_b_ndbuffer[
-                a_type,
-                a_shape,
-                b_type,
-                b_shape,
-                c_type,
-                c_shape,
-            ](b, bp)
+    comptime if b_packed:
+        pack_b_ndbuffer[a_type, c_type](b, bp, kernel_type_m)
 
     if kernel_type_m != 0:
         _matmul_cpu[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](
-            c,
-            a,
-            rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp),
-            kernel_type_m,
-        )
+        ](c, a, bp, kernel_type_m)
     else:
         matmul[
             transpose_b=transpose_b,
             b_packed=b_packed,
             saturated_vnni=saturated,
-        ](c, a, rebind[NDBuffer[b_type, 2, bp.origin, b_shape]](bp))
+        ](c, a, bp)
 
     gemm_naive(a, b, golden, m, n, k)
 
@@ -181,8 +146,7 @@ def test_matmul[
                 c_type,
             )
 
-            @parameter
-            if c_type.is_floating_point():
+            comptime if c_type.is_floating_point():
                 assert_almost_equal(c[i, j], golden[i, j], msg)
             else:
                 assert_equal(c[i, j], golden[i, j], msg)
@@ -202,19 +166,13 @@ def test_matmul[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
-](m: Int, n: Int, k: Int):
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
+](m: Int, n: Int, k: Int) raises:
     test_matmul[
         a_type,
-        a_shape,
         b_type,
-        b_shape,
         c_type,
-        c_shape,
         False,  # transpose_b
-        b_packed,  # b_packed
+        b_packed,
         saturated=saturated,
     ](m, n, k, m if mixed_kernels else 0)
 
@@ -226,9 +184,9 @@ def test_shapes[
     b_packed: Bool,
     saturated: Bool,
     mixed_kernels: Bool,
-]():
+]() raises:
     @parameter
-    fn test_shapes_helper(m: Int, n: Int, k: Int) raises:
+    def test_shapes_helper(m: Int, n: Int, k: Int) raises:
         test_matmul[
             a_type=a_type,
             b_type=b_type,
@@ -254,9 +212,8 @@ def test_shapes[
     test_shapes_helper(384, 768, 1)
 
 
-def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
-    @parameter
-    if b_packed and CompilationTarget.is_macos():
+def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]() raises:
+    comptime if b_packed and CompilationTarget.is_macos():
         return
 
     test_shapes[
@@ -284,7 +241,7 @@ def test_types[b_packed: Bool, saturated: Bool, mixed_kernels: Bool]():
         ]()
 
 
-def main():
+def main() raises:
     test_types[b_packed=False, saturated=False, mixed_kernels=False]()
     test_types[b_packed=True, saturated=False, mixed_kernels=False]()
     test_types[b_packed=False, saturated=True, mixed_kernels=False]()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,33 +16,31 @@
 # logic and shift instruction: lop3
 # https://docs.nvidia.com/cuda/parallel-thread-execution/index.html#logic-and-shift-instructions-lop3
 
-from sys.info import CompilationTarget, is_amd_gpu
+from std.sys.info import is_amd_gpu, is_apple_gpu
 
-from buffer import NDBuffer
-from gpu.host import DeviceContext
-from gpu.intrinsics import lop
-from gpu.memory import AddressSpace
-from memory.unsafe import bitcast
-from testing import assert_equal
+from std.gpu.host import DeviceContext
+from std.gpu.intrinsics import lop
+from std.memory.unsafe import bitcast
+from std.testing import assert_equal
+from layout import TileTensor, row_major
 
 
 # 8xint4 -> 8xbfloat16 interleaved conversion
-fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
-    alias MASK: Int32 = 0x000F000F
-    alias I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
+def int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
+    comptime MASK: Int32 = 0x000F000F
+    comptime I4s_TO_BF16s_MAGIC_NUM: Int32 = 0x43004300
 
     # 0xc308 = -136.0, 0xc300 = -128.0
-    alias BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
+    comptime BF16_BIAS = SIMD[DType.bfloat16, 2](-128, -128)
     # 0x3f80 = 1.0
-    alias BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
+    comptime BF16_ONE = SIMD[DType.bfloat16, 2](1, 1)
 
     var i4s: Int32 = i4
     var v: SIMD[DType.int32, 4] = 0
-    alias lut: Int32 = (0xF0 & 0xCC) | 0xAA
+    comptime lut: Int32 = (0xF0 & 0xCC) | 0xAA
     # This lut is operation: (A & B) | C
 
-    @parameter
-    for i in range(0, 4):
+    comptime for i in range(0, 4):
         # The ternary operator isnot working.
         # The conditional is_amd_gpu() or no_lop appears to not be constant
         # var t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM if (is_amd_gpu() or no_lop) else lop[
@@ -50,8 +48,7 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
         # ](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
         var t: Int32
 
-        @parameter
-        if is_amd_gpu() or no_lop:
+        comptime if is_apple_gpu() or is_amd_gpu() or no_lop:
             t = (i4s & MASK) | I4s_TO_BF16s_MAGIC_NUM
         else:
             t = lop[lut](i4s, MASK, I4s_TO_BF16s_MAGIC_NUM)
@@ -63,36 +60,30 @@ fn int4tobf16[no_lop: Bool = False](i4: Int32) -> SIMD[DType.bfloat16, 8]:
     return bitcast[DType.bfloat16, 8](v)
 
 
-fn call_int4tobf16[
+def call_int4tobf16[
     no_lop: Bool
-](
-    i4: Int32,
-    out_ptr: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-):
+](i4: Int32, out_ptr: UnsafePointer[BFloat16, MutAnyOrigin],):
     var v = int4tobf16[no_lop](i4)
     out_ptr.bitcast[Int32]().store[alignment=16](0, bitcast[DType.int32, 4](v))
 
 
-def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext):
-    var out_host = NDBuffer[
-        DType.bfloat16, 1, MutableAnyOrigin, 8
-    ].stack_allocation()
+def test_int4tobfloat16[no_lop: Bool](ctx: DeviceContext) raises:
+    var stack = InlineArray[BFloat16, 8](uninitialized=True)
+    var out_host = TileTensor(stack, row_major[8]())
     var out_device = ctx.enqueue_create_buffer[DType.bfloat16](8)
 
-    ctx.enqueue_function[call_int4tobf16[no_lop]](
-        UInt32(0x76543210), out_device, grid_dim=1, block_dim=1
+    comptime kernel = call_int4tobf16[no_lop]
+    ctx.enqueue_function_experimental[kernel](
+        Int32(0x76543210), out_device, grid_dim=1, block_dim=1
     )
 
-    ctx.enqueue_copy(out_host.data, out_device)
+    ctx.enqueue_copy(out_host.ptr, out_device)
     for i in range(4):
-        assert_equal(out_host[2 * i + 0], i + 0)
-        assert_equal(out_host[2 * i + 1], i + 4)
+        assert_equal(out_host[2 * i + 0], BFloat16(i + 0))
+        assert_equal(out_host[2 * i + 1], BFloat16(i + 4))
 
 
-def main():
-    # TODO(KERN-228): support BF16 on neon systems.
-    @parameter
-    if not CompilationTarget.has_neon():
-        with DeviceContext() as ctx:
-            test_int4tobfloat16[no_lop=False](ctx)
-            test_int4tobfloat16[no_lop=True](ctx)
+def main() raises:
+    with DeviceContext() as ctx:
+        test_int4tobfloat16[no_lop=False](ctx)
+        test_int4tobfloat16[no_lop=True](ctx)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Logger
+from std.logger import Logger
+from std.testing import TestSuite
 
 
-def main():
+def test_log_with_env() raises:
     var log = Logger()
 
-    # CHECK: DEBUG::: hello world
+    # CHECK: {{.*}}DEBUG{{.*}}::: hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
+    # CHECK: {{.*}}INFO{{.*}}::: hello
     log.info("hello")
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

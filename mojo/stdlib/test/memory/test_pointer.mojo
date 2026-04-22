@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal, assert_not_equal, assert_true
+from std.memory import AddressSpace, UnsafeMaybeUninit
+from test_utils import check_write_to
+from std.testing import TestSuite
+from std.testing import (
+    assert_equal,
+    assert_not_equal,
+    assert_true,
+    assert_false,
+)
 
 
-def test_copy_reference_explicitly():
+def test_copy_reference_explicitly() raises:
     var a = [1, 2, 3]
 
     var b = Pointer(to=a)
@@ -26,7 +34,7 @@ def test_copy_reference_explicitly():
     assert_equal(c[][0], 4)
 
 
-def test_equality():
+def test_equality() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
@@ -35,23 +43,78 @@ def test_equality():
     assert_true(Pointer(to=a) != Pointer(to=b))
 
 
-def test_str():
+def test_str() raises:
     var a = Int(42)
     var a_ref = Pointer(to=a)
     assert_true(String(a_ref).startswith("0x"))
 
 
-def test_pointer_to():
+def test_write_to() raises:
+    var a = Int(42)
+    check_write_to(Pointer(to=a), contains="0x", is_repr=False)
+    var s = String("hello")
+    check_write_to(Pointer(to=s), contains="0x", is_repr=False)
+
+
+def test_write_repr_to() raises:
+    var n = Int(42)
+    check_write_to(
+        Pointer(to=n),
+        contains=(
+            "Pointer[mut=True, Int, address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
+    check_write_to(
+        Pointer(to=n).get_immutable(),
+        contains=(
+            "Pointer[mut=False, Int, address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
+
+    var s = String("hello")
+    check_write_to(
+        Pointer(to=s),
+        contains=(
+            "Pointer[mut=True, String, address_space=AddressSpace.GENERIC](0x"
+        ),
+        is_repr=True,
+    )
+
+
+comptime ADDRESS_SPACE_STRINGS = [
+    (AddressSpace.GENERIC, "AddressSpace.GENERIC"),
+    (AddressSpace.GLOBAL, "AddressSpace.GLOBAL"),
+    (AddressSpace.SHARED, "AddressSpace.SHARED"),
+    (AddressSpace.CONSTANT, "AddressSpace.CONSTANT"),
+    (AddressSpace.LOCAL, "AddressSpace.LOCAL"),
+    (AddressSpace.SHARED_CLUSTER, "AddressSpace.SHARED_CLUSTER"),
+    (AddressSpace(42), "AddressSpace(42)"),
+]
+
+
+def test_address_space_write_to() raises:
+    for address_space, expected in materialize[ADDRESS_SPACE_STRINGS]():
+        check_write_to(address_space, expected=expected, is_repr=False)
+
+
+def test_address_space_write_repr_to() raises:
+    for address_space, expected in materialize[ADDRESS_SPACE_STRINGS]():
+        check_write_to(address_space, expected=expected, is_repr=True)
+
+
+def test_pointer_to() raises:
     var local = 1
     assert_not_equal(0, Pointer(to=local)[])
 
 
 # Test pointer merging with ternary operation.
-def test_merge():
+def test_merge() raises:
     var a = [1, 2, 3]
     var b = [4, 5, 6]
 
-    fn inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
+    def inner(cond: Bool, x: Int, mut a: List[Int], mut b: List[Int]):
         var either = Pointer(to=a) if cond else Pointer(to=b)
         either[].append(x)
 
@@ -62,19 +125,32 @@ def test_merge():
     assert_equal(b, [4, 5, 6, 8])
 
 
+def test_nicheable() raises:
+    var x = 42
+    comptime PointerType = Pointer[Int, ImmutOrigin(origin_of(x))]
+
+    assert_equal(PointerType.niche_count(), 1)
+
+    var memory = UnsafeMaybeUninit[PointerType]()
+
+    PointerType.write_niche(UnsafePointer(to=memory))
+    assert_true(PointerType.isa_niche(UnsafePointer(to=memory)))
+
+    memory.init_from(Pointer(to=x))
+    assert_false(PointerType.isa_niche(UnsafePointer(to=memory)))
+
+
 # We don't actually need to run this,
 # but Mojo's exclusivity check shouldn't complain
-def test_get_immutable() -> Int:
-    fn foo(x: Pointer[mut=False, Int], y: Pointer[mut=False, Int]) -> Int:
+def _test_get_immutable() raises -> Int:
+    def foo(
+        x: Pointer[mut=False, Int, ...], y: Pointer[mut=False, Int, ...]
+    ) -> Int:
         return x[]
 
     var x = Int(0)
     return foo(Pointer(to=x), Pointer(to=x))
 
 
-def main():
-    test_copy_reference_explicitly()
-    test_equality()
-    test_str()
-    test_pointer_to()
-    test_merge()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

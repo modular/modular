@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,22 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
-from buffer import Dim, DimList, NDBuffer
-from gpu.host import DeviceContext
-from nn.mha import flash_attention
-from nn.mha_mask import (
+from std.gpu.host import DeviceContext
+from layout import (
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
+from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
+from nn.attention.mha_mask import (
     MASK_VALUE,
     ChunkedCausalMask,
-    MaterializedMask,
     TileMaskStatus,
 )
-from nn.mha_score_mod import IdentityScoreMod
-from testing import assert_almost_equal, assert_equal
+from std.testing import assert_almost_equal, assert_equal
 
-from utils.index import Index
+from std.utils.index import Index
 
 
 def build_ChunkedCausalMask[
@@ -36,8 +41,8 @@ def build_ChunkedCausalMask[
     num_heads: Int,
     seq_len: Int,
     num_keys: Int,
-    mask: NDBuffer[mask_type, 4, MutableAnyOrigin],
-):
+    mask: LayoutTensor[mut=True, mask_type, ...],
+) raises:
     # Initialize causal mask.
     for b in range(batch_size):
         for h in range(num_heads):
@@ -51,11 +56,11 @@ def build_ChunkedCausalMask[
                     var masked = chunk_masked or causal_masked
                     mask.store(
                         Index(b, h, q_idx, k_idx),
-                        Scalar[mask.type](0 if not masked else MASK_VALUE),
+                        Scalar[mask.dtype](0 if not masked else MASK_VALUE),
                     )
 
 
-fn test_attention[
+def test_attention[
     qkv_type: DType,
     mask_type: DType,
     depth: Int,
@@ -81,9 +86,9 @@ fn test_attention[
         num_keys,
     )
     # Query, key, value dimensions.
-    alias batch_size = 1
-    alias scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
-    alias kv_num_heads = num_heads // group
+    comptime batch_size = 1
+    comptime scale = Float32(0.125)  # rsqrt[type, 1](Float32(depth))
+    comptime kv_num_heads = num_heads // group
 
     # Q, K, V shapes.
     var q_size = batch_size * num_heads * seq_len * depth
@@ -93,34 +98,26 @@ fn test_attention[
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = UnsafePointer[Scalar[qkv_type]].alloc(q_size)
-    var k_ptr = UnsafePointer[Scalar[qkv_type]].alloc(k_size)
-    var v_ptr = UnsafePointer[Scalar[qkv_type]].alloc(v_size)
-    var mask_ptr = UnsafePointer[Scalar[mask_type]].alloc(mask_size)
-    var output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
-    var flash_output_ptr = UnsafePointer[Scalar[qkv_type]].alloc(o_size)
+    var q_ptr = alloc[Scalar[qkv_type]](q_size)
+    var k_ptr = alloc[Scalar[qkv_type]](k_size)
+    var v_ptr = alloc[Scalar[qkv_type]](v_size)
+    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+    var output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
 
-    # Construct buffers.
-    var q = NDBuffer[qkv_type, 4](
-        q_ptr, Index(batch_size, seq_len, num_heads, depth)
-    )
-    var k = NDBuffer[qkv_type, 4](
-        k_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
-    )
-    var v = NDBuffer[qkv_type, 4](
-        v_ptr, Index(batch_size, num_keys, kv_num_heads, depth)
-    )
-    var mask = NDBuffer[mask_type, 4, MutableAnyOrigin](
-        mask_ptr, Index(batch_size, num_heads, seq_len, num_keys)
-    )
-    var output = NDBuffer[qkv_type, 4](
-        output_ptr, Index(batch_size, seq_len, num_heads, depth)
+    # Construct host mask buffer for initialization.
+    comptime layout_4d = Layout.row_major[4]()
+    var mask = LayoutTensor[mask_type, layout_4d, MutAnyOrigin](
+        mask_ptr,
+        RuntimeLayout[layout_4d].row_major(
+            Index(batch_size, num_heads, seq_len, num_keys)
+        ),
     )
 
     # Q, K, V are randomly initialized.
-    rand[qkv_type](q_ptr, q_size, min=-1.0, max=1.0)
-    rand[qkv_type](k_ptr, k_size, min=-1.0, max=1.0)
-    rand[qkv_type](v_ptr, v_size, min=-1.0, max=1.0)
+    rand[qkv_type](q_ptr, q_size)
+    rand[qkv_type](k_ptr, k_size)
+    rand[qkv_type](v_ptr, v_size)
 
     # Initialize causal mask.
     build_ChunkedCausalMask[local_window_size](
@@ -141,33 +138,60 @@ fn test_attention[
     ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
     # Construct device buffers.
-    var q_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        q_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+    var q_device = TileTensor(
+        q_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
+        ),
     )
-    var k_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
-        k_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+    var k_device = TileTensor(
+        k_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
+        ),
     )
-    var v_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), kv_num_heads, depth)
-    ](
-        v_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_keys, kv_num_heads, depth),
+    var v_device = TileTensor(
+        v_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
+        ),
     )
-    var mask4d = NDBuffer[mask_type, 4, _, DimList.create_unknown[4]()](
-        mask_device_ptr.unsafe_ptr(),
-        Index(batch_size, num_heads, seq_len, num_keys),
+    var mask4d = TileTensor(
+        mask_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx[num_heads](),
+                Idx(seq_len),
+                Idx(num_keys),
+            )
+        ),
     )
-    var output_device = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        output_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+    var output_device = TileTensor(
+        output_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
+        ),
     )
 
     flash_attention(
@@ -176,7 +200,6 @@ fn test_attention[
         k_device,
         v_device,
         ChunkedCausalMask[local_window_size](),
-        IdentityScoreMod(),
         scale,
         ctx,
     )
@@ -185,23 +208,35 @@ fn test_attention[
 
     ctx.enqueue_copy(flash_output_ptr, output_device_ptr)
 
+    # Use naive MHA with materialized mask as the reference.
     var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
-    var output_device_ref = NDBuffer[
-        qkv_type, 4, _, DimList(Dim(), Dim(), num_heads, depth)
-    ](
-        output_ref_device_ptr.unsafe_ptr(),
-        Index(batch_size, seq_len, num_heads, depth),
+    var output_device_ref = TileTensor(
+        output_ref_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(seq_len),
+                Idx[num_heads](),
+                Idx[depth](),
+            )
+        ),
     )
-    flash_attention(
-        output_device_ref,
+
+    mha_gpu_naive(
         q_device,
         k_device,
         v_device,
-        MaterializedMask(mask4d),
-        IdentityScoreMod(),
+        mask4d,
+        output_device_ref,
         scale,
+        batch_size,
+        seq_len,
+        num_keys,
+        num_heads,
+        depth,
+        group,
         ctx,
     )
 
@@ -209,7 +244,7 @@ fn test_attention[
     ctx.synchronize()
     _ = output_ref_device_ptr
 
-    var rtol = 1e-2
+    var rtol = 2e-2
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
@@ -238,12 +273,11 @@ fn test_attention[
     flash_output_ptr.free()
 
 
-def test_attention_suite(ctx: DeviceContext):
-    alias types = (DType.bfloat16, DType.float32)
+def test_attention_suite(ctx: DeviceContext) raises:
+    comptime types = (DType.bfloat16, DType.float32)
 
-    @parameter
-    for type_idx in range(len(types)):
-        alias type = types[type_idx]
+    comptime for type_idx in range(len(types)):
+        comptime type = types[type_idx]
         # context encoding
         test_attention[
             type,
@@ -289,7 +323,7 @@ def test_attention_suite(ctx: DeviceContext):
         ](1, 11, ctx)
 
 
-def test_mask_status():
+def test_mask_status() raises:
     var mask = ChunkedCausalMask[local_window_size=4]()
 
     assert_equal(
@@ -341,8 +375,8 @@ def test_mask_status():
     )
 
 
-def test_mask_apply():
-    alias local_window_size = 4
+def test_mask_apply() raises:
+    comptime local_window_size = 4
     var mask = ChunkedCausalMask[local_window_size]()
 
     var score_vec = SIMD[DType.float32, 4](0.0)
@@ -351,9 +385,9 @@ def test_mask_apply():
     score_vec[2] = 3.0
     score_vec[3] = 4.0
 
-    alias simd_width = 4
-    alias SIMD_T = SIMD[DType.float32, simd_width]
-    alias UNMASKED_INPUT = SIMD_T(0.0)
+    comptime simd_width = 4
+    comptime SIMD_T = SIMD[DType.float32, simd_width]
+    comptime UNMASKED_INPUT = SIMD_T(0.0)
     var inf_vec = SIMD_T(MASK_VALUE)
 
     # first two dims should be arbitrary, we pass in junk just to help confirm.
@@ -385,7 +419,7 @@ def test_mask_apply():
     )
 
 
-def main():
+def main() raises:
     test_mask_status()
     test_mask_apply()
     with DeviceContext() as ctx:

@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,14 +18,19 @@ binary_root=$PWD/..
 
 cd "$BUILD_WORKSPACE_DIRECTORY"
 
-binary=$(find $binary_root -name ruff | head -n 1)
+binary=$(find "$binary_root" -name ruff | head -n 1)
 
 result=0
 if [[ $1 == "check" ]]; then
-    "$binary" format --check --quiet --diff || result=$?
-    "$binary" check --quiet || result=$?
+    shift
+    "$binary" format --check --quiet --diff "$@" || result=$?
+    "$binary" check --quiet "$@" || result=$?
+elif [[ $1 == "fix" ]]; then
+    shift
+    "$binary" format "$@" || result=$?
+    "$binary" check --fix "$@" || result=$?
 else
-    "$binary" format || result=$?
-    "$binary" check --fix || result=$?
+    echo "Unknown subcommand '$1' to Ruff wrapper" >&2
+    result=1
 fi
 exit $result

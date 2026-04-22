@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,24 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from gpu import block, global_idx, warp
-from gpu.host import DeviceContext
-from gpu.host import DeviceContext
-from gpu.globals import WARP_SIZE
-from math import ceildiv
-from testing import assert_equal
+from std.gpu import global_idx
+from std.gpu.primitives import block, warp
+from std.gpu.globals import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
-alias dtype = DType.uint64
+comptime dtype = DType.uint64
 
 
-fn warp_prefix_sum_kernel[
+def warp_prefix_sum_kernel[
     dtype: DType,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     size: Int,
 ):
     var tid = global_idx.x
@@ -37,16 +36,16 @@ fn warp_prefix_sum_kernel[
     output[tid] = warp.prefix_sum[exclusive=exclusive](input[tid])
 
 
-def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
-    alias size = WARP_SIZE
-    alias BLOCK_SIZE = WARP_SIZE
+def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
+    comptime size = WARP_SIZE
+    comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var in_host = alloc[Scalar[dtype]](size)
+    var out_host = alloc[Scalar[dtype]](size)
 
     for i in range(size):
-        in_host[i] = i
+        in_host[i] = UInt64(i)
         out_host[i] = 0
 
     # Create device buffers and copy input data
@@ -56,11 +55,10 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[
-        warp_prefix_sum_kernel[dtype=dtype, exclusive=exclusive]
-    ](
-        out_device.unsafe_ptr(),
-        in_device.unsafe_ptr(),
+    comptime kernel = warp_prefix_sum_kernel[dtype=dtype, exclusive=exclusive]
+    ctx.enqueue_function_experimental[kernel](
+        out_device,
+        in_device,
         size,
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
@@ -73,18 +71,15 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     for i in range(size):
         var expected: Scalar[dtype]
 
-        @parameter
-        if exclusive:
-            expected = i * (i - 1) // 2
+        comptime if exclusive:
+            expected = UInt64(i * (i - 1) // 2)
         else:
-            expected = i * (i + 1) // 2
+            expected = UInt64(i * (i + 1) // 2)
 
         assert_equal(
             out_host[i],
             expected,
-            msg=String(
-                "out_host[", i, "] = ", out_host[i], " expected = ", expected
-            ),
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup
@@ -92,13 +87,13 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     out_host.free()
 
 
-fn block_prefix_sum_kernel[
+def block_prefix_sum_kernel[
     dtype: DType,
     block_size: Int,
     exclusive: Bool,
 ](
-    output: UnsafePointer[Scalar[dtype]],
-    input: UnsafePointer[Scalar[dtype]],
+    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    input: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     size: Int,
 ):
     var tid = global_idx.x
@@ -109,18 +104,18 @@ fn block_prefix_sum_kernel[
     )
 
 
-def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
+def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     # Initialize a block with several warps. The prefix sum for each warp is
     # tested above.
-    alias BLOCK_SIZE = WARP_SIZE * 13
-    alias size = BLOCK_SIZE
+    comptime BLOCK_SIZE = WARP_SIZE * 13
+    comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = UnsafePointer[Scalar[dtype]].alloc(size)
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(size)
+    var in_host = alloc[Scalar[dtype]](size)
+    var out_host = alloc[Scalar[dtype]](size)
 
     for i in range(size):
-        in_host[i] = i
+        in_host[i] = UInt64(i)
         out_host[i] = 0
 
     # Create device buffers and copy input data
@@ -130,13 +125,12 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
 
     # Launch kernel
     var grid_dim = ceildiv(size, BLOCK_SIZE)
-    ctx.enqueue_function[
-        block_prefix_sum_kernel[
-            dtype=dtype, block_size=BLOCK_SIZE, exclusive=exclusive
-        ]
-    ](
-        out_device.unsafe_ptr(),
-        in_device.unsafe_ptr(),
+    comptime kernel = block_prefix_sum_kernel[
+        dtype=dtype, block_size=BLOCK_SIZE, exclusive=exclusive
+    ]
+    ctx.enqueue_function_experimental[kernel](
+        out_device,
+        in_device,
         size,
         block_dim=BLOCK_SIZE,
         grid_dim=grid_dim,
@@ -149,18 +143,15 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     for i in range(size):
         var expected: Scalar[dtype]
 
-        @parameter
-        if exclusive:
-            expected = i * (i - 1) // 2
+        comptime if exclusive:
+            expected = UInt64(i * (i - 1) // 2)
         else:
-            expected = i * (i + 1) // 2
+            expected = UInt64(i * (i + 1) // 2)
 
         assert_equal(
             out_host[i],
             expected,
-            msg=String(
-                "out_host[", i, "] = ", out_host[i], " expected = ", expected
-            ),
+            msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
 
     # Cleanup
@@ -168,7 +159,7 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext):
     out_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_warp_prefix_sum[exclusive=True](ctx)
         test_warp_prefix_sum[exclusive=False](ctx)

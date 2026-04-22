@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,27 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand
+from std.random import rand
 
-from gpu import block_dim, block_idx, grid_dim, thread_idx
-from gpu.host import DeviceContext
-from gpu.semaphore import Semaphore
-from memory import memset_zero
-from testing import assert_equal
+from std.gpu import block_dim, block_idx, grid_dim, thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.sync.semaphore import Semaphore
+from std.memory import memset_zero
+from std.testing import assert_equal
 
 
-fn semaphore_vector_reduce[
+def semaphore_vector_reduce[
     dtype: DType,
     N: Int,
     num_parts: Int,
 ](
-    c_ptr: UnsafePointer[Scalar[dtype]],
-    a_ptr: UnsafePointer[Scalar[dtype]],
-    locks: UnsafePointer[Int32],
+    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: UnsafePointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), tid)
+    var sema = Semaphore(locks, tid)
 
     sema.fetch()
     # for each block the partition id is the same as block_idx
@@ -40,14 +40,14 @@ fn semaphore_vector_reduce[
 
     c_ptr[tid] += a_ptr[block_idx * N + tid]
     var lx: Int
-    if num_parts == (block_idx + 1):
+    if num_parts == block_idx + 1:
         lx = 0
     else:
         lx = block_idx + 1
-    sema.release(lx)
+    sema.release(Int32(lx))
 
 
-fn run_vector_reduction[
+def run_vector_reduction[
     dtype: DType,
     N: Int,
     num_parts: Int,
@@ -59,10 +59,10 @@ fn run_vector_reduction[
         num_parts,
     )
 
-    alias PN = N * num_parts
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(PN)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(N)
-    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(N)
+    comptime PN = N * num_parts
+    var a_host = alloc[Scalar[dtype]](PN)
+    var c_host = alloc[Scalar[dtype]](N)
+    var c_host_ref = alloc[Scalar[dtype]](N)
 
     rand[dtype](a_host, PN)
     memset_zero(c_host, N)
@@ -70,13 +70,14 @@ fn run_vector_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PN)
     var c_device = ctx.enqueue_create_buffer[dtype](N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    ctx.enqueue_function[semaphore_vector_reduce[dtype, N, num_parts]](
+    comptime kernel = semaphore_vector_reduce[dtype, N, num_parts]
+    ctx.enqueue_function_experimental[kernel](
         c_device,
         a_device,
         lock_dev,
@@ -103,16 +104,16 @@ fn run_vector_reduction[
     c_host_ref.free()
 
 
-fn semaphore_matrix_reduce[
+def semaphore_matrix_reduce[
     dtype: DType, M: Int, N: Int, num_parts: Int
 ](
-    c_ptr: UnsafePointer[Scalar[dtype]],
-    a_ptr: UnsafePointer[Scalar[dtype]],
-    locks: UnsafePointer[Int32],
+    c_ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
+    a_ptr: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    locks: UnsafePointer[Int32, MutAnyOrigin],
 ):
     var tid = thread_idx.x
     var block_idx = block_idx.x
-    var sema = Semaphore(locks.offset(0), tid)
+    var sema = Semaphore(locks, tid)
 
     sema.fetch()
 
@@ -125,14 +126,14 @@ fn semaphore_matrix_reduce[
         ]
 
     var lx: Int
-    if num_parts == (block_idx + 1):
+    if num_parts == block_idx + 1:
         lx = 0
     else:
         lx = block_idx + 1
-    sema.release(lx)
+    sema.release(Int32(lx))
 
 
-fn run_matrix_reduction[
+def run_matrix_reduction[
     dtype: DType,
     M: Int,
     N: Int,
@@ -146,10 +147,10 @@ fn run_matrix_reduction[
         num_parts,
     )
 
-    alias PX = M * N * num_parts
-    var a_host = UnsafePointer[Scalar[dtype]].alloc(PX)
-    var c_host = UnsafePointer[Scalar[dtype]].alloc(M * N)
-    var c_host_ref = UnsafePointer[Scalar[dtype]].alloc(M * N)
+    comptime PX = M * N * num_parts
+    var a_host = alloc[Scalar[dtype]](PX)
+    var c_host = alloc[Scalar[dtype]](M * N)
+    var c_host_ref = alloc[Scalar[dtype]](M * N)
 
     rand[dtype](a_host, PX)
     memset_zero(c_host, M * N)
@@ -157,7 +158,7 @@ fn run_matrix_reduction[
 
     var a_device = ctx.enqueue_create_buffer[dtype](PX)
     var c_device = ctx.enqueue_create_buffer[dtype](M * N)
-    var lock_dev = ctx.enqueue_create_buffer[dtype](1)
+    var lock_dev = ctx.enqueue_create_buffer[DType.int32](1)
 
     ctx.enqueue_memset(lock_dev, 0)
     ctx.enqueue_copy(a_device, a_host)
@@ -165,7 +166,8 @@ fn run_matrix_reduction[
 
     var block_size = 1024
 
-    ctx.enqueue_function[semaphore_matrix_reduce[dtype, M, N, num_parts]](
+    comptime kernel = semaphore_matrix_reduce[dtype, M, N, num_parts]
+    ctx.enqueue_function_experimental[kernel](
         c_device,
         a_device,
         lock_dev,
@@ -195,7 +197,7 @@ fn run_matrix_reduction[
     c_host_ref.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_vector_reduction[DType.float32, 128, 4](ctx)
         run_matrix_reduction[DType.float32, 128, 128, 4](ctx)

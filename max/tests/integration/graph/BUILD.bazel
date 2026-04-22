@@ -1,0 +1,403 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+_NVIDIA_ONLY_TESTS = [
+    "test_float8_e4m3fn.py",
+    "test_irfft.py",
+]
+
+_AMD_ONLY_TESTS = [
+    "test_fp8_conversion.py",
+]
+
+# CPU-only tests that don't require GPU
+_CPU_ONLY_TESTS = [
+    "test_bf16_cpu_error.py",
+    "test_is_inf.py",
+    "test_is_nan.py",
+    "test_matmul_packed.py",
+    "test_reduce_add.py",
+    "test_shard_and_stack.py",
+    "test_symbolic_dimension_validation.py",
+]
+
+# Tests with their own targets due to special configurations
+_SEPARATE_TARGET_TESTS = [
+    "test_debug_config.py",
+    "test_engine_device_graph.py",
+    "test_graph_pinned.py",
+    "test_graph_telemetry.py",
+    "test_load_weights_no_deps.py",
+    "test_logits_processor_gpu.py",
+    "test_runtime_source_notes.py",
+]
+
+# Temporarily disabled tests (MAXPLAT-477: causes H100 timeouts)
+_DISABLED_TESTS = [
+    "test_advanced_indexing.py",
+]
+
+modular_py_library(
+    name = "modular_graph_test",
+    testonly = True,
+    srcs = ["modular_graph_test.py"],
+    imports = ["."],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("hypothesis"),
+        requirement("torch"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "graph",
+    size = "large",
+    srcs = glob(
+        ["*.py"],
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _DISABLED_TESTS + [
+            "modular_graph_test.py",
+            "test_nan_check.py",
+        ],
+    ),
+    data = [
+        "//max/tests/integration/Inputs:inputs",
+        "//max/tests/integration/Inputs:pytest_inputs",
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+        "//max/tests/integration/Inputs/test_user_op",
+        "//max/tests/integration/graph/testdata/compile_config_ops",
+        "//max/tests/integration/graph/testdata/counter_ops",
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "MODULAR_COUNTER_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/counter_ops)",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+        "MODULAR_COMPILE_CONFIG_OPS_PATH": "$(rootpath //max/tests/integration/graph/testdata/compile_config_ops)",
+        "CUSTOM_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/test_user_op)",
+        "MODULAR_PATH": ".",
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    ignore_extra_deps = [
+        # Optional dep of max.graph, used to test loading weights
+        requirement("gguf"),
+    ],
+    mojo_deps = [
+        "//max/tests/integration/Inputs/test_user_op",
+        "//max/tests/integration/graph/testdata/compile_config_ops",
+    ],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":modular_graph_test",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/mlir",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("gguf"),
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+        requirement("torchvision"),
+    ],
+)
+
+# MAXPLAT-477: Temporarily disabled from CI due to H100 timeouts.
+# Run locally on demand: ./bazelw test //max/tests/integration/graph:test_advanced_indexing
+modular_py_test(
+    name = "test_advanced_indexing",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_advanced_indexing.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "nvidia_tests",
+    size = "large",
+    srcs = _NVIDIA_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    gpu_constraints = ["//:nvidia_gpu"],
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max:tensor",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/tests/integration/test_common:graph_utils",
+        requirement("hypothesis"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "amd_tests",
+    size = "large",
+    srcs = _AMD_ONLY_TESTS + ["conftest.py"],
+    exec_properties = {
+        "test.resources:gpu-memory": "2",
+    },
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:amd_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# CPU-only graph tests (can run without GPU)
+modular_py_test(
+    name = "cpu_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_matmul_packed.py",
+        "test_reduce_add.py",
+        "test_shard_and_stack.py",
+        "test_symbolic_dimension_validation.py",
+    ],
+    tags = [
+        "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
+    ],
+    deps = [
+        ":modular_graph_test",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+# CPU-only graph op tests (no macOS/ASAN restrictions unlike cpu_tests)
+modular_py_test(
+    name = "cpu_graph_op_tests",
+    size = "medium",
+    srcs = [
+        "conftest.py",
+        "test_bf16_cpu_error.py",
+        "test_is_inf.py",
+        "test_is_nan.py",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_engine_device_graph",
+    srcs = [
+        "test_engine_device_graph.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_pinned",
+    srcs = [
+        "test_graph_pinned.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
+        "//conditions:default": [],
+    }),
+    tags = ["gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_load_weights_no_deps",
+    srcs = [
+        "test_load_weights_no_deps.py",
+    ],
+    data = [
+        "//max/tests/tests/graph/testdata",
+    ],
+    env = {
+        "GRAPH_TESTDATA": "max/tests/tests/graph/testdata",
+    },
+    ignore_extra_deps = [
+        # max.graph.weights -> buffer_utils imports max.engine; test sources do
+        # not reference engine directly, so pydeps treats this dep as extra.
+        "//max/python/max/engine",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_test(
+    name = "test_logits_processor_gpu",
+    srcs = [
+        "conftest.py",
+        "test_logits_processor_gpu.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: SDLC-2743
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/lib",
+        requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_runtime_source_notes",
+    size = "large",
+    srcs = ["test_runtime_source_notes.py"],
+    data = [
+        "//max/tests/integration/Inputs/kernel_verification_ops",
+    ],
+    env = {
+        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
+        "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
+    },
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//:amd_gpu": ["@platforms//:incompatible"],  # ROCm aborts on GPU trap
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "no-sandbox",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_telemetry",
+    srcs = ["test_graph_telemetry.py"],
+    env = {
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_nan_check",
+    size = "large",
+    srcs = ["test_nan_check.py"],
+    data = glob(["nan_check_scripts/*.py"]),
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_debug_config",
+    size = "medium",
+    srcs = ["test_debug_config.py"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)

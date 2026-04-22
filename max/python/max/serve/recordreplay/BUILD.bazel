@@ -1,0 +1,15 @@
+load("//bazel:api.bzl", "modular_py_library", "requirement")
+
+package(default_visibility = ["//max:consumers"])
+
+modular_py_library(
+    name = "recordreplay",
+    srcs = glob(["**/*.py"]),
+    deps = [
+        requirement("asgiref"),
+        requirement("httpx"),
+        requirement("msgspec"),
+        requirement("scipy"),
+        requirement("taskgroup"),
+    ],
+)

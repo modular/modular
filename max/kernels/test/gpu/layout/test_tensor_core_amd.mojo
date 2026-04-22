@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,278 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import WARP_SIZE, lane_id
-from gpu.host import DeviceContext
+from std.gpu import WARP_SIZE, lane_id
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import MI300X, MI355X
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
-from layout.tensor_builder import LayoutTensorBuild as tb
-from layout.tensor_core import TensorCore
-from gpu.host.info import MI300X
-from utils.index import Index, IndexList
+from layout.tensor_core import load_b_tr
+from test_tensor_core_amd_utils import test_load_and_mma_and_multiply_operands
+from std.testing import assert_equal
+from std.utils.index import Index, IndexList
 
-
-alias fp8_dtype = DType.float8_e4m3fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e4m3fn
-alias bf8_dtype = DType.float8_e5m2fnuz if DeviceContext.default_device_info <= MI300X else DType.float8_e5m2
-
-
-fn test_load_a[
-    dst_dtype: DType,
-    dtype: DType,
-    layout: Layout,
-    inst_shape: IndexList[3],
-](
-    a: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    a_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
-):
-    var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var a_reg_tile = mma.load_a(a)
-    # only storing 0th element for result
-    a_lane[lane_id()] = a_reg_tile[0, 0]
-
-
-fn test_load_b[
-    dst_dtype: DType,
-    dtype: DType,
-    layout: Layout,
-    inst_shape: IndexList[3],
-    transpose_b: Bool,
-](
-    b: LayoutTensor[dtype, layout, MutableAnyOrigin],
-    b_lane: LayoutTensor[dtype, Layout(WARP_SIZE), MutableAnyOrigin],
-):
-    var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
-    var b_reg_tile = mma.load_b(b)
-    # only storing 0th element for result
-    b_lane[lane_id()] = b_reg_tile[0, 0]
-
-
-fn test_load_c[
-    dst_dtype: DType,
-    dtype: DType,
-    layout: Layout,
-    inst_shape: IndexList[3],
-](
-    c: LayoutTensor[dst_dtype, layout, MutableAnyOrigin],
-    c_lane: LayoutTensor[
-        dst_dtype, Layout.row_major(WARP_SIZE, 4), MutableAnyOrigin
-    ],
-):
-    var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var c_reg_tile = mma.load_c(c)
-    for i in range(4):
-        c_lane[lane_id(), i] = c_reg_tile[0, i]
-
-
-fn test_store_d[
-    dst_dtype: DType,
-    dtype: DType,
-    layout: Layout,
-    inst_shape: IndexList[3],
-](d: LayoutTensor[dst_dtype, layout, MutableAnyOrigin]):
-    var mma = TensorCore[dst_dtype, dtype, inst_shape, False]()
-    var src = __type_of(mma).c_reg_tile_type.stack_allocation().fill(lane_id())
-    mma.store_d(d, src)
-
-
-fn test_mma_op[
-    dst_dtype: DType,
-    dtype: DType,
-    layout_a: Layout,
-    layout_b: Layout,
-    layout_c: Layout,
-    inst_shape: IndexList[3],
-    transpose_b: Bool,
-](
-    a: LayoutTensor[dtype, layout_a, MutableAnyOrigin],
-    b: LayoutTensor[dtype, layout_b, MutableAnyOrigin],
-    c: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
-    d: LayoutTensor[dst_dtype, layout_c, MutableAnyOrigin],
-):
-    var mma = TensorCore[dst_dtype, dtype, inst_shape, transpose_b]()
-    alias k_group_size = a.layout.shape[1].value() // inst_shape[2]
-    var a_reg = mma.load_a(a)
-    var b_reg = mma.load_b(b)
-    var d_reg = mma.load_c(c)
-
-    @parameter
-    for k in range(k_group_size):
-        var a_reg_k = a_reg.tile[1, a_reg.layout.size() // k_group_size](0, k)
-        var b_reg_k = b_reg.tile[b_reg.layout.size() // k_group_size, 1](k, 0)
-        d_reg = mma.mma_op(a_reg_k, b_reg_k, d_reg)
-
-    mma.store_d(d, d_reg)
-
-
-fn _arange(tensor: LayoutTensor[mut=True, **_]):
-    # use custom arange and the current arange does not work with fp8
-    @parameter
-    if tensor.dtype in (DType.bfloat16, DType.float16, DType.float32):
-        arange(tensor)
-    elif tensor.dtype in (fp8_dtype, bf8_dtype):
-        # scale with 0.1 to avoid overflow
-        for i in range(tensor.shape[0]()):
-
-            @parameter
-            for j in range(tensor.shape[1]()):
-                tensor[i, j] = Scalar[tensor.dtype](Float32(0.1 * i + 0.2 * j))
-    else:
-        constrained[False, "Unsupported dtype"]()
-
-
-def test_load_and_mma_and_multiply_operands[
-    dst_dtype: DType,
-    dtype: DType,
-    shape: IndexList[3],
-    transpose_b: Bool,
-    k_group_size: Int = 1,
-](ctx: DeviceContext):
-    alias M = shape[0]
-    alias N = shape[1]
-    alias K = shape[2] * k_group_size
-
-    var a_host_ptr = UnsafePointer[Scalar[dtype]].alloc(M * K)
-    var b_host_ptr = UnsafePointer[Scalar[dtype]].alloc(K * N)
-    var c_host_ptr = UnsafePointer[Scalar[dst_dtype]].alloc(M * N)
-    var d_host_ptr = UnsafePointer[Scalar[dst_dtype]].alloc(M * N)
-    var d_ref_ptr = UnsafePointer[Scalar[dst_dtype]].alloc(M * N)
-
-    var a_lane_host_ptr = UnsafePointer[Scalar[dtype]].alloc(WARP_SIZE)
-    var b_lane_host_ptr = UnsafePointer[Scalar[dtype]].alloc(WARP_SIZE)
-    var c_lane_host_ptr = UnsafePointer[Scalar[dst_dtype]].alloc(WARP_SIZE * 4)
-
-    var a_device = ctx.enqueue_create_buffer[dtype](M * K)
-    var b_device = ctx.enqueue_create_buffer[dtype](K * N)
-    var c_device = ctx.enqueue_create_buffer[dst_dtype](M * N)
-    var d_device = ctx.enqueue_create_buffer[dst_dtype](M * N)
-
-    var d_device_mma = ctx.enqueue_create_buffer[dst_dtype](M * N)
-
-    var a_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
-    var b_lane_device = ctx.enqueue_create_buffer[dtype](WARP_SIZE)
-    var c_lane_device = ctx.enqueue_create_buffer[dst_dtype](WARP_SIZE * 4)
-
-    var a_host = tb[dtype]().row_major[M, K]().view(a_host_ptr)
-    var a_dev = tb[dtype]().row_major[M, K]().view(a_device.unsafe_ptr())
-
-    alias B_row = N if transpose_b else K
-    alias B_col = K if transpose_b else N
-
-    var b_host = tb[dtype]().row_major[B_row, B_col]().view(b_host_ptr)
-    var b_dev = (
-        tb[dtype]().row_major[B_row, B_col]().view(b_device.unsafe_ptr())
-    )
-
-    var c_host = tb[dst_dtype]().row_major[M, N]().view(c_host_ptr).fill(0)
-    var c_dev = tb[dst_dtype]().row_major[M, N]().view(c_device.unsafe_ptr())
-
-    var d_host = tb[dst_dtype]().row_major[M, N]().view(d_host_ptr).fill(0)
-
-    var d_dev = tb[dst_dtype]().row_major[M, N]().view(d_device.unsafe_ptr())
-    var d_dev_mma = (
-        tb[dst_dtype]().row_major[M, N]().view(d_device_mma.unsafe_ptr())
-    )
-
-    var a_lane_host = tb[dtype]().layout[WARP_SIZE]().view(a_lane_host_ptr)
-    var a_lane_dev = (
-        tb[dtype]().layout[WARP_SIZE]().view(a_lane_device.unsafe_ptr())
-    )
-    var b_lane_host = tb[dtype]().layout[WARP_SIZE]().view(b_lane_host_ptr)
-    var b_lane_dev = (
-        tb[dtype]().layout[WARP_SIZE]().view(b_lane_device.unsafe_ptr())
-    )
-
-    var c_lane_host = (
-        tb[dst_dtype]().row_major[WARP_SIZE, 4]().view(c_lane_host_ptr)
-    )
-    var c_lane_dev = (
-        tb[dst_dtype]()
-        .row_major[WARP_SIZE, 4]()
-        .view(c_lane_device.unsafe_ptr())
-    )
-
-    _arange(a_host)
-    _arange(b_host)
-    _arange(c_host)
-    ctx.enqueue_copy(a_device, a_host_ptr)
-    ctx.enqueue_copy(b_device, b_host_ptr)
-    ctx.enqueue_copy(c_device, c_host_ptr)
-
-    ctx.enqueue_function[test_load_a[dst_dtype, dtype, a_dev.layout, shape]](
-        a_dev, a_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
-    )
-
-    ctx.enqueue_function[
-        test_load_b[dst_dtype, dtype, b_dev.layout, shape, transpose_b]
-    ](b_dev, b_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE))
-
-    ctx.enqueue_function[test_load_c[dst_dtype, dtype, c_dev.layout, shape]](
-        c_dev, c_lane_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
-    )
-
-    ctx.enqueue_function[test_store_d[dst_dtype, dtype, c_dev.layout, shape]](
-        d_dev, grid_dim=(1, 1), block_dim=(WARP_SIZE)
-    )
-
-    alias kernel = test_mma_op[
-        dst_dtype,
-        dtype,
-        a_dev.layout,
-        b_dev.layout,
-        c_dev.layout,
-        shape,
-        transpose_b,
-    ]
-
-    ctx.enqueue_function[kernel](
-        a_dev,
-        b_dev,
-        c_dev,
-        d_dev_mma,
-        grid_dim=(1, 1),
-        block_dim=(WARP_SIZE),
-    )
-
-    ctx.enqueue_copy(a_lane_host_ptr, a_lane_device)
-    ctx.enqueue_copy(b_lane_host_ptr, b_lane_device)
-    ctx.enqueue_copy(c_lane_host_ptr, c_lane_device)
-    ctx.enqueue_copy(d_host_ptr, d_device)
-    ctx.synchronize()
-
-    print("== test_load_a")
-    print(a_lane_host)
-
-    print("== test_load_b")
-    print(b_lane_host)
-
-    print("== test_load_c")
-    print(c_lane_host)
-
-    print("== test_load_d")
-    print(d_host)
-
-    ctx.enqueue_copy(d_host_ptr, d_device_mma)
-    ctx.synchronize()
-
-    print("== test_mma")
-    print(d_host)
-    _ = a_device^
-    _ = b_device^
-    _ = c_device^
-    _ = d_device^
-    _ = a_lane_device^
-    _ = b_lane_device^
-    _ = c_lane_device^
-    _ = d_device_mma^
-
-    _ = a_host_ptr
-    _ = b_host_ptr
-    _ = c_host_ptr
-    _ = d_host_ptr
-    _ = a_lane_host_ptr
-    _ = b_lane_host_ptr
-    _ = c_lane_host_ptr
-    _ = d_ref_ptr
-
+comptime fp8_dtype = (
+    DType.float8_e4m3fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e4m3fn
+)
+comptime bf8_dtype = (
+    DType.float8_e5m2fnuz if DeviceContext.default_device_info.compute
+    <= MI300X.compute else DType.float8_e5m2
+)
 
 # CHECK-LABEL: test_load_and_mma_f32_f32_16x16x4
 # CHECK-LABEL: test_load_a
@@ -390,7 +136,7 @@ def test_load_and_mma_and_multiply_operands[
 # CHECK: 6224.0 6471.0 6718.0 6965.0 7212.0 7459.0 7706.0 7953.0 8200.0 8447.0 8694.0 8941.0 9188.0 9435.0 9682.0 9929.0
 
 
-def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), False
@@ -503,7 +249,7 @@ def test_load_and_mma_f32_f32_16x16x4(ctx: DeviceContext):
 # CHECK: 480880.0 484841.0 488802.0 492763.0 496724.0 500685.0 504646.0 508607.0 512568.0 516529.0 520490.0 524451.0 528412.0 532373.0 536334.0 540295.0
 
 
-def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), False, 4
@@ -614,7 +360,7 @@ def test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx: DeviceContext):
 # CHECK: 534.0 1391.0 2248.0 3105.0 3962.0 4819.0 5676.0 6533.0 7390.0 8247.0 9104.0 9961.0 10818.0 11675.0 12532.0 13389.0
 # CHECK: 574.0 1495.0 2416.0 3337.0 4258.0 5179.0 6100.0 7021.0 7942.0 8863.0 9784.0 10705.0 11626.0 12547.0 13468.0 14389.0
 # CHECK: 614.0 1599.0 2584.0 3569.0 4554.0 5539.0 6524.0 7509.0 8494.0 9479.0 10464.0 11449.0 12434.0 13419.0 14404.0 15389.0
-def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), True
@@ -727,7 +473,7 @@ def test_load_and_mma_f32_f32_16x16x4_transpose(ctx: DeviceContext):
 # CHECK: 30280.0 93641.0 157002.0 220363.0 283724.0 347085.0 410446.0 473807.0 537168.0 600529.0 663890.0 727251.0 790612.0 853973.0 917334.0 980695.0
 def test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4(
     ctx: DeviceContext,
-):
+) raises:
     print("== test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float32, Index(16, 16, 4), True, 4
@@ -838,7 +584,7 @@ def test_load_and_mma_f32_f32_16x16x4_transpose_k_group_size_4(
 # CHECK: 419408.0 422857.0 426306.0 429755.0 433204.0 436653.0 440102.0 443551.0 447000.0 450449.0 453898.0 457347.0 460796.0 464245.0 467694.0 471143.0
 # CHECK: 450144.0 453849.0 457554.0 461259.0 464964.0 468669.0 472374.0 476079.0 479784.0 483489.0 487194.0 490899.0 494604.0 498309.0 502014.0 505719.0
 # CHECK: 480880.0 484841.0 488802.0 492763.0 496724.0 500685.0 504646.0 508607.0 512568.0 516529.0 520490.0 524451.0 528412.0 532373.0 536334.0 540295.0
-def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), False
@@ -949,7 +695,9 @@ def test_load_and_mma_f32_bf16_16x16x16(ctx: DeviceContext):
 # CHECK: 28204240.0 28217672.0 28258482.0 28411868.0 28425300.0 28438732.0 28592118.0 28632928.0 28646360.0 28659792.0 28700602.0 28853988.0 28867420.0 28880852.0 29034238.0 29075048.0
 # CHECK: 30268640.0 30283096.0 30326978.0 30491628.0 30506084.0 30520540.0 30685190.0 30729072.0 30743528.0 30757984.0 30801866.0 30966516.0 30980972.0 30995428.0 31160078.0 31203960.0
 # CHECK: 32333040.0 32348520.0 32395474.0 32571388.0 32586868.0 32602348.0 32778262.0 32825216.0 32840696.0 32856176.0 32903130.0 33079044.0 33094524.0 33110004.0 33285918.0 33332872.0
-def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(
+    ctx: DeviceContext,
+) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), False, 4
@@ -1060,7 +808,7 @@ def test_load_and_mma_f32_bf16_16x16x16_k_group_size_4(ctx: DeviceContext):
 # CHECK: 26408.0 81577.0 136746.0 191915.0 247084.0 302253.0 357422.0 412591.0 467760.0 522929.0 578098.0 633267.0 688436.0 743605.0 798774.0 853943.0
 # CHECK: 28344.0 87609.0 146874.0 206139.0 265404.0 324669.0 383934.0 443199.0 502464.0 561729.0 620994.0 680259.0 739524.0 798789.0 858054.0 917319.0
 # CHECK: 30280.0 93641.0 157002.0 220363.0 283724.0 347085.0 410446.0 473807.0 537168.0 600529.0 663890.0 727251.0 790612.0 853973.0 917334.0 980695.0
-def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), True
@@ -1173,7 +921,7 @@ def test_load_and_mma_f32_bf16_16x16x16_transpose(ctx: DeviceContext):
 # CHECK: 2021040.0 6082225.0 10143410.0 14204595.0 18265844.0 22327028.0 26388214.0 30449400.0 34510712.0 38571896.0 42633080.0 46694270.0 50755450.0 54816636.0 58877824.0 62939010.0
 def test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4(
     ctx: DeviceContext,
-):
+) raises:
     print("== test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(16, 16, 16), True, 4
@@ -1286,7 +1034,7 @@ def test_load_and_mma_f32_bf16_16x16x16_transpose_k_group_size_4(
 # CHECK: 480880.0 484841.0 488802.0 492763.0 496724.0 500685.0 504646.0 508607.0 512568.0 516529.0 520490.0 524451.0 528412.0 532373.0 536334.0 540295.0
 
 
-def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_16x16x16")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(16, 16, 16), False
@@ -1399,7 +1147,7 @@ def test_load_and_mma_f32_f16_16x16x16(ctx: DeviceContext):
 # CHECK: 30280.0 93641.0 157002.0 220363.0 283724.0 347085.0 410446.0 473807.0 537168.0 600529.0 663890.0 727251.0 790612.0 853973.0 917334.0 980695.0
 
 
-def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_16x16x16_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(16, 16, 16), True
@@ -1544,7 +1292,7 @@ def test_load_and_mma_f32_f16_16x16x16_transpose(ctx: DeviceContext):
 # CHECK: 227680.0 229693.0 231706.0 233719.0 235732.0 237745.0 239758.0 241771.0 243784.0 245797.0 247810.0 249823.0 251836.0 253849.0 255862.0 257875.0 259888.0 261901.0 263914.0 265927.0 267940.0 269953.0 271966.0 273979.0 275992.0 278005.0 280018.0 282031.0 284044.0 286057.0 288070.0 290083.0
 
 
-def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x8")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(32, 32, 8), False
@@ -1689,7 +1437,7 @@ def test_load_and_mma_f32_bf16_32x32x8(ctx: DeviceContext):
 # CHECK: 8076.0 24173.0 40270.0 56367.0 72464.0 88561.0 104658.0 120755.0 136852.0 152949.0 169046.0 185143.0 201240.0 217337.0 233434.0 249531.0 265628.0 281725.0 297822.0 313919.0 330016.0 346113.0 362210.0 378307.0 394404.0 410501.0 426598.0 442695.0 458792.0 474889.0 490986.0 507083.0
 
 
-def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf16_32x32x8_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.bfloat16, Index(32, 32, 8), True
@@ -1834,7 +1582,7 @@ def test_load_and_mma_f32_bf16_32x32x8_transpose(ctx: DeviceContext):
 # CHECK: 227680.0 229693.0 231706.0 233719.0 235732.0 237745.0 239758.0 241771.0 243784.0 245797.0 247810.0 249823.0 251836.0 253849.0 255862.0 257875.0 259888.0 261901.0 263914.0 265927.0 267940.0 269953.0 271966.0 273979.0 275992.0 278005.0 280018.0 282031.0 284044.0 286057.0 288070.0 290083.0
 
 
-def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x8")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(32, 32, 8), False
@@ -1979,7 +1727,7 @@ def test_load_and_mma_f32_f16_32x32x8(ctx: DeviceContext):
 # CHECK: 8076.0 24173.0 40270.0 56367.0 72464.0 88561.0 104658.0 120755.0 136852.0 152949.0 169046.0 185143.0 201240.0 217337.0 233434.0 249531.0 265628.0 281725.0 297822.0 313919.0 330016.0 346113.0 362210.0 378307.0 394404.0 410501.0 426598.0 442695.0 458792.0 474889.0 490986.0 507083.0
 
 
-def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_f16_32x32x8_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, DType.float16, Index(32, 32, 8), True
@@ -2092,10 +1840,10 @@ def test_load_and_mma_f32_f16_32x32x8_transpose(ctx: DeviceContext):
 # CHECK: 522.47656 553.5156 584.375 612.5 645.90625 675.0 702.3125 725.5 762.5625 795.375 825.25 851.625 883.375 920.375 953.0 982.5
 
 
-def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext):
+def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32")
     test_load_and_mma_and_multiply_operands[
-        DType.float32, DType.float8_e5m2fnuz, Index(16, 16, 32), False
+        DType.float32, bf8_dtype, Index(16, 16, 32), False
     ](ctx)
 
 
@@ -2203,7 +1951,7 @@ def test_load_and_mma_f32_bf8_16x16x32(ctx: DeviceContext):
 # CHECK: 751.5625 765.83594 779.2656 792.2031 813.09375 825.40625 843.53125 855.625 873.5 884.78125 902.25 913.25 930.4375 949.375 963.6875 980.0
 # CHECK: 777.5625 792.3594 805.8125 819.90625 841.0625 853.53125 872.1875 884.3125 902.1875 914.0 931.5 942.5 959.75 978.6875 995.5625 1011.875
 # CHECK: 804.9531 820.0 833.5625 847.71875 869.03125 881.8125 902.625 914.78125 932.75 944.6875 962.5625 973.6875 991.0 1010.0 1026.875 1045.8125
-def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext):
+def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32_transpose")
     test_load_and_mma_and_multiply_operands[
         DType.float32, bf8_dtype, Index(16, 16, 32), True
@@ -2318,236 +2066,62 @@ def test_load_and_mma_f32_bf8_16x16x32_transpose(ctx: DeviceContext):
 
 def test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(
     ctx: DeviceContext,
-):
+) raises:
     print("== test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2")
     test_load_and_mma_and_multiply_operands[
         DType.float32, bf8_dtype, Index(16, 16, 32), True, 2
     ](ctx)
 
 
-# CHECK-LABEL: == test_load_and_mma_f32_f8_16x16x32
-# CHECK-LABEL: == test_load_a
-# CHECK: 0.0 0.1015625 0.203125 0.3125 0.40625 0.5 0.625 0.6875 0.8125 0.875 1.0 1.125 1.25 1.25 1.375 1.5 1.625 1.75 1.75 1.875 2.0 2.0 2.25 2.25 2.5 2.5 2.5 2.75 2.75 3.0 3.0 3.0 3.25 3.25 3.5 3.5 3.5 3.75 3.75 4.0 4.0 4.0 4.0 4.5 4.5 4.5 4.5 4.5 5.0 5.0 5.0 5.0 5.0 5.5 5.5 5.5 5.5 5.5 6.0 6.0 6.0 6.0 6.0 6.5
-# CHECK-LABEL: == test_load_b
-# CHECK: 0.0 0.203125 0.40625 0.625 0.8125 1.0 1.25 1.375 1.625 1.75 2.0 2.25 2.5 2.5 2.75 3.0 0.8125 1.0 1.25 1.375 1.625 1.75 2.0 2.25 2.5 2.5 2.75 3.0 3.25 3.5 3.5 3.75 1.625 1.75 2.0 2.25 2.5 2.5 2.75 3.0 3.25 3.5 3.5 3.75 4.0 4.0 4.5 4.5 2.5 2.5 2.75 3.0 3.25 3.5 3.5 3.75 4.0 4.0 4.5 4.5 5.0 5.0 5.0 5.5
-# CHECK-LABEL: == test_load_c
-# CHECK: 0.0 16.0 32.0 48.0
-# CHECK: 1.0 17.0 33.0 49.0
-# CHECK: 2.0 18.0 34.0 50.0
-# CHECK: 3.0 19.0 35.0 51.0
-# CHECK: 4.0 20.0 36.0 52.0
-# CHECK: 5.0 21.0 37.0 53.0
-# CHECK: 6.0 22.0 38.0 54.0
-# CHECK: 7.0 23.0 39.0 55.0
-# CHECK: 8.0 24.0 40.0 56.0
-# CHECK: 9.0 25.0 41.0 57.0
-# CHECK: 10.0 26.0 42.0 58.0
-# CHECK: 11.0 27.0 43.0 59.0
-# CHECK: 12.0 28.0 44.0 60.0
-# CHECK: 13.0 29.0 45.0 61.0
-# CHECK: 14.0 30.0 46.0 62.0
-# CHECK: 15.0 31.0 47.0 63.0
-# CHECK: 64.0 80.0 96.0 112.0
-# CHECK: 65.0 81.0 97.0 113.0
-# CHECK: 66.0 82.0 98.0 114.0
-# CHECK: 67.0 83.0 99.0 115.0
-# CHECK: 68.0 84.0 100.0 116.0
-# CHECK: 69.0 85.0 101.0 117.0
-# CHECK: 70.0 86.0 102.0 118.0
-# CHECK: 71.0 87.0 103.0 119.0
-# CHECK: 72.0 88.0 104.0 120.0
-# CHECK: 73.0 89.0 105.0 121.0
-# CHECK: 74.0 90.0 106.0 122.0
-# CHECK: 75.0 91.0 107.0 123.0
-# CHECK: 76.0 92.0 108.0 124.0
-# CHECK: 77.0 93.0 109.0 125.0
-# CHECK: 78.0 94.0 110.0 126.0
-# CHECK: 79.0 95.0 111.0 127.0
-# CHECK: 128.0 144.0 160.0 176.0
-# CHECK: 129.0 145.0 161.0 177.0
-# CHECK: 130.0 146.0 162.0 178.0
-# CHECK: 131.0 147.0 163.0 179.0
-# CHECK: 132.0 148.0 164.0 180.0
-# CHECK: 133.0 149.0 165.0 181.0
-# CHECK: 134.0 150.0 166.0 182.0
-# CHECK: 135.0 151.0 167.0 183.0
-# CHECK: 136.0 152.0 168.0 184.0
-# CHECK: 137.0 153.0 169.0 185.0
-# CHECK: 138.0 154.0 170.0 186.0
-# CHECK: 139.0 155.0 171.0 187.0
-# CHECK: 140.0 156.0 172.0 188.0
-# CHECK: 141.0 157.0 173.0 189.0
-# CHECK: 142.0 158.0 174.0 190.0
-# CHECK: 143.0 159.0 175.0 191.0
-# CHECK: 192.0 208.0 224.0 240.0
-# CHECK: 193.0 209.0 225.0 241.0
-# CHECK: 194.0 210.0 226.0 242.0
-# CHECK: 195.0 211.0 227.0 243.0
-# CHECK: 196.0 212.0 228.0 244.0
-# CHECK: 197.0 213.0 229.0 245.0
-# CHECK: 198.0 214.0 230.0 246.0
-# CHECK: 199.0 215.0 231.0 247.0
-# CHECK: 200.0 216.0 232.0 248.0
-# CHECK: 201.0 217.0 233.0 249.0
-# CHECK: 202.0 218.0 234.0 250.0
-# CHECK: 203.0 219.0 235.0 251.0
-# CHECK: 204.0 220.0 236.0 252.0
-# CHECK: 205.0 221.0 237.0 253.0
-# CHECK: 206.0 222.0 238.0 254.0
-# CHECK: 207.0 223.0 239.0 255.0
-# CHECK-LABEL: == test_load_d
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK-LABEL: == test_mma
-# CHECK: 207.33166 228.01758 249.39844 269.90723 291.13086 311.44726 332.21094 353.69922 372.70703 395.33398 415.6328 436.3789 458.0078 477.01953 499.53125 519.6797
-# CHECK: 229.07861 250.54797 272.70923 293.98926 315.9419 336.6875 358.25195 380.4209 400.00098 423.54492 444.3125 466.11914 488.17578 507.61328 531.06055 551.91406
-# CHECK: 249.3518 271.4768 294.28174 316.25 338.60644 359.97266 382.23047 404.98242 425.2832 449.3047 470.92188 493.1836 515.6953 535.90625 559.96484 581.59375
-# CHECK: 270.95996 293.81152 317.38476 339.6914 362.7539 384.90625 407.8203 431.35938 452.10156 477.01563 499.17187 521.8594 545.34375 566.1094 591.1406 613.1719
-# CHECK: 291.01758 314.56104 338.4541 361.42188 385.14258 407.95312 431.46875 455.45703 476.89453 502.35156 524.9531 548.47656 572.4219 594.0 619.46094 641.9219
-# CHECK: 312.42725 336.29688 360.9297 384.63672 409.08594 432.58594 456.48438 481.23437 503.3125 529.28906 552.78125 576.7344 601.6875 623.6406 649.5 672.84375
-# CHECK: 333.53174 358.18555 383.5586 407.9961 433.21875 457.08594 481.8125 507.21875 529.84375 556.7422 580.6875 605.7031 631.0625 653.4219 680.28125 704.1875
-# CHECK: 354.44238 379.78418 405.8418 431.0078 456.52734 481.0625 506.53125 532.5547 555.9297 583.21875 608.03125 633.5469 659.28125 682.5625 709.9531 734.78125
-# CHECK: 375.39844 401.4541 428.2832 453.72656 479.98828 505.26562 531.34375 558.1797 581.96094 610.1406 635.46875 661.3906 688.15625 711.84375 740.2656 765.46875
-# CHECK: 396.12598 422.85742 449.98047 476.1328 503.10156 529.0781 555.8125 583.0 607.5156 636.2969 662.125 688.90625 716.0625 740.71875 769.5 795.0625
-# CHECK: 416.875 443.94922 471.8047 498.64844 526.2969 553.0 580.0469 608.0156 633.1406 662.40625 689.125 716.3125 744.46875 769.46875 798.625 825.125
-# CHECK: 438.63086 466.47852 495.1211 522.75 551.22656 578.2031 606.1406 634.8281 660.5469 690.78125 717.875 746.15625 774.78125 800.125 830.4375 857.4375
-# CHECK: 458.90723 487.42187 516.72656 545.0781 573.78125 601.4531 630.0781 659.3281 685.8125 716.3906 744.34375 773.09375 802.0625 828.375 859.0625 887.03125
-# CHECK: 480.48438 509.76172 539.8281 568.4375 597.9375 626.40625 655.6875 685.8125 712.6094 744.125 772.65625 801.875 831.90625 858.5625 890.4375 918.71875
-# CHECK: 500.60644 530.49805 560.85547 590.14844 620.28906 649.3906 679.34375 709.7344 737.2656 769.3281 798.3125 828.375 858.75 886.34375 918.53125 947.125
-# CHECK: 521.9414 552.2539 583.3594 613.41406 644.3125 674.21875 704.4219 735.6719 763.90625 796.53125 826.46875 856.875 888.3125 916.34375 948.875 978.59375
-def test_load_and_mma_f32_f8_16x16x32(ctx: DeviceContext):
-    print("== test_load_and_mma_f32_f8_16x16x32")
-    test_load_and_mma_and_multiply_operands[
-        DType.float32, fp8_dtype, Index(16, 16, 32), False
-    ](ctx)
+def test_load_b_tr(ctx: DeviceContext) raises:
+    print("== test_load_b_tr")
+
+    def kernel[
+        mma_shape: IndexList[3]
+    ](flag: UnsafePointer[Scalar[DType.bool], MutAnyOrigin]):
+        var smem = LayoutTensor[
+            DType.bfloat16,
+            Layout.row_major(mma_shape[2], mma_shape[1]),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
+        ].stack_allocation()
+
+        if lane_id() == 0:
+            arange(smem)
+
+        # reference fragments
+        comptime warp_layout = Layout.row_major(2, 32) if mma_shape[
+            0
+        ] == 32 else Layout.row_major(4, 16)
+        var frags = smem.vectorize[4, 1]().distribute[warp_layout](lane_id())
+        var frags_simd = frags[0, 0].join(frags[1, 0])
+
+        var frags_tr = load_b_tr[mma_shape](smem)
+
+        flag[lane_id()] = frags_simd == rebind[type_of(frags_simd)](frags_tr)
+
+    var flag = ctx.enqueue_create_buffer[DType.bool](WARP_SIZE)
+
+    comptime kernel_32_32_16 = kernel[IndexList[3](32, 32, 16)]
+    ctx.enqueue_function_experimental[kernel_32_32_16](
+        flag, grid_dim=(1), block_dim=(WARP_SIZE)
+    )
+    with flag.map_to_host() as flag_host:
+        for i in range(WARP_SIZE):
+            if not flag_host[i]:
+                assert_equal(flag_host[i], True, "frags_simd != frags_tr")
+
+    comptime kernel_16_16_32 = kernel[IndexList[3](16, 16, 32)]
+    ctx.enqueue_function_experimental[kernel_16_16_32](
+        flag, grid_dim=(1), block_dim=(WARP_SIZE)
+    )
+    with flag.map_to_host() as flag_host:
+        for i in range(WARP_SIZE):
+            if not flag_host[i]:
+                assert_equal(flag_host[i], True, "frags_simd != frags_tr")
 
 
-# CHECK-LABEL: == test_load_and_mma_f32_f8_16x16x32_transpose
-# CHECK-LABEL: == test_load_a
-# CHECK: 0.0 0.1015625 0.203125 0.3125 0.40625 0.5 0.625 0.6875 0.8125 0.875 1.0 1.125 1.25 1.25 1.375 1.5 1.625 1.75 1.75 1.875 2.0 2.0 2.25 2.25 2.5 2.5 2.5 2.75 2.75 3.0 3.0 3.0 3.25 3.25 3.5 3.5 3.5 3.75 3.75 4.0 4.0 4.0 4.0 4.5 4.5 4.5 4.5 4.5 5.0 5.0 5.0 5.0 5.0 5.5 5.5 5.5 5.5 5.5 6.0 6.0 6.0 6.0 6.0 6.
-# CHECK-LABEL: == test_load_b
-# CHECK: 0.0 0.1015625 0.203125 0.3125 0.40625 0.5 0.625 0.6875 0.8125 0.875 1.0 1.125 1.25 1.25 1.375 1.5 1.625 1.75 1.75 1.875 2.0 2.0 2.25 2.25 2.5 2.5 2.5 2.75 2.75 3.0 3.0 3.0 3.25 3.25 3.5 3.5 3.5 3.75 3.75 4.0 4.0 4.0 4.0 4.5 4.5 4.5 4.5 4.5 5.0 5.0 5.0 5.0 5.0 5.5 5.5 5.5 5.5 5.5 6.0 6.0 6.0 6.0 6.0 6.
-# CHECK-LABEL: == test_load_c
-# CHECK: 0.0 16.0 32.0 48.0
-# CHECK: 1.0 17.0 33.0 49.0
-# CHECK: 2.0 18.0 34.0 50.0
-# CHECK: 3.0 19.0 35.0 51.0
-# CHECK: 4.0 20.0 36.0 52.0
-# CHECK: 5.0 21.0 37.0 53.0
-# CHECK: 6.0 22.0 38.0 54.0
-# CHECK: 7.0 23.0 39.0 55.0
-# CHECK: 8.0 24.0 40.0 56.0
-# CHECK: 9.0 25.0 41.0 57.0
-# CHECK: 10.0 26.0 42.0 58.0
-# CHECK: 11.0 27.0 43.0 59.0
-# CHECK: 12.0 28.0 44.0 60.0
-# CHECK: 13.0 29.0 45.0 61.0
-# CHECK: 14.0 30.0 46.0 62.0
-# CHECK: 15.0 31.0 47.0 63.0
-# CHECK: 64.0 80.0 96.0 112.0
-# CHECK: 65.0 81.0 97.0 113.0
-# CHECK: 66.0 82.0 98.0 114.0
-# CHECK: 67.0 83.0 99.0 115.0
-# CHECK: 68.0 84.0 100.0 116.0
-# CHECK: 69.0 85.0 101.0 117.0
-# CHECK: 70.0 86.0 102.0 118.0
-# CHECK: 71.0 87.0 103.0 119.0
-# CHECK: 72.0 88.0 104.0 120.0
-# CHECK: 73.0 89.0 105.0 121.0
-# CHECK: 74.0 90.0 106.0 122.0
-# CHECK: 75.0 91.0 107.0 123.0
-# CHECK: 76.0 92.0 108.0 124.0
-# CHECK: 77.0 93.0 109.0 125.0
-# CHECK: 78.0 94.0 110.0 126.0
-# CHECK: 79.0 95.0 111.0 127.0
-# CHECK: 128.0 144.0 160.0 176.0
-# CHECK: 129.0 145.0 161.0 177.0
-# CHECK: 130.0 146.0 162.0 178.0
-# CHECK: 131.0 147.0 163.0 179.0
-# CHECK: 132.0 148.0 164.0 180.0
-# CHECK: 133.0 149.0 165.0 181.0
-# CHECK: 134.0 150.0 166.0 182.0
-# CHECK: 135.0 151.0 167.0 183.0
-# CHECK: 136.0 152.0 168.0 184.0
-# CHECK: 137.0 153.0 169.0 185.0
-# CHECK: 138.0 154.0 170.0 186.0
-# CHECK: 139.0 155.0 171.0 187.0
-# CHECK: 140.0 156.0 172.0 188.0
-# CHECK: 141.0 157.0 173.0 189.0
-# CHECK: 142.0 158.0 174.0 190.0
-# CHECK: 143.0 159.0 175.0 191.0
-# CHECK: 192.0 208.0 224.0 240.0
-# CHECK: 193.0 209.0 225.0 241.0
-# CHECK: 194.0 210.0 226.0 242.0
-# CHECK: 195.0 211.0 227.0 243.0
-# CHECK: 196.0 212.0 228.0 244.0
-# CHECK: 197.0 213.0 229.0 245.0
-# CHECK: 198.0 214.0 230.0 246.0
-# CHECK: 199.0 215.0 231.0 247.0
-# CHECK: 200.0 216.0 232.0 248.0
-# CHECK: 201.0 217.0 233.0 249.0
-# CHECK: 202.0 218.0 234.0 250.0
-# CHECK: 203.0 219.0 235.0 251.0
-# CHECK: 204.0 220.0 236.0 252.0
-# CHECK: 205.0 221.0 237.0 253.0
-# CHECK: 206.0 222.0 238.0 254.0
-# CHECK: 207.0 223.0 239.0 255.0
-# CHECK-LABEL: == test_load_d
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 0.0 1.0 2.0 3.0 4.0 5.0 6.0 7.0 8.0 9.0 10.0 11.0 12.0 13.0 14.0 15.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 32.0 33.0 34.0 35.0 36.0 37.0 38.0 39.0 40.0 41.0 42.0 43.0 44.0 45.0 46.0 47.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK: 48.0 49.0 50.0 51.0 52.0 53.0 54.0 55.0 56.0 57.0 58.0 59.0 60.0 61.0 62.0 63.0
-# CHECK-LABEL: == test_mma
-# CHECK: 414.66333 427.15723 436.7036 448.91992 458.03516 469.8545 481.06348 491.88477 502.79687 513.25195 523.75 536.2617 545.81445 557.96875 567.2129 578.8828
-# CHECK: 442.15723 455.7525 465.39368 477.80518 487.09595 499.10156 511.333 522.32764 533.41846 544.01856 554.7344 568.22363 577.9785 590.291 599.64746 611.6367
-# CHECK: 466.7036 480.39368 490.91333 503.40723 512.9536 525.1699 537.53516 549.3545 560.5635 571.38477 582.2969 596.00195 606.5 619.0117 628.56445 640.71875
-# CHECK: 493.91992 507.80518 518.4072 531.9922 541.62305 554.02344 566.5547 578.5508 590.7695 601.7578 612.83594 626.6797 637.3828 650.8594 660.60156 672.91406
-# CHECK: 518.03516 532.09595 542.9536 556.62305 567.1221 579.59375 592.3711 604.56836 616.9082 628.71484 639.89844 653.95703 664.84375 678.52344 688.9961 701.5078
-# CHECK: 544.8545 559.10156 570.1699 584.02344 594.59375 608.1445 620.9961 633.3672 645.8594 657.83594 670.0156 684.2344 695.27344 709.0781 719.7422 733.21875
-# CHECK: 571.0635 586.333 597.53516 611.5547 622.3711 635.9961 649.957 662.3906 675.1172 687.28906 699.5781 714.8594 725.9922 740.0 750.83594 764.5156
-# CHECK: 596.88477 612.32764 624.3545 638.5508 649.56836 663.3672 677.3906 690.89453 703.6836 716.02344 728.4531 743.89844 756.0156 770.1719 781.14844 794.9531
-# CHECK: 622.7969 638.41846 650.5635 665.76953 676.9082 690.8594 705.1172 718.6836 732.5664 744.96094 757.6094 773.2422 785.4531 800.65625 811.71094 825.71875
-# CHECK: 648.25195 664.01856 676.38477 691.7578 703.71484 717.83594 732.28906 746.02344 759.96094 773.4219 786.125 801.9219 814.2656 829.625 841.65625 855.8125
-# CHECK: 673.75 689.7344 702.2969 717.83594 729.89844 745.0156 759.5781 773.4531 787.6094 801.125 814.90625 830.75 843.2969 858.8281 870.9375 886.1406
-# CHECK: 701.2617 718.22363 731.00195 746.6797 758.957 774.2344 789.8594 803.89844 818.2422 831.9219 845.75 862.90625 875.5 891.1875 903.4219 918.78125
-# CHECK: 725.81445 742.9785 756.5 772.3828 784.84375 800.27344 815.9922 831.0156 845.4531 859.2656 873.2969 890.5 904.15625 919.875 932.2969 947.8281
-# CHECK: 752.96875 770.291 784.0117 800.8594 813.52344 829.0781 845.0 860.1719 875.65625 889.625 903.8281 921.1875 934.875 951.8906 964.34375 980.03125
-# CHECK: 777.2129 794.64746 808.56445 825.60156 838.9961 854.7422 870.83594 886.14844 901.71094 916.65625 930.9375 948.4219 962.2969 979.34375 992.84375 1008.5625
-# CHECK: 803.8828 821.6367 835.71875 852.91406 866.5078 883.21875 899.5156 914.9531 930.71875 945.8125 961.1406 978.78125 992.8281 1010.03125 1023.5625 1040.5781
-def test_load_and_mma_f32_f8_16x16x32_transpose(ctx: DeviceContext):
-    print("== test_load_and_mma_f32_f8_16x16x32_transpose")
-    test_load_and_mma_and_multiply_operands[
-        DType.float32, fp8_dtype, Index(16, 16, 32), True
-    ](ctx)
-
-
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_load_and_mma_f32_f32_16x16x4(ctx)
         test_load_and_mma_f32_f32_16x16x4_k_group_size_4(ctx)
@@ -2568,5 +2142,5 @@ def main():
         test_load_and_mma_f32_bf8_16x16x32_transpose(ctx)
         test_load_and_mma_f32_bf8_16x16x32_transpose_k_group_size_2(ctx)
 
-        test_load_and_mma_f32_f8_16x16x32(ctx)
-        test_load_and_mma_f32_f8_16x16x32_transpose(ctx)
+        comptime if DeviceContext.default_device_info.compute >= MI355X.compute:
+            test_load_b_tr(ctx)

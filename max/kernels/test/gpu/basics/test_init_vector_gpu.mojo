@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,27 +12,23 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu import *
-from gpu.host import DeviceContext
-from buffer import DimList
-from internal_utils import (
-    Timer,
-    initialize,
-    InitializationType,
-    HostNDBuffer,
-    init_vector_launch,
-)
-from testing import assert_equal
+from std.random import seed
 
-from random import seed
+from std.gpu import *
+from std.gpu.host import DeviceContext
+from internal_utils import InitializationType, Timer, init_vector_launch
+
+from std.testing import assert_equal
+
+from layout import TileTensor, Idx, row_major
 
 
 @no_inline
-fn test_vec_init[
+def test_vec_init[
     dtype: DType, block_dim: Int = 256
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:
     var timer = Timer()
-    var out_host = UnsafePointer[Scalar[dtype]].alloc(length)
+    var out_host = alloc[Scalar[dtype]](length)
     var out_device = context.enqueue_create_buffer[dtype](length)
     timer.measure("create-buffer")
 
@@ -49,19 +45,29 @@ fn test_vec_init[
         InitializationType.one,
         InitializationType.arange,
     ]:
-        var verification_data = HostNDBuffer[dtype, 1](DimList(length))
+        var verification_ptr = alloc[Scalar[dtype]](length)
+        var verification_data = TileTensor(
+            verification_ptr, row_major(Idx(length))
+        )
         seed(0)
-        initialize(verification_data.tensor, init_type)
+        if init_type == InitializationType.zero:
+            _ = verification_data.fill(0)
+        elif init_type == InitializationType.one:
+            _ = verification_data.fill(1)
+        elif init_type == InitializationType.arange:
+            for i in range(length):
+                verification_data.raw_store(i, Scalar[dtype](i))
         for i in range(length):
-            assert_equal(verification_data.tensor.data[i], out_host[i])
+            assert_equal(verification_ptr[i], out_host[i])
+        verification_ptr.free()
 
     out_host.free()
     timer.print()
 
 
-def main():
-    alias block_dim = 256
-    alias dtype = DType.float32
+def main() raises:
+    comptime block_dim = 256
+    comptime dtype = DType.float32
     var length = 32 * 1024
     with DeviceContext() as ctx:
         test_vec_init[dtype, block_dim](

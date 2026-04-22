@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,35 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, iota
-from sys.info import simd_width_of
+from std.math import ceildiv, iota
+from std.sys.info import simd_width_of
 
-from algorithm import vectorize
-from buffer import NDBuffer
-from complex import ComplexSIMD
-from gpu import *
-from gpu.host import DeviceContext
-from testing import assert_equal
+from std.algorithm import vectorize
+from std.complex import ComplexSIMD
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import assert_equal
 
-from utils.index import Index
+from std.sys import has_apple_gpu_accelerator
+from layout import TileTensor, Idx, row_major
 
-alias float_type = DType.float64
-alias int_type = DType.index
+comptime float_type = DType.float32 if has_apple_gpu_accelerator() else DType.float64
+comptime int_type = DType.int
 
 
-alias width = 4096
-alias height = 4096
-alias MAX_ITERS = 1000
-alias BLOCK_SIZE = 32
+comptime width = 4096
+comptime height = 4096
+comptime MAX_ITERS = 1000
+comptime BLOCK_SIZE = 32
 
-alias min_x = -2.0
-alias max_x = 0.47
-alias min_y = -1.12
-alias max_y = 1.12
+comptime min_x = -2.0
+comptime max_x = 0.47
+comptime min_y = -1.12
+comptime max_y = 1.12
 
 
 @always_inline
-fn mandelbrot_kernel[
+def mandelbrot_kernel[
     simd_width: Int
 ](c: ComplexSIMD[float_type, simd_width]) -> SIMD[int_type, simd_width]:
     """A vectorized implementation of the inner mandelbrot computation."""
@@ -57,44 +57,49 @@ fn mandelbrot_kernel[
     return iters
 
 
-fn mandelbrot(out_ptr: UnsafePointer[Scalar[int_type]]):
+def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     # Each task gets a row.
     var row = global_idx.x
     if row >= height:
         return
 
-    var out = NDBuffer[int_type, 2](out_ptr, Index(height, width))
+    var out = TileTensor(out_ptr, row_major(Idx(height), Idx(width)))
 
-    alias scale_x = (max_x - min_x) / width
-    alias scale_y = (max_y - min_y) / height
+    comptime scale_x = (max_x - min_x) / width
+    comptime scale_y = (max_y - min_y) / height
 
     @always_inline
-    @parameter
-    fn compute_vector[simd_width: Int](col: Int):
+    def compute_vector[simd_width: Int](col: Int) unified {mut}:
         """Each time we operate on a `simd_width` vector of pixels."""
         if col >= width:
             return
-        var cx = min_x + (col + iota[float_type, simd_width]()) * scale_x
-        var cy = min_y + row * SIMD[float_type, simd_width](scale_y)
+        var cx = (
+            min_x
+            + (Scalar[float_type](col) + iota[float_type, simd_width]())
+            * scale_x
+        )
+        var cy = min_y + SIMD[float_type, 1](row) * SIMD[
+            float_type, simd_width
+        ](scale_y)
         var c = ComplexSIMD[float_type, simd_width](cx, cy)
         out.store[width=simd_width](
-            Index(row, col), mandelbrot_kernel[simd_width](c)
+            (Idx(row), Idx(col)), mandelbrot_kernel[simd_width](c)
         )
 
     # We vectorize the call to compute_vector where call gets a chunk of
     # pixels.
-    vectorize[compute_vector, simd_width_of[float_type]()](width)
+    vectorize[simd_width_of[float_type]()](width, compute_vector)
 
 
-fn run_mandelbrot(ctx: DeviceContext) raises:
-    var out_host = UnsafePointer[Scalar[int_type]].alloc(width * height)
+def run_mandelbrot(ctx: DeviceContext) raises:
+    var out_host = alloc[Scalar[int_type]](width * height)
 
     var out_device = ctx.enqueue_create_buffer[int_type](width * height)
 
     @always_inline
     @parameter
-    fn run_mandelbrot(ctx: DeviceContext) raises:
-        ctx.enqueue_function[mandelbrot](
+    def run_mandelbrot(ctx: DeviceContext) raises:
+        ctx.enqueue_function_experimental[mandelbrot](
             out_device,
             grid_dim=(ceildiv(height, BLOCK_SIZE),),
             block_dim=(BLOCK_SIZE,),
@@ -103,7 +108,7 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     run_mandelbrot(ctx)  # Warmup
     print(
         "Computation took:",
-        ctx.execution_time[run_mandelbrot](1) / 1_000_000_000.0,
+        Float64(ctx.execution_time[run_mandelbrot](1)) / 1_000_000_000.0,
     )
 
     ctx.enqueue_copy(out_host, out_device)
@@ -114,13 +119,11 @@ fn run_mandelbrot(ctx: DeviceContext) raises:
     for i in range(width):
         for j in range(height):
             accum += out_host[i * width + j]
-    assert_equal(Scalar[int_type](4687767697), accum)
 
-    _ = out_device
-
-    _ = out_host
+    comptime ref_result = 4687767697 if float_type == DType.float64 else 4687810683
+    assert_equal(Scalar[int_type](ref_result), accum)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_mandelbrot(ctx)

@@ -7,7 +7,7 @@ codeTitle: true
 
 The `@compiler.register` decorator registers a custom operation for use with the
 Graph API. For more information on custom operations, see
-[Intro to custom ops](/max/custom-ops).
+[Intro to custom ops](/max/develop/custom-ops/).
 
 To define a custom operation:
 
@@ -25,15 +25,15 @@ The following snippet shows the outline of a custom operation:
 struct AddVectorsCustom:
 
     @staticmethod
-    fn execute[...](...) raises:
+    def execute[...](...):
         pass
 
     @staticmethod
-    fn shape(...) raises -> IndexList:
+    def shape(...) -> IndexList:
         pass
 ```
 
-The `@compiler.register` decorator takes a single arguments, the name of the
+The `@compiler.register` decorator takes a single argument, the name of the
 custom operation, as a string. This name is used to load the custom op into your
 graph.
 
@@ -52,7 +52,7 @@ determined statically.
 
 The following sections describe the `execute()` and `shape()` functions.
 
-### `execute()` function
+## `execute()` function
 
 The `execute()` function performs the actual work of the custom op. It takes the
 following parameter:
@@ -62,10 +62,11 @@ following parameter:
 
 Graph output and input tensors are passed to the `execute()` function as
 instances of
-[`OutputTensor`](/max/api/mojo/tensor/managed_tensor_slice/#aliases) and
-[`InputTensor`](/max/api/mojo/tensor/managed_tensor_slice/#aliases),
-respectively. These are both aliases for specific configurations of
-[`ManagedTensorSlice`](/max/api/mojo/tensor/managed_tensor_slice/ManagedTensorSlice),
+[`OutputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#comptime-values)
+and
+[`InputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#comptime-values),
+respectively. These are both type aliases for specific configurations of
+[`ManagedTensorSlice`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/ManagedTensorSlice),
 so they both have the same API.
 
 In addition to input and output tensors, the function can take the following
@@ -78,14 +79,14 @@ arguments:
 
 ```mojo
 import compiler
-from utils.index import IndexList
+from std.utils.index import IndexList
 from max.tensor import OutputTensor, InputTensor, foreach, ManagedTensorSlice
-from runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr
 
 @compiler.register("add_vectors_custom")
 struct AddVectorsCustom:
     @staticmethod
-    fn execute[
+    def execute[
         # "gpu" or "cpu"
         target: StaticString,
     ](
@@ -96,17 +97,17 @@ struct AddVectorsCustom:
         y: InputTensor[dtype = out.dtype, rank = out.rank],
         # the context is needed for some GPU calls
         ctx: DeviceContextPtr,
-    ) raises:
+    ):
 
         @parameter
         @always_inline
-        fn func[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
+        def func[width: Int](idx: IndexList[x.rank]) -> SIMD[x.dtype, width]:
             return x.load[width](idx) + y.load[width](idx)
 
         foreach[func, target=target](out, ctx)
 ```
 
-### `shape()` function
+## `shape()` function
 
 The `shape()` function returns the dimensions of the output tensor(s).
 
@@ -116,7 +117,7 @@ output shapes when building a graph.
 
 The function takes the same arguments as the `execute()` function, minus the
 output tensors and `DeviceContextPtr`. It must return an
-[`IndexList`](/mojo/stdlib/utils/index_/IndexList/) specifying the dimensions of
+[`IndexList`](/mojo/std/utils/index_/IndexList/) specifying the dimensions of
 the output tensor.
 
 For example, if the operation takes two input tensors, and the shape of the
@@ -125,9 +126,9 @@ output tensor matches the first input tensor, you could use the following
 
 ```mojo
     @staticmethod
-    fn shape(
+    def shape(
         in1: InputTensor,
         in2: InputTensor,
-    ) raises -> IndexList[in1.rank]:
+    ) -> IndexList[in1.rank]:
         return in1.spec.shape
 ```

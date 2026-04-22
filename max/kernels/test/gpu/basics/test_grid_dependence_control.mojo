@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,18 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.grid_controls import _SUPPORT_PDL_LAUNCH as SUPPORT_PDL_LAUNCH
-from gpu.grid_controls import (
+from std.gpu.primitives.grid_controls import (
+    _SUPPORT_PDL_LAUNCH as SUPPORT_PDL_LAUNCH,
+)
+from std.gpu.primitives.grid_controls import (
     PDL,
     launch_dependent_grids,
     wait_on_dependent_grids,
 )
-from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
-from testing import assert_true
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import assert_true
 
 
-fn control_dep_grids_kernel():
+def control_dep_grids_kernel():
     wait_on_dependent_grids()
     launch_dependent_grids()
 
@@ -32,26 +34,26 @@ fn control_dep_grids_kernel():
 # CHECK: griddepcontrol.launch_dependents
 # CHECK: griddepcontrol.wait
 # CHECK: griddepcontrol.launch_dependents
-def test_grid_control_primitives():
+def test_grid_control_primitives() raises:
     print("== test_grid_control_primitives")
     assert_true(SUPPORT_PDL_LAUNCH)
     print(
         _compile_code[
             control_dep_grids_kernel,
             emission_kind="asm",
-            target = get_gpu_target["sm_90"](),
+            target=get_gpu_target["sm_90"](),
         ]()
     )
     print(
         _compile_code[
             control_dep_grids_kernel,
             emission_kind="asm",
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 
 
-fn control_dep_grids_kernel_context():
+def control_dep_grids_kernel_context():
     with PDL():
         pass
 
@@ -59,17 +61,17 @@ fn control_dep_grids_kernel_context():
 # CHECK-LABEL: test_grid_control_primitives_context
 # CHECK: griddepcontrol.wait
 # CHECK: griddepcontrol.launch_dependents
-def test_grid_control_primitives_context():
+def test_grid_control_primitives_context() raises:
     print("== test_grid_control_primitives_context")
     print(
         _compile_code[
             control_dep_grids_kernel_context,
             emission_kind="asm",
-            target = get_gpu_target["sm_90a"](),
+            target=get_gpu_target["sm_90a"](),
         ]()
     )
 
 
-def main():
+def main() raises:
     test_grid_control_primitives()
     test_grid_control_primitives_context()

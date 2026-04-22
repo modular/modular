@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,67 +11,86 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from utils.fast_div import FastDiv
-from gpu.host import get_gpu_target
-from layout.layout_tensor import LayoutTensor
-from layout.layout import Layout, IntTuple
-from gpu.host.compile import _compile_code
-from testing import assert_true
-from python import Python
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from layout import IntTuple, Layout, LayoutTensor
+from std.python import Python, PythonObject
+from std.testing import assert_true
+
+from std.utils.fast_div import FastDiv
 
 
-def contains_fastdiv_div_sequence(asm: String) -> Bool:
+def contains_fastdiv_div_sequence(asm: String, width: Int = 32) raises -> Bool:
     var re = Python.import_module("re")
+    var w = String(width)
     var fastdiv_pattern = String(
-        r"ld\.global\.b32\s+[^;]+;\s*"
-        r"mov\.b32\s+[^;]+;\s*"
-        r"mul\.hi\.u32\s+[^;]+;\s*"
-        r"sub\.s32\s+[^;]+;\s*"
-        r"shr\.u32\s+[^;]+;\s*"
-        r"add\.s32\s+[^;]+;\s*"
-        r"shr\.u32\s+[^;]+;\s*"
-        r"st\.global\.b32\s+[^;]+;"
+        r"ld\.global\.b" + w + r"\s+[^;]+;\s*"
+        r"mov\.b" + w + r"\s+[^;]+;\s*"
+        r"mul\.hi\.u" + w + r"\s+[^;]+;\s*"
+        r"sub\.s" + w + r"\s+[^;]+;\s*"
+        r"shr\.u" + w + r"\s+[^;]+;\s*"
+        r"add\.s" + w + r"\s+[^;]+;\s*"
+        r"shr\.u" + w + r"\s+[^;]+;\s*"
+        r"st\.global\.b" + w + r"\s+[^;]+;"
     )
     var result = re.search(fastdiv_pattern, asm)
-    return result is not None
+    return result is not PythonObject(None)
 
 
-def contains_power_of_2_sequence(asm: String) -> Bool:
+def contains_power_of_2_sequence(asm: String, width: Int = 32) raises -> Bool:
     var re = Python.import_module("re")
+    var w = String(width)
     var shift_pattern = String(
-        r"ld\.global\.b32\s+[^;]+;\s*"
-        r"shr\.u32\s+[^;]+;\s*"
-        r"st\.global\.b32\s+[^;]+;"
+        r"ld\.global\.b" + w + r"\s+[^;]+;\s*"
+        r"shr\.u" + w + r"\s+[^;]+;\s*"
+        r"st\.global\.b" + w + r"\s+[^;]+;"
     )
     var shift_result = re.search(shift_pattern, asm)
-    return shift_result is not None
+    return shift_result is not PythonObject(None)
 
 
-fn fast_div_kernel[
-    type: DType,
+def fast_div_kernel[
+    dtype: DType,
     layout: Layout,
     divisor: Int,
-](input: LayoutTensor[type, layout, MutableAnyOrigin],):
-    alias fast_div = FastDiv[type](divisor)
+](input: LayoutTensor[dtype, layout, MutAnyOrigin],):
+    comptime fast_div = FastDiv[dtype](divisor)
     var x = input[0]
     var result = rebind[Scalar[fast_div.uint_type]](x) / fast_div
-    input[0] = result.cast[type]()
+    input[0] = result.cast[dtype]()
 
 
-def main():
-    alias type = DType.uint32
-    alias layout = Layout(IntTuple(1))
-    alias kernel_fast_div_4 = fast_div_kernel[type, layout, 4]
-    alias kernel_fast_div_3 = fast_div_kernel[type, layout, 3]
+def main() raises:
+    comptime layout = Layout(IntTuple(1))
+
+    # Test uint32 FastDiv.
+    comptime kernel_u32_pow2 = fast_div_kernel[DType.uint32, layout, 4]
+    comptime kernel_u32_div = fast_div_kernel[DType.uint32, layout, 3]
 
     var asm = _compile_code[
-        kernel_fast_div_4,
-        target = get_gpu_target["sm_90"](),
+        kernel_u32_pow2,
+        target=get_gpu_target["sm_90"](),
     ]().asm
     assert_true(contains_power_of_2_sequence(asm))
 
     asm = _compile_code[
-        kernel_fast_div_3,
-        target = get_gpu_target["sm_90"](),
+        kernel_u32_div,
+        target=get_gpu_target["sm_90"](),
     ]().asm
     assert_true(contains_fastdiv_div_sequence(asm))
+
+    # Test uint64 FastDiv.
+    comptime kernel_u64_pow2 = fast_div_kernel[DType.uint64, layout, 4]
+    comptime kernel_u64_div = fast_div_kernel[DType.uint64, layout, 3]
+
+    asm = _compile_code[
+        kernel_u64_pow2,
+        target=get_gpu_target["sm_90"](),
+    ]().asm
+    assert_true(contains_power_of_2_sequence(asm, width=64))
+
+    asm = _compile_code[
+        kernel_u64_div,
+        target=get_gpu_target["sm_90"](),
+    ]().asm
+    assert_true(contains_fastdiv_div_sequence(asm, width=64))

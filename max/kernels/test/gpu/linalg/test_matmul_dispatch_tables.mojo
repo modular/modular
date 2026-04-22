@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from linalg.matmul_dispatch_sm90 import llama_8b_fp8_table, llama_405b_fp8_table
+from linalg.matmul.gpu.sm90.dispatch import (
+    llama_8b_fp8_table,
+    llama_405b_fp8_table,
+)
 
 
-fn main() raises:
-    constrained[llama_8b_fp8_table.check()]()
-    constrained[llama_405b_fp8_table.check()]()
+def main() raises:
+    comptime assert llama_8b_fp8_table.check()
+    comptime assert llama_405b_fp8_table.check()

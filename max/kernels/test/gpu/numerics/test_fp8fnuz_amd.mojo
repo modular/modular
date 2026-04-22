@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,22 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
-def test_fp8_constructor(ctx: DeviceContext):
-    fn kernel(ptr: UnsafePointer[Float8_e5m2fnuz]):
+def test_fp8_constructor(ctx: DeviceContext) raises:
+    def kernel(ptr: UnsafePointer[Float8_e5m2fnuz, MutAnyOrigin]):
         ptr[] = Float8_e5m2fnuz(42.0)
 
     # CHECK: v_mov_b32_e32 {{.*}}, 0x55
     # CHECK: store i8 85, ptr %{{.*}}, align 1
     _ = ctx.compile_function[
         kernel,
+        kernel,
         dump_llvm=True,
         dump_asm=True,
     ]()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_fp8_constructor(ctx)

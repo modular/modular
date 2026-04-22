@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python.python import Python, PythonObject
-from testing import assert_equal, assert_raises, assert_true
+from std.python.python import Python, PythonObject
+from std.testing import assert_equal, assert_raises, assert_true, TestSuite
 
 
-fn test_execute_python_string(mut python: Python) -> String:
+def _test_execute_python_string(mut python: Python) -> String:
     try:
         _ = Python.evaluate("print('evaluated by PyRunString')")
         return String(Python.evaluate("'a' + 'b'"))
@@ -23,7 +23,7 @@ fn test_execute_python_string(mut python: Python) -> String:
         return String(e)
 
 
-fn test_local_import(mut python: Python) -> String:
+def _test_local_import(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         if my_module:
@@ -35,8 +35,8 @@ fn test_local_import(mut python: Python) -> String:
         return String(e)
 
 
-fn test_dynamic_import(mut python: Python, times: Int = 1) -> String:
-    alias INLINE_MODULE = """
+def _test_dynamic_import(mut python: Python, times: Int = 1) -> String:
+    comptime INLINE_MODULE = """
 called_already = False
 def hello(name):
     global called_already
@@ -54,7 +54,7 @@ def hello(name):
         return String(e)
 
 
-fn test_call(mut python: Python) -> String:
+def _test_call(mut python: Python) -> String:
     try:
         var my_module: PythonObject = Python.import_module("my_module")
         return String(
@@ -71,7 +71,7 @@ fn test_call(mut python: Python) -> String:
         return String(e)
 
 
-def test_int_conversion():
+def test_int_conversion() raises:
     var py_int = Python.int(PythonObject("123"))
     # TODO: use assert_equal once we have parametric raises in __eq__.
     assert_true(py_int == PythonObject(123))
@@ -80,7 +80,7 @@ def test_int_conversion():
         _ = Python.int(PythonObject("foo"))
 
 
-def test_float_conversion():
+def test_float_conversion() raises:
     var math = Python.import_module("math")
 
     var f = Python.float(PythonObject("123.45"))
@@ -93,41 +93,47 @@ def test_float_conversion():
         _ = Python.float(PythonObject("foo"))
 
 
-def test_str_conversion():
+def test_str_conversion() raises:
     var py_str = Python.str(PythonObject(123))
     assert_true(py_str == PythonObject("123"))
 
 
-def main():
+def test_imports() raises:
     var python = Python()
-    assert_equal(test_local_import(python), "orange")
+    assert_equal(_test_local_import(python), "orange")
 
     # Test twice to ensure that the module state is fresh.
-    assert_equal(test_dynamic_import(python), "Hello world!")
-    assert_equal(test_dynamic_import(python), "Hello world!")
+    assert_equal(_test_dynamic_import(python), "Hello world!")
+    assert_equal(_test_dynamic_import(python), "Hello world!")
 
     # Test with two calls to ensure that the state is persistent.
-    assert_equal(test_dynamic_import(python, times=2), "Again?")
+    assert_equal(_test_dynamic_import(python, times=2), "Again?")
 
+
+def test_call() raises:
+    var python = Python()
     assert_equal(
-        test_call(python),
+        _test_call(python),
         (
             "carrot ('bread', 'rice') fruit=pear {'protein': 'fish', 'cake':"
             " 'yes'}"
         ),
     )
 
+
+def test_object_properties() raises:
+    var python = Python()
     var obj: PythonObject = [1, 2.4, True, "False"]
     assert_equal(String(obj), "[1, 2.4, True, 'False']")
 
     obj = Python.tuple(1, 2.4, True, "False")
     assert_equal(String(obj), "(1, 2.4, True, 'False')")
 
-    obj = None
+    obj = PythonObject(None)
     assert_equal(String(obj), "None")
 
-    assert_equal(test_execute_python_string(python), "ab")
+    assert_equal(_test_execute_python_string(python), "ab")
 
-    test_int_conversion()
-    test_float_conversion()
-    test_str_conversion()
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,41 +11,46 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from sys import argv
+from std.math import ceildiv, isclose
+from std.sys import argv
 
-from buffer import DimList, NDBuffer
-from gpu import WARP_SIZE
-from gpu.host import DeviceContext
-from gpu.id import block_idx, thread_idx, warp_id
-from gpu.memory import AddressSpace, async_copy_wait_all
-from gpu.sync import barrier
-from layout import Layout, LayoutTensor
-from layout._ndbuffer_stub import copy_from_nd_buffer, copy_to_nd_buffer
-from layout.layout_tensor import copy_sram_to_local
+from std.gpu import WARP_SIZE
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, warp_id
+from std.gpu.memory import async_copy_wait_all
+from std.gpu.sync import barrier
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    row_major,
+)
+from layout.layout_tensor import (
+    copy_sram_to_local,
+    copy_dram_to_sram_async,
+    copy_local_to_dram,
+)
 from layout.math import outer_product_acc
-from layout.tensor_builder import LayoutTensorBuild as tb
-from linalg.matmul_gpu import matmul_kernel_naive
-from testing import assert_almost_equal
-from layout._ndbuffer_stub import from_ndbuffer_row_major
-
-from utils import Index
+from linalg.matmul.gpu import matmul_kernel_naive
+from std.testing import assert_almost_equal
 
 
-fn is_benchmark() -> Bool:
+def is_benchmark() -> Bool:
     for arg in argv():
         if arg == "--benchmark" or arg == "-benchmark":
             return True
     return False
 
 
-fn gemm_kernel[
+def gemm_kernel[
     c_type: DType,
-    c_shape: DimList,
+    c_layout: Layout,
     a_type: DType,
-    a_shape: DimList,
+    a_layout: Layout,
     b_type: DType,
-    b_shape: DimList,
+    b_layout: Layout,
     NUM_THREADS: Int,
     BM: Int,
     BN: Int,
@@ -55,9 +60,9 @@ fn gemm_kernel[
     TM: Int,
     TN: Int,
 ](
-    mat_c: NDBuffer[c_type, 2, MutableAnyOrigin, c_shape],
-    mat_a: NDBuffer[a_type, 2, MutableAnyOrigin, a_shape],
-    mat_b: NDBuffer[b_type, 2, MutableAnyOrigin, b_shape],
+    mat_c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
+    mat_a: LayoutTensor[a_type, a_layout, ImmutAnyOrigin],
+    mat_b: LayoutTensor[b_type, b_layout, ImmutAnyOrigin],
 ):
     var M = mat_c.dim(0)
     var N = mat_c.dim(1)
@@ -66,53 +71,66 @@ fn gemm_kernel[
     var a_tile_sram = LayoutTensor[
         a_type,
         Layout.row_major(BM, BK),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var b_tile_sram = LayoutTensor[
         b_type,
         Layout.row_major(BK, BN),
-        MutableAnyOrigin,
-        address_space = AddressSpace.SHARED,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
     ].stack_allocation()
 
     var num_warps = NUM_THREADS // WARP_SIZE
     var n_warp_n = BN // WN
     var n_warp_m = BM // WM
-    var warp_m = Int(warp_id()) // n_warp_n
-    var warp_n = Int(warp_id()) % n_warp_n
+    var warp_m = warp_id() // n_warp_n
+    var warp_n = warp_id() % n_warp_n
 
     # Allocate register tiles.
-    var a_reg = tb[a_type]().row_major[TM]().local().alloc()
-    var b_reg = tb[b_type]().row_major[TN]().local().alloc()
-    var c_reg = tb[c_type]().row_major[TM, TN]().local().alloc().fill(0)
+    var a_reg = LayoutTensor[
+        a_type,
+        Layout.row_major(TN),
+        MutAnyOrigin,
+        address_space=AddressSpace.LOCAL,
+    ].stack_allocation()
+    var b_reg = LayoutTensor[
+        b_type,
+        Layout.row_major(TN),
+        MutAnyOrigin,
+        address_space=AddressSpace.LOCAL,
+    ].stack_allocation()
+    var c_reg = (
+        LayoutTensor[
+            c_type,
+            Layout.row_major(TM, TN),
+            MutAnyOrigin,
+            address_space=AddressSpace.LOCAL,
+        ]
+        .stack_allocation()
+        .fill(0)
+    )
 
-    alias warp_layout = Layout.row_major(8, 4)
+    comptime warp_layout = Layout.row_major(8, 4)
 
     for k_i in range(ceildiv(K, BK)):
-        var a_tile_dram = mat_a.tile[BM, BK](Index(Int(block_idx.y), k_i))
-        var a_tile_sram_local = a_tile_sram.distribute[
-            Layout.row_major(NUM_THREADS // BK, BK)
-        ](thread_idx.x)
-        copy_from_nd_buffer[
-            thread_layout = Layout.row_major(NUM_THREADS // BK, BK),
-            is_async=True,
-        ](a_tile_sram_local, a_tile_dram, thread_idx.x)
+        var a_tile_dram = mat_a.tile[BM, BK](block_idx.y, k_i)
 
-        var b_tile_dram = mat_b.tile[BK, BN](Index(k_i, Int(block_idx.x)))
-        var b_tile_sram_local = b_tile_sram.distribute[
-            Layout.row_major(NUM_THREADS // BN, BN)
-        ](thread_idx.x)
-        copy_from_nd_buffer[
-            thread_layout = Layout.row_major(NUM_THREADS // BN, BN),
-            is_async=True,
-        ](b_tile_sram_local, b_tile_dram, thread_idx.x)
+        copy_dram_to_sram_async[
+            thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
+        ](a_tile_sram, a_tile_dram)
+
+        var b_tile_dram = mat_b.tile[BK, BN](k_i, block_idx.x)
+
+        copy_dram_to_sram_async[
+            thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
+        ](b_tile_sram, b_tile_dram)
+
         async_copy_wait_all()
         barrier()
 
-        @parameter
-        for k_i in range(BK):
+        comptime for k_i in range(BK):
             var a_smem_warp_row = a_tile_sram.tile[WM, BK](warp_m, 0).slice[
                 :, k_i : k_i + 1
             ]()
@@ -131,39 +149,37 @@ fn gemm_kernel[
         # Otherwise a data race, faster threads will modify shared memory.
         barrier()
 
-    var c_warp_tile = mat_c.tile[BM, BN](
-        Index(Int(block_idx.y), Int(block_idx.x))
-    ).tile[WM, WN](Index(warp_m, warp_n))
-
-    copy_to_nd_buffer[thread_layout=warp_layout](
-        c_warp_tile, c_reg, thread_idx.x
+    var c_warp_tile = mat_c.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_m, warp_n
     )
 
+    copy_local_to_dram[dst_thread_layout=warp_layout](c_warp_tile, c_reg)
 
-fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
-    alias NUM_THREADS = 256
-    alias BM = 64
-    alias BN = 64
-    alias BK = 16
-    alias WM = 32
-    alias WN = 16
-    alias TM = 4
-    alias TN = 4
 
-    alias M = 1024
-    alias N = 1024
-    alias K = 128
+def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
+    comptime NUM_THREADS = 256
+    comptime BM = 64
+    comptime BN = 64
+    comptime BK = 16
+    comptime WM = 32
+    comptime WN = 16
+    comptime TM = 4
+    comptime TN = 4
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    comptime M = 1024
+    comptime N = 1024
+    comptime K = 128
+
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
-        a_host[i] = i
+        a_host[i] = Float32(i)
 
     for i in range(K * N):
-        b_host[i] = i
+        b_host[i] = Float32(i)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
@@ -173,23 +189,27 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     ctx.enqueue_copy(a_device, a_host)
     ctx.enqueue_copy(b_device, b_host)
 
-    var mat_a = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
-    ](a_device._unsafe_ptr(), dynamic_shape=Index(M, K))
-    var mat_b = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
-    ](b_device._unsafe_ptr(), dynamic_shape=Index(K, M))
-    var mat_c = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList.create_unknown[2]()
-    ](c_device._unsafe_ptr(), dynamic_shape=Index(N, M))
+    comptime a_layout = Layout.row_major(M, K)
+    comptime b_layout = Layout.row_major(K, M)
+    comptime c_layout = Layout.row_major(M, N)
 
-    alias kernel = gemm_kernel[
+    var a_tensor = LayoutTensor[DType.float32, a_layout, MutAnyOrigin](
+        a_device.unsafe_ptr()
+    )
+    var b_tensor = LayoutTensor[DType.float32, b_layout, MutAnyOrigin](
+        b_device.unsafe_ptr()
+    )
+    var c_tensor = LayoutTensor[DType.float32, c_layout, MutAnyOrigin](
+        c_device.unsafe_ptr()
+    )
+
+    comptime kernel = gemm_kernel[
         DType.float32,
-        DimList.create_unknown[2](),
+        c_tensor.layout,
         DType.float32,
-        DimList.create_unknown[2](),
+        a_tensor.layout,
         DType.float32,
-        DimList.create_unknown[2](),
+        b_tensor.layout,
         NUM_THREADS,
         BM,
         BN,
@@ -200,40 +220,55 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         TN,
     ]
 
-    ctx.enqueue_function[kernel](
-        mat_c,
-        mat_a,
-        mat_b,
+    ctx.enqueue_function_experimental[kernel](
+        c_tensor,
+        a_tensor,
+        b_tensor,
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(NUM_THREADS),
     )
 
     ctx.enqueue_copy(c_host, c_device)
 
-    var c_buffer_ref = NDBuffer[
-        DType.float32, 2, MutableAnyOrigin, DimList(M, N)
-    ](c_device_ref._unsafe_ptr())
+    # Create TileTensors for the naive kernel.
+    # a/b are constructed as immutable to match the ImmutAnyOrigin
+    # parameters that matmul_kernel_naive expects (enqueue_function_experimental
+    # requires exact type matches).
+    from std.memory import UnsafePointer
 
-    var c_tensor_ref = from_ndbuffer_row_major(c_buffer_ref)
-    var a_tensor = from_ndbuffer_row_major(mat_a)
-    var b_tensor = from_ndbuffer_row_major(mat_b)
+    var c_ref_tt = TileTensor(
+        c_device_ref,
+        row_major(Coord(Idx(M), Idx(N))),
+    )
+    var a_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(a_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(M), Idx(K))),
+    )
+    var b_tt = TileTensor(
+        UnsafePointer[Scalar[DType.float32], ImmutAnyOrigin](
+            unsafe_from_address=Int(b_device.unsafe_ptr())
+        ),
+        row_major(Coord(Idx(K), Idx(M))),
+    )
 
     # Naive gemm.
-    alias BLOCK_DIM = 16
-    alias gemm_naive = matmul_kernel_naive[
+    comptime BLOCK_DIM = 16
+    comptime gemm_naive = matmul_kernel_naive[
         DType.float32,
         DType.float32,
         DType.float32,
-        c_tensor_ref.layout,
-        a_tensor.layout,
-        b_tensor.layout,
+        type_of(c_ref_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
         BLOCK_DIM,
     ]
 
-    ctx.enqueue_function[gemm_naive](
-        c_tensor_ref,
-        a_tensor,
-        b_tensor,
+    ctx.enqueue_function_experimental[gemm_naive](
+        c_ref_tt,
+        a_tt,
+        b_tt,
         M,
         N,
         K,
@@ -249,30 +284,30 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
         assert_almost_equal(c_host[i], c_host_ref[i])
 
     if is_benchmark():
-        alias nrun = 200
-        alias nwarmup = 2
+        comptime nrun = 200
+        comptime nwarmup = 2
 
         @always_inline
         @parameter
-        fn run_func(ctx: DeviceContext) raises:
-            ctx.enqueue_function[kernel](
-                mat_c,
-                mat_a,
-                mat_b,
+        def run_func(ctx: DeviceContext) raises:
+            ctx.enqueue_function_experimental[kernel](
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
 
         # Warmup
         for i in range(nwarmup):
-            ctx.enqueue_function[kernel](
-                mat_c,
-                mat_a,
-                mat_b,
+            ctx.enqueue_function_experimental[kernel](
+                c_tensor,
+                a_tensor,
+                b_tensor,
                 grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
                 block_dim=(NUM_THREADS),
             )
-        var nstime = ctx.execution_time[run_func](nrun) / nrun
+        var nstime = Float64(ctx.execution_time[run_func](nrun)) / Float64(nrun)
         var sectime = nstime * 1e-9
         var TFlop = 2.0 * M * N * K * 1e-12
         print(nrun, "runs avg(s)", sectime, "TFlops/s", TFlop / sectime)
@@ -288,6 +323,6 @@ fn test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_gemm_kernel_dynamic(ctx)

@@ -1,6 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
 ##===----------------------------------------------------------------------===##
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,10 +19,10 @@ set -euo pipefail
 # - cc_binary: //KGEN/tools/mojo -- -h
 # - cc_test: //KGEN/unittests
 # - cc_test's underlying cc_binary: //KGEN/unittests:unittests.debug
-# - py_binary: //SDK/lib/API/python/max/entrypoints:pipelines -- generate --model-path modularai/Llama-3.1-8B-Instruct-GGUF --prompt "I believe the meaning of life is" --max-new-tokens 8 --max-batch-size 4 --cache-strategy=continuous --quantization-encoding float32
+# - py_binary: //max/python/max/entrypoints:pipelines -- generate --model modularai/Llama-3.1-8B-Instruct-GGUF --prompt "I believe the meaning of life is" --max-new-tokens 8 --max-batch-size 4 --quantization-encoding float32
 # - py_test: Support/python:unittests
 # - mojo_binary: Kernels/test/gpu-query
-# - mojo_test: open-source/max/mojo/stdlib/test:builtin/test_math.mojo.test
+# - mojo_test: oss/modular/mojo/stdlib/test:builtin/test_math.mojo.test
 # - arg parsing: --config=debug-bazel Support/python:unittests --config=debug-bazel -- other args
 
 target=""
@@ -39,6 +39,9 @@ do
     shift
   elif [[ "$arg" = --gdb ]]; then
     export MODULAR_GDB="1"
+    shift
+  elif [[ "$arg" = --rocgdb ]]; then
+    export MODULAR_ROCGDB="1"
     shift
   elif [[ "$arg" = --system-lldb ]]; then
     export MODULAR_SYSTEM_LLDB="1"

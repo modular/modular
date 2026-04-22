@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -19,13 +19,8 @@ import sys
 from collections.abc import Sequence
 from importlib.util import spec_from_file_location
 from pathlib import Path
-from typing import Optional
 
-from .paths import (
-    MojoCompilationError,
-    MojoModulePath,
-    find_mojo_module_in_dir,
-)
+from .paths import MojoCompilationError, MojoModulePath, find_mojo_module_in_dir
 from .run import subprocess_run_mojo
 
 # ---------------------------------------
@@ -34,15 +29,15 @@ from .run import subprocess_run_mojo
 
 
 def _calculate_mojo_source_hash(mojo_dir: Path) -> str:
-    """Calculates a truncated SHA256 hash of all .mojo/.🔥 files in a directory."""
-    # Find all .mojo and .🔥 files recursively
-    source_files = sorted((*mojo_dir.rglob("*.mojo"), *mojo_dir.rglob("*.🔥")))
+    """Calculates a truncated SHA256 hash of all .mojo files in a directory."""
+    # Find all .mojo files recursively
+    source_files = sorted(mojo_dir.rglob("*.mojo"))
 
     if not source_files:
         # This should be unreachable if the caller validates that mojo_dir
         # contains Mojo source files before calling this function.
         raise ImportError(
-            f"Internal Error: No .mojo or .🔥 files found in directory '{mojo_dir}' for hashing."
+            f"Internal Error: No .mojo files found in directory '{mojo_dir}' for hashing."
         )
 
     hasher = hashlib.sha256()
@@ -123,22 +118,19 @@ def _delete_matching_cached_files(
 #    https://docs.python.org/3/library/importlib.html#importlib.machinery.ExtensionFileLoader
 #    https://peps.python.org/pep-0489/#module-creation-phase
 class MojoImporter:
-    def find_spec(
+    def find_spec(  # noqa: ANN201
         self,
         name: str,
-        import_path: Optional[Sequence[str]],
-        target: Optional[object],
+        import_path: Sequence[str] | None,
+        target: object | None,
     ):
-        # This importer only handles top-level imports. `import foo.bar` is not
-        # supported.
-        if "." in name or import_path is not None:
-            return None
+        name_path = name.replace(".", "/")
 
-        mojo_module: Optional[MojoModulePath] = None
+        mojo_module: MojoModulePath | None = None
         # Search sys.path for the Mojo source file or package
         for path_entry in sys.path:
             # Use the helper function to check this directory
-            mojo_module = find_mojo_module_in_dir(Path(path_entry), name)
+            mojo_module = find_mojo_module_in_dir(Path(path_entry), name_path)
 
             if mojo_module:
                 break  # Found the source, stop searching sys.path

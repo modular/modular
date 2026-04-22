@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand, randint
+from std.random import rand, randint
 
-from benchmark import *
-from buffer import NDBuffer
-from buffer.dimlist import Dim
+from std.benchmark import *
+from layout import Coord, TileTensor, row_major
 from nn.gather_scatter import gather_elements
 
-from utils.index import Index
+from std.utils.index import Index
 
 
-fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
+def bench_gather(mut m: Bench, spec: GatherSpec) raises:
     @parameter
     @always_inline
-    fn bench_gather_wrapper(mut b: Bencher, concrete_spec: GatherSpec) raises:
+    def bench_gather_wrapper(mut b: Bencher, concrete_spec: GatherSpec) raises:
         bench_gather(b, concrete_spec)
 
     m.bench_with_input[GatherSpec, bench_gather_wrapper](
@@ -33,36 +32,34 @@ fn bench_gather(mut m: Bench, spec: GatherSpec) raises:
 
 
 @parameter
-fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
+def bench_gather(mut bencher: Bencher, spec: GatherSpec):
     var index_rand_min = 0
     var index_rand_max = spec.m1 - 1
 
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
 
-    var data_ptr = UnsafePointer[Float32].alloc(input_shape.flattened_length())
+    var data_ptr = alloc[Float32](input_shape.flattened_length())
     rand(data_ptr, input_shape.flattened_length())
-    var data_tensor = NDBuffer[DType.float32, 2](data_ptr, input_shape)
+    var data_tensor = TileTensor(data_ptr, row_major(Coord(input_shape)))
 
-    var indices_ptr = UnsafePointer[Int32].alloc(
-        indices_shape.flattened_length()
-    )
+    var indices_ptr = alloc[Int32](indices_shape.flattened_length())
     randint(
         indices_ptr,
         indices_shape.flattened_length(),
         index_rand_min,
         index_rand_max,
     )
-    var indices_tensor = NDBuffer[DType.int32, 2](indices_ptr, indices_shape)
-
-    var output_ptr = UnsafePointer[Float32].alloc(
-        indices_shape.flattened_length()
+    var indices_tensor = TileTensor(
+        indices_ptr, row_major(Coord(indices_shape))
     )
-    var output_tensor = NDBuffer[DType.float32, 2](output_ptr, indices_shape)
+
+    var output_ptr = alloc[Float32](indices_shape.flattened_length())
+    var output_tensor = TileTensor(output_ptr, row_major(Coord(indices_shape)))
 
     @always_inline
     @parameter
-    fn bench_fn():
+    def bench_fn():
         try:
             gather_elements(
                 data_tensor,
@@ -75,31 +72,35 @@ fn bench_gather(mut bencher: Bencher, spec: GatherSpec):
 
     bencher.iter[bench_fn]()
 
-    _ = data_tensor
-    _ = indices_tensor
-    _ = output_tensor
+    data_tensor.ptr.free()
+    indices_tensor.ptr.free()
+    output_tensor.ptr.free()
 
 
 @fieldwise_init
-struct GatherSpec(Copyable, Movable, Stringable):
+struct GatherSpec(ImplicitlyCopyable, Writable):
     var axis: Int
     var m1: Int
     var m2: Int
     var n1: Int
     var n2: Int
 
-    @no_inline
-    fn __str__(self) -> String:
-        # fmt: off
-        return String(
+    # fmt: off
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the gather spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "axis=", self.axis,
             ";Dim=(", self.m1, ",", self.m2, ")",
             "(", self.n1, ",", self.n2, ")",
         )
-        # fmt: on
+    # fmt: on
 
 
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=2))
     bench_gather(m, GatherSpec(axis=1, m1=400, m2=400, n1=200, n2=200))
     bench_gather(m, GatherSpec(axis=1, m1=1000, m2=1000, n1=200, n2=200))

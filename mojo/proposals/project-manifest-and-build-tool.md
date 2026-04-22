@@ -1,4 +1,6 @@
-# Mojo project manifest and build tool
+# Mojo Project Manifest and Build Tool
+
+**Status**: Abandoned.
 
 A *project manifest* is a file that describes the source code files that make up
 a library or executable, and how those files are meant to be built, distributed,
@@ -98,5 +100,5 @@ Below are some topics that we would love to hear community members’ opinions o
   favor of doing so, but on the other hand, we see tradeoffs as well, and a
   purely declarative form could be used.
 - Any other thoughts you wish to contribute — we are build systems and language
-  tooling nerds! Share your thoughts in [our Discord server](https://modul.ar/discord),
-  and let’s geek out.
+  tooling nerds! Share your thoughts in
+  [our Discord server](https://modul.ar/discord), and let’s geek out.

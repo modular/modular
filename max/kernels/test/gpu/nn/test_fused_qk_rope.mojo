@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import DimList, NDBuffer
-from gpu.host import DeviceContext
-from internal_utils import DeviceNDBuffer, HostNDBuffer, assert_almost_equal
+from std.gpu.host import DeviceContext
+from internal_utils import assert_almost_equal
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
     KVCacheStaticParams,
 )
-from memory import memcpy
+from layout import (
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    UNKNOWN_VALUE,
+    row_major,
+)
+from std.memory import memcpy
+
 from nn.fused_qk_rope import fused_qk_rope
 from testdata.fused_qk_rope_goldens import (
     freqs_cis_table_input,
@@ -28,225 +36,266 @@ from testdata.fused_qk_rope_goldens import (
     q_out_golden,
 )
 
-from utils import IndexList
+from std.utils import Index, IndexList
 
 
-def _init_device_ndbuffer_from_goldens[
-    dtype: DType, //, shape: DimList
-](goldens: List[Scalar[dtype]], ctx: DeviceContext) -> DeviceNDBuffer[
-    dtype, len(shape), shape=shape
-]:
-    """Initializes a device buffer with a set of golden values."""
-    host_tensor = HostNDBuffer[dtype, len(shape), shape=shape]()
-    memcpy(
-        dest=host_tensor.tensor.data,
-        src=goldens.unsafe_ptr(),
-        count=len(goldens),
-    )
-
-    # Copy tensor to device.
-    device_tensor = DeviceNDBuffer[
-        host_tensor.dtype, host_tensor.rank, shape = host_tensor.shape
-    ](ctx=ctx)
-    ctx.enqueue_copy(device_tensor.buffer, host_tensor.tensor.data)
-    ctx.synchronize()
-
-    # Ensure the host buffer outlives the copy.
-    _ = host_tensor^
-
-    return device_tensor
-
-
-def _fused_qk_rope[
-    dtype: DType, q_shape: DimList, freqs_shape: DimList, //
-](
-    q_proj: DeviceNDBuffer[dtype, shape=q_shape],
-    kv_collection: ContinuousBatchingKVCacheCollection,
-    freqs_cis: DeviceNDBuffer[dtype, shape=freqs_shape],
-    layer_idx: UInt32,
-    output: DeviceNDBuffer[dtype, shape=q_shape],
-    context: DeviceContext,
-) -> None:
-    """Wrapper that takes DeviceNDBuffer, to ensure lifetimes of data."""
-    fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
-        q_proj=rebind[NDBuffer[dtype, 4, MutableAnyOrigin, shape=q_shape]](
-            q_proj.tensor
-        ),
-        kv_collection=kv_collection,
-        freqs_cis=rebind[
-            NDBuffer[dtype, 2, MutableAnyOrigin, shape=freqs_shape]
-        ](freqs_cis.tensor),
-        layer_idx=layer_idx,
-        output=rebind[NDBuffer[dtype, 4, MutableAnyOrigin, shape=q_shape]](
-            output.tensor
-        ),
-        context=context,
-    )
-
-    # Synchronize here so that device buffers outlive the execution.
-    context.synchronize()
-
-
-def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) -> None:
+def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
     """Verifies fused_qk_rope against golden values computed with PyTorch."""
-    constrained[dtype is DType.float32, "goldens only for float32, currently"]()
+    comptime assert (
+        dtype == DType.float32
+    ), "goldens only for float32, currently"
 
     # Set up test hyperparameters.
-    alias batch_size = 2
-    alias start_positions = List[UInt32](0, 5)
-    alias lookup_table = List[UInt32](0, 1)
-    alias seq_len = 3
-    alias max_seq_len = 16
-    alias num_layers = 1
+    comptime batch_size = 2
+    comptime start_positions: List[UInt32] = [0, 5]
+    comptime seq_len = 3
+    comptime max_seq_len = 16
+    comptime num_layers = 1
+    var lookup_table: List[UInt32] = [0, 1]
 
-    fn _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
-        constrained[len(items) > 0, "empty list in _max"]()
-        max_item = items[0]
-        for i in range(1, len(items)):
-            if items[i] > max_item:
-                max_item = items[i]
+    def _max[dtype: DType, items: List[Scalar[dtype]]]() -> Scalar[dtype]:
+        comptime assert len(items) > 0, "empty list in _max"
+        items_dyn = materialize[items]()
+        max_item = items_dyn[0]
+        for i in range(1, len(items_dyn)):
+            if items_dyn[i] > max_item:
+                max_item = items_dyn[i]
         return max_item
 
-    constrained[
-        max_seq_len
-        > (seq_len + Int(_max[DType.uint32, items=start_positions]())),
-        "KV cache size smaller than sum of sequence length and start pos",
-    ]()
-    alias num_heads = 2
-    alias dim = 16
-    alias head_dim = dim // num_heads
+    comptime assert max_seq_len > (
+        seq_len + Int(_max[DType.uint32, items=start_positions]())
+    ), "KV cache size smaller than sum of sequence length and start pos"
+    comptime num_heads = 2
+    comptime dim = 16
+    comptime head_dim = dim // num_heads
 
     # Create aliases for KV cache parameters.
-    alias kv_params = KVCacheStaticParams(
+    comptime kv_params = KVCacheStaticParams(
         num_heads=num_heads, head_size=head_dim
     )
-    alias block_shape = DimList(
+
+    # Define layouts for LayoutTensor (used for KV cache)
+    comptime kv_block_layout = Layout.row_major(
         batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
+    comptime cache_lengths_layout = Layout.row_major(UNKNOWN_VALUE)
+    comptime lookup_table_layout = Layout.row_major(UNKNOWN_VALUE)
 
-    # Construct backing buffer and the KV cache itself.
-    kv_cache_block_host = HostNDBuffer[dtype, shape=block_shape](
-        block_shape.into_index_list[6]()
+    # Define TileTensor layouts
+    comptime q_tile_layout = row_major[
+        batch_size, seq_len, num_heads, head_dim
+    ]()
+    comptime freqs_tile_layout = row_major[max_seq_len, head_dim]()
+    comptime valid_lengths_tile_layout = row_major[batch_size]()
+
+    # Create shapes
+    var kv_block_shape = IndexList[6](
+        batch_size, 2, num_layers, max_seq_len, num_heads, head_dim
     )
+    var cache_lengths_shape = Index(batch_size)
+    var lookup_table_shape = Index(batch_size)
+    var q_shape = IndexList[4](batch_size, seq_len, num_heads, head_dim)
+    var freqs_shape = IndexList[2](max_seq_len, head_dim)
+
+    # Create runtime layouts for LayoutTensor
+    var kv_block_runtime_layout = RuntimeLayout[kv_block_layout].row_major(
+        kv_block_shape
+    )
+    var cache_lengths_runtime_layout = RuntimeLayout[
+        cache_lengths_layout
+    ].row_major(cache_lengths_shape)
+    var lookup_table_runtime_layout = RuntimeLayout[
+        lookup_table_layout
+    ].row_major(lookup_table_shape)
+
+    # Create device buffers
+    var kv_block_device = ctx.enqueue_create_buffer[dtype](
+        kv_block_shape.flattened_length()
+    )
+    var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    var lookup_table_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
+    )
+    var q_device = ctx.enqueue_create_buffer[dtype](q_shape.flattened_length())
+    var freqs_device = ctx.enqueue_create_buffer[dtype](
+        freqs_shape.flattened_length()
+    )
+    var q_out_device = ctx.enqueue_create_buffer[dtype](
+        q_shape.flattened_length()
+    )
+
+    start_positions_dyn = materialize[start_positions]()
 
     # Initialize KV cache block buffer with golden values.
     k_cache_input_buffer = k_cache_input[dtype]()
-    for batch_idx in range(batch_size):
+    with kv_block_device.map_to_host() as kv_block_host:
+        var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
+            kv_block_host, kv_block_runtime_layout
+        )
+        for batch_idx in range(batch_size):
+            var dest_offset = (
+                batch_idx * 2 * num_layers * max_seq_len * num_heads * head_dim
+                + Int(start_positions_dyn[batch_idx]) * num_heads * head_dim
+            )
+            memcpy(
+                dest=kv_block_tensor.ptr + dest_offset,
+                src=k_cache_input_buffer.unsafe_ptr()
+                + (batch_idx * seq_len * dim),
+                count=seq_len * dim,
+            )
+
+    # Initialize cache_lengths with start_positions
+    with cache_lengths_device.map_to_host() as cache_lengths_host:
+        for i in range(batch_size):
+            cache_lengths_host[i] = start_positions_dyn[i]
+
+    # Initialize lookup_table
+    with lookup_table_device.map_to_host() as lookup_table_host:
+        for i in range(batch_size):
+            lookup_table_host[i] = lookup_table[i]
+
+    # Initialize query buffer with golden values
+    q_input_buffer = q_input[dtype]()
+    with q_device.map_to_host() as q_host:
         memcpy(
-            dest=kv_cache_block_host.tensor._offset(
-                IndexList[6](
-                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
-                )
-            ),
-            src=k_cache_input_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
-            count=seq_len * dim,
+            dest=q_host.unsafe_ptr(),
+            src=q_input_buffer.unsafe_ptr(),
+            count=len(q_input_buffer),
         )
 
-    # Copy KV cache block to device.
-    kv_cache_block_dev = kv_cache_block_host.copy_to_device(ctx)
+    # Initialize freqs_cis_table with golden values
+    freqs_input_buffer = freqs_cis_table_input[dtype]()
+    with freqs_device.map_to_host() as freqs_host:
+        memcpy(
+            dest=freqs_host.unsafe_ptr(),
+            src=freqs_input_buffer.unsafe_ptr(),
+            count=len(freqs_input_buffer),
+        )
 
     # Create the actual KV cache type.
     var max_cache_len_in_batch = 0
     for i in range(batch_size):
         max_cache_len_in_batch = max(
-            max_cache_len_in_batch, Int(start_positions[i])
+            max_cache_len_in_batch, Int(start_positions_dyn[i])
         )
-    cache_lengths = DeviceNDBuffer[
-        DType.uint32, 1, shape = DimList(batch_size)
-    ](ctx=ctx)
-    ctx.enqueue_copy(cache_lengths.buffer, start_positions.unsafe_ptr())
 
-    lookup_table_dev = DeviceNDBuffer[
-        DType.uint32, 1, shape = DimList(batch_size)
-    ](ctx=ctx)
-    ctx.enqueue_copy(lookup_table_dev.buffer, lookup_table.unsafe_ptr())
-
-    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
-        blocks=kv_cache_block_dev.tensor,
-        cache_lengths=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            cache_lengths.tensor
-        ),
-        lookup_table=rebind[NDBuffer[DType.uint32, 1, MutableAnyOrigin]](
-            lookup_table_dev.tensor
-        ),
-        max_seq_length=seq_len,
-        max_cache_length=max_cache_len_in_batch,
+    # Create layout tensors for KV cache (still uses LayoutTensor)
+    var kv_block_tensor = LayoutTensor[dtype, kv_block_layout](
+        kv_block_device, kv_block_runtime_layout
+    )
+    var cache_lengths_tensor = LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        cache_lengths_device.unsafe_ptr(),
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(cache_lengths_shape),
+    )
+    var lookup_table_tensor = LayoutTensor[
+        DType.uint32, Layout(UNKNOWN_VALUE), ImmutAnyOrigin
+    ](
+        lookup_table_device.unsafe_ptr(),
+        RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(lookup_table_shape),
     )
 
-    # Create and initialize query buffer.
-    q_dev = _init_device_ndbuffer_from_goldens[
-        shape = DimList(batch_size, seq_len, num_heads, head_dim)
-    ](q_input[dtype](), ctx)
+    # Create TileTensors for q, freqs, and output
+    var q_tensor = TileTensor(q_device, q_tile_layout)
+    var freqs_tensor = TileTensor(freqs_device, freqs_tile_layout)
+    var q_out_tensor = TileTensor(q_out_device, q_tile_layout)
 
-    # Create and init rotary matrix (frequencies as cos(x) + i*sin(x)).
-    freqs_cis_table_dev = _init_device_ndbuffer_from_goldens[
-        shape = DimList(max_seq_len, head_dim)
-    ](freqs_cis_table_input[dtype](), ctx)
+    kv_collection = ContinuousBatchingKVCacheCollection[dtype, kv_params](
+        blocks=LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
+            kv_block_tensor.ptr,
+            RuntimeLayout[Layout.row_major[6]()].row_major(
+                kv_block_tensor.runtime_layout.shape.value
+            ),
+        ),
+        cache_lengths=cache_lengths_tensor,
+        lookup_table=lookup_table_tensor,
+        max_seq_length=seq_len,
+        max_cache_length=UInt32(max_cache_len_in_batch),
+    )
 
     # Create and initialize golden outputs.
     expected_q_out_buffer = q_out_golden[dtype]()
-    debug_assert(
-        len(expected_q_out_buffer) == q_dev.tensor.num_elements(),
-        "invalid expected q out init",
-    )
-    expected_q_out = NDBuffer[dtype, rank = q_dev.rank, shape = q_dev.shape](
-        expected_q_out_buffer.unsafe_ptr()
-    )
+    assert (
+        len(expected_q_out_buffer) == q_shape.flattened_length()
+    ), "invalid expected q out init"
     expected_k_out_buffer = k_out_golden[dtype]()
-    debug_assert(
-        len(expected_k_out_buffer) == batch_size * seq_len * dim,
-        "invalid expected k out init",
-    )
+    assert (
+        len(expected_k_out_buffer) == batch_size * seq_len * dim
+    ), "invalid expected k out init"
 
-    # Create output buffer.
-    q_out_dev = DeviceNDBuffer[q_dev.dtype, q_dev.rank, shape = q_dev.shape](
-        ctx=ctx
+    # Create valid_lengths device buffer - all sequences have full seq_len valid
+    var valid_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
+        batch_size
     )
+    with valid_lengths_device.map_to_host() as valid_lengths_host:
+        for i in range(batch_size):
+            valid_lengths_host[i] = UInt32(seq_len)
 
-    _fused_qk_rope(
-        q_proj=q_dev,
+    # Create valid_lengths TileTensor with RuntimeInt layout and MutAnyOrigin
+    var valid_lengths_static = TileTensor(
+        valid_lengths_device, valid_lengths_tile_layout
+    )
+    var valid_lengths_tensor = TileTensor[
+        DType.uint32,
+        type_of(valid_lengths_static).LayoutType,
+        MutAnyOrigin,
+    ](
+        valid_lengths_static.ptr.unsafe_origin_cast[MutAnyOrigin](),
+        valid_lengths_static.layout,
+    ).make_dynamic[
+        DType.int64
+    ]()
+
+    fused_qk_rope[kv_collection.CacheType, interleaved=True, target="gpu"](
+        q_proj=q_tensor,
         kv_collection=kv_collection,
-        freqs_cis=freqs_cis_table_dev,
+        freqs_cis=freqs_tensor,
         layer_idx=UInt32(0),
-        output=q_out_dev,
+        valid_lengths=valid_lengths_tensor,
+        output=q_out_tensor,
         context=ctx,
     )
 
-    # Copy KV cache block from device.
-    kv_cache_block_out_host = kv_cache_block_dev.copy_from_device(ctx)
-
-    # Compare output and expected query tensors.
-    q_out_host = HostNDBuffer[q_dev.dtype, q_dev.rank, shape = q_dev.shape]()
-    ctx.enqueue_copy(q_out_host.tensor.data, q_out_dev.buffer)
     ctx.synchronize()
 
-    assert_almost_equal(
-        q_out_host.tensor.data,
-        expected_q_out.data,
-        expected_q_out.num_elements(),
-    )
-
-    # Compare output and expected key cache buffers.
-    for batch_idx in range(batch_size):
+    # Compare output and expected query tensors.
+    with q_out_device.map_to_host() as q_out_host:
         assert_almost_equal(
-            kv_cache_block_out_host.tensor._offset(
-                IndexList[6](
-                    batch_idx, 0, 0, Int(start_positions[batch_idx]), 0, 0
-                )
-            ),
-            expected_k_out_buffer.unsafe_ptr() + (batch_idx * seq_len * dim),
-            # Number of elements in one batch item.
-            len(expected_k_out_buffer) // batch_size,
+            q_out_host.as_span(),
+            Span(expected_q_out_buffer)[: q_shape.flattened_length()],
         )
 
-    # Ensure the lifetimes of the KV cache and output, since their data is
-    # accessed through NDBuffers, which isn't parametrized on lifetime.
-    _ = kv_cache_block_dev^
-    _ = q_out_dev^
-    _ = cache_lengths^
-    _ = lookup_table_dev^
+    # Compare output and expected key cache buffers.
+    with kv_block_device.map_to_host() as kv_block_out_host:
+        var kv_block_out_tensor = LayoutTensor[dtype, kv_block_layout](
+            kv_block_out_host, kv_block_runtime_layout
+        )
+        for batch_idx in range(batch_size):
+            var src_offset = (
+                batch_idx * 2 * num_layers * max_seq_len * num_heads * head_dim
+                + Int(start_positions_dyn[batch_idx]) * num_heads * head_dim
+            )
+            assert_almost_equal(
+                kv_block_out_tensor.ptr + src_offset,
+                expected_k_out_buffer.unsafe_ptr()
+                + (batch_idx * seq_len * dim),
+                # Number of elements in one batch item.
+                len(expected_k_out_buffer) // batch_size,
+            )
+
+    # Explicitly free device buffers to return memory to the buffer cache
+    _ = kv_block_device^
+    _ = cache_lengths_device^
+    _ = lookup_table_device^
+    _ = q_device^
+    _ = freqs_device^
+    _ = q_out_device^
+    _ = valid_lengths_device^
 
 
-def main() -> None:
+def main() raises -> None:
     with DeviceContext() as ctx:
         test_fused_qk_rope[DType.float32](ctx)

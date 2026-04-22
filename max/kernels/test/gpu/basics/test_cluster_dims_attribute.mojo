@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
-from gpu.id import block_idx, cluster_dim, cluster_idx
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx, cluster_dim, cluster_idx
 
-from utils.static_tuple import StaticTuple
+from std.utils.static_tuple import StaticTuple
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=cluster_dims)
-fn test_cluster_dims_attribute_kernel_with_param[
+def test_cluster_dims_attribute_kernel_with_param[
     cluster_dims: StaticTuple[Int32, 3]
 ]():
     print(
@@ -41,7 +41,7 @@ fn test_cluster_dims_attribute_kernel_with_param[
 
 
 @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
-fn test_cluster_dims_attribute_kernel():
+def test_cluster_dims_attribute_kernel():
     print(
         "CLUSTER DIMS(",
         cluster_dim.x,
@@ -66,11 +66,10 @@ fn test_cluster_dims_attribute_kernel():
 # CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 1 0 0 ) CLUSTER( 0 0 0 )
 # CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 1 1 0 ) CLUSTER( 0 1 0 )
 # CHECK-DAG: CLUSTER DIMS( 2 1 1 ) BLOCK( 0 1 0 ) CLUSTER( 0 1 0 )
-fn test_cluster_dims_attribute(ctx: DeviceContext) raises:
+def test_cluster_dims_attribute(ctx: DeviceContext) raises:
     print("== test_cluster_dims_attribute")
-    ctx.enqueue_function[test_cluster_dims_attribute_kernel](
-        grid_dim=(2, 2, 1), block_dim=(1)
-    )
+    comptime kernel = test_cluster_dims_attribute_kernel
+    ctx.enqueue_function[kernel, kernel](grid_dim=(2, 2, 1), block_dim=(1))
     ctx.synchronize()
 
 
@@ -79,16 +78,15 @@ fn test_cluster_dims_attribute(ctx: DeviceContext) raises:
 # CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 0 0 0 ) CLUSTER( 0 0 0 )
 # CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 1 0 0 ) CLUSTER( 1 0 0 )
 # CHECK-DAG: CLUSTER DIMS( 1 2 1 ) BLOCK( 1 1 0 ) CLUSTER( 1 0 0 )
-fn test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
+def test_cluster_dims_attribute_with_param(ctx: DeviceContext) raises:
     print("== test_cluster_dims_attribute_with_param")
-    alias x = StaticTuple[Int32, 3](1, 2, 1)
-    ctx.enqueue_function[test_cluster_dims_attribute_kernel_with_param[x]](
-        grid_dim=(2, 2, 1), block_dim=(1)
-    )
+    comptime x = StaticTuple[Int32, 3](1, 2, 1)
+    comptime kernel = test_cluster_dims_attribute_kernel_with_param[x]
+    ctx.enqueue_function[kernel, kernel](grid_dim=(2, 2, 1), block_dim=(1))
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_cluster_dims_attribute(ctx)
         test_cluster_dims_attribute_with_param(ctx)

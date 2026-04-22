@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,55 +11,156 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.ffi import external_call, c_int, c_size_t
-from sys import is_nvidia_gpu, CompilationTarget
-from collections.optional import OptionalReg
-from gpu.host.launch_attribute import LaunchAttributeID, LaunchAttributeValue
-from gpu.host import (
-    DeviceContext,
-    ConstantMemoryMapping,
-    DeviceFunction,
-    DeviceStream,
-    DeviceEvent,
-    LaunchAttribute,
-    FuncAttribute,
-    DeviceAttribute,
-    Dim,
-    HostBuffer,
-)
-from gpu.host.device_context import (
-    _DumpPath,
-    _checked,
-    _CharPtr,
-    _DeviceContextPtr,
-)
-from os import getenv, setenv
-from sys import (
+from std.algorithm import parallelize
+from std.collections.optional import OptionalReg
+from std.os import abort
+from std.builtin.variadics import Variadic
+from std.builtin.device_passable import DevicePassable
+from std.sys import (
     CompilationTarget,
-    is_amd_gpu,
-    has_nvidia_gpu_accelerator,
-    size_of,
     argv,
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
 )
-from sys.ffi import c_int, external_call
-from ._mpi import (
-    get_mpi_comm_world,
-    MPI_Init,
-    MPI_Comm_rank,
-    MPI_Comm_size,
-    MPI_Finalize,
+
+from std.gpu.host import (
+    ConstantMemoryMapping,
+    DeviceAttribute,
+    DeviceContext,
+    DeviceEvent,
+    DeviceStream,
+    Dim,
+    FuncAttribute,
+    LaunchAttribute,
 )
+from std.gpu.host.device_context import _DumpPath
+from std.gpu.host.launch_attribute import (
+    LaunchAttributeID,
+    LaunchAttributeValue,
+)
+
+from ._mpi import MPI_Finalize, MPI_Init
 from .shmem_api import (
-    shmem_team_t,
     SHMEM_TEAM_NODE,
+    shmem_barrier_all_on_stream,
     shmem_finalize,
     shmem_init,
-    shmem_barrier_all_on_stream,
+    shmem_init_thread_tcp,
+    shmem_init_thread_mpi,
     shmem_module_init,
+    shmem_team_t,
 )
 
 
-struct SHMEMContext(Copyable, Movable):
+def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
+    """Takes a function defining a SHMEM program and launches it
+    on one thread for each GPU you have attached.
+
+    Parameters:
+        func: The function to run once per attached GPU per node.
+
+    ```mojo
+    def simple_shift(ctx: SHMEMContext) raises:
+        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+
+        ctx.enqueue_function[simple_shift_kernel](
+            destination, grid_dim=1, block_dim=1
+        )
+
+        ctx.barrier_all()
+
+        var msg = Int32(0)
+        destination.enqueue_copy_to(UnsafePointer(to=msg))
+
+        ctx.synchronize()
+
+        var mype = shmem_my_pe()
+        print("PE:", mype, "received message:", msg)
+        assert_equal(msg, (mype + 1) % shmem_n_pes())
+
+    def main() raises:
+        shmem_launch[simple_shift]()
+    ```
+
+    This initializes SHMEM and runs the program in parallel across each attached
+    GPU, taking care of initialization and cleanup logic. It will initialize and
+    finalize MPI on the main thread if running on NVIDIA.
+
+    Any unhandled exceptions will abort with the device id and error message of
+    the exception.
+
+    Raises:
+        If SHMEM initialization or the launched function fails.
+    """
+
+    comptime if has_nvidia_gpu_accelerator():
+        _shmem_launch_mpi[func]()
+    elif has_amd_gpu_accelerator():
+        _shmem_launch_tcp[func]()
+    else:
+        CompilationTarget.unsupported_target_error[
+            operation=__get_current_function_name()
+        ]()
+
+
+def _shmem_launch_mpi[func: def(ctx: SHMEMContext) thin raises]() raises:
+    var _argv = argv()
+    var argc = len(_argv)
+    MPI_Init(argc, _argv)
+
+    # Enable any exceptions inside the closure passed to abort with the original
+    # error and device ID in the message, as `parallelize` can't run on raising
+    # functions.
+    def shmem_error_wrapper(device_id_node: Int) capturing:
+        try:
+            var ctx = DeviceContext(device_id=device_id_node)
+            with SHMEMContext(ctx) as shmem_ctx:
+                func(shmem_ctx)
+        except e:
+            abort(
+                String(
+                    "SHMEM failure on local device id: ",
+                    device_id_node,
+                    ": ",
+                    e,
+                )
+            )
+
+    var npes_node = DeviceContext.number_of_devices()
+
+    # Same number of tasks as worker threads
+    parallelize[shmem_error_wrapper](npes_node, npes_node)
+
+    # Cleanup MPI resources
+    MPI_Finalize()
+
+
+def _shmem_launch_tcp[func: def(ctx: SHMEMContext) thin raises]() raises:
+    # Enable any exceptions inside the closure passed to abort with the original
+    # error and device ID in the message, as `parallelize` can't run on raising
+    # functions.
+    def shmem_error_wrapper(device_id_node: Int) capturing:
+        try:
+            var ctx = DeviceContext(device_id=device_id_node)
+            with SHMEMContext[tcp=True](ctx) as shmem_ctx:
+                func(shmem_ctx)
+        except e:
+            abort(
+                String(
+                    "SHMEM failure on local device id: ",
+                    device_id_node,
+                    ": ",
+                    e,
+                )
+            )
+
+    var npes_node = DeviceContext.number_of_devices()
+
+    # Same number of tasks as worker threads
+    parallelize[shmem_error_wrapper](npes_node, npes_node)
+
+
+struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     """Usable as a context manager to run kernels on a GPU with SHMEM support,
     on exit it will finalize SHMEM and clean up resources.
 
@@ -80,24 +181,31 @@ struct SHMEMContext(Copyable, Movable):
     var _end_event: DeviceEvent
     var _multiprocessor_count: Int
     var _cooperative: Bool
+    var _thread_per_gpu: Bool
 
-    fn __init__(out self, team: shmem_team_t = SHMEM_TEAM_NODE) raises:
+    def __init__(
+        out self, team: shmem_team_t = SHMEM_TEAM_NODE
+    ) raises where Self.tcp == False:
         """Initializes a device context with SHMEM support.
 
-        This constructor sets up MPI, initializes SHMEM, and creates a device
+        This constructor initializes MPI and SHMEM, and creates a device
         context for the current PE's assigned GPU device.
 
         Warning: if you're not using this as a context manager, you must call
-        `shmem_finalize()` or `SHMEMContext.finalize()` manually.
+        `SHMEMContext.finalize()` manually.
 
         Raises:
             If initialization fails.
         """
-        constrained[
-            has_nvidia_gpu_accelerator(),
-            "SHMEMContext is currently only available on NVIDIA GPUs",
-        ]()
         shmem_init()
+
+        # nvshmem and rocshmem behave differently here, nvshmem requires that
+        # you set the current context to a device ID corresponding with the
+        # GPU id on the node i.e. if team_my_pe is 3 then DeviceContext.id()
+        # should also be 3. rocshmem does this inside the rocshmem_init()
+        # call, and each process will launch kernels on the associated pe
+        # from MPI, the DeviceContext.id() will always be 0, but it's
+        # associated with a different GPU in each process.
         var mype = shmem_team_my_pe(team)
         self._ctx = DeviceContext(device_id=Int(mype))
         # Store main stream to avoid retrieving it in each collective launch.
@@ -105,9 +213,83 @@ struct SHMEMContext(Copyable, Movable):
 
         # Set up priority stream and events to be reused across collective launches
         var priority = self._ctx.stream_priority_range().greatest
-        self._priority_stream = self._ctx.create_stream(
-            priority=priority, blocking=False
+        self._priority_stream = self._ctx.create_stream(priority=priority)
+        self._begin_event = self._ctx.create_event()
+        self._end_event = self._ctx.create_event()
+
+        # Store attributes to avoid retrieving them in each collective launch.
+        self._multiprocessor_count = self._ctx.get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
         )
+
+        self._cooperative = Bool(
+            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+        )
+        self._thread_per_gpu = False
+
+    def __init__(out self, ctx: DeviceContext) raises where Self.tcp == False:
+        """Initializes a device context with SHMEM support, using one thread
+        per GPU.
+
+        This constructor expects that MPI has already been initialized in the
+        main thread, it then initializes SHMEM, and creates a device context for
+        the associated PE on this node.
+
+        Warning: if you're not using this as a context manager, you must call
+        `SHMEMContext.finalize()` manually.
+
+        Raises:
+            If initialization fails.
+        """
+        shmem_init_thread_mpi(ctx)
+        self._ctx = ctx
+        # Store main stream to avoid retrieving it in each collective launch.
+        self._main_stream = self._ctx.stream()
+
+        # Set up priority stream and events to be reused across collective launches
+        var priority = self._ctx.stream_priority_range().greatest
+        self._priority_stream = self._ctx.create_stream(priority=priority)
+        self._begin_event = self._ctx.create_event()
+        self._end_event = self._ctx.create_event()
+
+        # Store attributes to avoid retrieving them in each collective launch.
+        self._multiprocessor_count = self._ctx.get_attribute(
+            DeviceAttribute.MULTIPROCESSOR_COUNT
+        )
+
+        self._cooperative = Bool(
+            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
+        )
+        self._thread_per_gpu = True
+
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        node_id: Int = -1,
+        total_nodes: Int = -1,
+        gpus_per_node: Int = -1,
+        server_ip: String = "-1",
+        server_port: Int = -1,
+    ) raises where Self.tcp == True:
+        """Initializes a device context with SHMEM support, using one thread
+        per GPU and TCP bootstrapping with a unique ID.
+
+        Warning: if you're not using this as a context manager, you must call
+        `SHMEMContext.finalize()` manually.
+
+        Raises:
+            If initialization fails.
+        """
+        shmem_init_thread_tcp(
+            ctx, node_id, total_nodes, gpus_per_node, server_ip, server_port
+        )
+        self._ctx = ctx
+        # Store main stream to avoid retrieving it in each collective launch.
+        self._main_stream = self._ctx.stream()
+
+        # Set up priority stream and events to be reused across collective launches
+        var priority = self._ctx.stream_priority_range().greatest
+        self._priority_stream = self._ctx.create_stream(priority=priority)
         self._begin_event = self._ctx.create_event()
         self._end_event = self._ctx.create_event()
 
@@ -117,12 +299,11 @@ struct SHMEMContext(Copyable, Movable):
         )
         # TODO(MSTDL-1761): add ability to query AMD cooperative launch
         # capability with: hipLaunchAttributeCooperative and create function
-        # that works across NVIDIA/AMD.
-        self._cooperative = Bool(
-            self._ctx.get_attribute(DeviceAttribute.COOPERATIVE_LAUNCH)
-        )
+        # that works across NVIDIA/AMD. For now assume cooperative capability.
+        self._cooperative = True
+        self._thread_per_gpu = True
 
-    fn __enter__(var self) -> Self:
+    def __enter__(var self) -> Self:
         """Context manager entry method.
 
         Returns:
@@ -130,21 +311,29 @@ struct SHMEMContext(Copyable, Movable):
         """
         return self^
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         """Context manager exit method.
 
         Automatically finalizes SHMEM when exiting the context.
         """
-        self.finalize()
+        try:
+            self.finalize()
+        except e:
+            abort(String(e))
 
-    fn finalize(mut self):
+    def finalize(mut self) raises:
         """Finalizes the SHMEM runtime environment.
 
         Cleans up SHMEM and MPI resources.
+
+        Raises:
+            If SHMEM or MPI finalization fails.
         """
         shmem_finalize()
+        if not self._thread_per_gpu:
+            MPI_Finalize()
 
-    fn barrier_all(self) raises:
+    def barrier_all(self) raises:
         """Performs a barrier synchronization across all PEs.
 
         All PEs must call this function before any PE can proceed past the
@@ -155,7 +344,7 @@ struct SHMEMContext(Copyable, Movable):
         """
         shmem_barrier_all_on_stream(self._main_stream)
 
-    fn enqueue_create_buffer[
+    def enqueue_create_buffer[
         dtype: DType
     ](self, size: Int) raises -> SHMEMBuffer[dtype]:
         """Creates a SHMEM buffer that can be accessed by all PEs.
@@ -174,67 +363,20 @@ struct SHMEMContext(Copyable, Movable):
         """
         return SHMEMBuffer[dtype](self._ctx, size)
 
-    fn enqueue_create_host_buffer[
-        dtype: DType
-    ](self, size: Int) raises -> HostBuffer[dtype]:
-        """Enqueues the creation of a HostBuffer.
-
-        This function allocates memory on the host that is accessible by the device.
-        The memory is page-locked (pinned) for efficient data transfer between host and device.
-
-        Pinned memory is guaranteed to remain resident in the host's RAM, not be
-        paged/swapped out to disk. Memory allocated normally (for example, using
-        [`UnsafePointer.alloc()`](/mojo/stdlib/memory/unsafe_ptr/UnsafePointer#alloc))
-        is pageable—individual pages of memory can be moved to secondary storage
-        (disk/SSD) when main memory fills up.
-
-        Using pinned memory allows devices to make fast transfers
-        between host memory and device memory, because they can use direct
-        memory access (DMA) to transfer data without relying on the CPU.
-
-        Allocating too much pinned memory can cause performance issues, since it
-        reduces the amount of memory available for other processes.
-
-        Parameters:
-            dtype: The data type to be stored in the allocated memory.
-
-        Args:
-            size: The number of elements of `type` to allocate memory for.
-
-        Returns:
-            A `HostBuffer` object that wraps the allocated host memory.
-
-        Raises:
-            If memory allocation fails or if the device context is invalid.
-
-        Example:
-
-        ```mojo
-        from gpu.host import DeviceContext
-
-        with DeviceContext() as ctx:
-            # Allocate host memory accessible by the device
-            var host_buffer = ctx.enqueue_create_host_buffer[DType.float32](1024)
-
-            # Use the host buffer for device operations
-            # ...
-        ```
-        """
-        return HostBuffer[dtype](self._ctx, size)
-
     @always_inline
     @parameter
-    fn enqueue_function[
-        func_type: AnyTrivialRegType, //,
-        func: func_type,
-        *Ts: AnyType,
+    def enqueue_function[
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
+        func: def(* args: * declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
         self,
-        *args: *Ts,
+        *args: *actual_arg_types,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -246,9 +388,10 @@ struct SHMEMContext(Copyable, Movable):
         """Compiles and enqueues a kernel for execution on this device.
 
         Parameters:
-            func_type: The dtype of the function to launch.
+            declared_arg_types: The declared argument types from the function
+                signature (usually inferred).
             func: The function to launch.
-            Ts: The dtypes of the arguments being passed to the function.
+            actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -274,29 +417,17 @@ struct SHMEMContext(Copyable, Movable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from shmem import SHMEMContext
 
-        fn kernel():
+        def kernel():
             print("hello from the GPU")
 
-        with DeviceContext() as ctx:
+        with SHMEMContext() as ctx:
             ctx.enqueue_function[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
-
-        If you are reusing the same function and parameters multiple times, this
-        incurs 50-500 nanoseconds of overhead per enqueue, so you can compile it
-        first to remove the overhead:
-
-        ```mojo
-        with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.synchronize()
-        ```
         """
-        var gpu_kernel = self._ctx.compile_function[
+        var gpu_kernel = self._ctx.compile_function_experimental[
             func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
@@ -306,9 +437,9 @@ struct SHMEMContext(Copyable, Movable):
 
         shmem_module_init(gpu_kernel)
 
-        self._ctx._enqueue_function_unchecked(
+        self._ctx._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -317,19 +448,24 @@ struct SHMEMContext(Copyable, Movable):
             constant_memory=constant_memory^,
         )
 
+        shmem_module_finalize(gpu_kernel)
+
     @always_inline
     @parameter
-    fn enqueue_function_collective[
-        func_type: AnyTrivialRegType, //,
+    def enqueue_function_collective_checked[
+        func_type: TrivialRegisterPassable,
+        declared_arg_types: TypeList[Trait=AnyType, ...],
+        //,
         func: func_type,
-        *Ts: AnyType,
+        signature_func: def(* args: * declared_arg_types) thin -> None,
+        *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
         _dump_sass: _DumpPath = False,
         _ptxas_info_verbose: Bool = False,
     ](
         self,
-        *args: *Ts,
+        *args: *actual_arg_types,
         grid_dim: Dim,
         block_dim: Dim,
         cluster_dim: OptionalReg[Dim] = None,
@@ -342,8 +478,12 @@ struct SHMEMContext(Copyable, Movable):
 
         Parameters:
             func_type: The dtype of the function to launch.
+            declared_arg_types: The declared argument types from the function
+                signature (usually inferred).
             func: The function to launch.
-            Ts: The dtypes of the arguments being passed to the function.
+            signature_func: The kernel function, passed again for type checking.
+                Typically the same as `func`.
+            actual_arg_types: The types of the arguments being passed (usually inferred).
             dump_asm: To dump the compiled assembly, pass `True`, or a file
                 path to dump to, or a function returning a file path.
             dump_llvm: To dump the generated LLVM code, pass `True`, or a file
@@ -369,9 +509,9 @@ struct SHMEMContext(Copyable, Movable):
         compiling it first:
 
         ```mojo
-        from gpu.host import DeviceContext
+        from std.gpu.host import DeviceContext
 
-        fn kernel():
+        def kernel():
             print("hello from the GPU")
 
         with DeviceContext() as ctx:
@@ -385,14 +525,17 @@ struct SHMEMContext(Copyable, Movable):
 
         ```mojo
         with DeviceContext() as ctx:
-            var compile_func = ctx.compile_function[kernel]()
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
-            ctx.enqueue_function(compile_func, grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
+            ctx.enqueue_function_experimental[kernel](grid_dim=1, block_dim=1)
             ctx.synchronize()
         ```
         """
+        comptime assert (
+            has_nvidia_gpu_accelerator()
+        ), "only available on NVIDIA GPUs"
         var gpu_kernel = self._ctx.compile_function[
             func,
+            signature_func,
             dump_asm=dump_asm,
             dump_llvm=dump_llvm,
             _dump_sass=_dump_sass,
@@ -454,9 +597,9 @@ struct SHMEMContext(Copyable, Movable):
                 "Warning: cooperative launch not supported on at least one PE;"
                 " GPU-side synchronization may cause hang"
             )
-        self._priority_stream._enqueue_function_unchecked(
+        self._priority_stream._enqueue_function(
             gpu_kernel,
-            args,
+            *args,
             grid_dim=Dim(grid_x, grid_y, grid_z),
             block_dim=block_dim,
             cluster_dim=cluster_dim,
@@ -467,9 +610,10 @@ struct SHMEMContext(Copyable, Movable):
         # Mark point in priority stream and wait for it to complete in main stream
         self._priority_stream.record_event(self._end_event)
         self._main_stream.enqueue_wait_for(self._end_event)
+        shmem_module_finalize(gpu_kernel)
 
     @always_inline
-    fn synchronize(self) raises:
+    def synchronize(self) raises:
         """Blocks until all asynchronous calls on the stream associated with
         this device context have completed.
 
@@ -480,10 +624,31 @@ struct SHMEMContext(Copyable, Movable):
         self._ctx.synchronize()
 
     @always_inline
-    fn get_device_context(self) -> DeviceContext:
+    def get_device_context(self) -> DeviceContext:
         """Returns the device context associated with this SHMEMContext.
 
         Returns:
             The device context associated with this SHMEMContext.
         """
         return self._ctx
+
+    @staticmethod
+    @always_inline
+    def number_of_devices(
+        *, api: String = String(DeviceContext.default_device_info.api)
+    ) -> Int:
+        """Returns the number of devices available that support the specified API.
+
+        This function queries the system for available devices that support the
+        requested API (such as CUDA or HIP). It's useful for determining how many
+        accelerators are available before allocating resources or distributing work.
+
+        Args:
+            api: Requested device API (for example, "cuda" or "hip"). Defaults
+                to the device API specified by current target accelerator.
+
+        Returns:
+            The number of available devices supporting the specified API.
+
+        """
+        return DeviceContext.number_of_devices(api=api)

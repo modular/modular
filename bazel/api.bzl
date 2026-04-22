@@ -1,167 +1,120 @@
 """Public API accessors to reduce the number of load statements needed in BUILD.bazel files."""
 
-load("@com_github_grpc_grpc//bazel:python_rules.bzl", _py_grpc_library = "py_grpc_library")
-load("@rules_pkg//pkg:mappings.bzl", _strip_prefix = "strip_prefix")
-load("@rules_proto//proto:defs.bzl", _proto_library = "proto_library")
+load("@rules_pkg//pkg:mappings.bzl", _pkg_filegroup = "pkg_filegroup", _pkg_files = "pkg_files", _strip_prefix = "strip_prefix")
+load("//bazel/internal:copy_files.bzl", _copy_files = "copy_files")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:lit.bzl", _lit_tests = "lit_tests")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_cc_binary.bzl", _modular_cc_binary = "modular_cc_binary")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_cc_library.bzl", _modular_cc_library = "modular_cc_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_cc_test.bzl", _modular_cc_test = "modular_cc_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_multi_py_version_test.bzl", _modular_multi_py_version_test = "modular_multi_py_version_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_binary.bzl", _modular_py_binary = "modular_py_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_library.bzl", _modular_py_library = "modular_py_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_py_test.bzl", _modular_py_test = "modular_py_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_py_venv.bzl", _modular_py_venv = "modular_py_venv")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:modular_run_binary_test.bzl", _modular_run_binary_test = "modular_run_binary_test")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_sphinx_docs.bzl", _modular_sphinx_docs = "modular_sphinx_docs")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:modular_versioned_expand_template.bzl", _modular_versioned_expand_template = "modular_versioned_expand_template")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_binary.bzl", _mojo_binary = "mojo_binary")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_filecheck_test.bzl", _mojo_filecheck_test = "mojo_filecheck_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_library.bzl", _mojo_library = "mojo_library")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:mojo_shared_library.bzl", _mojo_shared_library = "mojo_shared_library")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test.bzl", _mojo_test = "mojo_test")  # buildifier: disable=bzl-visibility
 load("//bazel/internal:mojo_test_environment.bzl", _mojo_test_environment = "mojo_test_environment")  # buildifier: disable=bzl-visibility
+load("//bazel/internal:py_repl.bzl", _py_repl = "py_repl")  # buildifier: disable=bzl-visibility
 load("//bazel/pip:pip_requirement.bzl", _requirement = "pip_requirement")
 
+lit_tests = _lit_tests
+modular_multi_py_version_test = _modular_multi_py_version_test
+modular_py_binary = _modular_py_binary
 modular_py_venv = _modular_py_venv
-mojo_filecheck_test = _mojo_filecheck_test
+modular_run_binary_test = _modular_run_binary_test
+modular_versioned_expand_template = _modular_versioned_expand_template
+mojo_binary = _mojo_binary
+mojo_library = _mojo_library
+mojo_shared_library = _mojo_shared_library
 mojo_test = _mojo_test
+mojo_filecheck_test = _mojo_filecheck_test
+modular_sphinx_docs = _modular_sphinx_docs
 mojo_test_environment = _mojo_test_environment
-proto_library = _proto_library
-py_grpc_library = _py_grpc_library
+pkg_files = _pkg_files
+pkg_filegroup = _pkg_filegroup
+py_repl = _py_repl
 requirement = _requirement
 strip_prefix = _strip_prefix
 
-# Deps that aren't open source so we need to remap to pull from the wheel instead.
-_DEPS_FROM_WHEEL = [
-    "//max",
-    "//max/_core_mojo",
-    "//max/driver",
-    "//max/dtype",
-    "//max/engine",
-    "//max/experimental",
-    "//max/interfaces",
-    "//max/mlir",
-    "//max/profiler",
-    "//max/support",
-    "//max/torch",
-    "//max:_core",
-]
+def modular_py_library(name, deps = [], **kwargs):
+    if name == "dkv":
+        _modular_py_library(name = name, **kwargs)
+    else:
+        _modular_py_library(name = name, deps = deps, **kwargs)
 
-def _is_internal_reference(dep):
-    """Check if a dependency is an internal reference."""
-    return dep.startswith((
-        "//GenericML",
-        "//KGEN/",
-        "//Kernels/",
-        "//SDK/integration-test/pipelines/python",
-        "//SDK:max",
-    )) or "base_max_config_yaml_files" in dep or "benchmark_config_yaml_files" in dep
+def modular_py_test(tags = [], **kwargs):
+    if "external-exclusive" in tags:
+        tags.append("exclusive")
+    _modular_py_test(tags = tags, use_resource_tags = True, **kwargs)
 
-def _has_internal_reference(deps):
-    return any([_is_internal_reference(dep) for dep in deps])
-
-def _remove_internal_data(data):
-    # TODO: This is a hack that potentially breaks things at runtime
-    if type(data) != type([]):
-        return []
-    return [d for d in data if not _is_internal_reference(d)]
-
-def _rewrite_deps(deps):
-    """Rewrite dependencies to use the open-source package names, or to come from the wheel."""
+def _process_cc_deps(data, deps):
+    # TODO: This will break in the presence of select()s
+    extra_data = []
     new_deps = []
     for dep in deps:
-        if dep.startswith("//SDK/lib/API/python/"):
-            replaced_dep = dep.replace("//SDK/lib/API/python/", "//")
-            if replaced_dep in _DEPS_FROM_WHEEL:
-                replaced_dep = "@modular_wheel//:wheel"
-            if replaced_dep not in new_deps:
-                new_deps.append(replaced_dep)
-        elif dep.startswith("//open-source/max/mojo"):
-            replaced_dep = dep.replace("//open-source/max/mojo", "//mojo")
-            new_deps.append(replaced_dep)
+        if dep == "//max/internal:max":
+            new_deps.append("@modular_wheel//:max_lib")
+            extra_data.append("@modular_wheel//:wheel")
         else:
             new_deps.append(dep)
-    return new_deps
 
-def modular_py_library(
-        data = [],
-        deps = [],
-        visibility = ["//visibility:public"],
-        **kwargs):
-    if _has_internal_reference(deps):
-        return
+    return {
+        "deps": new_deps,
+        "data": data + extra_data,
+    }
 
-    _modular_py_library(
-        data = _remove_internal_data(data),
-        deps = _rewrite_deps(deps),
-        visibility = visibility,
-        **kwargs
+def modular_cc_binary(data = [], deps = [], **kwargs):
+    _modular_cc_binary(
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
+    )
+
+def modular_cc_library(data = [], deps = [], **kwargs):
+    _modular_cc_library(
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
+    )
+
+def modular_cc_test(data = [], deps = [], **kwargs):
+    _modular_cc_test(
+        **(kwargs | _process_cc_deps(
+            data = data,
+            deps = deps,
+        ))
+    )
+
+def modular_generate_stubfiles(name, pyi_srcs, deps = [], tags = [], **_kwargs):
+    modular_py_library(
+        name = name,
+        pyi_srcs = pyi_srcs,
+        deps = deps + ["@modular_wheel//:wheel"],
+        tags = tags + ["no-pydeps"],  # Pydeps works internally but not externally
     )
 
 # buildifier: disable=function-docstring
-def modular_py_binary(
-        name,
-        deps = [],
-        data = [],
-        env = {},
-        **kwargs):
-    if name == "pipelines":
-        # TODO: Fix this hack, there is a layering issue with what is open source right now
-        deps.append("//mojo/python/mojo")
-        data = []
-        env = {}
+def copy_files(srcs, **kwargs):
+    new_srcs = []
+    for src in srcs:
+        if src.startswith("//GraphCompiler:"):
+            if "@modular_wheel//:tblgen_python_srcs" not in new_srcs:
+                new_srcs.append("@modular_wheel//:tblgen_python_srcs")
+        else:
+            new_srcs.append(src)
 
-    # TODO: There is some data we can fix by pulling from the wheel
-    if _has_internal_reference(deps) or _has_internal_reference(data):
-        return
-
-    _modular_py_binary(
-        name = name,
-        data = data,
-        env = env,
-        deps = _rewrite_deps(deps),
-        **kwargs
-    )
-
-def mojo_library(deps = [], **kwargs):
-    if _has_internal_reference(deps):
-        return
-
-    _mojo_library(
-        deps = deps,
-        **kwargs
-    )
-
-def mojo_binary(
-        data = [],
-        deps = [],
-        **kwargs):
-    if _has_internal_reference(deps) or _has_internal_reference(data):
-        return
-    _mojo_binary(
-        data = data,
-        deps = deps,
-        **kwargs
-    )
-
-# buildifier: disable=function-docstring
-def modular_run_binary_test(name, external_noop = False, **kwargs):
-    if external_noop:
-        return
-
-    _modular_run_binary_test(
-        name = name,
-        **kwargs
-    )
-
-def lit_tests(tools = [], data = [], **kwargs):
-    if _has_internal_reference(data) or _has_internal_reference(tools):
-        return
-
-    _lit_tests(
-        data = data,
-        tools = tools,
-        **kwargs
-    )
+    _copy_files(srcs = new_srcs, **kwargs)
 
 def _noop(**_kwargs):
     pass
 
-modular_py_test = _noop
-mojo_kgen_lib = _noop
-pkg_attributes = _noop
-pkg_filegroup = _noop
-pkg_files = _noop
+install_docs = _noop
+modular_nanobind_extension = _noop

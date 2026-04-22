@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,71 +11,61 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from register import register_internal
+from layout import Coord, TileTensor
+from layout.coord import DynamicCoord
+from layout.tile_layout import Layout
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
 # Reshape assumes inputs are contiguous. It should always be fused last and
 # a non-contiguous tensor cannot be fused *into* this as input.
 @always_inline
-fn reshape[
-    rank: Int,
-    dtype: DType, //,
+def reshape[
+    dtype: DType,
+    //,
     output_rank: Int,
-    single_thread_blocking_override: Bool = True,
 ](
-    input: NDBuffer[dtype, rank, *_, **_],
+    input: TileTensor[dtype, ...],
     new_shape: IndexList[output_rank],
-) -> NDBuffer[dtype, output_rank, input.origin]:
-    var stride_tuple = __type_of(new_shape)()
+) -> TileTensor[
+    dtype,
+    Layout[
+        shape_types=DynamicCoord[DType.int64, output_rank].element_types,
+        stride_types=DynamicCoord[DType.int64, output_rank].element_types,
+    ],
+    input.origin,
+    address_space=input.address_space,
+]:
+    var stride_tuple = type_of(new_shape)()
     var stride: Int = 1
 
     # Create contiguous strides.
-    @parameter
-    for i in reversed(range(output_rank)):
+    comptime for i in reversed(range(output_rank)):
         # Start from the back so we can accumulate the strides.
         stride_tuple[i] = stride
         stride *= new_shape[i]
 
     # Return the a view with the new shape.
-    return NDBuffer[dtype, output_rank, address_space = input.address_space](
-        input.data, new_shape, stride_tuple
+    return TileTensor(
+        input.ptr,
+        Layout(Coord(new_shape), Coord(stride_tuple)),
     )
 
 
-@register_internal("ndbuffer_reshape")
 @always_inline
-fn ndbuffer_reshape[
-    rank: Int,
-    output_rank: Int,
-    dtype: DType,
-    single_thread_blocking_override: Bool,
-](
-    input: NDBuffer[dtype, rank],
-    new_shape: IndexList[output_rank],
-) -> NDBuffer[
-    dtype, output_rank, input.origin
-]:
-    return reshape[
-        output_rank,
-        single_thread_blocking_override=single_thread_blocking_override,
-    ](input, new_shape)
-
-
-@always_inline
-fn reshape_shape[
-    input_rank: Int,
+def reshape_shape[
     output_rank: Int,
     input_type: DType,
     target_shape_type: DType,
-    single_thread_blocking_override: Bool,
 ](
-    input_buf: NDBuffer[input_type, input_rank],
-    target_shape_buf: NDBuffer[target_shape_type, 1],
+    input_buf: TileTensor[input_type, ...],
+    target_shape_buf: TileTensor[target_shape_type, ...],
 ) raises -> IndexList[output_rank]:
-    if output_rank != target_shape_buf.dim(0):
+    comptime assert (
+        target_shape_buf.flat_rank == 1
+    ), "target_shape_buf must be rank 1"
+    if output_rank != Int(target_shape_buf.dim(0)):
         raise Error("[reshape] requires (len(target_shape) == output_rank)")
 
     # move the target shape from buffer into a static int tuple; also check and

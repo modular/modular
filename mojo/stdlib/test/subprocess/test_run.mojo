@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,10 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from subprocess import run
+from std.subprocess import run
 
-from testing import *
+from std.testing import *
 
 
-def main():
+def test_run() raises:
     assert_not_equal(run("ls"), "")
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

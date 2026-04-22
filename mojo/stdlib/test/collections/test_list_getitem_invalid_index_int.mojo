@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,13 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.testing import TestSuite
+
 
 # CHECK-LABEL: test_fail_list_index
-fn test_fail_list_index():
+def test_fail_list_index() raises:
     print("== test_fail_list_index")
-    # CHECK: List index out of bounds: index (4) valid range: -3 <= index < 3
+    # CHECK: index 4 is out of bounds, valid range is 0 to 2
     nums = [1, 2, 3]
     print(nums[4])
 
@@ -23,5 +25,5 @@ fn test_fail_list_index():
     print("is never reached")
 
 
-fn main():
-    test_fail_list_index()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

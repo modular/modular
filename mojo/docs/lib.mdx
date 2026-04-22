@@ -3,28 +3,16 @@ title: Mojo reference
 sidebar_label: Overview
 hide_table_of_contents: false
 description: Mojo standard library and other references
-listing:
-  - id: stdlib
-    contents: 'stdlib/*/index.md'
-    type: grid
-    page-size: 99
-  - id: kernels
-    contents: 'kernels/*/index.md'
-    type: grid
-    page-size: 99
-  - id: maxlib
-    contents: '../max/api/mojo/*/index.md'
-    type: grid
-    page-size: 20
 ---
+
+import DocCardList from '@theme/DocCardList';
+import {useSidebarCategory} from '@site/src/util/sidebarHelpers';
 
 This section includes the Mojo API references:
 
 - [Standard library](#standard-library): Common Mojo APIs.
 - [MAX AI Kernels library](#max-ai-kernels-library). Mojo APIs for writing
   high-performance computational kernels and custom operations for AI models.
-- [MAX library](#max-library). MAX Mojo APIs, including tensor APIs for custom
-  operations, and legacy MAX APIs.
 - [Decorators](#decorators). Mojo decorators reference.
 
 ## How to read the Mojo API docs
@@ -37,7 +25,7 @@ quick cheat-sheet on reading struct and function signatures.
 Function arguments appear in parentheses after the function name:
 
 ```mojo
-fn example_fn(pos: Int, /, pos_or_kw: Int, *, kw_only: Bool = False):
+def example_fn(pos: Int, /, pos_or_kw: Int, *, kw_only: Bool = False):
     ...
 ```
 
@@ -69,7 +57,7 @@ An argument may also be preceded by an _argument convention_, which indicates
 how the value is passed:
 
 ```mojo
-fn sort(mut names: List[String]):
+def sort(mut names: List[String]):
 ```
 
 The most common conventions are:
@@ -98,57 +86,82 @@ they're usually inferred.
 
 Like arguments, parameters can be positional-only, keyword-or-positional, or
 keyword-only, and they can be required or optional. The `/`, `*`, and `=`
-characters have the same meaning in parameter lists as they do in argument lists.
+characters have the same meaning in parameter lists as they do in argument
+lists.
 
 ## Standard library
 
 The Mojo standard library provides nearly everything you'll need for
 writing Mojo programs, including basic data types like
-[`Int`](/mojo/stdlib/builtin/int/Int) and
-[`SIMD`](/mojo/stdlib/builtin/simd/SIMD), collection types like
-[`List`](/mojo/stdlib/collections/list/List), reusable
-[algorithms](/mojo/stdlib/algorithm/) and modules to support
-[GPU programming](/mojo/stdlib/gpu).
+[`Int`](/mojo/std/builtin/int/Int) and
+[`SIMD`](/mojo/std/builtin/simd/SIMD), collection types like
+[`List`](/mojo/std/collections/list/List), reusable
+[algorithms](/mojo/std/algorithm/) and modules to support
+[GPU programming](/mojo/std/gpu).
 
 Top-level packages:
 
-:::🔥#stdlib
-:::
+export const StdLibCards = () => {
+  const stdLib = useSidebarCategory('Standard library');
+  if (!stdLib) return null;
+  // Don't show the index page as a card.
+  const items = stdLib.items.filter(
+    item => !(item.type === 'link' && item.docId === 'mojo/std/index')
+  );
+  return <DocCardList items={items} />;
+};
+
+<StdLibCards />
+
+## Layout library
+
+The layout library allows you to describe the memory layout of multidimensional
+data and build high-performance GPU kernels on top of those layouts. It maps
+multidimensional coordinates to linear offsets in memory and provides tensor
+views that support tiling, vectorization, and distribution of work across GPU
+threads—all without copying the underlying data. To learn more, see
+[Introduction to layouts](/mojo/manual/layout/layouts) and [Using
+LayoutTensor](/mojo/manual/layout/tensors).
+
+Top-level packages:
+
+export const LayoutCards = () => {
+  const layout = useSidebarCategory('Layout library');
+  if (!layout) return null;
+  // Don't show the index page as a card.
+  const items = layout.items.filter(
+    item => !(item.type === 'link' && item.docId === 'mojo/layout/index')
+  );
+  return <DocCardList items={items} />;
+};
+
+<LayoutCards />
 
 ## MAX AI kernels library
 
 The MAX AI kernels library provides a collection of highly optimized, reusable
 compute kernels for high-performance numerical and AI workloads. These kernels
 serve as the foundational building blocks for writing [MAX custom
-operations](/max/custom-ops/) or standalone [GPU
+operations](/max/develop/custom-ops/) or standalone [GPU
 kernels](/mojo/manual/gpu/basics) that are portable across CPUs and GPUs.
 
 Top-level packages:
 
-:::🔥#kernels
-:::
+export const KernelsCards = () => {
+  const kernels = useSidebarCategory('MAX AI kernels');
+  return kernels ? <DocCardList items={kernels.items} /> : null;
+};
 
-
-## MAX library
-
-The Mojo MAX library provides APIs to interact with the MAX graph compiler
-and runtime.
-
-Top-level packages:
-
-:::🔥#maxlib
-:::
-
+<KernelsCards />
 
 ## Decorators
 
 A Mojo decorator is a higher-order function that modifies or extends the
 behavior of a struct, a function, or some other code.
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
+export const DecoratorCards = () => {
+  const decorators = useSidebarCategory('Decorators');
+  return decorators ? <DocCardList items={decorators.items} /> : null;
+};
 
-export const decorators = [
-        '../manual/decorators/*.mdx'
-    ]
-
-<MDXListing mdxList={decorators} />
+<DecoratorCards />

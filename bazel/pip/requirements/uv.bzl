@@ -33,6 +33,7 @@ def _uv_lock_impl(ctx):
             py3_runtime.interpreter,
         ],
         mnemonic = "UvLock",
+        use_default_shell_env = True,
         execution_requirements = {
             "no-sandbox": "1",  # Trust the uv cache
             "requires-network": "1",  # Allow network access for uv resolution

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isclose
-from random import rand
+from std.math import isclose
+from std.random import rand
 
-from nn.conv import Naive2dConvolution
+from nn.conv.conv import Naive2dConvolution
 
-from utils.index import Index
+from std.utils.index import Index
 
 
-fn winograd_1d_convolution_3[
+def winograd_1d_convolution_3[
     dtype: DType, //, filter_len: Int
 ](
-    input: UnsafePointer[Scalar[dtype]],
-    filter: UnsafePointer[Scalar[dtype]],
-    output: UnsafePointer[Scalar[dtype]],
+    input: UnsafePointer[Scalar[dtype], _],
+    filter: UnsafePointer[Scalar[dtype], _],
+    output: UnsafePointer[mut=True, Scalar[dtype], _],
     input_len: Int,
 ):
     # TODO: Current implementation requires input_len >= 4
-    constrained[filter_len == 3]()
+    comptime assert filter_len == 3
     # TODO
     # I expected to have to reverse the filter, but
     # internal conv seems not to do that
@@ -54,31 +54,31 @@ fn winograd_1d_convolution_3[
 
 
 # CHECK-LABEL: test_conv1d_winograd
-fn test[dtype: DType](C: Int):  # Input Len
+def test[dtype: DType](C: Int):  # Input Len
     print("== test_conv1d_winograd")
 
     # TODO: make assert dynamic
-    # constrained[C >= 4]()
-    alias S: Int = 3  # Filter len
+    # comptime assert C >= 4
+    comptime S: Int = 3  # Filter len
 
     var O: Int = C - S + 1  # Output len (method="same")
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(C)
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(S)
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(O)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(O)
+    var input_ptr = alloc[Scalar[dtype]](C)
+    var filter_ptr = alloc[Scalar[dtype]](S)
+    var output_ptr = alloc[Scalar[dtype]](O)
+    var output_ref_ptr = alloc[Scalar[dtype]](O)
 
     rand[dtype](input_ptr, C)
     rand[dtype](filter_ptr, S)
 
     var output_shape = Index(1, 1, 1, O, 1)
     var input_shape = Index(1, 1, 1, C, 1)
-    alias filter_shape = Index(1, 1, S, 1, 1)
-    alias pad_d = Index(0, 0)
-    alias pad_h = Index(0, 0)
-    alias pad_w = Index(0, 0)
-    alias stride = Index(1, 1, 1)
-    alias dilation = Index(1, 1, 1)
-    alias num_groups = 1
+    comptime filter_shape = Index(1, 1, S, 1, 1)
+    comptime pad_d = Index(0, 0)
+    comptime pad_h = Index(0, 0)
+    comptime pad_w = Index(0, 0)
+    comptime stride = Index(1, 1, 1)
+    comptime dilation = Index(1, 1, 1)
+    comptime num_groups = 1
 
     Naive2dConvolution[
         dtype,
@@ -126,8 +126,8 @@ fn test[dtype: DType](C: Int):  # Input Len
     print("Succeed")
 
 
-def main():
-    alias dtype = DType.float32
+def main() raises:
+    comptime dtype = DType.float32
 
     # Make sure to test both even and odd
     test[dtype](7)

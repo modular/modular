@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu import *
-from gpu.host import DeviceContext
-from testing import *
+from std.gpu import global_idx
+from std.gpu.host import DeviceContext
+from std.testing import *
 
 
-fn add_constant_fn(
-    output: UnsafePointer[Float32],
-    input: UnsafePointer[Float32],
+def add_constant_fn(
+    output: UnsafePointer[Float32, MutAnyOrigin],
+    input: UnsafePointer[Float32, ImmutAnyOrigin],
     constant: Float32,
     len: Int,
 ):
@@ -28,20 +28,21 @@ fn add_constant_fn(
     output[tid] = input[tid] + constant
 
 
-def run_add_constant(ctx: DeviceContext):
-    alias length = 1024
+def run_add_constant(ctx: DeviceContext) raises:
+    comptime length = 1024
 
     var in_device = ctx.enqueue_create_buffer[DType.float32](length)
     var out_device = ctx.enqueue_create_buffer[DType.float32](length)
 
     with in_device.map_to_host() as in_host:
         for i in range(length):
-            in_host[i] = i
+            in_host[i] = Float32(i)
 
     var block_dim = 32
-    alias constant = Float32(33)
+    comptime constant = Float32(33)
 
-    ctx.enqueue_function[add_constant_fn](
+    comptime kernel = add_constant_fn
+    ctx.enqueue_function_experimental[kernel](
         out_device,
         in_device,
         constant,
@@ -52,9 +53,9 @@ def run_add_constant(ctx: DeviceContext):
 
     with out_device.map_to_host() as out_host:
         for i in range(10):
-            assert_equal(out_host[i], i + constant)
+            assert_equal(out_host[i], Float32(i) + constant)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_add_constant(ctx)

@@ -1,5 +1,7 @@
 load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
 
+package(default_visibility = ["//visibility:private"])
+
 _FILECHECK_TESTS = [
     "test_asyncrt.mojo",
     "test_locks.mojo",
@@ -7,6 +9,7 @@ _FILECHECK_TESTS = [
 
 _LIT_TESTS = [
     "test_tracing.mojo",
+    "test_op_logging.mojo",
 ]
 
 [
@@ -18,7 +21,7 @@ _LIT_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -34,7 +37,7 @@ _LIT_TESTS = [
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -49,7 +52,7 @@ lit_tests(
     size = "large",
     srcs = _LIT_TESTS,
     mojo_deps = [
-        "@mojo//:stdlib",
+        "@mojo//:std",
     ],
     target_compatible_with = select({
         "//:asan": ["@platforms//:incompatible"],

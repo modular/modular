@@ -38,13 +38,6 @@ name for a language that brings magical powers to Python, including unlocking
 an innovative programming model for accelerators and other heterogeneous
 systems pervasive in AI today.
 
-### Why does Mojo have the 🔥 file extension?
-
-We paired Mojo with fire emoji 🔥 as a fun visual way to impart onto users that
-Mojo empowers them to get their Mojo on—to develop faster and more efficiently
-than ever before. We also believe that the world can handle a unicode extension
-at this point, but you can also just use the `.mojo` extension. :)
-
 ### What problems does Mojo solve that no other language can?
 
 Mojo combines the usability of Python with the systems programming features
@@ -166,11 +159,11 @@ learning accelerators is MLIR.
 [MLIR](https://mlir.llvm.org/) provides a flexible infrastructure for building
 compilers. It’s based upon layers of intermediate representations (IRs) that
 allow for progressive lowering of any code for any hardware, and it has been
-widely adopted by the hardware accelerator industry since [its first
-release](https://blog.google/technology/ai/mlir-accelerating-ai-open-source-infrastructure/).
+widely adopted by the hardware accelerator industry since
+[its first release](https://blog.google/technology/ai/mlir-accelerating-ai-open-source-infrastructure/).
 Its greatest strength is its ability to build _domain specific_ compilers,
-particularly for weird domains that aren’t traditional CPUs and GPUs, such as
-AI ASICS, [quantum computing systems](https://github.com/PennyLaneAI/catalyst),
+particularly for weird domains that aren’t traditional CPUs and GPUs, such as AI
+ASICS, [quantum computing systems](https://github.com/PennyLaneAI/catalyst),
 FPGAs, and [custom silicon](https://circt.llvm.org/).
 
 Although you can use MLIR to create a flexible and powerful compiler for any
@@ -204,8 +197,8 @@ language that will support more architectures over time and includes a
 debugger, a full tool suite, etc.
 
 For more about our thoughts on embedded domain-specific languages (EDSLs) like
-Triton, read [Democratizing AI Compute, Part
-7](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls).
+Triton, read
+[Democratizing AI Compute, Part 7](https://www.modular.com/blog/democratizing-ai-compute-part-7-what-about-triton-and-python-edsls).
 
 ### Does Mojo support distributed execution?
 
@@ -245,30 +238,64 @@ will contribute additional hardware support in the future.
 ### Are there any AI related performance benchmarks for Mojo?
 
 It’s important to remember that Mojo is designed to be a general-purpose
-programming language, and any AI-related benchmarks will rely heavily upon
-other framework components. For example, our in-house CPU and GPU graph
-operations that power the Modular Platform are all written in Mojo and you can
-learn more about performance in our [matrix multiplication blog
-post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
-For details about our end-to-end model performance, read about [how we measure
-performance at
-Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
+programming language, and any AI-related benchmarks will rely heavily upon other
+framework components. For example, our in-house CPU and GPU graph operations
+that power the Modular Platform are all written in Mojo and you can learn more
+about performance in our
+[matrix multiplication blog post](https://www.modular.com/blog/the-worlds-fastest-unified-matrix-multiplication).
+For details about our end-to-end model performance, read about
+[how we measure performance at Modular](https://www.modular.com/blog/max-gpu-state-of-the-art-throughput-on-a-new-genai-platform).
 
 ## Mojo SDK
 
-### How can I get access to the SDK?
+### How can I get the Mojo SDK?
 
-You can install it with the `mojo` conda package. Try it now by following
-the tutorial to [get started with Mojo](/mojo/manual/get-started).
+You can get Mojo and all the developer tools by installing `mojo` with
+any Python or Conda package manager. For details, see the
+[Mojo installation guide](/mojo/manual/install).
+
+### What's included in the Mojo SDK?
+
+We actually offer two Mojo packages: `mojo` and `mojo-compiler`.
+
+The `mojo` package gives you everything you need for Mojo development.
+It includes:
+
+- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
+- [Mojo standard library](/mojo/lib)
+- [`mojo` Python
+  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
+- Mojo language server (LSP) for IDE/editor integration
+- [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
+- [Mojo code formatter](/mojo/cli/format)
+- [Mojo REPL](/mojo/cli/repl)
+
+The `mojo-compiler` package is smaller and is useful for environments where you
+only need to call or build existing Mojo code. For example, this is good if
+you're running Mojo in a production environment or when you're programming in
+Python and [calling a Mojo
+package](/mojo/manual/python/mojo-from-python)—situations where you don't need
+the LSP and debugger tools. It includes:
+
+- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
+- [Mojo standard library](/mojo/lib)
+- [`mojo` Python
+  package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 
 ### Is the Mojo Playground still available?
 
-Yes, but it's different. When we first announced Mojo, it was available
-only through login, in a JupyterLab environment. Now that Mojo is available
-for local development, we've shut down that service.
+No. We shut it down with the v25.6 release.
 
-The new [Mojo Playground](https://developer.modular.com/playground)
-does not require login.
+Here's the story: When we announced Mojo in May, 2023, Mojo wasn't
+available in an SDK; it was available only in web-hosted a JupyterLab
+environment. After we made Mojo available for local development, we
+shut down the JupyterLab environment and launched a new Mojo Playground
+for people to try Mojo on the web. But ever since we made the Mojo SDK
+available for Linux and Mac, Mojo Playground usage steadily declined.
+The trickle of users we get now no longer justifies the maintenance
+and hosting costs.
+
+See how to [install Mojo](/mojo/manual/install).
 
 ### What are the license terms for the SDK?
 
@@ -276,27 +303,48 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 
 ### What operating systems are supported?
 
-See the [system requirements](/max/faq#system-requirements).
+Mac and Linux. For details, see the
+[Mojo system requirements](/mojo/requirements/).
 
 ### Is there IDE Integration?
 
-Yes, we've published an official [Mojo language extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
-for VS Code.
-
-The extension supports various features including syntax highlighting, code
+Yes, we've published an official Mojo language extension for
+[Visual Studio Code](https://code.visualstudio.com/) and other editors that
+support VS Code extensions (such as [Cursor](https://cursor.com/home)). The
+extension supports various features including syntax highlighting, code
 completion, formatting, hover, etc. It works seamlessly with remote-ssh and dev
 containers to enable remote development in Mojo.
 
+You can obtain the extension from either the
+[Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
+or the
+[Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+See [Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension)
+for more information.
+
 ### Does the Mojo SDK collect telemetry?
 
-Yes, the Mojo SDK collects some basic system information, basic
-compiler/runtime events, and crash reports that enable us to identify, analyze,
-and prioritize Mojo issues.
+Yes, the Mojo SDK collects some basic system information, crash reports, and
+some LSP events that enable us to identify, analyze, and prioritize Mojo
+issues. v25.6 and earlier versions also collected compiler/runtime events,
+but we've since removed them.
+
+Specifically, we collect:
+
+- **Crash reports**: When the Mojo compiler crashes with a stack trace, the
+  only information used in the report is the OS version and MAX/Mojo version.
+- **LSP performance metrics**: The Mojo LSP reports aggregate data on how long
+  it takes to respond to user input (parsing latency). The only information
+  used in the report is the milliseconds between user keystrokes and when the
+  Mojo LSP is able to show appropriate error or warning messages.
+
+No user information, such as source code, keystrokes, or any other user data,
+is ever collected or transmitted.
 
 This telemetry is crucial to help us quickly identify problems and improve our
 products. Without this telemetry, we would have to rely on user-submitted bug
 reports, and in our decades of experience building developer products, we know
-that most people don’t do that. The telemetry provides us the insights we need
+that most people don't do that. The telemetry provides us the insights we need
 to build better products for you.
 
 ## Versioning & compatibility
@@ -337,8 +385,8 @@ Clang, Swift, MLIR, etc.).
 
 ### Where can I ask more questions or share feedback?
 
-If you have questions about upcoming features or have suggestions
-for the language, be sure you first read the [Mojo roadmap](/mojo/roadmap), which
+If you have questions about upcoming features or have suggestions for the
+language, be sure you first read the [Mojo roadmap](/mojo/roadmap), which
 provides important information about our current priorities.
 
 To get in touch with the Mojo team and developer community, use the resources

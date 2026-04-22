@@ -26,7 +26,7 @@ def _mojo_doc_implementation(ctx):
         mnemonic = "MojoDoc",
         arguments = [
                         "doc",
-                        "--validate-doc-strings",
+                        "-Werror",
                         "-o",
                         mojodoc_output.path,
                         file_args,
@@ -46,6 +46,8 @@ def _mojo_doc_implementation(ctx):
         inputs = [mojodoc_output],
         mnemonic = "MojoDoc",
         arguments = [
+            "--show-stability-markers",
+            ctx.attr.show_stability_markers,
             "-o",
             doc_output.path,
             mojodoc_output.path,
@@ -74,6 +76,11 @@ mojo_doc = rule(
         "docs_base_path": attr.string(
             default = "",
             doc = "Base path prefix for generated documentation links",
+        ),
+        "show_stability_markers": attr.string(
+            default = "none",
+            values = ["all", "stable", "none"],
+            doc = "Show stability markers in generated docs",
         ),
         "_mojodoc_json_to_markdown": attr.label(
             default = Label("//bazel/internal:mojodoc_json_to_markdown"),

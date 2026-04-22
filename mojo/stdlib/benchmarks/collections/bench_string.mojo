@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,22 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Optional
-from collections.string._utf8 import _is_valid_utf8
-from collections.string.string_slice import _split
-from os import abort
-from pathlib import _dir_of_current_file
-from random import seed
-from sys import stderr
+from std.collections import Optional
+from std.collections.string._utf8 import _is_valid_utf8
+from std.collections.string.string_slice import _split
+from std.os import abort
+from std.pathlib import _dir_of_current_file
+from std.random import seed
+from std.sys import stderr
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId, keep
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId, black_box, keep
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
 # ===-----------------------------------------------------------------------===#
-fn make_string[
-    length: UInt = 0
+def make_string[
+    length: Int = 0
 ](filename: String = "UN_charter_EN.txt") -> String:
     """Make a `String` made of items in the `./data` directory.
 
@@ -42,176 +42,166 @@ fn make_string[
         directory = _dir_of_current_file() / "data"
         var f = open(directory / filename, "r")
 
-        @parameter
-        if length > 0:
-            var items = f.read_bytes(Int(length))
+        comptime if length > 0:
+            var items = f.read_bytes(length)
             i = 0
             while length > len(items):
                 items.append(items[i])
                 i = i + 1 if i < len(items) - 1 else 0
-            return String(bytes=items)
+            return String(unsafe_from_utf8=items)
         else:
-            return String(bytes=f.read_bytes())
+            return String(unsafe_from_utf8=f.read_bytes())
     except e:
         print(e, file=stderr)
-    return abort[String]()
+    abort(String())
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string init
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_init(mut b: Bencher) raises:
+def bench_string_init(mut b: Bencher) raises:
     @always_inline
-    @parameter
-    fn call_fn():
+    def call_fn() unified {}:
         for _ in range(1000):
-            var d = String()
-            keep(d.unsafe_ptr())
+            var string = String()
+            keep(string)
 
-    b.iter[call_fn]()
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string count
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_count[
-    length: UInt = 0,
+def bench_string_count[
+    length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     sequence: StaticString = "a",
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var amnt = items.count(sequence)
+    def call_fn() unified {read}:
+        var amnt = black_box(items).count(black_box(sequence))
         keep(amnt)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string split
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_split[
-    length: UInt = 0,
+def bench_string_split[
+    length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     sequence: Optional[StaticString] = None,
 ](mut b: Bencher) raises:
-    var items = (
-        make_string[length](filename + ".txt").as_string_slice().get_immutable()
-    )
+    var items = StringSlice(
+        make_string[length](filename + ".txt")
+    ).get_immutable()
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res: List[__type_of(items)]
+    def call_fn() unified {read}:
+        var res: List[type_of(items)]
 
-        @parameter
-        if sequence:
-            res = _split[has_maxsplit=False](items, sequence.value(), -1)
+        comptime if sequence:
+            res = _split[has_maxsplit=False](
+                black_box(items), black_box(sequence.value()), black_box(-1)
+            )
         else:
-            res = _split[has_maxsplit=False](items, None, -1)
-        keep(res.unsafe_ptr())
+            res = _split[has_maxsplit=False](
+                black_box(items), None, black_box(-1)
+            )
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string join
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_join[short: Bool](mut b: Bencher) raises:
-    @parameter
-    if short:
+def bench_string_join[short: Bool](mut b: Bencher) raises:
+    comptime if short:
         count = 100
     else:
         count = 1000
 
-    word_list = List[String](capacity=count)
+    var word_list = List[String](capacity=count)
     for i in range(count):
         word_list.append(String(i))
 
-    @always_inline
-    @parameter
-    fn call_fn() raises:
-        for _ in range(1_000):
-            res = String(",").join(word_list)
-            keep(Bool(res))
+    var separator = String(",")
 
-    b.iter[call_fn]()
-    keep(Bool(word_list))
+    @always_inline
+    def call_fn() unified {read}:
+        for _ in range(1_000):
+            var res = black_box(separator).join(black_box(word_list))
+            keep(res)
+
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string splitlines
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_splitlines[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_string_splitlines[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
-    var items = make_string[length](filename + ".txt").as_string_slice()
+    var items = StringSlice(make_string[length](filename + ".txt"))
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    def call_fn() unified {read}:
         for _ in range(1_000_000 // length):
-            var res = items.splitlines()
-            keep(res.unsafe_ptr())
+            var res = black_box(items).splitlines()
+            keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string lower
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_lower[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_string_lower[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.lower()
-        keep(res.unsafe_ptr())
+    def call_fn() unified {read}:
+        var res = black_box(items).lower()
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string upper
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_upper[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_string_upper[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.upper()
-        keep(res.unsafe_ptr())
+    def call_fn() unified {read}:
+        var res = black_box(items).upper()
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string replace
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_replace[
-    length: UInt = 0,
+def bench_string_replace[
+    length: Int = 0,
     filename: StaticString = "UN_charter_EN",
     old: StaticString = "a",
     new: StaticString = "A",
@@ -219,84 +209,94 @@ fn bench_string_replace[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = items.replace(old, new)
-        keep(res.unsafe_ptr())
+    def call_fn() unified {read}:
+        var res = black_box(items).replace(black_box(old), black_box(new))
+        keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string count_codepoints
+# ===-----------------------------------------------------------------------===#
+@parameter
+def bench_string_count_codepoints[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    def call_fn() unified {read}:
+        var res = black_box(items).count_codepoints()
+        keep(res)
+
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find single
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_find_single[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_string_find_single[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    def call_fn() unified {read}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
-            var res = items.find("Z")  # something that probably won't be there
+            var res = black_box(items).find(
+                black_box("Z")
+            )  # something that probably won't be there
             keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string find multiple
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_find_multiple[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_string_find_multiple[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var sequence = "ZZZZ"  # something that probably won't be there
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    def call_fn() unified {read}:
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
-            var res = items.find(sequence)
+            var res = black_box(items).find(black_box(sequence))
             keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
-    keep(Bool(sequence))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string _is_valid_utf8
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_is_valid_utf8[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_string_is_valid_utf8[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".html")
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
-        var res = _is_valid_utf8(items.as_bytes())
+    def call_fn() unified {read}:
+        var res = _is_valid_utf8(black_box(items).as_bytes())
         keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark write_utf8
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_write_utf8[
-    length: UInt = 0, filename: StaticString = "UN_charter_EN"
+def bench_write_utf8[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
 ](mut b: Bencher) raises:
     var items = make_string[length](filename + ".txt")
     var codepoints_iter = items.codepoints()
@@ -306,27 +306,24 @@ fn bench_write_utf8[
         codepoints.append(c)
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    def call_fn() unified {read}:
         var data = InlineArray[Byte, 4](uninitialized=True)
         # this is to help with instability when measuring small strings
         for _ in range(10**6 // length):
             for i in range(len(codepoints)):
-                var res = codepoints.unsafe_get(i).unsafe_write_utf8(
-                    data.unsafe_ptr()
+                var res = black_box(codepoints.unsafe_get(i)).unsafe_write_utf8(
+                    black_box(data).unsafe_ptr()
                 )
-                keep(Bool(res))
+                keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
-    keep(Bool(codepoints))
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark string write
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_string_write[short: Bool](mut b: Bencher) raises:
+def bench_string_write[short: Bool](mut b: Bencher) raises:
     var items = make_string[1000]("UN_charter_EN.txt")
     # workaround for "allows writing to mem location ..."
     # even though I tried using an immutable StringSlice
@@ -336,47 +333,80 @@ fn bench_string_write[short: Bool](mut b: Bencher) raises:
     var items_5 = items.copy()
 
     @always_inline
-    @parameter
-    fn call_fn() raises:
+    def call_fn() unified {read}:
         for _ in range(1_000_000):
             var res: String
 
-            @parameter
-            if short:  # less than 24 bytes
-                res = String.write(0, " is ", "a", String(" number"))
+            comptime if short:  # less than 24 bytes
+                res = String.write(
+                    black_box(0),
+                    black_box(" is "),
+                    black_box("a"),
+                    black_box(String(" number")),
+                )
             else:  # 5001 bytes long
-                res = String.write(0, items, items_2, items_3, items_4, items_5)
-            keep(Bool(res))
+                res = String.write(
+                    black_box(0),
+                    black_box(items),
+                    black_box(items_2),
+                    black_box(items_3),
+                    black_box(items_4),
+                    black_box(items_5),
+                )
+            keep(res)
 
-    b.iter[call_fn]()
-    keep(Bool(items))
-    keep(Bool(items_2))
-    keep(Bool(items_3))
-    keep(Bool(items_4))
-    keep(Bool(items_5))
+    b.iter(call_fn)
+
+
+# ===-----------------------------------------------------------------------===#
+# Benchmark string repr
+# ===-----------------------------------------------------------------------===#
+
+
+@fieldwise_init
+struct NullWriter(ImplicitlyCopyable, Writer):
+    def write_string(mut self, string: StringSlice):
+        keep(string)
+
+
+@parameter
+def bench_string_repr[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher):
+    var items = make_string[length](filename + ".txt")
+
+    @always_inline
+    def call_fn() unified {read}:
+        # this is to help with instability when measuring small strings
+        for _ in range(10**6 // length):
+            var writer = NullWriter()
+            black_box(items).write_repr_to(writer)
+            keep(writer)
+
+    b.iter(call_fn)
 
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     seed()
     var m = Bench(BenchConfig(num_repetitions=1))
-    alias filenames = (
+    comptime filenames = (
         StaticString("UN_charter_EN"),
         StaticString("UN_charter_ES"),
         StaticString("UN_charter_AR"),
         StaticString("UN_charter_RU"),
         StaticString("UN_charter_zh-CN"),
     )
-    alias old_chars = (
+    comptime old_chars = (
         StaticString("a"),
         StaticString("ó"),
         StaticString("ل"),
         StaticString("и"),
         StaticString("一"),
     )
-    alias new_chars = (
+    comptime new_chars = (
         StaticString("A"),
         StaticString("Ó"),
         StaticString("ل"),
@@ -384,7 +414,7 @@ def main():
         StaticString("一"),
     )
 
-    alias lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
+    comptime lengths = (10, 30, 50, 100, 1000, 10_000, 100_000, 1_000_000)
     """At an average 5 letters per word and 300 words per page
     (in the English language):
 
@@ -406,16 +436,14 @@ def main():
         BenchId(String("bench_string_write_long"))
     )
 
-    @parameter
-    for i in range(len(lengths)):
-        alias length = lengths[i]
+    comptime for i in range(len(lengths)):
+        comptime length = lengths[i]
 
-        @parameter
-        for j in range(len(filenames)):
-            alias fname = filenames[j]
-            alias old = StaticString(old_chars[j])
-            alias new = new_chars[j]
-            alias suffix = String("[", length, "]")  # "(" + fname + ")"
+        comptime for j in range(len(filenames)):
+            comptime fname = filenames[j]
+            comptime old = StaticString(old_chars[j])
+            comptime new = new_chars[j]
+            comptime suffix = String("[", length, "]")  # "(" + fname + ")"
             m.bench_function[bench_string_count[length, fname, old]](
                 BenchId(String("bench_string_count", suffix))
             )
@@ -437,6 +465,9 @@ def main():
             m.bench_function[bench_string_replace[length, fname, old, new]](
                 BenchId(String("bench_string_replace", suffix))
             )
+            m.bench_function[bench_string_count_codepoints[length, fname]](
+                BenchId(String("bench_string_count_codepoints", suffix))
+            )
             m.bench_function[bench_string_find_single[length, fname]](
                 BenchId(String("bench_string_find_single", suffix))
             )
@@ -449,6 +480,9 @@ def main():
             m.bench_function[bench_write_utf8[length, fname]](
                 BenchId(String("bench_write_utf8", suffix))
             )
+            m.bench_function[bench_string_repr[length, fname]](
+                BenchId(String("bench_string_repr", suffix))
+            )
 
     m.bench_function[bench_string_join[True]](
         BenchId(String("bench_string_join_short"))
@@ -457,4 +491,18 @@ def main():
         BenchId(String("bench_string_join_long"))
     )
 
-    print(m)
+    # NOTE: do not delete this. This is supposed to measure the average for
+    # different languages. You can use print(m) if you wish to see the
+    # per-language breakdown
+    var results = Dict[String, Tuple[Float64, Int]]()
+    for info in m.info_vec:
+        var n = info.name
+        var time = info.result.mean("ms")
+        var avg, amnt = results.get(n, (Float64(0), 0))
+        results[n] = (
+            (avg * Float64(amnt) + time) / Float64((amnt + 1)),
+            amnt + 1,
+        )
+    print("")
+    for k_v in results.items():
+        print(k_v.key, k_v.value[0], sep=", ")

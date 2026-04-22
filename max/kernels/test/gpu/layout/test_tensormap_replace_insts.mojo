@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,57 +11,63 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import barrier
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import TensorMapSwizzle, TMADescriptor
-from gpu.id import block_idx, thread_idx
-from gpu.sync import syncwarp
+from std.gpu import barrier
+from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
+from std.gpu import block_idx, thread_idx
+from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 from layout.layout_tensor import copy_sram_to_dram
 from layout.swizzle import make_swizzle
 from layout.tma_async import (
+    create_tensor_tile,
     SharedMemBarrier,
     TMATensorTile,
     TMATensorTileArray,
-    create_tma_tile,
+    _idx_product,
 )
-from memory import stack_allocation
-from memory.pointer import _GPUAddressSpace
-from testing import assert_equal
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
-fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
+def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     dtype: DType,
     num_of_tensormaps: Int,
     src_layout: Layout,
     dst_layout: Layout,
-    cta_tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    cta_tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
-    template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    new_src: LayoutTensor[dtype, src_layout, MutAnyOrigin],
+    template_tma_tensormap: TMATensorTile[
+        dtype, tile_rank, cta_tile_shape, desc_shape
+    ],
     device_tma_tile: TMATensorTileArray[
-        num_of_tensormaps, dtype, cta_tile_layout, desc_layout
+        num_of_tensormaps, dtype, tile_rank, cta_tile_shape, desc_shape
     ],
 ):
-    alias M = cta_tile_layout.shape[0].value()
-    alias N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime M = cta_tile_shape[0]
+    comptime N = cta_tile_shape[1]
+    comptime expected_bytes = _idx_product[
+        tile_rank, cta_tile_shape
+    ]() * size_of[dtype]()
 
+    comptime __cta_tile_layout = Layout.row_major(M, N)
     tile = LayoutTensor[
         dtype,
-        cta_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        __cta_tile_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
@@ -74,16 +80,14 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
-        device_tma_tile[block_idx.x][].async_copy(
-            tile, mbar[0], (UInt(0), UInt(0))
-        )
+        mbar[0].expect_bytes(Int32(expected_bytes))
+        device_tma_tile[block_idx.x][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -95,13 +99,13 @@ fn test_tma_replace_global_addr_in_gmem_descriptor_kernel[
 
 def test_tma_replace_global_addr_in_gmem_descriptor[
     src_layout: Layout,
-](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
+](ctx: DeviceContext) raises:
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
 
-    alias num_of_tensormaps = 4
+    comptime num_of_tensormaps = 4
 
-    alias dst_layout = Layout.row_major(num_of_tensormaps * M, N)
+    comptime dst_layout = Layout.row_major(num_of_tensormaps * M, N)
 
     var old_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
     var new_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
@@ -110,24 +114,24 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
 
-    var template_tma_tensormap = create_tma_tile[
-        DType.bfloat16, 2, Index(M, N)
-    ](ctx, old_src.device_tensor())
+    var template_tma_tensormap = create_tensor_tile[Index(M, N)](
+        ctx, old_src.device_tensor()
+    )
 
     var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_tensormaps
     )
     var tensormaps = TMATensorTileArray[
         num_of_tensormaps,
-        __type_of(template_tma_tensormap).dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).rank,
+        type_of(template_tma_tensormap).tile_shape,
+        type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
 
-    @parameter
-    for i in range(num_of_tensormaps):
+    comptime for i in range(num_of_tensormaps):
         for j in range(128):
             tensormaps_host_ptr[
                 i * 128 + j
@@ -136,19 +140,24 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
     ctx.synchronize()
 
-    alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
-        __type_of(template_tma_tensormap).dtype,
+    comptime __smem_M = type_of(template_tma_tensormap).tile_shape[0]
+    comptime __smem_N = type_of(template_tma_tensormap).tile_shape[1]
+    comptime __thread_layout = Layout.row_major(__smem_M, __smem_N)
+
+    comptime kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
+        type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
-        __type_of(template_tma_tensormap).layout,  # thread layout
+        type_of(template_tma_tensormap).rank,  # tile rank
+        type_of(template_tma_tensormap).tile_shape,  # cta tile shape
+        type_of(template_tma_tensormap).desc_shape,  # desc shape
+        __thread_layout,  # thread layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        new_src.device_tensor(),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -174,36 +183,42 @@ def test_tma_replace_global_addr_in_gmem_descriptor[
 
 # Test loading a single 2d tile.
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
-fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
+def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     dtype: DType,
     num_of_tensormaps: Int,
     src_layout: Layout,
     dst_layout: Layout,
-    cta_tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    cta_tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
     thread_layout: Layout,
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    new_src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
-    template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    new_src: LayoutTensor[dtype, src_layout, MutAnyOrigin],
+    template_tma_tensormap: TMATensorTile[
+        dtype, tile_rank, cta_tile_shape, desc_shape
+    ],
     device_tma_tile: TMATensorTileArray[
-        num_of_tensormaps, dtype, cta_tile_layout, desc_layout
+        num_of_tensormaps, dtype, tile_rank, cta_tile_shape, desc_shape
     ],
 ):
-    alias M = cta_tile_layout.shape[0].value()
-    alias N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime M = cta_tile_shape[0]
+    comptime N = cta_tile_shape[1]
+    comptime expected_bytes = _idx_product[
+        tile_rank, cta_tile_shape
+    ]() * size_of[dtype]()
 
+    comptime __cta_tile_layout = Layout.row_major(M, N)
     tile = LayoutTensor[
         dtype,
-        cta_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        __cta_tile_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = _GPUAddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -231,16 +246,14 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
-        device_tma_tile[block_idx.x][].async_copy(
-            tile, mbar[0], (UInt(0), UInt(0))
-        )
+        mbar[0].expect_bytes(Int32(expected_bytes))
+        device_tma_tile[block_idx.x][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -252,12 +265,12 @@ fn test_tma_replace_global_addr_in_smem_descriptor_kernel[
 
 def test_tma_replace_global_addr_in_smem_descriptor[
     src_layout: Layout,
-](ctx: DeviceContext):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
+](ctx: DeviceContext) raises:
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
 
-    alias num_of_tensormaps = 4
-    alias dst_layout = Layout.row_major(num_of_tensormaps * M, N)
+    comptime num_of_tensormaps = 4
+    comptime dst_layout = Layout.row_major(num_of_tensormaps * M, N)
 
     var old_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
     var new_src = ManagedLayoutTensor[DType.bfloat16, src_layout](ctx)
@@ -266,24 +279,24 @@ def test_tma_replace_global_addr_in_smem_descriptor[
     arange(old_src.tensor(), 1)
     arange(new_src.tensor(), 1001)
 
-    var template_tma_tensormap = create_tma_tile[
-        DType.bfloat16, 2, Index(M, N)
-    ](ctx, old_src.device_tensor())
+    var template_tma_tensormap = create_tensor_tile[Index(M, N)](
+        ctx, old_src.device_tensor()
+    )
 
     var device_tensormaps = ctx.enqueue_create_buffer[DType.uint8](
         128 * num_of_tensormaps
     )
     var tensormaps = TMATensorTileArray[
         num_of_tensormaps,
-        __type_of(template_tma_tensormap).dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).dtype,
+        type_of(template_tma_tensormap).rank,
+        type_of(template_tma_tensormap).tile_shape,
+        type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
     var tensormaps_host_ptr = stack_allocation[num_of_tensormaps * 128, UInt8]()
 
-    @parameter
-    for i in range(num_of_tensormaps):
+    comptime for i in range(num_of_tensormaps):
         for j in range(128):
             tensormaps_host_ptr[
                 i * 128 + j
@@ -292,19 +305,24 @@ def test_tma_replace_global_addr_in_smem_descriptor[
 
     ctx.synchronize()
 
-    alias kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
-        __type_of(template_tma_tensormap).dtype,
+    comptime __smem_M = type_of(template_tma_tensormap).tile_shape[0]
+    comptime __smem_N = type_of(template_tma_tensormap).tile_shape[1]
+    comptime __thread_layout = Layout.row_major(__smem_M, __smem_N)
+
+    comptime kernel = test_tma_replace_global_addr_in_gmem_descriptor_kernel[
+        type_of(template_tma_tensormap).dtype,
         num_of_tensormaps,
         src_layout,  # src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
-        __type_of(template_tma_tensormap).layout,  # thread layout
+        type_of(template_tma_tensormap).rank,  # tile rank
+        type_of(template_tma_tensormap).tile_shape,  # cta tile shape
+        type_of(template_tma_tensormap).desc_shape,  # desc shape
+        __thread_layout,  # thread layout
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        new_src.device_tensor(),
         template_tma_tensormap,
         tensormaps,
         grid_dim=(num_of_tensormaps),
@@ -329,36 +347,42 @@ def test_tma_replace_global_addr_in_smem_descriptor[
 
 
 @__llvm_arg_metadata(template_tma_tensormap, `nvvm.grid_constant`)
-fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
+def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     dtype: DType,
     num_of_subtensors: Int,
     src_layout: Layout,
     dst_layout: Layout,
-    cta_tile_layout: Layout,
-    desc_layout: Layout,
+    tile_rank: Int,
+    cta_tile_shape: IndexList[tile_rank],
+    desc_shape: IndexList[tile_rank],
 ](
-    dst: LayoutTensor[dtype, dst_layout, MutableAnyOrigin],
-    src: LayoutTensor[dtype, src_layout, MutableAnyOrigin],
-    template_tma_tensormap: TMATensorTile[dtype, cta_tile_layout, desc_layout],
+    dst: LayoutTensor[dtype, dst_layout, MutAnyOrigin],
+    src: LayoutTensor[dtype, src_layout, MutAnyOrigin],
+    template_tma_tensormap: TMATensorTile[
+        dtype, tile_rank, cta_tile_shape, desc_shape
+    ],
     subtensors_m: IndexList[num_of_subtensors + 1],
     device_tma_tile: TMATensorTileArray[
-        num_of_subtensors, dtype, cta_tile_layout, desc_layout
+        num_of_subtensors, dtype, tile_rank, cta_tile_shape, desc_shape
     ],
 ):
-    alias tile_M = cta_tile_layout.shape[0].value()
-    alias tile_N = cta_tile_layout.shape[1].value()
-    alias expected_bytes = cta_tile_layout.size() * size_of[dtype]()
+    comptime tile_M = cta_tile_shape[0]
+    comptime tile_N = cta_tile_shape[1]
+    comptime expected_bytes = _idx_product[
+        tile_rank, cta_tile_shape
+    ]() * size_of[dtype]()
 
+    comptime __cta_tile_layout = Layout.row_major(tile_M, tile_N)
     tile = LayoutTensor[
         dtype,
-        cta_tile_layout,
-        MutableAnyOrigin,
-        address_space = _GPUAddressSpace.SHARED,
+        __cta_tile_layout,
+        MutAnyOrigin,
+        address_space=AddressSpace.SHARED,
         alignment=128,
     ].stack_allocation()
 
     var smem_desc = stack_allocation[
-        1, TMADescriptor, alignment=128, address_space = _GPUAddressSpace.SHARED
+        1, TMADescriptor, alignment=128, address_space=AddressSpace.SHARED
     ]()
 
     # load the tensormap from gmem into smem. Only the one elected thread should call this
@@ -391,7 +415,7 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
             2,
             0,
         ](
-            smem_desc, block_size
+            smem_desc, UInt32(block_size)
         )
 
     # Ensure warp is converged before issuing tensormap fence release
@@ -403,16 +427,14 @@ fn test_tma_replace_global_dim_in_smem_descriptor_kernel[
     mbar = stack_allocation[
         1,
         SharedMemBarrier,
-        address_space = _GPUAddressSpace.SHARED,
+        address_space=AddressSpace.SHARED,
         alignment=8,
     ]()
 
     if thread_idx.x == 0:
         mbar[0].init()
-        mbar[0].expect_bytes(expected_bytes)
-        device_tma_tile[block_idx.x][].async_copy(
-            tile, mbar[0], (UInt(0), UInt(0))
-        )
+        mbar[0].expect_bytes(Int32(expected_bytes))
+        device_tma_tile[block_idx.x][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -428,41 +450,35 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     cta_tile_layout: Layout,
     size_of_subtensors: Int,
     swizzle_mode: TensorMapSwizzle,
-](ctx: DeviceContext, subtensors_m: IndexList[size_of_subtensors]):
-    alias M = src_layout.shape[0].value()
-    alias N = src_layout.shape[1].value()
+](ctx: DeviceContext, subtensors_m: IndexList[size_of_subtensors]) raises:
+    comptime M = src_layout.shape[0].value()
+    comptime N = src_layout.shape[1].value()
 
-    alias cta_tile_M = cta_tile_layout.shape[0].value()
-    alias cta_tile_N = cta_tile_layout.shape[1].value()
+    comptime cta_tile_M = cta_tile_layout.shape[0].value()
+    comptime cta_tile_N = cta_tile_layout.shape[1].value()
 
-    constrained[
-        N == cta_tile_N,
-        (
-            "for this test number of columns in src layout should be equal to"
-            " number of columns in cta tile layout"
-        ),
-    ]()
-
-    debug_assert(
-        ctx.get_api_version() >= 12050,
-        (
-            "CUDA version must be >= 12.5. Current implementation of"
-            " `replace_tensormap_global_dim_strides_in_shared_mem` dose not"
-            " support CUDA versions < 12.5"
-        ),
+    comptime assert N == cta_tile_N, (
+        "for this test number of columns in src layout should be equal to"
+        " number of columns in cta tile layout"
     )
-    alias num_of_subtensors = size_of_subtensors - 1
+
+    assert ctx.get_api_version() >= 12050, (
+        "CUDA version must be >= 12.5. Current implementation of"
+        " `replace_tensormap_global_dim_strides_in_shared_mem` dose not"
+        " support CUDA versions < 12.5"
+    )
+    comptime num_of_subtensors = size_of_subtensors - 1
 
     var old_src = ManagedLayoutTensor[
         dtype, Layout.row_major(cta_tile_M, cta_tile_N)
     ](ctx)
     arange(old_src.tensor(), 1)
 
-    var template_tma_tensormap = create_tma_tile[
-        dtype, 2, Index(cta_tile_M, cta_tile_N), swizzle_mode=swizzle_mode
+    var template_tma_tensormap = create_tensor_tile[
+        Index(cta_tile_M, cta_tile_N), swizzle_mode=swizzle_mode
     ](ctx, old_src.device_tensor())
 
-    alias dst_layout = Layout.row_major(
+    comptime dst_layout = Layout.row_major(
         num_of_subtensors * cta_tile_M, cta_tile_N
     )
 
@@ -475,8 +491,7 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     )
     var tensormaps_host_ptr = stack_allocation[num_of_subtensors * 128, UInt8]()
 
-    @parameter
-    for i in range(num_of_subtensors):
+    comptime for i in range(num_of_subtensors):
         for j in range(128):
             tensormaps_host_ptr[
                 i * 128 + j
@@ -486,24 +501,26 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     var tensormaps = TMATensorTileArray[
         num_of_subtensors,
         dtype,
-        __type_of(template_tma_tensormap).layout,
-        __type_of(template_tma_tensormap).desc_layout,
+        type_of(template_tma_tensormap).rank,
+        type_of(template_tma_tensormap).tile_shape,
+        type_of(template_tma_tensormap).desc_shape,
     ](device_tensormaps)
 
     ctx.synchronize()
 
-    alias kernel = test_tma_replace_global_dim_in_smem_descriptor_kernel[
+    comptime kernel = test_tma_replace_global_dim_in_smem_descriptor_kernel[
         dtype,
         num_of_subtensors,
         src_layout,  # new src layout
         dst_layout,  # dst layout
-        __type_of(template_tma_tensormap).layout,  # smem layout
-        __type_of(template_tma_tensormap).desc_layout,  # desc layout
+        type_of(template_tma_tensormap).rank,  # tile rank
+        type_of(template_tma_tensormap).tile_shape,  # cta tile shape
+        type_of(template_tma_tensormap).desc_shape,  # desc shape
     ]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function[kernel, kernel](
         dst.device_tensor(),
-        new_src.device_buffer(),
+        new_src.device_tensor(),
         template_tma_tensormap,
         subtensors_m,
         tensormaps,
@@ -511,10 +528,10 @@ def test_tma_replace_global_dim_in_smem_descriptor[
         block_dim=(cta_tile_M * cta_tile_N),
     )
 
-    alias swizzle = make_swizzle[dtype, swizzle_mode]()
+    comptime swizzle = make_swizzle[dtype, swizzle_mode]()
 
     dest_tile = LayoutTensor[
-        dtype, Layout.row_major(cta_tile_M, cta_tile_N), MutableAnyOrigin
+        dtype, Layout.row_major(cta_tile_M, cta_tile_N), MutAnyOrigin
     ].stack_allocation()
 
     new_src_host = new_src.tensor()
@@ -542,34 +559,34 @@ def test_tma_replace_global_dim_in_smem_descriptor[
     _ = dst^
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         print("test_tma_replace_global_addr_in_gmem_descriptor")
         test_tma_replace_global_addr_in_gmem_descriptor[
-            src_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
         ](ctx)
 
         print("test_tma_replace_global_addr_in_smem_descriptor")
         test_tma_replace_global_addr_in_smem_descriptor[
-            src_layout = Layout.row_major(8, 8),
+            src_layout=Layout.row_major(8, 8),
         ](ctx)
 
         print("test_tma_replace_global_dim_in_smem_descriptor")
         print(" - SWIZZLE_NONE")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(16, 8),
-            cta_tile_layout = Layout.row_major(32, 8),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            src_layout=Layout.row_major(16, 8),
+            cta_tile_layout=Layout.row_major(32, 8),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](
             ctx,
             Index(0, 9, 16),
         )
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(29, 8),
-            cta_tile_layout = Layout.row_major(32, 8),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_NONE,
+            src_layout=Layout.row_major(29, 8),
+            cta_tile_layout=Layout.row_major(32, 8),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_NONE,
         ](
             ctx,
             Index(0, 9, 16, 25, 29),
@@ -577,9 +594,9 @@ def main():
         print(" - SWIZZLE_32B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(29, 16),
-            cta_tile_layout = Layout.row_major(32, 16),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_32B,
+            src_layout=Layout.row_major(29, 16),
+            cta_tile_layout=Layout.row_major(32, 16),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_32B,
         ](
             ctx,
             Index(0, 9, 16, 25, 29),
@@ -587,9 +604,9 @@ def main():
         print(" - SWIZZLE_64B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(29, 32),
-            cta_tile_layout = Layout.row_major(32, 32),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_64B,
+            src_layout=Layout.row_major(29, 32),
+            cta_tile_layout=Layout.row_major(32, 32),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_64B,
         ](
             ctx,
             Index(0, 9, 16, 25, 29),
@@ -597,9 +614,9 @@ def main():
         print(" - SWIZZLE_128B")
         test_tma_replace_global_dim_in_smem_descriptor[
             DType.bfloat16,
-            src_layout = Layout.row_major(15, 64),
-            cta_tile_layout = Layout.row_major(16, 64),
-            swizzle_mode = TensorMapSwizzle.SWIZZLE_128B,
+            src_layout=Layout.row_major(15, 64),
+            cta_tile_layout=Layout.row_major(16, 64),
+            swizzle_mode=TensorMapSwizzle.SWIZZLE_128B,
         ](
             ctx,
             Index(0, 3, 7, 11, 15),

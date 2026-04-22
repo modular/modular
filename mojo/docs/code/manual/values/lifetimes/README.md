@@ -1,4 +1,6 @@
-This directory contains code examples for the
+# Code examples and tests for lifetimes, origins, and references
+
+This directory contains Code examples and tests for the
 [Lifetimes, origins, and references](../../../../../docs/manual/values/lifetimes.mdx)
 section of the Mojo Manual.
 

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -83,6 +83,6 @@ def test_initialize_sdist() -> None:
     )
 
     with pytest.raises(
-        NotImplementedError, match="Tags are only supported for wheels."
+        NotImplementedError, match=r"Tags are only supported for wheels."
     ):
         _ = download.tags

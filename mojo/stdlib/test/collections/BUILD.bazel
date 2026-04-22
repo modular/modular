@@ -1,29 +1,26 @@
-load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+load("//bazel:api.bzl", "lit_tests", "mojo_filecheck_test", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
 
 _FILECHECK_TESTS = [
-    "test_index_normalization.mojo",
     "test_list_getitem_invalid_index_int.mojo",
     "test_list_getitem_invalid_index_uint.mojo",
+    "test_optional_none_abort.mojo",
+    "test_check_bounds_assert_error.mojo",
+    "test_negative_index_deque.mojo",
+    "test_negative_index_deque_insert.mojo",
+    "test_negative_index_inline_array.mojo",
+    "test_negative_index_linked_list.mojo",
+    "test_negative_index_list.mojo",
+    "test_negative_index_string.mojo",
+    "test_negative_index_string_slice.mojo",
 ]
 
-_NO_ASAN = [
-    "string/test_string.mojo",
-    "string/test_string_slice.mojo",  # TODO(MOCO-2316): Takes too long to compile
+_LIT_TESTS = [
+    "test_asan_annotations_list.mojo",
 ]
-
-_PLATFORM_CONSTRAINTS = {
-    src: select({
-        "//:asan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    })
-    for src in _NO_ASAN
-}
 
 _MOJO_COMPILE_OPTS = {
-    "test_index_normalization.mojo": [
-        "-D",
-        "ASSERT=warn",
-    ],
     "test_list_getitem_invalid_index_int.mojo": [
         "-D",
         "BUILD_TYPE=debug",
@@ -34,13 +31,18 @@ _MOJO_COMPILE_OPTS = {
     ],
 }
 
-_DISABLED_ASSERTIONS = [
-    "test_index_normalization.mojo",  # NOTE: only here because ASSERT cannot be passed more than once
-]
-
 _EXPECT_CRASH = [
     "test_list_getitem_invalid_index_int.mojo",
     "test_list_getitem_invalid_index_uint.mojo",
+    "test_optional_none_abort.mojo",
+    "test_check_bounds_assert_error.mojo",
+    "test_negative_index_deque.mojo",
+    "test_negative_index_deque_insert.mojo",
+    "test_negative_index_inline_array.mojo",
+    "test_negative_index_linked_list.mojo",
+    "test_negative_index_list.mojo",
+    "test_negative_index_string.mojo",
+    "test_negative_index_string_slice.mojo",
 ]
 
 [
@@ -51,11 +53,9 @@ _EXPECT_CRASH = [
             "--debug-level",
             "full",
         ] + _MOJO_COMPILE_OPTS.get(src, []),
-        enable_assertions = src not in _DISABLED_ASSERTIONS,
         expect_crash = src in _EXPECT_CRASH,
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
@@ -71,14 +71,33 @@ _EXPECT_CRASH = [
             "full",
         ],
         data = [src],  # NOTE: some tests attempt to read their source files
-        target_compatible_with = _PLATFORM_CONSTRAINTS.get(src, []),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _FILECHECK_TESTS,
+        exclude = _FILECHECK_TESTS + _LIT_TESTS,
     )
+]
+
+[
+    lit_tests(
+        name = "lit_tests",
+        size = "large",
+        srcs = [src],
+        mojo_deps = [
+            "@mojo//:std",
+        ],
+        # mojo build flags specified in RUN lines.
+        # Asan has different exit codes due to signal handling.
+        # Macos also has different exit codes due to signal handling.
+        target_compatible_with = select({
+            "//:asan": ["@platforms//:incompatible"],
+            "@platforms//os:macos": ["@platforms//:incompatible"],
+            "//conditions:default": [],
+        }),
+    )
+    for src in _LIT_TESTS
 ]

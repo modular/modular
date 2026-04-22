@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,53 +11,52 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_up
-from sys import align_of
-from sys.info import CompilationTarget
+from std.math import align_up
+from std.sys import align_of
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from linalg.matmul import GemmShape, KernelConfig
-from linalg.matmul_default import Inner_matmul_default
-from linalg.matmul_i8mm import Inner_matmul_i8mm
-from linalg.matmul_neon import Inner_matmul_neon
-from linalg.matmul_vnni import Inner_matmul_vnni
+from layout import Idx, TileTensor
+from layout.tile_layout import row_major
+from linalg.matmul.cpu.default import Inner_matmul_default
+from linalg.matmul.cpu.i8mm import Inner_matmul_i8mm
+from linalg.matmul.cpu.neon import Inner_matmul_neon
+from linalg.matmul.cpu.vnni import Inner_matmul_vnni
 from linalg.utils import (
+    GemmShape,
     InnerKernelID,
+    KernelConfig,
     get_kernel_config,
     get_matmul_arch_factor,
     select_inner_kernel,
     use_i8mm_fn,
     use_vnni_fn,
 )
-from testing import assert_equal
+from std.testing import assert_equal
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
-alias M: Int = 64
-alias N: Int = 64
-alias K: Int = 256
+comptime M: Int = 64
+comptime N: Int = 64
+comptime K: Int = 256
 
 
-fn _matmul_inner_loop[
+def _matmul_inner_loop[
     kernel_rows: Int,
     kernel_cols: Int,
     simd_size: Int,
     saturated_vnni: Bool,
 ](
-    c: NDBuffer,
-    a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _, _],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b_packed: TileTensor,
     global_offset: GemmShape,
     global_bound: GemmShape,
     tile_n_k: IndexList[2],
     skip_boundary_check: Bool,
 ):
-    alias kernel_id = select_inner_kernel[a.type, b_packed.type, c.type]()
+    comptime kernel_id = select_inner_kernel[a.dtype, b_packed.dtype, c.dtype]()
 
-    @parameter
-    if kernel_id == InnerKernelID.DEFAULT:
+    comptime if kernel_id == InnerKernelID.DEFAULT:
         Inner_matmul_default().__inner_matmul__[
             kernel_rows, kernel_cols, simd_size
         ](
@@ -106,15 +105,15 @@ fn _matmul_inner_loop[
             skip_boundary_check,
         )
     else:
-        constrained[False, "no _run_inner_loop implementation"]()
+        comptime assert False, "no _run_inner_loop implementation"
 
 
-fn matmul_inner_loop[
+def matmul_inner_loop[
     config: KernelConfig,
 ](
-    c: NDBuffer,
-    a: NDBuffer,
-    b_packed: NDBuffer[_, 3, _, _],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b_packed: TileTensor,
     m: Int,
     n: Int,
     k: Int,
@@ -137,74 +136,66 @@ fn matmul_inner_loop[
     )
 
 
-fn test_micro_kernel[
+def test_micro_kernel[
     a_type: DType, b_type: DType, c_type: DType, saturated_vnni: Bool = False
 ](m: Int, n: Int, k: Int) raises:
     print("== test_micro_kernel")
-    alias a_shape = DimList.create_unknown[2]()
-    alias b_shape = DimList.create_unknown[2]()
-    alias c_shape = DimList.create_unknown[2]()
-    alias b_packed_shape = DimList.create_unknown[3]()
 
-    alias config = get_kernel_config[a_type, b_type, c_type]()
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+    comptime config = get_kernel_config[a_type, b_type, c_type]()
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
     var np = align_up(n, config.kernel_cols)
     var kh = align_up(k, factor)
 
-    alias alignment = align_of[SIMD[c_type, config.simd_size]]()
+    comptime alignment = align_of[SIMD[c_type, config.simd_size]]()
 
-    var a_ptr = UnsafePointer[Scalar[a_type], alignment=alignment].alloc(m * k)
-    var b_packed_ptr = UnsafePointer[Scalar[b_type], alignment=alignment].alloc(
+    var a_ptr = alloc[Scalar[a_type],](m * k, alignment=alignment)
+    var b_packed_ptr = alloc[Scalar[b_type]](
         (np // config.kernel_cols)
         * (kh // factor)
-        * (factor * config.kernel_cols)
+        * (factor * config.kernel_cols),
+        alignment=alignment,
     )
-    var c_ptr = UnsafePointer[Scalar[c_type], alignment=alignment].alloc(m * n)
-    var a = NDBuffer[a_type, 2, _, a_shape](a_ptr, Index(m, k))
-
-    var b_packed = NDBuffer[b_type, 3, _, config.packed_shape](
+    var c_ptr = alloc[Scalar[c_type],](m * n, alignment=alignment)
+    var a = TileTensor(a_ptr, row_major(Idx(m), Idx(k)))
+    var b_packed = TileTensor(
         b_packed_ptr,
-        Index(
-            np // config.kernel_cols,
-            kh // factor,
-            factor * config.kernel_cols,
+        row_major(
+            Idx(np // config.kernel_cols),
+            Idx(kh // factor),
+            Idx(factor * config.kernel_cols),
         ),
     )
+    var c = TileTensor(c_ptr, row_major(Idx(m), Idx(n)))
 
-    var c = NDBuffer[c_type, 2, _, c_shape](c_ptr, Index(m, n))
-
-    a.fill(1)
-    b_packed.fill(1)
-    c.fill(0)
+    _ = a.fill(1)
+    _ = b_packed.fill(1)
+    _ = c.fill(0)
 
     matmul_inner_loop[config](c, a, b_packed, m, n, k)
 
-    assert_equal(Int(c[0, 0]), 256)
+    assert_equal(Int(c_ptr[0]), k)
     a_ptr.free()
     b_packed_ptr.free()
     c_ptr.free()
 
 
 @export(ABI="C")
-fn kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
+def kernel_export_dynamic(m: Int, n: Int, k: Int) raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](m, n, k)
 
 
-fn main() raises:
+def main() raises:
     test_micro_kernel[DType.float32, DType.float32, DType.float32](M, N, K)
     test_micro_kernel[DType.uint8, DType.int8, DType.int32](M, N, K)
     test_micro_kernel[
         DType.uint8, DType.int8, DType.int32, saturated_vnni=True
     ](M, N, K)
 
-    # TODO(KERN-228): Re-enable after we resolve llvm lowering issues.
-    @parameter
-    if not CompilationTarget.has_neon():
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](
-            M, N, K
-        )
-        test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](
-            M, N, K
-        )
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.bfloat16](M, N, K)
+    test_micro_kernel[DType.bfloat16, DType.bfloat16, DType.float32](M, N, K)
+
+    # Test int8 x int8 -> int8 to ensure it doesn't dispatch to i8mm (which
+    # requires 32-bit output). Use smaller k to fit in int8 range.
+    test_micro_kernel[DType.int8, DType.int8, DType.int8](M, N, 100)

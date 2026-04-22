@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from base64 import b16decode, b16encode, b64decode, b64encode
-
-from testing import assert_equal, assert_raises
+from std.base64 import b16decode, b16encode, b64decode, b64encode
 
 
-def test_b64encode():
+from std.testing import assert_equal, assert_raises
+from std.testing import TestSuite
+
+
+def test_b64encode() raises:
     assert_equal(b64encode("a"), "YQ==")
 
     assert_equal(b64encode("fo"), "Zm8=")
@@ -41,7 +43,7 @@ def test_b64encode():
     )
 
 
-def test_b64decode():
+def test_b64decode() raises:
     assert_equal(b64decode("YQ=="), "a")
 
     assert_equal(b64decode("Zm8="), "fo")
@@ -70,7 +72,7 @@ def test_b64decode():
         _ = b64decode[validate=True]("invalid base64 string!!!")
 
 
-def test_b16encode():
+def test_b16encode() raises:
     assert_equal(b16encode("a"), "61")
 
     assert_equal(b16encode("fo"), "666F")
@@ -87,7 +89,7 @@ def test_b16encode():
     assert_equal(b16encode("ABCDEFabcdef"), "414243444546616263646566")
 
 
-def test_b16decode():
+def test_b16decode() raises:
     assert_equal(b16decode("61"), "a")
 
     assert_equal(b16decode("666F"), "fo")
@@ -104,8 +106,5 @@ def test_b16decode():
     assert_equal(b16decode("414243444546616263646566"), "ABCDEFabcdef")
 
 
-def main():
-    test_b64encode()
-    test_b64decode()
-    test_b16encode()
-    test_b16decode()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

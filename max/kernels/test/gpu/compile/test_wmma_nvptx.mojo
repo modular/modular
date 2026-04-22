@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,13 +12,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
-from gpu.mma import mma
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.gpu.compute.mma import mma
+from std.testing import *
 
 
-fn SM80_16x8x8_F16F16F16F16_TN(
+def SM80_16x8x8_F16F16F16F16_TN(
     a: SIMD[DType.float16, 4],
     b: SIMD[DType.float16, 2],
     c: SIMD[DType.float16, 4],
@@ -28,7 +28,7 @@ fn SM80_16x8x8_F16F16F16F16_TN(
     return d
 
 
-def test_SM80_16x8x8_F16F16F16F16_TN():
+def test_SM80_16x8x8_F16F16F16F16_TN() raises:
     var asm = _compile_code[SM80_16x8x8_F16F16F16F16_TN]().asm
     assert_true("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16" in asm)
     assert_true("{%r6, %r7}," in asm)
@@ -37,7 +37,7 @@ def test_SM80_16x8x8_F16F16F16F16_TN():
     assert_true("{%r4, %r5};" in asm)
 
 
-fn SM80_m16n8k4_F32TF32TF32F32_TN(
+def SM80_m16n8k4_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 2],
     b: Float32,
     c: SIMD[DType.float32, 4],
@@ -47,7 +47,7 @@ fn SM80_m16n8k4_F32TF32TF32F32_TN(
     return d
 
 
-def test_SM80_m16n8k4_F32TF32TF32F32_TN():
+def test_SM80_m16n8k4_F32TF32TF32F32_TN() raises:
     var asm = _compile_code[SM80_m16n8k4_F32TF32TF32F32_TN]().asm
     assert_true("mma.sync.aligned.m16n8k4.row.col.f32.tf32.tf32.f32" in asm)
     assert_true("{%r8, %r9, %r10, %r11}," in asm)
@@ -56,7 +56,7 @@ def test_SM80_m16n8k4_F32TF32TF32F32_TN():
     assert_true("{%r3, %r4, %r5, %r6};" in asm)
 
 
-fn SM80_m16n8k8_F32TF32TF32F32_TN(
+def SM80_m16n8k8_F32TF32TF32F32_TN(
     a: SIMD[DType.float32, 4],
     b: Float32,
     c: SIMD[DType.float32, 4],
@@ -66,7 +66,7 @@ fn SM80_m16n8k8_F32TF32TF32F32_TN(
     return d
 
 
-def test_SM80_m16n8k8_F32TF32TF32F32_TN():
+def test_SM80_m16n8k8_F32TF32TF32F32_TN() raises:
     var asm = _compile_code[SM80_m16n8k8_F32TF32TF32F32_TN]().asm
     assert_true("mma.sync.aligned.m16n8k8.row.col.f32.tf32.tf32.f32" in asm)
     assert_true("{%r10, %r11, %r12, %r13}," in asm)
@@ -75,7 +75,7 @@ def test_SM80_m16n8k8_F32TF32TF32F32_TN():
     assert_true("{%r5, %r6, %r7, %r8};" in asm)
 
 
-fn SM80_m16n8k32_F8E4M3F8E4M_TN(
+def SM80_m16n8k32_F8E4M3F8E4M_TN(
     a: SIMD[DType.float8_e4m3fn, 16],
     b: SIMD[DType.float8_e4m3fn, 8],
     c: SIMD[DType.float32, 4],
@@ -85,9 +85,9 @@ fn SM80_m16n8k32_F8E4M3F8E4M_TN(
     return d
 
 
-def test_SM80_m16n8k8_F8E4M3F8E4M3_TN():
+def test_SM80_m16n8k8_F8E4M3F8E4M3_TN() raises:
     var asm = _compile_code[
-        SM80_m16n8k32_F8E4M3F8E4M_TN, target = get_gpu_target["sm_90"]()
+        SM80_m16n8k32_F8E4M3F8E4M_TN, target=get_gpu_target["sm_90"]()
     ]().asm
     assert_true("mma.sync.aligned.m16n8k32.row.col.f32.e4m3.e4m3.f32" in asm)
     assert_true("{%r1, %r2, %r3, %r4}" in asm)
@@ -95,7 +95,7 @@ def test_SM80_m16n8k8_F8E4M3F8E4M3_TN():
     assert_true("{%r9, %r10}, {%r11, %r12, %r13, %r14}" in asm)
 
 
-def main():
+def main() raises:
     test_SM80_16x8x8_F16F16F16F16_TN()
     test_SM80_m16n8k4_F32TF32TF32F32_TN()
     test_SM80_m16n8k8_F32TF32TF32F32_TN()

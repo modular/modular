@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,32 +11,30 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm.functional import elementwise
-from gpu.host import DeviceContext
-from gpu.host import get_gpu_target
-from layout import Layout, LayoutTensor, RuntimeLayout
+from std.algorithm.functional import elementwise
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import IntTuple, Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
 from layout._utils import ManagedLayoutTensor
-from layout.int_tuple import UNKNOWN_VALUE, IntTuple
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-fn test_elementwise_print[
+def test_elementwise_print[
     c_type: DType,
     c_layout: Layout,
-](c01: LayoutTensor[c_type, c_layout], ctx: DeviceContext) raises:
+](c01: LayoutTensor[c_type, c_layout, ...], ctx: DeviceContext) raises:
     var M = c01.dim[0]()
     var N = c01.dim[1]() // 2
-    alias simd_width = simd_width_of[
-        c_type, target = get_gpu_target["sm_80"]()
+    comptime simd_width = simd_width_of[
+        c_type, target=get_gpu_target["sm_80"]()
     ]()
 
     @always_inline
     @__copy_capture(c01, N)
     @parameter
-    fn binary[
+    def binary[
         simd_width: Int, rank: Int, alignment: Int = 1
     ](idx0: IndexList[rank]):
         var m: Int = idx0[0]
@@ -51,7 +49,7 @@ fn test_elementwise_print[
     print("finished elementwise")
 
 
-fn runtime_row_major[
+def runtime_row_major[
     cols: Int
 ](
     rows: Int,
@@ -59,13 +57,13 @@ fn runtime_row_major[
         Layout(IntTuple(UNKNOWN_VALUE, cols), IntTuple(cols, 1))
     ],
 ):
-    return __type_of(res).row_major(IndexList[2]((rows, cols)))
+    return type_of(res).row_major(IndexList[2]((rows, cols)))
 
 
-fn test_dual_matmul[
+def test_dual_matmul[
     N: Int = 512, K: Int = 512
 ](ctx: DeviceContext, M: Int = 512) raises:
-    alias dst_type = DType.float32
+    comptime dst_type = DType.float32
     var layout_c01 = runtime_row_major[2 * N](M)
     var mat_c01 = ManagedLayoutTensor[dst_type](layout_c01, ctx)
     test_elementwise_print(
@@ -73,9 +71,8 @@ fn test_dual_matmul[
         ctx,
     )
     print("returned from test_elementwise_print")
-    _ = mat_c01^
 
 
-fn main() raises:
+def main() raises:
     with DeviceContext() as ctx:
         test_dual_matmul(ctx)

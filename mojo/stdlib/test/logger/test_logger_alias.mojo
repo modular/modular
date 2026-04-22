@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,21 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from logger import Level, Logger
+from std.logger import Level, Logger
+from std.testing import TestSuite
 
-alias log = Logger[Level.INFO]()
+comptime log = Logger[Level.INFO]()
 
 
-def main():
-    # CHECK-NOT: DEBUG::: hello world
+def test_log_alias() raises:
+    # CHECK-NOT: DEBUG
+    # CHECK-NOT: :::     hello world
     log.debug("hello", "world")
 
-    # CHECK: INFO::: hello
+    # CHECK: INFO
+    # CHECK: ::: hello
     log.info("hello")
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,16 +10,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
+"""Provides helper functions for comparing values in tests."""
 
 # ===----------------------------------------------------------------------=== #
 # utils
 # ===----------------------------------------------------------------------=== #
 
 
-fn _minmax[
+def _minmax[
     dtype: DType, //
-](x: UnsafePointer[Scalar[dtype]], N: Int) -> Tuple[
+](x: UnsafePointer[Scalar[dtype], _], N: Int) -> Tuple[
     Scalar[dtype], Scalar[dtype]
 ]:
     var max_val = x[0]
@@ -32,17 +32,32 @@ fn _minmax[
     return (min_val, max_val)
 
 
-fn compare[
+def compare[
     dtype: DType, verbose: Bool = True
 ](
-    x: UnsafePointer[Scalar[dtype]],
-    y: UnsafePointer[Scalar[dtype]],
+    x: UnsafePointer[Scalar[dtype], _],
+    y: UnsafePointer[Scalar[dtype], _],
     num_elements: Int,
     *,
     msg: String = "",
 ) -> SIMD[dtype, 4]:
-    var atol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
-    var rtol = UnsafePointer[Scalar[dtype]].alloc(num_elements)
+    """Compares two arrays and computes absolute and relative error statistics.
+
+    Parameters:
+        dtype: The data type of the arrays to compare.
+        verbose: Whether to print the error statistics.
+
+    Args:
+        x: First array to compare.
+        y: Second array to compare.
+        num_elements: Number of elements in each array.
+        msg: Optional message to print before the statistics.
+
+    Returns:
+        A SIMD vector containing [atol_min, atol_max, rtol_min, rtol_max].
+    """
+    var atol = alloc[Scalar[dtype]](num_elements)
+    var rtol = alloc[Scalar[dtype]](num_elements)
 
     for i in range(num_elements):
         var d = abs(x[i] - y[i])

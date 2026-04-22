@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,33 +11,40 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import isqrt
-from sys import simd_width_of
 
-from buffer import NDBuffer
-from gpu.host import DeviceContext
+import std.math as math
+from std.math import rsqrt
+from std.sys import simd_width_of
+
+from std.gpu.host import DeviceContext, get_gpu_target
+from layout import Coord, Idx, TileTensor, row_major
 from nn.normalization import *
-from testing import assert_almost_equal, assert_true
+from std.testing import assert_almost_equal, assert_true
 
-from gpu.host import get_gpu_target
-
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
 
 def compute_group_stats[
     t: DType
-](vec: NDBuffer[t, 1], size: Int, eps: Scalar[t]) -> (Scalar[t], Scalar[t]):
-    var sum_val = Scalar[t]()
-    var sum_sq = Scalar[t]()
+](vec: TileTensor[t, ...], size: Int, eps: Scalar[t]) raises -> Tuple[
+    Float64,
+    Float64,
+]:
+    """Compute group mean and rsqrt(variance + eps) in float64 for accuracy."""
+    comptime assert vec.flat_rank == 1, "vec must be rank 1"
+    comptime assert vec.element_size == 1
+    var sum_val = Float64(0)
+    var sum_sq = Float64(0)
     for i in range(size):
-        sum_val += vec[i]
-        sum_sq += vec[i] * vec[i]
-    var mean = sum_val / size
-    var variance = max((sum_sq / size) - (mean * mean), 0.0)
-    return (mean, isqrt(variance + eps))
+        var v = Float64(vec[i][0])
+        sum_val += v
+        sum_sq += v * v
+    var mean = sum_val / Float64(size)
+    var variance = max(sum_sq / Float64(size) - mean * mean, 0.0)
+    return (mean, 1.0 / math.sqrt(variance + Float64(eps)))
 
 
-fn run_group_norm_gpu[
+def run_group_norm_gpu[
     dtype: DType, rank: Int
 ](
     ctx: DeviceContext,
@@ -55,26 +62,26 @@ fn run_group_norm_gpu[
     var rows = N * num_groups
     var cols = group_size
 
-    var data_h = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var res = UnsafePointer[Scalar[dtype]].alloc(rows * cols)
-    var gamma_h = UnsafePointer[Scalar[dtype]].alloc(C)
-    var beta_h = UnsafePointer[Scalar[dtype]].alloc(C)
+    var data_h = alloc[Scalar[dtype]](rows * cols)
+    var res = alloc[Scalar[dtype]](rows * cols)
+    var gamma_h = alloc[Scalar[dtype]](C)
+    var beta_h = alloc[Scalar[dtype]](C)
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
 
     for i in range(C):
-        gamma_h[i] = ((i + C) / C).cast[dtype]()
-        beta_h[i] = (i / C).cast[dtype]()
+        gamma_h[i] = (Float64(i + C) / Float64(C)).cast[dtype]()
+        beta_h[i] = (Float64(i) / Float64(C)).cast[dtype]()
 
     var data_d = ctx.enqueue_create_buffer[dtype](rows * cols)
     var gamma_d = ctx.enqueue_create_buffer[dtype](C)
     var beta_d = ctx.enqueue_create_buffer[dtype](C)
 
     var param_shape = Index(C)
-    var data_buf = NDBuffer[dtype, rank](data_d.unsafe_ptr(), shape)
-    var gamma = NDBuffer[dtype, 1](gamma_d.unsafe_ptr(), param_shape)
-    var beta = NDBuffer[dtype, 1](beta_d.unsafe_ptr(), param_shape)
+    var data_buf = TileTensor(data_d, row_major(Coord(shape)))
+    var gamma = TileTensor(gamma_d, row_major(Coord(param_shape)))
+    var beta = TileTensor(beta_d, row_major(Coord(param_shape)))
     var epsilon = Scalar[dtype](1e-5)
 
     ctx.enqueue_copy(data_d, data_h)
@@ -84,31 +91,38 @@ fn run_group_norm_gpu[
     @__copy_capture(data_buf)
     @always_inline
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int, _rank: Int
-    ](idx: IndexList[_rank]) -> SIMD[dtype, width]:
-        return data_buf.load[width=width](rebind[IndexList[rank]](idx))
+    ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+        var idx = data_buf.layout(Coord(coords))
+
+        return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
-    fn gamma_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
-        return gamma.load[width=width](rebind[IndexList[1]](idx))
+    def gamma_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        var idx = gamma.layout(Coord(coords))
+        return gamma.raw_load[width=width](idx)
 
     @__copy_capture(beta)
     @always_inline
     @parameter
-    fn beta_scalar_fn[width: Int](idx: IndexList[1]) -> SIMD[dtype, width]:
-        return beta.load[width=width](rebind[IndexList[1]](idx))
+    def beta_scalar_fn[width: Int](coords: IndexList[1]) -> SIMD[dtype, width]:
+        var idx = beta.layout(Coord(coords))
+        return beta.raw_load[width=width](idx)
 
     group_norm[dtype, rank, input_fn, gamma_scalar_fn, beta_scalar_fn, "gpu"](
-        shape, epsilon, num_groups, data_buf, ctx=ctx
+        shape, epsilon, Int32(num_groups), data_buf, ctx=ctx
     )
     ctx.enqueue_copy(res, data_d)
     ctx.synchronize()
 
     for r in range(rows):
-        var vec = NDBuffer[dtype, 1](data_h + r * cols, cols)
+        var vec = TileTensor(
+            data_h + r * cols,
+            row_major(Idx(cols)),
+        )
         var stats = compute_group_stats(vec, cols, epsilon)
         var mean_ref = stats[0]
         var norm_factor = stats[1]
@@ -118,9 +132,14 @@ fn run_group_norm_gpu[
             var offset = c // spatial
             var true_c = c_base + offset
             var idx = r * cols + c
-            var val = (
-                (vec[c] - mean_ref) * norm_factor * gamma_h[true_c]
-            ) + beta_h[true_c]
+            # Compute reference in float64 for accuracy, then cast to
+            # dtype for comparison (matches GPU's higher-precision accum).
+            var val = Scalar[dtype](
+                (Float64(vec[c][0]) - mean_ref)
+                * norm_factor
+                * Float64(gamma_h[true_c])
+                + Float64(beta_h[true_c])
+            )
             assert_almost_equal(val, res[idx], rtol=rtol, atol=atol)
 
     _ = data_d^
@@ -132,10 +151,10 @@ fn run_group_norm_gpu[
     beta_h.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
-        alias default_simd = simd_width_of[
-            DType.float32, target = get_gpu_target()
+        comptime default_simd = simd_width_of[
+            DType.float32, target=get_gpu_target()
         ]()
 
         # === Warp-Tiling Kernel Dispatch (SIMD-aligned, fits warp strategy) ===
@@ -224,6 +243,43 @@ def main():
         # Edge case from group norm layer tests
         run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 4, 4), num_groups=1)
         run_group_norm_gpu[DType.float32](ctx, Index(2, 2, 16), num_groups=1)
+
+        # === Multi-Block Kernel Dispatch (large group_size, few groups) ===
+
+        # These shapes trigger the multi-block path because:
+        # - group_size > WARP_SIZE * simd_width * max_warps_per_block
+        #   (too large for warp tiling)
+        # - num_rows (= N * num_groups) < desired_min_grid (= 256)
+        # Tolerances are relaxed because the test reference uses a two-pass
+        # variance formula (E[X^2]-E[X]^2) while the GPU uses Welford,
+        # which diverge more at large group sizes.
+
+        # bfloat16 tests matching FLUX2 VAE decoder dtype
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 256, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        # Batch > 1 with multi-block
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(2, 256, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        # 3D multi-block
+        run_group_norm_gpu[DType.bfloat16](
+            ctx, Index(1, 128, 16384), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+
+        # float32 multi-block tests for coverage
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(1, 128, 64, 64), num_groups=32, rtol=2e-3, atol=5e-4
+        )
+        run_group_norm_gpu[DType.float32](
+            ctx, Index(1, 512, 32, 32), num_groups=32, rtol=2e-3, atol=5e-4
+        )
 
         # Mismatched channels/groups → top-level init error
         try:

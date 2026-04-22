@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import Deque
+from std.collections import Deque
 
-from testing import assert_equal
+from std.testing import assert_equal, TestSuite
 
 
-def test_reversed_list():
+def test_reversed_list() raises:
     var list = [1, 2, 3, 4, 5, 6]
     var check: Int = 6
 
@@ -25,7 +25,7 @@ def test_reversed_list():
         check -= 1
 
 
-def test_reversed_deque():
+def test_reversed_deque() raises:
     var deque = Deque[Int](1, 2, 3, 4, 5, 6)
     var check: Int = 6
 
@@ -34,7 +34,7 @@ def test_reversed_deque():
         check -= 1
 
 
-def test_reversed_dict():
+def test_reversed_dict() raises:
     var dict = Dict[String, Int]()
     dict["a"] = 1
     dict["b"] = 2
@@ -140,6 +140,5 @@ def test_reversed_dict():
     assert_equal(check, 0)
 
 
-def main():
-    test_reversed_dict()
-    test_reversed_list()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

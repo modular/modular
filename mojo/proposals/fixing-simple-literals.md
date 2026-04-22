@@ -7,7 +7,7 @@ Status: Implemented, complete
 This doc proposes a redesign of the Int/Float/String literal types in Mojo to
 make them lower correctly and define away a large category of bugs that people
 run into. This feature depends on powerful dependent types support which Mojo
-now supports.  This is specific to Int/Float/String literals - `Bool` and
+now supports. This is specific to Int/Float/String literals - `Bool` and
 collection literals are not affected.
 
 ## Background
@@ -55,18 +55,18 @@ conversions from literals.
 
 String literals in Mojo are similar: we want to support arbitrary compile-time
 calculate of string values, but then burn them into a final executable binary as
-a literal constant.  That allows us to use them as immortal “pointer + length”
+a literal constant. That allows us to use them as immortal “pointer + length”
 values with a `StaticConstantOrigin`.
 
 ### The literal representation at compile time
 
 Mojo implements this by representing these compile time values as MLIR
-attributes.  Integers are an arbitrary precision integer of type
+attributes. Integers are an arbitrary precision integer of type
 `!pop.int_literal` and floating point values are `!pop.float_literal` and
 strings use `!kgen.string` as you might expect.
 
 The details of the representation are more complex than is obvious: besides
-being infinite precision, they handle complex cases correctly.  For example,
+being infinite precision, they handle complex cases correctly. For example,
 Mojo handles floating point constants internally by representing them as being
 either a special form (NaN, infinity, negative zero, etc) or a precise value
 represented as a rational of two infinite precision integers.
@@ -78,7 +78,7 @@ want to do *runtime* computation on it!
 
 Today, we have a “nearly” correct design, we model things like `IntLiteral` and
 `StringLiteral` as “nonmaterializable” types that are intended for use at
-compile time only.  These types may be used at compile time, and then they
+compile time only. These types may be used at compile time, and then they
 automatically promote to values of safe runtime type where necessary.
 
 For example, the current behavior for integers is (floating point works the same
@@ -96,11 +96,11 @@ fn integers():
 This is good behavior “things that happen at compile time stay at compile time”,
 where we can support fancy infinite precision math, but anything that gets into
 the runtime domain “materializes” to a type that the literal implicitly converts
-to, and if nothing else, it defaults to `Int` .  This is handled by the
+to, and if nothing else, it defaults to `Int` . This is handled by the
 implementation of `IntLiteral` , a simplified version of which looks like this:
 
 ```mojo
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral:
     var value: __mlir_type.`!pop.int_literal`
 
@@ -115,7 +115,7 @@ constant fold the `pop.int_literal.binop` MLIR operation when doing calculation
 in the compile time domain.
 
 This is simple enough, and works in many common cases, but unfortunately this
-can’t work in full generality.  Consider something like this:
+can’t work in full generality. Consider something like this:
 
 ```mojo
 @export
@@ -145,14 +145,14 @@ Ugh, what is that?
 
 The problem here is that the `IntLiteral` type is infinite precision compile
 time type - the compiler doesn’t know how to lower it to a runtime
-representation.  Furthermore, it doesn’t know how to codegen the
+representation. Furthermore, it doesn’t know how to codegen the
 `pop.int_literal.binop` operation either.
 
 We can definitely improve this error message, but there is still a core issue:
 we are expressing computation with an MLIR operation that cannot be lowered to
 LLVM.
 
-String literals are designed similarly, but are in worse shape.  `StringLiteral`
+String literals are designed similarly, but are in worse shape. `StringLiteral`
 doesn’t materialize to `String` for historical reasons, so we get this behavior:
 
 ```text
@@ -165,35 +165,35 @@ fn example(a: Int):
     print(x)
 
 $ mojo test.mojo
-stdlib/builtin/string_literal.mojo:156:45: error: cannot use StringLiteral append methods at runtime, only in an alias
+std/builtin/string_literal.mojo:156:45: error: cannot use StringLiteral append methods at runtime, only in an alias
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 x.mojo:6:11: note: called from
         x += "bar"
           ^
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: note: see https://github.com/modular/mojo/issues/3820 for more information
+Included from mojo/stdlib/std/prelude/__init__.mojo:1:
+Included from mojo/stdlib/std/prelude/__init__.mojo:102:
+mojo/stdlib/std/builtin/string_literal.mojo:156:45: note: see https://github.com/modular/mojo/issues/3820 for more information
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-/Users/clattner/Projects/modular/open-source/max/mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
+Included from mojo/stdlib/std/prelude/__init__.mojo:1:
+Included from mojo/stdlib/std/prelude/__init__.mojo:102:
+/Users/clattner/Projects/modular/oss/modular/mojo/stdlib/std/builtin/string_literal.mojo:156:45: error: failed to legalize operation 'pop.string.concat' that was explicitly marked illegal
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 x.mojo:6:11: note: called from
         x += "bar"
           ^
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:1:
-Included from mojo/stdlib/stdlib/prelude/__init__.mojo:102:
-mojo/stdlib/stdlib/builtin/string_literal.mojo:156:45: note: see current operation: %58 = "pop.string.concat"(%57, %28) : (!kgen.string, !kgen.string) -> !kgen.string
+Included from mojo/stdlib/std/prelude/__init__.mojo:1:
+Included from mojo/stdlib/std/prelude/__init__.mojo:102:
+mojo/stdlib/std/builtin/string_literal.mojo:156:45: note: see current operation: %58 = "pop.string.concat"(%57, %28) : (!kgen.string, !kgen.string) -> !kgen.string
         return __mlir_op.`pop.string.concat`(self.value, rhs.value)
                                             ^
 mojo: could not lower funcs to LLVM, run LowerToLLVMPipeline failed
 ```
 
-This is… not exactly the quality experience we want to have for Mojo.  I find
-failure on basic string literals to be pretty embarrassing.  While again we
+This is… not exactly the quality experience we want to have for Mojo. I find
+failure on basic string literals to be pretty embarrassing. While again we
 could improve the error messages to be better for this failure, I’d rather fix
 the model so things actually work correctly and can be implemented in a reliable
 way!
@@ -202,44 +202,44 @@ way!
 
 The core problem with the existing design is that we are representing
 compile-time only values (the underlying `!lit.int_literal` magic) as runtime
-state.  This *almost works*, because the comptime interpreter can execute this
+state. This *almost works*, because the comptime interpreter can execute this
 stuff at comptime, but will **never work in generality**, and will always be a
 source of problems.
 
 The solution is clear - let’s just keep compile-time-only values as
-**parameters**, instead of representing them as runtime state.  Until recently
+**parameters**, instead of representing them as runtime state. Until recently
 though, Mojo didn’t offer us this choice: a series of problems with dependent
 types and parameter inference were in the way - but these have been solved in
-order to support this work.  Let’s explore what the solution looks like, using
-`IntLiteral` as the exemplar.  This document proposes moving the above design to
-represent the `value` within `IntLiteral` as a parameter, not a var.  We’ll dig
-into this slowly and discuss the implications.  First the top level of
+order to support this work. Let’s explore what the solution looks like, using
+`IntLiteral` as the exemplar. This document proposes moving the above design to
+represent the `value` within `IntLiteral` as a parameter, not a var. We’ll dig
+into this slowly and discuss the implications. First the top level of
 `IntLiteral` shifts from:
 
 ```mojo
 # Old design we are replacing:
-# @nonmaterializable(Int)
+# @__nonmaterializable(Int)
 # struct IntLiteral:
 #    var value: __mlir_type.`!pop.int_literal`
 #    ...
 
 # New design:
-@nonmaterializable(Int)
+@__nonmaterializable(Int)
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     # no var or other state
     ...
 ```
 
 This shift - of the state from being `var` storage on `IntLiteral` to being a
-parameter, is the crux of this proposal.  By encoding the comptime-only value as
+parameter, is the crux of this proposal. By encoding the comptime-only value as
 a parameter, we know it will never need to be materialized at runtime.
 
 ### Compiler Literal Syntax Support
 
 Given this design, we make a small change to the compiler’s code generation of
-literal syntax, e.g. an expression like `42` or `4.0` .  Formerly, when a
+literal syntax, e.g. an expression like `42` or `4.0` . Formerly, when a
 literal was used (e.g. `alias x = 42`) the compiler would generate a call to the
-initializer like `alias x = IntLiteral(42)`.  With the new design, the compiler
+initializer like `alias x = IntLiteral(42)`. With the new design, the compiler
 generates a call of `alias x = IntLiteral[42]()`.
 
 We enable this easily in our literal type with an initializer:
@@ -252,12 +252,12 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
 ```
 
 Take a minute to grok what this says - because there is no state at all inside
-of `IntLiteral`, the initializer doesn’t store anything.  This initializer is
-the only initializer that `IntLiteral` gets, because it has no state.  We’ll
+of `IntLiteral`, the initializer doesn’t store anything. This initializer is
+the only initializer that `IntLiteral` gets, because it has no state. We’ll
 come back to this in a bit.
 
 Understanding the “`IntLiteral` holds no runtime state” part of the design is
-the most important thing to grok.  It means that all computation on integer
+the most important thing to grok. It means that all computation on integer
 literals must be done as part of the compile time domain, and therefore,
 computation of dependent result types is mechanic that underlies math on
 literals.
@@ -265,10 +265,10 @@ literals.
 ### Binary operations on literals
 
 Let’s look at how `2-1` works on integer literals: through composition, we know
-this is just sugar for `IntLiteral[2]().__sub__(IntLiteral[1]())` .  Note that
+this is just sugar for `IntLiteral[2]().__sub__(IntLiteral[1]())` . Note that
 while the LHS and RHS of the subtraction are both integer literals, the types
-are different because the parameters are different.  This means that the
-`__sub__` operation needs to accept asymmetric argument types.  Fortunately Mojo
+are different because the parameters are different. This means that the
+`__sub__` operation needs to accept asymmetric argument types. Fortunately Mojo
 makes this easy enough:
 
 ```mojo
@@ -292,7 +292,7 @@ new `IntLiteral`, but what do we use for the **result type parameter**?
 Given we’re encoding the value transformation in the type, we know it has to be
 inline computation, and it must be derived from `self.value` and `rhs.value`.
 We can do this with low-level MLIR attributes (something that only the
-implementation of `IntLiteral` needs to ever see.  One possible implementation
+implementation of `IntLiteral` needs to ever see. One possible implementation
 of `__sub__` looks like:
 
 ```mojo
@@ -321,14 +321,14 @@ of `__sub__` looks like:
 ```
 
 Ok, take this in, it is admittedly a bit yuck - we are using a KGEN attribute to
-perform the computation in the parameter domain.  This says that means the
+perform the computation in the parameter domain. This says that means the
 parameter of the result type is a “kgen int literal add of self.value and
-rhs.value”.  Mojo (still, sigh) doesn’t support initializer lists, so we have to
+rhs.value”. Mojo (still, sigh) doesn’t support initializer lists, so we have to
 utter the type once in the method signature, and then we repeat it again in the
 return line.
 
 While this is one way to write this, Mojo supports initializer lists, which
-allow us to infer the type from context (the `return` in this case).  Using it,
+allow us to infer the type from context (the `return` in this case). Using it,
 an improved implementation of `__sub__` looks like:
 
 ```mojo
@@ -347,18 +347,18 @@ an improved implementation of `__sub__` looks like:
 ```
 
 Before we move on, let’s look at that last line - we are **constructing the
-result value, using the `()` constructor**!  Recall that `IntLiteral` has
+result value, using the `()` constructor**! Recall that `IntLiteral` has
 no runtime state - the value of the result is captured in the type - so this is
-the right thing to do.  In fact, given that it is stateless, `IntLiteral` only
+the right thing to do. In fact, given that it is stateless, `IntLiteral` only
 gets one constructor.
 
 ### Mojo has full support for comptime determined parameters
 
 While thinking about something like `2-1` is easy to unpack, how do we think
-about something like `x-2` where we don’t know the value of `x`?  It turns out
-that this all composes, using dependent type support (and now with [improved
-dependent type support](https://github.com/modular/modular/blob/main/mojo/proposals/always_inline_builtin.md),
-it even works correctly!).  We have to write this function as a type function,
+about something like `x-2` where we don’t know the value of `x`? It turns out
+that this all composes, using dependent type support (and now with
+[improved dependent type support](https://github.com/modular/modular/blob/main/mojo/proposals/always_inline_builtin.md),
+it even works correctly!). We have to write this function as a type function,
 and we don’t want to utter that MLIR attribute, so we can write it like this:
 
 ```mojo
@@ -383,10 +383,10 @@ are aggregates of more primitive things, for example, `-x` is just `0-x` and
 ```mojo
 struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
     ...
-    fn __neg__(self) -> __type_of(0 - self):
+    fn __neg__(self) -> type_of(0 - self):
         return {}
 
-    fn __invert__(self) -> __type_of(self ^ -1):
+    fn __invert__(self) -> type_of(self ^ -1):
         return {}
 ```
 
@@ -395,8 +395,8 @@ Note how this stacks up: `0` and `1` are sugar for `IntLiteral[0]()`,
 
 ### Literal Comparisons
 
-Like all comparisons, literal comparisons return `Bool`.  As before, this is
-done with an MLIR attribute, but don’t require dependent types.  An
+Like all comparisons, literal comparisons return `Bool`. As before, this is
+done with an MLIR attribute, but don’t require dependent types. An
 implementation of less than looks like:
 
 ```mojo
@@ -413,20 +413,20 @@ struct IntLiteral[value: __mlir_type.`!pop.int_literal`]:
 ```
 
 Notice how this code is returning a parameter expression (an attribute) as the
-result.  This means that this comparison always instantiates into a `True` or
-`False` value after elaboration.  This is because of how parameters work - the
+result. This means that this comparison always instantiates into a `True` or
+`False` value after elaboration. This is because of how parameters work - the
 elaborator goes and instantiates all of these operations, so something like
 `4<5` or `x<17` (where x is some parametric `IntLiteral`) are always known at
-compile time.  Neat and tidy.
+compile time. Neat and tidy.
 
 ### Floating Point Literals
 
 That’s all you need to know to understand integer literals, so lets look at
-float literals.  They work exactly the same, and given we already know how the
+float literals. They work exactly the same, and given we already know how the
 pieces work, we can take more at once:
 
 ```mojo
-@nonmaterializable(Float64)
+@__nonmaterializable(Float64)
 struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     # Create from a float literal parameter expression.
     fn __init__(out self):
@@ -448,7 +448,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
 Similarly, the comparison and other methods work the same as `IntLiteral` does.
 `FloatLiteral` does have some new tricks though: we want to support conversions
 from integer literals, and those conversions mean that we need reversed binary
-operations: we want `4 - 1.0` to turn into `1.0.__rsub__(4)`.  No problem, we
+operations: we want `4 - 1.0` to turn into `1.0.__rsub__(4)`. No problem, we
 can implement these operations using the same pattern:
 
 ```mojo
@@ -468,7 +468,7 @@ struct FloatLiteral[value: __mlir_type.`!pop.float_literal`]:
     ):
         return {}
 
-    fn __rsub__(self, rhs: FloatLiteral) -> __type_of(rhs - self):
+    fn __rsub__(self, rhs: FloatLiteral) -> type_of(rhs - self):
         return {}
 ```
 
@@ -487,7 +487,7 @@ at a time.
 
 Let’s start with the good news: now that this design is unblocked (due to
 dependent types being fixed etc) this all works and the patch that [implements
-it is straight-forward](https://github.com/modularml/modular/pull/56959).  Even
+it is straight-forward](https://github.com/modularml/modular/pull/56959). Even
 better, this defines away all the bugs that motivated this work in the first
 place.
 
@@ -508,8 +508,8 @@ fn test(a: IntLiteral) -> IntLiteral: return a-1
                           ^
 ```
 
-This happens because `IntLiteral` takes a parameter.  Ok, let’s try to break it
-harder - we know how to make parametric functions with `IntLiteral` now.  You’d
+This happens because `IntLiteral` takes a parameter. Ok, let’s try to break it
+harder - we know how to make parametric functions with `IntLiteral` now. You’d
 write this function like this:
 
 ```mojo
@@ -519,7 +519,7 @@ fn test(a: IntLiteral) -> __typeof(a-1):
 
 This is perfectly valid Mojo code in the new design, and while you can’t
 directly export this (because it is parameterized) you can force the compiler to
-emit it if you use the `@noinline` decorator or similar.  The nice thing about
+emit it if you use the `@noinline` decorator or similar. The nice thing about
 this is that this is **completely valid code** (even if a bit weird) because
 `IntLIteral[someval]` is defined and lowers correctly to LLVM: it is just an
 empty struct after all, the same as returning an empty tuple or `None`.
@@ -528,7 +528,7 @@ empty struct after all, the same as returning an empty tuple or `None`.
 
 For proper dependent type support, the compiler needs to support the MLIR
 attribute form of the computations on symbolic literals, but the old design is
-also keeping around the MLIR operations.  With this design we can drop all the
+also keeping around the MLIR operations. With this design we can drop all the
 MLIR operations (and the code that links them) leading to a significant
 simplification in the compiler internals.
 
@@ -546,7 +546,7 @@ trait CeilDivable:
 ```
 
 This operation cannot be implemented on `IntLiteral` or `FloatLiteral` because
-the RHS and result type of the operation isn’t `__ceildiv__`.  In practice, it
+the RHS and result type of the operation isn’t `__ceildiv__`. In practice, it
 doesn’t seem like this matters: it did require defining one overload of the
 global `ceildiv` function:
 
@@ -556,22 +556,22 @@ fn ceildiv[T: CeilDivable, //](numerator: T, denominator: T) -> T:
     return numerator.__ceildiv__(denominator)
 
 fn ceildiv(numerator: IntLiteral, denominator: IntLiteral)
-  -> __type_of(numerator.__ceildiv__(denominator):
+  -> type_of(numerator.__ceildiv__(denominator):
     return {}
 ```
 
 However, while this one method was needed, it begs a question - why are we
-defining something as a global function that is already an operator?  Can we
+defining something as a global function that is already an operator? Can we
 just remove this and use the `//` operator instead?
 
 I also believe that this is a good thing - the point of traits is to build
-larger scaled composed generic algorithms based on these abstractions.  The
+larger scaled composed generic algorithms based on these abstractions. The
 previous design looked appealing but could never achieve this - they’d fail to
 compile and generate nasty errors. If abstracting over arbitrary precision
 integer/float values proves to be useful in the future, we can enable it at more
-complexity: we’d need to provide a `BigInt` type that exists at runtime.  Such a
+complexity: we’d need to provide a `BigInt` type that exists at runtime. Such a
 type could also be used at compile time and materialize into `IntLiteral` using
-the same pattern as `StringLiteral._from_string()` .  I think we should get
+the same pattern as `StringLiteral._from_string()` . I think we should get
 `StringLiteral` settled before embarking on this.
 
 ### Type merging of literals promotes to nonmaterializable type
@@ -586,14 +586,14 @@ fn do_thing[dt: DType]():
 ```
 
 The computation of `atol` needs to merge values of two different float literal
-types: `FloatLiteral[1e-06]()` and  `FloatLiteral[1e-1]()`.  The Mojo compiler
+types: `FloatLiteral[1e-06]()` and `FloatLiteral[1e-1]()`. The Mojo compiler
 promotes the result to `Float64` which is the shared nonmaterializable type for
-these two types.  This “just works”, but does require adding one cast in the
+these two types. This “just works”, but does require adding one cast in the
 monorepo. This doesn’t seem anything more than a curiosity to me.
 
 ### Compile time impact: None
 
-There is no expected measurable impact on compile time.  This change reduces IR
+There is no expected measurable impact on compile time. This change reduces IR
 bloat (by removing the MLIR operations) that the elaborator would need to make
 working with them, and maintains the same amount of work to fold the attributes
 to compute the values.
@@ -606,6 +606,6 @@ case.
 
 This design doc explores a change to the integer/float/string literal types
 which will allow us to define away a class of compiler crashes, clarify our
-model, and simplify the internals of the compiler.  It takes a moment to
+model, and simplify the internals of the compiler. It takes a moment to
 understand how it works, but seems like a nice step forward, building on Mojo’s
 maturing support for dependent types.

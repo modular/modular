@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,21 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections.string._unicode import _get_uppercase_mapping
+from std.collections.string._unicode import _get_uppercase_mapping
 
-from testing import assert_equal
+from std.testing import assert_equal
+from std.testing import TestSuite
 
 
-def test_uppercase_conversion():
+def test_uppercase_conversion() raises:
     # a -> A
-    count1, chars1 = _get_uppercase_mapping(Codepoint(97)).value()
+    count1, ref chars1 = _get_uppercase_mapping(Codepoint(97)).value()
     assert_equal(count1, 1)
     assert_equal(chars1[0], Codepoint(65))
     assert_equal(chars1[1], Codepoint(0))
     assert_equal(chars1[2], Codepoint(0))
 
     # ß -> SS
-    count2, chars2 = _get_uppercase_mapping(
+    count2, ref chars2 = _get_uppercase_mapping(
         Codepoint.from_u32(0xDF).value()
     ).value()
     assert_equal(count2, 2)
@@ -34,7 +35,7 @@ def test_uppercase_conversion():
     assert_equal(chars2[2], Codepoint(0))
 
     # ΐ -> Ϊ́
-    count3, chars3 = _get_uppercase_mapping(
+    count3, ref chars3 = _get_uppercase_mapping(
         Codepoint.from_u32(0x390).value()
     ).value()
     assert_equal(count3, 3)
@@ -43,5 +44,5 @@ def test_uppercase_conversion():
     assert_equal(chars3[2], Codepoint.from_u32(0x0301).value())
 
 
-def main():
-    test_uppercase_conversion()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

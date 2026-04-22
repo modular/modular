@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -43,10 +43,13 @@ def main():
 
     # second example
 
-    from math import sqrt
+    from std.math import sqrt
 
-    fn rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
+    def rsqrt[dt: DType, width: Int](x: SIMD[dt, width]) -> SIMD[dt, width]:
         return 1 / sqrt(x)
 
     var v = SIMD[DType.float16, 4](42)
     print(rsqrt(v))
+
+    _ = small_vec
+    _ = bigger_vec2

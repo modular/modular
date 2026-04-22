@@ -1,0 +1,96 @@
+load("//bazel:api.bzl", "modular_cc_binary", "modular_py_test", "requirement")
+
+package(default_visibility = ["//visibility:private"])
+
+modular_cc_binary(
+    name = "example",
+    testonly = True,
+    srcs = ["example.c"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
+modular_cc_binary(
+    name = "graph_capture",
+    testonly = True,
+    srcs = ["graph_capture.c"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
+modular_py_test(
+    name = "test",
+    srcs = ["test_capi.py"],
+    data = [
+        ":example",
+    ],
+    env = {
+        "GRAPH_EXECUTOR": "$(location :example)",
+    },
+    tags = ["gpu"],
+    # TODO(GEX-3548): vector-add MEF produces zeros instead of expected sums
+    # on Apple GPU (Metal) workers.
+    target_compatible_with = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_cc_binary(
+    name = "weights_example",
+    testonly = True,
+    srcs = ["weights_example.c"],
+    deps = [
+        "//max:CAPI.headers",
+        "//max/internal:max",
+    ],
+)
+
+modular_py_test(
+    name = "test_weights",
+    srcs = ["test_weights_capi.py"],
+    data = [
+        ":weights_example",
+    ],
+    env = {
+        "WEIGHTS_EXECUTOR": "$(location :weights_example)",
+    },
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_test(
+    name = "test_graph_capture",
+    srcs = ["test_graph_capture.py"],
+    data = [
+        ":graph_capture",
+    ],
+    env = {
+        "GRAPH_EXECUTOR": "$(location :graph_capture)",
+    },
+    tags = ["gpu"],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)

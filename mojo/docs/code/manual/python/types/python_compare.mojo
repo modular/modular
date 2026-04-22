@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from python import Python
-from python import PythonObject
+# start-python-compare-example
+from std.python import Python, PythonObject
 
 
-def main():
+def main() raises:
     var value1: PythonObject = 3.7
     value2 = Python.evaluate("10/3")
 
@@ -33,3 +33,4 @@ def main():
     print("Python float type:", py_float_type)
     print("value1 type:", Python.type(value1))
     print("Is value1 a Python float:", Python.type(value1) is py_float_type)
+    # end-python-compare-example

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,38 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from algorithm import sync_parallelize, vectorize
+from std.algorithm import sync_parallelize, vectorize
 from layout import *
 from layout._fillers import arange
 from layout._utils import ManagedLayoutTensor
 
 
 @fieldwise_init
-@register_passable
-struct Dim(Copyable, Movable, Stringable):
+struct Dim(ImplicitlyCopyable, RegisterPassable, Writable):
     var m: Int
     var n: Int
     var k: Int
 
-    fn subrange(self, sub_dim: Self) -> Self:
+    def subrange(self, sub_dim: Self) -> Self:
         return Self(
             self.m // sub_dim.m, self.n // sub_dim.n, self.k // sub_dim.k
         )
 
-    @no_inline
-    fn __str__(self) -> String:
-        return String("m: ", self.m, ", n: ", self.n, ", k: ", self.k)
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the dim.
+
+        Args:
+            writer: The writer to write to.
+        """
+        t"m: {self.m}, n: {self.n}, k: {self.k}".write_to(writer)
 
 
 trait TiledOp:
     @staticmethod
-    fn op(
-        mut dst: LayoutTensor,
+    def op(
+        dst: LayoutTensor[mut=True, ...],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
@@ -49,16 +52,16 @@ trait TiledOp:
 # matrix multiply and accumulate
 struct MMA(TiledOp):
     @staticmethod
-    fn op(
-        mut dst: LayoutTensor,
+    def op(
+        dst: LayoutTensor[mut=True, ...],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
-        alias dtype = dst.dtype
+        comptime dtype = dst.dtype
 
-        alias M = dst.shape[0]()
-        alias N = dst.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = dst.shape[0]()
+        comptime N = dst.shape[1]()
+        comptime K = lhs.shape[1]()
 
         for m in range(M):
             for n in range(N):
@@ -71,22 +74,21 @@ struct MMA(TiledOp):
 # matrix multiply and accumulate, vectorized and parallelized
 struct MMA_Vec(TiledOp):
     @staticmethod
-    fn op(
-        mut dst: LayoutTensor,
+    def op(
+        dst: LayoutTensor[mut=True, ...],
         lhs: LayoutTensor,
         rhs: LayoutTensor,
     ):
-        alias M = dst.shape[0]()
-        alias N = dst.shape[1]()
-        alias K = lhs.shape[1]()
+        comptime M = dst.shape[0]()
+        comptime N = dst.shape[1]()
+        comptime K = lhs.shape[1]()
 
-        alias width = simd_width_of[dst.dtype]() * 2
+        comptime width = simd_width_of[dst.dtype]() * 2
 
-        for m in range(M):
-            for n in range(N):
+        for var m in range(M):
+            for var n in range(N):
 
-                @parameter
-                fn dot[width: Int](k: Int):
+                def dot[width: Int](k: Int) unified {read}:
                     dst.store[width](
                         m,
                         n,
@@ -97,22 +99,24 @@ struct MMA_Vec(TiledOp):
                         * rhs.load[width](n, k).cast[dst.dtype](),
                     )
 
-                vectorize[dot, width, size=K]()
+                vectorize[width, size=K](dot)
 
 
-fn gemm_l2_cache[
+def gemm_l2_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor) raises:
-    alias M = dst.shape[0]()
-    alias N = dst.shape[1]()
-    alias K = lhs.shape[1]()
+](
+    dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor
+) raises:
+    comptime M = dst.shape[0]()
+    comptime N = dst.shape[1]()
+    comptime K = lhs.shape[1]()
 
     # Dimensions of the Operation
-    alias op_dim = Dim(M, N, K)
+    comptime op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(L1)
-    alias l2_size = L1.subrange(L2)
+    comptime l1_size = op_dim.subrange(L1)
+    comptime l2_size = L1.subrange(L2)
 
     # Cache matrix to materialize L2 transposed tiles
     var l2_rhs_cache = ManagedLayoutTensor[
@@ -153,19 +157,19 @@ fn gemm_l2_cache[
     _ = l2_rhs_cache^
 
 
-fn gemm_l1_cache[
+def gemm_l1_cache[
     mma: TiledOp, L1: Dim, L2: Dim
-](dst: LayoutTensor, lhs: LayoutTensor, rhs: LayoutTensor):
-    alias M = dst.shape[0]()
-    alias N = dst.shape[1]()
-    alias K = lhs.shape[1]()
+](dst: LayoutTensor[mut=True, ...], lhs: LayoutTensor, rhs: LayoutTensor):
+    comptime M = dst.shape[0]()
+    comptime N = dst.shape[1]()
+    comptime K = lhs.shape[1]()
 
     # Dimensions of the Operation
-    alias op_dim = Dim(M, N, K)
+    comptime op_dim = Dim(M, N, K)
 
     # L1 and L2 Tiile ranges
-    alias l1_size = op_dim.subrange(L1)
-    alias l2_size = L1.subrange(L2)
+    comptime l1_size = op_dim.subrange(L1)
+    comptime l2_size = L1.subrange(L2)
 
     # Cache the L1 RHS and LHS tiles to reuse across the k_1 loop
     # The RHS tile is also cached to minimize the transpose operatipons.
@@ -181,13 +185,13 @@ fn gemm_l1_cache[
     #     l1_rhs_cache.append(LayoutTensor[dtype, L1.n, L1.k]())
 
     @parameter
-    fn process_raw(m_1: Int):
+    def process_raw(m_1: Int):
         # Cache the current lhs tile and reuse it for all rhs tiles in the column
         var l1_lhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutableAnyOrigin
+            dst.dtype, Layout(IntTuple(L1.m, L1.k)), MutAnyOrigin
         ].stack_allocation()
         var l1_rhs_cache = LayoutTensor[
-            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutableAnyOrigin
+            dst.dtype, Layout(IntTuple(L1.n, L1.k)), MutAnyOrigin
         ].stack_allocation()
 
         for k_1 in range(l1_size.k):
@@ -225,7 +229,7 @@ fn gemm_l1_cache[
     # _ = len(l1_rhs_cache)
 
 
-fn test_tiled_matmul[use_l1_cache: Bool]() raises:
+def test_tiled_matmul[use_l1_cache: Bool]() raises:
     if use_l1_cache:
         print("=== test_tiled_matmul_l1_cache")
     else:
@@ -258,7 +262,7 @@ fn test_tiled_matmul[use_l1_cache: Bool]() raises:
     _ = dst^
 
 
-fn main() raises:
+def main() raises:
     # CHECK: === test_tiled_matmul_l1_cache
     # CHECK: 1120.0   1148.0   1176.0   1204.0   1232.0   1260.0   1288.0   1316.0
     # CHECK: 2912.0   3004.0   3096.0   3188.0   3280.0   3372.0   3464.0   3556.0

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import (
+from std.sys import (
     CompilationTarget,
     align_of,
     num_logical_cores,
@@ -20,10 +20,11 @@ from sys import (
     size_of,
 )
 
-from testing import assert_equal, assert_true
+from std.testing import assert_equal, assert_true
+from std.testing import TestSuite
 
 
-fn test_size_of() raises:
+def test_size_of() raises:
     assert_equal(size_of[__mlir_type.i16](), 2)
 
     assert_equal(size_of[__mlir_type.ui16](), 2)
@@ -35,7 +36,7 @@ fn test_size_of() raises:
     assert_equal(size_of[SIMD[DType.int16, 2]](), 4)
 
 
-fn test_align_of() raises:
+def test_align_of() raises:
     assert_true(align_of[__mlir_type.i16]() > 0)
 
     assert_true(align_of[__mlir_type.ui16]() > 0)
@@ -47,13 +48,29 @@ fn test_align_of() raises:
     assert_true(align_of[SIMD[DType.int16, 2]]() > 0)
 
 
-fn test_cores() raises:
+def test_cores() raises:
     assert_true(num_logical_cores() > 0)
     assert_true(num_physical_cores() > 0)
     assert_true(num_performance_cores() > 0)
 
 
-fn test_target_has_feature():
+def test_target_is_apple() raises:
+    # Consistency: ensure predicates exist + returns Bool
+    var _is_apple_mx: Bool = CompilationTarget.is_apple_m1()
+    _is_apple_mx |= CompilationTarget.is_apple_m2()
+    _is_apple_mx |= CompilationTarget.is_apple_m3()
+    _is_apple_mx |= CompilationTarget.is_apple_m4()
+    _is_apple_mx |= CompilationTarget.is_apple_m5()
+
+    # Invariant: M series implies apple silicon
+    if _is_apple_mx:
+        assert_true(
+            CompilationTarget.is_apple_silicon(),
+            "Target is Apple M-Series but is_apple_silicon() returned False",
+        )
+
+
+def test_target_has_feature() raises:
     # Ensures target feature check functions exist and return a boolable value.
     var _has_feature: Bool = CompilationTarget.has_avx()
     _has_feature = CompilationTarget.has_avx2()
@@ -67,8 +84,5 @@ fn test_target_has_feature():
     _has_feature = CompilationTarget.has_vnni()
 
 
-def main():
-    test_size_of()
-    test_align_of()
-    test_cores()
-    test_target_has_feature()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

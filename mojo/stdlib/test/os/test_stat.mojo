@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import stat
-from stat import S_ISREG
+from std.os import stat
+from std.stat import S_ISREG
 
-from builtin._location import __source_location
-from testing import assert_not_equal, assert_true
+from std.reflection import source_location
+from std.testing import TestSuite, assert_not_equal, assert_true
 
 
-def main():
-    var st = stat(__source_location().file_name)
+def test_stat() raises:
+    var st = stat(source_location().file_name())
     assert_not_equal(String(st), "")
     assert_true(S_ISREG(st.st_mode))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

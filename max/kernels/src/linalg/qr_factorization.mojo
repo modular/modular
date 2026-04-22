@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,19 +11,18 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import copysign, sqrt
-from os import abort
+from std.math import copysign, sqrt
+from std.os import abort
 
-from layout.layout import Layout
-from layout.layout_tensor import LayoutTensor
+from layout import Layout, LayoutTensor
 
 
-fn qr_factorization[
+def qr_factorization[
     dtype: DType,
     element_layout: Layout,
 ](
-    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
+    sigma: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
+    A: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
     """Performs QR factorization of a matrix `A` using the Householder reflector
     method.
@@ -89,13 +88,13 @@ fn qr_factorization[
                 )  # v[i + 1] -= s * w
 
 
-fn apply_q[
+def apply_q[
     dtype: DType,
     element_layout: Layout,
 ](
-    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
-    X: LayoutTensor[dtype, element_layout=element_layout, **_],
+    sigma: LayoutTensor[dtype, element_layout=element_layout, ...],
+    A: LayoutTensor[dtype, element_layout=element_layout, ...],
+    X: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
     """Applies the implicit Q factor stored in `A` and `sigma` after calling
     `qr_factorization` to the `X` matrix.
@@ -120,13 +119,13 @@ fn apply_q[
                 X[k + i + 1, j] -= s * A[k + i + 1, k]  # v[i + 1] -= s * w
 
 
-fn form_q[
+def form_q[
     dtype: DType,
     element_layout: Layout,
 ](
-    sigma: LayoutTensor[dtype, element_layout=element_layout, **_],
-    A: LayoutTensor[dtype, element_layout=element_layout, **_],
-    Q: LayoutTensor[dtype, element_layout=element_layout, **_],
+    sigma: LayoutTensor[dtype, element_layout=element_layout, ...],
+    A: LayoutTensor[dtype, element_layout=element_layout, ...],
+    Q: LayoutTensor[mut=True, dtype, element_layout=element_layout, ...],
 ):
     """Forms the Q factor from the implicit Q factor stored in `A` and `sigma`
     after calling `qr_factorization` and stores the result in `Q`.

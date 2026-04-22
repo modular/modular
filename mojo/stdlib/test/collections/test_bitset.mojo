@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,12 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import BitSet
+from std.collections import BitSet
 
-from testing import assert_equal, assert_not_equal, assert_false, assert_true
+from std.testing import (
+    assert_equal,
+    assert_false,
+    assert_not_equal,
+    assert_true,
+)
+from std.testing import TestSuite
+from test_utils import check_write_to
 
 
-def test_bitset_init():
+def test_bitset_init() raises:
     # Test default initialization
     var bs = BitSet[128]()
     assert_equal(len(bs), 0, msg="Empty BitSet should have length 0")
@@ -27,7 +34,7 @@ def test_bitset_init():
     assert_equal(len(bs2), 0, msg="Empty BitSet should have length 0")
 
 
-def test_bitset_set_test_clear():
+def test_bitset_set_test_clear() raises:
     var bs = BitSet[128]()
 
     # Test setting bits
@@ -61,7 +68,7 @@ def test_bitset_set_test_clear():
     assert_false(bs.test(100), msg="Bit 100 should be cleared after clear_all")
 
 
-def test_bitset_toggle():
+def test_bitset_toggle() raises:
     var bs = BitSet[64]()
 
     # Toggle bit from 0 to 1
@@ -82,7 +89,7 @@ def test_bitset_toggle():
     assert_equal(len(bs), 3, msg="BitSet length should be 31")
 
 
-def test_bitset_toggle_all():
+def test_bitset_toggle_all() raises:
     var bs1 = BitSet[64]()
     var bs2 = BitSet[64]()
 
@@ -109,7 +116,35 @@ def test_bitset_toggle_all():
     assert_equal(len(bs1), 56, msg="BitSet total popcount should be 56")
 
 
-def test_bitset_set_all():
+def test_bitset_toggle_all_non_word_length() raises:
+    var bs1 = BitSet[57]()
+    var bs2 = BitSet[57]()
+
+    # set 7 bits
+    for idx in [0, 1, 10, 19, 22, 37, 56]:
+        bs1.set(idx)
+        bs2.set(idx)
+
+    # toggle all in one BitSet
+    bs1.toggle_all()
+
+    # assert that they differ in all idx
+    for idx in range(57):
+        assert_not_equal(
+            bs1.test(idx),
+            bs2.test(idx),
+            msg="Bit "
+            + String(idx)
+            + " should be "
+            + String(not bs2.test(idx))
+            + " after toggle",
+        )
+
+    # after toggling, 50/57 bits should be set
+    assert_equal(len(bs1), 50, msg="BitSet total popcount should be 50")
+
+
+def test_bitset_set_all() raises:
     var bs = BitSet[64]()
 
     # set random enough pattern in BitSet
@@ -128,7 +163,22 @@ def test_bitset_set_all():
     assert_equal(len(bs), 64, msg="BitSet total popcount should be 64")
 
 
-def test_bitset_count():
+def test_bitset_set_all_non_word_length() raises:
+    var bs = BitSet[27]()
+
+    bs.set_all()
+
+    # assert 1 in all idx
+    for idx in range(27):
+        assert_true(
+            bs.test(idx),
+            msg="Bit " + String(idx) + " should be True (1) after set all",
+        )
+
+    assert_equal(len(bs), 27, msg="BitSet total popcount should be 27")
+
+
+def test_bitset_count() raises:
     var bs = BitSet[256]()
 
     # Empty set should have count 0
@@ -153,7 +203,7 @@ def test_bitset_count():
     assert_equal(len(bs), 0, msg="BitSet should have count 0 after clear_all")
 
 
-def test_bitset_bounds():
+def test_bitset_bounds() raises:
     var bs = BitSet[32]()
 
     # Test valid operations
@@ -163,7 +213,7 @@ def test_bitset_bounds():
     assert_true(bs.test(31), msg="Bit 31 should be set")
 
 
-def test_bitset_str_repr():
+def test_bitset_str_repr() raises:
     var bs = BitSet[16]()
     bs.set(1)
     bs.set(5)
@@ -192,7 +242,20 @@ def test_bitset_str_repr():
     )
 
 
-def test_bitset_edge_cases():
+def test_write_to() raises:
+    var bitset = BitSet[16]()
+
+    check_write_to(bitset, expected="{}", is_repr=False)
+    check_write_to(bitset, expected="BitSet[16]({})", is_repr=True)
+
+    bitset.set(1)
+    bitset.set(5)
+
+    check_write_to(bitset, expected="{1, 5}", is_repr=False)
+    check_write_to(bitset, expected="BitSet[16]({1, 5})", is_repr=True)
+
+
+def test_bitset_edge_cases() raises:
     # Test with minimum size
     var bs_min = BitSet[1]()
     bs_min.set(0)
@@ -220,7 +283,7 @@ def test_bitset_edge_cases():
     )
 
 
-def test_bitset_consecutive_operations():
+def test_bitset_consecutive_operations() raises:
     var bs = BitSet[64]()
 
     # Set and immediately clear
@@ -249,7 +312,7 @@ def test_bitset_consecutive_operations():
     assert_false(bs, msg="BitSet should be empty after clear_all")
 
 
-def test_bitset_word_boundaries():
+def test_bitset_word_boundaries() raises:
     var bs = BitSet[128]()
 
     # Test bits at word boundaries (assuming 64-bit words)
@@ -281,7 +344,7 @@ def test_bitset_word_boundaries():
     )
 
 
-def test_bitset_large_indices():
+def test_bitset_large_indices() raises:
     var bs = BitSet[256]()
 
     # Test with larger indices
@@ -304,7 +367,7 @@ def test_bitset_large_indices():
     )
 
 
-def test_bitset_union():
+def test_bitset_union() raises:
     # Basic case
     var bs1 = BitSet[128]()
     bs1.set(1)
@@ -373,7 +436,7 @@ def test_bitset_union():
     assert_true(bs11.test(70), msg="Union: Across words bit 70")
 
 
-def test_bitset_intersection():
+def test_bitset_intersection() raises:
     # Basic case
     var bs1 = BitSet[128]()
     bs1.set(1)
@@ -435,7 +498,7 @@ def test_bitset_intersection():
     assert_false(bs11.test(75), msg="Intersection: Across words bit 75")
 
 
-def test_bitset_difference():
+def test_bitset_difference() raises:
     # Basic case (bs1 - bs2)
     var bs1 = BitSet[128]()
     bs1.set(1)
@@ -540,7 +603,7 @@ def test_bitset_difference():
     )
 
 
-def test_bitset_simd_init():
+def test_bitset_simd_init() raises:
     var bs1 = BitSet(SIMD[DType.bool, 128](fill=True))
     assert_equal(len(bs1), 128, msg="BitSet count should be 128")
 
@@ -551,7 +614,7 @@ def test_bitset_simd_init():
     assert_equal(len(bs3), 2, msg="BitSet count should be 2")
 
 
-def test_bitset_len():
+def test_bitset_len() raises:
     # 1. Empty BitSet
     var bs = BitSet[128]()
     assert_equal(len(bs), 0, msg="Len: Empty BitSet should be 0")
@@ -580,7 +643,7 @@ def test_bitset_len():
     assert_equal(len(bs), expected, msg="Len: Pattern insertion")
 
 
-def test_bitset_small_size():
+def test_bitset_small_size() raises:
     # Test BitSet with size less than 64 (word size)
     var bs = BitSet[32]()
     assert_equal(len(bs), 0, msg="Small BitSet: Empty should have length 0")
@@ -708,22 +771,5 @@ def test_bitset_small_size():
     )
 
 
-def main():
-    test_bitset_init()
-    test_bitset_set_test_clear()
-    test_bitset_toggle()
-    test_bitset_toggle_all()
-    test_bitset_set_all()
-    test_bitset_count()
-    test_bitset_bounds()
-    test_bitset_str_repr()
-    test_bitset_edge_cases()
-    test_bitset_consecutive_operations()
-    test_bitset_word_boundaries()
-    test_bitset_large_indices()
-    test_bitset_union()
-    test_bitset_intersection()
-    test_bitset_difference()
-    test_bitset_simd_init()
-    test_bitset_len()
-    test_bitset_small_size()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

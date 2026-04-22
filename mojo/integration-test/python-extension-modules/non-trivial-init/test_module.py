@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,15 +13,9 @@
 
 """Test non-trivial initialization of MojoPair from Python."""
 
-import sys
-
-import pytest
-
-# Put the current directory (containing .so) on the Python module lookup path.
-sys.path.insert(0, "")
-
 # Imports from 'mojo_module.so'
-import mojo_module
+import mojo_module  # type: ignore[import-not-found]
+import pytest
 
 
 def test_non_trivial_initialization() -> None:
@@ -58,7 +52,7 @@ def test_error_handling() -> None:
         mojo_module.MojoPair(42, "not_a_number")
 
 
-def test_keyword_arguments():
+def test_keyword_arguments() -> None:
     """Test that keyword arguments work in __init__ methods."""
     # Test basic keyword arguments
     pair = mojo_module.MojoPair(first=42, second=10)

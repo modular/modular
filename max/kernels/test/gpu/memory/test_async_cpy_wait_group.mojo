@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,36 +11,36 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import size_of
+from std.sys import size_of
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
-from gpu.memory import (
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
+from std.gpu.memory import (
     AddressSpace,
     async_copy,
     async_copy_commit_group,
     async_copy_wait_all,
     async_copy_wait_group,
 )
-from memory import stack_allocation
-from testing import assert_equal
+from std.memory import stack_allocation
+from std.testing import assert_equal
 
 
-fn copy_via_shared(
-    src: UnsafePointer[Float32],
-    dst: UnsafePointer[Float32],
+def copy_via_shared(
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
 ):
-    var thread_id = Int(thread_idx.x)
+    var thread_id = thread_idx.x
     var mem_buff: UnsafePointer[
-        Float32, address_space = AddressSpace.SHARED
-    ] = stack_allocation[16, Float32, address_space = AddressSpace.SHARED]()
+        Float32, MutAnyOrigin, address_space=AddressSpace.SHARED
+    ] = stack_allocation[16, Float32, address_space=AddressSpace.SHARED]()
     var src_global: UnsafePointer[
-        Float32, address_space = AddressSpace.GLOBAL
+        Float32, ImmutAnyOrigin, address_space=AddressSpace.GLOBAL
     ] = src.address_space_cast[AddressSpace.GLOBAL]()
 
     async_copy[4](
-        src_global.offset(thread_id),
-        mem_buff.offset(thread_id),
+        src_global + thread_id,
+        mem_buff + thread_id,
     )
 
     async_copy_commit_group()
@@ -49,21 +49,21 @@ fn copy_via_shared(
     dst[thread_id] = mem_buff[thread_id]
 
 
-fn run_copy_via_shared(ctx: DeviceContext) raises:
+def run_copy_via_shared(ctx: DeviceContext) raises:
     print("== run_copy_via_shared")
-    var in_data = UnsafePointer[Float32].alloc(16)
-    var out_data = UnsafePointer[Float32].alloc(16)
+    var in_data = alloc[Float32](16)
+    var out_data = alloc[Float32](16)
     var in_data_device = ctx.enqueue_create_buffer[DType.float32](16)
     var out_data_device = ctx.enqueue_create_buffer[DType.float32](16)
 
     for i in range(16):
-        in_data[i] = i + 1
+        in_data[i] = Float32(i + 1)
         out_data[i] = 0
 
     ctx.enqueue_copy(in_data_device, in_data)
     ctx.enqueue_copy(out_data_device, out_data)
 
-    ctx.enqueue_function[copy_via_shared](
+    ctx.enqueue_function_experimental[copy_via_shared](
         in_data_device,
         out_data_device,
         grid_dim=(1,),
@@ -83,39 +83,43 @@ fn run_copy_via_shared(ctx: DeviceContext) raises:
     out_data.free()
 
 
-fn copy_with_src_size(
-    src: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[Float32, address_space = AddressSpace.GLOBAL],
+def copy_with_src_size(
+    src: UnsafePointer[Float32, ImmutAnyOrigin],
+    dst: UnsafePointer[Float32, MutAnyOrigin],
     src_size: Int,
 ):
     var smem = stack_allocation[
-        8, DType.float32, address_space = AddressSpace.SHARED
+        8, DType.float32, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(8):
         smem[i] = -1.0
 
     # src[0: 4] are valid addresses, this copies `src_size` elements.
-    async_copy[16, fill = Float32(0)](src, smem, src_size)
+    async_copy[16, fill=Float32(0)](
+        src.address_space_cast[AddressSpace.GLOBAL](), smem, Int32(src_size)
+    )
     # src[4: 8] are OOB, this should ignore src and set dst to zero.
     # See https://github.com/NVIDIA/cutlass/blob/5b283c872cae5f858ab682847181ca9d54d97377/include/cute/arch/copy_sm80.hpp#L101-L127.
     # Use `mojo build <this test>; compute-sanitizer <this test>` to verify there
     # is no OOB access.
-    async_copy[16, fill = Float32(0)](src + 4, smem + 4, 0)
+    async_copy[16, fill=Float32(0)](
+        src.address_space_cast[AddressSpace.GLOBAL]() + 4, smem + 4, 0
+    )
     async_copy_wait_all()
 
     for i in range(8):
         dst[i] = smem[i]
 
 
-fn copy_with_non_zero_fill[
+def copy_with_non_zero_fill[
     smem_size: Int
 ](
-    src: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
-    dst: UnsafePointer[BFloat16, address_space = AddressSpace.GLOBAL],
+    src: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    dst: UnsafePointer[BFloat16, MutAnyOrigin],
 ):
     var smem = stack_allocation[
-        smem_size, DType.bfloat16, address_space = AddressSpace.SHARED
+        smem_size, DType.bfloat16, address_space=AddressSpace.SHARED
     ]()
 
     for i in range(smem_size):
@@ -123,10 +127,14 @@ fn copy_with_non_zero_fill[
 
     var offset = smem_size // 2
 
-    async_copy[16, fill = BFloat16(32)](src, smem, predicate=True)
+    async_copy[16, fill=BFloat16(32)](
+        src.address_space_cast[AddressSpace.GLOBAL](), smem, predicate=True
+    )
 
-    async_copy[16, fill = BFloat16(32)](
-        src + offset, smem + offset, predicate=False
+    async_copy[16, fill=BFloat16(32)](
+        (src + offset).address_space_cast[AddressSpace.GLOBAL](),
+        smem + offset,
+        predicate=False,
     )
     async_copy_wait_all()
 
@@ -134,28 +142,28 @@ fn copy_with_non_zero_fill[
         dst[i] = smem[i]
 
 
-fn test_copy_with_src_size(ctx: DeviceContext) raises:
-    alias size = 4
+def test_copy_with_src_size(ctx: DeviceContext) raises:
+    comptime size = 4
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
-    var a_host = UnsafePointer[Float32].alloc(size)
-    var b_host = UnsafePointer[Float32].alloc(2 * size)
+    var a_host = alloc[Float32](size)
+    var b_host = alloc[Float32](2 * size)
 
     for i in range(size):
-        a_host[i] = i + 1
+        a_host[i] = Float32(i + 1)
 
     for i in range(2 * size):
-        b_host[i] = i + 1
+        b_host[i] = Float32(i + 1)
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](size)
     var b_device = ctx.enqueue_create_buffer[DType.float32](2 * size)
 
     ctx.enqueue_copy(a_device, a_host)
 
-    alias kernel = copy_with_src_size
-    alias src_size = 3 * size_of[DType.float32]()
+    comptime kernel = copy_with_src_size
+    comptime src_size = 3 * size_of[DType.float32]()
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         src_size,
@@ -182,15 +190,15 @@ fn test_copy_with_src_size(ctx: DeviceContext) raises:
     b_host.free()
 
 
-fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
-    alias size = 8
+def test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
+    comptime size = 8
 
     # Allocate arrays of different sizes to trigger an OOB address in test.
-    var a_host = UnsafePointer[BFloat16].alloc(size)
-    var b_host = UnsafePointer[BFloat16].alloc(2 * size)
+    var a_host = alloc[BFloat16](size)
+    var b_host = alloc[BFloat16](2 * size)
 
     for i in range(size):
-        a_host[i] = i + 1
+        a_host[i] = BFloat16(i + 1)
 
     for i in range(2 * size):
         b_host[i] = 0
@@ -200,14 +208,13 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
 
     ctx.enqueue_copy(a_device, a_host)
 
-    alias kernel = copy_with_non_zero_fill[2 * size]
+    comptime kernel = copy_with_non_zero_fill[2 * size]
 
-    alias src_size = 3 * size_of[DType.bfloat16]()
+    comptime src_size = 3 * size_of[DType.bfloat16]()
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
-        src_size,
         grid_dim=(1, 1, 1),
         block_dim=(1, 1, 1),
     )
@@ -239,7 +246,7 @@ fn test_copy_with_non_zero_fill(ctx: DeviceContext) raises:
     b_host.free()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_copy_via_shared(ctx)
         test_copy_with_src_size(ctx)

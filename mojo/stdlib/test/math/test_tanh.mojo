@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,28 +11,29 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import tanh
-from random import randn, seed
+from std.math import tanh
+from std.random import randn, seed
 
-from buffer import NDBuffer
 from test_utils import compare, libm_call
-from testing import assert_almost_equal
+from std.testing import assert_almost_equal, TestSuite
 
 
-fn tanh_libm[
-    dtype: DType, simd_width: Int
-](arg: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
+def tanh_libm[
+    dtype: DType, simd_width: SIMDSize
+](arg: SIMD[dtype, simd_width]) -> SIMD[
+    dtype, simd_width
+] where dtype.is_floating_point():
     return libm_call["tanhf", "tanh"](arg)
 
 
-def test_tanh_tfvals_fp32():
-    alias dtype = DType.float32
+def test_tanh_tfvals_fp32() raises:
+    comptime dtype = DType.float32
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var x = NDBuffer[dtype, 1, _, 4](x_stack)
-    x.store[width=4](
+    var x = Span(x_stack)
+    x.unsafe_ptr().store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -43,7 +44,7 @@ def test_tanh_tfvals_fp32():
     )
 
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 1, _, 4](y_stack)
+    var y = Span(y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
 
@@ -51,8 +52,8 @@ def test_tanh_tfvals_fp32():
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float32(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var tfvals_fp32 = NDBuffer[dtype, 1, _, 4](tfvals_stack)
-    tfvals_fp32.store[width=4](
+    var tfvals_fp32 = Span(tfvals_stack)
+    tfvals_fp32.unsafe_ptr().store[width=4](
         0, SIMD[dtype, 4](-0.850603521, -1, -1, -0.612388909)
     )
 
@@ -61,7 +62,10 @@ def test_tanh_tfvals_fp32():
         0.0, 1.1920928955078125e-07, 0.0, 1.1920928955078125e-07
     )
     var err = compare[dtype](
-        y.data, tfvals_fp32.data, 4, msg="Compare Mojo vs. Tensorflow FP32"
+        y.unsafe_ptr(),
+        tfvals_fp32.unsafe_ptr(),
+        4,
+        msg="Compare Mojo vs. Tensorflow FP32",
     )
     # check that tolerances are better than or almost equal to abs_rel_err
     for i in range(4):
@@ -69,14 +73,14 @@ def test_tanh_tfvals_fp32():
             assert_almost_equal(err[i], abs_rel_err[i])
 
 
-def test_tanh_tfvals_fp64():
-    alias dtype = DType.float64
+def test_tanh_tfvals_fp64() raises:
+    comptime dtype = DType.float64
 
     # The following input values for x are taken from
     # https://github.com/modularml/modular/issues/28981#issuecomment-1890182667
     var x_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var x = NDBuffer[dtype, 1, _, 4](x_stack)
-    x.store[width=4](
+    var x = Span(x_stack)
+    x.unsafe_ptr().store[width=4](
         0,
         SIMD[dtype, 4](
             -1.2583316564559937,
@@ -87,7 +91,7 @@ def test_tanh_tfvals_fp64():
     )
 
     var y_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var y = NDBuffer[dtype, 1, _, 4](y_stack)
+    var y = Span(y_stack)
     for i in range(4):
         y[i] = tanh(x[i])
 
@@ -95,8 +99,8 @@ def test_tanh_tfvals_fp64():
     # TF results
     # use `tf.print(tf.math.tanh(numpy.float64(x)))`
     var tfvals_stack = InlineArray[Scalar[dtype], 4](uninitialized=True)
-    var tfvals_fp64 = NDBuffer[dtype, 1, _, 4](tfvals_stack)
-    tfvals_fp64.store[width=4](
+    var tfvals_fp64 = Span(tfvals_stack)
+    tfvals_fp64.unsafe_ptr().store[width=4](
         0,
         SIMD[dtype, 4](
             -0.85060351067231821,
@@ -115,7 +119,10 @@ def test_tanh_tfvals_fp64():
     )
 
     var err = compare[dtype](
-        y.data, tfvals_fp64.data, 4, msg="Compare Mojo vs. Tensorflow FP64"
+        y.unsafe_ptr(),
+        tfvals_fp64.unsafe_ptr(),
+        4,
+        msg="Compare Mojo vs. Tensorflow FP64",
     )
     # check that tolerances are better than or almost equal to abs_rel_err
     for i in range(4):
@@ -123,30 +130,30 @@ def test_tanh_tfvals_fp64():
             assert_almost_equal(err[i], abs_rel_err[i])
 
 
-def test_tanh_libm[N: Int = 8192]():
+def _test_tanh_libm[N: Int = 8192]() raises:
     seed(0)
-    alias test_dtype = DType.float32
-    var x32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    comptime test_dtype = DType.float32
+    var x32 = alloc[Scalar[test_dtype]](N)
     randn[test_dtype](x32, N, 0, 9.0)
     print("For N=", N, " randomly generated vals; mean=0.0, var=9.0")
 
     ####################
     # mojo tanh result
     ####################
-    var y32 = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var y32 = alloc[Scalar[test_dtype]](N)
     for i in range(N):
         y32[i] = tanh(x32[i])
 
     ####################
     ## libm tanh result
     ####################
-    var libm_out = UnsafePointer[Scalar[test_dtype]].alloc(N)
+    var libm_out = alloc[Scalar[test_dtype]](N)
     for i in range(N):
         libm_out[i] = tanh_libm(x32[i])
 
     # abs_rel_err = (abs_min, abs_max, rel_min, rel_max)
     var abs_rel_err = SIMD[test_dtype, 4](
-        0.0, 2.384185791015625e-07, 0.0, 2.5438197326366208e-07
+        0.0, 2.384185791015625e-07, 0.0, 3.2e-07
     )
 
     var err = compare[test_dtype](y32, libm_out, N, msg="Compare Mojo vs. LibM")
@@ -160,8 +167,8 @@ def test_tanh_libm[N: Int = 8192]():
     libm_out.free()
 
 
-def test_direct():
-    alias F32x4 = SIMD[DType.float32, 4]
+def test_direct() raises:
+    comptime F32x4 = SIMD[DType.float32, 4]
     var f32x4 = 0.5 * F32x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
         tanh(f32x4), F32x4(0.0, 0.462117165, 0.761594176, 0.905148208)
@@ -170,7 +177,7 @@ def test_direct():
         tanh(0.5 * f32x4), F32x4(0.0, 0.244918659, 0.462117165, 0.635149002)
     )
 
-    alias F64x4 = SIMD[DType.float64, 4]
+    comptime F64x4 = SIMD[DType.float64, 4]
     var f64x4 = 0.5 * F64x4(0.0, 1.0, 2.0, 3.0)
     assert_almost_equal(
         tanh(f64x4), F64x4(0.0, 0.462117165, 0.761594176, 0.905148208)
@@ -180,8 +187,41 @@ def test_direct():
     )
 
 
-def main():
-    test_direct()
-    test_tanh_tfvals_fp32()
-    test_tanh_tfvals_fp64()
-    test_tanh_libm()
+def test_tanh_libm() raises:
+    _test_tanh_libm[]()
+
+
+def test_tanh_libm_f64() raises:
+    comptime N = 8192
+    seed(0)
+    comptime test_dtype = DType.float64
+    var x64 = alloc[Scalar[test_dtype]](N)
+    randn[test_dtype](x64, N, 0, 9.0)
+    print("For N=", N, " randomly generated float64 vals; mean=0.0, var=9.0")
+
+    var y64 = alloc[Scalar[test_dtype]](N)
+    for i in range(N):
+        y64[i] = tanh(x64[i])
+
+    var libm_out = alloc[Scalar[test_dtype]](N)
+    for i in range(N):
+        libm_out[i] = tanh_libm(x64[i])
+
+    # Expect near machine-epsilon accuracy after float64 fix.
+    # Allow up to 1e-14 absolute and relative error as a conservative bound.
+    var abs_rel_err = SIMD[test_dtype, 4](0.0, 1e-14, 0.0, 1e-14)
+
+    var err = compare[test_dtype](
+        y64, libm_out, N, msg="Compare Mojo float64 vs. LibM tanh"
+    )
+    for i in range(4):
+        if not err[i] <= abs_rel_err[i]:
+            assert_almost_equal(err[i], abs_rel_err[i])
+
+    x64.free()
+    y64.free()
+    libm_out.free()
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

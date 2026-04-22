@@ -1,4 +1,6 @@
-# Mojo deinit argument convention [v2]
+# Mojo `deinit` Argument Convention [v2]
+
+**Status**: Implemented.
 
 This document explores what is hopefully the last argument naming convention
 repainting that we need to figure out, finally bringing the whole system into a
@@ -12,7 +14,7 @@ fits in with implicit destructors.
 ## Before we dive in: An Important Grounding Truth
 
 The most important thing to understand going into this document is that a
-“struct value” cannot be though of as just a sum of its parts.  Consider this
+“struct value” cannot be though of as just a sum of its parts. Consider this
 very simple type:
 
 ```mojo
@@ -23,17 +25,17 @@ struct FileDescriptor:
         sys.close(self.value) # Call close(2)
 ```
 
-A `FileDescriptor` is a struct that wraps an `Int`.   Mojo as a language and
+A `FileDescriptor` is a struct that wraps an `Int`. Mojo as a language and
 compiler doesn’t know what an `Int` is, but it does know it is a trivial type
-(has no destructor and can be moved trivially).  Note that `FileDescriptor` is
-not trivial, even though it only has one trivial member.  This is what we mean
+(has no destructor and can be moved trivially). Note that `FileDescriptor` is
+not trivial, even though it only has one trivial member. This is what we mean
 by saying that the behavior of a struct (like `FileDescriptor`) can be very
 different than the behavior of its members.
 
 Let’s generalize this observation: While some familiar types (e.g. “a pair” or
 “a dataclass”) should behave the same way as a composition of their elements,
-this isn’t true in general.  A struct can provide additional semantic behavior
-on top of the storage they contain.  This isn’t surprising: a `List` is far more
+this isn’t true in general. A struct can provide additional semantic behavior
+on top of the storage they contain. This isn’t surprising: a `List` is far more
 than an unsafe pointer, capacity and length!
 
 ## Background: How Argument Conventions work
@@ -55,7 +57,8 @@ fn f5(out a: SomeType):
 ```
 
 This design has been through a lot of discussion, has been rolled out now and
-seems to be [well received](https://discord.com/channels/1087530497313357884/1224434323193594059/1390609085380034591)
+seems to be
+[well received](https://discord.com/channels/1087530497313357884/1224434323193594059/1390609085380034591)
 so far, though it is early days.
 
 While rolling out [the patch to mass adopt the new
@@ -86,12 +89,12 @@ here.
 ### Behavior of `var` / `owned` arguments and the `__del__`
 
 The `__del__` special function in Mojo is a familiar friend: it implements the
-destruction logic that tears down a value after its last use.  Mojo decides when
+destruction logic that tears down a value after its last use. Mojo decides when
 a value has been “last used” and inserts the calls to destructors automatically,
 using static garbage collection.
 
 Let’s take a careful look inside a destructor to see how it works, because there
-is an unfortunate bit of magic afoot.  With top of tree Mojo, `__del__` and
+is an unfortunate bit of magic afoot. With top of tree Mojo, `__del__` and
 `normal_method1` behave differently due to this magic.
 
 ```mojo
@@ -112,7 +115,7 @@ struct MyStringWrapper:
 
 In normal methods, a `var` argument is a uniquely owned value, and Mojo will
 make sure that value is destroyed for you after its last use: e.g. in
-`normal_method1` .  Mojo is smart - if you consume the whole value inside the
+`normal_method1` . Mojo is smart - if you consume the whole value inside the
 function then it knows that the value is not alive, and will not run its
 implicit destructor:
 
@@ -124,7 +127,7 @@ extension MyStringWrapper:
 ```
 
 However, take a look at what happens when a method consuming one member string
-out of the value, but not the value as a whole.  Mojo realizes that the *value
+out of the value, but not the value as a whole. Mojo realizes that the *value
 as a whole* isn’t destroyed (go back to the `FileDescriptor` example - consuming
 a field doesn’t mean the whole value is destroyed) so when it tries to destroy
 it, it produces a compile time error saying it can’t.
@@ -141,7 +144,7 @@ side effects!
 
 This raises the question though - why does `__del__` compile? It is taking
 something that looks syntactically like an `owned` or `var` argument, but in
-fact, it doesn’t (recursively) run the destructor on self at the end.  The
+fact, it doesn’t (recursively) run the destructor on self at the end. The
 answer is that `__del__` is special cased to disable the full object destruction
 state of `self` before any returns, which makes it actually behave like this:
 
@@ -155,14 +158,14 @@ extension MyStringWrapper:
 
 This is what I mean when I say that `__del__` has a bit of implicit magic in it:
 all `__del__` methods include an implicit `__disable_del` inside of them, that
-are completely invisible in the code.  This magic erodes the mental model and
+are completely invisible in the code. This magic erodes the mental model and
 hurts teachability of Mojo.
 
 ### Behavior of `existing` in a `__moveinit__`
 
 Similarly to destructors, `__moveinit__` also has the same special case (and
 this special case is limited to exactly these two methods): the `existing` value
-also gets its destructor disabled.  This is why this logic works for
+also gets its destructor disabled. This is why this logic works for
 `__moveinit__` but not other methods:
 
 ```mojo
@@ -182,13 +185,13 @@ struct StringPair:
 ```
 
 The issue here is the same: `__del__` and `__moveinit__` both have implicit
-calls to `__disable_del` on their `owned`/`var` arguments.  These are the only
+calls to `__disable_del` on their `owned`/`var` arguments. These are the only
 two methods in mojo with this behavior.
 
 It’s worth noting that this behavior is very natural to Mojo programmers in a
 `__del__` method, but empirically people find this behavior surprising in a
 `__moveinit__`, probably because this behavior is invisible and different than
-C++.  It is very common to see code like this, for example:
+C++. It is very common to see code like this, for example:
 
 ```mojo
 struct MyArray:
@@ -211,18 +214,18 @@ all move operations that “steal” out of a value still have a destructor run 
 the original value, so it must be reset into a no-op defensive state.
 
 Mojo has moved the puck forward - if a value is being consumed, the destructor
-won’t be run on it, and moveinit’s disable the destructor automatically.  This
+won’t be run on it, and moveinit’s disable the destructor automatically. This
 is a great feature that leads to more efficient and easier to implement logic,
 but nonetheless, it is clear that normal Mojo programmers don’t understand this
-behavior.  Any why would they?  This is completely magic behavior that only
+behavior. Any why would they? This is completely magic behavior that only
 applies to destructors and moveinit, an it is mostly invisible - until it is
 surprising.
 
 ### The problem: Mojo should be orthogonal and explainable
 
-While this behavior is explainable, it is complicated and non-obvious.  This
+While this behavior is explainable, it is complicated and non-obvious. This
 leads to surprising behavior because there is nothing in the code that enables
-programmers to understand what is going on.  This is difficult to explain (e.g.
+programmers to understand what is going on. This is difficult to explain (e.g.
 in documentation) and hurts scalability. This design has been useful to
 bootstrap Mojo and get it off the ground, but if we are going to make a change,
 it is better to make it sooner rather than later.
@@ -242,7 +245,7 @@ together all this complexity with one simple solution.
 ## Proposal: Formalize `deinit` argument convention
 
 The proposed solution is to introduce a new `deinit` argument convention and
-remove `__disable_del`.  This can be done in a few steps:
+remove `__disable_del`. This can be done in a few steps:
 
 ### Step 1: Formalize the destructor convention
 
@@ -270,7 +273,7 @@ struct MyStruct:
 
 This argument convention works the same was as `var` on the caller side - it
 demands a uniquely owned rvalue, and will attempt to copy the value on the
-caller side if not owned.  Such a convention can be applied to **any** function
+caller side if not owned. Such a convention can be applied to **any** function
 though, not just destructors:
 
 ```mojo
@@ -294,7 +297,7 @@ struct MyThing:
 ```
 
 The consequence of this is that the behavior of `__moveinit__` is now
-explainable, and the user can even opt-in to whatever behavior they want.  The
+explainable, and the user can even opt-in to whatever behavior they want. The
 default recommendation would be:
 
 ```cpp
@@ -343,13 +346,13 @@ struct Tuple[...]:
 ```
 
 instead, we need to add a method to `VariadicPack` that does this (note: this
-has been done, it is currently called `consume_elements`).  This can be a good
-way to up-level the APIs in general to being more safe.  Mojo is getting
+has been done, it is currently called `consume_elements`). This can be a good
+way to up-level the APIs in general to being more safe. Mojo is getting
 `struct` extensions soon, so this isn’t even a limitation in power.
 
 ## Exotic Examples
 
-Here are a few exotic examples that came up in discussion.  These aren’t
+Here are a few exotic examples that came up in discussion. These aren’t
 expected to be common, but explore some of the edge cases.
 
 ### The `self` argument of `__del__` need not be `deinit`
@@ -370,7 +373,7 @@ struct DelNeedNotBeDeinit:
        pass # custom logic is here.
 ```
 
-This opens questions about how common errors are diagnosed.  We believe that the
+This opens questions about how common errors are diagnosed. We believe that the
 compiler has the right infrastructure to diagnose mistakes correctly, e.g.:
 
 ```mojo
@@ -404,9 +407,9 @@ struct NoParametricDeinit:
 ### We can't accept `var` on `__del__` or `__moveinit__` for a while
 
 While we want to support logic like the above for full generality, we can't do
-that immediately.  The problem is that all Mojo code currently declares their
+that immediately. The problem is that all Mojo code currently declares their
 `__del__` arguments with `owned` or `var` keywords and implicitly get `deinit`
-behavior.  It would be *extremely* hostile to 3rd party code to silently break
+behavior. It would be *extremely* hostile to 3rd party code to silently break
 all destructors by changing behavior.
 
 A better approach to phasing this in is to force the world to move to `__del__`
@@ -465,13 +468,13 @@ There are several different alternatives to consider in this space:
 
 ### Different argument convention names
 
-The names above are somewhat arbitrary, and are soft keywords.  We could
+The names above are somewhat arbitrary, and are soft keywords. We could
 consider other names (suggestions welcome!).
 
 ### Just remove the magic
 
 We could remove the del magic by requiring the use of `__disable_del` (and some
-corresponding operation in initializers) explicitly.  The good thing about this
+corresponding operation in initializers) explicitly. The good thing about this
 is that it would make the behavior very explicit:
 
 ```mojo
@@ -484,14 +487,14 @@ struct String:
 ```
 
 Forgetting to write this would cause the Mojo compiler to complain about
-recursive destruction of a value, so there is no lack of safety.  That said, it
-does seem like a lot of boiler plate for a common operation.  This would also
+recursive destruction of a value, so there is no lack of safety. That said, it
+does seem like a lot of boiler plate for a common operation. This would also
 raise the urgency of finding a good syntax for `__disable_del` , because that
-spelling is just a placeholder.  This also doesn’t help with encapsulation, and
+spelling is just a placeholder. This also doesn’t help with encapsulation, and
 make destructors unnecessarily verbose.
 
 ### Embrace the magic
 
-One alternative is to just leave one or the other behavior alone.  That has the
+One alternative is to just leave one or the other behavior alone. That has the
 disadvantage of leaving a footgun in the language and needing to keep
 `__disable_del` around, and for linear types to never be first class.

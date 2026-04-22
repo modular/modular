@@ -1,6 +1,8 @@
-# Upgrading “Trivial”
+# Upgrading "Trivial"
 
-April 2025. Status: Proposed, not implemented.
+**Status**: Partially Implemented.
+
+Date: April 2025
 
 The `@register_passable("trivial")` decorator on struct declarations were added
 early in the evolution of Mojo as a way to bring up the language, when
@@ -89,9 +91,9 @@ moveinit explicitly) and as a performance optimization for very low level code.
 ## What should "trivial" mean?
 
 There are currently three core operations relevant to this topic: destruction,
-copying and moving.  "Trivial" for destruction means that the destructor is a
+copying and moving. "Trivial" for destruction means that the destructor is a
 no-op, trivial for copying means that the value can be copied with a `memcpy`
-(no other side effects are required).  Trivial for moving means that a value can
+(no other side effects are required). Trivial for moving means that a value can
 be moved by `memcpy`'ing its state and considering the original value.
 
 These are all each orthogonal axes: it is common for types to be trivially
@@ -99,7 +101,7 @@ movable, but have a destructor (e.g. an Arc pointer).
 
 ## Desired improvements to `“trivial”`
 
-Trivial has worked well, but it can be better.  Some observations:
+Trivial has worked well, but it can be better. Some observations:
 
 - The semantics of ”copyable with memcpy” and “no behavior in the destructor”
   really have nothing to do with register pass-ability, we would like for this
@@ -124,7 +126,7 @@ For all these reasons, we need to upgrade “trivial” and decouple it from the
 The Mojo compiler now [implicitly synthesizes
 conformances](upgrading-value-decorator.md) to `AnyType` (providing a
 destructor), to `Movable` (providing `__moveinit__`) and to `Copyable`
-(providing `__copyinit__`).  The compiler can know that each of these operations
+(providing `__copyinit__`). The compiler can know that each of these operations
 are trivial if all contained fields of the type are trivial according to the
 same operation: for example, a struct's destructor is trivial if its elements
 destructors are all trivial.
@@ -253,8 +255,8 @@ have the word "unsafe" in them.
 ### Removing `@register_passable("trivial")`
 
 It appears that this would allow us to remove `@register_passable("trivial")`,
-but keep `@register_passable`.  The former would be replaced with
-`@register_passable`+`Copyable`+`Movable` conformance.  If that causes too much
+but keep `@register_passable`. The former would be replaced with
+`@register_passable`+`Copyable`+`Movable` conformance. If that causes too much
 boilerplate, then we can define a helper trait in the standard library that a
 type can conform to:
 
@@ -272,11 +274,11 @@ Here are a couple design and implementation challenges that may come up:
    the word "unsafe" in them.
 
 2) We might not be able to use `Bool` as the type of these properties, because
-   Bool itself conforms to these traits.  We may run into cycling resolution
-   problems.  Mitigation: we can use `i1` or some purpose built type if
+   Bool itself conforms to these traits. We may run into cycling resolution
+   problems. Mitigation: we can use `i1` or some purpose built type if
    required.
 
-3) We don't actually have defaulted aliases yet.  Mitigation: we can hack the
+3) We don't actually have defaulted aliases yet. Mitigation: we can hack the
    compiler to know about this, since these traits already have synthesis magic.
 
 ## Alternatives Considered
@@ -305,6 +307,6 @@ seems like the right approach in the long term.
 ## Conclusion
 
 This proposal should expand the expressive capability of Mojo by building into
-other existing features in a nice orthogonal way.  It does so without
+other existing features in a nice orthogonal way. It does so without
 introducing new language syntax, and indeed allows removing
 `@register_passable("trivial")`, which removes a concept from the language.

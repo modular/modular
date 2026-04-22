@@ -38,8 +38,19 @@ def _extract_linker_variables(ctx):
         variables = variables,
     )
 
-    # TODO: Fix -Wl, exclusion
-    system_libs = ",".join([x for x in link_arguments if not x.startswith("-Wl,")])
+    system_libs = []
+    for x in link_arguments:
+        if x.startswith("-Wl,"):
+            args = x.split(",")[1:]
+            if args == ["-pie"]:
+                # Skip -pie because some tests link shared libs libs,
+                # assume they will add it anyways
+                continue
+            for y in args:
+                system_libs.append("-Xlinker")
+                system_libs.append(y)
+        else:
+            system_libs.append(x)
 
     return linker_driver, system_libs, env, cc_toolchain.all_files
 
@@ -75,15 +86,10 @@ def _mojo_test_environment_implementation(ctx):
         transitive_runfiles.append(target[DefaultInfo].default_runfiles)
 
     shared_libs = []
-    transitive_files = [depset([mojo_toolchain.lld])]
-
-    # TODO: This also contains runfiles, it probably should not.
-    for tool in mojo_toolchain.all_tools:
-        if type(tool) == type(depset()):
-            transitive_files.append(tool)
-
+    transitive_files = [depset([mojo_toolchain.lld])] + mojo_toolchain.all_tools
     compilerrt = None
-    for lib in mojo_toolchain.implicit_deps:
+    cc_deps = mojo_toolchain.implicit_deps + ([ctx.attr._link_extra_lib] if ctx.attr._link_extra_lib else [])
+    for lib in cc_deps:
         if CcInfo not in lib:
             continue
 
@@ -106,6 +112,21 @@ def _mojo_test_environment_implementation(ctx):
 
     # NOTE: env should probably be used here but can't be passed through directly, right now it is only ZERO_AR_DATE
     linker_driver, system_libs, _, extra_files = _extract_linker_variables(ctx)
+    if ctx.attr.short_path:
+        linker_driver = linker_driver.replace("external/", "../")
+    new_system_libs = []
+    for lib in system_libs:
+        # This is only for cross compilation, which doesn't happen in the test
+        if lib.startswith("-resource-dir="):
+            continue
+
+        # Escape $ORIGIN otherwise it will fail later
+        lib = lib.replace("$ORIGIN", "$$ORIGIN")
+
+        if ctx.attr.short_path:
+            new_system_libs.append(lib.replace("external/", "../"))
+        else:
+            new_system_libs.append(lib)
 
     return [
         CcInfo(),  # Requirement of py_test
@@ -122,7 +143,7 @@ def _mojo_test_environment_implementation(ctx):
             "LLD_PATH": mojo_toolchain.lld.short_path if ctx.attr.short_path else mojo_toolchain.lld.path,
             "MOJO_BINARY_PATH": mojo_toolchain.mojo.short_path if ctx.attr.short_path else mojo_toolchain.mojo.path,
             "MOJO_LINKER_DRIVER": linker_driver,
-            "MOJO_LINKER_SYSTEM_LIBS": system_libs,
+            "MOJO_LINKER_SYSTEM_LIBS": ",".join(new_system_libs),
         }),
     ]
 
@@ -132,6 +153,10 @@ mojo_test_environment = rule(
         "short_path": attr.bool(default = True),
         "data": attr.label_list(
             providers = [MojoInfo],
+        ),
+        "_link_extra_lib": attr.label(
+            default = "@bazel_tools//tools/cpp:link_extra_lib",
+            providers = [CcInfo],
         ),
     },
     toolchains = use_cpp_toolchain() + [

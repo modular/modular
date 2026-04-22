@@ -24,7 +24,7 @@ we need to execute the following command:
 ./bazelw test mojo/stdlib/benchmarks/... --local_test_jobs=1 --test_output=all
 ```
 
-This script builds the open source `stdlib.mojopkg` and then executes
+This script builds the open source `std.mojopkg` and then executes
 all the benchmarks sequentially.
 
 If you wish to test changes you are making on the current branch, remove the
@@ -39,7 +39,7 @@ for src in glob(["**/*.mojo"])
 To something like this:
 
 ```bash
-for src in glob(["**/bench_list.mojo"])
+for src in glob(["**/collections/bench_dict.mojo"])
 ```
 
 Remember to revert the `-t` flag and the `glob` changes again before pushing
@@ -54,11 +54,13 @@ benchmarks to get started.
 
 ## Benchmarks in CI
 
-Currently, there is no short-term plans for adding these benchmarks with regression
-detection and such in the public Mojo CI. We're working hard to improve the processes
-for this internally first before we commit to doing this in the external repo.
+Currently, there is no short-term plans for adding these benchmarks with
+regression detection and such in the public Mojo CI. We're working hard to
+improve the processes for this internally first before we commit to doing this
+in the external repo.
 
 ## Other reading
 
-Check out our [blog post](https://www.modular.com/blog/how-to-be-confident-in-your-performance-benchmarking)
+Check out our
+[blog post](https://www.modular.com/blog/how-to-be-confident-in-your-performance-benchmarking)
 for more info on writing benchmarks.

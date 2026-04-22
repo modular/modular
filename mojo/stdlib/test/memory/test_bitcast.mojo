@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from memory import bitcast, pack_bits
-from testing import assert_equal
+from std.memory import bitcast, pack_bits
+from std.testing import TestSuite
+from std.testing import assert_equal
 
 
-def test_bitcast():
+def test_bitcast() raises:
     assert_equal(
         bitcast[DType.int8, 8](SIMD[DType.int16, 4](1, 2, 3, 4)),
         SIMD[DType.int8, 8](1, 0, 2, 0, 3, 0, 4, 0),
@@ -27,21 +28,21 @@ def test_bitcast():
     )
 
 
-def test_pack_bits():
-    alias b1 = SIMD[DType.bool, 1](True)
+def test_pack_bits() raises:
+    comptime b1 = Scalar[DType.bool](True)
     assert_equal(pack_bits(b1).cast[DType.bool](), b1)
     assert_equal(pack_bits(b1).cast[DType.uint8](), UInt8(0b0000_0001))
 
-    alias b2 = SIMD[DType.bool, 2](1, 0)
+    comptime b2 = SIMD[DType.bool, 2](1, 0)
     assert_equal(pack_bits(b2).cast[DType.uint8](), UInt8(0b0000_0001))
 
-    alias b4 = SIMD[DType.bool, 4](1, 1, 0, 1)
+    comptime b4 = SIMD[DType.bool, 4](1, 1, 0, 1)
     assert_equal(pack_bits(b4).cast[DType.uint8](), UInt8(0b0000_1011))
 
-    alias b8 = SIMD[DType.bool, 8](1, 1, 1, 0, 1, 0, 1, 0)
+    comptime b8 = SIMD[DType.bool, 8](1, 1, 1, 0, 1, 0, 1, 0)
     assert_equal(pack_bits(b8), UInt8(0b0101_0111))
 
-    alias b16 = SIMD[DType.bool, 16](
+    comptime b16 = SIMD[DType.bool, 16](
         1, 1, 1, 0, 1, 0, 1, 0, 0, 1, 0, 1, 0, 0, 0, 1
     )
     assert_equal(pack_bits(b16), UInt16(0b1000_1010_0101_0111))
@@ -51,6 +52,5 @@ def test_pack_bits():
     )
 
 
-def main():
-    test_bitcast()
-    test_pack_bits()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

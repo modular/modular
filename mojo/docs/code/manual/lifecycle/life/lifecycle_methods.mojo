@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,28 +13,25 @@
 
 # ===----------------------------------------------------------------------=== #
 # This example shows the hand-written equivalents of the lifecycle methods
-# that Mojo synthesizes for the struct in lifecycle_methods_sythensized
+# that Mojo synthesizes for the struct in lifecycle_methods_synthesized
 # ===----------------------------------------------------------------------=== #
 
 
-struct MyPet:
+struct MyPet(Copyable):
     var name: String
     var age: Int
 
-    fn __init__(out self, var name: String, age: Int):
+    def __init__(out self, var name: String, age: Int):
         self.name = name^
         self.age = age
 
-    fn __copyinit__(out self, existing: Self):
-        self.name = existing.name
-        self.age = existing.age
+    def __init__(out self, *, copy: Self):
+        self.name = copy.name
+        self.age = copy.age
 
-    fn __moveinit__(out self, deinit existing: Self):
-        self.name = existing.name^
-        self.age = existing.age
-
-    fn copy(self) -> Self:
-        return Self(self.name, self.age)
+    def __init__(out self, *, deinit take: Self):
+        self.name = take.name^
+        self.age = take.age
 
 
 def main():
@@ -42,7 +39,7 @@ def main():
     pet2 = pet.copy()
     print(pet2.name)
     print(pet2.age)
-    pet3 = pet
+    pet3 = pet.copy()
     print(pet3.name)
     pet4 = pet^
     print(pet4.name)

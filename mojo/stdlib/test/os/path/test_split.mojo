@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,23 +11,23 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.path import expanduser, split
-from pathlib import Path
+import std.os
+from std.os.path import expanduser, split
+from std.pathlib import Path
 
-from builtin._location import __source_location
-from testing import assert_equal
+from std.reflection import source_location
+from std.testing import TestSuite, assert_equal
 
 
-def main():
+def test_split() raises:
     # Normal case
-    head, tail = split(os.path.join("a", "b", "c.txt"))
-    assert_equal(head, os.path.join("a", "b"))
+    head, tail = split(std.os.path.join("a", "b", "c.txt"))
+    assert_equal(head, std.os.path.join("a", "b"))
     assert_equal(tail, "c.txt")
 
     # Absolute and empty tail
     head, tail = split(Path.home() / "a" / "b" / "")
-    assert_equal(head, expanduser(os.path.join("~", "a", "b")))
+    assert_equal(head, expanduser(std.os.path.join("~", "a", "b")))
     assert_equal(tail, "")
 
     # Empty head
@@ -41,26 +41,30 @@ def main():
     assert_equal(tail, "")
 
     # Single separator
-    head, tail = split(os.sep)
-    assert_equal(head, String(os.sep))
+    head, tail = split(std.os.sep)
+    assert_equal(head, String(std.os.sep))
     assert_equal(tail, "")
 
     # Two chars, absolute on Linux.
-    head, tail = split(os.path.join(String(os.sep), "a"))
-    assert_equal(head, String(os.sep))
+    head, tail = split(std.os.path.join(String(std.os.sep), "a"))
+    assert_equal(head, String(std.os.sep))
     assert_equal(tail, "a")
 
     # Two chars relative, empty tail
-    head, tail = split(os.path.join("a", ""))
+    head, tail = split(std.os.path.join("a", ""))
     assert_equal(head, "a")
     assert_equal(tail, "")
 
     # Test with Path objects
     head, tail = split(Path("a") / "b" / "c.txt")
-    assert_equal(head, os.path.join("a", "b"))
+    assert_equal(head, std.os.path.join("a", "b"))
     assert_equal(tail, "c.txt")
 
-    # Test with __source_location()
-    source_location = String(__source_location().file_name)
+    # Test with source_location()
+    source_location = String(source_location().file_name())
     head, tail = split(source_location)
-    assert_equal(head + os.sep + tail, source_location)
+    assert_equal(head + std.os.sep + tail, source_location)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

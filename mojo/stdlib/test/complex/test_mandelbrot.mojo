@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,13 +16,17 @@
 #
 # ===----------------------------------------------------------------------=== #
 
-from complex import ComplexFloat32, ComplexSIMD
-from testing import assert_equal
+from std.complex import ComplexScalar, ComplexFloat32, ComplexSIMD
+from std.testing import assert_equal
+
+# NOTE: This is commented out because TestSuite is part of `test_utils` which
+# is not packaged with the stdlib.
+# from testing import TestSuite
 
 
-fn mandelbrot_iter(row: Int, col: Int) -> Int:
-    alias height = 375
-    alias width = 500
+def mandelbrot_iter(row: Int, col: Int) -> Int:
+    comptime height = 375
+    comptime width = 500
 
     var xRange: Float32 = 2.0
     var yRange: Float32 = 1.5
@@ -30,7 +34,8 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     var maxY = -0.5 + yRange
 
     var c = ComplexFloat32(
-        minX + col * xRange / width, maxY - row * yRange / height
+        minX + Float32(col) * xRange / width,
+        maxY - Float32(row) * yRange / height,
     )
 
     var z = c
@@ -44,17 +49,18 @@ fn mandelbrot_iter(row: Int, col: Int) -> Int:
     return iter
 
 
-def test_mandelbrot_iter():
+def test_mandelbrot_iter() raises:
     assert_equal(mandelbrot_iter(0, 0), 1)
     assert_equal(mandelbrot_iter(0, 1), 1)
     assert_equal(mandelbrot_iter(50, 50), 2)
     assert_equal(mandelbrot_iter(100, 100), 3)
 
-    var z = ComplexSIMD[DType.int32, 1](re=Int32(3), im=Int32(4))
+    var z = ComplexScalar[DType.int32](re=Int32(3), im=Int32(4))
     assert_equal(z.squared_norm(), 25)
 
 
-def main():
+def main() raises:
     test_mandelbrot_iter()
+
     # NOTE: We need to print this for the SDK self test.
     print("Mandelbrot passed")

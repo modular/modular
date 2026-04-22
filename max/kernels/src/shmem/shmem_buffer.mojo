@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,50 +11,77 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import has_nvidia_gpu_accelerator, CompilationTarget
-from sys.ffi import external_call
-from sys import size_of
-from gpu.host import DeviceContext, HostBuffer
-from gpu.host.device_context import _checked, _DeviceContextPtr
+from std.sys import (
+    CompilationTarget,
+    has_nvidia_gpu_accelerator,
+    has_amd_gpu_accelerator,
+    size_of,
+)
+from std.ffi import external_call
 
-from .shmem_api import shmem_malloc, shmem_free
+from std.gpu.host import DeviceContext, HostBuffer
+from std.gpu.host.device_context import _checked, _CString, _DeviceContextPtr
+
+from .shmem_api import shmem_free, shmem_malloc
+from std.builtin.device_passable import DevicePassable
 
 
-struct SHMEMBuffer[dtype: DType](Sized):
-    var _data: UnsafePointer[Scalar[dtype]]
-    var _ctx_ptr: _DeviceContextPtr
+struct SHMEMBuffer[dtype: DType](DevicePassable, Sized):
+    var _data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin]
+    var _ctx_ptr: _DeviceContextPtr[mut=True]
     var _size: Int
 
-    @doc_private
+    comptime device_type: AnyType = UnsafePointer[
+        Scalar[Self.dtype], MutAnyOrigin
+    ]
+
+    def _to_device_type(self, target: MutOpaquePointer[_]):
+        target.bitcast[Self.device_type]()[] = self._data
+
+    @staticmethod
+    def get_type_name() -> String:
+        return String(t"SHMEMBuffer[{Self.dtype}]")
+
+    @doc_hidden
     @always_inline
-    fn __init__(
+    def __init__(
         out self,
         ctx: DeviceContext,
         size: Int,
     ) raises:
-        @parameter
-        if has_nvidia_gpu_accelerator():
-            self._data = shmem_malloc[dtype](size)
+        comptime if has_nvidia_gpu_accelerator() or has_amd_gpu_accelerator():
+            self._data = shmem_malloc[Self.dtype](size)
             self._ctx_ptr = ctx._handle
             self._size = size
         else:
             CompilationTarget.unsupported_target_error[
                 operation="SHMEMBuffer.__init__",
             ]()
-            self._data = UnsafePointer[Scalar[dtype]]()
-            self._ctx_ptr = ctx._handle
-            self._size = size
 
-    fn __del__(deinit self):
+    @doc_hidden
+    @always_inline
+    def __init__(
+        out self,
+        ctx: DeviceContext,
+        data: UnsafePointer[Scalar[Self.dtype], MutExternalOrigin],
+        size: Int,
+    ):
+        self._data = data
+        self._ctx_ptr = ctx._handle
+        self._size = size
+
+    def __del__(deinit self):
         shmem_free(self._data)
 
-    fn __len__(self) -> Int:
+    def __len__(self) -> Int:
         return self._size
 
-    fn unsafe_ptr(self) -> UnsafePointer[Scalar[dtype]]:
+    def unsafe_ptr(self) -> UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]:
         return self._data
 
-    fn enqueue_copy_to(self, dst_ptr: UnsafePointer[Scalar[dtype]]) raises:
+    def enqueue_copy_to(
+        self, dst_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    ) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -67,20 +94,20 @@ struct SHMEMBuffer[dtype: DType](Sized):
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
-                UnsafePointer[Byte],
-                _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                _CString[],
+                _DeviceContextPtr[mut=True],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
             ](
                 self._ctx_ptr,
                 dst_ptr,
                 self._data,
-                self._size * size_of[dtype](),
+                self._size * size_of[Self.dtype](),
             )
         )
 
-    fn enqueue_copy_to(self, dst: HostBuffer[dtype]) raises:
+    def enqueue_copy_to(self, dst: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from this buffer to host memory.
 
         This method schedules a memory copy operation from this device buffer to the
@@ -89,24 +116,25 @@ struct SHMEMBuffer[dtype: DType](Sized):
 
         Args:
             dst: Host buffer to copy to.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_DtoH_async_sized",
-                UnsafePointer[Byte],
-                _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
-                Int,
+                _CString[],
             ](
                 self._ctx_ptr,
                 dst.unsafe_ptr(),
                 self._data,
-                self._size * size_of[dtype](),
+                Int(self._size * size_of[Self.dtype]()),
             )
         )
 
-    fn enqueue_copy_from(self, src_ptr: UnsafePointer[Scalar[dtype]]) raises:
+    def enqueue_copy_from(
+        self, src_ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+    ) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
 
         This method schedules a memory copy operation from the specified host memory
@@ -115,24 +143,27 @@ struct SHMEMBuffer[dtype: DType](Sized):
 
         Args:
             src_ptr: Pointer to the source host memory location.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
-                UnsafePointer[Byte],
-                _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
+                _CString[],
+                _DeviceContextPtr[mut=True],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+                UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
                 Int,
             ](
                 self._ctx_ptr,
                 self._data,
                 src_ptr,
-                self._size * size_of[dtype](),
+                self._size * size_of[Self.dtype](),
             )
         )
 
-    fn enqueue_copy_from(self, src: HostBuffer[dtype]) raises:
+    def enqueue_copy_from(self, src: HostBuffer[Self.dtype]) raises:
         """Enqueues an asynchronous copy from host memory to this buffer.
 
         This method schedules a memory copy operation from the specified host memory
@@ -141,19 +172,18 @@ struct SHMEMBuffer[dtype: DType](Sized):
 
         Args:
             src: Host buffer to copy from.
+
+        Raises:
+            If the copy operation fails.
         """
         _checked(
             external_call[
                 "AsyncRT_DeviceContext_HtoD_async_sized",
-                UnsafePointer[Byte],
-                _DeviceContextPtr,
-                UnsafePointer[Scalar[dtype]],
-                UnsafePointer[Scalar[dtype]],
-                Int,
+                _CString[],
             ](
                 self._ctx_ptr,
                 self._data,
                 src.unsafe_ptr(),
-                self._size * size_of[dtype](),
+                Int(self._size * size_of[Self.dtype]()),
             )
         )

@@ -18,11 +18,11 @@ Bazel is the build system of choice for this repo and you can build
 the Mojo Standard Library with:
 
 ```bash
-./bazelw build //mojo/stdlib/stdlib
+./bazelw build //mojo/stdlib/std
 ```
 
-This creates a `stdlib.mojopkg` (the built artifact) from the Bazel build
-directory: `bazel-bin/mojo/stdlib/stdlib/stdlib.mojopkg`.
+This creates a `std.mojopkg` (the built artifact) from the Bazel build
+directory: `bazel-bin/mojo/stdlib/std/std.mojopkg`.
 
 ### Running Tests
 
@@ -64,13 +64,14 @@ Tests are run with `-D ASSERT=all` by default.
 
 ### Running Benchmarks
 
-Read the `mojo/stdlib/benchmarks/README.md` for details on how to run benchmarks.
+Read the `mojo/stdlib/benchmarks/README.md` for details on how to run
+benchmarks.
 
 ### Code Formatting
 
 ```bash
-# Format all Mojo files
-mojo format ./
+# Format all Mojo files (from the root of the repository)
+./bazelw run format
 
 # Format is automatically applied via pre-commit hooks
 ```
@@ -78,8 +79,7 @@ mojo format ./
 ### Documentation Validation
 
 ```bash
-mojo doc --diagnose-missing-doc-strings --validate-doc-strings \
-  -o /dev/null stdlib/stdlib/
+mojo doc --diagnose-missing-doc-strings -Werror -o /dev/null stdlib/std/
 ```
 
 ## High-Level Architecture
@@ -87,7 +87,7 @@ mojo doc --diagnose-missing-doc-strings --validate-doc-strings \
 ### Repository Structure
 
 - `stdlib/`: Mojo standard library implementation
-  - `stdlib/stdlib/`: Source code organized by module (builtin, collections,
+  - `stdlib/std/`: Source code organized by module (builtin, collections,
     memory, etc.)
   - `stdlib/test/`: Unit tests mirroring the source structure
   - `stdlib/benchmarks/`: Performance benchmarks
@@ -107,17 +107,17 @@ modules:
 
 ```bash
 # Build the standard library first
-./bazelw build //mojo/stdlib/stdlib
+./bazelw build //mojo/stdlib/std
 
-# Use the locally built stdlib
-MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/stdlib mojo main.mojo
+# Use the locally built std
+MODULAR_MOJO_MAX_IMPORT_PATH=bazel-bin/mojo/stdlib/std mojo main.mojo
 ```
 
 #### Memory Management
 
 - Follow value semantics and ownership conventions
 - Use `Reference` types and lifetimes in APIs
-- Prefer `AnyType` over `AnyTrivialRegType` (except for MLIR interactions)
+- Prefer `AnyType` over `__TypeOfAllTypes` (except for MLIR interactions)
 
 ## Development Workflow
 
@@ -167,7 +167,8 @@ least one simple code example.
 
 - **First sentence**: Start with a present tense verb describing what the
   function/struct does (for example, "Gets", "Converts", "Stores").
-- **Code font**: Use backticks for all API names (for example, `Int`, `append()`).
+- **Code font**: Use backticks for all API names (for example, `Int`,
+  `append()`).
 - **End with periods**: All sentences and sentence fragments end with periods.
 - **No markdown headings**: Instead use an introductory phrase ending with a
   colon (for example, "Examples:", "Performance tips:").

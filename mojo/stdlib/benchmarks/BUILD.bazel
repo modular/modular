@@ -1,5 +1,9 @@
 load("//bazel:api.bzl", "mojo_test")
 
+# gazelle:default_visibility //visibility:private
+
+package(default_visibility = ["//visibility:private"])
+
 [
     mojo_test(
         name = src + ".test",
@@ -25,7 +29,7 @@ load("//bazel:api.bzl", "mojo_test")
             "//conditions:default": [],
         }),
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
         ],
     )
     for src in glob(["**/*.mojo"])

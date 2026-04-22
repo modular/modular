@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,51 +11,40 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
+from std.math import ceildiv
 
-from buffer import NDBuffer
-from gpu.host import DeviceContext
-from gpu.id import block_idx
-from gpu.memory import AddressSpace
-from nn.mha_tile_scheduler import (
+from std.gpu.host import DeviceContext
+from std.gpu import block_idx
+from nn.attention.gpu.nvidia.sm90.attention import NullPointer
+from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedule,
-    MHASchedulerSynchronization,
     MHATileSummary,
     TileScheduler,
-    WorkInfo,
 )
 
 
-fn test_kernel[schedule: MHASchedule]():
-    alias scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
+def test_kernel[schedule: MHASchedule]():
+    comptime scheduler_t = TileScheduler[32, 3, num_ctas=8, schedule=schedule]
     scheduler = scheduler_t()
-    valid_length = NDBuffer[DType.uint32, 1, MutableAnyOrigin]()
+    valid_length = NullPointer[DType.uint32]()
     tile_summary = MHATileSummary(1, ceildiv(100, 32), valid_length, 0)
     state = scheduler.initial_state(
-        UnsafePointer[UInt32, address_space = AddressSpace.SHARED](),
+        UnsafePointer[
+            UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ].unsafe_dangling(),
         tile_summary,
     )
     work_info = scheduler.get_current_work_info(tile_summary, state)
-
-    # @parameter
-    # @always_inline
-    # fn update_work_info(work: WorkInfo):
-    #     work_info = work
-
-    # while scheduler.advance[func=update_work_info, producer=True,sync= MHASchedulerSynchronization.DEFAULT](
-    #     tile_summary, state, 0
-    # ):
-    #     print(block_idx.x, work_info)
 
     while work_info.is_valid():
         print(block_idx.x, work_info)
         work_info = scheduler.fetch_next_work(tile_summary, state)
 
 
-def test[schedule: MHASchedule](ctx: DeviceContext):
-    alias kernel = test_kernel[schedule]
+def test[schedule: MHASchedule](ctx: DeviceContext) raises:
+    comptime kernel = test_kernel[schedule]
 
-    ctx.enqueue_function[kernel](
+    ctx.enqueue_function_experimental[kernel](
         grid_dim=8,
         block_dim=1,
     )
@@ -63,7 +52,7 @@ def test[schedule: MHASchedule](ctx: DeviceContext):
     ctx.synchronize()
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         # CHECK-LABEL: ==== test default schedule
         # CHECK-DAG: 0 (0, 0, 0, True)

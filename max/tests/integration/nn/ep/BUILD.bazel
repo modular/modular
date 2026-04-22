@@ -1,0 +1,93 @@
+load("//bazel:api.bzl", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+_QUANTIZED_TESTS = [
+    "test_ep_moe_fp4.py",
+    "test_ep_moe_fp8.py",
+]
+
+_COMMON_ENV = select({
+    "//:nvidia_gpu": {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",  # reserve memory for NVSHMEM
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
+    },
+    "//:amd_gpu": {
+        "MODULAR_TORCH_MEMORY_PERCENT": "0.6",  # reserve memory for rocshmem
+        "MODULAR_SHMEM_LIB_DIR": "../+http_archive+rocshmem/lib",
+        # 8GB symmetric heap for large buffer tests
+        "ROCSHMEM_HEAP_SIZE": "8589934592",
+        "ROCSHMEM_BOOTSTRAP_SOCKET_IFNAME": "eno0",
+        # Example config to uncomment for running tests across 2 nodes
+        # set one node SHMEM_NODE_ID: 0, and the other to SHMEM_NODE_ID: 1
+        # Find the SHMEM_SERVER_IP  with e.g. `ip addr show eno0`
+        # "SHMEM_NODE_ID": "0",
+        # "SHMEM_TOTAL_NODES": "2",
+        # "SHMEM_GPUS_PER_NODE": "8",
+        # "SHMEM_SERVER_IP": "10.24.8.111",
+        # "SHMEM_SERVER_PORT": "12345",
+    },
+    "//conditions:default": {},
+})
+
+_COMMON_DEPS = [
+    "//max/python/max/driver",
+    "//max/python/max/dtype",
+    "//max/python/max/engine",
+    "//max/python/max/graph",
+    "//max/python/max/nn",
+    "//max/tests/integration/test_common:graph_utils",
+    requirement("torch"),
+]
+
+modular_py_test(
+    name = "ep_tests",
+    size = "large",
+    srcs = glob(
+        ["test_*.py"],
+        exclude = _QUANTIZED_TESTS,
+    ) + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    gpu_constraints = [
+        "//:has_4_gpus",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS + [requirement("numpy")],
+)
+
+modular_py_test(
+    name = "ep_quantized_tests",
+    size = "large",
+    srcs = _QUANTIZED_TESTS + ["conftest.py"],
+    env = _COMMON_ENV,
+    exec_properties = {
+        "test.resources:gpu-memory": "12",
+    },
+    gpu_constraints = [
+        "//:has_multi_gpu",
+    ],
+    imports = ["."],
+    mojo_deps = [
+        "//max:shmem",
+    ],
+    tags = [
+        "gpu",
+        "requires-network",
+    ],
+    deps = _COMMON_DEPS,
+)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,38 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-import os
-from os.env import getenv, setenv
-from os.path import expanduser, join
-from sys.info import CompilationTarget
+import std.os
+from std.os.env import getenv, setenv
+from std.os.path import expanduser, join
+from std.sys.info import CompilationTarget
 
-from testing import assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-fn get_user_path() -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return join("C:", "Users", "user")
+def get_user_path() -> String:
     return "/home/user"
 
 
-fn get_current_home() -> String:
-    @parameter
-    if CompilationTarget.is_windows():
-        return getenv("USERPROFILE")
+def get_current_home() -> String:
     return getenv("HOME")
 
 
-def set_home(path: String):
-    @parameter
-    if CompilationTarget.is_windows():
-        _ = os.env.setenv("USERPROFILE", path)
-    else:
-        _ = os.env.setenv("HOME", path)
+def set_home(path: String) raises:
+    _ = std.os.env.setenv("HOME", path)
 
 
-fn main() raises:
-    alias user_path = get_user_path()
+def test_expanduser() raises:
+    comptime user_path = get_user_path()
     var original_home = get_current_home()
     set_home(user_path)
 
@@ -68,3 +58,7 @@ fn main() raises:
     assert_equal(join(user_path, "~folder"), expanduser("~/~folder"))
 
     set_home(original_home)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

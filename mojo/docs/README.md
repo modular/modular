@@ -5,7 +5,7 @@ This directory includes most of the documentation at
 
 The only things not here are the `mojo` CLI pages and the Mojo Standard Library
 reference. The reference docs are generated from source files, which are located
-in the [/stdlib/stdlib](../stdlib/stdlib) directory.
+in the [/stdlib/std](../stdlib/std) directory.
 
 ## Contributing
 
@@ -35,3 +35,13 @@ render Markdown and MDX files, such as VS Code, including the
 
 For more information about how to contribute, see the [Contributor
 Guide](../../CONTRIBUTING.md)
+
+## Other docs
+
+- [`/mojo/stdlib/docs`](/mojo/stdlib/docs): Docs for developers working in the
+  Mojo standard library.
+- [`/max/docs`](/max/docs): Docs for developers working in the MAX framework
+  codebase.
+- [`/max/docs/design-docs`](/max/docs/design-docs): Engineering docs that
+  describe how core Modular technologies work.
+- [docs.modular.com](https://docs.modular.com): All other developer docs.

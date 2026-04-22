@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,40 +11,45 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import _dir_of_current_file
-from random import random_float64, random_si64, random_ui64, seed
+from std.collections.string.string_slice import _to_string_list
+from std.pathlib import _dir_of_current_file
+from std.random import rand, random_float64, random_si64, random_ui64, seed
 
-from builtin.sort import _quicksort, _small_sort, _SortWrapper
-from collections.string.string_slice import _to_string_list
-from testing import assert_equal, assert_false, assert_true
+from std.builtin.sort import (
+    _heap_sort,
+    _insertion_sort,
+    _quicksort,
+    _small_sort,
+    _stable_sort,
+)
+from test_utils import CopyCounter
+from std.testing import assert_equal, assert_false, assert_true, TestSuite
 
 
-fn random_numbers[
+def random_numbers[
     dtype: DType
 ](size: Int, max: Int = 3000) -> List[Scalar[dtype]]:
-    var result = List[Scalar[dtype]](size)
+    var result = List[Scalar[dtype]](capacity=size)
     for _ in range(size):
-
-        @parameter
-        if (
-            dtype is DType.int8
-            or dtype is DType.int16
-            or dtype is DType.int32
-            or dtype is DType.int64
+        comptime if (
+            dtype == DType.int8
+            or dtype == DType.int16
+            or dtype == DType.int32
+            or dtype == DType.int64
         ):
-            result.append(random_si64(0, max).cast[dtype]())
+            result.append(random_si64(0, Int64(max)).cast[dtype]())
         elif (
-            dtype is DType.float16
-            or dtype is DType.float32
-            or dtype is DType.float64
+            dtype == DType.float16
+            or dtype == DType.float32
+            or dtype == DType.float64
         ):
-            result.append(random_float64(0, max).cast[dtype]())
+            result.append(random_float64(0, Float64(max)).cast[dtype]())
         else:
-            result.append(random_ui64(0, max).cast[dtype]())
-    return result
+            result.append(random_ui64(0, UInt64(max)).cast[dtype]())
+    return result^
 
 
-fn assert_sorted_string(mut list: List[String]) raises:
+def assert_sorted_string(mut list: List[String]) raises:
     for i in range(1, len(list)):
         assert_true(
             list[i] >= list[i - 1],
@@ -52,13 +57,13 @@ fn assert_sorted_string(mut list: List[String]) raises:
         )
 
 
-fn assert_sorted[T: Copyable & Movable & Comparable](mut list: List[T]) raises:
+def assert_sorted[T: Copyable & Comparable](mut list: List[T]) raises:
     for i in range(1, len(list)):
         assert_true(list[i] >= list[i - 1], String("error at index: ", i))
 
 
-fn test_sort_small_3() raises:
-    alias length = 3
+def test_sort_small_3() raises:
+    comptime length = 3
 
     var list = List[Int]()
 
@@ -67,18 +72,18 @@ fn test_sort_small_3() raises:
     list.append(2)
 
     @parameter
-    fn _less_than(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    def _less_than(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
-    _small_sort[length, Int, _less_than](list.unsafe_ptr())
+    _small_sort[length, Int, _less_than](list)
 
     var expected = [1, 2, 9]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
 
-fn test_sort_small_5() raises:
-    alias length = 5
+def test_sort_small_5() raises:
+    comptime length = 5
 
     var list = List[Int]()
 
@@ -89,24 +94,24 @@ fn test_sort_small_5() raises:
     list.append(4)
 
     @parameter
-    fn _less_than(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    def _less_than(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
-    _small_sort[length, Int, _less_than](list.unsafe_ptr())
+    _small_sort[length, Int, _less_than](list)
 
     var expected = [1, 2, 3, 4, 9]
     for i in range(length):
         assert_equal(expected[i], list[i])
 
 
-fn test_sort0():
+def test_sort0() raises:
     var list = List[Int]()
 
     sort(list)
 
 
-fn test_sort2() raises:
-    alias length = 2
+def test_sort2() raises:
+    comptime length = 2
     var list = List[Int]()
 
     list.append(-1)
@@ -128,8 +133,8 @@ fn test_sort2() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort3() raises:
-    alias length = 3
+def test_sort3() raises:
+    comptime length = 3
     var list = List[Int]()
 
     list.append(-1)
@@ -153,11 +158,11 @@ fn test_sort3() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort3_dupe_elements() raises:
-    alias length = 3
+def test_sort3_dupe_elements() raises:
+    comptime length = 3
 
-    fn test[
-        cmp_fn: fn (_SortWrapper[Int], _SortWrapper[Int]) capturing [_] -> Bool,
+    def test[
+        cmp_fn: def(Int, Int) capturing[_] -> Bool,
     ]() raises:
         var list = List[Int](capacity=3)
         list.append(5)
@@ -171,14 +176,14 @@ fn test_sort3_dupe_elements() raises:
             assert_equal(expected[i], list[i])
 
     @parameter
-    fn _lt(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    def _lt(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
     test[_lt]()
 
 
-fn test_sort4() raises:
-    alias length = 4
+def test_sort4() raises:
+    comptime length = 4
     var list = List[Int]()
 
     list.append(-1)
@@ -204,8 +209,8 @@ fn test_sort4() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort5() raises:
-    alias length = 5
+def test_sort5() raises:
+    comptime length = 5
     var list = List[Int]()
 
     for i in range(5):
@@ -230,8 +235,8 @@ fn test_sort5() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort_reverse() raises:
-    alias length = 5
+def test_sort_reverse() raises:
+    comptime length = 5
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -244,8 +249,8 @@ fn test_sort_reverse() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort_semi_random() raises:
-    alias length = 8
+def test_sort_semi_random() raises:
+    comptime length = 8
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -261,8 +266,8 @@ fn test_sort_semi_random() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort9() raises:
-    alias length = 9
+def test_sort9() raises:
+    comptime length = 9
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -275,8 +280,8 @@ fn test_sort9() raises:
         assert_equal(expected[i], list[i])
 
 
-fn test_sort103() raises:
-    alias length = 103
+def test_sort103() raises:
+    comptime length = 103
     var list = List[Int](capacity=length)
 
     for i in range(length):
@@ -298,12 +303,12 @@ fn test_sort103() raises:
         assert_false(list1[i - 1] > list1[i])
 
 
-fn test_sort_any_103() raises:
-    alias length = 103
+def test_sort_any_103() raises:
+    comptime length = 103
     var list = List[Float32](capacity=length)
 
     for i in range(length):
-        list.append(length - i - 1)
+        list.append(Float32(length - i - 1))
 
     sort(list)
 
@@ -311,25 +316,23 @@ fn test_sort_any_103() raises:
         assert_false(list[i - 1] > list[i])
 
 
-fn test_quick_sort_repeated_val() raises:
-    alias length = 36
+def test_quick_sort_repeated_val() raises:
+    comptime length = 36
     var list = List[Float32](capacity=length)
 
     for i in range(0, length // 4):
-        list.append(i + 1)
-        list.append(i + 1)
-        list.append(i + 1)
-        list.append(i + 1)
+        list.append(Float32(i + 1))
+        list.append(Float32(i + 1))
+        list.append(Float32(i + 1))
+        list.append(Float32(i + 1))
 
     @parameter
-    fn _greater_than(
-        lhs: _SortWrapper[Float32], rhs: _SortWrapper[Float32]
-    ) -> Bool:
-        return lhs.data > rhs.data
+    def _greater_than(lhs: Float32, rhs: Float32) -> Bool:
+        return lhs > rhs
 
     _quicksort[_greater_than](list)
 
-    var expected = List[Float32](
+    var expected: List[Float32] = [
         9.0,
         9.0,
         9.0,
@@ -366,17 +369,15 @@ fn test_quick_sort_repeated_val() raises:
         1.0,
         1.0,
         1.0,
-    )
+    ]
     for i in range(0, length):
         assert_equal(expected[i], list[i])
 
     @parameter
-    fn _less_than(
-        lhs: _SortWrapper[Float32], rhs: _SortWrapper[Float32]
-    ) -> Bool:
-        return lhs.data < rhs.data
+    def _less_than(lhs: Float32, rhs: Float32) -> Bool:
+        return lhs < rhs
 
-    expected = List[Float32](
+    expected: List[Float32] = [
         1.0,
         1.0,
         1.0,
@@ -413,44 +414,42 @@ fn test_quick_sort_repeated_val() raises:
         9.0,
         9.0,
         9.0,
-    )
+    ]
     _quicksort[_less_than](list)
     for i in range(0, length):
         assert_equal(expected[i], list[i])
 
 
-fn test_partition_top_k(length: Int, k: Int) raises:
+def _test_partition_top_k(length: Int, k: Int) raises:
     var list = List[Float32](capacity=length)
 
     for i in range(0, length):
-        list.append(i)
+        list.append(Float32(i))
 
     @parameter
-    fn _great_than(lhs: Float32, rhs: Float32) -> Bool:
+    def _great_than(lhs: Float32, rhs: Float32) -> Bool:
         return lhs > rhs
 
     _ = partition[_great_than](list, k)
 
     for i in range(0, k):
-        assert_false(list[i] < length - k)
+        assert_false(list[i] < Float32(length - k))
 
 
-fn test_sort_stress() raises:
+def test_sort_stress() raises:
     var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
 
     @__copy_capture(random_seed)
     @parameter
-    fn test[
-        cmp_fn: fn (_SortWrapper[Int], _SortWrapper[Int]) capturing [_] -> Bool,
-        check_fn: fn (_SortWrapper[Int], _SortWrapper[Int]) capturing [
-            _
-        ] -> Bool,
+    def test[
+        cmp_fn: def(Int, Int) capturing[_] -> Bool,
+        check_fn: def(Int, Int) capturing[_] -> Bool,
     ](length: Int) raises:
         var list = List[Int](capacity=length)
         for _ in range(length):
-            list.append(Int(random_si64(-length, length)))
+            list.append(Int(random_si64(Int64(-length), Int64(length))))
 
         _quicksort[cmp_fn](list)
 
@@ -459,37 +458,36 @@ fn test_sort_stress() raises:
 
     @parameter
     @always_inline
-    fn _gt(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data > rhs.data
+    def _gt(lhs: Int, rhs: Int) -> Bool:
+        return lhs > rhs
 
     @parameter
     @always_inline
-    fn _geq(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data >= rhs.data
+    def _geq(lhs: Int, rhs: Int) -> Bool:
+        return lhs >= rhs
 
     @parameter
     @always_inline
-    fn _lt(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data < rhs.data
+    def _lt(lhs: Int, rhs: Int) -> Bool:
+        return lhs < rhs
 
     @parameter
     @always_inline
-    fn _leq(lhs: _SortWrapper[Int], rhs: _SortWrapper[Int]) -> Bool:
-        return lhs.data <= rhs.data
+    def _leq(lhs: Int, rhs: Int) -> Bool:
+        return lhs <= rhs
 
-    for i in range(len(lens)):
-        var length = lens[i]
+    for length in lens:
         test[_gt, _geq](length)
         test[_lt, _leq](length)
 
 
 @fieldwise_init
-struct MyStruct(Copyable, Movable):
+struct MyStruct(ImplicitlyCopyable):
     var val: Int
 
 
-fn test_sort_custom() raises:
-    alias length = 103
+def test_sort_custom() raises:
+    comptime length = 103
 
     var list = List[MyStruct](capacity=length)
 
@@ -497,7 +495,7 @@ fn test_sort_custom() raises:
         list.append(MyStruct(length - i - 1))
 
     @parameter
-    fn compare_fn(lhs: MyStruct, rhs: MyStruct) -> Bool:
+    def compare_fn(lhs: MyStruct, rhs: MyStruct) -> Bool:
         return lhs.val < rhs.val
 
     sort[compare_fn](list)
@@ -506,7 +504,7 @@ fn test_sort_custom() raises:
         assert_false(list[i - 1].val > list[i].val)
 
 
-def test_sort_string_small_list():
+def test_sort_string_small_list() raises:
     var list = random_numbers[DType.int32](10)
     var string_list = List[String]()
     for n in list:
@@ -515,7 +513,7 @@ def test_sort_string_small_list():
     assert_sorted_string(string_list)
 
 
-def test_sort_string_big_list():
+def test_sort_string_big_list() raises:
     var list = random_numbers[DType.int32](1000)
     var string_list = List[String]()
     for n in list:
@@ -524,7 +522,7 @@ def test_sort_string_big_list():
     assert_sorted_string(string_list)
 
 
-def test_sort_strings():
+def test_sort_strings() raises:
     var text = (
         _dir_of_current_file() / "test_file_dummy_input.txt"
     ).read_text()
@@ -534,38 +532,27 @@ def test_sort_strings():
 
 
 @fieldwise_init
-struct Person(Comparable, Copyable, Movable):
+struct Person(Comparable, ImplicitlyCopyable):
+    """Test struct using default reflection-based __eq__."""
+
     var name: String
     var age: Int
 
-    fn __lt__(self, other: Self) -> Bool:
+    def __lt__(self, other: Self) -> Bool:
         if self.age < other.age:
             return True
         if self.age == other.age:
             return self.name < other.name
         return False
 
-    fn __le__(self, other: Self) -> Bool:
-        return not (other < self)
-
-    fn __gt__(self, other: Self) -> Bool:
-        return other < self
-
-    fn __ge__(self, other: Self) -> Bool:
-        return not (self < other)
-
-    fn __eq__(self, other: Self) -> Bool:
-        return self.age == other.age and self.name == other.name
-
-    fn __ne__(self, other: Self) -> Bool:
-        return self.age != other.age or self.name != other.name
+    # Uses default reflection-based __eq__ from Equatable trait
 
 
-def test_sort_comparamble_elements_list():
+def test_sort_comparamble_elements_list() raises:
     var list = List[Person]()
 
     @parameter
-    fn gen_list(count: Int):
+    def gen_list(count: Int):
         list = List[Person]()
         var ages = random_numbers[DType.uint8](count)
         var names = ["Maxim", "Max", "Alex", "Bob", "Joe"]
@@ -586,28 +573,27 @@ def test_sort_comparamble_elements_list():
     assert_sorted(list)
 
 
-fn test_sort_empty_comparable_elements_list() raises:
+def test_sort_empty_comparable_elements_list() raises:
     var person_list = List[Person]()
     sort(person_list)
     assert_true(len(person_list) == 0)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct IntPair:
+struct IntPair(TrivialRegisterPassable):
     var x: Int
     var idx: Int
 
 
-def test_stable_sort_stress():
+def test_stable_sort_stress() raises:
     var lens = [3, 100, 117, 223, 500, 1000, 1500, 2000, 3000]
     var random_seed = 0
     seed(random_seed)
 
     @parameter
-    fn test[
-        cmp_fn: fn (IntPair, IntPair) capturing [_] -> Bool,
-        check_fn: fn (IntPair, IntPair) capturing [_] -> Bool,
+    def test[
+        cmp_fn: def(IntPair, IntPair) capturing[_] -> Bool,
+        check_fn: def(IntPair, IntPair) capturing[_] -> Bool,
     ](length: Int) raises:
         var list = List[IntPair](capacity=length)
         for i in range(length):
@@ -623,46 +609,73 @@ def test_stable_sort_stress():
     # stable by making sure that for the same x value, the idx field is sorted.
     @parameter
     @always_inline
-    fn _lt(lhs: IntPair, rhs: IntPair) -> Bool:
+    def _lt(lhs: IntPair, rhs: IntPair) -> Bool:
         return lhs.x < rhs.x
 
     @parameter
     @always_inline
-    fn _lt_check(lhs: IntPair, rhs: IntPair) -> Bool:
+    def _lt_check(lhs: IntPair, rhs: IntPair) -> Bool:
         return lhs.idx < rhs.idx if lhs.x == rhs.x else lhs.x < rhs.x
 
-    for i in range(len(lens)):
-        var length = lens[i]
+    for length in lens:
         test[_lt, _lt_check](length)
 
 
-def main():
-    test_sort_small_3()
-    test_sort_small_5()
-    test_sort0()
-    test_sort2()
-    test_sort3()
-    test_sort3_dupe_elements()
-    test_sort4()
-    test_sort5()
-    test_sort_reverse()
-    test_sort_semi_random()
-    test_sort9()
-    test_sort103()
-    test_sort_any_103()
-    test_quick_sort_repeated_val()
+def test_sort_scalar() raises:
+    var listi32 = random_numbers[DType.int32](50, max=Int(Int32.MAX))
+    sort(listi32)
+    assert_sorted(listi32)
 
-    test_sort_stress()
-    test_stable_sort_stress()
+    # Note: We'd use Float32.MAX_FINITE here, but it doesn't fit in Int
+    # (random_numbers takes Int max). Float32.MAX returns inf, so we use Int.MAX
+    # which is safe and provides good coverage (9.2e18 >> typical float32 values)
+    var listf32 = random_numbers[DType.float32](50, max=Int.MAX)
+    sort(listf32)
+    assert_sorted(listf32)
 
-    test_sort_custom()
 
-    test_partition_top_k(7, 5)
-    test_partition_top_k(11, 2)
-    test_partition_top_k(4, 1)
+def test_ensure_no_copies() raises:
+    def get_list() -> List[CopyCounter[UInt64]]:
+        seed(0)
+        var list = List[CopyCounter[UInt64]](capacity=50)
+        for _ in range(50):
+            list.append(CopyCounter[UInt64](random_ui64(min=0, max=UInt64.MAX)))
+        return list^
 
-    test_sort_string_small_list()
-    test_sort_string_big_list()
-    test_sort_strings()
-    test_sort_comparamble_elements_list()
-    test_sort_empty_comparable_elements_list()
+    def verify_list(list: List[CopyCounter[UInt64]]) raises:
+        for e in list:
+            assert_true(e.copy_count == 0)
+
+    @parameter
+    def cmp_fn(lhs: CopyCounter[UInt64], rhs: CopyCounter[UInt64]) -> Bool:
+        return lhs.value < rhs.value
+
+    var list = get_list()
+    _insertion_sort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    _stable_sort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    _quicksort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    _heap_sort[cmp_fn](list)
+    verify_list(list)
+
+    list = get_list()
+    sort[cmp_fn](list)
+    verify_list(list)
+
+
+def test_partition() raises:
+    _test_partition_top_k(7, 5)
+    _test_partition_top_k(11, 2)
+    _test_partition_top_k(4, 1)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

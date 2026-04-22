@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from test_utils import ulp_distance
-from testing import assert_true
+from std.testing import assert_true, TestSuite
 
 
-fn test_ulp_distance() raises:
+def test_ulp_distance() raises:
     var a: Float64 = 1.0
     var b: Float64 = 1.0
     var ulp = ulp_distance(a, b)
@@ -57,5 +57,5 @@ fn test_ulp_distance() raises:
     assert_true(ulp == 13)
 
 
-fn main() raises:
-    test_ulp_distance()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

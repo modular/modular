@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,32 +11,107 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import align_down, align_up, ceildiv
-from sys import align_of
-from sys._build import is_debug_build
-from sys.info import (
-    CompilationTarget,
-    simd_width_of,
-    size_of,
-)
-
-from algorithm import vectorize
-from buffer.buffer import NDBuffer, partial_simd_load, partial_simd_store
-from buffer.dimlist import DimList
+from std.math import align_down, align_up, ceildiv, iota
+from std.sys import align_of
+from std.sys._build import is_debug_build
+from std.sys.info import CompilationTarget, simd_width_of, size_of
+from std.sys.intrinsics import masked_load, masked_store
+from std.utils.index import Index, IndexList
+from std.algorithm import vectorize
 from layout.layout import *
-from layout.layout_tensor import LayoutTensor
-
-from utils.index import Index, IndexList
-
-alias elementwise_epilogue_type = fn[
-    dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> None
-
-alias elementwise_compute_lambda_type = fn[
-    dtype: DType, width: Int, *, alignment: Int = 1
-] (IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+from layout import LayoutTensor, TileTensor
 
 
+@always_inline
+def partial_simd_load[
+    dtype: DType, //, width: Int
+](
+    storage: UnsafePointer[mut=False, Scalar[dtype], ...],
+    lbound: Int,
+    rbound: Int,
+    pad_value: Scalar[dtype],
+) -> SIMD[dtype, width]:
+    """Loads a vector with dynamic bound.
+
+    Out of bound data will be filled with pad value. Data is valid if
+    lbound <= idx < rbound for idx from 0 to (simd_width-1). For example:
+
+        addr 0  1  2  3
+        data x 42 43  x
+
+        partial_simd_load[4](addr0, 1, 3) #gives [0 42 43 0]
+
+    Parameters:
+        dtype: The DType of storage.
+        width: The system simd vector size.
+
+    Args:
+        storage: Pointer to the address to perform load.
+        lbound: Lower bound of valid index within simd (inclusive).
+        rbound: Upper bound of valid index within simd (non-inclusive).
+        pad_value: Value to fill for out of bound indices.
+
+    Returns:
+        The SIMD vector loaded and zero-filled.
+    """
+    # Create a mask based on input bounds.
+    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
+    var incr = iota[DType.int32, width]()
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
+
+    return masked_load[width](storage, mask, pad_value)
+
+
+@always_inline
+def partial_simd_store[
+    dtype: DType, //, width: Int
+](
+    storage: UnsafePointer[mut=True, Scalar[dtype], ...],
+    lbound: Int,
+    rbound: Int,
+    data: SIMD[dtype, width],
+):
+    """Stores a vector with dynamic bound.
+
+    Out of bound data will ignored. Data is valid if lbound <= idx < rbound for
+    idx from 0 to (simd_width-1).
+
+    e.g.
+        addr 0 1 2  3
+        data 0 0 0  0
+
+        partial_simd_load[4](addr0, 1, 3, [-1, 42, 43, -1]) #gives [0 42 43 0]
+
+    Parameters:
+        dtype: The DType of storage.
+        width: The system simd vector size.
+
+    Args:
+        storage: Pointer to the address to perform load.
+        lbound: Lower bound of valid index within simd (inclusive).
+        rbound: Upper bound of valid index within simd (non-inclusive).
+        data: The vector value to store.
+    """
+    # Create a mask based on input bounds.
+    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
+    var incr = iota[DType.int32, width]()
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
+
+    return masked_store(data, storage, mask)
+
+
+comptime elementwise_epilogue_type = def[
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+](IndexList[2], SIMD[dtype, width]) capturing -> None
+
+comptime elementwise_compute_lambda_type = def[
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
+](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
+
+
+@fieldwise_init
 struct KernelConfig:
     """Static configuration of the matmul inner kernel."""
 
@@ -49,77 +124,33 @@ struct KernelConfig:
     # Static info on simd vector size.
     var simd_size: Int
 
-    # Static packed shape info of the packed buffer.
-    var packed_shape: DimList
 
-    fn __init__(
-        out self,
-        *,
-        kernel_rows: Int,
-        kernel_cols: Int,
-        simd_size: Int,
-        packed_shape: DimList,
-    ):
-        self.kernel_rows = kernel_rows
-        self.kernel_cols = kernel_cols
-        self.simd_size = simd_size
-        self.packed_shape = packed_shape
-
-
-@register_passable("trivial")
-struct MicroKernelShape(Copyable, Movable):
+@fieldwise_init
+struct MicroKernelShape(TrivialRegisterPassable):
     """Record describing the inner kernel shape."""
 
     var simd_rows: Int
-
     var simd_cols: Int
-
-    fn __init__(out self, rows: Int, cols: Int):
-        self.simd_rows = rows
-        self.simd_cols = cols
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct GemmShape(Copyable, Movable):
+struct GemmShape(TrivialRegisterPassable):
     """Helper class to unpack gemm dimension and layout."""
 
     var M: Int
     var N: Int
     var K: Int
 
-    # Construct from dynamic shaped input.
     @staticmethod
-    fn get[
-        transpose_b: Bool,
-    ](
-        c: NDBuffer[rank=2, *_, **_],
-        a: NDBuffer[rank=2, *_, **_],
-        b: NDBuffer[rank=2, *_, **_],
-    ) -> GemmShape:
-        """Constructor of a gemm shape record from input buffers.
-
-        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
-        is because `b` may be padded to a multiple of the tile size if it has
-        been pre-packed.
-
-        Args:
-            c: NDBuffer with allocated output space.
-            a: NDBuffer containing matrix operand A.
-            b: NDBuffer containing matrix operand B.
-        """
-        return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
-
-    @staticmethod
-    fn get[
+    def get[
         transpose_b: Bool,
         layout_c: Layout,
         layout_a: Layout,
         layout_b: Layout,
     ](
-        c: LayoutTensor[_, layout_c, _, **_],
-        a: LayoutTensor[_, layout_a, _, **_],
-        b: LayoutTensor[_, layout_b, _, **_],
+        c: LayoutTensor[_, layout_c, ...],
+        a: LayoutTensor[_, layout_a, ...],
+        b: LayoutTensor[_, layout_b, ...],
     ) -> GemmShape:
         """Constructor of a gemm shape record from input buffers.
 
@@ -134,22 +165,44 @@ struct GemmShape(Copyable, Movable):
         """
 
         # We only want a 2D tensor for now
-        constrained[c.rank == 2]()
-        constrained[a.rank == 2]()
-        constrained[b.rank == 2]()
+        comptime assert c.rank == 2
+        comptime assert a.rank == 2
+        comptime assert b.rank == 2
 
         return GemmShape(c.dim[0](), c.dim[1](), a.dim[1]())
 
+    @staticmethod
+    def get[
+        transpose_b: Bool,
+    ](c: TileTensor, a: TileTensor, b: TileTensor,) -> GemmShape:
+        """Constructor of a gemm shape record from TileTensor inputs.
+
+        M, N, and K are intentionally calculated using `a` and `c` ONLY. This
+        is because `b` may be padded to a multiple of the tile size if it has
+        been pre-packed.
+
+        Args:
+            c: TileTensor with allocated output space.
+            a: TileTensor containing matrix operand A.
+            b: TileTensor containing matrix operand B.
+        """
+
+        comptime assert c.rank == 2, "c must be of rank 2"
+        comptime assert a.rank == 2, "a must be of rank 2"
+        comptime assert b.rank == 2, "b must be of rank 2"
+
+        return GemmShape(Int(c.dim[0]()), Int(c.dim[1]()), Int(a.dim[1]()))
+
     # TODO: re-enable using IndexList.
     @always_inline
-    fn __getitem__(self, idx: Int) -> Int:
+    def __getitem__(self, idx: Int) -> Int:
         if idx == 0:
             return self.M
         if idx == 1:
             return self.N
         return self.K
 
-    fn __setitem__(mut self, idx: Int, value: Int):
+    def __setitem__(mut self, idx: Int, value: Int):
         if idx == 0:
             self.M = value
             return
@@ -160,7 +213,7 @@ struct GemmShape(Copyable, Movable):
             self.K = value
             return
 
-    fn __init__(out self, index: IndexList[3]):
+    def __init__(out self, index: IndexList[3]):
         """Constructor of a gemm shape record from a index tuple.
 
         Args:
@@ -170,7 +223,7 @@ struct GemmShape(Copyable, Movable):
         self.N = index[1]
         self.K = index[2]
 
-    fn as_index(self) -> IndexList[3]:
+    def as_index(self) -> IndexList[3]:
         """Utility to convert the underlying data to an index tuple. So that the
         utilities such as elementwise add can be used.
 
@@ -179,7 +232,7 @@ struct GemmShape(Copyable, Movable):
         """
         return Index(self.M, self.N, self.K)
 
-    fn __add__(self, rhs: GemmShape) -> GemmShape:
+    def __add__(self, rhs: GemmShape) -> GemmShape:
         """Coordinate-wise addition of two gemm shape records.
 
         Args:
@@ -187,7 +240,7 @@ struct GemmShape(Copyable, Movable):
         """
         return GemmShape(self.as_index() + rhs.as_index())
 
-    fn __sub__(self, rhs: GemmShape) -> GemmShape:
+    def __sub__(self, rhs: GemmShape) -> GemmShape:
         """Coordinate-wise subtraction of two gemm shape records.
 
         Args:
@@ -199,7 +252,7 @@ struct GemmShape(Copyable, Movable):
 # Helper heuristic function to decide on tile size
 #  Returns (TileN, TileK)
 @always_inline
-fn calculate_tile_n_k[
+def calculate_tile_n_k[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -218,10 +271,10 @@ fn calculate_tile_n_k[
         The calculated tile size to partition the matmul as (TileN, TileK).
     """
 
-    alias pack_cache_size = get_pack_data_size[b_type]()
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
-    alias factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
+    comptime pack_cache_size = get_pack_data_size[b_type]()
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime factor = get_matmul_arch_factor[use_vnni, use_i8mm]()
 
     var least_tile_n: Int = kernel_cols
 
@@ -246,7 +299,7 @@ fn calculate_tile_n_k[
     return Index(tile_n, tile_k)
 
 
-fn calculate_tile_n_k[
+def calculate_tile_n_k[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -258,47 +311,23 @@ fn calculate_tile_n_k[
 
 
 @always_inline
-fn _get_tile_n_k[
+def _get_tile_n_k[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     kernel_cols: Int,
     transpose_b: Bool,
-](b: NDBuffer[_, 2, _, _]) -> IndexList[2]:
+](b: TileTensor) -> IndexList[2]:
+    comptime assert b.rank == 2
     var tile_n_k: IndexList[2]
 
-    @parameter
-    if not transpose_b:
+    comptime if not transpose_b:
         tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(1), b.dim(0)
+            Int(b.dim[1]()), Int(b.dim[0]())
         )
     else:
         tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(0), b.dim(1)
-        )
-    return tile_n_k
-
-
-@always_inline
-fn _get_tile_n_k[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    kernel_cols: Int,
-    transpose_b: Bool,
-    layout: Layout,
-](b: LayoutTensor[b_type, layout, _, **_]) -> IndexList[2]:
-    constrained[b.rank == 2]()
-    var tile_n_k: IndexList[2]
-
-    @parameter
-    if not transpose_b:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(1), b.dim(0)
-        )
-    else:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(0), b.dim(1)
+            Int(b.dim[0]()), Int(b.dim[1]())
         )
 
     return tile_n_k
@@ -306,12 +335,9 @@ fn _get_tile_n_k[
 
 # The number of registers used for the inner kernel is:
 #   kernel_rows*kernel_cols + 1*kernel_cols + 1
-fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
-    @parameter
-    if CompilationTarget.has_avx512f():
-
-        @parameter
-        if kernel_type:
+def get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
+    comptime if CompilationTarget.has_avx512f():
+        comptime if kernel_type:
             return MicroKernelShape(8, 3)
         else:
             return MicroKernelShape(6, 4)
@@ -319,22 +345,18 @@ fn get_matmul_kernel_shape_x86[kernel_type: Bool]() -> MicroKernelShape:
         return MicroKernelShape(4, 3)
 
 
-fn get_matmul_kernel_shape_ARM[
+def get_matmul_kernel_shape_ARM[
     a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
-    @parameter
-    if CompilationTarget.is_neoverse_n1():
-
-        @parameter
-        if kernel_type:
+    comptime if CompilationTarget.is_neoverse_n1():
+        comptime if kernel_type:
             return MicroKernelShape(4, 4)
         else:
             return MicroKernelShape(8, 2)
     else:
-        alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+        comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
-        @parameter
-        if use_i8mm:
+        comptime if use_i8mm:
             return MicroKernelShape(4, 6)
         elif kernel_type:
             return MicroKernelShape(6, 4)
@@ -347,13 +369,12 @@ fn get_matmul_kernel_shape_ARM[
 # For AVX512 a 5x4, 5x5, or 6x4 kernel can be used, 6x4 gives the best result.
 # For the Graviton 2 a 8x2 kernel gives the best result in most cases.
 # For the Graviton 3 a 6x4 or 4x6 kernel gives the best result.
-fn get_matmul_kernel_shape[
+def get_matmul_kernel_shape[
     a_type: DType, b_type: DType, c_type: DType, kernel_type: Bool
 ]() -> MicroKernelShape:
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
-    @parameter
-    if CompilationTarget.has_neon():
+    comptime if CompilationTarget.has_neon():
         return get_matmul_kernel_shape_ARM[
             a_type, b_type, c_type, kernel_type
         ]()
@@ -361,7 +382,7 @@ fn get_matmul_kernel_shape[
         return get_matmul_kernel_shape_x86[kernel_type]()
 
 
-fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
+def get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
     if use_i8mm:
         return 8
     elif use_vnni:
@@ -371,21 +392,20 @@ fn get_matmul_arch_factor[use_vnni: Bool, use_i8mm: Bool]() -> Int:
 
 
 # prefetching at least on the Graviton 2 performs worse than without.
-fn get_matmul_prefetch_b_distance_k() -> Int:
-    @parameter
-    if CompilationTarget.has_neon():
+def get_matmul_prefetch_b_distance_k() -> Int:
+    comptime if CompilationTarget.has_neon():
         return 0
     return 4
 
 
 # Min task size. This is copied from MLAS.
 # TODO: Replace this magic number with a heuristic based on arch.
-fn get_min_task_size() -> Int:
+def get_min_task_size() -> Int:
     return 65536
 
 
 # Unroll factor in packing B
-fn get_packB_unroll_factor() -> Int:
+def get_packB_unroll_factor() -> Int:
     return 8
 
 
@@ -395,7 +415,7 @@ fn get_packB_unroll_factor() -> Int:
 
 
 @always_inline
-fn get_matmul_num_tasks[
+def get_matmul_num_tasks[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -414,7 +434,7 @@ fn get_matmul_num_tasks[
     # support partition in k dim yet. E.x. 32x32x1024 uses 16 threads by min
     # task complexity but we only want it to use <= 4 threads for now since
     # M and N are very small.
-    alias kernel_shape = get_matmul_kernel_shape[
+    comptime kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
     var max_row_tasks = ceildiv(m, 2 * kernel_shape.simd_rows)
@@ -425,7 +445,7 @@ fn get_matmul_num_tasks[
 
 
 @fieldwise_init
-struct SubMatmulConfig(Copyable, Movable):
+struct SubMatmulConfig(ImplicitlyCopyable):
     """Static configuration of sub-matrices in parallel matmul."""
 
     # Starting Indices of sub-matrices.
@@ -435,19 +455,20 @@ struct SubMatmulConfig(Copyable, Movable):
     var shape: IndexList[3]
 
     @always_inline
-    fn is_valid(self) -> Bool:
+    def is_valid(self) -> Bool:
         return self.shape > Index(0, 0, 0)
 
 
 # The work is first grouped into blocks for alignment and load/store efficiency.
 # This will partition the work blocks between tasks as even as possible.
 @always_inline
-fn partition_work(
+def partition_work(
     task_id: Int, num_tasks: Int, work: Int, work_block_size: Int
 ) -> IndexList[2]:
     var num_work_blocks = ceildiv(work, work_block_size)
-    var blocks_per_task = num_work_blocks // num_tasks
-    var blocks_per_task_extra = num_work_blocks % num_tasks
+    var blocks_per_task, blocks_per_task_extra = divmod(
+        num_work_blocks, num_tasks
+    )
 
     var work_per_task = blocks_per_task * work_block_size
     var work_id = (
@@ -462,17 +483,16 @@ fn partition_work(
     return IndexList[2](work_id, min(work - work_id, work_per_task))
 
 
-fn get_partitioned_matmul[
+def get_partitioned_matmul[
     a_type: DType,
     b_type: DType,
     c_type: DType,
     kernel_rows: Int,
     kernel_cols: Int,
 ](m: Int, n: Int, k: Int, task_id: Int, num_tasks: Int) -> SubMatmulConfig:
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
-    @parameter
-    if use_i8mm:
+    comptime if use_i8mm:
         # i8mm needs to have even partitions in m.
         # Only the last range is allowed to be odd.
         var partition = get_partitioned_matmul_mojo[
@@ -491,7 +511,7 @@ fn get_partitioned_matmul[
         )
 
 
-fn get_partitioned_matmul_mojo[
+def get_partitioned_matmul_mojo[
     b_type: DType,
     kernel_rows: Int,
     kernel_cols: Int,
@@ -502,8 +522,7 @@ fn get_partitioned_matmul_mojo[
     ](m, n, k, num_tasks)
     var num_row_tasks = shape[0]
     var num_col_tasks = shape[1]
-    var row_task_id = task_id // num_col_tasks
-    var col_task_id = task_id % num_col_tasks
+    var row_task_id, col_task_id = divmod(task_id, num_col_tasks)
 
     var row_range = partition_work(row_task_id, num_row_tasks, m, kernel_rows)
     var col_range = partition_work(col_task_id, num_col_tasks, n, kernel_cols)
@@ -513,7 +532,7 @@ fn get_partitioned_matmul_mojo[
     )
 
 
-fn get_partitioned_matmul_mojo_shape[
+def get_partitioned_matmul_mojo_shape[
     b_type: DType,
     kernel_rows: Int,
     kernel_cols: Int,
@@ -563,28 +582,25 @@ fn get_partitioned_matmul_mojo_shape[
     return Index(num_row_tasks, num_col_tasks)
 
 
-fn get_pack_data_size[dtype: DType]() -> Int:
+def get_pack_data_size[dtype: DType]() -> Int:
     """Utility to compute the number of elements to pack in each tile.
     Returns:
         The number of elements to pack.
     """
-    alias KB = 1024
+    comptime KB = 1024
 
-    @parameter
-    if is_debug_build():
+    comptime if is_debug_build():
         # Only use the large cache size for release build as debug build may
         # contain additional data could cause stack overflow.
         # Restrict it to 4K.
         return 4 * KB // size_of[dtype]()
 
-    @parameter
-    if CompilationTarget.is_macos():
+    comptime if CompilationTarget.is_macos():
         # Macos has lower stack limit so lower this allocation too.
         # Restrict it to 64K.
         return 64 * KB // size_of[dtype]()
 
-    @parameter
-    if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
+    comptime if CompilationTarget.has_neon() or CompilationTarget.has_avx512f():
         # TODO: This should be 1/2 of L2 cache size on Intel. Graviton 2 and
         # Skylake server have a 1 MiB L1 cache AMD Rome has a 512 KiB L2 cache
         # return half the cache size as 4 byte elements
@@ -594,7 +610,7 @@ fn get_pack_data_size[dtype: DType]() -> Int:
 
 
 @always_inline
-fn get_kernel_config[
+def get_kernel_config[
     a_type: DType,
     b_type: DType,
     c_type: DType,
@@ -605,51 +621,51 @@ fn get_kernel_config[
     Functions.
         TODO: Add target dependent configuration parameters.
     """
-    alias simd_size = simd_width_of[c_type]()
+    comptime simd_size = simd_width_of[c_type]()
 
-    alias kernel_shape = get_matmul_kernel_shape[
+    comptime kernel_shape = get_matmul_kernel_shape[
         a_type, b_type, c_type, kernel_type
     ]()
 
-    return KernelConfig(
-        kernel_rows=kernel_shape.simd_rows,
-        kernel_cols=kernel_shape.simd_cols * simd_size,
-        simd_size=simd_size,
-        packed_shape=DimList.create_unknown[3](),
-    )
+    return {
+        kernel_rows = kernel_shape.simd_rows,
+        kernel_cols = kernel_shape.simd_cols * simd_size,
+        simd_size = simd_size,
+    }
 
 
 @always_inline
-fn use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
-    @parameter
-    if (
+def use_vnni_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
+    comptime if (
         CompilationTarget.has_neon_int8_dotprod()
         and not CompilationTarget.has_neon_int8_matmul()
     ):
         return (
-            (a_type is DType.int8 and b_type is DType.int8)
-            or (a_type is DType.uint8 and b_type is DType.uint8)
-        ) and c_type is DType.int32
+            (a_type == DType.int8 and b_type == DType.int8)
+            or (a_type == DType.uint8 and b_type == DType.uint8)
+        ) and c_type == DType.int32
     elif CompilationTarget.has_avx2():
         return (
-            a_type is DType.uint8
-            and b_type is DType.int8
-            and c_type is DType.int32
+            a_type == DType.uint8
+            and b_type == DType.int8
+            and c_type == DType.int32
         )
     else:
         return False
 
 
 @always_inline
-fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
+def use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
     # u8u8, u8s8, s8s8, but not s8u8
+    # Output must be 32-bit integer (int32 or uint32) since i8mm produces 4-wide
+    # SIMD vectors.
     return (
-        # Return False for now until i8mm is fully ready.
         CompilationTarget.has_neon_int8_matmul()
+        and (c_type == DType.int32 or c_type == DType.uint32)
         and (
-            (a_type is DType.uint8 and b_type is DType.uint8)
-            or (a_type is DType.uint8 and b_type is DType.int8)
-            or (a_type is DType.int8 and b_type is DType.int8)
+            (a_type == DType.uint8 and b_type == DType.uint8)
+            or (a_type == DType.uint8 and b_type == DType.int8)
+            or (a_type == DType.int8 and b_type == DType.int8)
         )
     )
 
@@ -657,14 +673,11 @@ fn use_i8mm_fn[a_type: DType, b_type: DType, c_type: DType]() -> Bool:
 # Determines which kernel shape to use based on the matmul shape MxNxK.
 # Currently only allows two shapes.
 @always_inline
-fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
-    @parameter
-    if CompilationTarget.has_avx512f():
+def get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
+    comptime if CompilationTarget.has_avx512f():
         return m > 0 and m <= 32
     elif CompilationTarget.has_neon():
-
-        @parameter
-        if CompilationTarget.is_neoverse_n1():
+        comptime if CompilationTarget.is_neoverse_n1():
             return (k % 4096) == 0
         else:
             return m > 32
@@ -673,8 +686,8 @@ fn get_kernel_type(m: Int, n: Int, k: Int) -> Bool:
         return False
 
 
-fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () raises capturing [_] -> None,
+def dispatch_get_kernel_type[
+    func: def[x: Bool]() raises capturing[_] -> None,
 ](m: Int, n: Int, k: Int) raises:
     if get_kernel_type(m, n, k):
         func[True]()
@@ -682,8 +695,8 @@ fn dispatch_get_kernel_type[
         func[False]()
 
 
-fn dispatch_get_kernel_type[
-    func: fn[x: Bool] () capturing [_] -> None,
+def dispatch_get_kernel_type[
+    func: def[x: Bool]() capturing[_] -> None,
 ](m: Int, n: Int, k: Int):
     if get_kernel_type(m, n, k):
         func[True]()
@@ -692,68 +705,63 @@ fn dispatch_get_kernel_type[
 
 
 @always_inline
-fn packA_i8mm[
+def packA_i8mm[
     a_type: DType
 ](
     t0: Int,
     t1: Int,
     k: Int,
-    a_ptr: UnsafePointer[Scalar[a_type]],
-    a_packed_ptr: UnsafePointer[Scalar[a_type]],
+    a_ptr: UnsafePointer[mut=False, Scalar[a_type], ...],
+    a_packed_ptr: UnsafePointer[mut=True, Scalar[a_type], ...],
 ):
     @always_inline
-    @__copy_capture(k)
-    @parameter
-    fn packA_helper[nrow: Int](offset: Int):
+    def packA_helper[
+        nrow: Int
+    ](offset: Int) unified {var k, var t0, read a_ptr, read a_packed_ptr}:
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset
         for l in range(0, k, 8):
-
-            @parameter
-            for idx in range(nrow):
+            comptime for idx in range(nrow):
                 var t0 = a_ptr.load[width=8]((j + idx) * k + l)
                 a_packed_ptr.store(kh * j + 2 * l + 8 * idx, t0)
 
-        @parameter
-        for idx in range(nrow):
+        comptime for idx in range(nrow):
             var t0 = partial_simd_load[8](
-                a_ptr.offset((j + idx) * k + kl), 0, k - kl, 0
+                a_ptr + ((j + idx) * k + kl), 0, k - kl, 0
             )
             partial_simd_store(
-                a_packed_ptr.offset(kh * j + 2 * kl + 8 * idx),
+                a_packed_ptr + (kh * j + 2 * kl + 8 * idx),
                 0,
                 k - kl,
                 t0,
             )
 
-    vectorize[packA_helper, 2](t1 - t0)
+    vectorize[2](t1 - t0, packA_helper)
 
 
 @fieldwise_init
-@register_passable("trivial")
-struct InnerKernelID(Copyable, Movable):
-    alias DEFAULT = InnerKernelID(0)
-    alias VNNI = InnerKernelID(1)
-    alias NEON = InnerKernelID(2)
-    alias I8MM = InnerKernelID(3)
+struct InnerKernelID(TrivialRegisterPassable):
+    comptime DEFAULT = InnerKernelID(0)
+    comptime VNNI = InnerKernelID(1)
+    comptime NEON = InnerKernelID(2)
+    comptime I8MM = InnerKernelID(3)
 
     var value: Int
 
     @always_inline
-    fn __eq__(self, rhs: InnerKernelID) -> Bool:
+    def __eq__(self, rhs: InnerKernelID) -> Bool:
         return self.value == rhs.value
 
 
 @always_inline
-fn select_inner_kernel[
+def select_inner_kernel[
     a_type: DType, b_type: DType, c_type: DType
 ]() -> InnerKernelID:
-    alias use_vnni = use_vnni_fn[a_type, b_type, c_type]()
-    alias use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
+    comptime use_vnni = use_vnni_fn[a_type, b_type, c_type]()
+    comptime use_i8mm = use_i8mm_fn[a_type, b_type, c_type]()
 
-    @parameter
-    if use_i8mm:
+    comptime if use_i8mm:
         return InnerKernelID.I8MM
     elif CompilationTarget.has_neon() and not use_vnni and not use_i8mm:
         return InnerKernelID.NEON
@@ -764,62 +772,56 @@ fn select_inner_kernel[
 
 
 @always_inline
-fn apply_epilogue[
+def apply_epilogue[
     elementwise_lambda: elementwise_epilogue_type,
     dst_layout: Layout,
     dst_element_layout: Layout = Layout(1, 1),
 ](src: LayoutTensor, offset: Int):  # register or shared memory
     # Check if input is 2D simd tile. This is only for double buffer gemm
     # TODO: extend it to 1D simd tile.
-    @parameter
-    if (
+    comptime if (
         src.element_layout.rank() == 2
         and dst_element_layout.shape == src.element_layout.shape
         and dst_element_layout.stride[1] == 1
         and src.element_layout.stride[1] == 1
     ):
         # update an element tensor.
-        alias num_copies = src.element_layout.shape[0].value()
-        alias vec_width = src.element_layout.shape[1].value()
+        comptime num_copies = src.element_layout.shape[0].value()
+        comptime vec_width = src.element_layout.shape[1].value()
 
-        @parameter
-        for i in range(dst_layout.size()):
+        comptime for i in range(dst_layout.size()):
             # Offset to the current element.
-            alias src_offset = src.layout(i)
-            alias dst_offset = dst_layout(i)
+            comptime src_offset = src.layout(i)
+            comptime dst_offset = dst_layout(i)
 
-            @parameter
-            for j in range(num_copies):
-                alias src_idx = src_offset + src.element_layout(j)
-                alias dst_idx = dst_offset + dst_element_layout(j)
+            comptime for j in range(num_copies):
+                comptime src_idx = src_offset + src.element_layout(j)
+                comptime dst_idx = dst_offset + dst_element_layout(j)
                 # C matrix dimension. For 2D simd tile, element_layout preserves
                 # the matrix dimension, layout doesn't.
-                alias N = dst_element_layout.stride[0].value()
+                comptime N = dst_element_layout.stride[0].value()
 
                 var vec = src.ptr.load[
                     width=vec_width,
-                    alignment = align_of[SIMD[src.dtype, vec_width]](),
+                    alignment=align_of[SIMD[src.dtype, vec_width]](),
                 ](src_idx)
 
-                var m = (dst_idx + offset) // N
-                var n = (dst_idx + offset) % N
+                var m, n = divmod(dst_idx + offset, N)
 
                 elementwise_lambda[src.dtype, vec_width]((m, n), vec)
 
     # Scalar case
     # TODO: 1D vector is included, should handle it in a separate branch.
     else:
-        constrained[dst_element_layout.rank() == 1]()
+        comptime assert dst_element_layout.rank() == 1
 
-        @parameter
-        for i in range(src.layout.size() * src.element_size):
-            alias src_idx = make_layout(src.element_layout, src.layout)(i)
-            alias dst_idx = make_layout(dst_element_layout, dst_layout)(i)
+        comptime for i in range(src.layout.size() * src.element_size):
+            comptime src_idx = make_layout(src.element_layout, src.layout)(i)
+            comptime dst_idx = make_layout(dst_element_layout, dst_layout)(i)
             # C matrix dimension. For scalar or 1D vector element, the layout
             # preserves the matrix dimension.
-            alias N = dst_layout.stride[0].value()
+            comptime N = dst_layout.stride[0].value()
 
-            var m = (src_idx + offset) // N
-            var n = (src_idx + offset) % N
+            var m, n = divmod(src_idx + offset, N)
 
             elementwise_lambda[src.dtype, 1]((m, n), src.ptr[src_idx + offset])

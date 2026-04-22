@@ -13,9 +13,9 @@ you do that as you see fit. To be clear, Mojo has no reference counter and no
 garbage collector.
 
 Mojo also has no built-in data types with special privileges. All data types
-in the standard library (such as [`Bool`](/mojo/stdlib/builtin/bool/Bool),
-[`Int`](/mojo/stdlib/builtin/int/Int), and
-[`String`](/mojo/stdlib/collections/string/string/String)) are implemented as
+in the standard library (such as [`Bool`](/mojo/std/builtin/bool/Bool),
+[`Int`](/mojo/std/builtin/int/Int), and
+[`String`](/mojo/std/collections/string/string/String)) are implemented as
 [structs](/mojo/manual/structs).
 
 What's great about the Mojo language is that it provides you these low-level
@@ -42,22 +42,23 @@ ownership.
 
 First, let's clarify some terminology:
 
-* The "lifecycle" of a value is defined by various [dunder
+- The "lifecycle" of a value is defined by various [dunder
   methods](/mojo/manual/structs#special-methods) in a struct.
   Each lifecycle event is handled by a different method,
   such as the constructor (`__init__()`), the destructor (`__del__()`), the copy
-  constructor (`__copyinit__()`), and the move constructor (`__moveinit__()`).
+  constructor (`__init__(copy=)`), and the move constructor (`__init__(take=)`).
   All values that are declared with the same type have the same lifecycle.
 
-* The "lifetime" of a variable is defined by the span of time during
+- The "lifetime" of a variable is defined by the span of time during
   program execution in which the variable is considered valid. The life of a
-  variable begins when its value is initialized (via `__init__()`,
-  `__copyinit__()` or `__moveinit__()`) and ends when the value is destroyed
+  variable begins when its value is initialized (via `__init__()`) and ends when
+  the value is destroyed
   (`__del__()`), or consumed in some other way (for example, as part of a
-  `__moveinit__()` call).
+  `__init__(take=)` call).
 
 No two values have the exact same lifetime, because every value is created and
-destroyed at a different point in time (even if the difference is imperceptible).
+destroyed at a different point in time (even if the difference is
+imperceptible).
 
 :::note Origin type
 
@@ -70,8 +71,8 @@ references](/mojo/manual/values/lifetimes).
 
 The life of a value in Mojo begins when a variable is initialized and continues
 up until the value is last used, at which point Mojo destroys it. Mojo destroys
-every value/object as soon as it's no longer used, using an “as soon as
-possible” (ASAP) destruction policy that runs after every sub-expression. The
+every value/object as soon as it's no longer used, using an "as soon as
+possible" (ASAP) destruction policy that runs after every sub-expression. The
 Mojo compiler takes care of releasing resources after last use when needed.
 
 As you might imagine, keeping track of a value's life can be difficult if a

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,11 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-fn count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
+def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
     var total = 0
 
-    @parameter
-    for i in range(args.__len__()):
+    comptime for i in range(args.__len__()):
         total += Int(args[i])
 
     return total

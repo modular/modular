@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,44 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys.param_env import env_get_string, is_defined
-from sys.info import _accelerator_arch
-from gpu.host import DeviceContext
-from gpu.host.info import GPUInfo
+from std.sys.info import _accelerator_arch
+from std.sys.defines import get_defined_string, is_defined
+
+from std.gpu.host import DeviceContext
+from std.gpu.host.info import GPUInfo
 
 
-fn expect_eq[
-    dtype: DType, size: Int, *Ts: Writable
-](val: SIMD[dtype, size], expected: SIMD[dtype, size], *messages: *Ts) raises:
-    if val != expected:
-        var message = String(messages)
-        raise Error("expect_eq failed: ", message)
+def api() -> String:
+    comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+        comptime api = get_defined_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
 
-
-fn expect_eq[*Ts: Writable](val: Bool, expected: Bool, *messages: *Ts) raises:
-    if val != expected:
-        var message = String(messages)
-        raise Error("expect_eq failed: ", message)
-
-
-fn api() -> String:
-    @parameter
-    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
-        alias api = env_get_string["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]()
-
-        @parameter
-        if api == "gpu":
+        comptime if api == "gpu":
             return String(GPUInfo.from_name[_accelerator_arch()]().api)
         return String(api)
     return "default"
 
 
-fn create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
+def create_test_device_context(*, device_id: Int = 0) raises -> DeviceContext:
     # Create an instance of the DeviceContext
     var test_ctx: DeviceContext
 
-    @parameter
-    if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
+    comptime if is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V2"]():
         print("Using DeviceContext: V2 - " + api())
         test_ctx = DeviceContext(device_id=device_id, api=api())
     elif is_defined["MODULAR_ASYNCRT_DEVICE_CONTEXT_V1"]():

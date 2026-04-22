@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -17,13 +17,13 @@
 # REQUIRES: neon_dotprod
 # RUN: %mojo-no-debug %s | FileCheck %s
 
-from sys.info import CompilationTarget
+from std.sys.info import CompilationTarget
 
-from linalg.neon_intrinsics import _neon_dotprod, _neon_dotprod_lane
+from linalg.arch.cpu.neon_intrinsics import _neon_dotprod, _neon_dotprod_lane
 
 
 # CHECK-LABEL: test_has_neon_int8_dotprod
-fn test_has_neon_int8_dotprod():
+def test_has_neon_int8_dotprod():
     print("== test_has_neon_int8_dotprod")
 
     # CHECK: True
@@ -31,7 +31,7 @@ fn test_has_neon_int8_dotprod():
 
 
 # CHECK-LABEL: test_int8_dotprod
-fn test_int8_dotprod():
+def test_int8_dotprod():
     print("== test_int8_dotprod")
 
     var a = SIMD[DType.int8, 16](
@@ -55,7 +55,7 @@ fn test_int8_dotprod():
 
 
 # CHECK-LABEL: test_uint8_dotprod
-fn test_uint8_dotprod():
+def test_uint8_dotprod():
     print("== test_uint8_dotprod")
 
     var a = SIMD[DType.uint8, 16](
@@ -78,7 +78,7 @@ fn test_uint8_dotprod():
     print(_neon_dotprod_lane[0](c, a, b8))
 
 
-fn main():
+def main():
     test_has_neon_int8_dotprod()
     test_int8_dotprod()
     test_uint8_dotprod()

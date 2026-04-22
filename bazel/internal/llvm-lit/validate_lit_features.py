@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -22,8 +22,10 @@ _KNOWN_FEATURES = {
     "asan",
     "DISABLED",
     "disabled",
+    "emit-mojo",
     "manual",  # Alias for disabling
     "msan",
+    "macos-26+",
     "system-darwin",
     "system-linux",
     "tsan",
@@ -45,12 +47,6 @@ _GPU_FEATURES = {
 
 _FEATURES_BY_PREFIX = {
     "max/kernels/test/linalg": {
-        "avx2",
-        "intel_amx",
-        "neon_dotprod",
-        "neon_matmul",
-    },
-    "open-source/max/max/kernels/test/linalg": {
         "avx2",
         "intel_amx",
         "neon_dotprod",

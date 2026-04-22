@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,27 +11,28 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
+
+from layout import Idx, TileTensor, row_major
 from nn.argsort import argsort
-from testing import assert_true
+from std.testing import assert_true
 
 
-fn test_argsort[
+def test_argsort[
     *,
     ascending: Bool,
-    filler: fn (Int, Int) -> Float32,
+    filler: def(Int, Int) thin -> Float32,
 ]() raises:
     print("== test_argsort")
 
-    alias n = 16384
+    comptime n = 16384
 
-    var input_ptr = UnsafePointer[Float32].alloc(n)
-    var input = LayoutTensor[DType.float32, Layout.row_major(n)](input_ptr)
+    var input_ptr = alloc[Float32](n)
+    var input = TileTensor(input_ptr, row_major(Idx(n)))
 
-    var indices_ptr = UnsafePointer[Int32].alloc(n)
-    var indices = LayoutTensor[DType.int32, Layout.row_major(n)](
-        indices_ptr
-    ).fill(0)
+    var indices_ptr = alloc[Int32](n)
+    var indices = TileTensor(indices_ptr, row_major(Idx(n))).fill[
+        use_runtime_layout=True
+    ](0)
 
     for i in range(n):
         input[i] = filler(i, n)
@@ -40,11 +41,10 @@ fn test_argsort[
 
     for i in range(n):
         if i < n - 1:
-            var lhs = input[Int(indices[i])]
-            var rhs = input[Int(indices[i + 1])]
+            var lhs = input[indices[i]]
+            var rhs = input[indices[i + 1]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs < rhs,
                     msg=String(
@@ -85,11 +85,10 @@ fn test_argsort[
                     ),
                 )
         else:
-            var lhs = input[Int(indices[i])]
-            var rhs = input[Int(indices[0])]
+            var lhs = input[indices[i]]
+            var rhs = input[indices[0]]
 
-            @parameter
-            if ascending:
+            comptime if ascending:
                 assert_true(
                     lhs > rhs,
                     msg=String(
@@ -130,12 +129,12 @@ fn test_argsort[
     indices_ptr.free()
 
 
-fn main() raises:
-    fn linear_filler(i: Int, n: Int) -> Float32:
-        return i
+def main() raises:
+    def linear_filler(i: Int, n: Int) -> Float32:
+        return Float32(i)
 
-    fn reverse_filler(i: Int, n: Int) -> Float32:
-        return n - i
+    def reverse_filler(i: Int, n: Int) -> Float32:
+        return Float32(n - i)
 
     test_argsort[ascending=True, filler=linear_filler]()
     test_argsort[ascending=True, filler=reverse_filler]()

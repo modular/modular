@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from std.testing import TestSuite, assert_equal
 
 
-fn sum_items(data: List[Int8]) -> Int:
+def sum_items(data: List[Int8]) -> Int:
     var sum: Int = 0
-    for i in range(len(data)):
-        sum += Int(data[i])
+    for item in data:
+        sum += Int(item)
     return sum
 
 
-fn make_abcd_vector() -> List[Int8]:
-    return List[Int8](97, 98, 99, 100)
+def make_abcd_vector() -> List[Int8]:
+    return [97, 98, 99, 100]
 
 
-def main():
+def test_issue_13632() raises:
     var vec = make_abcd_vector()
     assert_equal(sum_items(vec), 394)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

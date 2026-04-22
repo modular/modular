@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,24 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv
-from random import random_si64
+from std.math import ceildiv
+from std.random import random_si64
 
-from gpu import WARP_SIZE, block_idx
-from gpu.host import DeviceContext
-from gpu.mma import mma
-from gpu.mma_util import load_matrix_a_amd as load_matrix_a
-from gpu.mma_util import load_matrix_b_amd as load_matrix_b
-from gpu.mma_util import store_matrix_d
-from testing import assert_equal
+from std.gpu import WARP_SIZE, block_idx
+from std.gpu.host import DeviceContext
+from std.gpu.compute.mma import mma
+from std.gpu.compute.mma_util import load_matrix_a_amd as load_matrix_a
+from std.gpu.compute.mma_util import load_matrix_b_amd as load_matrix_b
+from std.gpu.compute.mma_util import store_matrix_d
+from std.testing import assert_equal
 
 
-fn matmul_naive[
+def matmul_naive[
     a_type: DType, b_type: DType, c_type: DType, //, mma_n_blocks: Int = 1
 ](
-    a: UnsafePointer[Scalar[a_type]],
-    b: UnsafePointer[Scalar[b_type]],
-    c: UnsafePointer[Scalar[c_type]],
+    a: UnsafePointer[Scalar[a_type], _],
+    b: UnsafePointer[Scalar[b_type], _],
+    c: UnsafePointer[mut=True, Scalar[c_type], _],
     m: Int,
     n: Int,
     k: Int,
@@ -42,17 +42,17 @@ fn matmul_naive[
                     c[bl * m * n + n * i + j] += av * bv
 
 
-fn mma_kernel_fp32_fp32(
-    a_ptr: UnsafePointer[Float32],
-    b_ptr: UnsafePointer[Float32],
-    c_ptr: UnsafePointer[Float32],
+def mma_kernel_fp32_fp32(
+    a_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Float32, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    alias mma_m = 16
-    alias mma_n = 16
-    alias mma_k = 4
+    comptime mma_m = 16
+    comptime mma_n = 16
+    comptime mma_k = 4
 
     var d_reg: SIMD[DType.float32, 4] = 0
     var tile_loops = k // (4 * mma_k)
@@ -78,19 +78,19 @@ fn mma_kernel_fp32_fp32(
     store_matrix_d[mma_m, mma_n, mma_k](c_ptr, d_reg, c_tile_row, c_tile_col, n)
 
 
-fn mma_kernel_fp32_fp16[
+def mma_kernel_fp32_fp16[
     mma_n_blocks: Int
 ](
-    a_ptr: UnsafePointer[Float16],
-    b_ptr: UnsafePointer[Float16],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[Float16, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    alias mma_m = 4 if mma_n_blocks == 16 else 16
-    alias mma_n = 4 if mma_n_blocks == 16 else 16
-    alias mma_k = 4 if mma_n_blocks == 16 else 16
+    comptime mma_m = 4 if mma_n_blocks == 16 else 16
+    comptime mma_n = 4 if mma_n_blocks == 16 else 16
+    comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
     var d_reg: SIMD[DType.float32, 4] = 0
     var tile_loops = k // mma_k
@@ -116,19 +116,19 @@ fn mma_kernel_fp32_fp16[
     )
 
 
-fn mma_kernel_fp32_bf16[
+def mma_kernel_fp32_bf16[
     mma_n_blocks: Int
 ](
-    a_ptr: UnsafePointer[BFloat16],
-    b_ptr: UnsafePointer[BFloat16],
-    c_ptr: UnsafePointer[Float32],
+    a_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    b_ptr: UnsafePointer[BFloat16, ImmutAnyOrigin],
+    c_ptr: UnsafePointer[Float32, MutAnyOrigin],
     m: Int,
     n: Int,
     k: Int,
 ):
-    alias mma_m = 4 if mma_n_blocks == 16 else 16
-    alias mma_n = 4 if mma_n_blocks == 16 else 16
-    alias mma_k = 4 if mma_n_blocks == 16 else 16
+    comptime mma_m = 4 if mma_n_blocks == 16 else 16
+    comptime mma_n = 4 if mma_n_blocks == 16 else 16
+    comptime mma_k = 4 if mma_n_blocks == 16 else 16
 
     var d_reg: SIMD[DType.float32, 4] = 0
     var tile_loops = k // mma_k
@@ -154,7 +154,7 @@ fn mma_kernel_fp32_bf16[
     )
 
 
-fn run_mma_fp32_fp32(
+def run_mma_fp32_fp32(
     M: Int,
     N: Int,
     K: Int,
@@ -164,10 +164,10 @@ fn run_mma_fp32_fp32(
 ) raises:
     print("== run_matmul fp32.fp32 matrix core kernel")
 
-    var a_host = UnsafePointer[Float32].alloc(M * K)
-    var b_host = UnsafePointer[Float32].alloc(K * N)
-    var c_host = UnsafePointer[Float32].alloc(M * N)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N)
+    var a_host = alloc[Float32](M * K)
+    var b_host = alloc[Float32](K * N)
+    var c_host = alloc[Float32](M * N)
+    var c_host_ref = alloc[Float32](M * N)
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -189,12 +189,14 @@ fn run_mma_fp32_fp32(
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 16
-    alias MMA_N = 16
-    alias MMA_K = 4
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 16
+    comptime MMA_N = 16
+    comptime MMA_K = 4
 
-    ctx.enqueue_function[mma_kernel_fp32_fp32](
+    comptime kernel = mma_kernel_fp32_fp32
+
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         c_device,
@@ -234,17 +236,17 @@ fn run_mma_fp32_fp32(
     assert_equal(errors, 0)
 
 
-fn run_mma_fp32_fp16[
+def run_mma_fp32_fp16[
     mma_n_blocks: Int = 1
 ](
     M: Int, N: Int, K: Int, rand_min: Int64, rand_max: Int64, ctx: DeviceContext
 ) raises:
     print("== run_matmul fp32.fp16 matrix core kernel")
 
-    var a_host = UnsafePointer[Float16].alloc(M * K * mma_n_blocks)
-    var b_host = UnsafePointer[Float16].alloc(K * N * mma_n_blocks)
-    var c_host = UnsafePointer[Float32].alloc(M * N * mma_n_blocks)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N * mma_n_blocks)
+    var a_host = alloc[Float16](M * K * mma_n_blocks)
+    var b_host = alloc[Float16](K * N * mma_n_blocks)
+    var c_host = alloc[Float32](M * N * mma_n_blocks)
+    var c_host_ref = alloc[Float32](M * N * mma_n_blocks)
 
     for b in range(mma_n_blocks):
         for i in range(M * K):
@@ -275,12 +277,14 @@ fn run_mma_fp32_fp16[
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 4 if mma_n_blocks == 16 else 16
-    alias MMA_N = 4 if mma_n_blocks == 16 else 16
-    alias MMA_K = 4 if mma_n_blocks == 16 else 16
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_N = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_K = 4 if mma_n_blocks == 16 else 16
 
-    ctx.enqueue_function[mma_kernel_fp32_fp16[mma_n_blocks]](
+    comptime kernel = mma_kernel_fp32_fp16[mma_n_blocks]
+
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         c_device,
@@ -321,7 +325,7 @@ fn run_mma_fp32_fp16[
     assert_equal(errors, 0)
 
 
-fn run_mma_fp32_bf16[
+def run_mma_fp32_bf16[
     mma_n_blocks: Int = 1
 ](
     M: Int,
@@ -333,10 +337,10 @@ fn run_mma_fp32_bf16[
 ) raises:
     print("== run_matmul fp32.bf16 matrix core kernel")
 
-    var a_host = UnsafePointer[BFloat16].alloc(M * K * mma_n_blocks)
-    var b_host = UnsafePointer[BFloat16].alloc(K * N * mma_n_blocks)
-    var c_host = UnsafePointer[Float32].alloc(M * N * mma_n_blocks)
-    var c_host_ref = UnsafePointer[Float32].alloc(M * N * mma_n_blocks)
+    var a_host = alloc[BFloat16](M * K * mma_n_blocks)
+    var b_host = alloc[BFloat16](K * N * mma_n_blocks)
+    var c_host = alloc[Float32](M * N * mma_n_blocks)
+    var c_host_ref = alloc[Float32](M * N * mma_n_blocks)
 
     for b in range(mma_n_blocks):
         for i in range(M * K):
@@ -367,12 +371,14 @@ fn run_mma_fp32_bf16[
     ctx.enqueue_copy(b_device, b_host)
     ctx.enqueue_copy(c_device, c_host)
 
-    alias WARP_PER_BLOCK = 1
-    alias MMA_M = 4 if mma_n_blocks == 16 else 16
-    alias MMA_N = 4 if mma_n_blocks == 16 else 16
-    alias MMA_K = 4 if mma_n_blocks == 16 else 16
+    comptime WARP_PER_BLOCK = 1
+    comptime MMA_M = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_N = 4 if mma_n_blocks == 16 else 16
+    comptime MMA_K = 4 if mma_n_blocks == 16 else 16
 
-    ctx.enqueue_function[mma_kernel_fp32_bf16[mma_n_blocks]](
+    comptime kernel = mma_kernel_fp32_bf16[mma_n_blocks]
+
+    ctx.enqueue_function_experimental[kernel](
         a_device,
         b_device,
         c_device,
@@ -413,7 +419,7 @@ fn run_mma_fp32_bf16[
     assert_equal(errors, 0)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         run_mma_fp32_fp32(16, 16, 16, -100, 100, ctx)
         run_mma_fp32_fp32(1024, 1024, 1024, -100, 100, ctx)

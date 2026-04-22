@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -13,28 +13,22 @@
 """Implements the fold operation."""
 
 
-from algorithm import elementwise
-from layout import (
-    UNKNOWN_VALUE,
-    Layout,
-    LayoutTensor,
-    RuntimeLayout,
-    RuntimeTuple,
-)
-from runtime.asyncrt import DeviceContextPtr
+from std.algorithm import elementwise
+from layout import TileTensor
+from std.runtime.asyncrt import DeviceContextPtr
 
-from utils.index import IndexList
+from std.utils.index import IndexList
 
 
-fn fold[
+def fold[
     dtype: DType,
     stride: Tuple[Int, Int],
     dilation: Tuple[Int, Int],
     padding: Tuple[Int, Int],
     target: StaticString,
 ](
-    input: LayoutTensor[dtype, **_],
-    output: LayoutTensor[mut=True, dtype, **_],
+    input: TileTensor[dtype, ...],
+    output: TileTensor[mut=True, dtype, ...],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
     ctx: DeviceContextPtr,
@@ -56,25 +50,27 @@ fn fold[
         ctx: DeviceContextPtr.
     """
 
-    constrained[stride[0] > 0 and stride[1] > 0, "Stride must be positive"]()
-    constrained[
-        dilation[0] > 0 and dilation[1] > 0, "Dilation must be positive"
-    ]()
-    constrained[
-        padding[0] >= 0 and padding[1] >= 0, "Padding must be non-negative"
-    ]()
+    comptime assert stride[0] > 0 and stride[1] > 0, "Stride must be positive"
+    comptime assert (
+        dilation[0] > 0 and dilation[1] > 0
+    ), "Dilation must be positive"
+    comptime assert (
+        padding[0] >= 0 and padding[1] >= 0
+    ), "Padding must be non-negative"
+    comptime assert output.flat_rank == 4
+    comptime assert input.flat_rank == 3
 
-    var N = output.dim(0)
-    var C = output.dim(1)
-    var H = output.dim(2)
-    var W = output.dim(3)
+    var N = Int(output.dim(0))
+    var C = Int(output.dim(1))
+    var H = Int(output.dim(2))
+    var W = Int(output.dim(3))
 
     if output_size[0] != H or output_size[1] != W:
         raise Error("Output tensor size[2:] must be equal to output_size.")
 
     var channels_col = C * kernel_size[0] * kernel_size[1]
 
-    if input.dim(1) != channels_col:
+    if input.dim(1) != Scalar[input.linear_idx_type](channels_col):
         raise Error(
             "Input tensor channels must be equal to C * prod(kernel_size)."
         )
@@ -90,7 +86,7 @@ fn fold[
 
     var expected_blocks = height_col * width_col
 
-    if num_blocks != expected_blocks:
+    if num_blocks != Scalar[input.linear_idx_type](expected_blocks):
         raise Error(
             "Input tensor must have the same number of blocks ("
             + String(num_blocks)
@@ -101,10 +97,10 @@ fn fold[
 
     var kernel_w = kernel_size[1]
     var kernel_h = kernel_size[0]
-    alias dilation_w = dilation[1]
-    alias dilation_h = dilation[0]
-    alias stride_w = stride[1]
-    alias stride_h = stride[0]
+    comptime dilation_w = dilation[1]
+    comptime dilation_h = dilation[0]
+    comptime stride_w = stride[1]
+    comptime stride_h = stride[0]
 
     @always_inline
     @parameter
@@ -114,10 +110,10 @@ fn fold[
         height_col,
         width_col,
     )
-    fn fold_fn[
+    def fold_fn[
         width: Int, rank_: Int, alignment: Int = 1
     ](idx_arg: IndexList[rank_]):
-        constrained[rank_ == 4, "fold_fn: rank must be 4"]()
+        comptime assert rank_ == 4, "fold_fn: rank must be 4"
         var idx = rebind[IndexList[4]](idx_arg)
 
         var batch = idx[0]
@@ -133,8 +129,8 @@ fn fold[
 
         # Given the position in the output tensor (h_out, w_out), compute the
         # start and end of the kernel patches that might overlap with this position.
-        var h_start = max(0, (h_out - kernel_span_h) // stride_h + 1)
-        var w_start = max(0, (w_out - kernel_span_w) // stride_w + 1)
+        var h_start = max(((h_out - kernel_span_h) // stride_h + 1), 0)
+        var w_start = max(((w_out - kernel_span_w) // stride_w + 1), 0)
         var h_end = min(h_out // stride_h + 1, height_col)
         var w_end = min(w_out // stride_w + 1, width_col)
 
@@ -155,6 +151,7 @@ fn fold[
                     var patch_offset = h * width_col + w
 
                     # Load and accumulate
+                    comptime assert input.element_size == 1
                     output_val += input[
                         batch, channel_offset + kernel_offset, patch_offset
                     ][0]
@@ -170,17 +167,17 @@ fn fold[
     ](dispatch_shape, ctx)
 
 
-fn fold_shape[
+def fold_shape[
     dtype: DType
 ](
-    input: LayoutTensor[dtype, **_],
+    input: TileTensor[dtype, ...],
     output_size: IndexList[2],
     kernel_size: IndexList[2],
 ) raises -> IndexList[4]:
     """Returns the shape of the output tensor of the fold operation."""
     var output_shape = IndexList[4]()
-    output_shape[0] = input.dim(0)
-    output_shape[1] = input.dim(1) // (kernel_size[0] * kernel_size[1])
+    output_shape[0] = Int(input.dim(0))
+    output_shape[1] = Int(input.dim(1)) // (kernel_size[0] * kernel_size[1])
     output_shape[2] = output_size[0]
     output_shape[3] = output_size[1]
     return output_shape

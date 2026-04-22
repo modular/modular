@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,11 +10,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The `gpu.comm` package provides communication primitives for GPUs.
+"""Provides communication primitives for GPUs.
 
 This package includes functions for sending and receiving data between GPUs,
 as well as for synchronizing threads across GPUs.
 """
 
-from .allgather import allgather
-from .allreduce import allreduce
+from .sync import Signal, MAX_GPUS, group_start, group_end

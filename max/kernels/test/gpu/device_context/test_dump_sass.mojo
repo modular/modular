@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,25 +11,27 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from pathlib import Path
-from sys._assembly import inlined_assembly
+from std.pathlib import Path
+from std.sys._assembly import inlined_assembly
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
-alias ptxas_path = Path("/usr/local/cuda/bin/ptxas")
-alias nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
+comptime ptxas_path = Path("/usr/local/cuda/bin/ptxas")
+comptime nvdisasm_path = Path("/usr/local/cuda/bin/nvdisasm")
 
 
-def test__dump_sass():
-    fn kernel_inlined_assembly():
+def test__dump_sass() raises:
+    def kernel_inlined_assembly():
         inlined_assembly["nanosleep.u32 $0;", NoneType, constraints="r"](
             UInt32(100)
         )
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel_inlined_assembly, _dump_sass=True]()
+        _ = ctx.compile_function[
+            kernel_inlined_assembly, kernel_inlined_assembly, _dump_sass=True
+        ]()
 
 
-def main():
+def main() raises:
     if ptxas_path.exists() and nvdisasm_path.exists():
         test__dump_sass()

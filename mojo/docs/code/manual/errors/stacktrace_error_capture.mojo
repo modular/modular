@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -10,11 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-def func2() -> None:
+def func2() raises -> None:
     raise Error("Intentional error")
 
 
-def func1() -> None:
+def func1() raises -> None:
     func2()
 
 
@@ -24,4 +24,8 @@ def main():
     except e:
         print(e)
         print("-" * 20)
-        print(String(e.get_stack_trace()))
+        var stack_trace = e.get_stack_trace()
+        if stack_trace:
+            print(stack_trace.value())
+        else:
+            print("No stack trace available")

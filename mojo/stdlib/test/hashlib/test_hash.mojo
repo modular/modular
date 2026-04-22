@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -16,16 +16,20 @@
 # These tests aren't _great_. They're platform specific, and implementation
 # specific. But for now they test behavior and reproducibility.
 
-from hashlib import default_comp_time_hasher
-from testing import assert_equal, assert_not_equal, assert_true
+from std.hashlib import default_comp_time_hasher
+
+from std.testing import assert_equal, assert_not_equal, assert_true
+from std.testing import TestSuite
+
+from test_utils.reflection import SimplePoint, NestedStruct, EmptyStruct
 
 
-def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) -> UInt8:
+def same_low_bits(i1: UInt64, i2: UInt64, bits: Int = 5) raises -> UInt8:
     var mask = (1 << bits) - 1
-    return Int(not (i1 ^ i2) & mask)
+    return UInt8(Int(not (i1 ^ i2) & UInt64(mask)))
 
 
-def test_hash_byte_array():
+def test_hash_byte_array() raises:
     # Test that values hash deterministically
     assert_equal(hash("a".unsafe_ptr(), 1), hash("a".unsafe_ptr(), 1))
     assert_equal(hash("b".unsafe_ptr(), 1), hash("b".unsafe_ptr(), 1))
@@ -60,10 +64,12 @@ def test_hash_byte_array():
     # that at least the hash function returns _some_ different things.
 
     # TODO(MSTDL-472): fix this flaky check
-    # assert_true(num_same < 6, "too little entropy in hash fn low bits")
+    # assert_true(num_same < 6, "too little entropy in hash def low bits")
 
 
-def _test_hash_int_simd[dtype: DType](bits: Int = 4, max_num_same: Int = 2):
+def _test_hash_int_simd[
+    dtype: DType
+](bits: Int = 4, max_num_same: Int = 2) raises:
     var a = Scalar[dtype](0)
     var b = Scalar[dtype](1)
     var c = Scalar[dtype](2)
@@ -85,11 +91,12 @@ def _test_hash_int_simd[dtype: DType](bits: Int = 4, max_num_same: Int = 2):
     num_same += same_low_bits(hash(c), hash(d), bits)
 
     assert_true(
-        num_same < max_num_same, "too little entropy in hash fn low bits"
+        num_same < UInt8(max_num_same),
+        "too little entropy in hash def low bits",
     )
 
 
-def test_hash_simd():
+def test_hash_simd() raises:
     _test_hash_int_simd[DType.int8]()
     _test_hash_int_simd[DType.int16]()
     _test_hash_int_simd[DType.int32]()
@@ -132,24 +139,105 @@ def test_hash_simd():
     )
 
 
-fn test_issue_31111():
+def test_issue_31111() raises:
     _ = hash(Int(1))
 
 
-def test_hash_comptime():
-    alias hash_123 = hash[HasherType=default_comp_time_hasher](
-        StaticString("123")
-    )
-    assert_equal(
-        hash_123, hash[HasherType=default_comp_time_hasher](StaticString("123"))
-    )
+def test_hash_comptime() raises:
+    comptime hash_123 = hash[default_comp_time_hasher](StaticString("123"))
+    assert_equal(hash_123, hash[default_comp_time_hasher](StaticString("123")))
 
-    alias hash_22 = hash[HasherType=default_comp_time_hasher](22)
-    assert_equal(hash_22, hash[HasherType=default_comp_time_hasher](22))
+    comptime hash_22 = hash[default_comp_time_hasher](22)
+    assert_equal(hash_22, hash[default_comp_time_hasher](22))
 
 
-def main():
-    test_hash_byte_array()
-    test_hash_simd()
-    test_issue_31111()
-    test_hash_comptime()
+@fieldwise_init
+struct TestStruct(Hashable):
+    var x: StaticString
+    var y: Int
+    var z: Float32
+
+
+def test_default_conformance() raises:
+    # Test that two instances with the same values hash to the same value
+    var a = TestStruct("hello", 42, 3.14)
+    var b = TestStruct("hello", 42, 3.14)
+    assert_equal(hash(a), hash(b))
+
+    # Test that instances with different values hash to different values
+    var c = TestStruct("world", 42, 3.14)
+    var d = TestStruct("hello", 43, 3.14)
+    var e = TestStruct("hello", 42, 2.71)
+
+    assert_not_equal(hash(a), hash(c))  # different x
+    assert_not_equal(hash(a), hash(d))  # different y
+    assert_not_equal(hash(a), hash(e))  # different z
+
+
+def test_default_conformance_deterministic() raises:
+    var a = TestStruct("hello", 42, 3.14)
+    var b = TestStruct("world", 42, 3.14)
+    # Test that hash is deterministic across multiple calls
+    assert_equal(hash(a), hash(a))
+    assert_equal(hash(b), hash(b))
+
+
+def test_default_hash_simple() raises:
+    """Test the reflection-based default __hash__ with a simple struct."""
+    var p1 = SimplePoint(1, 2)
+    var p2 = SimplePoint(1, 2)
+    var p3 = SimplePoint(1, 3)
+    var p4 = SimplePoint(2, 2)
+
+    # Equal values must have equal hashes
+    assert_equal(hash(p1), hash(p2))
+
+    # Different values should (usually) have different hashes
+    assert_not_equal(hash(p1), hash(p3))
+    assert_not_equal(hash(p1), hash(p4))
+
+    # Verify deterministic hashing
+    assert_equal(hash(p1), hash(p1))
+
+
+def test_default_hash_nested() raises:
+    """Test the reflection-based default __hash__ with nested structs."""
+    var s1 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s2 = NestedStruct(SimplePoint(1, 2), "hello")
+    var s3 = NestedStruct(SimplePoint(1, 2), "world")
+    var s4 = NestedStruct(SimplePoint(3, 4), "hello")
+
+    # Equal values must have equal hashes
+    assert_equal(hash(s1), hash(s2))
+
+    # Different values should have different hashes
+    assert_not_equal(hash(s1), hash(s3))
+    assert_not_equal(hash(s1), hash(s4))
+
+
+def test_default_hash_empty() raises:
+    """Test the reflection-based default __hash__ with an empty struct."""
+    var e1 = EmptyStruct()
+    var e2 = EmptyStruct()
+
+    # Empty structs should hash to the same value
+    assert_equal(hash(e1), hash(e2))
+
+
+def test_default_hash_equatable_consistency() raises:
+    """Test that default __hash__ is consistent with default __eq__."""
+    var p1 = SimplePoint(42, 99)
+    var p2 = SimplePoint(42, 99)
+    var p3 = SimplePoint(42, 100)
+
+    # If p1 == p2, then hash(p1) == hash(p2)
+    assert_true(p1 == p2)
+    assert_equal(hash(p1), hash(p2))
+
+    # If p1 != p3, hashes should differ (not guaranteed but expected)
+    assert_true(p1 != p3)
+    assert_not_equal(hash(p1), hash(p3))
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

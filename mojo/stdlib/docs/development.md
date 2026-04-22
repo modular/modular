@@ -10,11 +10,8 @@ If this is your first time contributing, first read everything in
 To get started, you need to do the following:
 
 1. [Fork the repo and create a branch](../../CONTRIBUTING.md#how-to-create-a-pull-request).
-2. If you're using VS Code, [Install the nightly Mojo VS Code
-  extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo-nightly)
-
-    NOTE: You can only have one Mojo extension enabled at a time, remember to
-    switch when using the stable release!
+2. If you're using VS Code,
+   [Install the Mojo VS Code extension](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 
 3. Install the nightly Mojo compiler:
 
@@ -61,14 +58,32 @@ prerequisites installed.
 The unit test dependency `lit` is also pre-installed and `pre-commit` is
 already set up.
 
-See [Mojo Dev Container &gt; Usage](https://github.com/benz0li/mojo-dev-container#usage)
-on how to use with [Github Codespaces](https://docs.github.com/en/codespaces/developing-in-codespaces/creating-a-codespace-for-a-repository#creating-a-codespace-for-a-repository)
+See
+[Mojo Dev Container &gt; Usage](https://github.com/benz0li/mojo-dev-container#usage)
+on how to use with
+[Github Codespaces](https://docs.github.com/en/codespaces/developing-in-codespaces/creating-a-codespace-for-a-repository#creating-a-codespace-for-a-repository)
 or [VS Code](https://code.visualstudio.com/docs/devcontainers/containers).
 
 If there is a problem with the Dev Container, please open an issue
 [here](https://github.com/benz0li/mojo-dev-container/issues).
 
 ## Building the standard library
+
+The Modular repository uses [Bazel](https://bazel.build/), a fast, scalable
+build and test tool to ensure reproducible builds through dependency tracking
+and caching.
+
+To build and test your changes to the Mojo standard library, run the following
+`./bazelw` commands from the top-level directory of the repository (where the
+`bazel` folder is located).
+
+Be sure that you meet the
+[system requirements](https://docs.modular.com/mojo/manual/install#system-requirements).
+
+If you're developing on macOS, you need Xcode 16.0 or later and macOS 15.0 or
+later. You may need to run `xcodebuild -downloadComponent MetalToolchain`, which
+downloads the Metal utilities required for GPU programming in later versions of
+Xcode.
 
 To build the standard library, you can run:
 
@@ -86,11 +101,17 @@ To run the tests for the standard library, you can run:
 
 ## Testing only a subset of the standard library
 
-You can run all of the tests within a specific subdirectory by simply
+You can run all the tests within a specific subdirectory by simply
 specifying the subdirectory and using `/...`. For example:
 
 ```bash
 ./bazelw test //mojo/stdlib/test/math/...
+```
+
+To find all the test targets, you can run:
+
+```bash
+./bazelw query 'tests(//mojo/stdlib/...)'
 ```
 
 A convenience script exists for executing standard library tests within the mojo
@@ -109,11 +130,11 @@ will automatically execute the equivalent bazelw command
 ## Formatting changes
 
 Please make sure your changes are formatted before submitting a pull request.
-Otherwise, CI will fail in its lint and formatting checks.  The `mojo` compiler
-provides a `format` command.  So, you can format your changes like so:
+Otherwise, CI will fail in its lint and formatting checks. `bazel` setup
+provides a `format` command. So, you can format your changes like so:
 
 ```bash
-mojo format ./
+./bazelw run format
 ```
 
 It is advised, to avoid forgetting, to set-up `pre-commit`, which will format
@@ -123,15 +144,14 @@ always have the latest linting tools applied.
 To do so, install pre-commit:
 
 ```bash
-pip install pre-commit
-pre-commit install
+pixi x pre-commit install
 ```
 
 and that's it!
 
-If you need to manually apply the `pre-commit`, for example, if you
-made a commit with the github UI, you can do `pre-commit run --all-files`,
-and it will apply the formatting to all Mojo files.
+If you need to manually apply the `pre-commit`, for example, if you made a
+commit with the github UI, you can do `pixi x pre-commit run --all-files`, and
+it will apply the formatting to all Mojo files.
 
 You can also consider setting up your editor to automatically format
 Mojo files upon saving.

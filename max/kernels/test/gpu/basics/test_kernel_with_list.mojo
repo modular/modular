@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
-fn kernel_with_list(res: UnsafePointer[Float32]):
-    var list = List[Float32](10)
+def kernel_with_list(res: UnsafePointer[Float32, MutAnyOrigin]):
+    var list: List[Float32] = [10]
     for i in range(4):
-        list.append(i + 1)
+        list.append(Float32(i + 1))
     res[] = list[0] * list[1] + list[2] * list[3]
 
 
-fn test_kernel_with_list(ctx: DeviceContext) raises:
+def test_kernel_with_list(ctx: DeviceContext) raises:
     print("== test_kernel_with_list")
     var res_device = ctx.enqueue_create_buffer[DType.float32](1)
-    _ = res_device.enqueue_fill(0)
+    res_device.enqueue_fill(0)
     # CHECK: call.uni
     # CHECK: malloc,
     # CHECK: (
@@ -35,7 +35,8 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
     # CHECK: (
     # CHECK: param0
     # CHECK: );
-    ctx.enqueue_function[kernel_with_list, dump_asm=True](
+    comptime kernel = kernel_with_list
+    ctx.enqueue_function_experimental[kernel, dump_asm=True](
         res_device, block_dim=(1), grid_dim=(1)
     )
     with res_device.map_to_host() as res_host:
@@ -43,6 +44,6 @@ fn test_kernel_with_list(ctx: DeviceContext) raises:
         print("Res=", res_host[0])
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_kernel_with_list(ctx)

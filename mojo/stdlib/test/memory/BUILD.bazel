@@ -1,4 +1,31 @@
-load("//bazel:api.bzl", "mojo_test")
+load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
+
+package(default_visibility = ["//visibility:private"])
+
+_FILECHECK_TESTS = [
+    "test_negative_index_span.mojo",
+]
+
+_EXPECT_CRASH = [
+    "test_negative_index_span.mojo",
+]
+
+[
+    mojo_filecheck_test(
+        name = src + ".test",
+        srcs = [src],
+        copts = [
+            "--debug-level",
+            "full",
+        ],
+        expect_crash = src in _EXPECT_CRASH,
+        deps = [
+            "@mojo//:std",
+            "@mojo//:test_utils",
+        ],
+    )
+    for src in _FILECHECK_TESTS
+]
 
 [
     mojo_test(
@@ -9,9 +36,12 @@ load("//bazel:api.bzl", "mojo_test")
             "full",
         ],
         deps = [
-            "@mojo//:stdlib",
+            "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
-    for src in glob(["*.mojo"])
+    for src in glob(
+        ["*.mojo"],
+        exclude = _FILECHECK_TESTS,
+    )
 ]

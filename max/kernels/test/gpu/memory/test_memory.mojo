@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,19 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import iota
 
-from gpu.host import DeviceContext
+from std.gpu.host import DeviceContext
 
 
 # CHECK-LABEL: test_memset_async
-fn test_memset_async(ctx: DeviceContext) raises:
+def test_memset_async(ctx: DeviceContext) raises:
     print("== test_memset_async")
 
     @parameter
     @always_inline
-    fn test_memset[dtype: DType](val: Scalar[dtype]) raises:
-        alias length = 4
-        var data = UnsafePointer[Scalar[dtype]].alloc(length)
+    def test_memset[dtype: DType](val: Scalar[dtype]) raises:
+        comptime length = 4
+        var data = alloc[Scalar[dtype]](length)
         var data_device = ctx.enqueue_create_buffer[dtype](length)
         ctx.enqueue_copy(data_device, data)
         # iota(data, length, 0)
@@ -53,6 +52,6 @@ fn test_memset_async(ctx: DeviceContext) raises:
     test_memset[DType.int8](3)
 
 
-def main():
+def main() raises:
     with DeviceContext() as ctx:
         test_memset_async(ctx)

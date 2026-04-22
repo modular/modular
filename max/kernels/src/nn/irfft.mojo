@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,8 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 """Inverse real FFT kernel using cuFFT."""
 
-from complex import ComplexFloat32
-from gpu._cufft.cufft import (
+
+from std.ffi import external_call, _get_global_or_null
+
+from _cufft.cufft import (
     cufftCreate,
     cufftEstimate1d,
     cufftExecC2R,
@@ -24,41 +26,33 @@ from gpu._cufft.cufft import (
     cufftSetStream,
     cufftSetWorkArea,
 )
-from gpu._cufft.types import Type
-from gpu._cufft.utils import check_error
-from gpu.host import DeviceContext
-from gpu.host._nvidia_cuda import CUDA
-from layout import LayoutTensor
-
-from sys.ffi import external_call
-from sys.intrinsics import _unsafe_aliasing_address_to_pointer
-
-
-# This should eventually be moved to ffi.mojo with a more general global cache method
-# cache key is a string and cache value is a pointer.
-@always_inline
-fn global_cache_lookup(key: String) -> OpaquePointer:
-    return external_call["KGEN_CompilerRT_GetGlobalOrNull", OpaquePointer](
-        key.unsafe_ptr(), key.byte_length()
-    )
+from _cufft.types import Type
+from _cufft.utils import check_error
+from std.complex import ComplexFloat32
+from std.gpu.host import DeviceContext
+from std.gpu.host._nvidia_cuda import CUDA
+from layout import TileTensor, coord_to_index_list
 
 
 @always_inline
-fn global_cache_insert(key: String, value: OpaquePointer):
+def global_cache_insert(key: String, value: OpaquePointer):
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(key),
         value,
     )
 
 
-fn _get_fft_workarea(
+def _get_fft_workarea(
     buffer_size: Int, ctx: DeviceContext
-) raises -> OpaquePointer:
-    var fft_buffer_key = String("CUFFT_BUFFER_PTR_", buffer_size)
+) raises -> OpaquePointer[MutExternalOrigin]:
+    # Include device ID in cache key to ensure per-device workspace buffers.
+    var fft_buffer_key = String(
+        "CUFFT_BUFFER_PTR_", buffer_size, "_DEV_", ctx.id()
+    )
 
-    if lookup := global_cache_lookup(fft_buffer_key):
+    if lookup := _get_global_or_null(fft_buffer_key):
         # we found the allocated device buffer
-        return lookup
+        return lookup.unsafe_value()
 
     # manually allocate the memory on the device, and cache the pointer
     var work_space = ctx.enqueue_create_buffer[DType.uint8](buffer_size)
@@ -70,10 +64,12 @@ fn _get_fft_workarea(
         device_ptr.bitcast[NoneType](),
     )
 
-    return device_ptr.bitcast[NoneType]()
+    return device_ptr.bitcast[NoneType]().unsafe_origin_cast[
+        MutExternalOrigin
+    ]()
 
 
-fn _get_fft_plan[
+def _get_fft_plan[
     create_if_not_found: Bool = True
 ](
     output_size: Int,
@@ -81,14 +77,16 @@ fn _get_fft_plan[
     workspace_size: Int,
     ctx: DeviceContext,
 ) raises -> cufftHandle:
-    var cached_plan_key = String("CUFFT_PLAN_", output_size, ",", batch_size)
+    # Include device ID in cache key to ensure per-device cuFFT plans.
+    var cached_plan_key = String(
+        "CUFFT_PLAN_", output_size, ",", batch_size, "_DEV_", ctx.id()
+    )
 
-    if lookup := global_cache_lookup(cached_plan_key):
+    if lookup := _get_global_or_null(cached_plan_key):
         # We found the plan in the cache, so just return it
-        return cufftHandle(Int(lookup))
+        return cufftHandle(Int(lookup.unsafe_value()))
 
-    @parameter
-    if not create_if_not_found:
+    comptime if not create_if_not_found:
         # a valid cufft handle is always non-zero
         return cufftHandle(0)
 
@@ -99,9 +97,9 @@ fn _get_fft_plan[
     check_error(
         cufftMakePlan1d(
             plan,
-            output_size,
+            Int32(output_size),
             Type.CUFFT_C2R,
-            batch_size,
+            Int32(batch_size),
             UnsafePointer(to=mem_size),
         )
     )
@@ -125,54 +123,42 @@ fn _get_fft_plan[
         cached_plan_key,
         # we are bitcasting the integer plan to a void * to cache it,
         # because that's what KGEN_CompilerRT_InsertGlobal expects.
-        _unsafe_aliasing_address_to_pointer[DType.index](Int(plan)).bitcast[
-            NoneType
-        ](),
+        UnsafePointer[NoneType, MutExternalOrigin](
+            unsafe_from_address=Int(plan)
+        ),
     )
 
     return plan
 
 
-fn irfft[
+def _irfft[
     input_type: DType,
     output_type: DType,
-    alignment: Int,
 ](
-    input: LayoutTensor[
+    input: TileTensor[
         input_type,
-        alignment=alignment,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space=AddressSpace.GENERIC,
+        ...,
     ],
-    output: LayoutTensor[
+    output: TileTensor[
         mut=True,
         output_type,
-        alignment=alignment,
-        address_space = AddressSpace.GENERIC, **_,
+        address_space=AddressSpace.GENERIC,
+        ...,
     ],
     n: Int,
     buffer_size_mb: Int,
     ctx: DeviceContext,
 ) raises:
-    """Compute the inverse real FFT of the input tensor.
-
-    Currently, only applies it to the last dimension.
-
-    Args:
-        input: Complex input tensor (NDBuffer).
-        output: Real output tensor (NDBuffer).
-        n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
-        buffer_size_mb: Esimated buffer size in MB.
-        ctx: Device context.
-    """
-    constrained[
-        input.rank == output.rank, "Input and output must have the same rank"
-    ]()
-    constrained[
-        input_type is DType.float32, "Only Float32 is supported for IRFFT"
-    ]()
-    constrained[
-        output_type is DType.float32, "Only Float32 is supported for IRFFT"
-    ]()
+    comptime assert (
+        input.rank == output.rank
+    ), "Input and output must have the same rank"
+    comptime assert (
+        input_type == DType.float32
+    ), "Only Float32 is supported for IRFFT"
+    comptime assert (
+        output_type == DType.float32
+    ), "Only Float32 is supported for IRFFT"
     # we allocate 64 MB more than the buffer size because the estimation might
     # not be exact.
     EST_WORKSPACE_SIZE = buffer_size_mb * 1024 * 1024
@@ -182,14 +168,14 @@ fn irfft[
     cuda_stream = CUDA(ctx.stream())
 
     # Get input and output dimensions
-    input_shape = input.runtime_layout.shape.value
+    input_shape = coord_to_index_list(input.layout.shape_coord())
     # Signal size is set to half the size of the last dimension of the input
     # tensor, because the input tensor is an interleaved complex value.
     input_size = input_shape[axis] // 2
     output_size = n if n > 0 else 2 * (input_size - 1)
 
     # Verify output dimensions
-    output_shape = output.runtime_layout.shape.value
+    output_shape = coord_to_index_list(output.layout.shape_coord())
     if output_shape[axis] != output_size:
         raise Error(
             "Output shape mismatch: got "
@@ -218,7 +204,10 @@ fn irfft[
     var work_size: Int = 0
     check_error(
         cufftEstimate1d(
-            output_size, Type.CUFFT_C2R, batch_size, UnsafePointer(to=work_size)
+            Int32(output_size),
+            Type.CUFFT_C2R,
+            Int32(batch_size),
+            UnsafePointer(to=work_size),
         )
     )
 
@@ -231,7 +220,7 @@ fn irfft[
 
         # Set up cuda stream.
         # Notice that we do not want to have this part of the cache
-        # The stream is set everytime the call is executed and we get the
+        # The stream is set every time the call is executed and we get the
         # stream from the context we are executing within
         check_error(cufftSetStream(plan, cuda_stream))
 
@@ -249,9 +238,9 @@ fn irfft[
             try:
                 check_error(
                     cufftEstimate1d(
-                        output_size,
+                        Int32(output_size),
                         Type.CUFFT_C2R,
-                        reduced_batch_size,
+                        Int32(reduced_batch_size),
                         UnsafePointer(to=work_size),
                     )
                 )
@@ -308,3 +297,38 @@ fn irfft[
                     output_ptr.bitcast[Float32](),
                 )
             )
+
+
+def irfft[
+    input_type: DType,
+    output_type: DType,
+](
+    input: TileTensor[
+        input_type,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    output: TileTensor[
+        mut=True,
+        output_type,
+        address_space=AddressSpace.GENERIC,
+        ...,
+    ],
+    n: Int,
+    buffer_size_mb: Int,
+    ctx: DeviceContext,
+) raises:
+    """Compute the inverse real FFT of the input tensor.
+
+    Currently, only applies it to the last dimension.
+
+    Args:
+        input: Complex input tensor (TileTensor).
+        output: Real output tensor (TileTensor).
+        n: Output signal size (if <= 0, computed as 2*(input.size(axis) - 1)).
+        buffer_size_mb: Estimated buffer size in MB.
+        ctx: Device context.
+    """
+    # Set `ctx`'s CUcontext as current to satisfy cuFFT's stateful API.
+    with ctx.push_context():
+        _irfft(input, output, n, buffer_size_mb, ctx)

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -18,21 +18,21 @@
 # RUN: cat %t/test_compile_via_param/test_compile_via_param.ptx | FileCheck %s
 # RUN: rm -fr %t/test_compile_via_param/
 
-from gpu import thread_idx
-from gpu.host import DeviceContext
+from std.gpu import thread_idx
+from std.gpu.host import DeviceContext
 
 
-def test_compile_function():
+def test_compile_function() raises:
     print("== test_compile_function")
 
-    fn kernel(x: UnsafePointer[Int]):
+    def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
         x[0] = thread_idx.x
 
     # CHECK: tid.x
 
     with DeviceContext() as ctx:
-        _ = ctx.compile_function[kernel]()
+        _ = ctx.compile_function_experimental[kernel]()
 
 
-def main():
+def main() raises:
     test_compile_function()

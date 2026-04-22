@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,20 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from os import abort
+from std.os import abort
 
-from python import Python, PythonObject
-from python.bindings import (
+from std.python import Python, PythonObject
+from std.python._cpython import PyObjectPtr
+from std.python.bindings import (
+    PythonModuleBuilder,
     check_and_get_arg,
     check_and_get_or_convert_arg,
     check_arguments_arity,
-    PythonModuleBuilder,
 )
-from python._cpython import PyObjectPtr
 
 
 @export
-fn PyInit_mojo_module() -> PythonObject:
+def PyInit_mojo_module() -> PythonObject:
     # ----------------------------------
     # Create a Python module
     # ----------------------------------
@@ -57,9 +57,7 @@ fn PyInit_mojo_module() -> PythonObject:
         ).def_init_defaultable[FailToInitialize]()
         return b.finalize()
     except e:
-        return abort[PythonObject](
-            String("failed to create Python module: ", e)
-        )
+        abort(String("failed to create Python module: ", e))
 
 
 # ===----------------------------------------------------------------------=== #
@@ -67,13 +65,13 @@ fn PyInit_mojo_module() -> PythonObject:
 # ===----------------------------------------------------------------------=== #
 
 
-fn case_return_arg_tuple(
+def case_return_arg_tuple(
     py_self: PythonObject, args: PythonObject
 ) -> PythonObject:
     return args
 
 
-fn case_raise_empty_error() -> PythonObject:
+def case_raise_empty_error() -> PythonObject:
     ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
@@ -83,28 +81,30 @@ fn case_raise_empty_error() -> PythonObject:
     return PythonObject(from_owned=PyObjectPtr())
 
 
-fn case_raise_string_error() -> PythonObject:
+def case_raise_string_error() -> PythonObject:
     ref cpython = Python().cpython()
 
     var error_type = cpython.get_error_global("PyExc_ValueError")
 
-    cpython.PyErr_SetString(error_type, "sample value error".unsafe_cstr_ptr())
+    cpython.PyErr_SetString(
+        error_type, "sample value error".as_c_string_slice().unsafe_ptr()
+    )
 
     return PythonObject(from_owned=PyObjectPtr())
 
 
 # Returning New Mojo Values
-fn create_string() raises -> PythonObject:
+def create_string() raises -> PythonObject:
     var result = "Hello"
 
     return PythonObject(alloc=result^)
 
 
-fn case_mojo_raise() raises -> PythonObject:
+def case_mojo_raise() raises -> PythonObject:
     raise Error("Mojo error")
 
 
-fn case_mojo_mutate(list: PythonObject) raises -> PythonObject:
+def case_mojo_mutate(list: PythonObject) raises -> PythonObject:
     # this would work even if args was `read`, but we want just to test that
     # the binding API accepts a function that mutates the argument.
     list[0] += 1
@@ -116,7 +116,7 @@ struct NonBoundType:
     pass
 
 
-fn case_downcast_unbound_type(value: PythonObject) raises:
+def case_downcast_unbound_type(value: PythonObject) raises:
     var _ptr = value.downcast_value_ptr[NonBoundType]()
 
 
@@ -126,41 +126,32 @@ fn case_downcast_unbound_type(value: PythonObject) raises:
 
 
 @fieldwise_init
-struct Person(Copyable, Defaultable, Movable, Representable):
+struct Person(Defaultable, ImplicitlyCopyable, Writable):
     var name: String
     var age: Int
 
-    fn __init__(out self):
+    def __init__(out self):
         self.name = "John Smith"
         self.age = 123
 
-    fn __repr__(self) -> String:
-        return String(
-            "Person(",
-            repr(self.name),
-            ", ",
-            repr(self.age),
-            ")",
-        )
-
     @staticmethod
-    fn obj_name(self_: PythonObject) raises -> PythonObject:
+    def obj_name(self_: PythonObject) raises -> PythonObject:
         var self0 = self_.downcast_value_ptr[Self]()
 
         return PythonObject(self0[].name)
 
     @staticmethod
-    fn change_name(
+    def change_name(
         self_: PythonObject, new_name: PythonObject
     ) raises -> PythonObject:
-        var self0 = UnsafePointer[Self, **_](
+        var self0 = UnsafePointer[Self, ...](
             unchecked_downcast_value=self_
-        ).origin_cast[mut=True]()
+        ).unsafe_mut_cast[True]()
 
         if len(new_name) > len(self0[].name.codepoints()):
             raise Error("cannot make name longer than current name")
 
-        self0[].name = String(new_name)
+        self0[].name = String(py=new_name)
 
         return PythonObject(None)
 
@@ -170,15 +161,12 @@ struct Person(Copyable, Defaultable, Movable, Representable):
 # ===----------------------------------------------------------------------=== #
 
 
-struct FailToInitialize(Defaultable, Movable, Representable):
-    fn __init__(out self):
+struct FailToInitialize(Defaultable, Movable, Writable):
+    def __init__(out self):
         pass
 
-    fn __del__(deinit self):
+    def __del__(deinit self):
         abort("FailToInitialize should never be deinitialized.")
-
-    fn __repr__(self) -> String:
-        return "FailToInitialize()"
 
 
 # ===----------------------------------------------------------------------=== #
@@ -190,11 +178,11 @@ struct FailToInitialize(Defaultable, Movable, Representable):
 # ====================================
 
 
-fn incr_int(mut arg: Int):
+def incr_int(mut arg: Int):
     arg += 1
 
 
-fn add_to_int(mut arg: Int, var value: Int):
+def add_to_int(mut arg: Int, var value: Int):
     arg += value
 
 
@@ -203,12 +191,12 @@ fn add_to_int(mut arg: Int, var value: Int):
 #
 
 
-fn incr_int__wrapper(
+def incr_int__wrapper(
     py_self: PythonObject, py_args: PythonObject
 ) raises -> PythonObject:
     check_arguments_arity(1, py_args, "incr_int")
 
-    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "incr_int", py_args, 0
     )
 
@@ -218,16 +206,18 @@ fn incr_int__wrapper(
     return PythonObject(None)
 
 
-fn add_to_int__wrapper(
+def add_to_int__wrapper(
     py_self: PythonObject, py_args: PythonObject
 ) raises -> PythonObject:
     check_arguments_arity(2, py_args, "add_to_int")
 
-    var arg_0: UnsafePointer[Int] = check_and_get_arg[Int](
+    var arg_0: UnsafePointer[Int, MutAnyOrigin] = check_and_get_arg[Int](
         "add_to_int", py_args, 0
     )
 
-    var arg_1: UnsafePointer[Int] = check_and_get_or_convert_arg[Int](
+    var arg_1: UnsafePointer[Int, MutAnyOrigin] = check_and_get_or_convert_arg[
+        Int
+    ](
         "add_to_int",
         py_args,
         1,

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,48 +11,74 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from buffer import NDBuffer
-from buffer.dimlist import DimList
+from layout import (
+    Coord,
+    Layout,
+    LayoutTensor,
+    RuntimeInt,
+    TileTensor,
+    row_major,
+)
+from layout.int_tuple import to_index_list
 from linalg.matrix_band_part import matrix_band_part as _matrix_band_part
-from runtime.asyncrt import DeviceContextPtr
-from testing import assert_equal
+from std.runtime.asyncrt import DeviceContextPtr
+from std.testing import assert_equal
 
-from utils import IndexList
+from std.utils import IndexList
 
 
 def matrix_band_part[
-    rank: Int,
+    output_layout: Layout,
     dtype: DType,
 ](
-    input: NDBuffer[dtype, rank],
-    output: NDBuffer[mut=True, dtype, rank],
+    input: LayoutTensor[dtype, output_layout, ImmutAnyOrigin],
+    output: LayoutTensor[dtype, output_layout, MutAnyOrigin],
     num_lower: Int,
     num_upper: Int,
     exclude: Bool,
-):
-    alias int_type = DType.index
-    alias cond_type = DType.bool
+) raises:
+    comptime int_type = DType.int
+    comptime cond_type = DType.bool
 
-    var num_lower_buf = NDBuffer[
-        int_type, 1, MutableAnyOrigin, DimList(1)
+    var num_lower_buf = LayoutTensor[
+        int_type, Layout.row_major(1), MutAnyOrigin
     ].stack_allocation()
-    var num_upper_buf = NDBuffer[
-        int_type, 1, MutableAnyOrigin, DimList(1)
+    var num_upper_buf = LayoutTensor[
+        int_type, Layout.row_major(1), MutAnyOrigin
     ].stack_allocation()
-    var exclude_buf = NDBuffer[
-        cond_type, 1, MutableAnyOrigin, DimList(1)
+    var exclude_buf = LayoutTensor[
+        cond_type, Layout.row_major(1), MutAnyOrigin
     ].stack_allocation()
 
-    num_lower_buf[0] = num_lower
-    num_upper_buf[0] = num_upper
+    num_lower_buf[0] = Scalar[DType.int](num_lower)
+    num_upper_buf[0] = Scalar[DType.int](num_upper)
     exclude_buf[0] = exclude
+    comptime rank = input.rank
+    var input_shape: IndexList[rank] = to_index_list[rank](input.layout.shape)
 
     @parameter
-    fn input_fn[
+    def input_fn[
         width: Int,
         _rank: Int,
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         return input.load[width=width](rebind[IndexList[rank]](coords))
+
+    # Create TileTensors for scalar parameters.
+    var num_lower_shape = Coord(RuntimeInt[DType.int64](Int64(1)))
+    var num_lower_tt = TileTensor(num_lower_buf.ptr, row_major(num_lower_shape))
+    var num_upper_shape = Coord(RuntimeInt[DType.int64](Int64(1)))
+    var num_upper_tt = TileTensor(num_upper_buf.ptr, row_major(num_upper_shape))
+    var exclude_shape = Coord(RuntimeInt[DType.int64](Int64(1)))
+    var exclude_tt = TileTensor(exclude_buf.ptr, row_major(exclude_shape))
+
+    # Create TileTensor for output.
+    comptime m = output_layout.shape[0].value()
+    comptime n = output_layout.shape[1].value()
+    var output_shape = Coord(
+        RuntimeInt[DType.int64](Int64(m)),
+        RuntimeInt[DType.int64](Int64(n)),
+    )
+    var output_tt = TileTensor(output.ptr, row_major(output_shape))
 
     _matrix_band_part[
         dtype,
@@ -63,26 +89,21 @@ def matrix_band_part[
         simd_width=1,
         single_thread_blocking_override=True,
     ](
-        input.get_shape(),
-        num_lower_buf.make_dims_unknown(),
-        num_upper_buf.make_dims_unknown(),
-        exclude_buf.make_dims_unknown(),
-        output,
+        input_shape,
+        num_lower_tt,
+        num_upper_tt,
+        exclude_tt,
+        output_tt,
         DeviceContextPtr(),
     )
 
 
-def test_matrix_band_part():
-    alias rank = 2
-    alias shape = DimList(3, 3)
-    alias dtype = DType.float32
+def test_matrix_band_part() raises:
+    comptime layout = Layout.row_major(3, 3)
+    comptime dtype = DType.float32
 
-    var input = NDBuffer[
-        dtype, rank, MutableAnyOrigin, shape
-    ].stack_allocation()
-    var output = NDBuffer[
-        dtype, rank, MutableAnyOrigin, shape
-    ].stack_allocation()
+    var input = LayoutTensor[dtype, layout, MutAnyOrigin].stack_allocation()
+    var output = LayoutTensor[dtype, layout, MutAnyOrigin].stack_allocation()
 
     input[0, 0] = 1
     input[0, 1] = 2
@@ -95,8 +116,8 @@ def test_matrix_band_part():
     input[2, 2] = 9
 
     matrix_band_part(
-        input.make_dims_unknown(),
-        output.make_dims_unknown(),
+        input.get_immutable(),
+        output,
         num_lower=0,
         num_upper=-1,
         exclude=False,
@@ -113,8 +134,8 @@ def test_matrix_band_part():
     assert_equal(output[2, 2], 9)
 
     matrix_band_part(
-        input.make_dims_unknown(),
-        output.make_dims_unknown(),
+        input.get_immutable(),
+        output,
         num_lower=0,
         num_upper=-1,
         exclude=True,
@@ -131,5 +152,5 @@ def test_matrix_band_part():
     assert_equal(output[2, 2], 0)
 
 
-def main():
+def main() raises:
     test_matrix_band_part()

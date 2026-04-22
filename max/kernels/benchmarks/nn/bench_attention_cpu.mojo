@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,124 +11,128 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from random import rand
+from std.random import rand
 
-from benchmark import *
-from buffer import NDBuffer
-from buffer.dimlist import Dim, DimList
-from nn.flash_attention import flash_attention
+from std.benchmark import *
+from layout import Layout, LayoutTensor, RuntimeLayout, UNKNOWN_VALUE
+from nn.attention.cpu.mha import flash_attention
 
-from utils import IndexList
-from utils.index import Index
+from std.utils import IndexList
+from std.utils.index import Index
 
 
 @fieldwise_init
-struct AttentionSpec(Copyable, Movable, Stringable):
+struct AttentionSpec(ImplicitlyCopyable, Writable):
     var batch_size: Int
     var seq_len: Int
     var kv_seq_len: Int
     var depth_dim: Int
 
-    @no_inline
-    fn __str__(self) -> String:
-        # fmt: off
-        return String(
+    # fmt: off
+    def write_to(self, mut writer: Some[Writer]):
+        """Writes a string representation of the attention spec.
+
+        Args:
+            writer: The writer to write to.
+        """
+        writer.write(
             "batch_size=", self.batch_size,
             ",seq_len=", self.seq_len,
             ",kv_seq_len=", self.kv_seq_len,
             ",depth_dim=", self.depth_dim,
         )
-        # fmt: on
+    # fmt: on
 
 
-def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec):
+def bench_attention[dtype: DType](mut m: Bench, spec: AttentionSpec) raises:
     var q_shape = Index(spec.batch_size, spec.seq_len, spec.depth_dim)
     var kv_shape = Index(spec.batch_size, spec.kv_seq_len, spec.depth_dim)
     var mask_shape = Index(spec.batch_size, spec.seq_len, spec.kv_seq_len)
 
-    var q_ptr = UnsafePointer[Scalar[dtype]].alloc(q_shape.flattened_length())
-    var k_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_shape.flattened_length())
-    var v_ptr = UnsafePointer[Scalar[dtype]].alloc(kv_shape.flattened_length())
-    var mask_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        mask_shape.flattened_length()
-    )
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(
-        q_shape.flattened_length()
-    )
+    var q_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
+    var k_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
+    var v_ptr = alloc[Scalar[dtype]](kv_shape.flattened_length())
+    var mask_ptr = alloc[Scalar[dtype]](mask_shape.flattened_length())
+    var output_ptr = alloc[Scalar[dtype]](q_shape.flattened_length())
 
     rand(q_ptr, q_shape.flattened_length())
     rand(k_ptr, kv_shape.flattened_length())
     rand(v_ptr, kv_shape.flattened_length())
     rand(mask_ptr, mask_shape.flattened_length())
 
-    var q = NDBuffer[dtype, 3](q_ptr, q_shape)
-    var k = NDBuffer[dtype, 3](k_ptr, kv_shape)
-    var v = NDBuffer[dtype, 3](v_ptr, kv_shape)
-    var mask = NDBuffer[dtype, 3](mask_ptr, mask_shape)
-    var output = NDBuffer[dtype, 3](output_ptr, q_shape)
+    comptime layout = Layout.row_major[3]()
+    var q = LayoutTensor[dtype, layout](
+        q_ptr, RuntimeLayout[layout].row_major(q_shape)
+    )
+    var k = LayoutTensor[dtype, layout](
+        k_ptr, RuntimeLayout[layout].row_major(kv_shape)
+    )
+    var v = LayoutTensor[dtype, layout](
+        v_ptr, RuntimeLayout[layout].row_major(kv_shape)
+    )
+    var mask = LayoutTensor[dtype, layout](
+        mask_ptr, RuntimeLayout[layout].row_major(mask_shape)
+    )
+    var output = LayoutTensor[dtype, layout](
+        output_ptr, RuntimeLayout[layout].row_major(q_shape)
+    )
 
     @parameter
     @always_inline
-    fn input_k_fn[
+    def input_k_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return k.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
-    fn input_v_fn[
+    def input_v_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return v.load[width=simd_width](rebind[IndexList[3]](idx))
 
     @parameter
     @always_inline
-    fn mask_fn[
+    def mask_fn[
         simd_width: Int, _rank: Int
     ](idx: IndexList[_rank]) -> SIMD[dtype, simd_width]:
         return mask.load[width=simd_width](rebind[IndexList[3]](idx))
 
-    alias scale = 0.25
+    comptime scale = 0.25
 
     @always_inline
     @parameter
-    fn flash_bench_fn(mut b: Bencher):
+    def flash_bench_fn(mut b: Bencher):
         @always_inline
         @parameter
-        fn iter_fn[depth_static_dim: Dim]():
-            alias output_static_shape = DimList(Dim(), Dim(), depth_static_dim)
+        def iter_fn[depth_static_dim: Int]():
+            comptime output_static_shape = IndexList[3](
+                UNKNOWN_VALUE, UNKNOWN_VALUE, depth_static_dim
+            )
             flash_attention[input_k_fn, input_v_fn, mask_fn](
-                q.make_dims_unknown(),
-                k.get_shape(),
-                v.get_shape(),
-                mask.get_shape(),
-                rebind[NDBuffer[dtype, 3, output.origin, output_static_shape]](
-                    output
-                ),
+                q,
+                k.runtime_layout.shape.value.canonicalize(),
+                v.runtime_layout.shape.value.canonicalize(),
+                mask.runtime_layout.shape.value.canonicalize(),
+                output,
                 scale=scale,
             )
 
-        alias depth_static_dims = VariadicList[Int](40, 64, 80, 128, 160)
+        comptime depth_static_dims = [40, 64, 80, 128, 160]
 
-        @parameter
-        for idx in range(len(depth_static_dims)):
-            if depth_static_dims[idx] == spec.depth_dim:
-                b.iter[iter_fn[Dim(depth_static_dims[idx])]]()
+        comptime for idx in range(len(depth_static_dims)):
+            comptime dim = depth_static_dims[idx]
+            if dim == spec.depth_dim:
+                b.iter[iter_fn[dim]]()
                 return
 
         # Fallback to dispatch with a dynamic shape.
-        b.iter[iter_fn[Dim()]]()
+        b.iter[iter_fn[UNKNOWN_VALUE]]()
 
     m.bench_function[flash_bench_fn](BenchId("flash", String(spec)))
 
-    _ = q
-    _ = k
-    _ = v
-    _ = mask
-    _ = output
 
-
-def main():
+def main() raises:
     var specs = [
         # bert-base-uncased-seqlen-16-onnx.yaml
         AttentionSpec(

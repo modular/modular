@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,14 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math.polynomial import _horner_evaluate, polynomial_evaluate
+from std.math.polynomial import _horner_evaluate, polynomial_evaluate
 
-from testing import assert_equal
+from std.testing import TestSuite
+from std.testing import assert_equal
 
 
-def test_polynomial_evaluate_degree3():
+def test_polynomial_evaluate_degree1() raises:
+    # This is a degenerate case where the number of coefficients is 1, so we
+    # just return the coefficient.
+    comptime coeffs: List[Float64] = [42]
+    assert_equal(_horner_evaluate[coeffs](9999.0), 42.0)
+
+
+def test_polynomial_evaluate_degree3() raises:
     # Evaluate 1000 + x + x^2
-    alias coeffs = List[Float64](1000.0, 1.0, 1.0)
+    comptime coeffs: List[Float64] = [1000.0, 1.0, 1.0]
 
     assert_equal(_horner_evaluate[coeffs](1.0), 1002.0)
     assert_equal(polynomial_evaluate[coeffs](1.0), 1002.0)
@@ -26,9 +34,9 @@ def test_polynomial_evaluate_degree3():
     assert_equal(polynomial_evaluate[coeffs](0.1), 1000.11)
 
 
-def test_polynomial_evaluate_degree4():
+def test_polynomial_evaluate_degree4() raises:
     # Evalaute 1000 + 99 x - 43 x^2 + 12 x^3 - 14 x^4
-    alias coeffs = List[Float64](1000.0, 99.0, -43.0, 12.0, -14.0)
+    comptime coeffs: List[Float64] = [1000.0, 99.0, -43.0, 12.0, -14.0]
 
     assert_equal(_horner_evaluate[coeffs](1.0), 1054.0)
     assert_equal(polynomial_evaluate[coeffs](1.0), 1054.0)
@@ -36,12 +44,22 @@ def test_polynomial_evaluate_degree4():
     assert_equal(polynomial_evaluate[coeffs](0.1), 1009.4806)
 
 
-def test_polynomial_evaluate_degree10():
+def test_polynomial_evaluate_degree10() raises:
     # Evaluate 20.0 + 9.0 x + 1.0 x^2 + 1.0 x^3 + 1.0 x^4 + 1.0 x^5 + 1.0 x^6 +
     # 1.0 x^7 + 1.0 x^8 + 43.0 x^9 + 10.0 x^10
-    alias coeffs = List[Float64](
-        20.0, 9.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 43.0, 10.0
-    )
+    comptime coeffs: List[Float64] = [
+        20.0,
+        9.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        1.0,
+        43.0,
+        10.0,
+    ]
 
     assert_equal(_horner_evaluate[coeffs](1.0), 89.0)
     assert_equal(polynomial_evaluate[coeffs](1.0), 89.0)
@@ -49,7 +67,5 @@ def test_polynomial_evaluate_degree10():
     assert_equal(polynomial_evaluate[coeffs](0.1), 20.911111154)
 
 
-def main():
-    test_polynomial_evaluate_degree3()
-    test_polynomial_evaluate_degree4()
-    test_polynomial_evaluate_degree10()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

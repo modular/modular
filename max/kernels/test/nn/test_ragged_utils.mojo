@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,45 +11,43 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from internal_utils import HostNDBuffer
+from layout import TileTensor, row_major
 from nn._ragged_utils import get_batch_from_row_offsets
-from testing import assert_equal
-from buffer import DimList
+from std.testing import assert_equal
 
 
-def test_get_batch_from_row_offsets():
-    batch_size = 9
-    prefix_sums = HostNDBuffer[DType.uint32, 1](DimList(batch_size + 1))
-    prefix_sums.tensor[0] = 0
-    prefix_sums.tensor[1] = 100
-    prefix_sums.tensor[2] = 200
-    prefix_sums.tensor[3] = 300
-    prefix_sums.tensor[4] = 400
-    prefix_sums.tensor[5] = 500
-    prefix_sums.tensor[6] = 600
-    prefix_sums.tensor[7] = 700
-    prefix_sums.tensor[8] = 800
-    prefix_sums.tensor[9] = 900
+def test_get_batch_from_row_offsets() raises:
+    comptime batch_size = 9
+    var storage = InlineArray[UInt32, batch_size + 1](uninitialized=True)
+    prefix_sums = TileTensor(storage, row_major[batch_size + 1]())
+    prefix_sums[0] = 0
+    prefix_sums[1] = 100
+    prefix_sums[2] = 200
+    prefix_sums[3] = 300
+    prefix_sums[4] = 400
+    prefix_sums[5] = 500
+    prefix_sums[6] = 600
+    prefix_sums[7] = 700
+    prefix_sums[8] = 800
+    prefix_sums[9] = 900
 
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 100),
+        get_batch_from_row_offsets(prefix_sums, 100),
         1,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 0),
+        get_batch_from_row_offsets(prefix_sums, 0),
         0,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 899),
+        get_batch_from_row_offsets(prefix_sums, 899),
         8,
     )
     assert_equal(
-        get_batch_from_row_offsets(prefix_sums.tensor, 555),
+        get_batch_from_row_offsets(prefix_sums, 555),
         5,
     )
 
-    _ = prefix_sums^
 
-
-def main():
+def main() raises:
     test_get_batch_from_row_offsets()

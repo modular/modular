@@ -18,16 +18,18 @@ effectively toward the continued improvement of Mojo.
 
 For more information on our priorities, see the following documents:
 
-- Our [Vision document](./stdlib/docs/vision.md) describes the guiding
-  principles behind our development efforts.
-- Our [Roadmap](./stdlib/docs/roadmap.md) identifies concrete development goals
-  as we work towards an even more robust and feature-rich standard library.
+- Our [Vision document](https://docs.modular.com/mojo/vision) describes the
+  guiding principles behind our development efforts.
+- Our [Roadmap](https://docs.modular.com/mojo/roadmap/) identifies concrete
+  development goals as we work towards an even more robust and feature-rich
+  standard library.
 
 For technical details on developing for the standard library, see the following
 documents:
 
-- [Developing the standard library](./stdlib/docs/development.md) covers building,
-  testing, and other information you’ll need to work in the standard library.
+- [Developing the standard library](./stdlib/docs/development.md) covers
+  building, testing, and other information you’ll need to work in the standard
+  library.
 - [Coding Standards and Style Guide](./stdlib/docs/style-guide.md) provides
   guidelines for writing code for the standard library.
 
@@ -85,17 +87,20 @@ This guideline is here for the following reasons:
 - **Higher quality reviews**: It is much easier to spot a bug in a few lines
 than in 1000 lines.
 - **Faster overall review**: Reviewers, to approve a pull request, need to
-understand every line and understand how it fits into your overall change.
-They also need to go back and forth between files and functions to understand
-the flow of the code. This is exponentially hard as there are more lines in the code.
+understand every line and understand how it fits into your overall change. They
+also need to go back and forth between files and functions to understand the
+flow of the code. This is exponentially hard as there are more lines in the
+code.
 - **Avoiding blocking changes that are valid**: In a huge pull request, it's
-likely that some changes are valid and some need to be reworked/discussed. If all
-the changes are in the same pull request, then the valid changes will be blocked
-until all discussions have been resolved.
-- **Reducing the number of git conflicts**: Bigger pull request means slower reviews,
-thus means that the pull request will be open longer and will have more git conflicts
-to be resolved before being merged.
-- **Parallel processing**: All programmers like to parallelize. Well, reviewers also
+likely that some changes are valid and some need to be reworked/discussed. If
+all the changes are in the same pull request, then the valid changes will be
+blocked until all discussions have been resolved.
+- **Reducing the number of git conflicts**: Bigger pull request means slower
+  reviews,
+thus means that the pull request will be open longer and will have more git
+conflicts to be resolved before being merged.
+- **Parallel processing**: All programmers like to parallelize. Well, reviewers
+  also
 like to parallelize code reviews to merge your code faster. If you open two pull
 requests that are independent, then two reviewers will be able to work on your
 code.
@@ -117,7 +122,8 @@ proposals process ensures feedback from the widest possible set of community
 members and serves as an audit log of past proposal changes with most
 importantly the rationale behind it.
 
-Proposals consist of a GitHub [Pull Request](#pull-requests) that adds a
+Proposals consist of a GitHub
+[Pull Request](#submitting-pull-requests) that adds a
 document to the [`proposals/`](./proposals) directory. Contributors are
 encouraged to react with a *thumbs-up* to proposal PRs if they are generally
 interested and supportive of the high-level direction. These are assigned to

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,9 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from sys import simd_width_of
+from std.sys import simd_width_of
 
-from benchmark import Bench, BenchConfig, Bencher, BenchId
+from std.benchmark import Bench, BenchConfig, Bencher, BenchId
 
 # ===-----------------------------------------------------------------------===#
 # Benchmark Data
@@ -24,10 +24,10 @@ from benchmark import Bench, BenchConfig, Bencher, BenchId
 # Benchmarks
 # ===-----------------------------------------------------------------------===#
 @parameter
-fn bench_writer_int[n: Int](mut b: Bencher) raises:
+def bench_writer_int[n: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         var s1 = String()
         s1.write(n)
         _ = s1^
@@ -36,10 +36,10 @@ fn bench_writer_int[n: Int](mut b: Bencher) raises:
 
 
 @parameter
-fn bench_writer_simd[n: Int](mut b: Bencher) raises:
+def bench_writer_simd[n: Int](mut b: Bencher) raises:
     @always_inline
     @parameter
-    fn call_fn():
+    def call_fn():
         var s1 = String()
         s1.write(SIMD[DType.int32, simd_width_of[DType.int32]()](n))
         _ = s1^
@@ -50,7 +50,7 @@ fn bench_writer_simd[n: Int](mut b: Bencher) raises:
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
-def main():
+def main() raises:
     var m = Bench(BenchConfig(num_repetitions=1))
     m.bench_function[bench_writer_int[42]](BenchId("bench_writer_int_42"))
     m.bench_function[bench_writer_int[2**64]](

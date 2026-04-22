@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,11 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from testing import assert_equal
+from std.testing import assert_equal, TestSuite
 
 
 # CHECK: test_range_getitem_uint_out_of_bounds
-def test_range_getitem_uint_out_of_bounds():
+def test_range_getitem_uint_out_of_bounds() raises:
     print("== test_range_getitem_uint_out_of_bounds ==")
     assert_equal(range(UInt(0), UInt.MAX)[0], UInt(0), "range(0, UInt.MAX)[0]")
     assert_equal(
@@ -37,5 +37,5 @@ def test_range_getitem_uint_out_of_bounds():
     _ = rng_obj[10]
 
 
-def main():
-    test_range_getitem_uint_out_of_bounds()
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

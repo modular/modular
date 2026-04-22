@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,35 +11,33 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from math import ceildiv, isclose
-from random import rand
-from sys.info import simd_width_of
+from std.math import isclose
+from std.random import rand
+from std.sys.info import simd_width_of
 
-from algorithm.functional import vectorize
-from buffer import NDBuffer
-from buffer.dimlist import DimList
-from nn.conv import (
+from std.algorithm.functional import vectorize
+from layout import Layout, LayoutTensor, RuntimeLayout
+from layout import lt_to_tt
+from nn.conv.conv import (
     ConvDirectNHWC,
     ConvInfoStatic,
     pack_conv_filter_shape,
     pack_filter,
 )
-from nn.conv_utils import (
+from nn.conv.conv_utils import (
     ConvShape,
     append_shape,
     extend_shape,
-    get_direct_conv_micro_kernel_height,
-    get_direct_conv_micro_kernel_width,
 )
 
-from utils.index import Index, IndexList
+from std.utils.index import Index, IndexList
 
-alias simd_size: Int = simd_width_of[DType.float32]()
-alias dtype = DType.float32
+comptime simd_size: Int = simd_width_of[DType.float32]()
+comptime dtype = DType.float32
 
 
 # CHECK-LABEL: test_conv_epilogue
-fn test[
+def test[
     rank: Int, dtype: DType, filter_packed: Bool
 ](
     N: Int,
@@ -56,8 +54,7 @@ fn test[
 
     var output_dims = IndexList[rank](1)
 
-    @parameter
-    for i in range(rank):
+    comptime for i in range(rank):
         output_dims[i] = (
             input_dims[i]
             + pad[2 * i]
@@ -70,8 +67,7 @@ fn test[
     var pad_h = IndexList[2](0)
     var pad_w = IndexList[2](0)
 
-    @parameter
-    if rank == 1:
+    comptime if rank == 1:
         pad_w = Index(pad[0], pad[1])
     elif rank == 2:
         pad_h = Index(pad[0], pad[1])
@@ -99,18 +95,18 @@ fn test[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = UnsafePointer[Scalar[dtype]].alloc(input_size)
+    var input_ptr = alloc[Scalar[dtype]](input_size)
     rand(input_ptr, input_size)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = UnsafePointer[Scalar[dtype]].alloc(filter_size)
+    var filter_ptr = alloc[Scalar[dtype]](filter_size)
     rand(filter_ptr, filter_size)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
-    var output_ref_ptr = UnsafePointer[Scalar[dtype]].alloc(output_size)
+    var output_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
 
-    var bias_ptr = UnsafePointer[Scalar[dtype]].alloc(F)
+    var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
     # Find the tile size used in packing.
@@ -122,48 +118,53 @@ fn test[
     # var rounded_F = ceildiv(F, micro_kernel_f_size) * micro_kernel_f_size
 
     # Input buffer.
+    comptime layout_p2 = Layout.row_major[rank + 2]()
+    comptime layout_p3 = Layout.row_major[rank + 3]()
     var input_shape = extend_shape(input_dims, N, C)
-    var input = NDBuffer[dtype, rank + 2](input_ptr, input_shape)
+    var input = LayoutTensor[dtype, layout_p2](
+        input_ptr, RuntimeLayout[layout_p2].row_major(input_shape)
+    )
 
     # Filter buffer.
     var filter_shape = append_shape(filter_dims, C_per_group, F)
-    var filter = NDBuffer[dtype, rank + 2](filter_ptr, filter_shape)
+    var filter = LayoutTensor[dtype, layout_p2](
+        filter_ptr, RuntimeLayout[layout_p2].row_major(filter_shape)
+    )
 
-    var packed_filter_shape = pack_conv_filter_shape[False](filter, num_groups)
-    var packed_filter_ptr = UnsafePointer[Scalar[dtype]].alloc(
+    var packed_filter_shape = pack_conv_filter_shape(
+        lt_to_tt(filter), num_groups
+    )
+    var packed_filter_ptr = alloc[Scalar[dtype]](
         packed_filter_shape.flattened_length()
     )
-    var packed_filter = NDBuffer[dtype, rank + 3](
-        packed_filter_ptr, rebind[IndexList[rank + 3]](packed_filter_shape)
+    var packed_filter = LayoutTensor[dtype, layout_p3](
+        packed_filter_ptr,
+        RuntimeLayout[layout_p3].row_major(packed_filter_shape),
     )
 
     var output_shape = extend_shape(output_dims, N, F)
-    var output = NDBuffer[dtype, rank + 2](output_ptr, output_shape)
-    var output_ref = NDBuffer[dtype, rank + 2](output_ref_ptr, output_shape)
+    var output = LayoutTensor[dtype, layout_p2](
+        output_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
+    )
+    var output_ref = LayoutTensor[dtype, layout_p2](
+        output_ref_ptr, RuntimeLayout[layout_p2].row_major(output_shape)
+    )
 
-    @parameter
-    if filter_packed:
-        pack_filter(filter, packed_filter, num_groups)
+    comptime if filter_packed:
+        pack_filter(lt_to_tt(filter), lt_to_tt(packed_filter), num_groups)
 
-    alias conv_attr = ConvInfoStatic[rank + 2 - 2]()
+    comptime conv_attr = ConvInfoStatic[rank]()
 
     @always_inline
     @parameter
-    fn null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
+    def null_epilogue[rank: Int](coords: IndexList[rank], f_size: Int):
         pass
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 3,
-            rank + 2,
-            _,
-            _,
-            _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 3](),
-            DimList.create_unknown[rank + 2](),
+            layout_p2,
+            layout_p3,
+            layout_p2,
             dtype,
             dtype,
             dtype,
@@ -178,15 +179,9 @@ fn test[
         )
     else:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 2,
-            rank + 2,
-            _,
-            _,
-            _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
+            layout_p2,
+            layout_p2,
+            layout_p2,
             dtype,
             dtype,
             dtype,
@@ -204,14 +199,13 @@ fn test[
     var output_image_size = output_dims.flattened_length()
     for n in range(N):
         for i in range(output_image_size):
-            var output_ref_ptr = output_ref.data + F * (
+            var output_ref_ptr = output_ref.ptr + F * (
                 i + output_image_size * n
             )
 
             @always_inline
-            @__copy_capture(output_ref_ptr, bias_ptr)
             @parameter
-            fn body0[width: Int](offset: Int):
+            def body0[width: Int](offset: Int) unified {var}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -221,15 +215,14 @@ fn test[
                     ),
                 )
 
-            vectorize[body0, simd_size](F)
+            vectorize[simd_size](F, body0)
 
     # Test epilogue
     @always_inline
     @parameter
-    fn epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
+    def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        @parameter
-        fn body1[width: Int](idx: Int):
+        def body1[width: Int](idx: Int) unified {read}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
@@ -241,20 +234,13 @@ fn test[
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
             )
 
-        vectorize[body1, simd_size](f_size)
+        vectorize[simd_size](f_size, body1)
 
-    @parameter
-    if filter_packed:
+    comptime if filter_packed:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 3,
-            rank + 2,
-            _,
-            _,
-            _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 3](),
-            DimList.create_unknown[rank + 2](),
+            layout_p2,
+            layout_p3,
+            layout_p2,
             dtype,
             dtype,
             dtype,
@@ -270,15 +256,9 @@ fn test[
         )
     else:
         ConvDirectNHWC[
-            rank + 2,
-            rank + 2,
-            rank + 2,
-            _,
-            _,
-            _,
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
-            DimList.create_unknown[rank + 2](),
+            layout_p2,
+            layout_p2,
+            layout_p2,
             dtype,
             dtype,
             dtype,
@@ -301,8 +281,8 @@ fn test[
     # Check results, return on the first failed comparison.
     for i in range(output_size):
         if not isclose(
-            output_ref.data[i],
-            output.data[i],
+            output_ref.ptr[i],
+            output.ptr[i],
             atol=1e-4,  # absolute error tolerance
             rtol=1e-4,  # relative error tolerance
         ):
@@ -311,8 +291,8 @@ fn test[
             print("filter packed", filter_packed)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.data[i])
-            print("Actual value: ", output.data[i])
+            print("Golden value: ", output_ref.ptr[i])
+            print("Actual value: ", output.ptr[i])
             output_ptr.free()
             output_ref_ptr.free()
             return
@@ -324,7 +304,7 @@ fn test[
     print("Succeed")
 
 
-fn main() raises:
+def main() raises:
     # No packing or padding.
     test[2, DType.float32, False](
         1,  # N

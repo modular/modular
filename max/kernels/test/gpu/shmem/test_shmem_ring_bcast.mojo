@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,31 +11,20 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 # REQUIRES: NVIDIA-GPU
+# RUN: %mojo %s
 
-# RUN: %mojo-no-debug %s
+from std.ffi import c_int, c_size_t
 
-# RUN: NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
-# RUN: %mojo-build %s -o %t
-# RUN: %mpirun -n $NUM_GPUS %t
-
-from testing import assert_equal
+from std.gpu.host import DeviceBuffer
 from shmem import *
-from pathlib import cwd, Path
-from os.path import dirname
-from os import listdir, getenv, setenv
-from subprocess import run
-from sys.param_env import env_get_string
-from python import Python
-from gpu.host.dim import Dim
-from gpu.host.device_attribute import DeviceAttribute
-from sys.ffi import c_int
+from std.testing import assert_equal
 
 
-fn ring_bcast(
-    data: UnsafePointer[c_int],
+def ring_bcast(
+    data: UnsafePointer[c_int, MutAnyOrigin],
     nelem: Int,
     root: c_int,
-    psync: UnsafePointer[UInt64],
+    psync: UnsafePointer[UInt64, MutAnyOrigin],
 ):
     var mype = shmem_my_pe()
     var npes = shmem_n_pes()
@@ -49,56 +38,58 @@ fn ring_bcast(
     if mype == npes - 1:
         return
 
-    shmem_put(data, data, nelem, peer)
+    shmem_put(data, data, c_size_t(nelem), peer)
     shmem_fence()
     shmem_signal_op(psync, 1, SHMEM_SIGNAL_SET, peer)
 
     psync[0] = 0
 
 
-def main():
-    alias data_len = 32
+def test_ring_bcast(ctx: SHMEMContext) raises:
+    comptime data_len = 32
+    var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
-    with SHMEMContext() as ctx:
-        var destination = ctx.enqueue_create_buffer[DType.int32](1)
+    var data = ctx.enqueue_create_buffer[DType.int32](data_len)
+    var data_h = alloc[Int32](data_len)
+    var psync = shmem_calloc[DType.uint64](1)
 
-        var data = ctx.enqueue_create_buffer[DType.int32](data_len)
-        var data_h = UnsafePointer[Int32].alloc(data_len)
-        var psync = shmem_calloc[DType.uint64](1)
+    for i in range(data_len):
+        data_h[i] = shmem_my_pe() + Int32(i)
 
-        for i in range(data_len):
-            data_h[i] = shmem_my_pe() + i
+    data.enqueue_copy_from(data_h)
 
-        data.enqueue_copy_from(data_h)
+    var root: Int32 = 0
+    ctx.barrier_all()
+    ctx.enqueue_function_collective_checked[ring_bcast, ring_bcast](
+        data,
+        data_len,
+        root,
+        DeviceBuffer[DType.uint64](ctx._ctx, psync, 1, owning=False),
+        grid_dim=1,
+        block_dim=1,
+    )
+    ctx.barrier_all()
 
-        var root = 0
-        ctx.barrier_all()
-        ctx.enqueue_function_collective[ring_bcast](
-            data.unsafe_ptr(),
-            data_len,
-            root,
-            psync,
-            grid_dim=1,
-            block_dim=1,
-        )
-        ctx.barrier_all()
+    data.enqueue_copy_to(data_h)
+    ctx.synchronize()
 
-        data.enqueue_copy_to(data_h)
-        ctx.synchronize()
-
-        var mype = shmem_my_pe()
-        for i in range(data_len):
-            assert_equal(
+    var mype = shmem_my_pe()
+    for i in range(data_len):
+        assert_equal(
+            data_h[i],
+            Int32(i),
+            String(
+                "PE",
+                mype,
+                "error, data[",
+                i,
+                "] = ",
                 data_h[i],
-                Int32(i),
-                String(
-                    "PE",
-                    mype,
-                    "error, data[",
-                    i,
-                    "] = ",
-                    data_h[i],
-                    " expected ",
-                    i,
-                ),
-            )
+                " expected ",
+                i,
+            ),
+        )
+
+
+def main() raises:
+    shmem_launch[test_ring_bcast]()

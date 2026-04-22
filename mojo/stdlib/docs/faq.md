@@ -22,19 +22,19 @@ your issues resolved.
 
 ## Standard library code
 
-### 1. Why do we have both `AnyTrivialRegType` and `AnyType`?
+### 1. Why do we have both `__TypeOfAllTypes` and `AnyType`?
 
-This is largely a historical thing as the library only worked on `AnyTrivialRegType`
-when it was first written. As we introduced the notion of memory-only types and
-traits, `AnyType` was born. At this point, most of the standard library operates
-on `AnyType` or some other trait-bound type. A few low-level things will always
-need to operate at the `AnyTrivialRegType` type level, such as when interacting
-with MLIR attributes.
+This is largely a historical thing as the library only worked on
+`__TypeOfAllTypes` when it was first written. As we introduced the notion of
+memory-only types and traits, `AnyType` was born. At this point, most of the
+standard library operates on `AnyType` or some other trait-bound type. A few
+low-level things will always need to operate at the `__TypeOfAllTypes` type
+level, such as when interacting with MLIR attributes.
 
 ### 2. Are the MLIR dialects private?
 
 The standard library makes use of internal MLIR dialects such as `pop`, `kgen`,
-and `lit`.  Currently, these are private, undocumented APIs.  We provide
+and `lit`. Currently, these are private, undocumented APIs. We provide
 no backward compatibility guarantees and therefore they can change at any time.
 These particular areas of the compiler and standard library are in active
 development and we are exploring how we can release them when their

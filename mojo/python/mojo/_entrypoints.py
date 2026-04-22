@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -20,6 +20,14 @@ from ._package_root import get_package_root
 from .run import _mojo_env
 
 
+def _entrypoint(file: str) -> None:
+    root = get_package_root()
+    assert root
+    env = _mojo_env()
+
+    os.execve(root / "bin" / file, sys.argv, env)
+
+
 def exec_mojo() -> None:
     env = _mojo_env()
 
@@ -27,12 +35,8 @@ def exec_mojo() -> None:
 
 
 def exec_lld() -> None:
-    root = get_package_root()
-    assert root
-    os.execv(root / "bin" / "lld", sys.argv)
+    _entrypoint("lld")
 
 
 def exec_modular_crashpad_handler() -> None:
-    root = get_package_root()
-    assert root
-    os.execv(root / "bin" / "modular-crashpad-handler", sys.argv)
+    _entrypoint("modular-crashpad-handler")

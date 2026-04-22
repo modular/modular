@@ -1,0 +1,214 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Op implementation for conditional."""
+
+from __future__ import annotations
+
+from collections.abc import Callable, Iterable
+from typing import Any
+
+from max.mlir.dialects import mo
+
+from ..graph import Graph
+from ..type import Type, _ChainType
+from ..value import TensorValue, TensorValueLike, Value, _ChainValue
+
+
+def cond(
+    pred: TensorValueLike,
+    out_types: Iterable[Type[Any]] | None,
+    then_fn: Callable[
+        [],
+        Iterable[Value[Any] | TensorValueLike]
+        | Value[Any]
+        | TensorValueLike
+        | None,
+    ],
+    else_fn: Callable[
+        [],
+        Iterable[Value[Any] | TensorValueLike]
+        | Value[Any]
+        | TensorValueLike
+        | None,
+    ],
+) -> list[TensorValue]:
+    """Conditionally execute one of two branches based on a boolean predicate.
+
+    This function provides conditional execution in the computation graph, where
+    one of two branches is executed based on the runtime value of a boolean
+    predicate. Both branches must return the same number and types of values as
+    specified in ``out_types``. Buffer mutations in branches are tracked
+    automatically through the chain mechanism.
+
+    The predicate is evaluated at runtime to determine which branch to execute.
+    Both branches are compiled but only the selected branch is executed based
+    on the predicate value.
+
+    This example shows a basic conditional with return values:
+
+    .. code-block:: python
+
+        def then_fn():
+            return ops.constant(1, DType.int32, device=DeviceRef.CPU())
+
+        def else_fn():
+            return ops.constant(0, DType.int32, device=DeviceRef.CPU())
+
+        device = DeviceRef.CPU()
+        pred = ops.constant(True, DType.bool, device=device)
+        result = ops.cond(
+            pred,
+            [TensorType(DType.int32, [], device=device)],
+            then_fn,
+            else_fn
+        )
+
+    This example shows a conditional with buffer mutations, where branches
+    don't return values:
+
+    .. code-block:: python
+
+        def then_fn():
+            ops.inplace_custom("increment", device=buffer.device, values=[buffer])
+
+        def else_fn():
+            ops.inplace_custom("decrement", device=buffer.device, values=[buffer])
+
+        ops.cond(pred, None, then_fn, else_fn)
+
+    This example shows a conditional with multiple return values:
+
+    .. code-block:: python
+
+        def then_fn():
+            a = ops.constant(1, DType.float32, device=device)
+            b = ops.constant(2, DType.float32, device=device)
+            return a, b
+
+        def else_fn():
+            a = ops.constant(0, DType.float32, device=device)
+            b = ops.constant(-1, DType.float32, device=device)
+            return a, b
+
+        device = DeviceRef.CPU()
+        out_types = [
+            TensorType(DType.float32, [], device=device),
+            TensorType(DType.float32, [], device=device)
+        ]
+        results = ops.cond(pred, out_types, then_fn, else_fn)
+
+    Args:
+        pred: Boolean scalar tensor of type :attr:`DType.bool` determining branch
+            execution.
+        out_types: Expected output types for both branches. Use :obj:`None` for
+            branches that don't return values.
+        then_fn: Callable executed when ``pred`` is True. Must return values
+            matching ``out_types`` if ``out_types`` is not :obj:`None`.
+        else_fn: Callable executed when ``pred`` is False. Must return values
+            matching ``out_types`` if ``out_types`` is not :obj:`None`.
+
+    Returns:
+        List of output values from executed branch. Returns empty list when
+        ``out_types`` is :obj:`None`.
+
+    Raises:
+        ValueError: If branches return different numbers of results or result
+            types don't match ``out_types``.
+    """
+    pred = TensorValue(pred)
+    if not pred.device.is_cpu():
+        raise ValueError(
+            "The predicate for `ops.cond` must reside on CPU, but got a"
+            f" tensor on {pred.device}. Transfer it explicitly with"
+            " `ops.transfer_to(pred, CPU())`."
+        )
+    out_types_actual = [
+        *(t.to_mlir() for t in out_types or []),
+        _ChainType().to_mlir(),
+        *(_ChainType().to_mlir() for _ in Graph.current.device_chains),
+    ]
+
+    # Pause verification until the operation is fully constructed
+    with Graph.current._pause_verification():
+        results, if_op = Graph.current._add_op_get_op_with_results(
+            mo.if_, pred, out_types_actual
+        )
+
+    num_values = len(list(out_types)) if out_types is not None else 0
+
+    results, out_chain, device_chains = (
+        results[:num_values],
+        results[num_values],
+        results[num_values + 1 :],
+    )
+
+    def wrap_region_func(  # noqa: ANN202
+        user_func,  # noqa: ANN001
+    ):
+        # Capture the set of live devices before and after constructing the
+        # body region. If new per-device chains were introduced, merge them
+        # back into the global chain (guaranteed to exist).
+        def handle_chains(*args, **kwargs):  # noqa: ANN202
+            live_devices_on_entry = dict.fromkeys(Graph.current.device_chains)
+
+            results = user_func(*args, **kwargs)
+
+            live_devices_on_exit = tuple(Graph.current.device_chains)
+
+            for device in live_devices_on_exit:
+                if device in live_devices_on_entry:
+                    continue
+
+                # Merge this chain with the global chain
+                Graph.current._merge_chains(
+                    [
+                        Graph.current._current_chain,
+                        Graph.current.device_chains[device],
+                    ]
+                )
+
+                # Remove the new device chain from the map
+                del Graph.current.device_chains[device]
+
+            return results
+
+        return handle_chains
+
+    try:
+        Graph.current._build_block(
+            if_op.thenRegion.blocks[0],
+            wrap_region_func(then_fn),
+            mo.YieldOp,
+            "then_block",
+            out_types,
+        )
+
+        Graph.current._build_block(
+            if_op.elseRegion.blocks[0],
+            wrap_region_func(else_fn),
+            mo.YieldOp,
+            "else_block",
+            out_types,
+        )
+
+        Graph.current._update_chain(out_chain)
+        for i, device in enumerate(Graph.current.device_chains):
+            new_chain = device_chains[i]
+            assert isinstance(new_chain, _ChainValue)
+            Graph.current.device_chains[device] = new_chain
+
+        Graph.current._verify_op(if_op)
+        return results
+    except Exception as e:
+        if_op.erase()
+        raise e

@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,49 +11,56 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from time import sleep
+from std.time import sleep
 
-from gpu.host.compile import _compile_code
-from gpu.host import get_gpu_target
-from testing import *
+from std.gpu.host import get_gpu_target
+from std.gpu.host.compile import _compile_code
+from std.testing import *
 
 
-fn sleep_intrinsics():
+def sleep_intrinsics():
     sleep(0.0000001)
 
 
 @always_inline
-fn _verify_sleep_intrinsics_nvidia(asm: StringSlice) raises -> None:
+def _verify_sleep_intrinsics_nvidia(asm: StringSlice) raises -> None:
     assert_true("nanosleep.u32" in asm)
 
 
 @always_inline
-fn _verify_sleep_intrinsics_mi300x(asm: StringSlice) raises -> None:
+def _verify_sleep_intrinsics_amd(asm: StringSlice) raises -> None:
+    # AMD sleep uses s_memrealtime for timing and s_sleep for sleeping.
+    assert_true("s_memrealtime" in asm)
     assert_true("s_sleep" in asm)
 
 
-def test_sleep_intrinsics_sm80():
+def test_sleep_intrinsics_sm80() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["sm_80"]()
+        sleep_intrinsics, target=get_gpu_target["sm_80"]()
     ]().asm
     _verify_sleep_intrinsics_nvidia(asm)
 
 
-def test_sleep_intrinsics_sm90():
+def test_sleep_intrinsics_sm90() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["sm_90"]()
+        sleep_intrinsics, target=get_gpu_target["sm_90"]()
     ]().asm
     _verify_sleep_intrinsics_nvidia(asm)
 
 
-def test_sleep_intrinsics_mi300x():
+def test_sleep_intrinsics_gfx942() raises:
     var asm = _compile_code[
-        sleep_intrinsics, target = get_gpu_target["mi300x"]()
+        sleep_intrinsics, target=get_gpu_target["gfx942"]()
     ]().asm
-    _verify_sleep_intrinsics_mi300x(asm)
+    _verify_sleep_intrinsics_amd(asm)
 
 
-def main():
-    test_sleep_intrinsics_sm80()
-    test_sleep_intrinsics_sm90()
-    test_sleep_intrinsics_mi300x()
+def test_sleep_intrinsics_gfx950() raises:
+    var asm = _compile_code[
+        sleep_intrinsics, target=get_gpu_target["gfx950"]()
+    ]().asm
+    _verify_sleep_intrinsics_amd(asm)
+
+
+def main() raises:
+    TestSuite.discover_tests[__functions_in_module()]().run()

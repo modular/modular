@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from collections import List
+from std.collections import List
 
 
 struct NameList:
@@ -22,14 +22,14 @@ struct NameList:
         for name in names:
             self.names.append(name)
 
-    def __getitem__(ref self, index: Int) -> ref [self.names] String:
+    def __getitem__(ref self, index: Int) raises -> ref[self.names] String:
         if index >= 0 and index < len(self.names):
             return self.names[index]
         else:
             raise Error("index out of bounds")
 
 
-def main():
+def main() raises:
     list = NameList("Thor", "Athena", "Dana", "Vrinda")
     ref name = list[2]
     print(name)

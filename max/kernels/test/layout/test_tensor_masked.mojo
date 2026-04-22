@@ -1,5 +1,5 @@
 # ===----------------------------------------------------------------------=== #
-# Copyright (c) 2025, Modular Inc. All rights reserved.
+# Copyright (c) 2026, Modular Inc. All rights reserved.
 #
 # Licensed under the Apache License v2.0 with LLVM Exceptions:
 # https://llvm.org/LICENSE.txt
@@ -12,14 +12,16 @@
 # ===----------------------------------------------------------------------=== #
 
 
-from layout import Layout
+from layout import Layout, LayoutTensor, RuntimeLayout
 from layout._fillers import arange
-from layout.tensor_builder import LayoutTensorBuild as tb
+from std.utils import Index
 
 
-fn test_tile_masked():
+def test_tile_masked():
     print("== test_tile_masked")
-    tensor_11x7 = tb[DType.float32]().row_major[11, 7]().alloc()
+    comptime layout = Layout.row_major(11, 7)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_11x7 = LayoutTensor[DType.float32, layout](stack)
     arange(tensor_11x7)
     for tile_i in range(3):
         for tile_j in range(2):
@@ -33,9 +35,11 @@ fn test_tile_masked():
             print(tensor_4x4_masked)
 
 
-fn test_subtile_masked():
+def test_subtile_masked():
     print("== test_subtile_masked")
-    tensor_15x9 = tb[DType.float32]().row_major[15, 9]().alloc()
+    comptime layout = Layout.row_major(15, 9)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_15x9 = LayoutTensor[DType.float32, layout](stack)
     arange(tensor_15x9)
     for tile_i in range(2):
         for tile_j in range(2):
@@ -60,11 +64,12 @@ fn test_subtile_masked():
                     print(subtile_4x4_masked)
 
 
-fn test_tile_dynamic_no_bounds():
+def test_tile_dynamic_no_bounds():
     print("== test_tile_dynamic_no_bounds")
-    arr_4x4_f32 = InlineArray[Float32, 16](uninitialized=True)
-    tensor_UxU = (
-        tb[DType.float32]().row_major(4, 4).view(arr_4x4_f32.unsafe_ptr())
+    comptime layout = Layout.row_major(4, 4)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+        stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(4, 4))
     )
     arange(tensor_UxU)
     for tile_i in range(2):
@@ -79,11 +84,12 @@ fn test_tile_dynamic_no_bounds():
             print(tensor_2x2_masked)
 
 
-fn test_tile_dynamic_with_bounds():
+def test_tile_dynamic_with_bounds():
     print("== test_tile_dynamic_with_bounds")
-    arr_5x3_f32 = InlineArray[Float32, 15](uninitialized=True)
-    tensor_UxU = (
-        tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
+    comptime layout = Layout.row_major(5, 3)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+        stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
     )
     arange(tensor_UxU)
     for tile_i in range(3):
@@ -98,11 +104,12 @@ fn test_tile_dynamic_with_bounds():
             print(tensor_2x2_masked)
 
 
-fn test_tile_and_distribute():
+def test_tile_and_distribute():
     print("== test_tile_and_distribute")
-    arr_5x3_f32 = InlineArray[Float32, 15](uninitialized=True)
-    tensor_UxU = (
-        tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
+    comptime layout = Layout.row_major(5, 3)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+        stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
     )
     arange(tensor_UxU)
     for tile_i in range(3):
@@ -123,11 +130,12 @@ fn test_tile_and_distribute():
                 print(distributed_masked_tensor)
 
 
-fn test_tile_iterator_masked():
+def test_tile_iterator_masked():
     print("== test_tile_iterator_masked")
-    arr_5x3_f32 = InlineArray[Float32, 15](uninitialized=True)
-    tensor_UxU = (
-        tb[DType.float32]().row_major(5, 3).view(arr_5x3_f32.unsafe_ptr())
+    comptime layout = Layout.row_major(5, 3)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+        stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(5, 3))
     )
     arange(tensor_UxU)
     print(tensor_UxU)
@@ -140,11 +148,12 @@ fn test_tile_iterator_masked():
             tensor_iter_2x2_masked += 1
 
 
-fn test_tile_and_vectorize():
+def test_tile_and_vectorize():
     print("== test_tile_and_vectorize")
-    arr_3x4_f32 = InlineArray[Float32, 12](uninitialized=True)
-    tensor_UxU = (
-        tb[DType.float32]().row_major(3, 4).view(arr_3x4_f32.unsafe_ptr())
+    comptime layout = Layout.row_major(3, 4)
+    var stack = InlineArray[Float32, layout.size()](uninitialized=True)
+    tensor_UxU = LayoutTensor[DType.float32, Layout.row_major[2]()](
+        stack, RuntimeLayout[Layout.row_major[2]()].row_major(Index(3, 4))
     )
     arange(tensor_UxU)
     print(tensor_UxU)
@@ -154,7 +163,7 @@ fn test_tile_and_vectorize():
             print(tensor_UxU.tile[2, 2](tile_i, tile_j).vectorize[1, 2]())
 
 
-fn main():
+def main():
     # CHECK-LABEL: test_tile_masked
     # CHECK: --tile[ 0 ,  0 ]--
     # CHECK: ((4, 4):(7, 1)) True False

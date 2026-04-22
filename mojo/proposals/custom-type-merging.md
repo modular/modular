@@ -3,9 +3,9 @@
 Chris Lattner, Feb 28, 2025
 Status: Implemented in 25.3
 
-NOTE: this doc explains an expansion of the Mojo type checker.  It is now
+NOTE: this doc explains an expansion of the Mojo type checker. It is now
 implemented, but the doc still explains it as "the old behavior" and then "the
-new change".  If you are reading this to understand Mojo's behavior, please
+new change". If you are reading this to understand Mojo's behavior, please
 skip down to the "Proposed Solution" section.
 
 One small but important decision the Mojo type checker needs to handle is “what
@@ -39,7 +39,7 @@ fn get_common_type(typea, typeb) raises -> Type:
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
 
-   # Elided: do similar test for @nonmaterializable types.
+   # Elided: do similar test for @__nonmaterializable types.
    throw "no common type found"
 ```
 
@@ -80,12 +80,12 @@ Or pointers with origins that need to be unioned:
 
 ```mojo
 fn ptr_example(mut x: Int, mut y: Int, cond: Bool):
-  xptr = Pointer.address_of(x) # Type: Pointer[Int, __origin_of(x)]
-  yptr = Pointer.address_of(y) # Type: Pointer[Int, __origin_of(y)]
+  xptr = Pointer.address_of(x) # Type: Pointer[Int, origin_of(x)]
+  yptr = Pointer.address_of(y) # Type: Pointer[Int, origin_of(y)]
 
   # Currently error.
   xy_ptr = xptr if cond else yptr
-  # Desired type: Pointer[Int, __origin_of(x, y)]
+  # Desired type: Pointer[Int, origin_of(x, y)]
 
   xy_ptr[] += 42
 ```
@@ -110,7 +110,7 @@ We do this by defining a new dunder (we should support both the forward and the
 ```mojo
 struct StringLiteral[value: ...]:  # slightly simplified from StringLiteral.mojo
    fn __merge_with__[
-         other_type: __type_of(StringLiteral[_])
+         other_type: type_of(StringLiteral[_])
       ](self) -> StaticString:
         return self
 ```
@@ -144,9 +144,9 @@ generics:
 struct Pointer[type, origin]:  # slightly simplified from pointer.mojo
    # TODO: '_' doesn't work right in parameter lists currently, so the unbound
    # params of Pointer need to be explicitly declared.
-   fn __merge_with__[other_type: __type_of(Pointer[type, _])]
-      (self, out result: Pointer[type, __origin_of(self.origin, other_type.origin)):
-        return __type_of(result)(self._value)
+   fn __merge_with__[other_type: type_of(Pointer[type, _])]
+      (self) -> Pointer[type, origin_of(self.origin, other_type.origin)]:
+        return {self._value}
 ```
 
 Ok, that is a mouthful, but the same as before. The similar approach can be
@@ -156,9 +156,9 @@ This would also solve the numeric issue it would look like:
 
 ```mojo
 struct SIMD[type: DType, size: Int](
-    fn __merge_with__[other_type: __type_of(SIMD[_, size])]
-      (self, out result: SIMD[type.merged_with(other_type.type), size]):
-        return __type_of(result)(self) # Use explicit conversion ctor
+    fn __merge_with__[other_type: type_of(SIMD[_, size])]
+      (self) -> SIMD[type.merged_with(other_type.type), size]:
+        return {self} # Use explicit conversion ctor
 
 struct DType:
    ...
@@ -226,7 +226,7 @@ fn get_common_type(typea, typeb) raises -> Type:
    if b_impl_converts_to_a:
        return typea  # Use implicit conversion
 
-   # Elided: do similar test for @nonmaterializable types.
+   # Elided: do similar test for @__nonmaterializable types.
    throw "no common type found"
 ```
 
@@ -235,7 +235,7 @@ To paraphrase, the overall behavior here has this order of resolution:
 1) If either type implements a matching `__merge_with__` function, then that
    overrides all other behavior.
 
-2) If not, the compiler checks for implicit conversions.  This should cover
+2) If not, the compiler checks for implicit conversions. This should cover
    almost all cases, because typically common types are one of the two types.
 
 3) The compiler rejects things that are ambiguous.
@@ -243,7 +243,7 @@ To paraphrase, the overall behavior here has this order of resolution:
 Some other notes that may be helpful:
 
 - Any given type is allowed to have multiple `__merge_with__` overloads for
-  different cases.  Each overload can produce different target types if they
+  different cases. Each overload can produce different target types if they
   want to. This allows defining `A.mergewith(B)->C` but `A.mergewith(D)->E`.
 
 - When dealing with a merge two incompatible types `A <-> B`, it is sufficient
