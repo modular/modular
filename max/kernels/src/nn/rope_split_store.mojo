@@ -139,7 +139,9 @@ def _rope_split_store_ragged_impl[
             var bi: Int = get_batch_from_row_offsets(
                 input_row_offsets, global_token_idx
             )
-            var ti = Int(UInt32(global_token_idx) - input_row_offsets.ptr[bi])
+            var ti = Int(
+                UInt32(global_token_idx) - input_row_offsets.raw_load(bi)
+            )
 
             # Cache position: used for cache stores and as the default
             # freq_pos when the caller doesn't supply explicit position IDs.
@@ -393,10 +395,10 @@ def _rope_split_store_ragged_with_position_ids[
     *,
     target: StaticString,
     interleaved: Bool = True,
-    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
-        CoordLike
-    ],
-    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
+    mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
     ],
@@ -486,10 +488,10 @@ def rope_split_store_paged_ragged_with_position_ids[
     freq_dtype: DType,
     target: StaticString = "cpu",
     interleaved: Bool = True,
-    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
-        CoordLike
-    ],
-    mrope_section: Optional[Coord[*TypeList[mrope_types]()]] = None,
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
+    mrope_section: Optional[Coord[*mrope_types]] = None,
     PositionIdsLayoutType: TensorLayout = RowMajorLayout[
         *Coord[RuntimeInt[DType.int64], RuntimeInt[DType.int64]].element_types
     ],

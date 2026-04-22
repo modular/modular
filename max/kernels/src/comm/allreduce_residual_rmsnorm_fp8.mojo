@@ -133,7 +133,7 @@ def _allreduce_rmsnorm_fp8_kernel_warp_tiling[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: Int](
+    output_fn: def[width: SIMDSize](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -313,7 +313,7 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
     simd_width: Int,
     threads_per_block: Int,
     has_residual: Bool,
-    output_fn: def[width: Int](
+    output_fn: def[width: SIMDSize](
         row: Int, col: Int, val: SIMD[out_dtype, width]
     ) capturing -> None,
 ](
@@ -559,8 +559,9 @@ def _allreduce_rmsnorm_fp8_kernel_2stage[
                 ](local_elem, output_fp8)
 
     # Per-block barrier with fence: block B waits for block B on all GPUs.
-    # syncthreads + store_release + load_acquire ensures all of block B's
-    # Stage 1 writes on every GPU are visible before Stage 2 reads them.
+    # `syncthreads` plus the release/acquire atomics inside `_multi_gpu_barrier`
+    # ensure all of block B's Stage 1 writes on every GPU are visible before
+    # Stage 2 reads them.
     _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
         rank_sigs, rank_sigs[my_rank], my_rank
     )
@@ -676,7 +677,9 @@ def _allreduce_rmsnorm_fp8_launch[
     @always_inline
     @parameter
     @__copy_capture(output)
-    def output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    def output_fn[
+        width: SIMDSize
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]):
         output.store[width=width](Coord(Idx(row), Idx(col)), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_warp_tiling[
@@ -827,7 +830,9 @@ def _allreduce_rmsnorm_fp8_launch_2stage[
     @always_inline
     @parameter
     @__copy_capture(output)
-    def output_fn[width: Int](row: Int, col: Int, val: SIMD[out_dtype, width]):
+    def output_fn[
+        width: SIMDSize
+    ](row: Int, col: Int, val: SIMD[out_dtype, width]):
         output.store[width=width](Coord(Idx(row), Idx(col)), val)
 
     comptime kernel = _allreduce_rmsnorm_fp8_kernel_2stage[
@@ -949,7 +954,7 @@ def _launch_split_allreduce_rmsnorm_fp8[
     @parameter
     def add_epilogue[
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, size=_width]) -> None:
