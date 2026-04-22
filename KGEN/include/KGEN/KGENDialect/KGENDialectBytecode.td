@@ -401,6 +401,109 @@ def LinkageNameAttr : DialectAttribute<(attr
   ConcreteAttribute<"BoolAttr">:$mangle
 )>;
 
+def TypeConformsToTraitAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  ConcreteAttrArray<"SymbolRefAttr">:$traitSymbols
+)>;
+
+def DowncastAttr : DialectAttribute<(attr
+  Type:$type,
+  TypedAttr:$inputTypeValue
+)>;
+
+def CompileOffloadClosureAttr : DialectAttribute<(attr
+  TypedAttr:$target,
+  TypedAttr:$func,
+  Type:$type
+)>;
+
+def GetLinkageNameAttr : DialectAttribute<(attr
+  TypedAttr:$target,
+  TypedAttr:$func,
+  Type:$type
+)>;
+
+def GetSourceNameAttr : DialectAttribute<(attr
+  TypedAttr:$func,
+  Type:$type
+)>;
+
+def CompileAssemblyAttr : DialectAttribute<(attr
+  TypedAttr:$target,
+  TypedAttr:$emissionKind,
+  TypedAttr:$emissionOptions,
+  ConcreteAttribute<"BoolAttr">:$propagateError,
+  TypedAttr:$func,
+  Type:$type
+)>;
+
+def GetTypeNameAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$qualifiedBuiltins,
+  Type:$type
+)>;
+
+def StructFieldTypesAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  ConcreteType<"ParamListType">:$type
+)>;
+
+def StructFieldNamesAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  ConcreteType<"ParamListType">:$type
+)>;
+
+def StructFieldIndexByNameAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$fieldName,
+  ConcreteType<"IndexType">:$type
+)>;
+
+def StructFieldTypeByNameAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$fieldName,
+  Type:$type
+)>;
+
+def StructFieldOffsetByIndexAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$fieldIndex,
+  TypedAttr:$target
+)>;
+
+def StructFieldOffsetByNameAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  TypedAttr:$fieldName,
+  TypedAttr:$target
+)>;
+
+def IsStructTypeAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  ConcreteType<"IntegerType">:$type
+)>;
+
+def FnTypeIsCABIAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue,
+  ConcreteType<"IntegerType">:$type
+)>;
+
+def GetBaseTypeNameAttr : DialectAttribute<(attr
+  TypedAttr:$typeValue
+)>;
+
+def DeferredAttr : DialectAttribute<(attr
+  Attribute:$attr
+)>;
+
+def AttrCtorDeferredAttr : DialectAttribute<(attr
+  TypedAttrArray:$strings
+)>;
+
+def ToStringDeferredAttr : DialectAttribute<(attr
+  Attribute:$attr,
+  ConcreteOptionalAttribute<"UnitAttr">:$needElideType
+)>;
+
 def KGENDialectAttributes : DialectAttributes<"kgen"> {
   let elems = [
     ParameterExprArrayAttr,
@@ -448,7 +551,26 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     ClosureAttr,
     ClosureMethodAttr,
     MemSymbolTripleAttr,
-    LinkageNameAttr
+    LinkageNameAttr,
+    TypeConformsToTraitAttr,
+    DowncastAttr,
+    CompileOffloadClosureAttr,
+    GetLinkageNameAttr,
+    GetSourceNameAttr,
+    CompileAssemblyAttr,
+    GetTypeNameAttr,
+    StructFieldTypesAttr,
+    StructFieldNamesAttr,
+    StructFieldIndexByNameAttr,
+    StructFieldTypeByNameAttr,
+    StructFieldOffsetByIndexAttr,
+    StructFieldOffsetByNameAttr,
+    IsStructTypeAttr,
+    FnTypeIsCABIAttr,
+    GetBaseTypeNameAttr,
+    DeferredAttr,
+    AttrCtorDeferredAttr,
+    ToStringDeferredAttr
   ];
 }
 
