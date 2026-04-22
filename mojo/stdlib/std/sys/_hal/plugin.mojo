@@ -16,6 +16,8 @@ Loads a HAL plugin shared library and resolves all required function pointers
 from the M_driver_* C API.
 """
 
+from std.collections import OptionalReg
+
 from std.ffi import (
     _DLHandle,
     OwnedDLHandle,
@@ -69,7 +71,7 @@ struct M_driver_queue_execute_config_gpu(TrivialRegisterPassable):
     var grid: M_driver_dim
     var block: M_driver_dim
     var shared_mem_bytes: UInt32
-    var attributes: OpaquePointer[MutExternalOrigin]
+    var attributes: OptionalReg[OpaquePointer[MutExternalOrigin]]
     var num_attributes: UInt32
 
 
@@ -445,7 +447,7 @@ struct RawDriver(Movable):
                     grid=M_driver_dim(x=grid[0], y=grid[1], z=grid[2]),
                     block=M_driver_dim(x=block[0], y=block[1], z=block[2]),
                     shared_mem_bytes=UInt32(0),
-                    attributes=OpaquePointer[MutExternalOrigin](),
+                    attributes={},
                     num_attributes=UInt32(0),
                 )
             ),
@@ -812,7 +814,7 @@ struct RawPlugin(Movable):
         self.bundle_unload = type_of(self.bundle_unload)(handle, so_path)
 
     def _create_init_driver(mut self) raises HALError -> DriverHandle:
-        var handle = UnsafeMaybeUninit(DriverHandle(_unsafe_null=()))
+        var handle = UnsafeMaybeUninit[DriverHandle]()
         var version = DriverVersion(
             major=M_DRIVER_INTERFACE_VERSION_MAJOR,
             minor=M_DRIVER_INTERFACE_VERSION_MINOR,

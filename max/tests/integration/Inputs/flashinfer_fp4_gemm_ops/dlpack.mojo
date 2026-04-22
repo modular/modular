@@ -120,7 +120,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
     var _rank: Int32
     var data_type: DLDataType
     var _shape_ptr: UnsafePointer[Int64, MutAnyOrigin]
-    var _strides_ptr: UnsafePointer[Int64, MutAnyOrigin]
+    var _strides_ptr: Optional[UnsafePointer[Int64, MutAnyOrigin]]
     var byte_offset: UInt64
 
     # Implementation detail: shape and strides are stored inline after
@@ -149,7 +149,7 @@ struct DLTensor[rank: Int, dtype: DType](ImplicitlyCopyable):
         # contiguous. Many consumers (e.g. FlashInfer's `IsContiguous()`) check
         # for this, so we null the strides out when the tensor is contiguous.
         if Self._is_row_major(self.shape, self.strides):
-            self._strides_ptr = UnsafePointer[Int64, MutAnyOrigin]()
+            self._strides_ptr = {}
         else:
             self._strides_ptr = UnsafePointer(to=self.strides).bitcast[Int64]()
 
