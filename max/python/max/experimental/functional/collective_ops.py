@@ -252,6 +252,13 @@ def transfer_to(
     if isinstance(target, Device):
         target = PlacementMapping(DeviceMesh.single(target), (Replicated(),))
 
+    # Short-circuit for single-device tensors.
+    if t.real and not t.is_distributed and target.mesh.num_devices == 1:
+        mesh_device = target.mesh.devices[0]
+        if t.device == mesh_device:
+            return t
+        return Tensor(storage=t.driver_tensor.to(mesh_device))
+
     target_p = target.to_placements()
 
     # ── Non-distributed input: scatter onto target mesh ─────────────
