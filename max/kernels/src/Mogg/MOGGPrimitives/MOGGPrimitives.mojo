@@ -426,6 +426,36 @@ def mgp_buffer_slice(
     return MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
 
 
+@register_internal("mgp.buffer.bulk_slice")
+@no_inline
+def mgp_buffer_bulk_slice[
+    N: Int,
+    //,
+](
+    base: MutByteBuffer,
+    offsets: InlineArray[Int, N],
+    sizes: InlineArray[Int, N],
+) -> InlineArray[MutByteBuffer, N]:
+    """Bulk slice: produce N non-overlapping sub-buffers from a pool buffer.
+
+    Parameters:
+        N: Number of slices.
+
+    Args:
+        base: The pool buffer.
+        offsets: Byte offset of each slice within the pool.
+        sizes: Byte size of each slice.
+
+    Returns:
+        An InlineArray of N MutByteBuffer views into the pool.
+    """
+    var result = InlineArray[MutByteBuffer, N](uninitialized=True)
+
+    for i in range(N):
+        result[i] = mgp_buffer_slice(base, offsets[i], sizes[i])
+    return result
+
+
 @register_internal("mgp.buffer.plan")
 @no_inline
 def mgp_buffer_plan[
