@@ -1442,25 +1442,17 @@ Returns:
     A Coord full of `size` static elements.
 """
 
-comptime _FlattenReducer[
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: SIMDSize,
-] = Variadic.concat_types[
-    Prev,
-    TypeList[From]()[idx]
-    ._ParamListType if TypeList[From]()[idx]
-    .is_tuple else TypeList.of[Trait=CoordLike, TypeList[From]()[idx]]()
-    .values,
-]
 
+comptime _FlattenOnceMapper[
+    element_type: CoordLike,
+]: TypeList.of[Trait=CoordLike]()._mlir_type = (
+    element_type._ParamListType if element_type.is_tuple else TypeList.of[
+        Trait=CoordLike, element_type
+    ]().values
+)
 
-comptime _FlattenOnce[*element_types: CoordLike] = TypeList[
-    _ReduceVariadicAndIdxToVariadic[
-        BaseVal=TypeList.of[Trait=CoordLike]().values,
-        ParamListType=element_types.values,
-        Reducer=_FlattenReducer,
-    ]
+comptime _FlattenOnce[*element_types: CoordLike] = TypeList._concat[
+    *element_types.map_to_values[_FlattenOnceMapper]()
 ]()
 """Peels one level of Coord nesting from a variadic type list.
 
@@ -1485,41 +1477,6 @@ Applies `_FlattenOnce` four times via doubling (`_Flatten2` ∘ `_Flatten2`),
 handling up to four levels of Coord nesting.  Once fully flat, additional
 passes are no-ops since all elements are scalars.
 """
-
-comptime _NextOffset[
-    prev_offset: Int,
-    element_type: CoordLike,
-] = prev_offset + (
-    1 if element_type.is_value else _Flattened[*element_type.ParamListType].size
-)
-
-
-comptime _FlattenOffsetReducer[
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
-    idx: SIMDSize,
-] = Variadic.concat_types[
-    Prev,
-    TypeList.of[
-        Trait=CoordLike,
-        ComptimeInt[
-            0 if idx
-            == 0 else _NextOffset[
-                TypeList[Prev]()[TypeList[Prev].size - 1].static_value,
-                TypeList[From]()[idx - 1],
-            ]
-        ],
-    ]().values,
-]
-
-
-comptime _FlattenedOffsets[
-    *element_types: CoordLike
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=TypeList.of[Trait=CoordLike]().values,
-    ParamListType=element_types.values,
-    Reducer=_FlattenOffsetReducer,
-]
 
 
 def _get_flattened_helper[
