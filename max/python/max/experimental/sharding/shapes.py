@@ -18,7 +18,7 @@ from __future__ import annotations
 import math
 from collections.abc import Sequence
 
-from max.graph import Dim, Shape, StaticDim
+from max.graph import Dim, Shape, StaticDim, SymbolicDim
 from max.graph.dim import DimLike
 
 from .mesh import DeviceMesh
@@ -83,39 +83,30 @@ def local_shard_shape_from_global(
 
     For each :class:`Sharded` placement, the corresponding tensor dimension is
     split across ``mesh.mesh_shape[mesh_axis]`` ranks along that mesh axis.
-    When a parent size is not divisible by the mesh axis size, shard extents
-    differ by at most one element (standard strided decomposition).
+    Dispatch on the parent dim subtype (mirrors
+    :meth:`sharding.types.DistributedTensorType._local_shard_shape`):
+
+    - :class:`StaticDim`: standard strided decomposition — when the parent
+      size is not divisible by the mesh axis size, shard extents differ by
+      at most one element.
+    - :class:`SymbolicDim`: emit a fresh named symbolic dim
+      ``"{name}_{axis_name}"`` — every shard gets the same symbolic size.
+    - :class:`AlgebraicDim` (and any other non-static case): divide
+      symbolically via ``parent // mesh_axis_size``; the resulting
+      ``AlgebraicDim`` folds eagerly when operands are static.
 
     Device flat indices follow the same row-major order as
     :attr:`DeviceMesh.devices`.
 
-    Args:
-        global_shape: Logical global tensor shape (static sizes along sharded
-            axes are required for uneven splits; symbolic dims are not
-            supported yet for sharded axes).
-        mesh: Device mesh.
-        placements: One placement per mesh axis.
-
-    Returns:
-        One :class:`Shape` per device, in mesh device order.
-
     Raises:
         ValueError: If ``placements`` length does not match ``mesh.ndim`` or a
             sharded axis is out of range.
-        NotImplementedError: If a sharded tensor dimension is not static.
     """
     if len(placements) != mesh.ndim:
         raise ValueError(
             f"Need one placement per mesh axis. Mesh has {mesh.ndim} axes, "
             f"got {len(placements)} placements."
         )
-
-    for dim in global_shape:
-        if not isinstance(dim, StaticDim):
-            raise NotImplementedError(
-                "Sharding from global shape requires static dimensions; got "
-                f"{global_shape}."
-            )
 
     local_dims = [list(global_shape) for _ in range(mesh.num_devices)]
 
@@ -131,17 +122,27 @@ def local_shard_shape_from_global(
                 )
 
             mesh_axis_size = mesh.mesh_shape[mesh_axis]
+            axis_name = mesh.axis_names[mesh_axis]
             stride = math.prod(mesh.mesh_shape[mesh_axis + 1 :])
 
             for device_idx in range(mesh.num_devices):
                 parent_dim = local_dims[device_idx][tensor_axis]
-                shard_sizes = _shard_sizes_along_axis(
-                    int(parent_dim), mesh_axis_size
-                )
-                coord_along_axis = (device_idx // stride) % mesh_axis_size
-                local_dims[device_idx][tensor_axis] = StaticDim(
-                    shard_sizes[coord_along_axis]
-                )
+                if isinstance(parent_dim, StaticDim):
+                    shard_sizes = _shard_sizes_along_axis(
+                        int(parent_dim), mesh_axis_size
+                    )
+                    coord_along_axis = (device_idx // stride) % mesh_axis_size
+                    local_dims[device_idx][tensor_axis] = StaticDim(
+                        shard_sizes[coord_along_axis]
+                    )
+                elif isinstance(parent_dim, SymbolicDim):
+                    local_dims[device_idx][tensor_axis] = SymbolicDim(
+                        f"{parent_dim.name}_{axis_name}"
+                    )
+                else:
+                    local_dims[device_idx][tensor_axis] = (
+                        parent_dim // mesh_axis_size
+                    )
         elif isinstance(placement, (Replicated, Partial)):
             continue
         else:

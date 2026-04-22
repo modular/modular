@@ -27,9 +27,6 @@ INTERNVL_LANGUAGE_MODEL_MAPPING = {
     # InternVLLanguageModel expects: "lm_head.weight"
     "language_model.lm_head.": "lm_head.",
     # Remap unfused Q/K/V projections into StackedLinear namespace.
-    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
-    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
-    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 # Maps from InternVL checkpoint names to InternVLVisionModel weight names.

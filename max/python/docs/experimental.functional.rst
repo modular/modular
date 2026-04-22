@@ -13,4 +13,5 @@ max.experimental.functional
 .. automodule:: max.experimental.functional
    :members:
    :undoc-members:
+   :imported-members:
    :show-inheritance:

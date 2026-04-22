@@ -255,13 +255,8 @@ class Gemma3_MultiModalModel(
 
         # Get processed state dict for language and vision models
         weights_dict = dict(self.weights.items())
-        # Pass layer_types and attention_k_eq_v so the adapter can remap
-        # q/k/v_proj -> qkv_proj.{q,k,v} or qk_proj.{q,k} per layer.
-        hf_text_config = getattr(self.huggingface_config, "text_config", None)
         language_weights_dict = convert_safetensor_language_state_dict(
-            weights_dict,
-            layer_types=getattr(hf_text_config, "layer_types", None),
-            attention_k_eq_v=getattr(hf_text_config, "attention_k_eq_v", True),
+            weights_dict
         )
 
         vision_weights_dict = convert_safetensor_vision_state_dict(weights_dict)

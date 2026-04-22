@@ -433,36 +433,34 @@ def mgp_buffer_plan[
     num_runtime_sizes: Int,
     //,
     alignments: InlineArray[Int, num_static_sizes + num_runtime_sizes],
-    min_pre: InlineArray[Int, num_static_sizes + num_runtime_sizes],
-    min_post: InlineArray[Int, num_static_sizes + num_runtime_sizes],
-    max_pre: InlineArray[Int, num_static_sizes + num_runtime_sizes],
-    max_post: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    can_share: InlineArray[
+        Int,
+        (num_static_sizes + num_runtime_sizes)
+        * (num_static_sizes + num_runtime_sizes),
+    ],
     static_sizes: InlineArray[Int, num_static_sizes],
 ](runtime_sizes: InlineArray[Int, num_runtime_sizes]) -> Tuple[
     Int, InlineArray[Int, num_static_sizes + num_runtime_sizes]
 ]:
     """Runtime memory planning for buffers.
 
-    Given static and runtime size information along with lifetime information
-    for allocations, returns the high watermark size and offsets for each
+    Given static and runtime size information along with a sharing matrix for
+    allocations, returns the high watermark size and offsets for each
     allocation.
 
     The allocations are ordered as: [static_sizes..., runtime_sizes...]
     where the first num_static_sizes allocations have compile-time known sizes,
     and the remaining num_runtime_sizes allocations have runtime sizes.
 
-    Alloc lifetimes are represented as the min/max pre/postorder indices of the
-    uses of every allocation in the "dependency tree". An allocation A can reuse
-    an allocation B if A.max_pre < B.min_pre && A.min_post > B.max_post.
+    can_share is a flat NxN matrix (row-major) where can_share[i*N+j]=1 iff
+    allocations i and j have non-overlapping lifetimes and can therefore
+    occupy the same memory slot. N = num_static_sizes + num_runtime_sizes.
 
     Parameters:
         num_static_sizes: Number of allocations with static sizes.
         num_runtime_sizes: Number of allocations with runtime sizes.
         alignments: Alignment requirements for each allocation.
-        min_pre: Minimum preorder indices for each allocation.
-        min_post: Minimum postorder indices for each allocation.
-        max_pre: Maximum preorder indices for each allocation.
-        max_post: Maximum postorder indices for each allocation.
+        can_share: NxN sharing matrix (row-major, 0/1 values).
         static_sizes: Compile-time known sizes for first num_static_sizes allocations.
 
     Args:
@@ -477,10 +475,7 @@ def mgp_buffer_plan[
     def compute_static_allocations(
         out result: BufferPlanState[
             alignments,
-            min_pre,
-            min_post,
-            max_pre,
-            max_post,
+            can_share,
         ],
     ):
         result = {}
@@ -1236,7 +1231,7 @@ def mgp_buffer_get_cached(
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
     external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
 
 
