@@ -346,8 +346,8 @@ def enumerate(
 
 
 struct _ZipIterator[origin: Origin, *Ts: Iterator](
-    Copyable where AllCopyable[*Ts.upcast[AnyType]()],
-    Iterable where AllCopyable[*Ts.upcast[AnyType]()],
+    Copyable where AllCopyable[*Ts],
+    Iterable where AllCopyable[*Ts],
     IterableOwned,
     Iterator,
 ):
@@ -368,7 +368,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
             `Iterator` and its `Element` must be `ImplicitlyDestructible`.
     """
 
-    comptime _InjectedValues = Tuple[*Self.Ts.upcast[Movable]()]
+    comptime _InjectedValues = Tuple[*Self.Ts]
     var _values: Self._InjectedValues
 
     comptime IteratorType[
@@ -383,9 +383,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
     @always_inline
     def __iter__(
         ref self,
-    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[
-        *Self.Ts.upcast[AnyType]()
-    ]:
+    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
         return self.copy()
 
     @always_inline
@@ -437,7 +435,7 @@ def zip[
     out res: _ZipIterator[
         iterables.origin, *_iterable_to_iterator[iterables.origin, *Ts]
     ],
-) where AllImplicitlyDestructible[*res.Ts.upcast[AnyType]()]:
+) where AllImplicitlyDestructible[*res.Ts]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
@@ -472,7 +470,7 @@ def zip[
 ](
     var *iterables: *Ts,
     out res: _ZipIterator[MutExternalOrigin, *_iterable_owned_to_iterator[*Ts]],
-) where AllImplicitlyDestructible[*res.Ts.upcast[AnyType]()]:
+) where AllImplicitlyDestructible[*res.Ts]:
     """Returns an iterator that yields tuples of the elements of the original
     iterables.
 
