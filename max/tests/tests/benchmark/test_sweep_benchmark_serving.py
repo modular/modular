@@ -927,3 +927,79 @@ def test_upload_path_writes_one_json_per_concurrency(
             f"Expected results-{expected_mc}-median.json in filename, "
             f"got {filename!r}"
         )
+
+
+def test_upload_path_single_run_no_max_concurrency(
+    tmp_path: Path,
+    workload_config: Path,
+    mocker: pytest_mock.MockerFixture,
+) -> None:
+    """run_sweep must call save_result_json for a non-sweep (single-run) upload.
+
+    When upload_results=True and max_concurrency is not set, run_sweep must
+    still write a JSON — the result_dict/metrics guard must not silently skip
+    the upload for single-run jobs migrated from the old out-of-process path.
+    """
+    from max.benchmark.benchmark_serving import BenchmarkRunResult
+
+    mock_metrics = MagicMock()
+    mock_metrics.completed = 5
+
+    fake_results = [
+        BenchmarkRunResult(
+            max_concurrency=None,
+            request_rate=float("inf"),
+            num_prompts=10,
+            metrics=mock_metrics,
+            result_dict={"duration": 1.0},
+        )
+    ]
+
+    saved_filenames: list[str] = []
+
+    def capture_save(config: object, *args: object, **kwargs: object) -> None:
+        saved_filenames.append(getattr(config, "result_filename", "") or "")
+
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.benchmark_serving_main",
+        return_value=fake_results,
+    )
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.save_result_json",
+        side_effect=capture_save,
+    )
+    mocker.patch(
+        "max.benchmark.sweep_benchmark_serving._build_sweep_result",
+        return_value=MagicMock(),
+    )
+    mock_writer_cls = mocker.patch(
+        "max.benchmark.sweep_benchmark_serving.LLMBenchmarkResultWriter"
+    )
+    mock_ctx = MagicMock()
+    mock_ctx.__enter__ = MagicMock(return_value=mock_ctx)
+    mock_ctx.__exit__ = MagicMock(return_value=False)
+    mock_writer_cls.return_value = mock_ctx
+
+    sweep_benchmark_serving.main(
+        [
+            "--model",
+            "myorg/mymodel",
+            "--workload-config",
+            str(workload_config),
+            "--num-prompts",
+            "10",
+            "--upload-results",
+            "--log-dir",
+            str(tmp_path),
+        ],
+        uploader=MagicMock(),
+    )
+
+    assert len(saved_filenames) == 1, (
+        f"Expected save_result_json called once for single-run upload, "
+        f"got {len(saved_filenames)}."
+    )
+    assert "results-None-median.json" in saved_filenames[0], (
+        f"Expected results-None-median.json in filename, "
+        f"got {saved_filenames[0]!r}."
+    )
