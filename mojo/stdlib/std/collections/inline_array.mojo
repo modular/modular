@@ -433,7 +433,9 @@ struct InlineArray[ElementType: Copyable, size: Int](
         )
 
     @always_inline
-    def __init__(out self, var *elems: Self.ElementType, __list_literal__: ()):
+    def __init__(
+        out self, var *elems: Self.ElementType, __list_literal__: NoneType
+    ):
         """Constructs an array from a variadic list of elements.
 
         Args:

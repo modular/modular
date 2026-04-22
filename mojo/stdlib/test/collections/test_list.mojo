@@ -80,7 +80,7 @@ def test_list() raises:
 
 
 struct WeirdList[T: AnyType]:
-    def __init__(out self, var *values: Self.T, __list_literal__: ()):
+    def __init__(out self, var *values: Self.T, __list_literal__: NoneType):
         pass
 
 

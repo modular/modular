@@ -556,7 +556,9 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    def __init__(out self, *elements: IntTuple, __list_literal__: () = ()):
+    def __init__(
+        out self, *elements: IntTuple, __list_literal__: NoneType = None
+    ):
         """Initialize an `IntTuple` with nested IntTuples.
 
         Creates a hierarchical `IntTuple` containing the provided `IntTuple` elements,

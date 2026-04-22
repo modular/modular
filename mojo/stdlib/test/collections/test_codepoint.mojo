@@ -190,29 +190,33 @@ comptime SIGNIFICANT_CODEPOINTS: List[Tuple[Int, List[Byte]]] = [
     # 1-byte (ASCII) codepoints
     # --------------------------
     # Smallest 1-byte codepoint value
-    (0, List[Byte](0, __list_literal__=())),
-    (1, List[Byte](1, __list_literal__=())),
-    (32, List[Byte](32, __list_literal__=())),  # First non-control character
-    (0b0111_1111, List[Byte](127, __list_literal__=())),  # 127
+    (0, List[Byte](0, __list_literal__=None)),
+    (1, List[Byte](1, __list_literal__=None)),
+    (32, List[Byte](32, __list_literal__=None)),  # First non-control character
+    (0b0111_1111, List[Byte](127, __list_literal__=None)),  # 127
     # ------------------
     # 2-byte codepoints -- 0b110x_xxxx 0b10xx_xxxx (11 x's)
     # ------------------
     # Smallest 2-byte codepoint
-    (128, List[Byte](0b1100_0010, 0b1000_0000, __list_literal__=())),
+    (128, List[Byte](0b1100_0010, 0b1000_0000, __list_literal__=None)),
     # Largest 2-byte codepoint -- 2^11 - 1 == 2047
-    (2**11 - 1, List[Byte](0b1101_1111, 0b1011_1111, __list_literal__=())),
+    (2**11 - 1, List[Byte](0b1101_1111, 0b1011_1111, __list_literal__=None)),
     # ------------------
     # 3-byte codepoints -- 0b1110_xxxx 0b10xx_xxxx 0b10xx_xxxx (16 x's)
     # ------------------
     # Smallest 3-byte codepoint -- 2^11 == 2048
     (
         2**11,
-        List[Byte](0b1110_0000, 0b1010_0000, 0b1000_0000, __list_literal__=()),
+        List[Byte](
+            0b1110_0000, 0b1010_0000, 0b1000_0000, __list_literal__=None
+        ),
     ),
     # Largest 3-byte codepoint -- 2^16 - 1 == 65535 == 0xFFFF
     (
         2**16 - 1,
-        List[Byte](0b1110_1111, 0b1011_1111, 0b1011_1111, __list_literal__=()),
+        List[Byte](
+            0b1110_1111, 0b1011_1111, 0b1011_1111, __list_literal__=None
+        ),
     ),
     # ------------------
     # 4-byte codepoints 0b1111_0xxx 0b10xx_xxxx 0b10xx_xxxx 0b10xx_xxxx (21 x's)
@@ -225,7 +229,7 @@ comptime SIGNIFICANT_CODEPOINTS: List[Tuple[Int, List[Byte]]] = [
             0b1001_0000,
             0b1000_0000,
             0b1000_0000,
-            __list_literal__=(),
+            __list_literal__=None,
         ),
     ),
     # Largest 4-byte codepoint -- Maximum Unicode codepoint
@@ -236,7 +240,7 @@ comptime SIGNIFICANT_CODEPOINTS: List[Tuple[Int, List[Byte]]] = [
             0b1000_1111,
             0b1011_1111,
             0b1011_1111,
-            __list_literal__=(),
+            __list_literal__=None,
         ),
     ),
 ]

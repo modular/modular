@@ -67,7 +67,7 @@ struct Slice(
         start: Optional[Int],
         end: Optional[Int],
         step: Optional[Int],
-        __slice_literal__: () = (),
+        __slice_literal__: NoneType = None,
     ):
         """Construct slice given the start, end and step values.
 
@@ -207,7 +207,7 @@ struct StridedSlice(ImplicitlyCopyable, Writable):
         start: Optional[Int],
         end: Optional[Int],
         stride: Int,
-        __slice_literal__: () = (),
+        __slice_literal__: NoneType = None,
     ):
         """Construct slice given start, end, and stride values.
 
@@ -273,7 +273,7 @@ struct ContiguousSlice(ImplicitlyCopyable, Writable):
         start: Optional[Int],
         end: Optional[Int],
         stride: NoneType,
-        __slice_literal__: () = (),
+        __slice_literal__: NoneType = None,
     ):
         """Construct slice given the start and end values.
 

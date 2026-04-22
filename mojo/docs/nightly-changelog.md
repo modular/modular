@@ -8,6 +8,9 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now uses `NoneType` instead of an empty tuple to mark constructor using
+  literals.
+
 - The ternary `if/else` expression now coerces each element to its contextual
   type when it is obvious. For example, this works instead of producing an
   error about incompatible metatypes:

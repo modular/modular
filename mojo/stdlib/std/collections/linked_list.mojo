@@ -271,7 +271,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         self._size = 0
 
     def __init__(
-        out self, var *elements: Self.ElementType, __list_literal__: () = ()
+        out self,
+        var *elements: Self.ElementType,
+        __list_literal__: NoneType = None,
     ):
         """Initialize a linked list with the given elements.
 

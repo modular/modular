@@ -415,7 +415,7 @@ struct List[T: Copyable](
         self._unchecked_grow(length, fill)
 
     @always_inline
-    def __init__(out self, var *values: Self.T, __list_literal__: ()):
+    def __init__(out self, var *values: Self.T, __list_literal__: NoneType):
         """Constructs a list from the given values.
 
         Args:

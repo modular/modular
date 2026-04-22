@@ -950,7 +950,7 @@ struct Dict[
         out self,
         var keys: List[Self.K],
         var values: List[Self.V],
-        __dict_literal__: (),
+        __dict_literal__: NoneType,
     ):
         """Constructs a dictionary from the given keys and values.
 
