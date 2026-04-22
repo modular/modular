@@ -81,7 +81,7 @@ Logger &getDefaultLog();
 
 void setLogLevel(LogLevel level);
 
-LogLevel getLogLevel(Logger &log = getDefaultLog());
+LogLevel getLogLevel(const Logger &log = getDefaultLog());
 
 void logWrite(Logger &log, LogLevel level, llvm::StringRef msg);
 

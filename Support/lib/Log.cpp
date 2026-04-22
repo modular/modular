@@ -146,9 +146,6 @@ static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
 }
 
 class Sink {
-protected:
-  std::mutex outputMutex;
-
 public:
   virtual ~Sink() = default;
   virtual void write(llvm::StringRef msg) = 0;
@@ -157,18 +154,13 @@ public:
 class FileSink : public Sink {
   std::error_code ec;
   llvm::raw_fd_ostream ostream;
+  std::mutex outputMutex;
 
   FileSink(llvm::StringRef path)
       : ostream{path, ec, llvm::sys::fs::CD_OpenAlways, llvm::sys::fs::FA_Write,
                 llvm::sys::fs::OF_Append} {}
 
 public:
-  ~FileSink() override {
-    // Ensure the file is flushed and closed on destruction.
-    ostream.flush();
-    ostream.close();
-  }
-
   static llvm::ErrorOr<std::unique_ptr<FileSink>> create(llvm::StringRef path) {
     auto fileSink = std::unique_ptr<FileSink>(new FileSink(path));
     if (fileSink->ec)
@@ -185,6 +177,8 @@ public:
 };
 
 class StdoutSink : public Sink {
+  std::mutex outputMutex;
+
   void write(llvm::StringRef msg) override {
     std::lock_guard<std::mutex> lock(outputMutex);
     llvm::outs() << msg << "\n";
@@ -235,7 +229,7 @@ public:
     formatState.emitJSON = cfg.getValueAsBool(LOG_JSON, false);
     auto logToStdout = cfg.getValueAsBool(LOG_STDOUT, true);
 
-    setLogLevel(parseLogLevelFromString(
+    this->setLogLevel(parseLogLevelFromString(
         cfg.getValueOr(ConfigEntry::LOG_LEVEL, "WARN")));
 
     // If stdout logging is requested or if no log file present, log to stdout.
@@ -334,7 +328,7 @@ private:
 
 void setLogLevel(LogLevel level) { getDefaultLog().setLogLevel(level); }
 
-LogLevel getLogLevel(Logger &log) { return log.getLogLevel(); }
+LogLevel getLogLevel(const Logger &log) { return log.getLogLevel(); }
 
 Logger &getDefaultLog() {
   static Logger defaultLog;
