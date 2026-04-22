@@ -1629,7 +1629,7 @@ struct Grouped1D1DMatmulKernel[
                         * (UInt(SF_ATOM_M[1]) * UInt(SF_ATOM_K))
                         + (outer / UInt(SF_ATOM_M[0])) * UInt(SF_ATOM_K)
                     )
-                    sfb_scales = sfb_smem_tile.ptr.load[
+                    sfb_scales = sfb_smem_tile.raw_load[
                         width=SF_ATOM_K,
                         alignment=align_of[SIMD[Self.sfb_dtype, SF_ATOM_K]](),
                     ](scales_offset)

@@ -14,22 +14,14 @@
 from std.collections import BitSet, InlineArray
 
 
-def _compute_unsharable[
+def _compute_unshareable[
     N: Int,
-](
-    min_pre: InlineArray[Int, N],
-    min_post: InlineArray[Int, N],
-    max_pre: InlineArray[Int, N],
-    max_post: InlineArray[Int, N],
-    out result: BitSet[N],
-):
+](can_share: InlineArray[Int, N * N], out result: BitSet[N],):
     """Compute which allocations cannot share memory with any other allocation.
 
-    An allocation i is unsharable if no other allocation j has a
+    An allocation i is unshareable if no other allocation j has a
     non-overlapping lifetime with it. Two allocations can share memory when
-    one's lifetime does not contain the other in the dependency-tree traversal
-    order: can_share(i, j) := (max_pre[i] < min_pre[j] && min_post[i] >
-    max_post[j]) || (max_pre[j] < min_pre[i] && min_post[j] > max_post[i]).
+    can_share[i * N + j] == 1, meaning their lifetimes do not overlap.
     """
     result = {}
     result.set_all()
@@ -38,12 +30,26 @@ def _compute_unsharable[
         for j in range(N):
             if i == j:
                 continue
-
-            if (max_pre[i] < min_pre[j] and min_post[i] > max_post[j]) or (
-                max_pre[j] < min_pre[i] and min_post[j] > max_post[i]
-            ):
+            if can_share[i * N + j]:
                 result.clear(i)
                 break
+
+
+def _compute_shareable_rows[
+    N: Int,
+](can_share: InlineArray[Int, N * N], out result: InlineArray[BitSet[N], N],):
+    """Compute per-allocation sharing bitsets from the sharing matrix.
+
+    result[i].test(j) == True iff can_share[i * N + j] == 1, i.e. allocations
+    i and j have non-overlapping lifetimes and may share a memory block.
+    """
+    result = InlineArray[BitSet[N], N](uninitialized=True)
+    for i in range(N):
+        var row: BitSet[N] = {}
+        for j in range(N):
+            if can_share[i * N + j]:
+                row.set(j)
+        result[i] = row^
 
 
 def _maximum(alignments: InlineArray[Int, _]) -> Int:
@@ -54,59 +60,65 @@ def _maximum(alignments: InlineArray[Int, _]) -> Int:
     return result
 
 
-@fieldwise_init
-struct MemoryBlock(ImplicitlyCopyable, Movable):
+struct MemoryBlock[N: Int](Copyable, Movable):
     """Memory block used by buffer planning algorithm."""
 
     var offset: Int
     var size: Int
-    var min_pre: Int
-    var max_pre: Int
-    var min_post: Int
-    var max_post: Int
+    # Set of allocation indices that can still be assigned to this block.
+    # An allocation j is in this set iff j can share memory with every
+    # allocation already assigned to this block.
+    var shareable: BitSet[Self.N]
 
-    def extend_lifetime(
-        mut self, min_pre: Int, max_pre: Int, min_post: Int, max_post: Int
+    def __init__(
+        out self, offset: Int, size: Int, var shareable: BitSet[Self.N]
     ):
-        self.min_pre = min(self.min_pre, min_pre)
-        self.max_pre = max(self.max_pre, max_pre)
-        self.min_post = min(self.min_post, min_post)
-        self.max_post = max(self.max_post, max_post)
+        self.offset = offset
+        self.size = size
+        self.shareable = shareable^
 
 
 struct BufferPlanState[
     num_allocs: Int,
     //,
     alignments: InlineArray[Int, num_allocs],
-    min_pre: InlineArray[Int, num_allocs],
-    min_post: InlineArray[Int, num_allocs],
-    max_pre: InlineArray[Int, num_allocs],
-    max_post: InlineArray[Int, num_allocs],
+    can_share: InlineArray[Int, num_allocs * num_allocs],
 ](Movable):
     # Computed at comptime: which allocations interfere with all others and
     # therefore can never share a memory block with any other allocation.
-    comptime unsharable = _compute_unsharable[Self.num_allocs](
-        Self.min_pre, Self.min_post, Self.max_pre, Self.max_post
+    comptime unshareable = _compute_unshareable[Self.num_allocs](Self.can_share)
+    # Per-allocation sharing bitsets: shareable_rows[i].test(j) == True iff
+    # allocations i and j can share a memory block.
+    comptime shareable_rows = _compute_shareable_rows[Self.num_allocs](
+        Self.can_share
     )
-    # If every allocation is unsharable, skip the greedy block-reuse logic
+    # If every allocation is unshareable, skip the greedy block-reuse logic
     # entirely and use the fast linear-allocation path.
-    comptime enable_sharing = len(Self.unsharable) < Self.num_allocs
+    comptime enable_sharing = len(Self.unshareable) < Self.num_allocs
     comptime max_alignment = _maximum(Self.alignments)
 
-    var blocks: List[MemoryBlock]
+    var blocks: List[MemoryBlock[Self.num_allocs]]
     var allocated: Int
 
     # Computed allocation offsets for all allocations.
     var offsets: InlineArray[Int, Self.num_allocs]
     var pool_size: Int
 
+    # The set of per-allocation shareable bitsets.
+    var shareable_sets: InlineArray[BitSet[Self.num_allocs], Self.num_allocs]
+
     def __init__(
         out self,
     ):
         comptime if Self.enable_sharing:
-            self.blocks = List[MemoryBlock](capacity=Self.num_allocs)
+            self.blocks = List[MemoryBlock[Self.num_allocs]](
+                capacity=Self.num_allocs
+            )
+            self.shareable_sets = materialize[Self.shareable_rows]()
         else:
             self.blocks = {}
+            self.shareable_sets = {uninitialized = True}
+
         self.allocated = 0
         self.pool_size = 0
         self.offsets = InlineArray[Int, Self.num_allocs](fill=0)
@@ -132,21 +144,25 @@ struct BufferPlanState[
         var best_size = Int.MAX
 
         for block_idx in range(len(self.blocks)):
-            var block = self.blocks[block_idx]
-
             if (
-                alloc_size <= block.size
-                and block.size < best_size
-                and self.max_pre[index] < block.min_pre
-                and self.min_post[index] > block.max_post
+                alloc_size > self.blocks[block_idx].size
+                or self.blocks[block_idx].size >= best_size
             ):
-                best_size = block.size
+                continue
+
+            if self.blocks[block_idx].shareable.test(index):
+                best_size = self.blocks[block_idx].size
                 result = block_idx
 
     @always_inline
     def append_result(mut self, index: Int, value: Int):
         self.offsets[index] = value
         self.allocated += 1
+
+    @always_inline
+    def shareable_set(self, index: Int) -> BitSet[Self.num_allocs]:
+        assert Self.enable_sharing, "unable to get shareable set"
+        return self.shareable_sets[index].copy()
 
     def allocate_new_block(mut self, index: Int, alloc_size: Int):
         var new_offset = (
@@ -157,13 +173,10 @@ struct BufferPlanState[
 
         comptime if Self.enable_sharing:
             self.blocks.append(
-                MemoryBlock(
+                MemoryBlock[Self.num_allocs](
                     offset=new_offset,
                     size=alloc_size,
-                    min_pre=self.min_pre[index],
-                    max_pre=self.max_pre[index],
-                    min_post=self.min_post[index],
-                    max_post=self.max_post[index],
+                    shareable=self.shareable_set(index),
                 )
             )
 
@@ -173,14 +186,13 @@ struct BufferPlanState[
     def try_reuse_block(mut self, result_idx: Int, alloc_size: Int):
         var best_block_idx = self.find_block(result_idx, alloc_size)
         if best_block_idx >= 0:
-            # We found a memory block to reuse
-            # Update lifetime of memory block
-            self.blocks[best_block_idx].extend_lifetime(
-                self.min_pre[result_idx],
-                self.max_pre[result_idx],
-                self.min_post[result_idx],
-                self.max_post[result_idx],
-            )
+            # Intersect the block's shareable set with the precomputed row for
+            # result_idx. Since the diagonal is zero, result_idx is
+            # automatically cleared (it is now a member, not a future
+            # candidate).
+            self.blocks[best_block_idx].shareable = self.blocks[
+                best_block_idx
+            ].shareable.intersection(self.shareable_set(result_idx))
             self.append_result(result_idx, self.blocks[best_block_idx].offset)
         else:
             self.allocate_new_block(result_idx, alloc_size)
@@ -198,7 +210,7 @@ struct BufferPlanState[
                 var alloc_size = sizes[i]
                 comptime result_idx = i + start
 
-                comptime if Self.unsharable.test(result_idx):
+                comptime if Self.unshareable.test(result_idx):
                     # This allocation cannot share with any other; skip search.
                     self.allocate_new_block(result_idx, alloc_size)
                 else:

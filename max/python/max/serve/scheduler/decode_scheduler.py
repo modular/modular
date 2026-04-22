@@ -37,10 +37,7 @@ from max.kv_cache import (
     TransferReqData,
 )
 from max.pipelines.core import TextAndVisionContext, TextContext
-from max.pipelines.lib import (
-    PipelineConfig,
-    TextGenerationPipeline,
-)
+from max.pipelines.lib import PipelineConfig, TextGenerationPipeline
 from max.profiler import Tracer, traced
 from max.serve.config import Settings
 from max.serve.scheduler.base import (
@@ -107,6 +104,16 @@ class DecodeScheduler(Scheduler):
             # Assume all replicas have the same number of pages.
             total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
         )
+
+        # Register draft KV cache blocks for speculative decoding so that
+        # target and draft KV are bundled into a single NIXL transfer.
+        draft_kv_blocks = getattr(pipeline, "draft_kv_blocks", None)
+        if isinstance(draft_kv_blocks, list):
+            self.transfer_engine.register_tensor_group(
+                name="draft",
+                tensors=[[buf] for buf in draft_kv_blocks],
+                total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
+            )
 
         self.batch_constructor = TextBatchConstructor(
             scheduler_config=scheduler_config,
@@ -269,7 +276,6 @@ class DecodeScheduler(Scheduler):
                     context,
                     replica_idx=replica_idx,
                     num_steps=1,
-                    num_speculative_steps=self.scheduler_config.num_speculative_tokens,
                 )
             except InsufficientBlocksError:
                 # If we don't have enough space, we will return this to the request queue.

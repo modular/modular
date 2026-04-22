@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
+from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
@@ -341,10 +342,15 @@ class InferenceSession:
     _impl: _InferenceSession
     # This is shared across sessions. Compilation is currently not thread safe.
     _compilation_lock = threading.Lock()
+    # DebugConfig is a process-wide singleton. Assigning it as a class
+    # attribute at import time means both ``InferenceSession.debug`` and
+    # ``session.debug`` return the same underlying object, and any
+    # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
+    debug: DebugConfig = _InferenceSession.debug
 
     def __init__(
         self,
-        devices: Iterable[Device],
+        devices: Iterable[Device] = (),
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
@@ -591,9 +597,23 @@ class InferenceSession:
         from max.driver import is_virtual_device_mode
 
         if is_virtual_device_mode():
-            # In compile-only mode with virtual devices, skip initialization
-            # Initialization requires device memory allocation which virtual devices don't support
-            return [_model]
+            # In compile-only mode with virtual devices, skip initialization.
+            # Initialization requires device memory allocation which virtual
+            # devices don't support. Return one handle per top-level graph in
+            # the module (skipping subgraphs, which are inlined callees) so
+            # callers that unpack per-model
+            # (e.g. ``vision, language = session.load_all(...)``) still work.
+            # The MLIR attribute for subgraph GraphOps is stored as
+            # ``isSubgraph`` (camelCase matches the tablegen ODS).
+            if isinstance(model, Graph):
+                num_models = sum(
+                    1
+                    for op in model._module.body.operations
+                    if "isSubgraph" not in op.attributes
+                )
+            else:
+                num_models = 1
+            return [_model] * num_models
 
         return self._impl._load_all(_model, weights_registry_real)
 

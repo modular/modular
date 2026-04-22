@@ -148,7 +148,7 @@ class Gemma4Attention(Module, Shardable):
                     self.kv_weight_dim,
                     self.kv_weight_dim,
                 ],
-                names=["q", "k", "v"],
+                names=["q_proj", "k_proj", "v_proj"],
                 dtype=dtype,
                 device=devices[0],
                 stacked=False,
@@ -160,7 +160,7 @@ class Gemma4Attention(Module, Shardable):
             self.qk_proj = StackedLinear(
                 in_dim=hidden_size,
                 out_dims=[self.q_weight_dim, self.kv_weight_dim],
-                names=["q", "k"],
+                names=["q_proj", "k_proj"],
                 dtype=dtype,
                 device=devices[0],
                 stacked=False,

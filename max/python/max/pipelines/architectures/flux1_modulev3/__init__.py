@@ -10,5 +10,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""FLUX.1 diffusion architecture for image generation."""
 
-from .arch import flux1_arch, flux1_modulev3_arch
+from .arch import (
+    FluxArchConfig,
+    _FluxV2NotImplemented,
+    flux1_arch,
+    flux1_modulev3_arch,
+)
+
+__all__ = ["FluxArchConfig", "flux1_arch", "flux1_modulev3_arch"]
