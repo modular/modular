@@ -259,12 +259,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 
-        if ep_size > 1:
-            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+        num_devices = len(self.devices)
+        if num_devices > 1:
+            if ep_size > 1:
+                attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+                moe_strategy = "EP"
+            else:
+                attn_strategy = "TP"
+                moe_strategy = "TP"
             logger.info(
                 f"DeepSeekV3: data_parallel_degree={data_parallel_degree},"
-                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
-                f" strategy."
+                f" ep_size={ep_size}. Use {attn_strategy}-attention +"
+                f" {moe_strategy}-MoE strategy."
             )
 
         return model_config
@@ -535,13 +541,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 }
             # Create the model
             config = self._create_model_config(state_dict)
-
-            n_devices = len(self.devices)
-            if (
-                n_devices > 1
-                and self.pipeline_config.runtime.ep_size != n_devices
-            ):
-                raise ValueError("Only the EP strategy is supported.")
 
             self.ep_comm_initializer: EPCommInitializer | None = None
             # Skip EP initialization in virtual device mode (compilation-only)

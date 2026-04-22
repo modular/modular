@@ -117,6 +117,10 @@ MODEL_ALIASES = CaseInsensitiveDict({
         "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": "--data-parallel-degree 1",
     },
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": {
+        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
+        "max_serve_args": "--ep-size 1 --data-parallel-degree 1",
+    },
     "nvidia/Kimi-K2.5-NVFP4__with_vision": {  # MODELS-1066
         "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",

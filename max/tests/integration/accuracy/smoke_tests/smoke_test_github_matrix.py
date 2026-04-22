@@ -113,6 +113,7 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "microsoft/phi-4__modulev3": MULTI,
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": NON_XL | {"8xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": NON_XL | {"8xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__no_vision": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI | {"vllm", "sglang"},
