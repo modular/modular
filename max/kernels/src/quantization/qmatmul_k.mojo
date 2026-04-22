@@ -1454,7 +1454,7 @@ def _matmul_Qb_K[
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(

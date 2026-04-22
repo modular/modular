@@ -767,7 +767,7 @@ def layer_norm_cpu[
     comptime for i in range(rank - 1):
         prod_all_but_last_dim *= shape[i]
 
-    var num_workers = min(parallelism_level(), prod_all_but_last_dim)
+    var num_workers = min(parallelism_level(ctx), prod_all_but_last_dim)
     var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
     @__copy_capture(chunk_size, prod_all_but_last_dim, last_dim, epsilon)
@@ -1439,7 +1439,7 @@ def rms_norm_cpu[
     var last_dim = shape[rank - 1]
     var prod_all_but_last_dim = shape.flattened_length() // last_dim
 
-    var num_workers = min(parallelism_level(), prod_all_but_last_dim)
+    var num_workers = min(parallelism_level(ctx), prod_all_but_last_dim)
     var chunk_size = ceildiv(prod_all_but_last_dim, num_workers)
 
     @__copy_capture(

@@ -717,7 +717,7 @@ struct _FlashAttention[
         var num_blocks_n = ceildiv(depth_dim, Self._config.o_block_n)
         var work_count = num_batches * num_heads * num_blocks_m * num_blocks_n
 
-        var num_threads = min(work_count, parallelism_level())
+        var num_threads = min(work_count, parallelism_level(ctx))
 
         @__copy_capture(
             num_threads,

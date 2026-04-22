@@ -132,7 +132,7 @@ def parallelize[
     def func_unified(i: Int) unified register_passable {}:
         func(i)
 
-    _parallelize_impl(func_unified, num_work_items, parallelism_level(), ctx)
+    _parallelize_impl(func_unified, num_work_items, parallelism_level(ctx), ctx)
 
 
 @always_inline
@@ -173,7 +173,7 @@ def parallelize[
         num_work_items: Number of parallel tasks.
         ctx: Optional CPU DeviceContext to execute the work on.
     """
-    _parallelize_impl(func, num_work_items, parallelism_level(), ctx)
+    _parallelize_impl(func, num_work_items, parallelism_level(ctx), ctx)
 
 
 @always_inline
@@ -246,20 +246,27 @@ def _parallelize_impl[
 
 
 @always_inline
-def _get_num_workers(problem_size: Int, grain_size: Int = 32768) -> Int:
+def _get_num_workers(
+    problem_size: Int,
+    grain_size: Int = 32768,
+    ctx: Optional[DeviceContext] = None,
+) -> Int:
     """Returns a number of workers to run in parallel for given problem_size,
     accounting for the available worker threads of the current runtime.
 
     Args:
         problem_size: The number of parallel tasks.
         grain_size: Minimum number of elements to warrant an additional thread.
+        ctx: The context to execute the work on.
 
     Returns:
         The number of workers to run in parallel.
     """
     # default grain_size copied from https://github.com/pytorch/pytorch/blob/20dfce591ce88bc957ffcd0c8dc7d5f7611a4a3b/aten/src/ATen/TensorIterator.h#L86
     # Ensure at least one worker is always returned to avoid division by zero.
-    return max(1, min(parallelism_level(), ceildiv(problem_size, grain_size)))
+    return max(
+        1, min(parallelism_level(ctx), ceildiv(problem_size, grain_size))
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -323,7 +330,7 @@ def parallelize_over_rows[
 
     var num_workers = min(
         num_rows,
-        _get_num_workers(total_size, grain_size),
+        _get_num_workers(total_size, grain_size, ctx),
     )
     var chunk_size = ceildiv(num_rows, num_workers)
 

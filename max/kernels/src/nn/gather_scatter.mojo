@@ -17,6 +17,7 @@ from std.sys import simd_width_of, size_of
 from std.sys.info import CompilationTarget, _current_target
 
 from std.algorithm import elementwise, parallel_memcpy, sync_parallelize
+from std.gpu.host import DeviceContext
 from std.algorithm.functional import tile
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 from std.gpu.host.info import is_cpu, is_gpu
@@ -155,7 +156,7 @@ def gather_reduce[
     # This is about 4x larger than the default in gather, which makes sense
     # since this kernel performs far fewer writes
     comptime MIN_TASK_COPY_SIZE = 64 * 100 * 32 * 4  # bytes
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
     var num_tasks = min(
         ceildiv(
             Int(indices.dim[0]())

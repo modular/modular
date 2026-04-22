@@ -618,7 +618,7 @@ def _softmax_cpu[
 
     var inner_dim = Int(output.dim[rank - 1]())
     var outer_dim = product[rank](shape, rank - 1)
-    var num_workers = min(parallelism_level(), outer_dim)
+    var num_workers = min(parallelism_level(ctx), outer_dim)
     var chunk_size = ceildiv(outer_dim, num_workers)
 
     @__copy_capture(chunk_size, inner_dim, outer_dim)

@@ -299,7 +299,7 @@ def _batched_matmul_cpu[
     var m = Int(c.dim[1]())
     var n = Int(c.dim[2]())
     var k = Int(a.dim[2]())
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
         ceildiv(m * n * k * batch_size, get_min_task_size()), batch_size

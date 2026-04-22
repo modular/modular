@@ -657,7 +657,7 @@ def _transpose_2d_parallel_tiled[
 
     var work = ceildiv(n_tiles, rows_per_worker)
 
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
 
     var num_tasks = min(work, num_threads)
 
@@ -771,7 +771,7 @@ def _transpose_4d_swap_middle_helper[
                     )
         return
     else:
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
 
         var num_tasks = min(work, num_threads)
 
@@ -897,6 +897,7 @@ def transpose_trivial_memcpy[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     var src_ptr = input.ptr
     var dst_ptr = output.ptr
@@ -912,7 +913,7 @@ def transpose_trivial_memcpy[
 
     else:
         var work_units = ceildiv(total_size, min_work_per_task)
-        var num_tasks = min(work_units, parallelism_level())
+        var num_tasks = min(work_units, parallelism_level(ctx))
         var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
@@ -1020,7 +1021,7 @@ def _copy_with_strides[
             next_output_offset += output_axis_stride
 
     else:
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
         var num_tasks = min(
             ceildiv(output_bytecount, min_work_per_task), num_threads
         )
@@ -1210,7 +1211,7 @@ def transpose[
 
     if simplified_rank == 1:
         # memcpy
-        return transpose_trivial_memcpy(output, input)
+        return transpose_trivial_memcpy(output, input, ctx)
     # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose

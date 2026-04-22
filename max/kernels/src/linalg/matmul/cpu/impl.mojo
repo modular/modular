@@ -440,7 +440,7 @@ def _matmul_cpu_impl[
         var complexity = m * n * k
         var num_tasks = min(
             ceildiv(complexity, get_min_task_size()),
-            num_threads if num_threads > 0 else parallelism_level(),
+            num_threads if num_threads > 0 else parallelism_level(ctx),
         )
 
         comptime use_i8mm = kernel_id == InnerKernelID.I8MM

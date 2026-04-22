@@ -238,7 +238,7 @@ def _index_tensor_1d[
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.
     comptime MIN_LINES = 32
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
     var num_tasks = min(
         ceildiv(
             batch_volume,
