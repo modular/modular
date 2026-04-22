@@ -34,34 +34,43 @@ replaceSymNames(Operation *op,
                                         /*replaceTypes=*/true);
 }
 
-/// Apply the @__name linkage name formula for GPU targets.
+/// Apply the linkage name formula.
 ///
 /// This function is called from two places that must produce identical names:
 ///
-///   1. renameFunctions (post-elaboration, GPU side): renames the concrete
-///      FuncOp in the PTX module to its final symbol.
+///   1. renameFunctions (post-elaboration, both host & offload side): renames
+///      the concrete FuncOps in the elaborated module to their final symbols.
 ///
-///   2. applyLinkageName (during parameter evaluation, host side): computes
-///      the name that get_linkage_name will return so the host runtime knows
-///      what PTX symbol to dispatch to.
+///   2. evaluateMangledName (during parameter evaluation, host side): computes
+///      the name that get_linkage_name will return. This is typically used so
+///      the host runtime knows what kernel entry point symbol to dispatch to.
 ///
-/// Centralizing the formula here ensures the PTX symbol written into the
-/// binary and the name the host looks up are always identical.
-StringAttr KGEN::applyGPULinkageName(StringAttr resolved, LinkageNameAttr lna,
-                                     StringRef symName,
-                                     mlir::FunctionType funcType) {
-  if (!lna.getMangle().getValue())
-    return sanitizeSymbolToUnderscores(resolved);
-  // mangle=true: sanitize the @__name prefix, then append a uniqueness suffix
-  // derived from symName and the printed function type. This matches the PTX
-  // symbol produced by the GPU rename loop (renameFunctions) and the name
-  // looked up by the host (get_linkage_name / applyLinkageName).
+/// Centralizing the formula here ensures the kernel entry point symbol written
+/// into the binary and the name the host looks up are always identical.
+StringAttr KGEN::applyLinkageName(StringAttr resolved, LinkageNameAttr lna,
+                                  bool sanitize, StringRef symName,
+                                  mlir::FunctionType funcType) {
+  bool mangle = lna.getMangle().getValue();
+  // First sanitize the linkage name if asked. If we're mangling the name, keep
+  // all characters. Else, produce a short mangled name of 32 characters.
+  // FIXME: Perhaps split apart the concepts of sanitzation and name shortening,
+  // and stop conflating it to exclusively 'GPU' (offload) targets.
+  if (sanitize) {
+    size_t charToKeep = !mangle ? 32 : std::numeric_limits<size_t>::max();
+    resolved = sanitizeSymbolToUnderscores(resolved, charToKeep);
+  }
+
+  // If we're not mangling, we're done
+  if (!mangle)
+    return resolved;
+  // Else append a unique suffix derived from the symName and the printed
+  // function type. This matches the symbol produced by the GPU rename loop
+  // (renameFunctions) annd the name looked up by the host (get_linkage_name /
+  // evaluateMangledName).
   std::string funcTypeStr;
   llvm::raw_string_ostream os(funcTypeStr);
   funcType.print(os);
-  StringAttr sanitized =
-      sanitizeSymbolToUnderscores(resolved, std::numeric_limits<size_t>::max());
-  return appendAutoMangledSuffix(sanitized, symName, funcTypeStr);
+  return appendAutoMangledSuffix(resolved, symName, funcTypeStr);
 }
 
 void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
@@ -83,23 +92,16 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
       }
       StringRef prefix = prefixAttr.getValue();
       StringAttr userName = StringAttr::get(theModule.getContext(), prefix);
-      if (isGPU) {
-        newName =
-            applyGPULinkageName(userName, linkageNameAttr, func.getSymName(),
-                                func.getFunctionType());
-      } else {
-        // mangle=false + non-GPU: use the linkage name verbatim.
-        newName = StringAttr::get(theModule.getContext(), prefix);
-      }
+      newName = applyLinkageName(userName, linkageNameAttr, /*sanitize=*/isGPU,
+                                 func.getSymName(), func.getFunctionType());
       func.removeLinkageNameAttr();
     }
 
-    if (isGPU) {
-      // When @__name is set, newName is already set above.
-      // When @__name is absent, sanitize the auto-mangled sym_name as before.
-      if (!newName)
-        newName = sanitizeSymbolToAlnum(func.getSymNameAttr());
-    }
+    // When a linkage name is set, newName is already set above.
+    // When a linkage name is absent, sanitize the auto-mangled sym_name as
+    // before.
+    if (isGPU && !newName)
+      newName = sanitizeSymbolToAlnum(func.getSymNameAttr());
 
     if (!newName || newName == func.getSymNameAttr())
       continue;
@@ -117,9 +119,9 @@ void KGEN::renameFunctions(mlir::ModuleOp theModule, bool isGPU, bool &failed) {
     DebugInfo::updateSubprogram(func, newName);
 
     // On host targets, also rename the companion populate_captures stub when
-    // a host function carries @__name. GPU kernels live only in standalone GPU
-    // modules and never have stubs in the host module, so this is a no-op for
-    // GPU targets.
+    // a host function carries an explicit linkage name. GPU kernels live only
+    // in standalone GPU modules and never have stubs in the host module, so
+    // this is a no-op for GPU targets.
     if (!isGPU) {
       MLIRContext *ctx = theModule.getContext();
       SmallString<128> stubOldStr(oldSym.getValue());
