@@ -28,9 +28,7 @@ def _compute_unshareable[
 
     for i in range(N):
         for j in range(N):
-            if i == j:
-                continue
-            if can_share[i * N + j]:
+            if i != j and can_share[i * N + j]:
                 result.clear(i)
                 break
 
