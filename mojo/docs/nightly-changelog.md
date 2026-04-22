@@ -353,6 +353,14 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- Added `comb(n, k)` and `perm(n, k)` to `std.math`, matching Python's
+  `math.comb()` and `math.perm()`. `comb(n, k)` computes the binomial
+  coefficient C(n, k) without computing full factorials, returning 0 when
+  `k > n`. `perm(n, k)` computes permutations P(n, k); omitting `k` (default
+  `-1`) returns `n!`. `factorial()`, `comb()`, and `perm()` also accept
+  `Scalar[dtype]` arguments for any integer dtype (e.g. `Int32`, `Int64`,
+  `UInt32`).
+
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
   `and_then()` chains operations that themselves return an `Optional`, enabling
