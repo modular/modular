@@ -2464,12 +2464,16 @@ def cbrt[
     elif dtype == DType.float64:
         return _call_libm["cbrt"](x)
 
-    var result = SIMD[DType.float32, width]()
+    @always_inline
+    @parameter
+    fn _float32_dispatch[
+        input_dtype: DType, result_dtype: DType
+    ](val: Scalar[input_dtype]) -> Scalar[result_dtype]:
+        return _cbrtf(rebind[Float32](val)).cast[result_dtype]()
 
-    for i in range(width):
-        result[i] = _cbrtf(rebind[Float32](x[i]))
-
-    return rebind[type_of(x)](result)
+    return rebind[type_of(x)](
+        _simd_apply[_float32_dispatch, result_dtype=DType.float32](x)
+    )
 
 
 # ===----------------------------------------------------------------------=== #
