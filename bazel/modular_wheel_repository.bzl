@@ -18,7 +18,7 @@ def _rebuild_wheel(rctx):
         rctx.download_and_extract(
             url = "{base_url}/max/max-{version}-cp{py}-cp{py}-{platform}.whl".format(
                 base_url = rctx.attr.base_url,
-                version = rctx.attr.version,
+                version = rctx.attr.max_version,
                 py = py_version.replace(".", ""),
                 platform = _PLATFORM_MAPPINGS[rctx.attr.platform],
             ),
