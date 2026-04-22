@@ -27,7 +27,7 @@ import numpy as np
 if TYPE_CHECKING:
     from max.diagnostics.cpu import CPUMetrics
 
-    from .server_metrics import ParsedMetrics
+    from .server_metrics import HistogramData, ParsedMetrics
 
 
 def _validate_data(data: list[float]) -> None:
@@ -364,7 +364,9 @@ class BaseBenchmarkMetrics(Metrics):
 
     cpu_metrics: CPUMetrics | None = None
 
-    server_metrics: ParsedMetrics | None = None
+    metrics_by_endpoint: Mapping[str, ParsedMetrics] = field(
+        default_factory=dict
+    )
 
     def to_result_dict(self) -> dict[str, object]:
         """Serialize aggregate metrics to a flat dict.
@@ -447,45 +449,39 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     max_output: int
     max_total: int
 
-    # Convenience properties for common server-side metrics
+    def _find_batch_histogram(self, batch_type: str) -> HistogramData | None:
+        """First endpoint that exposes the MAX-serve batch-time histogram."""
+        for pm in self.metrics_by_endpoint.values():
+            hist = pm.get_histogram(
+                "maxserve_batch_execution_time_milliseconds",
+                {"batch_type": batch_type},
+            )
+            if hist:
+                return hist
+        return None
+
     @property
     def mean_prefill_batch_time_ms(self) -> float | None:
         """Mean prefill (context encoding) batch execution time in milliseconds."""
-        if not self.server_metrics:
-            return None
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
-        )
+        hist = self._find_batch_histogram("CE")
         return hist.mean if hist else None
 
     @property
     def mean_decode_batch_time_ms(self) -> float | None:
         """Mean decode (token generation) batch execution time in milliseconds."""
-        if not self.server_metrics:
-            return None
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
-        )
+        hist = self._find_batch_histogram("TG")
         return hist.mean if hist else None
 
     @property
     def prefill_batch_count(self) -> int:
         """Total number of prefill (context encoding) batches executed."""
-        if not self.server_metrics:
-            return 0
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
-        )
+        hist = self._find_batch_histogram("CE")
         return int(hist.count) if hist else 0
 
     @property
     def decode_batch_count(self) -> int:
         """Total number of decode (token generation) batches executed."""
-        if not self.server_metrics:
-            return 0
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
-        )
+        hist = self._find_batch_histogram("TG")
         return int(hist.count) if hist else 0
 
     def validate(self) -> tuple[bool, list[str]]:

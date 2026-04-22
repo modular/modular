@@ -343,10 +343,6 @@ class SamplingParams:
         if self.min_p < 0.0 or self.min_p > 1.0:
             raise ValueError("min_p must be in [0.0, 1.0]")
 
-        if self.min_p != 0.0 and self.top_k != 1:
-            raise ValueError(
-                "We currently do not handle explicit min_p and top_k at the same time."
-            )
         if self.repetition_penalty <= 0:
             raise ValueError("repetition_penalty must be greater than 0.")
 

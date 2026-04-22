@@ -13,6 +13,7 @@
 
 from std.os import abort
 from std.random import rand
+from std.utils.numerics import get_accum_type
 
 from std.benchmark import *
 from std.benchmark import keep
@@ -27,20 +28,29 @@ def _ri(v: Int) -> RuntimeInt[DType.int64]:
 
 
 def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
+    """Naive reference matmul. Accumulates into an `acc_type` (f32 for f16/bf16
+    output) scratch buffer so that verification matches the main matmul's
+    internal fp32-scratch behavior."""
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
     var k = Int(a.dim[1]())
-    _ = c.fill(Scalar[c.dtype](0))
 
-    var ak = Int(a.dim[1]())
-    var bn = Int(b.dim[1]())
+    comptime acc_type = get_accum_type[c.dtype]()
+
+    var accum = alloc[Scalar[acc_type]](m * n)
+    for idx in range(m * n):
+        accum[idx] = Scalar[acc_type](0)
 
     for i in range(m):
         for p in range(k):
+            var a_val = a.raw_load(i * k + p).cast[acc_type]()
             for j in range(n):
-                var a_val = a.ptr[i * ak + p].cast[c.dtype]()
-                var b_val = b.ptr[p * bn + j].cast[c.dtype]()
-                c.ptr[i * n + j] += a_val * b_val
+                var b_val = b.raw_load(p * n + j).cast[acc_type]()
+                accum[i * n + j] += a_val * b_val
+
+    for idx in range(m * n):
+        c.ptr[idx] = accum[idx].cast[c.dtype]()
+    accum.free()
 
 
 def verify(a: TileTensor, b: TileTensor, c: TileTensor):
@@ -54,7 +64,9 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
     for i in range(m):
         for j in range(n):
             try:
-                assert_almost_equal(c.ptr[i * n + j], c_ref.ptr[i * n + j])
+                assert_almost_equal(
+                    c.raw_load(i * n + j), c_ref.raw_load(i * n + j)
+                )
             except e:
                 abort(String(e))
     c_ref_ptr.free()
@@ -104,6 +116,7 @@ def bench_matmul[
         pack_b_ndbuffer[a_type, c_type](b, bp)
 
     @always_inline
+    @__copy_capture(a, b, c, bp)
     @parameter
     def bench_fn() raises:
         matmul[
@@ -178,10 +191,47 @@ def main() raises:
         b_type=DType.float32,
         c_type=DType.float32,
     )
-
+    comptime unpacked_f16_f16 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.float16,
+        b_type=DType.float16,
+        c_type=DType.float16,
+    )
+    comptime unpacked_f16_f32 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.float16,
+        b_type=DType.float16,
+        c_type=DType.float32,
+    )
+    comptime unpacked_bf16_bf16 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.bfloat16,
+        b_type=DType.bfloat16,
+        c_type=DType.bfloat16,
+    )
+    comptime unpacked_bf16_f32 = MatmulSpecStatic(
+        b_packed=False,
+        a_type=DType.bfloat16,
+        b_type=DType.bfloat16,
+        c_type=DType.float32,
+    )
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=256, n=256, k=256))
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=512, n=512, k=512))
     bench_matmul_spec(m, MatmulSpec[packed_float32](m=1024, n=1024, k=1024))
     bench_matmul_spec(m, MatmulSpec[unpacked_float32](m=256, n=256, k=256))
+
+    # fp16/bf16 coverage — exercises the internal fp32 scratch-buffer path.
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f16](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f16](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f16](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f32](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f32](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_f16_f32](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_bf16](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_bf16](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_bf16](m=1024, n=1024, k=1024))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_f32](m=256, n=256, k=256))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_f32](m=512, n=512, k=512))
+    bench_matmul_spec(m, MatmulSpec[unpacked_bf16_f32](m=1024, n=1024, k=1024))
 
     m.dump_report()
