@@ -492,45 +492,59 @@ stringSliceSummaryProvider(ValueObject &valobj, Stream &stream,
       StringPrinter::StringElementType::ASCII>(options);
 }
 
-// Summary provider for Mojo reference pointers (ref y = x)
+// Summary provider for Mojo UnsafePointer[T] variables (!kgen.pointer<T>).
+// Dereferences the pointer and shows the pointee's own summary (or raw value).
+// The unanchored regex `pointer<.*>` is a substring match that catches
+// `!kgen.pointer<T>` type spellings.
+//
+// For pointer<…String…> spellings, reverse-order registration routes the
+// variable to pointerToStringSummaryProvider first (that provider is
+// registered later). For other pointer-to-String cases the deref path here
+// reaches the String struct's own summary provider directly.
 static bool
-mojoReferenceSummaryProvider(ValueObject &valobj, Stream &stream,
-                             const TypeSummaryOptions &summaryOptions) {
-  // Check if this is a pointer that represents a Mojo reference
+mojoPointerSummaryProvider(ValueObject &valobj, Stream &stream,
+                           const TypeSummaryOptions &summaryOptions) {
   if (!valobj.IsPointerType())
     return false;
 
-  // Skip if this is a pointer to String type - let specific handler take it
-  ConstString typeNameConst = valobj.GetTypeName();
-  if (typeNameConst) {
-    llvm::StringRef typeName = typeNameConst.GetStringRef();
-    if (typeName.contains("String"))
-      return false;
-  }
-
-  // Try to dereference the pointer to get the actual value
   Status error;
-  ValueObjectSP derefValObj = valobj.Dereference(error);
-  if (!derefValObj || error.Fail())
+  ValueObjectSP deref = valobj.Dereference(error);
+  if (!deref || error.Fail())
     return false;
 
-  // Get the raw value directly without triggering formatters to avoid recursion
-  DataExtractor data;
-  Status dataError;
-  size_t bytesRead = derefValObj->GetData(data, dataError);
-  if (dataError.Fail() || bytesRead == 0)
+  // Avoid recursing into pointer-to-pointer.
+  if (deref->GetCompilerType().IsPointerType())
     return false;
 
-  // For simple integer types, extract and display the value
-  CompilerType derefType = derefValObj->GetCompilerType();
-  if (derefType.IsInteger()) {
-    lldb::offset_t offset = 0;
-    uint64_t intValue = data.GetMaxU64(&offset, bytesRead);
-    stream.Printf("%" PRIu64, intValue);
+  // Call GetValueAsCString before GetSummaryAsCString to prime the data
+  // buffer. GetSummaryAsCString triggers UpdateValueIfNeeded on a freshly
+  // Dereference()'d value whose m_data is still null; UpdateValue() returns
+  // true (no error path), so the caller immediately calls Checksum(null, 0),
+  // which fires a UBSAN nonnull violation in LLVM's MD5 code.
+  // GetValueAsCString also calls UpdateValueIfNeeded and loads data into
+  // m_data, so after this call NeedsUpdating() is false and the
+  // GetSummaryAsCString below skips Checksum entirely.
+  //
+  // For vector/SIMD types (e.g. Float64 = SIMD[DType.float64, 1]), the raw
+  // value is hex bytes — not useful. Fall through to the registered summary
+  // provider even if GetValueAsCString returns non-null.
+  const char *raw = deref->GetValueAsCString();
+  bool isVector =
+      (deref->GetCompilerType().GetTypeInfo() & lldb::eTypeIsVector) != 0;
+  if (raw && !isVector) {
+    stream << raw;
     return true;
   }
 
-  // For other types, fall back to default behavior to avoid recursion
+  // For types with no raw scalar LLDB value (e.g. Bool), let the pointee's
+  // own registered formatter produce the summary.
+  std::string summary;
+  deref->GetSummaryAsCString(summary, summaryOptions);
+  if (!summary.empty()) {
+    stream << summary;
+    return true;
+  }
+
   return false;
 }
 
@@ -618,9 +632,8 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 "Mojo decorator-based summary provider",
                 kLLDBFormatterWrappingTypeRegex, summaryFlags, /*regex=*/true);
 
-  // Add summary provider for Mojo reference pointers
-  AddCXXSummary(mojoCategorySP, mojoReferenceSummaryProvider,
-                "Mojo reference pointer summary provider", R"(pointer<.*>)",
+  AddCXXSummary(mojoCategorySP, mojoPointerSummaryProvider,
+                "Mojo UnsafePointer summary provider", R"(pointer<.*>)",
                 summaryFlags, /*regex=*/true);
 
   // Add summary provider for pointer<String> types - MUST be AFTER generic
