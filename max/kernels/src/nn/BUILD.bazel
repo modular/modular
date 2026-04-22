@@ -17,6 +17,7 @@ mojo_library(
         "//max:linalg",
         "//max:quantization",
         "//max:register",
+        "//max:shmem",
         "//max:structured_kernels",
         "@mojo//:std",
     ],
