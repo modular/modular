@@ -160,20 +160,20 @@ class Gemma4AttentionHarness(
 
         weights: dict[str, torch.Tensor] = {}
         if has_v_proj:
-            weights["qkv_proj.q.weight"] = (
+            weights["q_proj.weight"] = (
                 torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * std
             )
-            weights["qkv_proj.k.weight"] = (
+            weights["k_proj.weight"] = (
                 torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
             )
-            weights["qkv_proj.v.weight"] = (
+            weights["v_proj.weight"] = (
                 torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
             )
         else:
-            weights["qk_proj.q.weight"] = (
+            weights["q_proj.weight"] = (
                 torch.randn(q_dim, hidden_size, dtype=torch.bfloat16) * std
             )
-            weights["qk_proj.k.weight"] = (
+            weights["k_proj.weight"] = (
                 torch.randn(kv_dim, hidden_size, dtype=torch.bfloat16) * std
             )
 

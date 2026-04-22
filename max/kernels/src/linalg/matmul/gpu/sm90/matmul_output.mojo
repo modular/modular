@@ -88,9 +88,9 @@ struct MatmulTileWriter[
         masked=Self.masked,
         alignment=Self.alignment,
     ]
-    comptime lambda_type = def[dtype: DType, width: Int, *, alignment: Int = 1](
-        IndexList[2], mut SIMD[dtype, width]
-    ) capturing -> None
+    comptime lambda_type = def[
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
+    ](IndexList[2], mut SIMD[dtype, width]) capturing -> None
 
     # Instance fields
     var tensor: Self.CTensorType
@@ -370,7 +370,7 @@ struct MatmulTileWriter[
 
                 @parameter
                 def _compute[
-                    dtype: DType, width: Int, *, alignment: Int = 1
+                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
                 ](
                     index: IndexList[2], mut val: SIMD[dtype, width]
                 ) capturing -> None:
@@ -384,7 +384,7 @@ struct MatmulTileWriter[
 
                 @parameter
                 def _epilogue[
-                    dtype: DType, width: Int, *, alignment: Int = 1
+                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
                 ](
                     index: IndexList[2], mut val: SIMD[dtype, width]
                 ) capturing -> None:

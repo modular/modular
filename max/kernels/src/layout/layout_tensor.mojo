@@ -2406,7 +2406,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: Int, store_alignment: Int = Self.alignment
+        width: SIMDSize, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         m: Int,
@@ -2471,7 +2471,7 @@ struct LayoutTensor[
                 "LayoutTensor store out of bounds: n=",
                 n,
                 ", width=",
-                width,
+                Int(width),
                 " (valid range for n+width: [0, ",
                 dim1,
                 "])",
@@ -2483,7 +2483,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: Int, store_alignment: Int = Self.alignment
+        width: SIMDSize, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         coords: IndexList[...],
@@ -2528,7 +2528,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def aligned_store[
-        width: Int
+        width: SIMDSize
     ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
@@ -5460,12 +5460,12 @@ struct LayoutTensor[
         performance.
 
         For optimal performance, you need to arrange the copy correctly. Use the
-        [`distribute()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#distribute)
+        [`distribute()`](/mojo/layout/layout_tensor/LayoutTensor/#distribute)
         method to create thread-local fragments of the source and
         destination tensors, assigning each thread one or more elements to copy.
 
         Optionally, use the
-        [`vectorize()`](/mojo/kernels/layout/layout_tensor/LayoutTensor/#vectorize)
+        [`vectorize()`](/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
         method to get vectorized views of both tensors before calling
         `distribute()`. This allows each thread to copy multiple elements of the
         tensor. For example:
@@ -6847,7 +6847,7 @@ def copy_dram_to_sram_async[
     ](dst, src)
 
 
-comptime binary_op_type = def[dtype: DType, width: Int](
+comptime binary_op_type = def[dtype: DType, width: SIMDSize](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) thin -> SIMD[dtype, width]
 """

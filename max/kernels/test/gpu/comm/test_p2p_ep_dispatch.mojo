@@ -93,7 +93,11 @@ trait DispatchTestT(ImplicitlyDestructible):
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         ...
 
@@ -172,7 +176,11 @@ struct BF16DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -318,7 +326,11 @@ struct BlockwiseFP8DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -439,7 +451,6 @@ struct NVFP4DispatchTest[
         fp4_dtype=Self.fp4_dtype,
         scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.output_layout),
-        scales_layout=type_of(Self.output_scales_layout),
         scales_offset_layout=type_of(Self.output_scales_offset_layout),
         Self.hidden_size,
         Self.top_k,
@@ -527,7 +538,11 @@ struct NVFP4DispatchTest[
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -549,7 +564,10 @@ struct NVFP4DispatchTest[
         )
 
         result = Self.TokenFormatType(
-            output_tensor, output_scales_tensor, output_scales_offset_tensor
+            output_tensor,
+            output_scales_tensor,
+            output_scales_offset_tensor,
+            ctx,
         )
 
     @always_inline
@@ -676,37 +694,26 @@ struct MXFP4DispatchTest[
     )
     comptime output_scales_layout = row_major(
         (
-            Idx(Self.scales_padded_size // SF_MN_GROUP_SIZE),
-            Idx[ceildiv(Self.hidden_size, SF_ATOM_K * MXFP4_SF_VECTOR_SIZE)](),
-            Idx[SF_ATOM_M[0]](),
-            Idx[SF_ATOM_M[1]](),
-            Idx[SF_ATOM_K](),
+            Idx[Self.max_recv_num_tokens](),
+            Idx(Self.hidden_size // MXFP4_SF_VECTOR_SIZE),
         )
     )
-    comptime output_scales_offset_layout = row_major[
-        Self.n_experts // Self.n_ranks
-    ]()
     comptime TokenFormatType = MXFP4TokenFormat[
         fp4_dtype=Self.fp4_dtype,
         scales_dtype=Self.scales_dtype,
         output_layout=type_of(Self.output_layout),
         scales_layout=type_of(Self.output_scales_layout),
-        scales_offset_layout=type_of(Self.output_scales_offset_layout),
         Self.hidden_size,
         Self.top_k,
     ]
 
     var device_output_bufs_list: List[DeviceBuffer[Self.fp4_dtype]]
     var device_output_scales_bufs_list: List[DeviceBuffer[Self.scales_dtype]]
-    var device_output_scales_offset_bufs_list: List[DeviceBuffer[DType.uint32]]
     var host_output_bufs_list: List[
         UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
     ]
     var host_output_scales_bufs_list: List[
         UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
-    ]
-    var host_output_scales_offset_bufs_list: List[
-        UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
     ]
 
     def __init__(out self, list_of_ctx: List[DeviceContext]) raises:
@@ -716,17 +723,11 @@ struct MXFP4DispatchTest[
         self.device_output_scales_bufs_list = List[
             DeviceBuffer[Self.scales_dtype]
         ](capacity=Self.n_ranks)
-        self.device_output_scales_offset_bufs_list = List[
-            DeviceBuffer[DType.uint32]
-        ](capacity=Self.n_ranks)
         self.host_output_bufs_list = List[
             UnsafePointer[Scalar[Self.fp4_dtype], MutExternalOrigin]
         ](capacity=Self.n_ranks)
         self.host_output_scales_bufs_list = List[
             UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
-        ](capacity=Self.n_ranks)
-        self.host_output_scales_offset_bufs_list = List[
-            UnsafePointer[Scalar[DType.uint32], MutExternalOrigin]
         ](capacity=Self.n_ranks)
         for i in range(Self.n_ranks):
             self.device_output_bufs_list.append(
@@ -744,11 +745,6 @@ struct MXFP4DispatchTest[
                     // MXFP4_SF_VECTOR_SIZE
                 )
             )
-            self.device_output_scales_offset_bufs_list.append(
-                list_of_ctx[i].enqueue_create_buffer[DType.uint32](
-                    Self.n_slots * (Self.n_experts // Self.n_ranks)
-                )
-            )
             self.host_output_bufs_list.append(
                 alloc[Scalar[Self.fp4_dtype]](
                     Self.n_slots
@@ -764,21 +760,19 @@ struct MXFP4DispatchTest[
                     // MXFP4_SF_VECTOR_SIZE
                 )
             )
-            self.host_output_scales_offset_bufs_list.append(
-                alloc[Scalar[DType.uint32]](
-                    Self.n_slots * (Self.n_experts // Self.n_ranks)
-                )
-            )
 
     def __del__(deinit self):
         for i in range(Self.n_ranks):
             self.host_output_bufs_list[i].free()
             self.host_output_scales_bufs_list[i].free()
-            self.host_output_scales_offset_bufs_list[i].free()
 
     @always_inline
     def get_token_handler(
-        self, dev_idx: Int, slot_idx: Int, out result: Self.TokenFormatType
+        self,
+        dev_idx: Int,
+        slot_idx: Int,
+        ctx: DeviceContext,
+        out result: Self.TokenFormatType,
     ):
         var output_tensor = TileTensor[origin=MutAnyOrigin](
             ptr=self.device_output_bufs_list[dev_idx].unsafe_ptr()
@@ -793,15 +787,8 @@ struct MXFP4DispatchTest[
             // MXFP4_SF_VECTOR_SIZE,
             layout=Self.output_scales_layout,
         )
-        var output_scales_offset_tensor = TileTensor[origin=MutAnyOrigin](
-            ptr=self.device_output_scales_offset_bufs_list[dev_idx].unsafe_ptr()
-            + slot_idx * (Self.n_experts // Self.n_ranks),
-            layout=Self.output_scales_offset_layout,
-        )
 
-        result = Self.TokenFormatType(
-            output_tensor, output_scales_tensor, output_scales_offset_tensor
-        )
+        result = Self.TokenFormatType(output_tensor, output_scales_tensor)
 
     @always_inline
     def save_outputs_to_host(
@@ -814,10 +801,6 @@ struct MXFP4DispatchTest[
             list_of_ctx[i].enqueue_copy(
                 self.host_output_scales_bufs_list[i],
                 self.device_output_scales_bufs_list[i],
-            )
-            list_of_ctx[i].enqueue_copy(
-                self.host_output_scales_offset_bufs_list[i],
-                self.device_output_scales_offset_bufs_list[i],
             )
             list_of_ctx[i].synchronize()
 
@@ -838,34 +821,20 @@ struct MXFP4DispatchTest[
             + (hid_dim_idx // 2)
         )
 
-        var host_scales_tensor = TileTensor[origin=MutAnyOrigin](
-            ptr=self.host_output_scales_bufs_list[dev_idx]
-            + slot_idx
-            * Self.scales_padded_size
-            * Self.hidden_size
-            // MXFP4_SF_VECTOR_SIZE,
-            layout=Self.output_scales_layout,
-        )
-
-        var expert_start_index = token_idx - expert_token_idx
-        var scales_block_id = (
-            UInt32(expert_start_index // SF_MN_GROUP_SIZE)
-            + self.host_output_scales_offset_bufs_list[dev_idx][
-                slot_idx * (Self.n_experts // Self.n_ranks) + expert_idx
-            ]
-        )
-        var _scales_tensor = TileTensor[origin=MutAnyOrigin](
-            ptr=host_scales_tensor.ptr_at_offset(
-                (Idx(scales_block_id), Idx(0), Idx(0), Idx(0), Idx(0))
-            ),
-            layout=Self.output_scales_layout,
-        )
-
         var uint8_val = self.host_output_bufs_list[dev_idx][output_offset]
 
-        var token_scale = get_scale_factor[SF_VECTOR_SIZE=MXFP4_SF_VECTOR_SIZE](
-            _scales_tensor, expert_token_idx, hid_dim_idx
+        var scale_offset = (
+            slot_idx
+            * Self.max_recv_num_tokens
+            * Self.hidden_size
+            // MXFP4_SF_VECTOR_SIZE
+            + token_idx * (Self.hidden_size // MXFP4_SF_VECTOR_SIZE)
+            + (hid_dim_idx // MXFP4_SF_VECTOR_SIZE)
         )
+        var token_scale = self.host_output_scales_bufs_list[dev_idx][
+            scale_offset
+        ]
+
         var token_val = (
             E2M1_TO_FLOAT32[
                 Int(
@@ -1107,7 +1076,9 @@ def test_dispatch_common[
     @parameter
     def run_dispatch_async_wait(dev_idx: Int, slot_idx: Int) raises:
         var ctx = list_of_ctx[dev_idx]
-        var format_handler = dispatch_test.get_token_handler(dev_idx, slot_idx)
+        var format_handler = dispatch_test.get_token_handler(
+            dev_idx, slot_idx, ctx
+        )
         ep_dispatch_wait_kernel_api[
             n_experts,
             n_tokens_per_rank,
