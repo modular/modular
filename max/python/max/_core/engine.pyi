@@ -317,7 +317,7 @@ class DebugConfig:
     @property
     def nan_check(self) -> bool:
         """
-        When ``True``, inserts runtime checks after each compiled op that abort if any output contains NaN.  Takes effect at model build time.
+        A boolean that, when ``True``, triggers MAX to insert runtime checks after each compiled op that abort if any output contains ``NaN``. Takes effect at model build time.
         """
 
     @nan_check.setter
@@ -325,7 +325,7 @@ class DebugConfig:
     @property
     def uninitialized_read_check(self) -> bool:
         """
-        When ``True``, instruments buffer reads to detect reads of uninitialized memory.  Takes effect at model build time.
+        A boolean that, when ``True``, triggers MAX to instrument buffer reads to detect reads of uninitialized memory. Takes effect at model build time.
         """
 
     @uninitialized_read_check.setter
@@ -333,7 +333,7 @@ class DebugConfig:
     @property
     def device_sync_mode(self) -> bool:
         """
-        When ``True``, forces synchronous GPU execution so every device operation waits for completion.  Surfaces async errors at their call site but serializes the pipeline.  Takes effect at run time.
+        A boolean that, when ``True``, triggers MAX to force synchronous GPU execution so every device operation waits for completion. This surfaces async errors at their call site but serializes the pipeline. Takes effect at run time.
         """
 
     @device_sync_mode.setter
@@ -341,7 +341,7 @@ class DebugConfig:
     @property
     def stack_trace_on_error(self) -> bool:
         """
-        When ``True``, prints a C++ stack trace whenever a runtime error is raised.  Takes effect at run time.
+        A boolean that, when ``True``, triggers MAX to print a C++ stack trace whenever a runtime error is raised. Takes effect at run time.
         """
 
     @stack_trace_on_error.setter
@@ -349,7 +349,7 @@ class DebugConfig:
     @property
     def stack_trace_on_crash(self) -> bool:
         """
-        When ``True``, prints a C++ stack trace on fatal signals (e.g. SIGSEGV, SIGABRT).  Takes effect at run time.
+        A boolean that, when ``True``, triggers MAX to print a C++ stack trace on fatal signals such as ``SIGSEGV`` or ``SIGABRT``. Takes effect at run time.
         """
 
     @stack_trace_on_crash.setter
@@ -357,7 +357,7 @@ class DebugConfig:
     @property
     def source_tracebacks(self) -> bool:
         """
-        When ``True``, captures Python source locations during graph construction so runtime errors can be traced back to user code.  Takes effect at graph build time and is typically set using ``Graph.debug.source_tracebacks``.
+        A boolean that, when ``True``, triggers MAX to capture Python source locations during graph construction so runtime errors can be traced back to user code. Takes effect at graph build time and is typically set using ``Graph.debug.source_tracebacks``.
         """
 
     @source_tracebacks.setter
@@ -365,7 +365,7 @@ class DebugConfig:
     @property
     def op_log_level(self) -> str:
         r"""
-        Log level for per-op tracing.  One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``.  Takes effect at model build time.
+        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``. Takes effect at model build time.
         """
 
     @op_log_level.setter
@@ -373,21 +373,23 @@ class DebugConfig:
     @property
     def assert_level(self) -> str:
         r"""
-        Mojo assertion level for compiled kernels.  One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``.  Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost.  Takes effect at model build time.
+        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.
         """
 
     @assert_level.setter
     def assert_level(self, arg: str, /) -> None: ...
     @property
     def print_style(self) -> PrintStyle:
-        """Format for tensor debug printing.  Takes effect at run time."""
+        """
+        A :obj:`PrintStyle` value that sets the format for tensor debug printing. Takes effect at run time.
+        """
 
     @print_style.setter
     def print_style(self, arg: PrintStyle, /) -> None: ...
     @property
     def ir_output_dir(self) -> str:
         """
-        Directory into which to dump intermediate compiler IR for inspection.  Empty string disables dumping.  Takes effect at model build time.
+        A string path to the directory into which MAX dumps intermediate compiler IR for inspection. Empty string disables dumping. Takes effect at model build time.
         """
 
     @ir_output_dir.setter
@@ -395,7 +397,7 @@ class DebugConfig:
     @property
     def sensible_mode(self) -> bool:
         """
-        When set to ``True``, enables a curated default debugging set, including ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``.  You can override the defaults using individual properties.
+        A boolean that, when ``True``, triggers MAX to enable a curated default debugging set, including ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``. You can override the defaults using individual properties.
         """
 
     @sensible_mode.setter

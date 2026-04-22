@@ -135,6 +135,7 @@ const maxSidebars = {
             },
           ],
         },
+        "max/develop/debugging",
         "max/gpu-system-profiling",
       ],
     },
