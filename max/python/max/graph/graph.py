@@ -64,7 +64,15 @@ def _yaml_parse_bool(config: str) -> bool:
     return bool(yaml.safe_load(io.StringIO(config)))
 
 
-MODULAR_MAX_DEBUG = _yaml_parse_bool(os.environ.get("MODULAR_MAX_DEBUG", ""))
+# Prefer the new max-debug.source-tracebacks config key (covers
+# MODULAR_MAX_DEBUG_SOURCE_TRACEBACKS env var, modular.cfg, and
+# Graph.debug.source_tracebacks Python setter via Config overrides).  Fall
+# back to the legacy MODULAR_MAX_DEBUG env var.  The legacy fallback will be
+# removed in a follow-up PR once callers have migrated.
+MODULAR_MAX_DEBUG = (
+    _InferenceSession.debug.source_tracebacks
+    or _yaml_parse_bool(os.environ.get("MODULAR_MAX_DEBUG", ""))
+)
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
 
