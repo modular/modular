@@ -476,17 +476,18 @@ InitializerUValue InitializerUValue::create(Syntax syntax,
 
 const CallOperands &InitializerUValue::get() const { return storage->operands; }
 
-static void addEmptyTuple(CallOperands &operands, StringRef kwargName,
-                          IREmitter &emitter) {
-  // Emit the tuple in a parameter context so we don't eagerly generated IR into
+static void addNoneLiteralMarker(CallOperands &operands, StringRef kwargName,
+                                 IREmitter &emitter) {
+  // Emit the None in a parameter context so we don't eagerly generated IR into
   // the body of any current function.
   auto paramEmitter = emitter.getParamEmitter(EC_CollectionLiteral);
-
-  TupleNode emptyTuple(operands.callExpr->getLoc(), {});
-  if (auto tupleValue =
-          paramEmitter.emitExprRValue(&emptyTuple, EC_CollectionLiteral))
-    operands.addKeyword(StringAttr::get(paramEmitter.getContext(), kwargName),
-                        {tupleValue, operands.callExpr});
+  SimpleLiteralNode noneLiteral(SimpleLiteralNode::kNoneLiteral,
+                                operands.callExpr->getLoc());
+  RValue noneValue =
+      paramEmitter.emitExprRValue(&noneLiteral, EC_CollectionLiteral);
+  assert(noneValue && "failed to emit None literal");
+  operands.addKeyword(StringAttr::get(paramEmitter.getContext(), kwargName),
+                      {noneValue, operands.callExpr});
 }
 
 ASTType InitializerUValue::getDefaultType(SharedState &shared) const {
@@ -511,13 +512,13 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
   CallOperands operands(get());
   switch (syntax) {
   case Syntax::kSliceLiteral:
-    addEmptyTuple(operands, "__slice_literal__", emitter);
+    addNoneLiteralMarker(operands, "__slice_literal__", emitter);
     break;
   case Syntax::kListLiteral:
-    addEmptyTuple(operands, "__list_literal__", emitter);
+    addNoneLiteralMarker(operands, "__list_literal__", emitter);
     break;
   case Syntax::kDictLiteral:
-    addEmptyTuple(operands, "__dict_literal__", emitter);
+    addNoneLiteralMarker(operands, "__dict_literal__", emitter);
     break;
   case Syntax::kSetInitLiteral:
     // Given we have an inferred type, we can interrogate it a bit.  If there
@@ -544,7 +545,7 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
       CallOperands dictOperands(CallSyntax::kTypeCall, operands.callExpr);
       dictOperands.add({getEmptyList(), operands.callExpr});
       dictOperands.add({getEmptyList(), operands.callExpr});
-      addEmptyTuple(dictOperands, "__dict_literal__", emitter);
+      addNoneLiteralMarker(dictOperands, "__dict_literal__", emitter);
       CallOperands dictCopy(dictOperands);
       FailureOr<PValue> pValue = OverloadSet::canConstructType(
           type, std::move(dictOperands), emitter.declScope);
@@ -556,11 +557,11 @@ InitializerUValue::getOperandsForInferredType(ASTType type,
     // take precedent over initializer list emission, because (e.g.)
     // PythonObject's set literal ctor takes a required keyword argument.
     CallOperands setOperands(CallSyntax::kTypeCall, operands.callExpr);
-    addEmptyTuple(setOperands, "__set_literal__", emitter);
+    addNoneLiteralMarker(setOperands, "__set_literal__", emitter);
     FailureOr<PValue> pValue = OverloadSet::canConstructType(
         type, std::move(setOperands), emitter.declScope);
     if (succeeded(pValue) && pValue.value()) {
-      addEmptyTuple(operands, "__set_literal__", emitter);
+      addNoneLiteralMarker(operands, "__set_literal__", emitter);
       break;
     }
     // Otherwise, leave it alone as an initializer list.
@@ -642,7 +643,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
       return {};
 
     // Add the __list_literal__ kwarg.
-    addEmptyTuple(operands, "__list_literal__", emitter);
+    addNoneLiteralMarker(operands, "__list_literal__", emitter);
     auto listType = emitter.shared.getStandardCollectionType(
         get().callExpr->getLoc(), "List");
     if (!listType)
@@ -657,7 +658,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
     if (!dictType)
       return {};
     CallOperands operands(get());
-    addEmptyTuple(operands, "__dict_literal__", emitter);
+    addNoneLiteralMarker(operands, "__dict_literal__", emitter);
     return emitter.emitConstructorCall(dictType, std::move(operands), dest);
   }
   case Syntax::kSetInitLiteral: {
@@ -684,7 +685,7 @@ CValue InitializerUValue::emitAsCValue(IREmitter &emitter, ValueDest &dest) {
       return {};
 
     // Add the __set_literal__ kwarg.
-    addEmptyTuple(operands, "__set_literal__", emitter);
+    addNoneLiteralMarker(operands, "__set_literal__", emitter);
 
     auto setType = emitter.shared.getStandardCollectionType(
         get().callExpr->getLoc(), "Set");

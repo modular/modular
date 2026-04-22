@@ -70,7 +70,9 @@ def var_let_decls():
 
 
 struct IntList(TrivialRegisterPassable):
-    def __init__(out self, *list_elements: Int, __list_literal__: () = ()):
+    def __init__(
+        out self, *list_elements: Int, __list_literal__: NoneType = None
+    ):
         pass
 
     def append(mut self, value: Int):
@@ -85,27 +87,21 @@ def inspect(list: List[_]):
 def test_list_literal():
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
-    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
-    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %a)
+    # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
+    # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %a)
     var a = [1, 2, 3]
 
     # CHECK-DAG: [[TMP1:%.*]] = kgen.param.constant: !Int = <{1}>
     # CHECK-DAG: [[TMP2:%.*]] = kgen.param.constant: !Int = <{2}>
     # CHECK-DAG: [[TMP3:%.*]] = kgen.param.constant: !Int = <{3}>
     # CHECK-DAG: {{%.*}} = pop.array.create [{{.*}}]
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
-    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
-    # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
+    # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
+    # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]])
     var b: IntList = [1, 2, 3]
 
     # CHECK: [[VARIADIC:%.*]] = kgen.param.constant: !lit.ref<array<0, !lit.ref<!Int, imm {}>>, imm {}> = <#interp.pointer<0>>
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
-    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
-    # CHECK-NEXT: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[TUP_TMP]])
+    # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
+    # CHECK: lit.call {{.*}}@IntList::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]])
     var c: IntList = []
 
     # CHECK: lit.call {{.*}}@List::@"__init__{{.*}}<:!Copyable !FloatDyn>
@@ -177,14 +173,17 @@ struct MyDict[
         out self,
         var keys: List[Self.K],
         var values: List[Self.V],
-        __dict_literal__: (),
+        __dict_literal__: NoneType,
     ):
         pass
 
 
 struct IntDict:
     def __init__(
-        out self, keys: IntList, values: IntList, __dict_literal__: () = ()
+        out self,
+        keys: IntList,
+        values: IntList,
+        __dict_literal__: NoneType = None,
     ):
         pass
 
@@ -229,7 +228,7 @@ def test_dict_comprehension():
 
 
 struct MySet[T: AnyType]:
-    def __init__(out self, var *values: Self.T, __set_literal__: ()):
+    def __init__(out self, var *values: Self.T, __set_literal__: NoneType):
         pass
 
 
@@ -241,10 +240,8 @@ def param_infer_equal[T: AnyType](a: T, b: T):
 def test_set_literal():
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
-    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
-    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut [[EMPTY_TUPLE]]
-    # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %a)
+    # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
+    # CHECK: lit.call {{.*}}@Set::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %a)
     var a = {1, 2, 3}
 
     # MOCO-1974 - Param inference isn't substituting full type
@@ -252,10 +249,8 @@ def test_set_literal():
 
     # CHECK: lit.var.decl "__passed_varargs__"
     # CHECK-NEXT: {{%.*}} = pop.array.create
-    # CHECK: [[TUPVAL:%.*]] = kgen.param.materialize{{.*}}@Tuple::@"__init__()"<:param_list<!Movable> []
-    # CHECK-NEXT: lit.ref.store [[TUPVAL]], [[EMPTY_TUPLE:%.*]] :
-    # CHECK: [[TUP_TMP:%.*]] = lit.ref.immut
-    # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}({{.*}}, [[TUP_TMP]], %b)
+    # CHECK: [[NONE_MARKER:%.*]] = kgen.param.constant: !NoneType
+    # CHECK: lit.call {{.*}}@MySet::@"__init__{{.*}}({{.*}}, [[NONE_MARKER]], %b)
     var b: MySet[Int] = {1, 2}
 
 
@@ -317,14 +312,14 @@ struct AnyCollection:
     def __init__(out self, value: AnyType):
         pass
 
-    def __init__(out self, var *values: Int, __list_literal__: ()):
+    def __init__(out self, var *values: Int, __list_literal__: NoneType):
         pass
 
-    def __init__(out self, var *values: Int, __set_literal__: ()):
+    def __init__(out self, var *values: Int, __set_literal__: NoneType):
         pass
 
     def __init__(
-        out self, keys: IntList, values: IntList, __dict_literal__: ()
+        out self, keys: IntList, values: IntList, __dict_literal__: NoneType
     ):
         pass
 
