@@ -34,7 +34,7 @@ import numpy as np
 from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import Model
-from max.experimental.distributed_functional import full, matmul
+from max.experimental.functional import full, matmul
 from max.experimental.nn.module import CompiledModel, Module, module_dataclass
 from max.experimental.tensor import Tensor, TensorType
 from max.graph import DeviceRef
@@ -173,7 +173,6 @@ class CUDAGraphTests:
         x = self._gpu_buf(np.ones((3, D), dtype=np.float32))
         raw_outputs = compiled.execute_raw(x)
         assert len(raw_outputs) == 1
-        eager_result = Tensor(storage=raw_outputs[0]).to_numpy()
 
         # Warmup: capture graphs for batch sizes 1..3 (like ServeGraphCaptureRunner).
         captured: dict[int, tuple[Buffer, list[Buffer]]] = {}

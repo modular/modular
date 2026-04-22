@@ -56,9 +56,9 @@ def test_convert_gguf_state_dict_non_quantized_uses_stacked_linear_keys() -> (
         pipeline_config=pipeline_config,  # type: ignore[arg-type]
     )
 
-    assert "layers.0.self_attn.qkv_proj.q.weight" in converted
-    assert "layers.0.self_attn.qkv_proj.k.weight" in converted
-    assert "layers.0.self_attn.qkv_proj.v.weight" in converted
+    assert "layers.0.self_attn.q_proj.weight" in converted
+    assert "layers.0.self_attn.k_proj.weight" in converted
+    assert "layers.0.self_attn.v_proj.weight" in converted
     assert "rope_freqs.weight" not in converted
 
 

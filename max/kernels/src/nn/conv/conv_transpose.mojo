@@ -18,6 +18,7 @@ from std.sys import align_of, simd_width_of
 from _cudnn.cnn_infer import (
     cudnnConvolutionBackwardData,
     cudnnConvolutionMode_t,
+    cudnnGetConvolutionBackwardDataWorkspaceSize,
     cudnnSetConvolution2dDescriptor,
 )
 from _cudnn.infer import (
@@ -457,6 +458,7 @@ struct ConvTransposedPacked[
             ...,
         ],
         conv_shape: ConvShape[Self.conv_attr_rank],
+        ctx: Optional[DeviceContext] = None,
     ) raises:
         comptime assert input.rank - 2 == Self.conv_attr_rank
         comptime simd_size = simd_width_of[Self.output_type]()
@@ -526,7 +528,7 @@ struct ConvTransposedPacked[
             )
             instance._batch_group_loop()
 
-        sync_parallelize[task_func](num_tasks)
+        sync_parallelize[task_func](num_tasks, ctx)
 
     @always_inline
     def _zero_output(self, n: Int, g: Int):
@@ -1377,7 +1379,7 @@ def conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: def[dtype: DType, rank: Int, width: Int](
+    elementwise_lambda: def[dtype: DType, rank: Int, width: SIMDSize](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -1389,6 +1391,7 @@ def conv_transposed_cpu[
     pad_d: IndexList[2],
     pad_h: IndexList[2],
     pad_w: IndexList[2],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     @always_inline
     @parameter
@@ -1471,7 +1474,7 @@ def conv_transposed_cpu[
 
                 var output_idx = output.layout(Coord(curr_coords))
 
-                var vec = output.ptr.load[width=width](output_idx)
+                var vec = output.raw_load[width=width](output_idx)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)
@@ -1487,7 +1490,7 @@ def conv_transposed_cpu[
             Optional[elementwise_epilogue_type](
                 elementwise_epilogue
             ) if lambdas_have_fusion else None,
-        ].run(output, input, packed_filter, conv_shape)
+        ].run(output, input, packed_filter, conv_shape, ctx)
 
         comptime if not filter_packed:
             packed_filter_ptr.free()
@@ -1546,7 +1549,7 @@ def conv_transposed_gpu[
         ](coords: IndexList[_rank]):
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout((Coord(coords)))
-            vec = output_tmp.ptr.load[width=_width, alignment=align](idx)
+            vec = output_tmp.raw_load[width=_width, alignment=align](idx)
             epilogue(coords, vec)
 
         elementwise[
@@ -1642,22 +1645,29 @@ def _conv_transposed_cudnn[
     # ---------------- Algorithm & workspace -------------------------------
     var algo = cudnnConvolutionBwdDataAlgo_t.CUDNN_CONVOLUTION_BWD_DATA_ALGO_0
 
+    # ALGO_0 is the implicit deconv formulation; cuDNN may still require a
+    # workspace for larger shapes. Query the exact size and allocate a
+    # per-call device buffer so we don't trip CUDNN_STATUS_NOT_SUPPORTED.
+    var workspace_size: Int = 0
+    check_cudnn_error(
+        cudnnGetConvolutionBackwardDataWorkspaceSize(
+            cudnn_handle[].ptr_handle,
+            cudnn_handle[].ptr_filter_desc,
+            cudnn_handle[].ptr_input_desc,
+            cudnn_handle[].ptr_conv_desc,
+            cudnn_handle[].ptr_output_desc,
+            algo,
+            UnsafePointer(to=workspace_size),
+        )
+    )
+
+    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](
+        workspace_size
+    )
+
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
 
-    # handle: UnsafePointer[cudnnContext],
-    # alpha: OpaquePointer,
-    # w_desc: UnsafePointer[cudnnFilterStruct],
-    # w: OpaquePointer,
-    # dy_desc: UnsafePointer[cudnnTensorStruct],
-    # dy: OpaquePointer,
-    # conv_desc: UnsafePointer[cudnnConvolutionStruct],
-    # algo: cudnnConvolutionBwdDataAlgo_t,
-    # work_space: OpaquePointer,
-    # work_space_size_in_bytes: Int,
-    # beta: OpaquePointer,
-    # dx_desc: UnsafePointer[cudnnTensorStruct],
-    # dx: OpaquePointer,
     check_cudnn_error(
         cudnnConvolutionBackwardData(
             cudnn_handle[].ptr_handle,
@@ -1668,13 +1678,14 @@ def _conv_transposed_cudnn[
             input.ptr.bitcast[NoneType](),
             cudnn_handle[].ptr_conv_desc,
             algo,
-            None,
-            0,
+            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            workspace_size,
             UnsafePointer(to=beta).bitcast[NoneType](),
             cudnn_handle[].ptr_output_desc,
             output.ptr.bitcast[NoneType](),
         )
     )
+    _ = workspace_buffer^
 
 
 def conv_transposed_cudnn[

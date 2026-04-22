@@ -28,9 +28,6 @@ QWEN3_VL_MODEL_MAPPING = {
     "gate_up_proj_scale_inv": "gate_up_proj_scale",
     "down_proj_scale_inv": "down_proj_scale",
     # Remap unfused Q/K/V projections into StackedLinear namespace (decoder).
-    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
-    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
-    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
     # Remap stacked QKV in vision attention to StackedLinear namespace.
     "attn.qkv.": "attn.qkv_proj.",
 }

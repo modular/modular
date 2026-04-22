@@ -47,14 +47,15 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 # TODO(EMF-96): add support for remaining float dtypes
 
 
-comptime BINARY_ARITHMETIC_OPS = Variadic.types[
-    T=ElementwiseBinaryOp, Add, Sub, Mul, Div, Mod, Max, Min
-]
+comptime BINARY_ARITHMETIC_OPS = TypeList.of[
+    Trait=ElementwiseBinaryOp, Add, Sub, Mul, Div, Mod, Max, Min
+]()
 
 # Binary boolean operations
-comptime BINARY_BOOLEAN_OPS = Variadic.types[
-    T=ElementwiseBinaryOp, And, Or, Xor
-]
+comptime BINARY_BOOLEAN_OPS = TypeList.of[
+    Trait=ElementwiseBinaryOp, And, Or, Xor
+]()
+
 
 # =============================================================================
 # GPU Support Configuration
@@ -92,7 +93,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_binary_ops")
 
         # Binary arithmetic operations
-        comptime for i in range(TypeList[BINARY_ARITHMETIC_OPS].size):
+        comptime for i in range(BINARY_ARITHMETIC_OPS.size):
             comptime op = BINARY_ARITHMETIC_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -103,7 +104,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
             )
 
         # Binary boolean operations
-        comptime for i in range(TypeList[BINARY_BOOLEAN_OPS].size):
+        comptime for i in range(BINARY_BOOLEAN_OPS.size):
             comptime op = BINARY_BOOLEAN_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(

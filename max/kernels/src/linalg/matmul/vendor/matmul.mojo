@@ -22,7 +22,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from layout.tile_tensor import NullableTileTensor
 
 from std.utils import Index, IndexList
 
@@ -34,12 +33,16 @@ def matmul[
     transpose_b: Bool = False,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: NullableTileTensor[mut=True, ...],
+    c: TileTensor[mut=True, ...],
     a: TileTensor,
     b: TileTensor,
     ctx: DeviceContext,
 ) raises:
-    """Vendor matmul dispatch for TileTensor operands."""
+    """Vendor matmul dispatch for TileTensor operands. Callers are
+    responsible for allocating `c`; for fp32-accumulate-and-quantize
+    patterns, allocate an fp32 scratch buffer at the call site and supply
+    an `elementwise_lambda_fn` that reads from it and writes the final
+    quantized output."""
     comptime assert c.flat_rank == 2, "c must be of rank 2"
     comptime assert a.flat_rank == 2, "a must be of rank 2"
     comptime assert b.flat_rank == 2, "b must be of rank 2"
@@ -47,8 +50,6 @@ def matmul[
     comptime c_type = c.dtype
 
     comptime if not elementwise_lambda_fn:
-        if not c.ptr:
-            raise "c must be allocated"
         vendor_matmul[use_tf32=True](
             ctx,
             c,
@@ -88,40 +89,17 @@ def matmul[
             ](idx)
             epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
-        # If c is already allocated, we can just use the vendor matmul and
-        # apply the epilogue.
-        if c.ptr:
-            var m = Int(c.dim[0]())
-            var n = Int(c.dim[1]())
+        var m = Int(c.dim[0]())
+        var n = Int(c.dim[1]())
 
-            # For D = alpha * A * B + beta * C, vendor matmul currently sets
-            # C to null, i.e don't fuse linear operations into gemm, KERN-1774.
-            vendor_matmul[use_tf32=True](
-                ctx,
-                c,
-                a,
-                b,
-                c_row_major=True,
-                transpose_b=transpose_b,
-            )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
-            return
-
-        # Otherwise, we need to allocate a new buffer for c and apply the
-        # epilogue.
-        var num_elements = Int(c.dim[0]()) * Int(c.dim[1]())
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elements)
-
-        var c_tmp = TileTensor(
-            tmp_device_buffer,
-            row_major(Coord(Idx(Int(c.dim[0]())), Idx(Int(c.dim[1]())))),
-        )
-
-        matmul[
+        # For D = alpha * A * B + beta * C, vendor matmul currently sets
+        # C to null, i.e don't fuse linear operations into gemm, KERN-1774.
+        vendor_matmul[use_tf32=True](
+            ctx,
+            c,
+            a,
+            b,
+            c_row_major=True,
             transpose_b=transpose_b,
-            elementwise_lambda_fn=elementwise_lambda_fn,
-        ](c_tmp, a, b, ctx)
-
-        _ = tmp_device_buffer^
+        )
+        elementwise[epilogue_wrapper, simd_size, target="gpu"](Index(m, n), ctx)
