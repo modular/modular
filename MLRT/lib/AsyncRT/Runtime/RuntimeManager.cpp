@@ -7,6 +7,7 @@
 #include "MLRT/AsyncRT/Runtime/RuntimeManager.h"
 #include "MLRT/AsyncRT/Runtime/Globals/RuntimeGlobal.h"
 #include "MLRT/AsyncRT/Runtime/Runtime.h"
+#include "Support/Threading/HWInfo.h"
 
 #include "llvm/Support/ErrorHandling.h"
 
@@ -48,6 +49,11 @@ RuntimeRef getOrCreateRuntime(RuntimeSource source,
                   options.runtimeProfilingTypeMask, options.profilerDebuginfo));
 
   getStoredGlobalRuntimeCreationOptions() = options;
+
+  // Initialise the NUMA topology, to be used later when creating allocators and
+  // work-queues.
+  (void)NUMATopology::get();
+
   setGlobalRuntimePointer(newRuntime.getPointer());
   return newRuntime.copy();
 }

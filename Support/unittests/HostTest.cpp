@@ -235,7 +235,7 @@ TEST(Host, ParseV2CPUCgroupHybrid) {
 
 TEST(Host, NUMATopologyQueries) {
   // Get NUMATopology instance.
-  auto errOrTopo = NUMATopology::get();
+  const auto &errOrTopo = NUMATopology::get();
   ASSERT_FALSE(errOrTopo.isError()) << errOrTopo.getError();
   const NUMATopology &topo = *errOrTopo;
 

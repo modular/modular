@@ -568,7 +568,7 @@ ErrorOr<CPULimits> CPULimits::get() {
   return Error("CPULimits are not supported by this build");
 }
 
-ErrorOr<NUMATopology> NUMATopology::get() {
+static ErrorOr<NUMATopology> queryNumaTopology() {
 #if HAVE_LINUX_X86_SYSTEM_INFO
   NUMATopology topology;
 
@@ -646,6 +646,11 @@ ErrorOr<NUMATopology> NUMATopology::get() {
 #else
   return Error("NUMATopology is only supported on Linux x86");
 #endif
+}
+
+const ErrorOr<NUMATopology> &NUMATopology::get() {
+  static const ErrorOr<NUMATopology> cachedNUMATopology = queryNumaTopology();
+  return cachedNUMATopology;
 }
 
 std::vector<size_t> NUMATopology::getCpuIdsForNumaNode(int numaNode) const {

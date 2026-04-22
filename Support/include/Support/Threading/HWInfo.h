@@ -89,9 +89,10 @@ struct NUMATopology {
   std::map<int, std::vector<std::string>> pciBusesPerNumaNode;
   std::map<std::string, int> pciBusToNumaNode;
 
-  /// Returns NUMA topology if it can be determined. Returns an error if NUMA
-  /// topology cannot be determined.
-  static ErrorOr<NUMATopology> get();
+  /// Returns the process-wide NUMA topology, querying the system on the first
+  /// call and caching the result (success or error) for the remainder of the
+  /// process lifetime. Thread-safe via C++11 static initialization.
+  static const ErrorOr<NUMATopology> &get();
 
   /// Returns the list of NUMA node IDs available in the system.
   const std::vector<int> &getNumaNodes() const { return numaNodes; }
