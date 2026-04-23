@@ -210,17 +210,82 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Print all input and outputs to console.",
     )
 
+    verbose: bool = Field(
+        default=False,
+        description="Enable detailed DEBUG logging.",
+    )
 
-class ServingBenchmarkConfig(BaseBenchmarkConfig):
+
+class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
+    """Fields shared by every serving-style benchmark (text-gen, TTS, ...).
+
+    Sits between :class:`BaseBenchmarkConfig` and the concrete
+    :class:`ServingBenchmarkConfig` / :class:`TTSServingBenchmarkConfig`
+    classes. Only holds fields whose type *and* default align across both
+    serving codepaths so downstream configs can opt into shared behavior
+    without per-codepath overrides. Fields whose semantics diverge (e.g.
+    ``request_rate`` sweep strings vs floats) are intentionally left on the
+    concrete subclasses.
+    """
+
+    burstiness: float = Field(
+        default=1.0,
+        description="Burstiness factor (1.0 = Poisson process).",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    skip_test_prompt: bool = Field(
+        default=False,
+        description="Skip the test prompt. Useful when doing external profiling.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    collect_gpu_stats: bool = Field(
+        default=True,
+        description="Enable GPU stats collection (NVIDIA only).",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    lora_paths: list[str] = Field(
+        default_factory=list,
+        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    lora_uniform_traffic_ratio: float = Field(
+        default=0.0,
+        description=(
+            "Probability of selecting any LoRA uniformly at random (vs base model). "
+            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    per_lora_traffic_ratio: list[float] = Field(
+        default_factory=list,
+        description=(
+            "Traffic percentages for each LoRA adapter in the benchmark. "
+            "Must have same length as lora_paths. Sum must not exceed 1.0. "
+            "Remainder goes to base model requests. "
+            "If specified, overrides lora_uniform_traffic_ratio."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+
+class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     """Configuration class for serving benchmarks (benchmark_serving.py).
 
-    Inherits from BaseBenchmarkConfig and adds serving-specific parameters:
+    Inherits shared serving fields (burstiness, LoRA traffic, GPU stats,
+    skip_test_prompt) from :class:`BaseServingBenchmarkConfig` and adds
+    serving-specific parameters:
+
     - Backend and API configuration
-    - Request configuration (concurrency, LoRA)
-    - Traffic control (request rate, burstiness, TTFT)
+    - Request configuration (concurrency, sweeps)
+    - Traffic control (request rate, TTFT)
     - Chat session configuration
     - Serving-specific dataset parameters
-    - GPU stats collection
+    - CPU and server stats collection
     """
 
     # Backend and API configuration (serving-specific)
@@ -424,12 +489,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         },
     )
 
-    burstiness: float = Field(
-        default=1.0,
-        description="Burstiness factor (1.0 = Poisson process).",
-        json_schema_extra={"group": "Traffic Control"},
-    )
-
     skip_first_n_requests: int | None = Field(
         default=None,
         description="Skip first N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
@@ -569,20 +628,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "group_description": "Boolean flags controlling benchmark behavior",
         },
     )
-    skip_test_prompt: bool = Field(
-        default=False,
-        description="Skip the test prompt. Useful when doing external profiling.",
-        json_schema_extra={
-            "group": "Control Flags",
-            "group_description": "Boolean flags controlling benchmark behavior",
-        },
-    )
-    collect_gpu_stats: bool = Field(
-        default=True,
-        description="Enable GPU stats collection for serving benchmarks.",
-        json_schema_extra={"group": "Control Flags"},
-    )
-
     collect_cpu_stats: bool = Field(
         default=True,
         description="Enable CPU stats collection for serving benchmarks.",
@@ -723,32 +768,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Sweep Configuration"},
     )
 
-    lora_paths: list[str] = Field(
-        default_factory=list,
-        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
-    lora_uniform_traffic_ratio: float = Field(
-        default=0.0,
-        description=(
-            "Probability of selecting any LoRA uniformly at random (vs base model). "
-            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
-        ),
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
-    per_lora_traffic_ratio: list[float] = Field(
-        default_factory=list,
-        description=(
-            "Traffic percentages for each LoRA adapter in the benchmark. "
-            "Must have same length as lora_paths. Sum must not exceed 1.0. "
-            "Remainder goes to base model requests. "
-            "If specified, overrides lora_uniform_traffic_ratio."
-        ),
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
     max_concurrent_lora_ops: int = Field(
         default=1,
         description="Maximum concurrent LoRA loading/unloading operations.",
@@ -761,11 +780,11 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
 # ---------------------------------------------------------------------------
 
 
-class TTSServingBenchmarkConfig(BaseBenchmarkConfig):
+class TTSServingBenchmarkConfig(BaseServingBenchmarkConfig):
     """Configuration for TTS serving benchmarks (benchmark_tts_serving.py).
 
-    Inherits common fields from BaseBenchmarkConfig (model, tokenizer, seed,
-    num_prompts, disable_tqdm, print_inputs_and_outputs) and adds
+    Inherits shared serving fields (LoRA traffic, burstiness, GPU stats,
+    skip_test_prompt) from :class:`BaseServingBenchmarkConfig` and adds
     TTS-specific parameters for speech LM, streaming, sampling, quality
     evaluation, and profiling.
     """
@@ -788,12 +807,6 @@ class TTSServingBenchmarkConfig(BaseBenchmarkConfig):
             "from the given seed. Otherwise all request seeds equal the "
             "given seed."
         ),
-        json_schema_extra={"group": "Execution Options"},
-    )
-
-    skip_test_prompt: bool = Field(
-        default=False,
-        description="Skip the test prompt. Useful when doing external profiling.",
         json_schema_extra={"group": "Execution Options"},
     )
 
@@ -827,15 +840,6 @@ class TTSServingBenchmarkConfig(BaseBenchmarkConfig):
             "group": "Workload Options",
             "group_description": "Controls request generation and traffic shape.",
         },
-    )
-
-    burstiness: float = Field(
-        default=1.0,
-        description=(
-            "Burstiness factor of request generation. Only takes effect "
-            "when request_rate is not inf. 1.0 = Poisson process."
-        ),
-        json_schema_extra={"group": "Workload Options"},
     )
 
     max_concurrency: int | None = Field(
@@ -943,24 +947,6 @@ class TTSServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "SpeechLM Engine Options"},
     )
 
-    lora_paths: list[str] = Field(
-        default_factory=list,
-        description="Paths to LoRA adapters.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    lora_uniform_traffic_ratio: float = Field(
-        default=0.0,
-        description="Ratio of requests randomly selected to be LoRA requests.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
-    per_lora_traffic_ratio: list[float] = Field(
-        default_factory=list,
-        description="Traffic percentages for each LoRA adapter.",
-        json_schema_extra={"group": "SpeechLM Engine Options"},
-    )
-
     # -- Streaming Options --------------------------------------------------
 
     streaming_block_size: int = Field(
@@ -1059,20 +1045,8 @@ class TTSServingBenchmarkConfig(BaseBenchmarkConfig):
         },
     )
 
-    collect_gpu_stats: bool = Field(
-        default=False,
-        description="Collect GPU stats with NVML (NVIDIA only).",
-        json_schema_extra={"group": "Profiling Options"},
-    )
-
     result_file: str | None = Field(
         default=None,
         description="Path to save benchmark results in JSON format.",
-        json_schema_extra={"group": "Profiling Options"},
-    )
-
-    verbose: bool = Field(
-        default=False,
-        description="Enable detailed DEBUG logging.",
         json_schema_extra={"group": "Profiling Options"},
     )

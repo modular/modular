@@ -23,6 +23,7 @@ import yaml
 from max.benchmark.benchmark_serving import main_with_parsed_args
 from max.benchmark.benchmark_shared.config import (
     BaseBenchmarkConfig,
+    BaseServingBenchmarkConfig,
     ServingBenchmarkConfig,
     TTSServingBenchmarkConfig,
 )
@@ -338,3 +339,36 @@ def test_tts_serving_config_inherits_base() -> None:
     )
     assert config.num_prompts == 42
     assert config.seed == 7
+
+
+def test_serving_configs_inherit_base_serving() -> None:
+    """Both serving configs inherit from the shared BaseServingBenchmarkConfig."""
+    assert issubclass(ServingBenchmarkConfig, BaseServingBenchmarkConfig)
+    assert issubclass(TTSServingBenchmarkConfig, BaseServingBenchmarkConfig)
+
+
+def test_shared_serving_defaults_match() -> None:
+    """Shared fields on BaseServingBenchmarkConfig have the same default on both subclasses."""
+    serving = ServingBenchmarkConfig()
+    tts = TTSServingBenchmarkConfig(workload_config="workload.yaml")
+    for field in (
+        "burstiness",
+        "skip_test_prompt",
+        "collect_gpu_stats",
+        "lora_paths",
+        "lora_uniform_traffic_ratio",
+        "per_lora_traffic_ratio",
+    ):
+        assert getattr(serving, field) == getattr(tts, field), (
+            f"{field} default differs between serving and TTS configs"
+        )
+
+
+def test_verbose_on_base() -> None:
+    """`verbose` is defined on BaseBenchmarkConfig and inherited by both serving configs."""
+    assert "verbose" in BaseBenchmarkConfig.model_fields
+    assert ServingBenchmarkConfig().verbose is False
+    assert (
+        TTSServingBenchmarkConfig(workload_config="workload.yaml").verbose
+        is False
+    )
