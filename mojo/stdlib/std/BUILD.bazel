@@ -27,6 +27,8 @@ filegroup(
             "sys/info.mojo",
             "sys/__init__.mojo",
             "math/math.mojo",
+            "_plugin/__init__.mojo",
+            "_plugin/_impl.mojo",
         ],
     ),
     tags = ["maybe-unused"],  # Consumed by external plugin repos.
