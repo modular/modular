@@ -848,6 +848,12 @@ world"
     var a12 = "A\x423"           # CHECK: "AB3"
     var a13 = "A\102"            # CHECK: "AB"
     var a14 = "A\1023"           # CHECK: "AB3"
+    # \xhh and \ooo denote Unicode code points (Python str semantics). Values
+    # >= 0x80 expand to their UTF-8 encoding rather than a single raw byte,
+    # so `\x85` is U+0085 (NEL), encoded as bytes C2 85.
+    var a11b = "\x85"            # CHECK: "\C2\85"
+    var a11c = "\xff"            # CHECK: "\C3\BF"
+    var a13b = "\205"            # CHECK: "\C2\85"
 
     # COM: the MLIR textual representation escapes strings, so below \ is \\ and " is \"
     var a15 = 'Hello "world"'    # CHECK: "Hello \22world\22"

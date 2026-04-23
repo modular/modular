@@ -1187,8 +1187,11 @@ static bool advanceEscapeUnit(const char *&src, const char *end, bool isRaw,
     assert(llvm::isHexDigit(hex0) && llvm::isHexDigit(hex1) &&
            "invalid escape");
     src += 2;
-    out.push_back(static_cast<char>((llvm::hexDigitValue(hex0) << 4) |
-                                    llvm::hexDigitValue(hex1)));
+    // `\xhh` encodes the Unicode code point U+00hh, matching Python `str`
+    // semantics. Values >= 0x80 are emitted as two UTF-8 bytes so the
+    // resulting string literal is well-formed UTF-8.
+    uint32_t cp = (llvm::hexDigitValue(hex0) << 4) | llvm::hexDigitValue(hex1);
+    appendUtf8(cp, out);
     return true;
   }
   case 'u':
@@ -1219,7 +1222,9 @@ static bool advanceEscapeUnit(const char *&src, const char *end, bool isRaw,
     unsigned num = c1 - '0';
     for (int i = 0; i < 2 && src < end && isOctalDigit(*src); ++i, ++src)
       num = (num << 3) | (*src - '0');
-    out.push_back(static_cast<char>(num));
+    // `\ooo` encodes the Unicode code point with the given octal value,
+    // matching Python `str` semantics and `\x` / `\u` handling above.
+    appendUtf8(num, out);
     return true;
   }
   default:
