@@ -125,29 +125,11 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--speculative-method eagle"
         ),
     },
-    # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": {
-        "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 1"
-        ),
-    },
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": {
         "max_serve_args": (
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
             "--num-speculative-tokens 3"
-        ),
-    },
-    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": {
-        "max_serve_args": (
-            "--speculative-method eagle "
-            "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
         ),
     },
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": {
@@ -156,16 +138,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
             "--num-speculative-tokens 3"
-        ),
-    },
-    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep_1_draft_token": {
-        "max_serve_args": (
-            "--data-parallel-degree 1 "
-            "--speculative-method eagle "
-            "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
         ),
     },
     "nvidia/Kimi-K2.5-NVFP4__eagle": {
@@ -177,24 +149,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
             "--num-speculative-tokens 3 "
-            "--kv-cache-format float8_e4m3fn "
-            "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
-        ),
-    },
-    # Kimi Eagle + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": {
-        "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--draft-data-parallel-degree 8 "
-            "--draft-quantization-encoding bfloat16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 1 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
             "--max-batch-input-tokens 4096 "
