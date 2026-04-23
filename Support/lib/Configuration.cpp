@@ -10,6 +10,7 @@
 #include "Support/Error.h"
 #include "Support/ErrorOr.h"
 #include "Support/FileSystemExtras.h"
+#include "Support/Globals/Globals.h"
 #include "Support/LLVMForwardDecls.h"
 #include "Support/LogicalResult.h"
 #include "llvm/ADT/STLExtras.h"
@@ -37,16 +38,17 @@ using namespace M;
 namespace {
 enum class FolderType { Config, Data, Cache };
 
-// Runtime overrides set via Config::setGlobalValue().  Shared across every
-// Config instance through maybeGetValue() so that Python-level writes
-// reach downstream C++ readers without a direct dependency.
+// Runtime overrides set via Config::setGlobalValue() are stored in
+// `libMSupportGlobals.so` so that writes from one shared library (e.g.
+// the `max._core` Python extension that wraps `DebugConfig`) are visible
+// to reads from another (e.g. `libmax.so` which contains
+// `GraphCompiler/FrameworkFrontend`). A function-local static here would
+// give each consumer shared library its own copy and break propagation.
 std::mutex &globalOverridesMutex() {
-  static std::mutex m;
-  return m;
+  return M::Globals::getConfigOverridesMutex();
 }
 llvm::StringMap<std::string> &globalOverrides() {
-  static llvm::StringMap<std::string> m;
-  return m;
+  return M::Globals::getConfigOverrides();
 }
 } // namespace
 
