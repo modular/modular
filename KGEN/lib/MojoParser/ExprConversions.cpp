@@ -1246,7 +1246,8 @@ PValue IREmitter::emitZeroCostConvert(PValue value, ASTType toType,
   if (sugarIsa<OriginType>(toType) && sugarIsa<OriginType>(value.getType()))
     value = OriginMutCastAttr::get(value, toType);
 
-  if (sugarIsa<TypeType>(toType) && sugarIsa<TraitType>(value.getType()))
+  if (sugarIsa<TypeType>(toType) &&
+      sugarIsa<TraitType, AnyTraitType>(value.getType()))
     return TypeParamAttr::get(ASTType(value), toType);
 
   if (sugarIsa<FnLiteralTypeGeneratorMetaType>(value.getType()) &&
