@@ -2359,49 +2359,86 @@ def quantize_dynamic_block_scaled_mxfp4[
 
 
 @always_inline
-def _mxfp4_dotprod(
+def _mxfp4_dotprod[
+    out_dtype: DType,
+    //,
+    BLOCK_N: Int,
+](
+    c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
     b_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
     a_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
     b_scales_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin],
-    k_groups: Int,
-) -> Float32:
+    K: Int,
+):
     @always_inline
-    def cast_fp2em1x2_to_fp32x2[
+    def cast_fp2em1x2_to_bf16x2[
         byte_select: Int
-    ](packed: Int32, scale: Float32) -> SIMD[DType.float32, 2]:
+    ](packed: Int32, scale: Float32) -> SIMD[DType.bfloat16, 2]:
         return llvm_intrinsic[
-            "llvm.amdgcn.cvt.scalef32.pk.f32.fp4",
-            SIMD[DType.float32, 2],
+            "llvm.amdgcn.cvt.scalef32.pk.bf16.fp4", SIMD[DType.bfloat16, 2]
         ](packed, scale, Int32(byte_select))
+
+    @always_inline
+    def dotprod_bf16x2(
+        a: SIMD[DType.bfloat16, 2], b: SIMD[DType.bfloat16, 2], c: Float32
+    ) -> Float32:
+        return llvm_intrinsic["llvm.amdgcn.fdot2.f32.bf16", Float32](
+            a, b, c, False
+        )
+
+    var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
     var a_local_ptr = a_ptr
     var b_local_ptr = b_ptr
 
-    var accum = SIMD[DType.float32, 2](0)
+    var accum = SIMD[DType.float32, BLOCK_N](0)
 
     for ko in range(k_groups):
         var a_scale = a_scales_ptr[ko].cast[DType.float32]()
-        var b_scale = b_scales_ptr[ko].cast[DType.float32]()
+        var b_scale = InlineArray[Float32, BLOCK_N](uninitialized=True)
+
+        comptime for bn in range(BLOCK_N):
+            b_scale[bn] = b_scales_ptr[bn * k_groups + ko].cast[DType.float32]()
 
         comptime for ki in range(0, MXFP4_SF_VECTOR_SIZE // 2, 4):
             var a_data = bitcast[DType.int32, 1](a_local_ptr.load[width=4](ki))
-            var b_data = bitcast[DType.int32, 1](b_local_ptr.load[width=4](ki))
+            var b_data = InlineArray[Int32, BLOCK_N](uninitialized=True)
+
+            comptime for bn in range(BLOCK_N):
+                b_data[bn] = bitcast[DType.int32, 1](
+                    b_local_ptr.load[width=4](bn * (K // 2) + ki)
+                )
 
             comptime for byte_select in range(4):
-                accum += cast_fp2em1x2_to_fp32x2[byte_select](
+                var a_slice_bf16x2 = cast_fp2em1x2_to_bf16x2[byte_select](
                     a_data, a_scale
-                ) * cast_fp2em1x2_to_fp32x2[byte_select](b_data, b_scale)
+                )
+
+                comptime for bn in range(BLOCK_N):
+                    accum[bn] = dotprod_bf16x2(
+                        a_slice_bf16x2,
+                        cast_fp2em1x2_to_bf16x2[byte_select](
+                            b_data[bn], b_scale[bn]
+                        ),
+                        accum[bn],
+                    )
 
         a_local_ptr += MXFP4_SF_VECTOR_SIZE // 2
         b_local_ptr += MXFP4_SF_VECTOR_SIZE // 2
 
-    return accum.reduce_add()
+    c_ptr.store(accum.cast[out_dtype]())
+
+
+@always_inline
+def _mxfp4_dotprod_block_size(static_N: Int) -> Int:
+    comptime target_block_size = 16
+    return target_block_size if (static_N % target_block_size) == 0 else 1
 
 
 @__name("matmul_dynamic_block_scaled_mxfp4_kernel", mangle=True)
 def matmul_dynamic_block_scaled_mxfp4_kernel[
-    out_dtype: DType
+    out_dtype: DType, BLOCK_N: Int
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
@@ -2412,23 +2449,22 @@ def matmul_dynamic_block_scaled_mxfp4_kernel[
     N: Int,
     K: Int,
 ):
-    var m = global_idx.x
-    var n = global_idx.y
+    var n = global_idx.x * BLOCK_N
+    var m = global_idx.y
 
     if m >= M or n >= N:
         return
 
     var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-    var accum = _mxfp4_dotprod(
+    _mxfp4_dotprod[BLOCK_N](
+        c_ptr + m * N + n,
         a_ptr + m * (K // 2),
         b_ptr + n * (K // 2),
         a_scales_ptr + m * k_groups,
         b_scales_ptr + n * k_groups,
-        k_groups,
+        K,
     )
-
-    c_ptr[m * N + n] = accum.cast[out_dtype]()
 
 
 @always_inline
@@ -2447,6 +2483,7 @@ def matmul_dynamic_block_scaled_mxfp4[
         task_id=get_safe_task_id(ctx),
     ):
         comptime BLOCK_DIM = 16
+        comptime BLOCK_N = _mxfp4_dotprod_block_size(c.static_shape[1])
 
         var M = Int(c.dim[0]())
         var N = Int(c.dim[1]())
@@ -2455,7 +2492,9 @@ def matmul_dynamic_block_scaled_mxfp4[
         if M == 0 or N == 0:
             return
 
-        comptime kernel = matmul_dynamic_block_scaled_mxfp4_kernel[out_dtype]
+        comptime kernel = matmul_dynamic_block_scaled_mxfp4_kernel[
+            out_dtype, BLOCK_N
+        ]
 
         ctx.enqueue_function[kernel, kernel](
             c.ptr,
@@ -2466,14 +2505,14 @@ def matmul_dynamic_block_scaled_mxfp4[
             M,
             N,
             K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(N // BLOCK_N, BLOCK_DIM), ceildiv(M, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
 
 
 @__name("grouped_matmul_block_scaled_mxfp4_kernel", mangle=True)
 def grouped_matmul_block_scaled_mxfp4_kernel[
-    out_dtype: DType
+    out_dtype: DType, BLOCK_N: Int
 ](
     c_ptr: UnsafePointer[Scalar[out_dtype], MutAnyOrigin],
     a_ptr: UnsafePointer[Scalar[DType.uint8], ImmutAnyOrigin],
@@ -2487,8 +2526,8 @@ def grouped_matmul_block_scaled_mxfp4_kernel[
     N: Int,
     K: Int,
 ):
-    var m = global_idx.x
-    var n = global_idx.y
+    var n = global_idx.x * BLOCK_N
+    var m = global_idx.y
 
     if m >= M or n >= N:
         return
@@ -2499,45 +2538,33 @@ def grouped_matmul_block_scaled_mxfp4_kernel[
             expert_id = Int(expert_ids_ptr[i])
             break
 
-    var accum = Float32(0)
+    if expert_id == -1:
+        c_ptr.store(m * N + n, SIMD[out_dtype, BLOCK_N](0))
+        return
 
-    if expert_id != -1:
-        var k_groups = K // MXFP4_SF_VECTOR_SIZE
+    var k_groups = K // MXFP4_SF_VECTOR_SIZE
 
-        accum = _mxfp4_dotprod(
-            a_ptr + m * (K // 2),
-            b_ptr + (expert_id * N + n) * (K // 2),
-            a_scales_ptr + m * k_groups,
-            b_scales_ptr + (expert_id * N + n) * k_groups,
-            k_groups,
-        )
-
-    c_ptr[m * N + n] = accum.cast[out_dtype]()
+    _mxfp4_dotprod[BLOCK_N](
+        c_ptr + m * N + n,
+        a_ptr + m * (K // 2),
+        b_ptr + (expert_id * N + n) * (K // 2),
+        a_scales_ptr + m * k_groups,
+        b_scales_ptr + (expert_id * N + n) * k_groups,
+        K,
+    )
 
 
 @always_inline
 def grouped_matmul_block_scaled_mxfp4[
     out_dtype: DType,
 ](
-    c: TileTensor[mut=True, out_dtype, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    b: TileTensor[
-        mut=False, DType.uint8, address_space=AddressSpace.GENERIC, ...
-    ],
-    a_scales: TileTensor[
-        mut=False, DType.float8_e8m0fnu, address_space=AddressSpace.GENERIC, ...
-    ],
-    b_scales: TileTensor[
-        mut=False, DType.float8_e8m0fnu, address_space=AddressSpace.GENERIC, ...
-    ],
-    row_offsets: TileTensor[
-        mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
-    ],
-    expert_ids: TileTensor[
-        mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
-    ],
+    c: TileTensor[mut=True, out_dtype, ...],
+    a: TileTensor[mut=False, DType.uint8, ...],
+    b: TileTensor[mut=False, DType.uint8, ...],
+    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    row_offsets: TileTensor[mut=False, DType.uint32, ...],
+    expert_ids: TileTensor[mut=False, DType.int32, ...],
     num_active_experts: Int,
     ctx: DeviceContext,
 ) raises:
@@ -2546,6 +2573,7 @@ def grouped_matmul_block_scaled_mxfp4[
         task_id=get_safe_task_id(ctx),
     ):
         comptime BLOCK_DIM = 16
+        comptime BLOCK_N = _mxfp4_dotprod_block_size(c.static_shape[1])
 
         var M = Int(c.dim[0]())
         var N = Int(c.dim[1]())
@@ -2554,7 +2582,9 @@ def grouped_matmul_block_scaled_mxfp4[
         if M == 0 or N == 0:
             return
 
-        comptime kernel = grouped_matmul_block_scaled_mxfp4_kernel[out_dtype]
+        comptime kernel = grouped_matmul_block_scaled_mxfp4_kernel[
+            out_dtype, BLOCK_N
+        ]
 
         ctx.enqueue_function[kernel, kernel](
             c.ptr,
@@ -2568,6 +2598,6 @@ def grouped_matmul_block_scaled_mxfp4[
             M,
             N,
             K,
-            grid_dim=(ceildiv(M, BLOCK_DIM), ceildiv(N, BLOCK_DIM)),
+            grid_dim=(ceildiv(N // BLOCK_N, BLOCK_DIM), ceildiv(M, BLOCK_DIM)),
             block_dim=(BLOCK_DIM, BLOCK_DIM),
         )
