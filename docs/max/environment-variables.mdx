@@ -87,17 +87,40 @@ For more information, read about
 | `MAX_SERVE_DEPLOYMENT_ID`     | Deployment identifier for telemetry (e.g., your application name) | String                      | None    |
 | `MAX_SERVE_METRIC_LEVEL`      | Level of detail in metrics emitted                                | `NONE`, `BASIC`, `DETAILED` | `BASIC` |
 
-## Debugging and profiling
+## Debugging
 
-These variables enable debugging and profiling features.
+The `MODULAR_DEBUG` environment variable enables one or more MAX debugging
+options. Set it to a comma-separated list of option names, using `name=value`
+for options that take a value:
 
-For more information about profiling, see
+```bash
+export MODULAR_DEBUG=nan-check,assert-level=all
+```
+
+This table includes all options you can add to `MODULAR_DEBUG`:
+
+| Option                     | Description                                                  | Type    | Accepted values                                          | Default   |
+|----------------------------|--------------------------------------------------------------|---------|----------------------------------------------------------|-----------|
+| `sensible`                 | Enable a curated default debugging set                       | Boolean | N/A                                                      | `false`   |
+| `nan-check`                | Insert NaN/Inf checks after each fused set of ops            | Boolean | N/A                                                      | `false`   |
+| `uninitialized-read-check` | Detect reads of uninitialized memory                         | Boolean | N/A                                                      | `false`   |
+| `device-sync-mode`         | Force synchronous GPU execution for debugging                | Boolean | N/A                                                      | `false`   |
+| `stack-trace-on-error`     | Show Mojo stack traces on runtime errors                     | Boolean | N/A                                                      | `false`   |
+| `stack-trace-on-crash`     | Show Mojo stack traces on crashes                            | Boolean | N/A                                                      | `false`   |
+| `source-tracebacks`        | Include Python source locations in error messages            | Boolean | N/A                                                      | `false`   |
+| `op-log-level`             | Log level for op-level execution tracing                     | String  | `trace`, `debug`, `info`, `warning`, `error`, `critical` | `off`     |
+| `assert-level`             | Assertion level for the Mojo standard library                | String  | `none`, `warn`, `safe`, `all`                            | `none`    |
+| `print-style`              | Output format for tensor debug printing                      | String  | `compact`, `full`, `binary`, `binary_max_checkpoint`     | `compact` |
+| `ir-output-dir`            | Directory where MAX dumps intermediate compiler IR           | Path    | Filesystem path                                          | `unset`   |
+
+## Profiling
+
+For GPU profiling details, see
 [GPU profiling with Nsight Systems](/max/gpu-system-profiling).
 
-| Variable                   | Description                                          | Values                  | Default |
-|----------------------------|------------------------------------------------------|-------------------------|---------|
-| `MODULAR_MAX_DEBUG`        | Enable stack traces for MAX graph compilation errors | `True`, `False`         | `False` |
-| `MODULAR_ENABLE_PROFILING` | Enable runtime profiling and tracing                 | `off`, `on`, `detailed` | `off`   |
+| Variable                   | Description                          | Values                  | Default |
+|----------------------------|--------------------------------------|-------------------------|---------|
+| `MODULAR_ENABLE_PROFILING` | Enable runtime profiling and tracing | `off`, `on`, `detailed` | `off`   |
 
 ## Performance and caching
 

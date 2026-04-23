@@ -9,7 +9,8 @@ bugs, performance bottlenecks, and hard-to-trace runtime errors. This page
 explains how to configure debugging options.
 
 If you want to enable MAX's debugging defaults right away, you can set the
-environment variable `MODULAR_DEBUG=sensible` before running your model:
+[environment variable](/max/environment-variables/) `MODULAR_DEBUG=sensible`
+before running your model:
 
 ```bash
 MODULAR_DEBUG=sensible max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
@@ -118,6 +119,10 @@ debug option names. For options that take a value, use `=`.
 ```bash
 export MODULAR_DEBUG=nan-check,device-sync-mode,source-tracebacks,assert-level=safe
 ```
+
+See the [Debugging section](/max/environment-variables#debugging) of the
+environment variables reference for every option you can pass to
+`MODULAR_DEBUG`.
 
 ### Update your config file
 
