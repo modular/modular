@@ -45,7 +45,7 @@ class PagedCacheValues(KVCacheInputsPerDevice[Tensor, Tensor]):
     @classmethod
     def from_upstream(
         cls,
-        per_device: list[_PagedCacheValues],
+        per_device: Sequence[_PagedCacheValues],
         mapping: DeviceMapping,
     ) -> PagedCacheValues:
         """Constructs from per-device upstream PagedCacheValues."""

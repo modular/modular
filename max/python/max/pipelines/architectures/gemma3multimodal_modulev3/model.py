@@ -26,6 +26,10 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
+from max.experimental.sharding import (
+    DeviceMesh,
+)
+from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, TensorType
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights, WeightsAdapter
@@ -208,6 +212,9 @@ class Gemma3MultiModalModelV3(
         self.config = model_config
 
         device_ref = DeviceRef.from_device(self.devices[0])
+        n_devices = len(self.devices)
+
+        mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
 
         # ---- Build and compile vision model ----
         with CompilationTimer("vision model") as timer:
@@ -236,17 +243,11 @@ class Gemma3MultiModalModelV3(
         with CompilationTimer("language model") as timer:
             with F.lazy():
                 language_nn = Gemma3LanguageModel(model_config, self.kv_params)
-                language_nn.to(self.devices[0])
+                language_nn.to(mesh)
 
             tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=device_ref
-            )
-            return_n_logits_type = TensorType(
-                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
-            )
-            input_row_offsets_type = TensorType(
-                DType.uint32,
-                shape=["input_row_offsets_len"],
+                DType.int64,
+                shape=["total_seq_len"],
                 device=device_ref,
             )
             image_embeddings_type = TensorType(
@@ -261,6 +262,14 @@ class Gemma3MultiModalModelV3(
                 DType.int32,
                 shape=["total_image_tokens"],
                 device=device_ref,
+            )
+            input_row_offsets_type = TensorType(
+                DType.uint32,
+                shape=["input_row_offsets_len"],
+                device=device_ref,
+            )
+            return_n_logits_type = TensorType(
+                DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
             )
 
             kv_inputs = self.kv_params.get_symbolic_inputs()
@@ -296,7 +305,8 @@ class Gemma3MultiModalModelV3(
             image_embeddings = self._create_empty_image_embeddings()
             image_token_indices = self._create_empty_indices()
 
-        assert model_inputs.kv_cache_inputs
+        kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert kv_cache_inputs is not None
 
         model_outputs = self.language_model(
             model_inputs.tokens,
@@ -304,19 +314,25 @@ class Gemma3MultiModalModelV3(
             model_inputs.input_row_offsets,
             image_embeddings,
             image_token_indices,
-            *model_inputs.kv_cache_inputs.flatten(),
+            *kv_cache_inputs.flatten(),
         )
+
+        def _to_buffer(t: Tensor) -> Buffer:
+            """Extracts a Buffer from a potentially distributed Tensor."""
+            if t.is_distributed:
+                return cast(Buffer, t.local_shards[0].driver_tensor)
+            return cast(Buffer, t.driver_tensor)
 
         if len(model_outputs) == 3:
             return ModelOutputs(
-                logits=cast(Buffer, model_outputs[1].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
-                logit_offsets=cast(Buffer, model_outputs[2].driver_tensor),
+                logits=_to_buffer(model_outputs[1]),
+                next_token_logits=_to_buffer(model_outputs[0]),
+                logit_offsets=_to_buffer(model_outputs[2]),
             )
         else:
             return ModelOutputs(
-                logits=cast(Buffer, model_outputs[0].driver_tensor),
-                next_token_logits=cast(Buffer, model_outputs[0].driver_tensor),
+                logits=_to_buffer(model_outputs[0]),
+                next_token_logits=_to_buffer(model_outputs[0]),
             )
 
     def prepare_initial_token_inputs(

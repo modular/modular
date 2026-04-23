@@ -25,10 +25,14 @@ from max.experimental.nn.common_layers.functional_kernels import (
     flash_attention_ragged,
     rope_split_store_ragged,
 )
-from max.experimental.nn.linear import Linear
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
+from max.experimental.nn.common_layers.linear import (
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
 from max.experimental.tensor import Tensor
 from max.nn.attention import MHAMaskVariant
-from max.nn.kv_cache import KVCacheParams, PagedCacheValues
+from max.nn.kv_cache import KVCacheParams
 
 from .rms_norm import Gemma3RMSNorm
 from .rotary_embedding import Llama3RotaryEmbedding
@@ -75,22 +79,22 @@ class Gemma3Attention(Module[..., Tensor]):
         self.q_weight_dim = q_weight_dim
         self.kv_weight_dim = kv_weight_dim
 
-        self.q_proj = Linear(
+        self.q_proj = ColumnParallelLinear(
             in_dim=hidden_size,
             out_dim=q_weight_dim,
             bias=has_bias,
         )
-        self.k_proj = Linear(
+        self.k_proj = ColumnParallelLinear(
             in_dim=hidden_size,
             out_dim=kv_weight_dim,
             bias=has_bias,
         )
-        self.v_proj = Linear(
+        self.v_proj = ColumnParallelLinear(
             in_dim=hidden_size,
             out_dim=kv_weight_dim,
             bias=has_bias,
         )
-        self.o_proj = Linear(
+        self.o_proj = RowParallelLinear(
             in_dim=q_weight_dim,
             out_dim=hidden_size,
             bias=False,
@@ -126,6 +130,9 @@ class Gemma3Attention(Module[..., Tensor]):
 
         layer_idx = F.constant(self.layer_idx, DType.uint32, device=CPU())
 
+        n_devices = kv_collection.n_devices
+        per_device_n_heads = self.n_heads // n_devices
+
         head_dim = self.kv_params.head_dim
         q_dim = self.q_weight_dim
         kv_dim = self.kv_weight_dim
@@ -152,7 +159,7 @@ class Gemma3Attention(Module[..., Tensor]):
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
-        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        freqs_cis = F.cast(rope.freqs_cis, qkv.dtype)
         xq = rope_split_store_ragged(
             kv_params=self.kv_params,
             qkv=qkv,
@@ -160,7 +167,7 @@ class Gemma3Attention(Module[..., Tensor]):
             freqs_cis=freqs_cis,
             kv_collection=kv_collection,
             layer_idx=layer_idx,
-            n_heads=self.n_heads,
+            n_heads=per_device_n_heads,
             interleaved=rope.interleaved,
         )
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
@@ -180,5 +187,8 @@ class Gemma3Attention(Module[..., Tensor]):
             scale=self.scale,
             local_window_size=self.local_window_size,
         )
-        attn_out = F.reshape(attn_out, shape=[total_seq_len, -1])
+        # TODO: handle reshape with -1
+        # ValueError: reshape: cannot map sharded dim 1 (global size 8) from shape [Dim('total_seq_len'), Dim(8), Dim(256)] to [Dim('total_seq_len'), -1]
+        hidden_dim = self.n_heads * self.kv_params.head_dim
+        attn_out = F.reshape(attn_out, shape=[total_seq_len, hidden_dim])
         return self.o_proj(attn_out)

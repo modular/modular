@@ -16,6 +16,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from max.dtype import DType
+from max.experimental.sharding import DeviceMesh
 from max.graph import DeviceRef
 from max.graph.weights import WeightData, WeightsFormat, weights_format
 from max.nn.kv_cache import KVCacheParams
@@ -105,8 +106,8 @@ class Gemma3Config(ArchConfigWithKVCache):
     dtype: DType
     """DType of the model weights and input."""
 
-    devices: list[DeviceRef]
-    """Devices to run the model with."""
+    mesh: DeviceMesh
+    """Device mesh to run the model with."""
 
     interleaved_rope_weights: bool
     """True if the rope weights are in interleaved complex format."""
@@ -243,10 +244,16 @@ class Gemma3Config(ArchConfigWithKVCache):
             _weights_format == WeightsFormat.gguf
             and pipeline_config.model.rope_type == "normal"
         )
+
         device_refs = [
             DeviceRef(spec.device_type, spec.id)
             for spec in pipeline_config.model.device_specs
         ]
+        device_mesh = DeviceMesh(
+            tuple(device.to_device() for device in device_refs),
+            (len(device_refs),),
+            ("tp",),
+        )
 
         # transformers >= 5.0 moves rope config into nested rope_parameters;
         # transformers 4.x uses direct attributes.
@@ -313,7 +320,7 @@ class Gemma3Config(ArchConfigWithKVCache):
             rope_local_base_freq=rope_local_base_freq,
             sliding_window_pattern=huggingface_config._sliding_window_pattern,
             dtype=dtype,
-            devices=device_refs,
+            mesh=device_mesh,
             interleaved_rope_weights=interleaved_rope_weights,
             kv_params=Gemma3Config.construct_kv_params(
                 huggingface_config=huggingface_config,
