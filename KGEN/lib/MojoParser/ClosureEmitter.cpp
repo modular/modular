@@ -897,7 +897,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
     // Create rebinding transform to cast call operands.
     DenseMap<StringRef, TypedAttr> paramToAliasValue;
     for (auto [paramName, aliasPair] :
-         llvm::zip(parameters.take_back(aliases.size()), aliases))
+         llvm::zip(parameters.take_front(aliases.size()), aliases))
       paramToAliasValue.insert({paramName.getName(), aliasPair.second.second});
     mlir::AttrTypeReplacer aliasReplacer;
     aliasReplacer.addReplacement([&](ParamDeclRefAttr paramRef) -> TypedAttr {
@@ -1291,8 +1291,8 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
     if (!captureParams.empty()) {
       assert(parameters.size() >= captureParams.size() &&
              "wrapper auxiliary parameters must correspond to captures");
-      auxiliaryParams = parameters.take_back(captureParams.size());
-      callParams = parameters.drop_back(captureParams.size());
+      auxiliaryParams = parameters.take_front(captureParams.size());
+      callParams = parameters.drop_front(captureParams.size());
     }
     llvm::append_range(
         paramArgs, llvm::map_range(auxiliaryParams, [](ParamDeclAttr param) {
@@ -1727,11 +1727,10 @@ ASTDecl *ClosureEmitter::createClosureTrait(
     // Augment the call function with auxiliary parameters. These auxiliary
     // parameters enable rebinding argument types in terms of external
     // parameters (e.g. "T") in terms of the alias members of closure type C
-    // (e.g. "C.T")
+    SmallVector<ParamDeclAttr> sigParams(
+        populateParametersFromFnGeneratorType(sig));
     SmallVector<ParamDeclAttr> parameters;
     SmallVector<PogMetadataAttr> extendedPogs;
-    llvm::append_range(parameters, populateParametersFromFnGeneratorType(sig));
-    llvm::append_range(extendedPogs, sig.getParamListAttrs().getPogs());
     DenseMap<StringRef, ParamDeclAttr> aliasNameToParam;
     for (auto [aliasName, aliasType] : aliasMembers) {
       StringAttr nameAttr = builder.getStringAttr("_" + Twine(aliasName));
@@ -1739,15 +1738,17 @@ ASTDecl *ClosureEmitter::createClosureTrait(
       parameters.push_back(param);
       aliasNameToParam[aliasName] = param;
       extendedPogs.push_back(
-          PogMetadataAttr::get(nameAttr, PassingKind::Implicit));
+          PogMetadataAttr::get(nameAttr, PassingKind::Inferred));
     }
+    llvm::append_range(parameters, sigParams);
+    llvm::append_range(extendedPogs, sig.getParamListAttrs().getPogs());
     PogListAttr extendedParamListAttrs = PogListAttr::get(
         ctx, extendedPogs, sig.getParamListAttrs().getOrigVariadicConvention());
     auto callName = StringAttr::get(ctx, "__call__");
     // Calculate the argument types and result types in terms of the named
     // parameters. Also replace GetWitnessAttr references to aliases with
     // references to auxiliary parameters.
-    ParamRefRemapper replacer(parameters);
+    ParamRefRemapper replacer(sigParams);
     mlir::AttrTypeReplacer aliasReplacer;
     aliasReplacer.addReplacement([&](GetWitnessAttr getWitness) -> TypedAttr {
       StringRef witnessName = getWitness.getWitnessName().getValue();
@@ -2848,7 +2849,7 @@ struct ConformanceTableEntryMapper {
     assert(actualParams.size() >= ctx.numStructAuxiliaryParams &&
            "struct auxiliary params should be present in function signature");
     ArrayRef<ParamDeclAttr> actualAuxiliaryParams =
-        actualParams.take_back(ctx.numStructAuxiliaryParams);
+        actualParams.take_front(ctx.numStructAuxiliaryParams);
     for (auto [offset, auxiliaryParam] :
          llvm::enumerate(actualAuxiliaryParams)) {
       TypedAttr aliasValue = ctx.getAliasRef(ctx.startingIndex + offset);
@@ -2905,8 +2906,8 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
     return false;
 
   ArrayRef<Type> actualExplicitParams =
-      actualSig.getInputParamTypes().drop_back(ctx.numStructAuxiliaryParams);
-  ArrayRef<Type> targetExplicitParams = target.getInputParamTypes().drop_back(
+      actualSig.getInputParamTypes().drop_front(ctx.numStructAuxiliaryParams);
+  ArrayRef<Type> targetExplicitParams = target.getInputParamTypes().drop_front(
       ctx.traitAuxiliaryParameters.size());
   SMLoc loc = shared.getTopLevelDecl().getLoc();
   SyntheticNode syntheticExpr(loc);
@@ -2918,15 +2919,19 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
   if (actualExplicitParams.size() != targetExplicitParams.size())
     return false;
   ParamRefRemapper remapper(actualFn.getInputParams());
+  size_t actualAuxCount = ctx.numStructAuxiliaryParams;
+  size_t targetAuxCount = ctx.traitAuxiliaryParameters.size();
   for (auto [index, actualParamType, targetParam] :
        llvm::enumerate(actualExplicitParams, targetExplicitParams)) {
     Type actualParam = remapper.replace(actualParamType);
     if (!isEqualCanon(actualParam, targetParam))
       return false;
 
-    StringAttr actualParamName = actualFn.getInputParams()[index].getName();
+    StringAttr actualParamName =
+        actualFn.getInputParams()[index + actualAuxCount].getName();
     if (failed(inference.setInitialInferredValue(
-            index, ParamDeclRefAttr::get(actualParamName, actualParam))))
+            index + targetAuxCount,
+            ParamDeclRefAttr::get(actualParamName, actualParam))))
       return false;
   }
   FailureOr<SmallVector<TypedAttr>> specialization =
@@ -2939,12 +2944,6 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
   DenseMap<Attribute, TypedAttr> structBindingToFnLevel;
   adapteeParts.fnLevelBindings.reserve(actualExplicitParams.size() +
                                        ctx.traitAuxiliaryParameters.size());
-  for (auto [index, explicitParamType] :
-       llvm::enumerate(targetExplicitParams)) {
-    StringAttr explicitParamName = target.getParamName(index);
-    adapteeParts.fnLevelBindings.push_back(
-        ParamDeclRefAttr::get(explicitParamName, explicitParamType));
-  }
   unsigned targetAuxStart = ctx.startingIndex;
   for (auto [offset, aliasAndParam] : llvm::enumerate(
            llvm::zip(ctx.traitAliases, ctx.traitAuxiliaryParameters))) {
@@ -2995,6 +2994,12 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
       adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] =
           fnLevelBinding;
   }
+  for (auto [index, explicitParamType] :
+       llvm::enumerate(targetExplicitParams)) {
+    StringAttr explicitParamName = target.getParamName(index + targetAuxCount);
+    adapteeParts.fnLevelBindings.push_back(
+        ParamDeclRefAttr::get(explicitParamName, explicitParamType));
+  }
 
   return true;
 }
@@ -3032,7 +3037,6 @@ void ClosureEmitter::buildCallAdaptorAndAddWitness(
   expectedTypes.reserve(adaptorBlock.getNumArguments());
   for (BlockArgument arg : adaptorBlock.getArguments())
     expectedTypes.push_back(replacer.replace(arg.getType()));
-
   auto symbol = buildSymbolWithBindings(structCallFn, structParams,
                                         adapteeParts.fnLevelBindings);
   auto symbolSigGen = cast<FnTypeGeneratorType>(symbol.getType());
@@ -3173,7 +3177,6 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   if (callDecls.empty())
     return failure();
 
-  size_t originCount = traitSignature.getNumImplicitOriginDecls();
   // Collect closure-specific alias names. Inherited AliasDeclOps (e.g.
   // `__del__is_trivial`) are cloned into the trait's fields by lazy body
   // resolution and are marked with `inheritedFrom`; skip them.
@@ -3186,12 +3189,9 @@ LogicalResult ClosureEmitter::checkStructCompatibility(ASTType structType,
   size_t traitAliasCount = traitAliasOps.size();
   SmallVector<ParamDeclAttr> auxiliaryParams;
   for (ParamDeclAttr auxiliaryParam :
-       callFunction.getInputParams()
-           .take_back(traitAliasCount + originCount)
-           .take_front(traitAliasCount))
+       callFunction.getInputParams().take_front(traitAliasCount))
     auxiliaryParams.push_back(auxiliaryParam);
-  unsigned startingIndex =
-      callFunction.getInputParams().size() - (traitAliasCount + originCount);
+  unsigned startingIndex = 0;
   SmallVector<TypedAttr> structAliasOps;
   llvm::DenseSet<TypedAttr> uniqueNonInheritedAliasValues;
   for (AliasDeclOp aliasOp : structDeclOp.getFields().getOps<AliasDeclOp>()) {

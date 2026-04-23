@@ -755,8 +755,14 @@ OverloadFitness OverloadFitness::evaluate(
     }
   }
   if (!implicitParams.empty()) {
-    size_t paramIdx =
-        signature.getInputParamTypes().size() - implicitParams.size();
+    // Capture slots are at the front of the method's own parameter list
+    // (Inferred PassingKind), but getFullSignature() prepends contextual
+    // params (e.g. the trait's _Self). Skip past them.
+    auto fnOp = cast<FnOp>(funcIfDirect->getIfOperation());
+    size_t contextualParams =
+        signature.getInputParamTypes().size() -
+        fnOp.getFuncTypeGenerator().getInputParamTypes().size();
+    size_t paramIdx = contextualParams;
     for (const auto &[paramName, paramType] : implicitParams) {
       TypedAttr paramValue = ParamDeclRefAttr::get(paramName, paramType);
       if (failed(inference.setInitialInferredValue(paramIdx, paramValue))) {
