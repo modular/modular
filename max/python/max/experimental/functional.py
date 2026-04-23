@@ -36,8 +36,8 @@ from collections.abc import (
 from pathlib import Path
 from typing import Any, TypeAlias, TypeVar, overload
 
-from max import driver
-from max._mlir_context import MLIRThreadPoolExecutor
+from max import driver, mlir
+from max._mlir_context import MLIRThreadPoolExecutor, default_mlir_context
 from max.dtype import DType
 from max.experimental import realization_context as rc
 from max.experimental import tensor
@@ -203,6 +203,8 @@ def functional(op: Op[..., Any]) -> Op[..., Any]:
     @functools.wraps(op)
     def wrapped(*args, **kwargs):  # noqa: ANN202
         with contextlib.ExitStack() as stack:
+            if mlir.Context.current is None:
+                stack.enter_context(default_mlir_context())
             if tensor.current_realization_context(None) is None:
                 ctx = (
                     rc.GraphRealizationContext(Graph.current)
