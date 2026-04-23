@@ -1187,3 +1187,46 @@ struct OptionalReg[T: TrivialRegisterPassable](
         out result: type_of(self).T,
     ):
         result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+
+    @deprecated(
+        "Cannot directly dereference an `OptionalReg[UnsafePointer]`."
+        " Unwrap the optional first with `.value()` (aborts if NULL) or"
+        " `.unsafe_value()` (unchecked), then index the pointer, e.g."
+        " `p.unsafe_value()[]` instead of `p[]`."
+    )
+    @doc_hidden
+    def __getitem__[
+        type: AnyType,
+        origin: Origin,
+        address_space: AddressSpace,
+        //,
+    ](
+        self: OptionalReg[
+            UnsafePointer[type, origin, address_space=address_space]
+        ],
+    ):
+        comptime assert (
+            False
+        ), "Cannot directly dereference an `OptionalReg[UnsafePointer]`"
+
+    @deprecated(
+        "Cannot index directly into an `OptionalReg[UnsafePointer]`. Unwrap the"
+        " optional first with `.value()` (aborts if NULL) or `.unsafe_value()`"
+        " (unchecked), then index the pointer, e.g. `p.unsafe_value()[i]`"
+        " instead of `p[i]`."
+    )
+    @doc_hidden
+    def __getitem__[
+        type: AnyType,
+        origin: Origin,
+        address_space: AddressSpace,
+        //,
+    ](
+        self: OptionalReg[
+            UnsafePointer[type, origin, address_space=address_space]
+        ],
+        offset: Some[Indexer],
+    ):
+        comptime assert (
+            False
+        ), "Cannot index directly into an `OptionalReg[UnsafePointer]`"
