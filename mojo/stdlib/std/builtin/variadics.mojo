@@ -45,22 +45,6 @@ struct Variadic:
         T: The trait that types in the variadic sequence must conform to.
     """
 
-    # ===-----------------------------------------------------------------------===#
-    # VariadicConcat
-    # ===-----------------------------------------------------------------------===#
-
-    comptime concat_types[
-        T: type_of(AnyType), //, *Ts: _MLIR.KGENTypeListType[T]
-    ] = __mlir_attr[
-        `#kgen.param_list.concat<`, Ts.values, `> :`, _MLIR.KGENTypeListType[T]
-    ]
-    """Represents the concatenation of multiple variadic sequences of types.
-
-    Parameters:
-        T: The trait that types in the variadic sequences must conform to.
-        Ts: The variadic sequences to concatenate.
-    """
-
 
 # ===-----------------------------------------------------------------------===#
 # ParameterList and TypeList Utilities

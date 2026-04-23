@@ -786,7 +786,7 @@ comptime _RowMajorMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: SIMDSize,
-] = Variadic.concat_types[
+] = TypeList._concat[
     TypeList.of[Trait=CoordLike, ComptimeInt[1]]().values if idx
     == 0 else (
         TypeList.of[
@@ -811,7 +811,7 @@ comptime _RowMajorMapper[
         .values
     ),
     Prev,
-]
+]().values
 
 
 @always_inline
@@ -975,7 +975,7 @@ comptime _ColMajorMapper[
     Prev: Variadic.TypesOfTrait[CoordLike],
     From: Variadic.TypesOfTrait[CoordLike],
     idx: SIMDSize,
-] = Variadic.concat_types[
+] = TypeList._concat[
     Prev,
     TypeList.of[Trait=CoordLike, ComptimeInt[1]]().values if idx
     == 0 else (
@@ -1000,7 +1000,7 @@ comptime _ColMajorMapper[
         ]()
         .values
     ),
-]
+]().values
 
 
 @always_inline
@@ -1799,17 +1799,19 @@ comptime _CoalesceReducer[
     idx: SIMDSize,
 ] = Prev if flat_shape_types[idx].static_value == 1 else (
     # prev_shape == 1: replace last pair with current (shape, stride)
-    Variadic.concat_types[
+    TypeList._concat[
         _DropLast2[Prev].values,
         TypeList.of[
             Trait=CoordLike,
             ComptimeInt[flat_shape_types[idx].static_value],
             ComptimeInt[flat_stride_types[idx].static_value],
         ]().values,
-    ] if TypeList[Prev]()[TypeList[Prev].size - 2].static_value
+    ]()
+    .values if TypeList[Prev]()[TypeList[Prev].size - 2]
+    .static_value
     == 1 else (
         # Contiguous: merge into previous (prev_shape * cur_shape, prev_stride)
-        Variadic.concat_types[
+        TypeList._concat[
             _DropLast2[Prev].values,
             TypeList.of[
                 Trait=CoordLike,
@@ -1819,18 +1821,20 @@ comptime _CoalesceReducer[
                 ],
                 TypeList[Prev]()[TypeList[Prev].size - 1],
             ]().values,
-        ] if TypeList[Prev]()[TypeList[Prev].size - 2].static_value
+        ]()
+        .values if TypeList[Prev]()[TypeList[Prev].size - 2]
+        .static_value
         * TypeList[Prev]()[TypeList[Prev].size - 1].static_value
         == flat_stride_types[idx].static_value else
         # Non-contiguous: append new (shape, stride) pair
-        Variadic.concat_types[
+        TypeList._concat[
             Prev,
             TypeList.of[
                 Trait=CoordLike,
                 ComptimeInt[flat_shape_types[idx].static_value],
                 ComptimeInt[flat_stride_types[idx].static_value],
             ]().values,
-        ]
+        ]().values
     )
 )
 """Reducer for coalescing a flattened layout.

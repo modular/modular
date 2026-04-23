@@ -1995,10 +1995,8 @@ struct _RegTuple[*element_types: CoordLike](
         self,
         other: _RegTuple[*other_element_types],
         out result: _RegTuple[
-            *TypeList[
-                Variadic.concat_types[
-                    Self.element_types.values, other_element_types.values
-                ],
+            *TypeList._concat[
+                Self.element_types.values, other_element_types.values
             ]()
         ],
     ):
