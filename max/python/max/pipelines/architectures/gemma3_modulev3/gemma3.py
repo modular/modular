@@ -178,15 +178,11 @@ class Gemma3TextModel(
             )
 
         # Gather last tokens and compute last-token logits.
-        offsets = (
-            input_row_offsets.local_shards[0]
-            if input_row_offsets.is_distributed
-            else input_row_offsets
-        )
-        last_h = F.gather(h, offsets[1:] - 1, axis=0)
+        last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
         last_logits = self._compute_logits(self.norm(last_h))
 
         logits: Tensor | None = None
+        offsets: Tensor | None = None
 
         if self.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = F.range(
@@ -197,7 +193,9 @@ class Gemma3TextModel(
                 device=CPU(),
                 dtype=DType.int64,
             )
-            offsets = F.unsqueeze(offsets[1:], -1) - return_n_logits_range
+            offsets = (
+                F.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
             last_indices = F.reshape(offsets, shape=(-1,))
             last_tokens = F.gather(h, last_indices, axis=0)
             logits = self._compute_logits(self.norm(last_tokens))
@@ -245,10 +243,9 @@ class Gemma3(Module[..., tuple[Tensor, ...]]):
         input_row_offsets: Tensor,
         *variadic_args,
     ) -> tuple[Tensor, ...]:
+        kv_inputs = iter(x._graph_value for x in variadic_args)
         kv_collections = (
-            self.kv_params.get_symbolic_inputs()
-            .unflatten(iter(variadic_args))
-            .inputs
+            self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
         )
 
         kv_collection = PagedCacheValues.from_upstream(

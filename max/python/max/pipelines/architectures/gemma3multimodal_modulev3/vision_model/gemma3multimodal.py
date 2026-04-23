@@ -124,13 +124,13 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
             )
 
         # Gather last tokens and compute logits
-        offsets = input_row_offsets  # .local_shards[0]
-        last_h = F.gather(h, offsets[1:] - 1, axis=0)
+        last_h = F.gather(h, input_row_offsets[1:] - 1, axis=0)
         last_logits = self.language_model._compute_logits(
             self.language_model.norm(last_h)
         )
 
         logits: Tensor | None = None
+        offsets: Tensor | None = None
 
         if self.language_model.return_logits == ReturnLogits.VARIABLE:
             return_n_logits_range = F.range(
@@ -141,7 +141,9 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
                 device=CPU(),
                 dtype=DType.int64,
             )
-            offsets = F.unsqueeze(offsets[1:], -1) - return_n_logits_range
+            offsets = (
+                F.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
+            )
             last_indices = offsets.reshape(shape=(-1,))
             last_tokens = F.gather(h, last_indices, axis=0)
             logits = self.language_model._compute_logits(
