@@ -251,9 +251,9 @@ def _binary_with_scalar_promotion(
     def wrapper(lhs: Tensor | int | float, rhs: Tensor | int | float) -> Tensor:
         if any_distributed((lhs, rhs)):
             if isinstance(lhs, (int, float)) and isinstance(rhs, Tensor):
-                lhs = full_like(rhs, float(lhs))
+                lhs = full_like(rhs, lhs)
             elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
-                rhs = full_like(lhs, float(rhs))
+                rhs = full_like(lhs, rhs)
         result = inner(lhs, rhs)
         assert isinstance(result, Tensor)
         return result

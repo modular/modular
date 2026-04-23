@@ -52,8 +52,9 @@ from max.experimental.nn._compile_utils import (
     _prepare_weight_for_parameter,
     _process_provided_weights,
     _reconstruct_outputs,
-    _unflatten_args,
     _wrap_graph_inputs,
+    engine_call_error,
+    flatten_input_buffers,
 )
 from max.nn.comm.allreduce import Signals
 
@@ -106,9 +107,19 @@ class CompiledModel:
 
     def __call__(self, *args: Any) -> Any:
         """Tensor-in, Tensor-out execution (distributed-aware)."""
-        flat_args = _unflatten_args(args, self._input_slots)
+        flat_args = flatten_input_buffers(args, self._input_slots)
         flat_args.extend(self._signal_buffers)
-        raw_results = list(self._engine_model(*flat_args))
+        try:
+            raw_results = list(self._engine_model(*flat_args))
+        except (TypeError, ValueError) as e:
+            raise engine_call_error(
+                e,
+                self._engine_model,
+                user_args=args,
+                flat_args=flat_args,
+                input_slots=self._input_slots,
+                signal_buffer_count=len(self._signal_buffers),
+            ) from e
         return _reconstruct_outputs(
             raw_results, self._output_slots, self._unary
         )
@@ -120,7 +131,17 @@ class CompiledModel:
         """
         all_bufs: list[Any] = list(buffers)
         all_bufs.extend(self._signal_buffers)
-        return list(self._engine_model(*all_bufs))
+        try:
+            return list(self._engine_model(*all_bufs))
+        except (TypeError, ValueError) as e:
+            raise engine_call_error(
+                e,
+                self._engine_model,
+                user_args=None,
+                flat_args=all_bufs,
+                input_slots=self._input_slots,
+                signal_buffer_count=len(self._signal_buffers),
+            ) from e
 
 
 class _DevicePinned:

@@ -112,6 +112,7 @@ from max.experimental.sharding import (
     DeviceMapping,
     DeviceMesh,
     DistributedTensorType,
+    NamedMapping,
     Placement,
     PlacementMapping,
     Replicated,
@@ -1729,7 +1730,10 @@ class Tensor(DLPackArray, HasTensorValue):
                 DeviceMesh.single(target), self.placements
             )
         elif isinstance(target, DeviceMesh):
-            mapping = PlacementMapping(target, self.placements)
+            if isinstance(self._mapping, NamedMapping):
+                mapping = NamedMapping(target, self._mapping.original_spec)
+            else:
+                mapping = PlacementMapping(target, self.placements)
         elif isinstance(target, DeviceMapping):
             mapping = target
         else:
@@ -2295,6 +2299,10 @@ class Tensor(DLPackArray, HasTensorValue):
         return self.transpose(-1, -2)
 
     def __getitem__(self, idx):  # noqa: ANN001
+        if self.is_distributed:
+            if not isinstance(idx, tuple):
+                idx = (idx,)
+            return F.slice_tensor(self, idx)
         return F.functional(graph.TensorValue.__getitem__)(self, idx)
 
     def __setitem__(self, idx, val) -> None:  # noqa: ANN001

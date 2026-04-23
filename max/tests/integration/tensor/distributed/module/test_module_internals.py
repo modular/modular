@@ -33,7 +33,7 @@ from max.experimental.nn.module import (
     _InputSlot,
     _OutputSlot,
     _reconstruct_outputs,
-    _unflatten_args,
+    flatten_input_buffers,
     module_dataclass,
 )
 from max.experimental.sharding import (
@@ -183,7 +183,7 @@ class TestFlattenInputTypes:
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  _unflatten_args
+#  flatten_input_buffers
 # ═════════════════════════════════════════════════════════════════════════
 
 
@@ -191,7 +191,7 @@ class TestUnflattenArgs:
     def test_non_distributed_passthrough(self) -> None:
         buf = Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
         slot = _InputSlot(start=0, count=1, dist=None)
-        flat = _unflatten_args([buf], [slot])
+        flat = flatten_input_buffers([buf], [slot])
         assert len(flat) == 1
         assert flat[0] is buf
 
@@ -200,7 +200,7 @@ class TestUnflattenArgs:
         dt = DistributedTensorType(DType.float32, [8, 4], mesh, [Sharded(0)])
         slot = _InputSlot(start=0, count=2, dist=dt)
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
-        flat = _unflatten_args([t], [slot])
+        flat = flatten_input_buffers([t], [slot])
         assert len(flat) == 2
         for item in flat:
             assert isinstance(item, Buffer)
@@ -213,7 +213,7 @@ class TestUnflattenArgs:
 
         buf = Buffer.zeros([3, 4], dtype=DType.float32, device=CPU())
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
-        flat = _unflatten_args([buf, t], [slot_plain, slot_dist])
+        flat = flatten_input_buffers([buf, t], [slot_plain, slot_dist])
         assert len(flat) == 3
         assert flat[0] is buf
         assert isinstance(flat[1], Buffer)
@@ -223,7 +223,7 @@ class TestUnflattenArgs:
         """Non-distributed Tensor with dist=None passes through unchanged."""
         slot = _InputSlot(start=0, count=1, dist=None)
         t = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
-        flat = _unflatten_args([t], [slot])
+        flat = flatten_input_buffers([t], [slot])
         assert len(flat) == 1
         assert flat[0] is t
 
@@ -457,6 +457,24 @@ class TestCompiledModelAPI:
         call_arr = np.from_dlpack(call_result)
         raw_arr = np.from_dlpack(raw_result[0])
         assert call_arr.shape == raw_arr.shape
+
+    def test_call_missing_arg_raises_diagnostic(self) -> None:
+        """Calling with too few args raises an error."""
+        compiled = self._compile_identity()
+        with pytest.raises(ValueError) as excinfo:
+            compiled()  # identity needs 1 arg, gave 0
+        message = str(excinfo.value)
+        assert "Unable to flatten input arguments" in message
+        assert "Expected 1 arguments, got 0" in message
+
+    def test_execute_raw_missing_arg_raises_diagnostic(self) -> None:
+        """execute_raw() with too few buffers also reports counts in the error."""
+        compiled = self._compile_identity()
+        with pytest.raises(TypeError) as excinfo:
+            compiled.execute_raw()  # identity needs 1 buffer, gave 0
+        message = str(excinfo.value)
+        assert "Compiled model call failed" in message
+        assert "Engine expects" in message
 
 
 # ═════════════════════════════════════════════════════════════════════════

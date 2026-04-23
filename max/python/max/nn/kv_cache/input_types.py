@@ -20,10 +20,11 @@ from typing import Any, Generic, TypeVar
 
 from max.driver import Buffer
 from max.dtype import DType
+from max.experimental.tensor import Tensor
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
 
-_Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer)
-_Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer)
+_Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
+_Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
 
 @dataclass
