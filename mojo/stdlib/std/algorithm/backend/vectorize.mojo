@@ -84,7 +84,7 @@ def vectorize[
     You can also unroll the loop to potentially improve performance at the cost
     of binary size:
 
-    ```mojo
+    ```text
     vectorize[closure, width, unroll_factor=2](size)
     ```
 
@@ -211,7 +211,7 @@ def vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```mojo
+    ```text
     vectorize[simd_width, unroll_factor=2](size, closure)
     ```
 
@@ -322,7 +322,7 @@ def vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```mojo
+    ```text
     vectorize[width, size=size, unroll_factor=2](closure)
     ```
 

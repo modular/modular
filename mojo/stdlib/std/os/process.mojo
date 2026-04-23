@@ -94,7 +94,11 @@ struct Pipe:
 
     Example usage:
     ```mojo
-    pipe().write_bytes("TEST".as_bytes())
+    from os.process import Pipe
+
+    def main() raises:
+        var pipe = Pipe()
+        pipe.write_bytes("TEST".as_bytes())
     ```
     """
 
@@ -211,9 +215,12 @@ struct Process:
 
     Example usage:
     ```mojo
-    child_process = Process.run("ls", List[String]("-lha"))
-    if child_process.interrupt():
-        print("Successfully interrupted.")
+    from os.process import Process
+
+    def main() raises:
+        var child_process = Process.run("ls", ["-lha"])
+        if child_process.interrupt():
+            print("Successfully interrupted.")
     ```
     """
 
