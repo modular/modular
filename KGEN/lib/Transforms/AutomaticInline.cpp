@@ -100,10 +100,28 @@ struct CallGraphNode
 
   /// Return true if at the end of processing, the function is dead and will be
   /// erased.
+  ///
+  /// A function is only safe to erase if it has no remaining references in the
+  /// module. The call-graph tracks KGENCallOpInterface callers only, so
+  /// misses non-call references. Those references stay live after inlining and
+  /// would be left dangling if the function body were deleted. The owning
+  /// graph populates nonCallReferencedSyms before it is destructed, and
+  /// each node borrows a pointer to that set to keep this check cheap.
   bool isFunctionDead() {
-    return (isAllInlined() || !reachable) && !func.isExported() &&
-           !func.isExternal();
+    if (func.isExported() || func.isExternal())
+      return false;
+    if (!isAllInlined() && reachable)
+      return false;
+    if (nonCallReferencedSyms &&
+        nonCallReferencedSyms->contains(func.getSymNameAttr())) {
+      return false;
+    }
+    return true;
   }
+
+  /// Pointer to the owning graph's set of function symbols referenced by
+  /// non-call users.
+  const llvm::DenseSet<mlir::StringAttr> *nonCallReferencedSyms = nullptr;
 
   /// Should callee be inlined or not given a threshold.
   bool shouldInlineCallee(CallGraphNode *callee, uint64_t threshold);
@@ -162,6 +180,12 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
         numWorkItems(0),
         done(MLRT::AsyncValueRef<MLRT::Chain>::allocate(runtime)) {}
 
+  ~CallGraph() {
+    // Clear up nodes first so they can safely destruct their borrowed reference
+    // to nonCallReferencedSyms which we own.
+    this->nodes.clear();
+  }
+
   /// Build the CallGraph.
   void build(ModuleOp module, const SymbolTable &symtab);
 
@@ -176,6 +200,10 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   /// Performing inlining on the graph.
   void performInlining(uint64_t threshold);
 
+  /// Walk the module once to populate a set of symbols referenced by non-call
+  /// users, and hand a pointer to it to each node in the graph.
+  void collectNonCallReferencedSymbols(mlir::Operation *module);
+
   /// If inner pipeline for function optimization failed or not.
   std::atomic<bool> innerPipelineFailed = false;
 
@@ -183,6 +211,11 @@ struct CallGraph : CallGraphBase<CallGraph, CallGraphNode> {
   /// Module as callees. This node is the entry node of the CallGraph for
   /// computing SCCs.
   CallGraphNode externalNode;
+
+  /// Function symbols referenced by non-call users (e.g. function-pointer
+  /// values taken via `kgen.param.constant` or `kgen.create_closure`).
+  /// Populated by `collectNonCallReferencedSymbols`.
+  llvm::DenseSet<mlir::StringAttr> nonCallReferencedSyms;
 
   LogicalResult diagnoseAlwaysInliningCycle(ModuleOp module,
                                             const SymbolTable &symtab);
@@ -437,6 +470,20 @@ void CallGraph::performInlining(uint64_t threshold) {
   MLRT::await(done);
 }
 
+void CallGraph::collectNonCallReferencedSymbols(Operation *module) {
+  module->walk([&](Operation *op) {
+    if (isa<KGENCallOpInterface>(op))
+      return;
+    for (NamedAttribute attr : op->getAttrs()) {
+      attr.getValue().walk([&](FlatSymbolRefAttr ref) {
+        nonCallReferencedSyms.insert(ref.getAttr());
+      });
+    }
+  });
+  for (auto &[func, node] : nodes)
+    node.nonCallReferencedSyms = &nonCallReferencedSyms;
+}
+
 [[maybe_unused]] LogicalResult
 CallGraph::diagnoseAlwaysInliningCycle(ModuleOp module,
                                        const SymbolTable &symtab) {
@@ -605,6 +652,10 @@ void AutomaticInline::runOnOperation() {
   // If any inner function pipeline failed, then fail the overall pass.
   if (graph.innerPipelineFailed)
     return signalPassFailure();
+
+  // Collect function-symbol names referenced by non-call users so subsequent
+  // liveness checks keep them alive.
+  graph.collectNonCallReferencedSymbols(getOperation());
 
   // If we deferred debuginfo update, do that now.
   if (updateDebugInfo == InlinerDebugInfoUpdateTime::kDeferred) {
