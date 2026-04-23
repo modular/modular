@@ -81,22 +81,22 @@ def bench_cublas_per_group[
     comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
-    var k_array_val = k.value() // k_pack
+    var k_array_val = Int(k.value()) // k_pack
 
-    var a_size = m.value() * k_array_val
-    var b_size = n.value() * k_array_val
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * k_array_val
+    var b_size = Int(n.value()) * k_array_val
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -132,14 +132,14 @@ def bench_cublas_per_group[
     var b_shape = Coord(n, Idx[K_ARRAY]())
     var c_shape = Coord(m, n)
     var a_scales_shape = Coord(
-        Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+        Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
         Idx[SF_ATOM_K](),
     )
     var b_scales_shape = Coord(
-        Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+        Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
         Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
@@ -153,7 +153,9 @@ def bench_cublas_per_group[
     var sfb_tensor = TileTensor(sfb_device, row_major(b_scales_shape))
 
     # FLOPs use logical K (not packed)
-    var total_flops = 2 * m.value() * n.value() * k.value() * num_groups
+    var total_flops = (
+        2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
+    )
 
     @parameter
     @__copy_capture(a_tensor, b_tensor, c_tensor, sfa_tensor, sfb_tensor)
@@ -187,11 +189,11 @@ def bench_cublas_per_group[
                 ",per-group) : ",
                 num_groups,
                 " x ",
-                m.value(),
+                Int(m.value()),
                 " x ",
-                n.value(),
+                Int(n.value()),
                 " x ",
-                k.value(),
+                Int(k.value()),
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],
@@ -230,22 +232,22 @@ def bench_structured_kernel[
     comptime is_fp4 = (a_type == DType.uint8)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
-    var k_array_val = k.value() // k_pack
+    var k_array_val = Int(k.value()) // k_pack
 
-    var a_size = m.value() * k_array_val
-    var b_size = n.value() * k_array_val
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * k_array_val
+    var b_size = Int(n.value()) * k_array_val
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -297,7 +299,7 @@ def bench_structured_kernel[
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+                Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
@@ -309,7 +311,7 @@ def bench_structured_kernel[
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+                Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
@@ -319,9 +321,9 @@ def bench_structured_kernel[
 
     var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = Int32(m.value())
-        problem_sizes_host[g * 4 + 1] = Int32(n.value())
-        problem_sizes_host[g * 4 + 2] = Int32(k.value())  # Logical K
+        problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))
+        problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))
+        problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
     var a_ptrs_host = alloc[UInt64](max_groups)
@@ -378,7 +380,9 @@ def bench_structured_kernel[
 
     comptime BM = mma_shape[0]
     comptime BN = mma_shape[1]
-    var tiles_per_group = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
+    var tiles_per_group = ceildiv(Int(m.value()), BM) * ceildiv(
+        Int(n.value()), BN
+    )
     var total_tiles = tiles_per_group * num_groups
 
     comptime config = BlockScaledMatmulConfig[
@@ -395,7 +399,9 @@ def bench_structured_kernel[
     )
 
     # FLOPs use logical K (not packed)
-    var total_flops = 2 * m.value() * n.value() * k.value() * num_groups
+    var total_flops = (
+        2 * Int(m.value()) * Int(n.value()) * Int(k.value()) * num_groups
+    )
 
     @parameter
     @__copy_capture(
@@ -456,11 +462,11 @@ def bench_structured_kernel[
                 ") : ",
                 num_groups,
                 " x ",
-                m.value(),
+                Int(m.value()),
                 " x ",
-                n.value(),
+                Int(n.value()),
                 " x ",
-                k.value(),
+                Int(k.value()),
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],

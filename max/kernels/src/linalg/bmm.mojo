@@ -199,11 +199,11 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 rebind[ShapeType](Idx[ShapeType.static_value]())
             )
         else:
-            var shape_val = tensor.layout.shape[idx]().value()
+            var shape_val = Int(tensor.layout.shape[idx]().value())
 
             comptime if i == 0:
                 comptime for batch_idx in range(rank - 3):
-                    shape_val *= tensor.layout.shape[batch_idx]().value()
+                    shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
             shape_ptr.init_pointee_copy(
                 rebind[ShapeType](
@@ -547,9 +547,15 @@ def batched_matmul_kernel_gpu[
     k: Int,
 ):
     var batch_idx = block_idx.z
-    var a_ptr = a_tensor.ptr + batch_idx * a_tensor.layout.stride[0]().value()
-    var b_ptr = b_tensor.ptr + batch_idx * b_tensor.layout.stride[0]().value()
-    var c_ptr = c_tensor.ptr + batch_idx * c_tensor.layout.stride[0]().value()
+    var a_ptr = a_tensor.ptr + batch_idx * Int(
+        a_tensor.layout.stride[0]().value()
+    )
+    var b_ptr = b_tensor.ptr + batch_idx * Int(
+        b_tensor.layout.stride[0]().value()
+    )
+    var c_ptr = c_tensor.ptr + batch_idx * Int(
+        c_tensor.layout.stride[0]().value()
+    )
 
     comptime k_static = a_tensor.static_shape[2]
     comptime n_static = b_tensor.static_shape[1]

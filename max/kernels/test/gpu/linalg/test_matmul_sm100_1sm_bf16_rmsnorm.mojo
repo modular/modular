@@ -64,9 +64,9 @@ def test_rmsnorm_then_matmul[
     pdl_level: PDLLevel = PDLLevel(),
     prefetch_tiles_n: Int = 0,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     print(
         t"rmsnorm->matmul: dtype={a_type} shape=({M}, {N}, {K})"

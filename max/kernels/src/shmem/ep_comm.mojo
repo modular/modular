@@ -785,7 +785,7 @@ struct NVFP4TokenFormat[
         SF_ATOM_K * SF_ATOM_M[1],
     )
     comptime _scales_smem_per_warp = align_up(
-        Coord(Self.tma_tile_shape).product(), 128
+        Int(Coord(Self.tma_tile_shape).product()), 128
     ) * size_of[Self.scales_dtype]()
     comptime _fp4_smem_per_warp = align_up(
         Self._hid_dim // 2 // Self._n_k_tiles, 16
@@ -1081,7 +1081,7 @@ struct NVFP4TokenFormat[
 
         # --- Scales: sub-warp shuffle into SMEM, then 2D TMA store ---
         comptime aligned_tile_size = align_up(
-            Coord(Self.tma_tile_shape).product(), 128
+            Int(Coord(Self.tma_tile_shape).product()), 128
         )
         var smem_ptr = external_memory[
             Scalar[Self.scales_dtype],

@@ -72,9 +72,9 @@ def test_gemv_partial_norm[
     transpose_b: Bool = True,
 ](ctx: DeviceContext, n: NType, k: KType, n_normed: NNormedType,) raises:
     var M = 1
-    var N = n.value()
-    var K = k.value()
-    var N_NORMED = n_normed.value()
+    var N = Int(n.value())
+    var K = Int(k.value())
+    var N_NORMED = Int(n_normed.value())
     var N_UNNORMED = N - N_NORMED
 
     print(

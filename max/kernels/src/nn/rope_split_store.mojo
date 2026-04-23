@@ -457,7 +457,7 @@ def _rope_split_store_ragged_with_position_ids[
         comptime if mrope_section:
             var section_idx = 0
             comptime for i in range(len(mrope_section.value())):
-                comptime val = mrope_section.value()[i].value()
+                comptime val = Int(mrope_section.value()[i].value())
                 if dim_idx < val:
                     section_idx = i
                     break

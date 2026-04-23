@@ -1725,9 +1725,9 @@ def shared_memory_epilogue_transpose[
                     [thread_shape, rest_shape], element_type=DType.uint32
                 ](
                     Int(0),
-                    crd[1].value(),
+                    Int(crd[1].value()),
                     Int(0),
-                    crd[3].value(),
+                    Int(crd[3].value()),
                     warp_j,
                     iter_j,
                     warp_i,
@@ -1805,9 +1805,9 @@ def shared_memory_epilogue_transpose[
                     var coord = RuntimeTuple[
                         [thread_shape, rest_shape], element_type=DType.uint32
                     ](
-                        crd[0].value(),
+                        Int(crd[0].value()),
                         Int(0),
-                        crd[2].value(),
+                        Int(crd[2].value()),
                         iter_j,
                         warp_i,
                         iter_i,

@@ -253,19 +253,19 @@ def non_max_suppression[
     comptime assert boxes.rank == 3, "boxes must be of rank 3"
     comptime assert scores.rank == 3, "scores must be of rank 3"
 
-    var batch_size = boxes.layout.shape[0]().value()
-    var num_boxes = boxes.layout.shape[1]().value()
-    var num_classes = scores.layout.shape[1]().value()
+    var batch_size = Int(boxes.layout.shape[0]().value())
+    var num_boxes = Int(boxes.layout.shape[1]().value())
+    var num_classes = Int(scores.layout.shape[1]().value())
 
-    assert boxes.layout.shape[2]().value() == 4, (
+    assert Int(boxes.layout.shape[2]().value()) == 4, (
         "boxes must be specified with the 2D coords representing the"
         " diagonal corners"
     )
-    assert (
-        boxes.layout.shape[0]().value() == scores.layout.shape[0]().value()
+    assert Int(boxes.layout.shape[0]().value()) == Int(
+        scores.layout.shape[0]().value()
     ), "dim 0 of boxes and scores must be equal"
-    assert (
-        boxes.layout.shape[1]().value() == scores.layout.shape[2]().value()
+    assert Int(boxes.layout.shape[1]().value()) == Int(
+        scores.layout.shape[2]().value()
     ), "boxes and scores must contain the same number of boxes"
 
     if max_output_boxes_per_class == 0:

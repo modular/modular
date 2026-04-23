@@ -2290,7 +2290,7 @@ def fused_token_sampling_gpu[
 
         comptime assert input.flat_rank == 2
 
-        var vocab_size = input.layout.shape[1]().value()
+        var vocab_size = Int(input.layout.shape[1]().value())
         var adjusted_max_k = vocab_size if max_k == -1 else max_k
 
         # softmax with temperature, then top-k+top-p rejection sampling.

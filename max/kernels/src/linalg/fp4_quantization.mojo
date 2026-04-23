@@ -1238,7 +1238,7 @@ def grouped_quantize_dynamic_scaled_fp4_async_kernel[
     var num_tokens = min(curr_expert_end - token_start, SF_MN_GROUP_SIZE)
 
     comptime scales_smem_tile_size = align_up(
-        Coord(scales_tile_shape).product(), 128
+        Int(Coord(scales_tile_shape).product()), 128
     )
     var smem_ptr = stack_allocation[
         scales_smem_tile_size,

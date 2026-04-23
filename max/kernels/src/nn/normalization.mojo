@@ -836,7 +836,7 @@ def layer_norm[
     if gamma_shape[0] != shape[rank - 1]:
         raise Error("Gamma size does not match dimension of reduction.")
 
-    if beta.layout.shape[0]().value() != shape[rank - 1]:
+    if Int(beta.layout.shape[0]().value()) != shape[rank - 1]:
         raise Error("Beta size does not match dimension of reduction.")
 
     @always_inline
@@ -1515,7 +1515,7 @@ def _rms_norm_impl[
     comptime assert gamma.flat_rank == 1, "gamma must have rank 1"
 
     # Note: we only support reduction along the last dimension
-    if gamma.layout.shape[0]().value() != shape[rank - 1]:
+    if Int(gamma.layout.shape[0]().value()) != shape[rank - 1]:
         raise Error(
             "Gamma size "
             + String(gamma.layout.shape[0]().value())
@@ -3094,7 +3094,7 @@ def _rms_norm_fused_residual_add_impl[
     comptime assert gamma2.rank == 1, "gamma2 must have rank 1"
 
     # Note: we only support reduction along the last dimension
-    if gamma1.layout.shape[0]().value() != shape[rank - 1]:
+    if Int(gamma1.layout.shape[0]().value()) != shape[rank - 1]:
         raise Error(
             "Gamma1 size "
             + String(gamma1.layout.shape[0]().value())
@@ -3103,7 +3103,7 @@ def _rms_norm_fused_residual_add_impl[
             + "."
         )
 
-    if gamma2.layout.shape[0]().value() != shape[rank - 1]:
+    if Int(gamma2.layout.shape[0]().value()) != shape[rank - 1]:
         raise Error(
             "Gamma2 size "
             + String(gamma2.layout.shape[0]().value())

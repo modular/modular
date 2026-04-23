@@ -1433,7 +1433,7 @@ def conv_transposed_cpu[
             packed_filter_shape = IndexList[packed_filter_rank]()
 
             comptime for i in range(packed_filter_rank):
-                packed_filter_shape[i] = filter.layout.shape[i]().value()
+                packed_filter_shape[i] = Int(filter.layout.shape[i]().value())
 
         var packed_filter = TileTensor(
             packed_filter_ptr,

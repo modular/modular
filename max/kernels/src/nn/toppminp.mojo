@@ -146,7 +146,7 @@ def _topp_minp_sampling[
     var shape = IndexList[input_logits.rank]()
 
     comptime for i in range(input_logits.rank):
-        shape[i] = input_logits.layout.shape[i]().value()
+        shape[i] = Int(input_logits.layout.shape[i]().value())
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,

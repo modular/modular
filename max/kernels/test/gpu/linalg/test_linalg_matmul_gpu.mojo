@@ -61,24 +61,24 @@ def matmul_test_case[
         end=" ",
     )
 
-    var mat_a_dev = ctx.enqueue_create_buffer[dtype](shape_a.product())
+    var mat_a_dev = ctx.enqueue_create_buffer[dtype](Int(shape_a.product()))
     var mat_a_tensor = TileTensor(mat_a_dev, row_major(shape_a))
-    var mat_b_dev = ctx.enqueue_create_buffer[dtype](shape_b.product())
+    var mat_b_dev = ctx.enqueue_create_buffer[dtype](Int(shape_b.product()))
     var mat_b_tensor = TileTensor(mat_b_dev, row_major(shape_b))
-    var mat_c_dev = ctx.enqueue_create_buffer[dtype](shape_c.product())
+    var mat_c_dev = ctx.enqueue_create_buffer[dtype](Int(shape_c.product()))
     var mat_c_tensor = TileTensor(mat_c_dev, row_major(shape_c))
 
     var mat_a_host = TileTensor(
-        alloc[Scalar[dtype]](shape_a.product()), row_major(shape_a)
+        alloc[Scalar[dtype]](Int(shape_a.product())), row_major(shape_a)
     )
     var mat_b_host = TileTensor(
-        alloc[Scalar[dtype]](shape_b.product()), row_major(shape_b)
+        alloc[Scalar[dtype]](Int(shape_b.product())), row_major(shape_b)
     )
     var mat_c_host = TileTensor(
-        alloc[Scalar[dtype]](shape_c.product()), row_major(shape_c)
+        alloc[Scalar[dtype]](Int(shape_c.product())), row_major(shape_c)
     )
     var mat_c_ref_host = TileTensor(
-        alloc[Scalar[dtype]](shape_c.product()), row_major(shape_c)
+        alloc[Scalar[dtype]](Int(shape_c.product())), row_major(shape_c)
     )
 
     _linspace_fill(mat_a_host)

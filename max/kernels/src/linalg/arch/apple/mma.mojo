@@ -68,9 +68,9 @@ struct MmaOpApple[
         Asserts at comptime that exactly one stride is 1.
         """
         comptime if type_of(tile).static_stride[1] == 1:
-            return tile.layout.stride[0]().value()
+            return Int(tile.layout.stride[0]().value())
         elif type_of(tile).static_stride[0] == 1:
-            return tile.layout.stride[1]().value()
+            return Int(tile.layout.stride[1]().value())
         else:
             comptime assert (
                 False

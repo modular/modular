@@ -430,9 +430,9 @@ struct Layout[
 
             comptime flat_len = type_of(flat_idx).__len__()
             comptime for i in range(flat_len):
-                result += Scalar[linear_idx_type](
-                    flat_idx[i].value() * flat_stride[i].value()
-                )
+                result += Scalar[linear_idx_type](flat_idx[i].value()) * Scalar[
+                    linear_idx_type
+                ](flat_stride[i].value())
 
             return result
         else:
@@ -491,10 +491,10 @@ struct Layout[
                 comptime for j in range(sub_rank):
                     var divided = _divide_by_stride[
                         Self.stride_types[i].ParamListType[j]
-                    ](idx, sub_stride[j].value())
+                    ](idx, Int(sub_stride[j].value()))
                     var coord_val = _mod_by_shape[
                         Self.shape_types[i].ParamListType[j]
-                    ](divided, sub_shape[j].value())
+                    ](divided, Int(sub_shape[j].value()))
                     UnsafePointer(to=sub_result[j]).init_pointee_copy(
                         rebind[SubResultType.element_types[j]](
                             RuntimeInt[out_dtype](Scalar[out_dtype](coord_val))
@@ -505,10 +505,10 @@ struct Layout[
                 )
             else:
                 var divided = _divide_by_stride[Self.stride_types[i]](
-                    idx, stride_t[i].value()
+                    idx, Int(stride_t[i].value())
                 )
                 var coord_val = _mod_by_shape[Self.shape_types[i]](
-                    divided, shape_t[i].value()
+                    divided, Int(shape_t[i].value())
                 )
                 UnsafePointer(to=result[i]).init_pointee_copy(
                     rebind[ResultType.element_types[i]](
@@ -527,7 +527,7 @@ struct Layout[
         Returns:
             The total number of elements in the layout.
         """
-        return self._shape.product()
+        return Int(self._shape.product())
 
     @always_inline("nodebug")
     def size(self) -> Int:
@@ -854,8 +854,8 @@ def row_major(var shape: Coord) -> RowMajorLayout[*shape.element_types]:
                     rebind[StrideType](Idx[stride_val]())
                 )
             else:
-                var stride_val = (
-                    shape[idx + 1].value() * strides[idx + 1].value()
+                var stride_val = Int(shape[idx + 1].value()) * Int(
+                    strides[idx + 1].value()
                 )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
@@ -915,8 +915,8 @@ def row_major[
                 )
             else:
                 # At least one is runtime, compute at runtime
-                var stride_val = (
-                    elements[idx + 1].value() * strides[idx + 1].value()
+                var stride_val = Int(elements[idx + 1].value()) * Int(
+                    strides[idx + 1].value()
                 )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
@@ -1068,7 +1068,9 @@ def col_major(var shape: Coord) -> ColMajorLayout[shape.element_types]:
                 )
             else:
                 # At least one is runtime, compute at runtime
-                var stride_val = shape[i - 1].value() * strides[i - 1].value()
+                var stride_val = Int(shape[i - 1].value()) * Int(
+                    strides[i - 1].value()
+                )
                 stride_ptr.init_pointee_copy(
                     rebind[StrideType](
                         RuntimeInt[StrideType.DTYPE](
@@ -1175,7 +1177,7 @@ def zipped_divide[
         ):
             outer_shape[i] = rebind[outer_shape.element_types[i]](
                 Scalar[outer_shape.element_types[i].DTYPE](
-                    shape[i].value() // tile[i].value()
+                    Int(shape[i].value()) // Int(tile[i].value())
                 )
             )
 
@@ -1185,7 +1187,7 @@ def zipped_divide[
         ):
             outer_stride[i] = rebind[outer_stride.element_types[i]](
                 Scalar[outer_stride.element_types[i].DTYPE](
-                    inner_stride[i].value() * tile[i].value()
+                    Int(inner_stride[i].value()) * Int(tile[i].value())
                 )
             )
     var out_layout = Layout(
@@ -1479,12 +1481,12 @@ def blocked_product[
                 )
             )
         else:
-            var block_cosize = block.shape_coord().product()
+            var block_cosize = Int(block.shape_coord().product())
             UnsafePointer(to=outer_stride[i]).init_pointee_copy(
                 rebind[OuterStrideTypes[i]](
                     RuntimeInt[OuterStrideTypes[i].DTYPE](
                         Scalar[OuterStrideTypes[i].DTYPE](
-                            tiler.stride_coord()[i].value() * block_cosize
+                            Int(tiler.stride_coord()[i].value()) * block_cosize
                         )
                     )
                 )
@@ -1744,7 +1746,7 @@ def upcast[
                     RuntimeInt(
                         Scalar[ResultStrideTypes[i].DTYPE](
                             _runtime_shape_div(
-                                layout.stride_coord()[i].value(), factor
+                                Int(layout.stride_coord()[i].value()), factor
                             )
                         )
                     )
@@ -1762,10 +1764,10 @@ def upcast[
                     RuntimeInt(
                         Scalar[ResultShapeTypes[i].DTYPE](
                             _runtime_shape_div(
-                                layout.shape_coord()[i].value(),
+                                Int(layout.shape_coord()[i].value()),
                                 _runtime_shape_div(
                                     factor,
-                                    layout.stride_coord()[i].value(),
+                                    Int(layout.stride_coord()[i].value()),
                                 ),
                             )
                         )

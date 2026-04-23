@@ -119,15 +119,15 @@ def bench_bmm[
     k: KType,
     init_type: InitializationType,
 ) raises:
-    var a_size = b.value() * m.value() * k.value()
+    var a_size = Int(b.value()) * Int(m.value()) * Int(k.value())
     var b_size = (
-        b.value()
-        * n.value()
-        * k.value() if transpose_b else b.value()
-        * k.value()
-        * n.value()
+        Int(b.value())
+        * Int(n.value())
+        * Int(k.value()) if transpose_b else Int(b.value())
+        * Int(k.value())
+        * Int(n.value())
     )
-    var c_size = b.value() * m.value() * n.value()
+    var c_size = Int(b.value()) * Int(m.value()) * Int(n.value())
 
     var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device_buffer = ctx.enqueue_create_buffer[a_type](b_size)
@@ -229,14 +229,20 @@ def bench_bmm[
                         b_buffer,
                         c_row_major=True,
                         transpose_b=transpose_b,
-                        batch_size=b.value(),
+                        batch_size=Int(b.value()),
                     )
                 else:
                     # Fallback vendor BMM for non-AMD GPUs
-                    for i in range(b.value()):
-                        var c_ptr = c_device.ptr + (i * m.value() * n.value())
-                        var a_ptr = a_device.ptr + (i * m.value() * k.value())
-                        var b_ptr = b_device.ptr + (i * k.value() * n.value())
+                    for i in range(Int(b.value())):
+                        var c_ptr = c_device.ptr + (
+                            i * Int(m.value()) * Int(n.value())
+                        )
+                        var a_ptr = a_device.ptr + (
+                            i * Int(m.value()) * Int(k.value())
+                        )
+                        var b_ptr = b_device.ptr + (
+                            i * Int(k.value()) * Int(n.value())
+                        )
 
                         var c_buffer = TileTensor(c_ptr, row_major(Coord(m, n)))
                         var a_buffer = TileTensor(a_ptr, row_major(Coord(m, k)))
@@ -267,7 +273,9 @@ def bench_bmm[
                 # Epilogue
                 comptime if lambda_fn:
                     elementwise[func, pack_size, target="gpu"](
-                        IndexList[3](b.value(), m.value(), n.value()),
+                        IndexList[3](
+                            Int(b.value()), Int(m.value()), Int(n.value())
+                        ),
                         ctx,
                     )
             else:
@@ -299,13 +307,17 @@ def bench_bmm[
                 transpose_b=transpose_b,
                 use_vendor_blas=use_vendor_blas,
                 lambda_fn=lambda_fn,
-            ](b.value(), m.value(), n.value(), k.value())
+            ](Int(b.value()), Int(m.value()), Int(n.value()), Int(k.value()))
         ),
         # TODO: Pick relevant benchmetric
         [
             ThroughputMeasure(
                 BenchMetric.flops,
-                2 * b.value() * m.value() * n.value() * k.value(),
+                2
+                * Int(b.value())
+                * Int(m.value())
+                * Int(n.value())
+                * Int(k.value()),
             )
         ],
     )
