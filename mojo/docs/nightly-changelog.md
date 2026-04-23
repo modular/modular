@@ -373,6 +373,9 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `StringSlice.startswith()` and `StringSlice.endswith()` now use direct
+  `memcmp` instead of `find()`/`rfind()`, reducing from O(n) to O(m).
+
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
   `and_then()` chains operations that themselves return an `Optional`, enabling
