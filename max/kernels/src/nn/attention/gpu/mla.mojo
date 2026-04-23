@@ -81,6 +81,7 @@ from layout.layout_tensor import (
 )
 from layout.swizzle import make_swizzle
 from layout.tensor_core import get_fragment_size, get_mma_shape
+from layout.tile_tensor import NullableTileTensor
 from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from std.memory import stack_allocation
 from nn._ragged_utils import get_batch_from_row_offsets
@@ -146,7 +147,7 @@ def flare_mla_decoding[
     ],
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: TileTensor[
+    scalar_args_buf: NullableTileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     q_max_seq_len: OptionalReg[Int] = None,
@@ -349,7 +350,7 @@ def flare_mla_decoding[
     mask_functor: mask_t,
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: TileTensor[
+    scalar_args_buf: NullableTileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     # if not set, we select num_partitions based on heuristics
@@ -434,7 +435,7 @@ def flare_mla_decoding_dispatch[
     max_cache_valid_length: Int,
     scale: Float32,
     ctx: DeviceContext,
-    scalar_args_buf: TileTensor[
+    scalar_args_buf: NullableTileTensor[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     kv_input_row_offsets: OptionalReg[
@@ -497,7 +498,7 @@ def flare_mla_decoding_dispatch[
     # TileTensor always has static shapes for the last two dims.
 
     comptime if _is_sm10x_gpu(ctx.default_device_info):
-        if scalar_args_buf.ptr._is_not_null():
+        if scalar_args_buf.ptr:
             # Capturable path: GPU buffer is pre-computed, compute host-side
             # dispatch args from inputs.
             var batch_size: Int
@@ -528,7 +529,7 @@ def flare_mla_decoding_dispatch[
                 scale,
                 valid_length,
                 mask_functor,
-                scalar_args_buf,
+                scalar_args_buf.value(),
                 batch_size,
                 max_prompt_len,
                 max_cache_valid_length,
