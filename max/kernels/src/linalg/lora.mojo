@@ -93,11 +93,11 @@ def shrink_qkv_permute_3mn_sm100(
     var M = Int(c_lora.dim(1))
     var c_tensor_lora = c_lora.to_layout_tensor()
     comptime N_Total = B * N
-    # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
+    # Create a dangling TileTensor for C. This ensures GroupGEMM does NOT
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
-    var c = TileTensor[c_type, _, MutExternalOrigin](
-        None,
+    var c = TileTensor(
+        UnsafePointer[Scalar[c_type], MutExternalOrigin].unsafe_dangling(),
         row_major(Coord(Idx(M), Idx(N_Total))),
     )
 

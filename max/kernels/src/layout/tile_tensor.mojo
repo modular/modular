@@ -19,7 +19,6 @@ from std.os import abort
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
 from std.builtin.int import index as _index
-from std.collections import OptionalReg
 from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
@@ -389,24 +388,6 @@ struct TileTensor[
         """
         self.ptr = other.ptr.unsafe_origin_cast[AnyOrigin[mut=Self.mut]]()
         self.layout = other.layout
-
-    @always_inline("nodebug")
-    @doc_hidden
-    def __init__(
-        out self,
-        ptr: OptionalReg[
-            UnsafePointer[
-                Scalar[Self.dtype],
-                Self.origin,
-                address_space=Self.address_space,
-            ]
-        ],
-        var layout: Self.LayoutType,
-    ):
-        self = Self(
-            ptr._unsafe_nullable(),
-            layout,
-        )
 
     @always_inline("nodebug")
     def __getitem__(

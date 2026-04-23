@@ -77,11 +77,9 @@ def _test_pull[
     var input_devbufs = List[DeviceBuffer[dtype]]()
     var host_buf = alloc[Scalar[dtype]](max_chunk_size)
 
-    comptime InputTileType = type_of(
-        TileTensor[dtype, _, MutAnyOrigin](
-            None, row_major(Idx(Int(0)))
-        ).as_immut()
-    )
+    comptime InputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(Int(0)))), ImmutAnyOrigin
+    ]
     var tt_input_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
 
     for dp in range(dp_size):
@@ -97,9 +95,9 @@ def _test_pull[
 
     # Output buffers on each GPU (sized to its replica's chunk).
     var output_devbufs = List[DeviceBuffer[dtype]]()
-    comptime OutputTileType = type_of(
-        TileTensor[dtype, _, MutAnyOrigin](None, row_major(Idx(Int(0))))
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(Int(0)))), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for i in range(ngpus):
         var replica = i // tp_size

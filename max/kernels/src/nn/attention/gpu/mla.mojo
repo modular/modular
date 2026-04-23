@@ -372,8 +372,10 @@ def flare_mla_decoding[
         )
     )
 
-    var valid_length = TileTensor[DType.uint32, _, MutExternalOrigin](
-        None,
+    var valid_length = TileTensor(
+        UnsafePointer[
+            Scalar[DType.uint32], MutExternalOrigin
+        ].unsafe_dangling(),
         row_major(Coord(Idx(0))),
     )
 
