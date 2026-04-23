@@ -13,8 +13,11 @@
 
 from std.collections.string.string_slice import (
     _to_string_list,
+    _unsafe_strlen,
     get_static_string,
 )
+from std.math import align_up
+from std.memory import alloc, UnsafePointer
 from std.sys.info import size_of, simd_width_of
 
 from std.testing import assert_equal, assert_false, assert_true, assert_raises
@@ -1070,6 +1073,125 @@ def test_merge() raises:
         return a if pred else b
 
     _ = cond(True, a, b)
+
+
+def test_string_slice_codepoint_slices_reversed() raises:
+    # Test ASCII
+    var s: StaticString = "xyz"
+    var iter = s.codepoint_slices_reversed()
+    assert_equal(iter.__next__(), "z")
+    assert_equal(iter.__next__(), "y")
+    assert_equal(iter.__next__(), "x")
+
+    # Test concatenation
+    s = "abc"
+    var concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "cba")
+
+    # Test Unicode
+    s = "hello🌍"
+    concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "🌍olleh")
+
+    # Test empty string
+    s = ""
+    concat = String()
+    for v in s.codepoint_slices_reversed():
+        concat += v
+    assert_equal(concat, "")
+
+
+def test_unsafe_strlen():
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    # Empty string: just a null terminator.
+    var empty = List[Byte](capacity=1)
+    empty.append(0)
+    assert_equal(_unsafe_strlen(empty.unsafe_ptr()), UInt(0))
+
+    # Short string, well below one SIMD block.
+    var short_buf = List[Byte](capacity=3)
+    short_buf.append(Byte(ord("h")))
+    short_buf.append(Byte(ord("i")))
+    short_buf.append(0)
+    assert_equal(_unsafe_strlen(short_buf.unsafe_ptr()), UInt(2))
+
+    # String exactly (simd_width - 1) bytes long (fits within one SIMD block).
+    var sub_block = List[Byte](capacity=simd_width)
+    for _ in range(simd_width - 1):
+        sub_block.append(Byte(ord("x")))
+    sub_block.append(0)
+    assert_equal(_unsafe_strlen(sub_block.unsafe_ptr()), UInt(simd_width - 1))
+
+    # String that spans more than one SIMD block.
+    var multi_block_len = simd_width * 3 + 7
+    var multi_block = List[Byte](capacity=multi_block_len + 1)
+    for _ in range(multi_block_len):
+        multi_block.append(Byte(ord("a")))
+    multi_block.append(0)
+    assert_equal(
+        _unsafe_strlen(multi_block.unsafe_ptr()), UInt(multi_block_len)
+    )
+
+    # Bounded scan: max smaller than the actual string length.
+    var long_buf = List[Byte](capacity=6)
+    long_buf.append(Byte(ord("a")))
+    long_buf.append(Byte(ord("b")))
+    long_buf.append(Byte(ord("c")))
+    long_buf.append(Byte(ord("d")))
+    long_buf.append(Byte(ord("e")))
+    long_buf.append(0)
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(3)), UInt(3))
+
+    # Bounded scan: max exactly equal to the string length.
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(5)), UInt(5))
+
+    # Bounded scan: max larger than the string length --- returns actual length.
+    assert_equal(_unsafe_strlen(long_buf.unsafe_ptr(), UInt(100)), UInt(5))
+
+    # Unicode bytes: UTF-8 is treated as raw bytes, all non-zero.
+    # "é" encodes as two bytes: 0xC3, 0xA9.
+    var unicode_buf = List[Byte](capacity=3)
+    unicode_buf.append(Byte(0xC3))
+    unicode_buf.append(Byte(0xA9))
+    unicode_buf.append(0)
+    assert_equal(_unsafe_strlen(unicode_buf.unsafe_ptr()), UInt(2))
+
+
+def test_unsafe_strlen_unaligned():
+    # Verify that _unsafe_strlen returns the correct length for every possible
+    # intra-block misalignment offset (0 = aligned, 1..simd_width-1 = unaligned).
+    #
+    # The unbounded fast path uses a scalar prelude to advance the pointer to
+    # a SIMD-width-aligned address before issuing SIMD loads, preventing
+    # unaligned loads from straddling a page boundary. This test exercises all
+    # misalignment cases to confirm correctness of the prelude.
+    comptime simd_width = simd_width_of[DType.bool]()
+
+    # Allocate enough room for the worst-case alignment padding plus the test
+    # string ("hi\0" = 3 bytes) followed by a full SIMD block of non-null bytes
+    # so the unbounded scan always terminates.
+    var capacity = 2 * simd_width + 4
+    var buf = alloc[Byte](capacity)
+    for i in range(capacity):
+        buf[i] = Byte(0xFF)  # non-null sentinel
+
+    # Find the first SIMD-aligned address at or after buf.
+    var aligned_offset = align_up(Int(buf), simd_width) - Int(buf)
+
+    for misalign in range(simd_width):
+        var p = buf + aligned_offset + misalign
+        p[0] = Byte(ord("h"))
+        p[1] = Byte(ord("i"))
+        p[2] = 0
+        assert_equal(_unsafe_strlen(p), UInt(2))
+        p[2] = Byte(0xFF)  # restore non-null for next iteration
+
+    buf.free()
 
 
 def main() raises:
