@@ -24,5 +24,3 @@ defines the core vocabulary of Mojo programming that every developer uses
 without thinking about imports. Library authors implement traits from this
 package to integrate custom types with language features.
 """
-
-from .variadics import Variadic

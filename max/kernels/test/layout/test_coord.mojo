@@ -15,8 +15,6 @@
 from std.sys import size_of
 from std.sys.intrinsics import _type_is_eq
 
-from std.builtin.variadics import Variadic
-
 from layout import ComptimeInt, Coord, CoordLike, Idx, RuntimeInt, coord
 from layout.coord import (
     coord_to_int_tuple,

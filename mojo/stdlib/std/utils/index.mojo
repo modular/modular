@@ -25,7 +25,6 @@ from std.sys import bit_width_of
 
 from std.builtin.device_passable import DevicePassable
 from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
-from std.builtin.variadics import Variadic
 import std.format._utils as fmt
 
 from .static_tuple import StaticTuple

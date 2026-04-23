@@ -15,7 +15,6 @@
 
 from std.collections import InlineArray
 from std.collections.optional import Optional
-from std.builtin.variadics import Variadic
 
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_layout import Layout

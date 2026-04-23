@@ -11,11 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.builtin.variadics import (
-    ParameterList,
-    TypeList,
-    Variadic,
-)
 from std.sys.intrinsics import _type_is_eq
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from test_utils import ExplicitDelOnly
@@ -191,6 +186,32 @@ def test_type_list_filter_idx_by_index() raises:
     assert_equal(filtered.size, 2)
     assert_true(_type_is_eq[filtered[0], WithValue[100]]())
     assert_true(_type_is_eq[filtered[1], WithValue[200]]())
+
+
+comptime _SumEltAndIdx[prev: Int, T: HasStaticValue, idx: Int]: Int = (
+    prev + T.STATIC_VALUE + idx
+)
+
+
+def test_type_list_reduce_idx() raises:
+    comptime folded = TypeList.of[
+        Trait=HasStaticValue,
+        WithValue[1],
+        WithValue[2],
+        WithValue[3],
+    ]().reduce_idx[
+        Int(10),
+        _SumEltAndIdx,
+    ]
+    assert_equal(folded, 19)
+
+
+def test_type_list_reduce_idx_empty() raises:
+    comptime folded = TypeList.of[Trait=HasStaticValue]().reduce_idx[
+        Int(7),
+        _SumEltAndIdx,
+    ]
+    assert_equal(folded, 7)
 
 
 def test_variadic_value_reducer() raises:

@@ -71,7 +71,6 @@ methods.
 
 
 from std.builtin.globals import global_constant
-from std.builtin.variadics import Variadic
 from std.collections.string.string_slice import get_static_string
 from std.compile import get_type_name
 from std.utils import Variant

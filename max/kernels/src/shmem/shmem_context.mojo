@@ -14,7 +14,6 @@
 from std.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
-from std.builtin.variadics import Variadic
 from std.builtin.device_passable import DevicePassable
 from std.sys import (
     CompilationTarget,

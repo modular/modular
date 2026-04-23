@@ -24,7 +24,6 @@ from layout.tile_layout import (
     Idx,
 )
 from layout.coord import Coord, CoordLike
-from std.builtin.variadics import Variadic
 from layout.tensor_core import num_matrix_reg
 from std.memory import AddressSpace as BaseAddressSpace
 from std.memory import stack_allocation, bitcast

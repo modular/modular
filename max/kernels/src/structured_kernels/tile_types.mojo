@@ -50,7 +50,6 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile,
 )
-from std.builtin.variadics import Variadic
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
 from std.memory import stack_allocation

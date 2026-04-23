@@ -17,7 +17,6 @@ from std.sys.intrinsics import _type_is_eq
 from std.utils import IndexList
 from std.math.uutils import umod, ufloordiv
 
-from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from std.sys.intrinsics import _type_is_eq_parse_time
 
 

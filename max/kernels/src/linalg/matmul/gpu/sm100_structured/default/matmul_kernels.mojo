@@ -65,7 +65,6 @@ from layout import (
     row_major,
 )
 from layout.tile_layout import Layout as _NewLayout
-from std.builtin.variadics import Variadic
 from structured_kernels.tile_types import (
     SMemTile as TTSMemTile,
     TmaOpType,

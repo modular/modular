@@ -123,6 +123,10 @@ This version is still a work in progress.
 
 ## Library changes
 
+- The `Variadic` suite of low-level operation has been refactored and migrated
+  to being members of the `TypeList` and `ParameterList` types, making them more
+  ergonomic to work with and more accessible.
+
 - Atomic operations have moved to a dedicated `std.atomic` module. The
   `Consistency` type has been renamed to `Ordering` and its `MONOTONIC`
   member has been renamed to `RELAXED` to align with conventions used by

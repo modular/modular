@@ -26,7 +26,6 @@ type-checked sum types.
 """
 
 from std.builtin.rebind import downcast
-from std.builtin.variadics import Variadic
 from std.format._utils import FormatStruct, Named, TypeNames
 from std.memory import UnsafePointer
 from std.sys import align_of, size_of
