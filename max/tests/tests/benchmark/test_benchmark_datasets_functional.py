@@ -153,3 +153,24 @@ def test_random_dataset_sys_prompt_ratio_matches_requested() -> None:
             f"System prompt token consistency below {SYS_PROMPT_PATTERN_CONSISTENCY_THRESHOLD} "
             f"for sys_prompt_ratio={sys_prompt_ratio}: rates={rates}"
         )
+
+
+def test_synthetic_placeholder_token_count() -> None:
+    """Synthetic placeholder for prefix turns should tokenize to ~output_len."""
+    assert isinstance(REPO_REVISION, str)
+    try:
+        model_path = generate_local_model_path(REPO_ID, REPO_REVISION)
+    except FileNotFoundError:
+        model_path = REPO_ID
+
+    tokenizer = AutoTokenizer.from_pretrained(model_path)
+
+    for output_len in [1, 5, 10, 50]:
+        placeholder = " ".join(["token"] * max(output_len, 1))
+        token_count = len(
+            tokenizer.encode(placeholder, add_special_tokens=False)
+        )
+        assert abs(token_count - output_len) / output_len < 0.2, (
+            f"output_len={output_len}: expected ~{output_len} tokens,"
+            f" got {token_count}"
+        )

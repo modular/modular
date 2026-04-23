@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import asyncio
+import dataclasses
 import sys
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -28,6 +29,7 @@ from max.benchmark.benchmark_serving import (
     elide_data_uris_in_string,
     get_request,
     parse_args,
+    prime_prefix_turns,
 )
 from max.benchmark.benchmark_shared.datasets import SampledRequest
 from max.benchmark.benchmark_shared.datasets.types import (
@@ -968,6 +970,88 @@ def test_prefix_turns_zero_is_noop() -> None:
 
     outputs = asyncio.run(run_test())
     assert len(outputs) == 4
+
+
+def _make_session_with_id(session_id: int, prefix_turns: int) -> ChatSession:
+    """Helper: 4-turn session with a specific id."""
+    session = _make_4turn_session(prefix_turns=prefix_turns)
+    return dataclasses.replace(session, id=session_id)
+
+
+def test_prime_prefix_turns_only_primes_sessions_with_prefix() -> None:
+    """Sessions with prefix_turns=0 should not generate any priming requests."""
+    sessions = [
+        _make_session_with_id(0, prefix_turns=0),
+        _make_session_with_id(1, prefix_turns=2),
+        _make_session_with_id(2, prefix_turns=0),
+    ]
+    driver = _CapturingDriver()
+
+    async def run() -> None:
+        await prime_prefix_turns(
+            sessions=sessions,
+            request_driver=driver,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+        )
+
+    asyncio.run(run())
+    assert len(driver.calls) == 1
+    assert driver.calls[0].session_id == "1"
+    # Priming requests request a single token and must not stop early on EOS
+    # (otherwise the full prefix may not be prefilled).
+    assert driver.calls[0].max_tokens == 1
+    assert driver.calls[0].ignore_eos is True
+
+
+def test_prime_prefix_turns_respects_max_sessions() -> None:
+    """max_sessions caps priming to the initial concurrent population."""
+    sessions = [_make_session_with_id(idx, prefix_turns=2) for idx in range(5)]
+    driver = _CapturingDriver()
+
+    async def run() -> None:
+        await prime_prefix_turns(
+            sessions=sessions,
+            request_driver=driver,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+            max_sessions=2,
+        )
+
+    asyncio.run(run())
+    # Only the first two sessions should be primed.
+    assert len(driver.calls) == 2
+    primed_ids = {call.session_id for call in driver.calls}
+    assert primed_ids == {"0", "1"}
+
+
+def test_prime_prefix_turns_noop_without_prefix_sessions() -> None:
+    """When no session has prefix_turns > 0, no requests are issued."""
+    sessions = [_make_session_with_id(idx, prefix_turns=0) for idx in range(3)]
+    driver = _CapturingDriver()
+
+    async def run() -> None:
+        await prime_prefix_turns(
+            sessions=sessions,
+            request_driver=driver,
+            model_id="test",
+            api_url="http://localhost:8000/v1/chat/completions",
+            max_chat_len=4096,
+            temperature=None,
+            top_p=None,
+            top_k=None,
+        )
+
+    asyncio.run(run())
+    assert driver.calls == []
 
 
 def test_parse_spec_decode_metrics_matches_vllm_format() -> None:
