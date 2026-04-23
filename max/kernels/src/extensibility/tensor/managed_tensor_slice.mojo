@@ -1031,6 +1031,7 @@ struct ManagedTensorSlice[
         width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
@@ -1040,9 +1041,9 @@ struct ManagedTensorSlice[
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime if Self._has_compute_fusion:
-            return self.compute_fusion.compute[Self.dtype, Self.rank, width](
-                ridx, val
-            )
+            return self.compute_fusion.compute[
+                Self.dtype, Self.rank, width, element_alignment
+            ](ridx, val)
         else:
             return val
 

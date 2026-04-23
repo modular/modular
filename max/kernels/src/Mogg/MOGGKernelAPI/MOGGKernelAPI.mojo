@@ -3925,7 +3925,7 @@ struct Matmul:
             _dtype, _width
         ]:
             return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda(
+                c._fused_compute_output_lambda[element_alignment=alignment](
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
             )
@@ -3988,7 +3988,9 @@ struct BatchMatmul:
             comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
             comptime if has_compute_lambda:
-                var output = c._fused_compute_output_lambda(
+                var output = c._fused_compute_output_lambda[
+                    element_alignment=alignment
+                ](
                     rebind[IndexList[c.rank]](coords),
                     rebind[SIMD[c.dtype, _width]](val),
                 )
@@ -9154,7 +9156,7 @@ struct Struct_matmul_dynamic_block_scaled:
             _dtype, _width
         ]:
             return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda(
+                c._fused_compute_output_lambda[element_alignment=alignment](
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
             )
