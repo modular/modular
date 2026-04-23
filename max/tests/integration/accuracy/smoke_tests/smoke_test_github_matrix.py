@@ -75,7 +75,7 @@ HF_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.2-1B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
-    "MiniMaxAI/MiniMax-M2.7": NON_XL | {"8xMI355"},
+    "MiniMaxAI/MiniMax-M2.7": NON_XL | {"8xMI355", "sglang"},
     "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
