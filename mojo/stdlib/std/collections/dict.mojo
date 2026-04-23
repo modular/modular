@@ -37,177 +37,24 @@ Value elements must be `Copyable`. As with `KeyElement`, the
 See the `Dict` docs for more details.
 """
 
-from std.compile import get_type_name
 from std.hashlib import Hasher, default_comp_time_hasher, default_hasher
 import std.format._utils as fmt
-from std.sys.intrinsics import likely
-from std.math import ceildiv
 
-from std.bit import count_trailing_zeros, next_power_of_two
-from std.memory import alloc, bitcast, memcpy, memset, pack_bits
+from std.memory import alloc, memset
+
+from ._swisstable import (
+    CTRL_DELETED,
+    CTRL_EMPTY,
+    SwissTable,
+    SwissTableEntry,
+    h2,
+    is_occupied,
+)
 
 comptime KeyElement = Copyable & Hashable & Equatable
 """A trait composition for types which implement all requirements of
 dictionary keys. Dict keys must minimally be `Copyable`, `Hashable`,
 and `Equatable`."""
-
-# ===-----------------------------------------------------------------------===#
-# Swiss Table constants and helpers
-# ===-----------------------------------------------------------------------===#
-
-comptime _CTRL_EMPTY: UInt8 = 0xFF
-"""Control byte for an empty slot."""
-comptime _CTRL_DELETED: UInt8 = 0x80
-"""Control byte for a deleted (tombstone) slot."""
-comptime _GROUP_WIDTH: Int = 16
-"""Number of control bytes processed in one SIMD operation."""
-comptime _INITIAL_CAPACITY: Int = 16
-"""Minimum table capacity. Must be >= _GROUP_WIDTH."""
-
-
-@always_inline
-def _h2(hash: UInt64) -> UInt8:
-    """Extract the top 7 bits of the hash as a fingerprint (0x00-0x7F)."""
-    return UInt8(hash >> 57)
-
-
-@always_inline
-def _is_occupied(ctrl: UInt8) -> Bool:
-    """Check if a control byte represents an occupied slot.
-
-    Occupied slots have h2 values in range 0x00-0x7F (top bit clear).
-    DELETED (0x80) and EMPTY (0xFF) both have top bit set.
-    """
-    return ctrl < _CTRL_DELETED
-
-
-# ===-----------------------------------------------------------------------===#
-# _Group: SIMD group operations on 16 control bytes
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct _Group(Copyable, Movable):
-    """A group of control bytes for SIMD probing.
-
-    Loads 16 control bytes at once and performs parallel matching using
-    SIMD comparison operations, enabling fast hash table lookups.
-    """
-
-    var ctrl: SIMD[DType.uint8, _GROUP_WIDTH]
-
-    @always_inline
-    def __init__(out self, ptr: UnsafePointer[UInt8, _]):
-        """Load a group of control bytes from memory.
-
-        Args:
-            ptr: Pointer to the start of 16 consecutive control bytes.
-        """
-        self.ctrl = ptr.load[width=_GROUP_WIDTH]()
-
-    # TODO: Remove `__is_run_in_comptime_interpreter` branches once `pack_bits` is supported
-    # by the compile-time interpreter. Currently `pack_bits` uses `pop.bitcast`
-    # which the interpreter can't handle, so we fall back to scalar loops for
-    # comptime contexts (e.g., Dict used in `comptime` expressions).
-
-    @always_inline
-    def match_h2(self, h2: UInt8) -> UInt16:
-        """Return a bitmask of slots matching the given h2 fingerprint.
-
-        Args:
-            h2: The h2 fingerprint to match (0x00-0x7F).
-
-        Returns:
-            A bitmask where bit i is set if ctrl[i] == h2.
-        """
-        if __is_run_in_comptime_interpreter:
-            return Self._scalar_match(self.ctrl, h2)
-        return pack_bits(self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](h2)))
-
-    @always_inline
-    def match_empty(self) -> UInt16:
-        """Return a bitmask of empty slots.
-
-        Returns:
-            A bitmask where bit i is set if ctrl[i] == EMPTY (0xFF).
-        """
-        if __is_run_in_comptime_interpreter:
-            return Self._scalar_match(self.ctrl, _CTRL_EMPTY)
-        return pack_bits(
-            self.ctrl.eq(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY))
-        )
-
-    @always_inline
-    def match_empty_or_deleted(self) -> UInt16:
-        """Return a bitmask of empty or deleted slots.
-
-        Both EMPTY (0xFF) and DELETED (0x80) have the top bit set,
-        so they are >= 0x80. All occupied h2 values are 0x00-0x7F.
-
-        Returns:
-            A bitmask where bit i is set if ctrl[i] is EMPTY or DELETED.
-        """
-        if __is_run_in_comptime_interpreter:
-            var result = UInt16(0)
-
-            comptime for i in range(_GROUP_WIDTH):
-                if self.ctrl[i] >= _CTRL_DELETED:
-                    result |= UInt16(1) << UInt16(i)
-            return result
-        return pack_bits(
-            self.ctrl.ge(SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED))
-        )
-
-    @always_inline
-    def _convert_special_to_empty_and_full_to_deleted(
-        self,
-    ) -> SIMD[DType.uint8, _GROUP_WIDTH]:
-        """Convert ctrl bytes for in-place rehash preparation.
-
-        EMPTY  (0xFF) -> EMPTY  (0xFF)  (unchanged)
-        DELETED(0x80) -> EMPTY  (0xFF)  (reclaim tombstone)
-        h2 (0x00-0x7F) -> DELETED(0x80) (mark for relocation)
-
-        Returns:
-            Transformed control byte vector.
-        """
-        if __is_run_in_comptime_interpreter:
-            var result = SIMD[DType.uint8, _GROUP_WIDTH](0)
-
-            comptime for i in range(_GROUP_WIDTH):
-                if self.ctrl[i] < _CTRL_DELETED:
-                    result[i] = _CTRL_DELETED
-                else:
-                    result[i] = _CTRL_EMPTY
-            return result
-        var is_full = self.ctrl.lt(
-            SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED)
-        )
-        return is_full.select(
-            SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_DELETED),
-            SIMD[DType.uint8, _GROUP_WIDTH](_CTRL_EMPTY),
-        )
-
-    @staticmethod
-    @always_inline
-    def _scalar_match(
-        ctrl: SIMD[DType.uint8, _GROUP_WIDTH], target: UInt8
-    ) -> UInt16:
-        """Scalar fallback for compile-time evaluation.
-
-        Args:
-            ctrl: The control byte vector.
-            target: The byte value to match.
-
-        Returns:
-            A bitmask where bit i is set if ctrl[i] == target.
-        """
-        var result = UInt16(0)
-
-        comptime for i in range(_GROUP_WIDTH):
-            if ctrl[i] == target:
-                result |= UInt16(1) << UInt16(i)
-        return result
 
 
 # ===-----------------------------------------------------------------------===#
@@ -264,6 +111,18 @@ struct EmptyDictError(ImplicitlyCopyable, Writable):
             writer: The writer to write to.
         """
         fmt.FormatStruct(writer, "EmptyDictError").fields()
+
+
+# ===-----------------------------------------------------------------------===#
+# DictEntry (alias for SwissTableEntry)
+# ===-----------------------------------------------------------------------===#
+
+
+comptime DictEntry = SwissTableEntry
+"""Store a key-value pair entry inside a dictionary.
+
+This is a comptime alias for `SwissTableEntry` for backwards compatibility.
+"""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -330,10 +189,10 @@ struct _DictEntryIter[
                 self.index -= 1
 
             var slot = Int(self.src[]._order[idx])
-            if _is_occupied(self.src[]._ctrl[slot]):
+            if is_occupied(self.src[]._table._ctrl[slot]):
                 self.seen += 1
                 return (
-                    (self.src[]._slots + slot)
+                    (self.src[]._table._slots + slot)
                     .unsafe_mut_cast[Self.mut]()
                     .unsafe_origin_cast[Self.origin]()[]
                 )
@@ -392,10 +251,10 @@ struct _TakeDictEntryIter[
             var slot = Int(self.src[]._order[self.index])
             self.index += 1
 
-            if _is_occupied(self.src[]._ctrl[slot]):
-                var entry = (self.src[]._slots + slot).take_pointee()
-                self.src[]._set_ctrl(slot, _CTRL_DELETED)
-                self.src[]._len -= 1
+            if is_occupied(self.src[]._table._ctrl[slot]):
+                var entry = (self.src[]._table._slots + slot).take_pointee()
+                self.src[]._table.set_ctrl(slot, CTRL_DELETED)
+                self.src[]._table._len -= 1
                 return entry^
 
         assert (
@@ -439,21 +298,21 @@ struct _DictEntryIterOwned[
             var slot = Int(self._dict._order[self._index])
             self._index += 1
 
-            if _is_occupied(self._dict._ctrl[slot]):
-                var entry = (self._dict._slots + slot).take_pointee()
-                self._dict._set_ctrl(slot, _CTRL_DELETED)
-                self._dict._len -= 1
+            if is_occupied(self._dict._table._ctrl[slot]):
+                var entry = (self._dict._table._slots + slot).take_pointee()
+                self._dict._table.set_ctrl(slot, CTRL_DELETED)
+                self._dict._table._len -= 1
                 return entry^
 
         debug_assert(
-            self._dict._len == 0,
+            self._dict._table._len == 0,
             "_order exhausted but _len > 0: ctrl bytes and _len out of sync",
         )
         raise StopIteration()
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        return (self._dict._len, {self._dict._len})
+        return (self._dict._table._len, {self._dict._table._len})
 
 
 @fieldwise_init
@@ -588,59 +447,6 @@ struct _DictValueIter[
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
         return self.iter.bounds()
-
-
-# ===-----------------------------------------------------------------------===#
-# DictEntry
-# ===-----------------------------------------------------------------------===#
-
-
-@fieldwise_init
-struct DictEntry[
-    K: KeyElement, V: Copyable & ImplicitlyDestructible, H: Hasher
-](Copyable):
-    """Store a key-value pair entry inside a dictionary.
-
-    Parameters:
-        K: The key type of the dict. Must be Hashable+Equatable.
-        V: The value type of the dict.
-        H: The type of the hasher used to hash the key.
-    """
-
-    var hash: UInt64
-    """`key.__hash__()`, stored so hashing isn't re-computed during dict
-    lookup."""
-    var key: Self.K
-    """The unique key for the entry."""
-    var value: Self.V
-    """The value associated with the key."""
-
-    def __init__(out self, var key: Self.K, var value: Self.V):
-        """Create an entry from a key and value, computing the hash.
-
-        Args:
-            key: The key of the entry.
-            value: The value of the entry.
-        """
-        self.hash = hash[Self.H](key)
-        self.key = key^
-        self.value = value^
-
-    def reap_key(deinit self) -> Self.K:
-        """Take the key from an owned entry, discarding hash and value.
-
-        Returns:
-            The key of the entry.
-        """
-        return self.key^
-
-    def reap_value(deinit self) -> Self.V:
-        """Take the value from an owned entry.
-
-        Returns:
-            The value of the entry.
-        """
-        return self.value^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -837,19 +643,13 @@ struct Dict[
     # Implementation:
     #
     # This Dict uses a Swiss Table design with flat layout + insertion-order
-    # side array. Key features:
+    # side array. The core Swiss Table logic (control bytes, SIMD probing,
+    # slot management) lives in _swisstable.SwissTable. Dict adds:
     #
-    # - SIMD group probing: 16 control bytes are compared in parallel using
-    #   SIMD operations for fast lookups.
-    # - Control bytes: Each slot has a 1-byte control that is either EMPTY
-    #   (0xFF), DELETED (0x80), or an h2 fingerprint (0x00-0x7F).
-    # - Flat slot array: DictEntry values stored directly in a flat array.
-    #   Only occupied slots are initialized.
     # - Insertion-order array: A separate List[Int32] tracks the order of
     #   insertion for deterministic iteration.
-    # - Load factor 7/8: Higher than CPython's 2/3, enabled by SIMD probing.
-    # - Ctrl mirroring: The first GROUP_WIDTH bytes are mirrored after the
-    #   main ctrl array to enable SIMD loads that wrap around.
+    # - Ordered find_slot: Uses SwissTable.find_slot which skips DELETED
+    #   slots to maintain _order consistency.
 
     # ===-------------------------------------------------------------------===#
     # Aliases
@@ -874,32 +674,12 @@ struct Dict[
     # Fields
     # ===-------------------------------------------------------------------===#
 
-    var _ctrl: UnsafePointer[UInt8, MutExternalOrigin]
-    """Control byte array. Size is _capacity + _GROUP_WIDTH.
-    Each byte is EMPTY (0xFF), DELETED (0x80), or h2 fingerprint (0x00-0x7F).
-    The last _GROUP_WIDTH bytes mirror the first _GROUP_WIDTH for SIMD wrapping.
-    """
-
-    var _slots: UnsafePointer[
-        DictEntry[Self.K, Self.V, Self.H], MutExternalOrigin
-    ]
-    """Flat slot array. Size is _capacity. Only occupied slots are initialized.
-    """
+    var _table: SwissTable[Self.K, Self.V, Self.H]
+    """The underlying Swiss Table managing ctrl bytes, slots, and probing."""
 
     var _order: List[Int32]
     """Insertion-order array of slot indices. Stale entries (from deleted slots)
     are skipped during iteration by checking the ctrl byte.
-    """
-
-    var _len: Int
-    """The number of live elements currently stored in the dict."""
-
-    var _capacity: Int
-    """The number of slots (always a power of 2, >= _INITIAL_CAPACITY)."""
-
-    var _growth_left: Int
-    """Number of EMPTY slots that can still be used before a resize is needed.
-    Decremented on each new insertion into an EMPTY slot. Reset on resize.
     """
 
     # ===-------------------------------------------------------------------===#
@@ -909,13 +689,8 @@ struct Dict[
     @always_inline
     def __init__(out self):
         """Initialize an empty dictionary."""
-        self._capacity = _INITIAL_CAPACITY
-        self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
-        memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
-        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
-        self._order = List[Int32](capacity=self._capacity * 7 // 8)
-        self._len = 0
-        self._growth_left = self._capacity * 7 // 8
+        self._table = SwissTable[Self.K, Self.V, Self.H]()
+        self._order = List[Int32](capacity=self._table._capacity * 7 // 8)
 
     @always_inline
     def __init__(out self, *, capacity: Int):
@@ -935,15 +710,8 @@ struct Dict[
         # Actual capacity is 2048; can hold 1792 entries without resizing.
         ```
         """
-        self._capacity = max(
-            next_power_of_two(ceildiv(capacity * 8, 7)), _INITIAL_CAPACITY
-        )
-        self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
-        memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
-        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
-        self._order = List[Int32](capacity=self._capacity * 7 // 8)
-        self._len = 0
-        self._growth_left = self._capacity * 7 // 8
+        self._table = SwissTable[Self.K, Self.V, Self.H](capacity=capacity)
+        self._order = List[Int32](capacity=self._table._capacity * 7 // 8)
 
     @always_inline
     def __init__(
@@ -973,7 +741,7 @@ struct Dict[
     # it possible to do `self._reserved`.
     @always_inline
     def _reserved(self) -> Int:
-        return self._capacity
+        return self._table._capacity
 
     @staticmethod
     def fromkeys(keys: List[Self.K, ...], value: Self.V) -> Self:
@@ -1020,38 +788,14 @@ struct Dict[
         Args:
             copy: The existing dict.
         """
-        self._capacity = copy._capacity
-        self._len = copy._len
-        self._growth_left = copy._growth_left
-
-        # Allocate and copy control bytes
-        self._ctrl = alloc[UInt8](self._capacity + _GROUP_WIDTH)
-        memcpy(
-            dest=self._ctrl,
-            src=copy._ctrl,
-            count=self._capacity + _GROUP_WIDTH,
-        )
-
-        # Allocate slots and deep-copy occupied entries
-        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
-        for i in range(self._capacity):
-            if _is_occupied(self._ctrl[i]):
-                (self._slots + i).init_pointee_copy((copy._slots + i)[])
-
-        # Copy the order array
+        self._table = SwissTable[Self.K, Self.V, Self.H](copy=copy._table)
         self._order = copy._order.copy()
 
     def __del__(deinit self):
         """Destroy all keys and values in the dictionary and free memory."""
-        # Destroy all occupied slot entries
-        for i in range(self._capacity):
-            if _is_occupied(self._ctrl[i]):
-                (self._slots + i).destroy_pointee()
-
-        # Free allocated memory
-        self._ctrl.free()
-        self._slots.free()
-        # _order is cleaned up by List destructor
+        # _table.__del__ handles destroying occupied slots and freeing memory.
+        # _order is cleaned up by List destructor.
+        pass
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -1091,7 +835,7 @@ struct Dict[
         Returns:
             True if the key exists in the dictionary, False otherwise.
         """
-        var found, _ = self._find_slot(hash[Self.H](key), key)
+        var found, _ = self._table.find_slot(hash[Self.H](key), key)
         return found
 
     def __iter__(var self) -> Self.IteratorOwnedType:
@@ -1153,7 +897,7 @@ struct Dict[
         Returns:
             The number of elements currently stored in the dictionary.
         """
-        return self._len
+        return self._table._len
 
     def __bool__(self) -> Bool:
         """Check if the dictionary is empty or not.
@@ -1327,14 +1071,14 @@ struct Dict[
             An optional value containing a reference to the value if it is
             present, otherwise an empty Optional.
         """
-        var hash = hash[Self.H](key)
-        var found, slot_idx = self._find_slot(hash, key)
+        var h = hash[Self.H](key)
+        var found, slot_idx = self._table.find_slot(h, key)
 
         if found:
-            assert _is_occupied(
-                self._ctrl[slot_idx]
+            assert is_occupied(
+                self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-            return (self._slots + slot_idx)[].value
+            return (self._table._slots + slot_idx)[].value
 
         raise DictKeyError[Self.K]()
 
@@ -1448,15 +1192,16 @@ struct Dict[
         print(missing_value)  # => 99
         ```
         """
-        var hash = hash[Self.H](key)
-        var found, slot_idx = self._find_slot(hash, key)
+        var h = hash[Self.H](key)
+        var found, slot_idx = self._table.find_slot(h, key)
+
         if found:
-            assert _is_occupied(
-                self._ctrl[slot_idx]
+            assert is_occupied(
+                self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-            var entry = (self._slots + slot_idx).take_pointee()
-            self._set_ctrl(slot_idx, _CTRL_DELETED)
-            self._len -= 1
+            var entry = (self._table._slots + slot_idx).take_pointee()
+            self._table.set_ctrl(slot_idx, CTRL_DELETED)
+            self._table._len -= 1
             return entry^.reap_value()
         raise DictKeyError[Self.K]()
 
@@ -1494,10 +1239,10 @@ struct Dict[
         var i = len(self._order) - 1
         while i >= 0:
             var slot = Int(self._order[i])
-            if _is_occupied(self._ctrl[slot]):
-                var entry = (self._slots + slot).take_pointee()
-                self._set_ctrl(slot, _CTRL_DELETED)
-                self._len -= 1
+            if is_occupied(self._table._ctrl[slot]):
+                var entry = (self._table._slots + slot).take_pointee()
+                self._table.set_ctrl(slot, CTRL_DELETED)
+                self._table._len -= 1
                 return entry^
             i -= 1
 
@@ -1636,18 +1381,8 @@ struct Dict[
         print(len(my_dict))  # => 0
         ```
         """
-        # Destroy all occupied entries
-        for i in range(self._capacity):
-            if _is_occupied(self._ctrl[i]):
-                (self._slots + i).destroy_pointee()
-
-        # Reset ctrl to all EMPTY
-        memset(self._ctrl, _CTRL_EMPTY, self._capacity + _GROUP_WIDTH)
-
-        # Clear state
+        self._table.clear()
         self._order.clear()
-        self._len = 0
-        self._growth_left = self._capacity * 7 // 8
 
     def setdefault(
         mut self, key: Self.K, var default: Self.V
@@ -1679,23 +1414,49 @@ struct Dict[
         """
         self._maybe_resize()
         var h = hash[Self.H](key)
-        var found, slot_idx = self._find_slot(h, key)
+        var found, slot_idx = self._table.find_slot(h, key)
         if not found:
             var entry = DictEntry[H=Self.H](key.copy(), default^)
-            self._set_ctrl(slot_idx, _h2(h))
-            (self._slots + slot_idx).init_pointee_move(entry^)
+            self._table.set_ctrl(slot_idx, h2(h))
+            (self._table._slots + slot_idx).init_pointee_move(entry^)
             self._order.append(Int32(slot_idx))
-            self._len += 1
-            self._growth_left -= 1
+            self._table._len += 1
+            self._table._growth_left -= 1
         else:
-            assert _is_occupied(
-                self._ctrl[slot_idx]
+            assert is_occupied(
+                self._table._ctrl[slot_idx]
             ), "_find_slot returned found=True but ctrl byte is not occupied"
-        return (self._slots + slot_idx)[].value
+        return (self._table._slots + slot_idx)[].value
 
     # ===-------------------------------------------------------------------===#
     # Internal methods
     # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    def _find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
+        """Find a slot matching the given key, or an empty slot for insertion.
+
+        This is a forwarding method to the underlying SwissTable for
+        backwards compatibility with internal callers.
+
+        Args:
+            hash: The hash of the key.
+            key: The key to search for.
+
+        Returns:
+            A tuple of (found, slot_index).
+        """
+        return self._table.find_slot(hash, key)
+
+    @always_inline
+    def _set_ctrl(mut self, index: Int, value: UInt8):
+        """Set a control byte. Forwards to the underlying SwissTable.
+
+        Args:
+            index: The slot index.
+            value: The control byte value.
+        """
+        self._table.set_ctrl(index, value)
 
     def _insert(mut self, var key: Self.K, var value: Self.V):
         self._insert(DictEntry[Self.K, Self.V, Self.H](key^, value^))
@@ -1705,244 +1466,98 @@ struct Dict[
     ](mut self, var entry: DictEntry[Self.K, Self.V, Self.H]):
         comptime if not safe_context:
             self._maybe_resize()
-        var found, slot_idx = self._find_slot(entry.hash, entry.key)
+        var found, slot_idx = self._table.find_slot(entry.hash, entry.key)
 
         if found:
             # Update existing entry: destroy old, move new in
-            (self._slots + slot_idx).destroy_pointee()
-            (self._slots + slot_idx).init_pointee_move(entry^)
+            (self._table._slots + slot_idx).destroy_pointee()
+            (self._table._slots + slot_idx).init_pointee_move(entry^)
         else:
             # New entry
-            self._set_ctrl(slot_idx, _h2(entry.hash))
-            (self._slots + slot_idx).init_pointee_move(entry^)
+            self._table.set_ctrl(slot_idx, h2(entry.hash))
+            (self._table._slots + slot_idx).init_pointee_move(entry^)
             self._order.append(Int32(slot_idx))
-            self._len += 1
-            self._growth_left -= 1
+            self._table._len += 1
+            self._table._growth_left -= 1
             assert (
-                self._growth_left >= 0
+                self._table._growth_left >= 0
             ), "_growth_left went negative after insert"
-
-    @always_inline
-    def _set_ctrl(mut self, index: Int, value: UInt8):
-        """Set a control byte, maintaining the mirror for wrap-around SIMD loads.
-
-        Args:
-            index: The slot index.
-            value: The control byte value (h2, EMPTY, or DELETED).
-        """
-        assert 0 <= index < self._capacity, "ctrl index out of bounds"
-        self._ctrl[index] = value
-        # Mirror first GROUP_WIDTH bytes at the end of the ctrl array
-        if index < _GROUP_WIDTH:
-            self._ctrl[self._capacity + index] = value
-
-    @always_inline
-    def _find_slot(self, hash: UInt64, key: Self.K) -> Tuple[Bool, Int]:
-        """Find a slot matching the given key, or an empty slot for insertion.
-
-        This intentionally does NOT return DELETED slots for insertion.
-        Reusing a DELETED slot would place the entry at an arbitrary position
-        in the slot array, but the caller appends to `_order` expecting the
-        slot index to correspond to insertion order. Skipping DELETED slots
-        keeps the mapping between `_order` and `_slots` consistent, and
-        DELETED slots are reclaimed during resize anyway.
-
-        Args:
-            hash: The hash of the key.
-            key: The key to search for.
-
-        Returns:
-            A tuple of (found, slot_index). If found, slot_index is the
-            matching slot. If not found, slot_index is the first EMPTY slot
-            suitable for insertion.
-        """
-        var h2_val = _h2(hash)
-        var pos = Int(hash) & (self._capacity - 1)
-
-        while True:
-            var group = _Group(self._ctrl + pos)
-
-            # Check for h2 fingerprint matches in this group
-            var match_mask = group.match_h2(h2_val)
-            while match_mask != 0:
-                var bit = count_trailing_zeros(Int(match_mask))
-                var slot_idx = (pos + bit) & (self._capacity - 1)
-                if (self._slots + slot_idx)[].hash == hash and likely(
-                    (self._slots + slot_idx)[].key == key
-                ):
-                    return (True, slot_idx)
-                match_mask &= match_mask - 1  # Clear lowest set bit
-
-            # If any EMPTY slot in this group, key is definitely absent
-            var empty_mask = group.match_empty()
-            if empty_mask != 0:
-                var bit = count_trailing_zeros(Int(empty_mask))
-                return (False, (pos + bit) & (self._capacity - 1))
-
-            # No match and no EMPTY in this group, continue probing
-            pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
-
-    @always_inline
-    def _find_empty_slot(self, hash: UInt64) -> Int:
-        """Find the first EMPTY or DELETED slot for the given hash.
-
-        Used during resize and in-place rehash when we know the key is
-        unique.
-
-        Args:
-            hash: The hash to determine the starting probe position.
-
-        Returns:
-            The index of the first available slot.
-        """
-        var pos = Int(hash) & (self._capacity - 1)
-
-        while True:
-            var group = _Group(self._ctrl + pos)
-            var mask = group.match_empty_or_deleted()
-            if mask != 0:
-                var bit = count_trailing_zeros(Int(mask))
-                return (pos + bit) & (self._capacity - 1)
-            pos = (pos + _GROUP_WIDTH) & (self._capacity - 1)
 
     def _maybe_resize(mut self):
         """Resize the table if growth_left has been exhausted."""
-        if self._growth_left > 0:
+        if not self._table.needs_resize():
             self._maybe_compact_order()
             return
 
-        # If table is sparse (occupancy <= 7/16 ≈ 44% of capacity), tombstones
+        # If table is sparse (occupancy <= 7/16 ~ 44% of capacity), tombstones
         # dominate. Rehash in-place to reclaim them without doubling memory.
-        # This threshold matches Abseil's Swiss Table heuristic.
-        if self._len <= self._capacity * 7 // 16:
+        if self._table.is_sparse():
             self._rehash_in_place()
             return
 
         # Double capacity and rehash
-        var new_capacity = self._capacity * 2
-        var old_ctrl = self._ctrl
-        var old_slots = self._slots
+        var old_capacity = self._table._capacity
+        var new_capacity = old_capacity * 2
         var old_order = self._order^
 
-        # Allocate new storage
-        self._ctrl = alloc[UInt8](new_capacity + _GROUP_WIDTH)
-        memset(self._ctrl, _CTRL_EMPTY, new_capacity + _GROUP_WIDTH)
-        self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](new_capacity)
-        self._capacity = new_capacity
-        self._growth_left = new_capacity * 7 // 8 - self._len
+        var relocations = self._table.resize(new_capacity)
 
-        # Rebuild order (compacted) by walking old order
-        self._order = List[Int32](capacity=self._len)
+        # Build old_slot -> new_slot mapping and a set of relocated old slots
+        # so we can filter stale _order entries (DELETED slots won't appear
+        # in relocations since resize only moves occupied entries).
+        var slot_map = alloc[Int32](old_capacity)
+        var relocated_set = alloc[UInt8](old_capacity)
+        memset(relocated_set, 0, old_capacity)
+        for i in range(len(relocations)):
+            slot_map[relocations[i][0]] = Int32(relocations[i][1])
+            relocated_set[relocations[i][0]] = 1
 
+        # Rebuild _order preserving insertion order, skipping stale entries
+        self._order = List[Int32](capacity=self._table._len)
         for i in range(len(old_order)):
             var old_slot = Int(old_order[i])
-            if _is_occupied(old_ctrl[old_slot]):
-                # Move entry from old table to new table
-                var entry = (old_slots + old_slot).take_pointee()
-                var h2_val = _h2(entry.hash)
-                var new_slot = self._find_empty_slot(entry.hash)
-                self._set_ctrl(new_slot, h2_val)
-                (self._slots + new_slot).init_pointee_move(entry^)
-                self._order.append(Int32(new_slot))
+            if relocated_set[old_slot] != 0:
+                self._order.append(slot_map[old_slot])
 
         assert (
-            len(self._order) == self._len
+            len(self._order) == self._table._len
         ), "order length doesn't match _len after resize"
 
-        # Free old storage
-        old_ctrl.free()
-        old_slots.free()
+        slot_map.free()
+        relocated_set.free()
 
     def _rehash_in_place(mut self):
-        """Rehash the table in place without changing capacity.
-
-        Reclaims DELETED tombstones by moving all entries to their ideal
-        probe positions at the current capacity. This is the Abseil
-        "drop deletes without resize" algorithm.
-        """
-        assert (
-            self._len <= self._capacity * 7 // 16
-        ), "in-place rehash called when table is too full"
-
-        # Step 0: Compact _order to remove stale entries before we lose
+        """Rehash the table in place without changing capacity."""
+        # Compact _order to remove stale entries before we lose
         # track of which slots are occupied vs deleted.
-        var compacted = List[Int32](capacity=self._len)
+        var compacted = List[Int32](capacity=self._table._len)
         for j in range(len(self._order)):
             var slot = Int(self._order[j])
-            if _is_occupied(self._ctrl[slot]):
+            if is_occupied(self._table._ctrl[slot]):
                 compacted.append(self._order[j])
         self._order = compacted^
 
-        # Step 1: Rewrite ctrl bytes.
-        # EMPTY->EMPTY, DELETED->EMPTY, OCCUPIED(h2)->DELETED
-        for pos in range(0, self._capacity, _GROUP_WIDTH):
-            var group = _Group(self._ctrl + pos)
-            var converted = (
-                group._convert_special_to_empty_and_full_to_deleted()
-            )
-            (self._ctrl + pos).store(converted)
+        # Delegate the actual rehash to the table, get slot mapping back
+        var slot_map = self._table.rehash_in_place()
 
-        # Step 2: Refresh mirror bytes.
-        memcpy(
-            dest=self._ctrl + self._capacity,
-            src=self._ctrl,
-            count=_GROUP_WIDTH,
-        )
-
-        # Step 3: Relocate entries.
-        # Build old->new slot mapping for _order update.
-        var slot_map = alloc[Int32](self._capacity)
-        for i in range(self._capacity):
-            slot_map[i] = Int32(i)
-
-        for i in range(self._capacity):
-            if self._ctrl[i] != _CTRL_DELETED:
-                continue
-
-            # This slot was occupied before rewrite; relocate its entry.
-            var entry = (self._slots + i).take_pointee()
-            self._set_ctrl(i, _CTRL_EMPTY)
-
-            var source = i
-            var target = self._find_empty_slot(entry.hash)
-
-            while self._ctrl[target] == _CTRL_DELETED:
-                # Target has another entry awaiting relocation; swap.
-                self._set_ctrl(target, _h2(entry.hash))
-                var displaced = (self._slots + target).take_pointee()
-                (self._slots + target).init_pointee_move(entry^)
-                slot_map[source] = Int32(target)
-
-                entry = displaced^
-                source = target
-                target = self._find_empty_slot(entry.hash)
-
-            # Target is EMPTY: final placement.
-            self._set_ctrl(target, _h2(entry.hash))
-            (self._slots + target).init_pointee_move(entry^)
-            slot_map[source] = Int32(target)
-
-        # Step 4: Update _order with new slot indices.
+        # Update _order with new slot indices
         for j in range(len(self._order)):
             self._order[j] = slot_map[Int(self._order[j])]
 
         assert (
-            len(self._order) == self._len
+            len(self._order) == self._table._len
         ), "order length doesn't match _len after in-place rehash"
-
-        # Step 5: Reset growth_left (all tombstones are now EMPTY).
-        self._growth_left = self._capacity * 7 // 8 - self._len
 
         slot_map.free()
 
     def _maybe_compact_order(mut self):
         """Compact the order array if it has too many stale entries."""
-        if len(self._order) <= 2 * self._len:
+        if len(self._order) <= 2 * self._table._len:
             return
-        var new_order = List[Int32](capacity=self._len)
+        var new_order = List[Int32](capacity=self._table._len)
         for i in range(len(self._order)):
             var slot = Int(self._order[i])
-            if _is_occupied(self._ctrl[slot]):
+            if is_occupied(self._table._ctrl[slot]):
                 new_order.append(self._order[i])
         self._order = new_order^
 
