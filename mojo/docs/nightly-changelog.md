@@ -490,3 +490,13 @@ This version is still a work in progress.
 - Fixed `Process.run()` not inheriting the parent's environment variables.
   Child processes spawned via `Process.run()` now correctly receive the
   parent's environment.
+
+- Fixed `\xhh` and `\ooo` escape sequences in string literals being
+  interpreted as raw bytes instead of Unicode code points, which produced
+  malformed UTF-8 for values `>= 0x80`. The escapes now match Python `str`
+  semantics (and the existing `\u`/`\U` handling): `"\x85"` encodes U+0085
+  (NEL) as two UTF-8 bytes and `ord("\x85")` returns `133` instead of `5`.
+  Code that relied on `\xhh` to emit a single raw byte for non-ASCII values
+  must construct the bytes explicitly (for example via a `List[Byte]`
+  literal).
+  ([Issue #2842](https://github.com/modular/modular/issues/2842))
