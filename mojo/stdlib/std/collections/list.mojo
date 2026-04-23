@@ -573,6 +573,33 @@ struct List[T: Copyable](
                 return True
         return False
 
+    def __contains__[
+        dtype: DType, //
+    ](self: List[Scalar[dtype], ...], value: Scalar[dtype]) -> Bool:
+        """Verify if a given value is present in the list.
+
+        Delegates to `Span.__contains__` which uses SIMD vectorized
+        comparison for improved performance when searching through lists
+        of scalar types.
+
+        Parameters:
+            dtype: The DType of the elements in the list.
+
+        Args:
+            value: The value to find.
+
+        Returns:
+            True if the value is contained in the list, False otherwise.
+
+        Examples:
+
+        ```mojo
+        var x = [1, 2, 3]
+        print("x contains 3" if 3 in x else "x does not contain 3")
+        ```
+        """
+        return value in Span(self)
+
     def __mul__(
         self, x: Int
     ) -> Self where conforms_to(Self.T, ImplicitlyDestructible):
