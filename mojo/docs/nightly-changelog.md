@@ -373,6 +373,9 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `ascii()` now pre-allocates capacity to avoid repeated reallocations when
+  building the result string.
+
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
   `and_then()` chains operations that themselves return an `Optional`, enabling
