@@ -3396,9 +3396,30 @@ AnyValue BinOpNode::emitAndOr(ValueDest &dest, IREmitter &emitter) const {
       return {};
     CValue rhsV = emitter.emitExprCValue(rhs, EC_BoolCondition);
 
-    // Coerce the true/false values into a compatible type if they disagree.
-    if (emitter.coerceTypesToEachOther(getLoc(), lhsV, lhs, rhsV, rhs, {}))
-      return {};
+    // Try to coerce the true/false values into a compatible type if they
+    // disagree. Pass a null SMLoc so no error is emitted on failure.
+    if (emitter.coerceTypesToEachOther(SMLoc(), lhsV, lhs, rhsV, rhs, {})) {
+      // The two types are incompatible (e.g. `comptime if someInt and
+      // someString`). Fall back to Bool for both sides, matching the runtime
+      // `and`/`or` behavior.
+      ASTType boolType =
+          emitter.shared.lookupBuiltinType("Bool", emitter.declScope, getLoc());
+
+      if (!rhsV.getRValueType().isEqualCanon(boolType)) {
+        RValue rhsI1Value =
+            emitter.emitI1({rhsV, rhs}, EC_OperatorOperandValue);
+        rhsV = emitter.emitCValue({rhsI1Value, rhs}, EC_OperatorOperandValue,
+                                  boolType);
+      }
+
+      if (!lhsV.getRValueType().isEqualCanon(boolType)) {
+        lhsV = emitter.emitCValue({AnyValue(lhsI1Val), lhs},
+                                  EC_OperatorOperandValue, boolType);
+      }
+
+      if (!lhsV || !rhsV)
+        return {};
+    }
 
     PValue lhsPV = emitter.emitPValue({lhsV, lhs}, EC_OperatorOperandValue);
     PValue rhsPV = emitter.emitPValue({rhsV, rhs}, EC_OperatorOperandValue);

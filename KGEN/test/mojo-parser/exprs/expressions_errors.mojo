@@ -425,13 +425,6 @@ def bad_func return def() -> __mlir_type.index
 # Other Specific expression forms
 ##===----------------------------------------------------------------------===##
 
-struct WeirdBoolish(RegisterPassable):
-  def __bool__(self) -> Bool: return False
-  def __init__(out self, *, copy: Self): pass;
-
-def badParamAnd[a: Bool, b: WeirdBoolish]():
-  #expected-error @+1 {{value of type 'Bool' is not compatible with value of type 'WeirdBoolish'}}
-  comptime c = a and b
 
 # expected-error @+1 {{'Self' type may only be used inside a struct, trait, or extension}}
 def badSelf(a: Self):
