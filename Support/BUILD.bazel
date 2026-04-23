@@ -294,6 +294,7 @@ modular_cc_library(
         ":BazelRunfiles",
         ":CacheLog",
         ":Filesystem",
+        ":Globals",
         "@llvm-project//llvm:Support",
     ],
 )
@@ -963,6 +964,7 @@ modular_shared_library(
     output_name = "MSupportGlobals",
     deps = [
         ":SymbolExport",
+        "@llvm-project//llvm:Support",
         "@llvm-project//mlir:Support",
     ],
     # TODO: Missing define conditionals for symbol visibility
