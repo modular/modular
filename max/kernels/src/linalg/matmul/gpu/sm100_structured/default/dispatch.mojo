@@ -272,6 +272,7 @@ def matmul_dispatch_sm100[
                 b_type=b_type,
                 transpose_b=transpose_b,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
                 elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
@@ -299,7 +300,6 @@ def matmul_dispatch_sm100[
         b_type,
         transpose_b,
         elementwise_lambda_wrapper=elementwise_lambda_wrapper,
-        pdl_level=pdl_level,
     ](c, a, b, ctx)
 
 
@@ -573,6 +573,7 @@ def matmul_dispatch_sm100_bf16[
     //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
@@ -586,6 +587,27 @@ def matmul_dispatch_sm100_bf16[
     comptime assert c.rank == 2, "c must be of rank 2"
     comptime assert a.rank == 2, "a must be of rank 2"
     comptime assert b.rank == 2, "b must be of rank 2"
+
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime MMA_K = 16
+    comptime BK = (TensorMapSwizzle.SWIZZLE_128B.bytes() // size_of[a_type]())
+
+    comptime low_perf_shapes = [
+        Index(2112, 14336),
+    ]
+
+    # fallback to vendor matmul for shapes that Mojo kernel is lagging behind
+    comptime if (static_N, static_K) in low_perf_shapes:
+        _vendor_blas_matmul_sm100[
+            c_type,
+            a_type,
+            b_type,
+            transpose_b,
+            elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+        ](c, a, b, ctx)
+        return DISPATCH_HIT
 
     return sm100_heuristic_and_outliers_dispatch[
         transpose_b=transpose_b,
@@ -604,7 +626,6 @@ def _vendor_blas_matmul_sm100[
     b_type: DType,
     transpose_b: Bool = False,
     elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
     a: TileTensor[a_type, ...],
