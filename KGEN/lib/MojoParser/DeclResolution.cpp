@@ -2660,10 +2660,10 @@ static LogicalResult verifyDerivedAncestorImplication(
 
       if (!constraintImplies(prop, ancestorProp)) {
         shared.emitError(constraint.getLoc())
-            << "constraint for '" << symbol.getLeafReference()
-            << "' does not imply constraint for ancestor trait '"
+            << "constraint for " << symbol.getLeafReference()
+            << " does not imply constraint for ancestor trait "
             << ancestor.getLeafReference()
-            << "'; strengthen the derived constraint by adding the ancestor's "
+            << "; strengthen the derived constraint by adding the ancestor's "
                "constraint with 'and'";
         hasErrors = true;
       }
@@ -2717,8 +2717,8 @@ static LogicalResult resolvePropagatedConstraints(
 
     // Diamond: multiple paths disagree -- require explicit listing.
     shared.emitError(paths.front().second)
-        << "ancestor trait '" << symbol.getLeafReference()
-        << "' is reached via multiple inheritance paths with different "
+        << "ancestor trait " << symbol.getLeafReference()
+        << " is reached via multiple inheritance paths with different "
            "constraints; it must be explicitly listed in the inheritance "
            "list with the desired constraint";
     hasErrors = true;

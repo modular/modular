@@ -34,7 +34,7 @@ trait DiamondDerivedB(DiamondBase):
 
 
 struct DiamondMissingExplicitBase[T: Movable](
-    # expected-error @below {{ancestor trait ''DiamondBase'' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the inheritance list with the desired constraint}}
+    # expected-error @below {{ancestor trait 'DiamondBase' is reached via multiple inheritance paths with different constraints; it must be explicitly listed in the inheritance list with the desired constraint}}
     DiamondDerivedA where conforms_to(T, Copyable),
     DiamondDerivedB where conforms_to(T, Intable),
     Movable,
@@ -64,7 +64,7 @@ struct DerivedDoesNotImplyAncestor[T: Movable](
     # Base requires Intable
     AncestorImplicationBase where conforms_to(T, Intable),
     # But Derived only requires Copyable - this doesn't imply Intable!
-    # expected-error @below {{constraint for ''AncestorImplicationDerived'' does not imply constraint for ancestor trait ''AncestorImplicationBase''; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
+    # expected-error @below {{constraint for 'AncestorImplicationDerived' does not imply constraint for ancestor trait 'AncestorImplicationBase'; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
     AncestorImplicationDerived where conforms_to(T, Copyable),
     Movable,
 ):
@@ -95,7 +95,7 @@ struct UnconditionalDerivedConditionalAncestor[T: Movable](
     Movable,
     # But ancestor is conditional - inconsistent!
     UnconditionalDerivedBase where conforms_to(T, Copyable),
-    # expected-error @below {{constraint for ''UnconditionalDerivedChild'' does not imply constraint for ancestor trait ''UnconditionalDerivedBase''; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
+    # expected-error @below {{constraint for 'UnconditionalDerivedChild' does not imply constraint for ancestor trait 'UnconditionalDerivedBase'; strengthen the derived constraint by adding the ancestor's constraint with 'and'}}
     UnconditionalDerivedChild,
 ):
     var data: Self.T
@@ -175,7 +175,7 @@ trait RPRequiringTrait(RegisterPassable):
 
 struct RPTraitWeakerConstraint[T: Movable](
     Movable,
-    # expected-error @below {{constraint for ''RPRequiringTrait'' does not imply constraint for ancestor trait ''RegisterPassable''}}
+    # expected-error @below {{constraint for 'RPRequiringTrait' does not imply constraint for ancestor trait 'RegisterPassable'}}
     RPRequiringTrait where conforms_to(T, Movable),
     RegisterPassable where conforms_to(T, RegisterPassable),
 ):
