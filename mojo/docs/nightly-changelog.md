@@ -373,6 +373,16 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `String` and `StringSlice` now have `is_ascii_alpha()`, `is_ascii_alnum()`,
+  `capitalize()`, and `title()` methods:
+
+  ```mojo
+  String("hello world").capitalize()        # "Hello world"
+  StringSlice("hello world").title()        # "Hello World"
+  String("abc").is_ascii_alpha()            # True
+  StringSlice("abc123").is_ascii_alnum()    # True
+  ```
+
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
   `and_then()` chains operations that themselves return an `Optional`, enabling
