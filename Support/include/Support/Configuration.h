@@ -111,6 +111,15 @@ public:
   /// set.  Thread-safe.
   static std::optional<std::string> getGlobalValueIfSet(StringRef key);
 
+  /// Parse the `MODULAR_DEBUG` env var (ASAN-style comma-separated tokens)
+  /// and write the resulting `max-debug.*` overrides via `setGlobalValue()`.
+  /// Idempotent: the parse runs at most once per process.  Invoked
+  /// automatically from `open()` so every consumer — including standalone
+  /// Mojo binaries that never touch the Python bindings — picks up the
+  /// overrides transparently.  Also callable directly (for example, from
+  /// `DebugConfig::instance()`) without risk of double-parsing.
+  static void parseModularDebugEnv();
+
   /// Get all the values contained in the config.
   const llvm::StringMap<std::string> &getAllValues() const { return kv; }
 
