@@ -499,20 +499,6 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(Bool),
-    ](self) -> Bool:
-        """Merge with other bools in an expression.
-
-        Parameters:
-            other_type: The type of the bool to merge with.
-
-        Returns:
-            A Bool after merging with the specified `other_type`.
-        """
-        return self.__bool__()
-
     def _write_to[
         *, is_repr: Bool
     ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
@@ -1139,20 +1125,6 @@ struct OptionalReg[T: TrivialRegisterPassable](
 
         Returns:
             True if the Optional has a value and False otherwise.
-        """
-        return self.__bool__()
-
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(Bool),
-    ](self) -> Bool:
-        """Merge with other bools in an expression.
-
-        Parameters:
-            other_type: The type of the bool to merge with.
-
-        Returns:
-            A Bool after merging with the specified `other_type`.
         """
         return self.__bool__()
 
