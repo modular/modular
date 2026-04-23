@@ -96,6 +96,14 @@ def assert_false[
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
+
+    Example:
+    ```mojo
+    from testing import assert_false
+
+    assert_false(False)  # passes
+    assert_false(0)      # passes (0 is falsy)
+    ```
     """
     if val:
         raise _assert_error(msg, location.or_else(call_location()))
@@ -114,6 +122,14 @@ def assert_equal[
 ) raises:
     """Asserts that the input values are equal. If it is not then an Error
     is raised.
+
+    Example:
+    ```mojo
+    from testing import assert_equal
+
+    assert_equal(42, 42)            # passes
+    assert_equal("hello", "hello")  # passes
+    ```
 
     Parameters:
         T: The type of the input values.
@@ -263,6 +279,14 @@ def assert_not_equal[
     """Asserts that the input values are not equal. If it is not then an
     Error is raised.
 
+    Example:
+    ```mojo
+    from testing import assert_not_equal
+
+    assert_not_equal(1, 2)          # passes
+    assert_not_equal("hi", "bye")   # passes
+    ```
+
     Parameters:
         T: The type of the input values.
 
@@ -323,6 +347,13 @@ def assert_almost_equal[
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
+
+    Example:
+    ```mojo
+    from testing import assert_almost_equal
+
+    assert_almost_equal(3.14159, 3.14160, atol=0.001)  # passes
+    ```
     """
     comptime assert (
         dtype == DType.bool or dtype.is_integral() or dtype.is_floating_point()
@@ -368,6 +399,14 @@ def assert_is[
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
+
+    Example:
+    ```mojo
+    from testing import assert_is
+
+    var a = String("hello")
+    assert_is(a, a)  # passes — same object
+    ```
     """
     if lhs is not rhs:
         raise _assert_cmp_error["`left is right` identification"](
@@ -402,6 +441,15 @@ def assert_is_not[
 
     Raises:
         An Error with the provided message if assert fails and `None` otherwise.
+
+    Example:
+    ```mojo
+    from testing import assert_is_not
+
+    var a = String("hello")
+    var b = String("hello")
+    assert_is_not(a, b)  # passes — different objects
+    ```
     """
     if lhs is rhs:
         raise _assert_cmp_error["`left is not right` identification"](
