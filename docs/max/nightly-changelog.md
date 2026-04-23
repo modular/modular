@@ -15,6 +15,13 @@ This version is still a work in progress.
   enabling significant speedups for image-to-image generation by skipping
   redundant transformer passes during the denoising loop.
 - Added the Mamba state space model architecture.
+- Fixed Wan 2.1 / 2.2 video diffusion pipelines silently running without
+  classifier-free guidance. The tokenizer gated negative-prompt tokenization
+  on `true_cfg_scale > 1.0` (default `1.0`), so negative tokens were never
+  produced and the executor fell back to unguided generation even when
+  `guidance_scale > 1.0` and a negative prompt were supplied. Wan now enables
+  classical CFG whenever `guidance_scale > 1.0` and defaults an absent
+  negative prompt to the empty string, matching the diffusers baseline.
 
 ## MAX framework {#26-3-max}
 

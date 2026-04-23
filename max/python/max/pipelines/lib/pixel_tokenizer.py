@@ -1016,6 +1016,16 @@ class PixelGenerationTokenizer(
             do_true_cfg = (
                 image_options.guidance_scale > 1.0 and not is_distilled_klein
             )
+        elif self._pipeline_class_name in (
+            PipelineClassName.WAN,
+            PipelineClassName.WAN_I2V,
+        ):
+            # Wan uses classical CFG: diffusers enables it whenever
+            # guidance_scale > 1.0, with an empty-string negative prompt as
+            # the standard "unconditional" conditioning.
+            do_true_cfg = image_options.guidance_scale > 1.0
+            if do_true_cfg and negative_prompt_resolved is None:
+                negative_prompt_resolved = ""
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
