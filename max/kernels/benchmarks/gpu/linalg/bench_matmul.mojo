@@ -33,6 +33,7 @@ from internal_utils import (
     CacheBustingBuffer,
     arg_parse,
     pytorch_like_tolerances_for,
+    update_bench_config_args,
 )
 from std.random import rand
 from internal_utils._utils import InitializationType, init_vector_launch
@@ -344,9 +345,15 @@ def bench_matmul[
         return Int(shape[0].value()) * Int(shape[1].value())
 
     comptime simd_size = 4
-    var cb_a = CacheBustingBuffer[a_type](get_size(shape_a), simd_size, ctx)
-    var cb_b = CacheBustingBuffer[a_type](get_size(shape_b), simd_size, ctx)
-    var cb_c = CacheBustingBuffer[c_type](get_size(shape_c), simd_size, ctx)
+    var cb_a = CacheBustingBuffer[a_type](
+        get_size(shape_a), simd_size, ctx, enabled=cache_busting
+    )
+    var cb_b = CacheBustingBuffer[a_type](
+        get_size(shape_b), simd_size, ctx, enabled=cache_busting
+    )
+    var cb_c = CacheBustingBuffer[c_type](
+        get_size(shape_c), simd_size, ctx, enabled=cache_busting
+    )
     # TODO: remove init_on_gpu flag and the loading on CPU
     comptime init_on_gpu = True
 
@@ -579,7 +586,7 @@ def main() raises:
         arg_parse("init_type", "uniform_distribution")
     )
     var verify = arg_parse("verify", True) if not c_type.is_float8() else False
-    comptime cache_busting = True
+    comptime cache_busting = get_defined_bool["cache_busting", True]()
     comptime transpose_b = True
     comptime use_vendor_blas = get_defined_bool["use_vendor_blas", False]()
     comptime enable_compute_epilogue = get_defined_bool[
@@ -591,6 +598,7 @@ def main() raises:
     var run_benchmark = arg_parse("run_benchmark", True)
 
     var m = Bench()
+    update_bench_config_args(m)
     with DeviceContext() as ctx:
         create_matmul_bench[
             c_type,
