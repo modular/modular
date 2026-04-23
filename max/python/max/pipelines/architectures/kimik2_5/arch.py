@@ -45,7 +45,6 @@ kimik2_5_arch = SupportedArchitecture(
     name="KimiK25ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
-        "moonshotai/Kimi-K2.5",
         "nvidia/Kimi-K2.5-NVFP4",
     ],
     default_encoding="bfloat16",
@@ -99,7 +98,7 @@ kimivl_arch = SupportedArchitecture(
 eagle3_kimik25_arch = SupportedArchitecture(
     name="Eagle3DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["moonshotai/Kimi-K2.5"],
+    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4"],
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",
