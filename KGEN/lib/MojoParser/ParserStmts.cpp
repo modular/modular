@@ -1661,26 +1661,18 @@ LoopResult StmtParser::emitForStmt(SMLoc forLoc, ExprNode *targetExpr,
                             {{MLValue(iterVar), seqExpr}});
   ASTType iterType = iterVar.getType().getElementType();
 
-  // HORRIBLE HACK: See if the type has a __next_old__ member.  If so, ignore
-  // the iterator traits and use it + __has_next__.  This is to work around a
-  // GPU codegen pessimization.  Remove this when we figure it out.
-  PValue nextFn = OverloadSet::lookupAndResolve(iterType, "__next_old__",
+  PValue nextFn = OverloadSet::lookupAndResolve(iterType, "__next__",
                                                 nextOperands, prefixEmitter);
-
   if (!nextFn) {
-    nextFn = OverloadSet::lookupAndResolve(iterType, "__next__", nextOperands,
-                                           prefixEmitter);
-    if (!nextFn) {
-      auto diag = emitError(seqExpr->getLoc());
-      diag << iterType
-           << " does not conform to 'Iterable'; add conformance to use in a "
-              "'for' loop"
-           << seqExpr->getRange();
-      diag.attachNote(seqExpr->getLoc())
-          << "to conform to 'Iterable', add it to the struct declaration: "
-             "'struct Foo(Iterable):'";
-      return LoopResult(LoopResult::ErrorKind::inLoopStmt);
-    }
+    auto diag = emitError(seqExpr->getLoc());
+    diag << iterType
+         << " does not conform to 'Iterable'; add conformance to use in a "
+            "'for' loop"
+         << seqExpr->getRange();
+    diag.attachNote(seqExpr->getLoc())
+        << "to conform to 'Iterable', add it to the struct declaration: "
+           "'struct Foo(Iterable):'";
+    return LoopResult(LoopResult::ErrorKind::inLoopStmt);
   }
 
   // Determine if we're modern or legacy structure.
