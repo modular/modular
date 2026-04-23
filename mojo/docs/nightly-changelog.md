@@ -388,6 +388,10 @@ This version is still a work in progress.
   print(mapped) # Optional("43")
   ```
 
+- Added `std.memory.forget_deinit()` to enable low-level code to skip the usual
+  requirement to run a destructor for a value. This function should be used
+  rarely, when building low-level abstractions.
+
 - `parallelize`, `parallelize_over_rows` (in
   `std.algorithm.backend.cpu.parallelize`) and the `elementwise` overloads in
   `std.algorithm.functional` now accept an optional trailing

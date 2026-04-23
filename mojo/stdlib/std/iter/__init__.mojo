@@ -411,9 +411,8 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                         to=trait_downcast[ImplicitlyDestructible](res[i])
                     ).destroy_pointee()
 
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(res)
-            )
+            std.memory.forget_deinit(res^)
+
             raise StopIteration
 
     def bounds(self) -> Tuple[Int, Optional[Int]]:

@@ -103,7 +103,7 @@ def rebind_var[
     """
     ref dest_ref = rebind[dest_type](src)
     dest = UnsafePointer(to=dest_ref).take_pointee()
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
+    std.memory.forget_deinit(src^)
 
 
 comptime downcast[

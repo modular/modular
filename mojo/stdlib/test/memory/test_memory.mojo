@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys import simd_width_of, size_of
+from std.os import abort
 
 from std.memory import (
     destroy_n,
@@ -22,6 +23,7 @@ from std.memory import (
     memset_zero,
     uninit_copy_n,
     uninit_move_n,
+    forget_deinit,
 )
 from std.testing import TestSuite
 from std.testing import (
@@ -31,6 +33,7 @@ from std.testing import (
     assert_true,
 )
 from test_utils import (
+    AbortOnDel,
     CopyCounter,
     DelCounter,
     MoveCounter,
@@ -1025,6 +1028,30 @@ def test_destroy_n_zero_count() raises:
     # Cleanup/free the memory
     destroy_n(ptr, count=1)
     ptr.free()
+
+
+@fieldwise_init
+struct Parent:
+    var child: Child
+
+    def __del__(deinit self):
+        abort("@ Parent.__del__ should not have run")
+
+
+@fieldwise_init
+struct Child(Movable):
+    def __del__(deinit self):
+        abort("@ Child.__del__ should not have run")
+
+
+def test_forget_deinit() raises:
+    # Test that simple case skips destructors
+    var abort_on_del = AbortOnDel(0)
+    forget_deinit(abort_on_del^)
+
+    # Test that field destructors are skipped as well
+    var parent = Parent(Child())
+    forget_deinit(parent^)
 
 
 def main() raises:

@@ -740,9 +740,7 @@ struct Variant[*Ts: Movable](
         var isa = self.isa[T]()
         var storage = self._storage^
         if not isa:
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(storage)
-            )
+            std.memory.forget_deinit(storage^)
             abort("taking the wrong type!")
 
         return storage^.take[T]()
@@ -928,9 +926,7 @@ struct Variant[*Ts: Movable](
         var isa = self.isa[T]()
         var storage = self._storage^
         if not isa:
-            __mlir_op.`lit.ownership.mark_destroyed`(
-                __get_mvalue_as_litref(storage)
-            )
+            std.memory.forget_deinit(storage^)
             abort("Variant.destroy_with: wrong variant type")
 
         destroy_func(storage^.take[T]())
