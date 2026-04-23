@@ -1101,25 +1101,25 @@ struct NVFP4TokenFormat[
         var scales_tok = w + SF_ATOM_M[0] * sub_warp_id
         var oob = scales_tok >= tile_token_count
 
-        var scales_gmem_ptr = UnsafePointer[
-            Scalar[Self.scales_dtype], MutExternalOrigin
+        comptime n_scales_per_token = (
+            Self.hid_dim // NVFP4_SF_VECTOR_SIZE // Self._n_k_tiles
+        )
+        comptime n_scales_simd_per_token = n_scales_per_token // SF_ATOM_K
+
+        var scales_gmem_ptr = Optional[
+            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
         ]()
         if not oob:
             scales_gmem_ptr = (
                 recv_buf_ptr_functor(scales_tok) + Self.scales_offset()
             ).bitcast[Scalar[Self.scales_dtype]]()
-
-        comptime n_scales_per_token = (
-            Self.hid_dim // NVFP4_SF_VECTOR_SIZE // Self._n_k_tiles
-        )
-        comptime n_scales_simd_per_token = n_scales_per_token // SF_ATOM_K
-        scales_gmem_ptr += n_scales_per_token * k_tile_idx
+            scales_gmem_ptr.unsafe_value() += n_scales_per_token * k_tile_idx
 
         comptime for i in range(0, n_scales_simd_per_token, sub_warp_size):
             var _i = i + lane_in_sub_warp
             var scales_simd = SIMD[Self.scales_dtype, SF_ATOM_K](0.0)
             if not oob:
-                scales_simd = scales_gmem_ptr.load[
+                scales_simd = scales_gmem_ptr.unsafe_value().load[
                     width=SF_ATOM_K, invariant=True, alignment=SF_ATOM_K
                 ](_i * SF_ATOM_K)
 
