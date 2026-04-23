@@ -168,14 +168,6 @@ struct _StridedRangeIterator(
         self.start += self.step
         return result
 
-    # FIXME(GENAI-359): Opt'ing into old-style foreach code generation is
-    # necessary to get an AMD355 test working.
-    @always_inline
-    def __next_old__(mut self) -> Self.Element:
-        var result = self.start
-        self.start += self.step
-        return result
-
     @always_inline
     def __has_next__(self) -> Bool:
         return self.__len__() > 0
@@ -339,17 +331,9 @@ struct _ZeroStartingScalarRange[dtype: DType](
     @always_inline
     def __next__(mut self) raises StopIteration -> Scalar[Self.dtype]:
         var curr = self.curr
+        self.curr = curr - 1
         if curr == 0:
             raise StopIteration()
-        self.curr = curr - 1
-        return self.end - curr
-
-    # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
-    # why doing so regresses code generation.
-    @always_inline
-    def __next_old__(mut self) -> Scalar[Self.dtype]:
-        var curr = self.curr
-        self.curr -= 1
         return self.end - curr
 
     @always_inline

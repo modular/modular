@@ -174,8 +174,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     for i in range(c_host_ref.dim[0]()):
         for j in range(c_host_ref.dim[1]()):
-            comptime assert i.dtype.is_integral()
-            comptime assert j.dtype.is_integral()
+            comptime assert type_of(i).dtype.is_integral()
+            comptime assert type_of(j).dtype.is_integral()
             comptime assert c_host.flat_rank >= 2
             assert_equal(
                 c_host[(Idx(i), Idx(j))].cast[DType.float64](),
