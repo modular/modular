@@ -466,15 +466,13 @@ modular_py_test(
     size = "small",
     srcs = ["test_hf_config_overrides.py"],
     imports = ["."],
-    tags = [
-        "no-pydeps",  # TODO: Fix pydeps import mapping for tools.hf_config_overrides
-    ],
     # TODO(MODELS-994): Investigate and enable on macOS
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:hf_config_overrides",

@@ -40,12 +40,12 @@ modular_py_test(
         "tests/test_embeddings_unit.py",
         "tests/test_weight_adapters.py",
     ],
-    tags = ["no-pydeps"],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/graph",
         "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
