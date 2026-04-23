@@ -31,7 +31,11 @@ from std.collections.string._utf8 import (
     _is_utf8_start_byte,
 )
 from std.collections.string.format import _FormatUtils
-from std.collections.string.iterators import CodepointSliceIter, CodepointsIter
+from std.collections.string.iterators import (
+    CodepointSliceIter,
+    CodepointsIter,
+    GraphemeSliceIter,
+)
 from std.hashlib.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _WriteBufferStack
 from std.math import align_down
@@ -1149,6 +1153,50 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             A reversed iterator of references to the string slice elements.
         """
         return CodepointSliceIter[Self.origin, forward=False](self)
+
+    def graphemes(self) -> GraphemeSliceIter[Self.origin]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. This handles combining marks, emoji
+        ZWJ sequences, flag emoji, Hangul syllables, and other
+        multi-codepoint clusters as defined by UAX #29.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+
+        Example:
+
+        ```mojo
+        %# from testing import assert_equal
+        # "café" with combining accent: c, a, f, e + combining acute
+        var s = StringSlice("cafe\\u{0301}")
+        var count = 0
+        for g in s.graphemes():
+            count += 1
+        assert_equal(count, 4)
+        ```
+        """
+        return GraphemeSliceIter(self)
+
+    def count_graphemes(self) -> Int:
+        """Count the number of grapheme clusters in this string.
+
+        This is an O(n) operation that scans the full string to identify
+        grapheme cluster boundaries using UAX #29 rules.
+
+        Returns:
+            The number of grapheme clusters.
+
+        Example:
+
+        ```mojo
+        %# from testing import assert_equal
+        var s = StringSlice("Hello")
+        assert_equal(s.count_graphemes(), 5)
+        ```
+        """
+        return len(self.graphemes())
 
     @always_inline
     def as_bytes(self) -> Span[Byte, Self.origin]:

@@ -147,6 +147,12 @@ This version is still a work in progress.
 
 - `assert_raises` now catches custom `Writable` error types, not just `Error`.
 
+- Added UAX #29 grapheme cluster segmentation to `String` and `StringSlice`.
+  New APIs: `graphemes()` returns a `GraphemeSliceIter` that yields each
+  user-perceived "character" as a `StringSlice`, and `count_graphemes()` returns
+  the grapheme cluster count. This correctly handles combining marks, emoji ZWJ
+  sequences, flag emoji, Hangul syllables, and other multi-codepoint clusters.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 
