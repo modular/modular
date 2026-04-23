@@ -9,9 +9,7 @@ def _modular_versioned_expand_template_impl(ctx):
 
     mojo_base_version = ctx.attr._mojo_base_version[BuildSettingInfo].value
 
-    # TODO (Mojo 1.0): We currently have 4 parts in the Mojo version,
-    # but the first will go away eventually, and is always a 0.
-    mojo_major, mojo_minor, mojo_patch, _tweak = mojo_base_version.split(".")
+    mojo_major, mojo_minor, mojo_patch = mojo_base_version.split(".")
     mojo_label = ctx.attr._mojo_version_label[BuildSettingInfo].value
 
     release_type = ctx.attr._release_type[BuildSettingInfo].value

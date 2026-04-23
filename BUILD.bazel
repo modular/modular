@@ -95,7 +95,7 @@ string_flag(
 
 string_flag(
     name = "mojo_base_version",
-    build_setting_default = "0.26.3.0",
+    build_setting_default = "1.0.0",
     make_variable = "MOJO_BASE_VERSION",
 )
 
