@@ -342,9 +342,10 @@ class BatchMetrics:
             int(self.total_kv_blocks * self.used_kv_pct)
         )
         METRICS.cache_num_total_blocks(self.total_kv_blocks)
-        METRICS.cache_hit_rate(self.cache_hit_rate)
-        METRICS.cache_hits(self.cache_hit_tokens)
-        METRICS.cache_misses(self.cache_miss_tokens)
+        if self.batch_type == BatchType.CE:
+            METRICS.cache_hit_rate(self.cache_hit_rate)
+            METRICS.cache_hits(self.cache_hit_tokens)
+            METRICS.cache_misses(self.cache_miss_tokens)
 
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
