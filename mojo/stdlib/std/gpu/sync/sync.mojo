@@ -439,7 +439,7 @@ def syncwarp(mask: Int = -1):
 
     This function creates a synchronization point where threads in a warp must wait until all
     threads specified by the mask reach this point. On NVIDIA GPUs, it uses warp-level
-    synchronization primitives. On AMD GPUs, this is a no-op since threads execute in lock-step.
+    synchronization primitives. On AMD GPUs, this acts as a wave execution barrier.
     On Apple GPUs, this acts as a SIMDGROUP execution barrier. Lane masks are not supported,
     so the mask argument is ignored and all active lanes must reach this point.
 
@@ -451,7 +451,7 @@ def syncwarp(mask: Int = -1):
 
     Note:
         - On NVIDIA GPUs, this maps to the nvvm.bar.warp.sync intrinsic.
-        - On AMD GPUs, this is a no-op since threads execute in lock-step.
+        - On AMD GPUs, this maps to the llvm.amdgcn.wave.barrier intrinsic.
         - On Apple GPUs, this provides *execution synchronization only* via a SIMDGROUP
           barrier with `mem_none` (no memory fence). Use `barrier()` for threadgroup
           memory ordering.
@@ -465,14 +465,12 @@ def syncwarp(mask: Int = -1):
             )
         )
     elif is_amd_gpu():
-        # In AMD GPU this is a nop (everything executed in lock-step).
-        return
+        llvm_intrinsic["llvm.amdgcn.wave.barrier", NoneType]()
     elif is_apple_gpu():
         # simdgroup_barrier(mem_flags::mem_none)
         llvm_intrinsic["llvm.air.simdgroup.barrier", NoneType](
             Int32(0), Int32(4)
         )
-        return
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

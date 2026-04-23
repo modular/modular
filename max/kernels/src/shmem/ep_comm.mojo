@@ -56,7 +56,6 @@ from std.gpu.sync import (
     syncwarp,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
-    schedule_barrier,
 )
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_tensor import _get_index_type
@@ -2191,9 +2190,6 @@ struct EPDispatchKernel[
                     )
                 )
                 smem_vals[1] = fetch_tile_id()
-            # TODO(KERN-2792): Investigate why AMD GPUs require this.
-            comptime if is_amd_gpu():
-                schedule_barrier()
 
             # Load within-expert rank prefix sums for this expert.
             var base = Self.rank_prefix_offset + local_expert_id * Self.n_ranks
@@ -2290,9 +2286,6 @@ struct EPDispatchKernel[
                 if warp_id() == 0:
                     if tid == 0:
                         smem_vals[1] = fetch_tile_id()
-                    # TODO(KERN-2792): Investigate why AMD GPUs require this.
-                    comptime if is_amd_gpu():
-                        schedule_barrier()
                     syncwarp()
                     fill_tok_rank_map(Int(smem_vals[1]), total_tokens)
                 barrier()
