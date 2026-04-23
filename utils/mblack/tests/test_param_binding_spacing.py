@@ -185,25 +185,42 @@ def test_alias_params_function():
     assert_mojo_format(source, expected)
 
 
+# A small Foo with an attribute and a method, used by tests whose samples
+# exercise attribute access / method call as a parameter binding value.
+_FOO_DECL = (
+    "@fieldwise_init\n"
+    "struct Foo(Copyable):\n"
+    "    var y: Int\n"
+    "    var _y: Int\n"
+    "\n"
+    "    def method(self) -> Int:\n"
+    "        return self.y\n"
+    "\n"
+    "\n"
+)
+
+
 def test_call_params_attribute_access():
     """Spaces around = should be removed when value is an attribute access."""
     source = (
-        "def f[a: Int]():\n"
+        _FOO_DECL
+        + "def f[a: Int]():\n"
         "    pass\n"
         "\n"
         "\n"
         "def main():\n"
-        "    var x = Foo()\n"
+        "    comptime x = Foo(0, 0)\n"
         "    f[a = x.y]()\n"
         "    f[a = x._y]()\n"
     )
     expected = (
-        "def f[a: Int]():\n"
+        _FOO_DECL
+        + "def f[a: Int]():\n"
         "    pass\n"
         "\n"
         "\n"
         "def main():\n"
-        "    var x = Foo()\n"
+        "    comptime x = Foo(0, 0)\n"
         "    f[a=x.y]()\n"
         "    f[a=x._y]()\n"
     )
@@ -213,21 +230,23 @@ def test_call_params_attribute_access():
 def test_call_params_method_call():
     """Spaces around = should be removed when value is a method call."""
     source = (
-        "def f[a: Int]():\n"
+        _FOO_DECL
+        + "def f[a: Int]():\n"
         "    pass\n"
         "\n"
         "\n"
         "def main():\n"
-        "    var x = Foo()\n"
+        "    comptime x = Foo(0, 0)\n"
         "    f[a = x.method()]()\n"
     )
     expected = (
-        "def f[a: Int]():\n"
+        _FOO_DECL
+        + "def f[a: Int]():\n"
         "    pass\n"
         "\n"
         "\n"
         "def main():\n"
-        "    var x = Foo()\n"
+        "    comptime x = Foo(0, 0)\n"
         "    f[a=x.method()]()\n"
     )
     assert_mojo_format(source, expected)
@@ -299,7 +318,8 @@ def test_call_params_parameterized_type():
 def test_call_params_mixed_complex_and_simple():
     """Spaces around = should be consistently removed across mixed values."""
     source = (
-        "def f[a: Int, b: Int, c: Int, d: Int]():\n"
+        _FOO_DECL
+        + "def f[a: Int, b: Int, c: Int, d: Int]():\n"
         "    pass\n"
         "\n"
         "\n"
@@ -308,11 +328,12 @@ def test_call_params_mixed_complex_and_simple():
         "\n"
         "\n"
         "def main():\n"
-        "    var x = Foo()\n"
+        "    comptime x = Foo(0, 0)\n"
         "    f[a = g(), b = x.y, c = 1, d = 1 + 2]()\n"
     )
     expected = (
-        "def f[a: Int, b: Int, c: Int, d: Int]():\n"
+        _FOO_DECL
+        + "def f[a: Int, b: Int, c: Int, d: Int]():\n"
         "    pass\n"
         "\n"
         "\n"
@@ -321,7 +342,7 @@ def test_call_params_mixed_complex_and_simple():
         "\n"
         "\n"
         "def main():\n"
-        "    var x = Foo()\n"
+        "    comptime x = Foo(0, 0)\n"
         "    f[a=g(), b=x.y, c=1, d=1 + 2]()\n"
     )
     assert_mojo_format(source, expected)
@@ -330,6 +351,7 @@ def test_call_params_mixed_complex_and_simple():
 def test_mixed_param_binding_and_slice():
     """Parameter bindings get no spaces while slices in the same list keep them."""
     source = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, a: Int, b: Slice):\n"
         "        pass\n"
@@ -340,6 +362,7 @@ def test_mixed_param_binding_and_slice():
         "    x[a = 1, b = 0:5]\n"
     )
     expected = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, a: Int, b: Slice):\n"
         "        pass\n"

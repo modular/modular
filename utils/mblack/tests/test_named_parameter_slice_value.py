@@ -35,6 +35,7 @@ def test_named_subscript_parameter_slice_value():
 def test_named_subscript_parameter_slice_variants():
     """Test using different slice forms in named subscript parameters."""
     source = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, par: Slice): pass\n"
         "def main():\n"
@@ -51,6 +52,7 @@ def test_named_subscript_parameter_slice_variants():
         "    x[par=::-1]\n"
     )
     expected = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, par: Slice):\n"
         "        pass\n"
@@ -74,6 +76,7 @@ def test_named_subscript_parameter_slice_variants():
 def test_named_subscript_parameter_slice_variables():
     """Test using variables in slices in named subscript parameters."""
     source = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, par: Slice): pass\n"
         "def main():\n"
@@ -84,6 +87,7 @@ def test_named_subscript_parameter_slice_variables():
         "    x[par=a:a*2:a]\n"
     )
     expected = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, par: Slice):\n"
         "        pass\n"
@@ -102,6 +106,7 @@ def test_named_subscript_parameter_slice_variables():
 def test_named_subscript_parameter_multiple_slices():
     """Test multiple subscripts with slices."""
     source = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, par1: Slice, par2: Slice): pass\n"
         "def main():\n"
@@ -111,6 +116,7 @@ def test_named_subscript_parameter_multiple_slices():
         "    x[:, par2=1:5]\n"
     )
     expected = (
+        "@fieldwise_init\n"
         "struct Foo:\n"
         "    def __getitem__(self, par1: Slice, par2: Slice):\n"
         "        pass\n"

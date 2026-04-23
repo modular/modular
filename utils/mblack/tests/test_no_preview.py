@@ -56,7 +56,7 @@ def test_block_trailing_newline_preserved():
 
 def test_percent_comment_no_space():
     """preview=False allows #% without a space; preview=True inserts one."""
-    source = "x = 1  #% some comment\n"
+    source = "def main():\n    x = 1  #% some comment\n"
     assert_mojo_format(source, source, mode=MOJO_MODE_NO_PREVIEW)
 
 
@@ -77,10 +77,14 @@ def test_comptime_if():
 
 def test_keyword_spacing():
     """Argument convention keywords format correctly without preview."""
-    source = "def __init__(out self, mut v:Int, read x:Int): pass"
+    source = (
+        "struct Foo:\n"
+        "    def __init__(out self, mut v:Int, read x:Int): pass\n"
+    )
     expected = (
-        "def __init__(out self, mut v: Int, read x: Int):\n"
-        "    pass\n"
+        "struct Foo:\n"
+        "    def __init__(out self, mut v: Int, read x: Int):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected, mode=MOJO_MODE_NO_PREVIEW)
 

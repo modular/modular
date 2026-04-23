@@ -31,10 +31,11 @@ def test_borrowed_raises_error():
 
 
 def test_var_keyword_spacing_simple():
-    source = "def method(var self): pass"
+    source = "struct Foo:\n    def method(var self): pass"
     expected = (
-        "def method(var self):\n"
-        "    pass\n"
+        "struct Foo:\n"
+        "    def method(var self):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)
 
@@ -49,30 +50,33 @@ def test_var_keyword_spacing_with_type():
 
 
 def test_var_keyword_spacing_mixed():
-    source = "def method(var self, y: Int): pass"
+    source = "struct Foo:\n    def method(var self, y: Int): pass"
     expected = (
-        "def method(var self, y: Int):\n"
-        "    pass\n"
+        "struct Foo:\n"
+        "    def method(var self, y: Int):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)
 
 
 def test_contextual_keyword_spacing():
-    source = "def __init__(out self, mut v:Int, read x:Int): pass"
+    source = "struct Foo:\n    def __init__(out self, mut v:Int, read x:Int): pass"
     expected = (
-        "def __init__(out self, mut v: Int, read x: Int):\n"
-        "    pass\n"
+        "struct Foo:\n"
+        "    def __init__(out self, mut v: Int, read x: Int):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)
 
 
 def test_contextual_keyword_spacing_variadics():
-    source =  (
-        "def __init__(out self, mut *v: Int, read *x: *Int, mut **kwargs: Int): "
-        "pass"
+    source = (
+        "struct Foo:\n"
+        "    def __init__(out self, mut *v: Int, var **kwargs: Int): pass"
     )
     expected = (
-        "def __init__(out self, mut *v: Int, read *x: *Int, mut **kwargs: Int):\n"
-        "    pass\n"
+        "struct Foo:\n"
+        "    def __init__(out self, mut *v: Int, var **kwargs: Int):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)

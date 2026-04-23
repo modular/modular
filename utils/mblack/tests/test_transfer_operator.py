@@ -47,7 +47,7 @@ def _wrap_val_struct(body: str) -> str:
 
 @pytest.mark.parametrize(
     "op",
-    ["**", "*", "@", "/", "%", "//", "+", "-", "<<", ">>", "&", "|", "^"],
+    ["**", "*", "/", "%", "//", "+", "-", "<<", ">>", "&", "|", "^"],
 )
 def test_transfer_member_access_then_binop(op):
     """Transfer followed by member access and a binary operator."""

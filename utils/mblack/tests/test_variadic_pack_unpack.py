@@ -34,10 +34,14 @@ def test_star_self_attr_in_param():
 
 
 def test_star_expr_with_trailers_in_subscript():
-    """`*Ts.upcast[AnyType]()` in a subscript: no space after `*`."""
+    """`*Name.attr[T, U]()` in a subscript: no space after `*` regardless of
+    how deep the trailer chain goes."""
     source = (
+        "from std.iter import AllCopyable\n"
+        "\n"
+        "\n"
         "struct Variant[*Ts: Movable](\n"
-        "    Copyable where AllCopyable[*Ts.upcast[AnyType]()],\n"
+        "    Copyable where AllCopyable[*TypeList.of[Int, Int]()],\n"
         "):\n"
         "    pass\n"
     )

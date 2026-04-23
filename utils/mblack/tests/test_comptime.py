@@ -163,12 +163,12 @@ def test_comptime_expr_in_if_condition():
     """comptime(expr) used as a condition in an if statement."""
     source = (
         "def foo():\n"
-        "    if comptime(thread_layout.rank() == 1):\n"
+        "    if comptime(1 + 2 == 3):\n"
         "        pass\n"
     )
     expected = (
         "def foo():\n"
-        "    if comptime (thread_layout.rank() == 1):\n"
+        "    if comptime (1 + 2 == 3):\n"
         "        pass\n"
     )
     assert_mojo_format(source, expected)
