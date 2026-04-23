@@ -13,10 +13,10 @@
 """Qwen-Image-Edit diffusion architecture for image editing."""
 
 from .arch import qwen_image_edit_arch, qwen_image_edit_plus_arch
-from .pipeline_qwen_image_edit import QwenImageEditPipeline
+from .model import QwenImageEditTransformerModel
 
 __all__ = [
-    "QwenImageEditPipeline",
+    "QwenImageEditTransformerModel",
     "qwen_image_edit_arch",
     "qwen_image_edit_plus_arch",
 ]

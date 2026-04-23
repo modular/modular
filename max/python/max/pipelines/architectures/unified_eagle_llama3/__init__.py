@@ -13,11 +13,17 @@
 """EAGLE speculative decoding draft model for Llama 3 with unified graph compilation."""
 
 from .arch import unified_eagle_llama3_arch
-from .model import UnifiedEagleLlama3Model
+from .model import (
+    PersistentInputBuffers,
+    UnifiedEagleLlama3Inputs,
+    UnifiedEagleLlama3Model,
+)
 from .model_config import UnifiedEagleLlama3Config
 
 __all__ = [
+    "PersistentInputBuffers",
     "UnifiedEagleLlama3Config",
+    "UnifiedEagleLlama3Inputs",
     "UnifiedEagleLlama3Model",
     "unified_eagle_llama3_arch",
 ]

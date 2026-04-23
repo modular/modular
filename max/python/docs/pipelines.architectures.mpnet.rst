@@ -9,4 +9,5 @@ max.pipelines.architectures.mpnet
 
 .. automodule:: max.pipelines.architectures.mpnet
    :members:
+   :imported-members:
    :show-inheritance:

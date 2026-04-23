@@ -9,4 +9,5 @@ max.pipelines.architectures.mamba
 
 .. automodule:: max.pipelines.architectures.mamba
    :members:
+   :imported-members:
    :show-inheritance:

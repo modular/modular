@@ -14,11 +14,11 @@
 
 from .arch import ZImageArchConfig, z_image_arch
 from .model import ZImageTransformerModel
-from .pipeline_z_image import ZImagePipeline
+from .model_config import ZImageConfig
 
 __all__ = [
     "ZImageArchConfig",
-    "ZImagePipeline",
+    "ZImageConfig",
     "ZImageTransformerModel",
     "z_image_arch",
 ]

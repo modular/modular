@@ -14,11 +14,12 @@
 
 from .arch import QwenImageArchConfig, qwen_image_arch
 from .model import QwenImageTransformerModel
-from .pipeline_qwen_image import QwenImagePipeline
+from .model_config import QwenImageConfig, QwenImageConfigBase
 
 __all__ = [
     "QwenImageArchConfig",
-    "QwenImagePipeline",
+    "QwenImageConfig",
+    "QwenImageConfigBase",
     "QwenImageTransformerModel",
     "qwen_image_arch",
 ]

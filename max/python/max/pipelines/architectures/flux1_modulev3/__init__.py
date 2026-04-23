@@ -12,11 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 """FLUX.1 diffusion architecture for image generation."""
 
-from .arch import (
-    FluxArchConfig,
-    _FluxV2NotImplemented,
-    flux1_arch,
-    flux1_modulev3_arch,
-)
+from .arch import FluxArchConfig, flux1_arch, flux1_modulev3_arch
+from .model import Flux1TransformerModel
+from .model_config import FluxConfig
 
-__all__ = ["FluxArchConfig", "flux1_arch", "flux1_modulev3_arch"]
+__all__ = [
+    "Flux1TransformerModel",
+    "FluxArchConfig",
+    "FluxConfig",
+    "flux1_arch",
+    "flux1_modulev3_arch",
+]

@@ -16,4 +16,8 @@ from .arch import qwen2_arch
 from .model import Qwen2Model
 from .model_config import Qwen2Config
 
-__all__ = ["Qwen2Config", "Qwen2Model", "qwen2_arch"]
+__all__ = [
+    "Qwen2Config",
+    "Qwen2Model",
+    "qwen2_arch",
+]

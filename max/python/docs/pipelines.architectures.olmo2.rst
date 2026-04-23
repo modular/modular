@@ -9,4 +9,5 @@ max.pipelines.architectures.olmo2
 
 .. automodule:: max.pipelines.architectures.olmo2
    :members:
+   :imported-members:
    :show-inheritance:

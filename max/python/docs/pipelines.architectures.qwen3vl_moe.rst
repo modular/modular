@@ -9,4 +9,5 @@ max.pipelines.architectures.qwen3vl_moe
 
 .. automodule:: max.pipelines.architectures.qwen3vl_moe
    :members:
+   :imported-members:
    :show-inheritance:

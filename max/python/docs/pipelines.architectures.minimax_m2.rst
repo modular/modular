@@ -9,4 +9,5 @@ max.pipelines.architectures.minimax_m2
 
 .. automodule:: max.pipelines.architectures.minimax_m2
    :members:
+   :imported-members:
    :show-inheritance:

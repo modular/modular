@@ -12,5 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 
 from .arch import minimax_m2_arch
+from .model import MiniMaxM2Inputs, MiniMaxM2Model
+from .model_config import MiniMaxM2Config
 
-__all__ = ["minimax_m2_arch"]
+__all__ = [
+    "MiniMaxM2Config",
+    "MiniMaxM2Inputs",
+    "MiniMaxM2Model",
+    "minimax_m2_arch",
+]

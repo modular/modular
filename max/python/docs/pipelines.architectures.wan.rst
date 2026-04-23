@@ -9,4 +9,5 @@ max.pipelines.architectures.wan
 
 .. automodule:: max.pipelines.architectures.wan
    :members:
+   :imported-members:
    :show-inheritance:

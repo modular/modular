@@ -13,14 +13,16 @@
 """Gemma 3 vision-language architecture for multimodal text generation."""
 
 from .arch import gemma3_multimodal_arch
-from .model import Gemma3_MultiModalModel
-from .model_config import Gemma3ForConditionalGenerationConfig
-
-ARCHITECTURES = [gemma3_multimodal_arch]
+from .model import Gemma3_MultiModalModel, Gemma3MultiModalModelInputs
+from .model_config import (
+    Gemma3ForConditionalGenerationConfig,
+    Gemma3VisionConfig,
+)
 
 __all__ = [
-    "ARCHITECTURES",
     "Gemma3ForConditionalGenerationConfig",
+    "Gemma3MultiModalModelInputs",
+    "Gemma3VisionConfig",
     "Gemma3_MultiModalModel",
     "gemma3_multimodal_arch",
 ]

@@ -9,4 +9,5 @@ max.pipelines.architectures.llama3
 
 .. automodule:: max.pipelines.architectures.llama3
    :members:
+   :imported-members:
    :show-inheritance:

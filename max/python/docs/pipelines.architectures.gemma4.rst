@@ -9,4 +9,5 @@ max.pipelines.architectures.gemma4
 
 .. automodule:: max.pipelines.architectures.gemma4
    :members:
+   :imported-members:
    :show-inheritance:

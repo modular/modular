@@ -9,4 +9,5 @@ max.pipelines.architectures.granite
 
 .. automodule:: max.pipelines.architectures.granite
    :members:
+   :imported-members:
    :show-inheritance:
