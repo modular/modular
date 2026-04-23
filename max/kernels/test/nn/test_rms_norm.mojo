@@ -30,7 +30,7 @@ def compute_rms[
     comptime assert data.rank == 1, "data.rank must be 1"
     var sum_of_squares = Float32()
     for i in range(size):
-        var d = data.flat_load(i).cast[DType.float32]()
+        var d = data.raw_load(i).cast[DType.float32]()
         sum_of_squares += d * d
     return sqrt(
         (sum_of_squares / Float32(data.num_elements()))
@@ -72,7 +72,7 @@ def run_rms_norm_cpu[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
-        return input_buf.flat_load[width=width](idx)
+        return input_buf.raw_load[width=width](idx)
 
     @always_inline
     @__copy_capture(output_buf)
@@ -81,7 +81,7 @@ def run_rms_norm_cpu[
         width: Int, alignment: Int
     ](coords: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var idx = output_buf.layout(Coord(coords))
-        output_buf.flat_store[width=width, alignment=alignment](idx, val)
+        output_buf.raw_store[width=width, alignment=alignment](idx, val)
 
     rms_norm_cpu[input_fn, identity_output_fn, multiply_before_cast=True](
         shape,

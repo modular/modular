@@ -214,9 +214,9 @@ struct MLA_SM100_Decode_QKV_FP8[
         ],
     ):
         # Extract scalar launch args from the stable device buffer.
-        var batch_size = Int(scalar_args.flat_load(0))
-        var q_max_seq_len = Int(scalar_args.flat_load(1))
-        var num_partitions = Int(scalar_args.flat_load(2))
+        var batch_size = Int(scalar_args.raw_load(0))
+        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var num_partitions = Int(scalar_args.raw_load(2))
 
         # Register allocation: same as BF16 kernel (3 WGs)
         comptime num_reg_softmax = 192

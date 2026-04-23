@@ -308,7 +308,7 @@ struct PythonObject(
     @always_inline
     def __init__[
         *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __list_literal__: ()) raises:
+    ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
         """Construct an Python list of objects.
 
         Parameters:
@@ -329,7 +329,7 @@ struct PythonObject(
     @always_inline
     def __init__[
         *Ts: ConvertibleToPython & Copyable
-    ](out self, var *values: *Ts, __set_literal__: ()) raises:
+    ](out self, var *values: *Ts, __set_literal__: NoneType) raises:
         """Construct an Python set of objects.
 
         Parameters:
@@ -359,7 +359,7 @@ struct PythonObject(
         out self,
         var keys: List[PythonObject],
         var values: List[PythonObject],
-        __dict_literal__: (),
+        __dict_literal__: NoneType,
     ) raises:
         """Construct a Python dictionary from a list of keys and a list of values.
 

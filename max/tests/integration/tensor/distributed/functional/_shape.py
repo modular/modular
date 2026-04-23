@@ -30,7 +30,7 @@ import numpy as np
 import pytest
 from max.driver import CPU
 from max.dtype import DType
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     argsort,
     bottom_k,
     broadcast_to,
@@ -130,15 +130,18 @@ class _Reshape:
     def test_merged_axis_raises(self) -> None:
         """Reshape that merges sharded axis with adjacent axis raises.
 
-        (4, 8) Sharded(1) → (8, 4) merges axis 0 and axis 1 into new
-        axis 0. Per-shard reshape would give wrong global ordering.
-        The cumulative-product factorization correctly detects this.
+        (4, 8) Sharded(1) → (8, 4): old axis 1 spans new axes [0, 1],
+        but new axis 0 (size 8) also absorbs old axis 0's contribution
+        (factor 4). This is a "mixed split" — the per-shard reshape would
+        interleave shard data, so the rule rejects it.
         """
         t = transfer_to(
             Tensor(np.arange(32, dtype=np.float32).reshape(4, 8)),
             PlacementMapping(self.MESH_1D, (Sharded(1),)),
         )
-        with pytest.raises(ValueError, match="cannot be mapped"):
+        with pytest.raises(
+            ValueError, match="absorb other axes' contributions"
+        ):
             reshape(t, (8, 4))
 
     def test_partial_passthrough(self) -> None:
@@ -166,12 +169,19 @@ class _Reshape:
         )
 
     def test_sharded_split_raises(self) -> None:
-        """Sharded dim split with indivisible shard size -> ValueError."""
+        """Sharded dim split with no candidate divisible by mesh size.
+
+        (8, 4) Sharded(0) → (2, 4, 4) on N=4 devices: old axis 0 splits
+        into new axes [0, 1] of sizes [2, 4]. Neither candidate works:
+        new axis 0 (size 2) is not divisible by 4, and new axis 1 (size
+        4) has a preceding split component (size 2) that's not 1, which
+        would interleave shards.
+        """
         dt = transfer_to(
             Tensor(np.ones((8, 4), dtype=np.float32)),
             PlacementMapping(self.MESH_1D, (Sharded(0),)),
         )
-        with pytest.raises(ValueError, match="not evenly divisible"):
+        with pytest.raises(ValueError, match="no candidate has all preceding"):
             reshape(dt, (2, 4, 4))
 
     def test_mha_reshape_batch_sharded(self) -> None:
@@ -190,6 +200,38 @@ class _Reshape:
         assert list(out.shape) == [B, S, H, D]
         np.testing.assert_allclose(
             out.to_numpy(), t_np.reshape(B, S, H, D), rtol=1e-5
+        )
+
+    def test_split_sharded_axis_clean(self) -> None:
+        """Pure split of a sharded axis, leftmost candidate divides the
+        mesh size cleanly. Mirrors the (T, 2048) Sharded(1) → (-1, 8, 256)
+        pattern: old axis 1 (2048) splits into new axes [1, 2] of sizes
+        [8, 256], sharding lands on new axis 1 (8 % N == 0)."""
+        T = 5  # MESH_2 has 2 devices; mesh size N=2 divides new axis 1 (size 8).
+        t_np = np.arange(T * 2048, dtype=np.float32).reshape(T, 2048)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_2, (Sharded(1),))
+        )
+        out = reshape(dt, (-1, 8, 256))
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [T, 8, 256]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(-1, 8, 256), rtol=1e-5
+        )
+
+    def test_split_sharded_axis_indivisible_pure_split(self) -> None:
+        """Pure split where the sharded axis (size 32) splits into
+        [4, 8] and the leftmost candidate (4) divides the mesh size
+        N=4 (MESH_1D). Sharding lands on new axis 1."""
+        t_np = np.arange(8 * 32, dtype=np.float32).reshape(8, 32)
+        dt = transfer_to(
+            Tensor(t_np), PlacementMapping(self.MESH_1D, (Sharded(1),))
+        )
+        out = reshape(dt, (8, 4, 8))
+        assert out.placements == (Sharded(1),)
+        assert list(out.shape) == [8, 4, 8]
+        np.testing.assert_allclose(
+            out.to_numpy(), t_np.reshape(8, 4, 8), rtol=1e-5
         )
 
 

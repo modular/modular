@@ -1092,7 +1092,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An iterator type that returns successive `Codepoint` values stored in
             this string slice.
 
-        # Examples
+        **Examples:**
 
         Print the characters in a string:
 

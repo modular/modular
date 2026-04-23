@@ -60,7 +60,7 @@ struct TVMFFIAny(Copyable, Movable):
 # ABI for TVMFFISafeCallType
 # https://tvm.apache.org/ffi/concepts/func_module.html#sec-function-calling-convention
 comptime SafeFunction = def(
-    module: UnsafePointer[NoneType, MutAnyOrigin],
+    module: Optional[UnsafePointer[NoneType, MutAnyOrigin]],
     args: Pointer[TVMFFIAny, MutAnyOrigin],
     nargs: Int32,
     result: Pointer[TVMFFIAny, MutAnyOrigin],
@@ -115,14 +115,16 @@ struct TVMFFIErrorCell(
 
 
 def _tvm_ffi_error_move_from_raised(
-    mut result: UnsafePointer[TVMFFIObject, MutAnyOrigin]
+    mut result: Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]]
 ) raises:
     """Wraps TVMFFIErrorMoveFromRaised."""
     # Expects that `libtvm_ffi.so` is available, for instance loaded by python
     # importing `tvm_ffi`.
     lib = OwnedDLHandle(path="libtvm_ffi.so")
     comptime FnType = def(
-        UnsafePointer[UnsafePointer[TVMFFIObject, MutAnyOrigin], MutAnyOrigin]
+        UnsafePointer[
+            Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]], MutAnyOrigin
+        ]
     ) thin abi("C") -> None
     fn_ptr = lib.get_function[FnType]("TVMFFIErrorMoveFromRaised")
     fn_ptr(UnsafePointer(to=result))
@@ -130,8 +132,8 @@ def _tvm_ffi_error_move_from_raised(
 
 def take_latest_error() raises -> TVMFFIErrorCell:
     """Retrieves the last TVM FFI error message."""
-    error_ptr = UnsafePointer[TVMFFIObject, MutAnyOrigin]()
+    var error_ptr = Optional[UnsafePointer[TVMFFIObject, MutAnyOrigin]]()
     _tvm_ffi_error_move_from_raised(error_ptr)
     if not error_ptr:
         raise Error("TVM FFI: No error.")
-    return error_ptr[][TVMFFIErrorCell]
+    return error_ptr.unsafe_value()[][TVMFFIErrorCell]

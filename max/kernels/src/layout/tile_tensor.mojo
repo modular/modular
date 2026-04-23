@@ -19,7 +19,6 @@ from std.os import abort
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.device_passable import DevicePassable
 from std.builtin.int import index as _index
-from std.collections import OptionalReg
 from std.collections._conditional import _ComptimeConditional
 from std.memory import stack_allocation as _std_stack_allocation
 from std.memory.unsafe_pointer import unsafe_cast
@@ -391,24 +390,6 @@ struct TileTensor[
         self.layout = other.layout
 
     @always_inline("nodebug")
-    @doc_hidden
-    def __init__(
-        out self,
-        ptr: OptionalReg[
-            UnsafePointer[
-                Scalar[Self.dtype],
-                Self.origin,
-                address_space=Self.address_space,
-            ]
-        ],
-        var layout: Self.LayoutType,
-    ):
-        self = Self(
-            ptr._unsafe_nullable(),
-            layout,
-        )
-
-    @always_inline("nodebug")
     def __getitem__(
         self, coord: Coord
     ) -> Self.ElementType where not coord.contains_slices:
@@ -459,7 +440,7 @@ struct TileTensor[
             )
 
         # Inline load logic to avoid constraint propagation issues
-        return self.flat_load[
+        return self.raw_load[
             width=Self.element_size,
             alignment=align_of[
                 SIMD[Self.dtype, Self.element_size]
@@ -529,11 +510,19 @@ struct TileTensor[
         ```
         """
         # Compute pointer offset from fixed (non-All) dimensions.
-        var offset = 0
+        # Narrow-first multiply at `linear_idx_type` precision keeps index
+        # arithmetic out of 64-bit Int on GPUs with narrow `linear_idx_type`
+        # (e.g. uint32). Callers are responsible for picking a `linear_idx_type`
+        # wide enough to hold the maximum offset.
+        var offset = Scalar[Self.linear_idx_type](0)
 
         comptime for i in range(Self.rank):
             comptime if not _type_is_eq_parse_time[IndexTypes[i], _All]():
-                offset += indices[i].value() * self.layout.stride[i]().value()
+                offset += Scalar[Self.linear_idx_type](
+                    indices[i].value()
+                ) * Scalar[Self.linear_idx_type](
+                    self.layout.stride[i]().value()
+                )
 
         # Build kept shape and stride coords.
         comptime KeptShapeTypes = Self.LayoutType._shape_types.filter_idx[
@@ -649,7 +638,7 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.flat_load[
+        return self.raw_load[
             width=width,
             alignment=alignment,
             invariant=invariant,
@@ -658,7 +647,7 @@ struct TileTensor[
 
     @always_inline("nodebug")
     def store[
-        width: Int = Self.element_size,
+        width: SIMDSize = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]]() if is_gpu() else 1,
         non_temporal: Bool = False,
     ](self, coord: Coord, value: SIMD[Self.dtype, width]) where Self.mut:
@@ -736,13 +725,13 @@ struct TileTensor[
         Returns:
             A SIMD vector containing the loaded elements.
         """
-        return self.flat_load[
+        return self.raw_load[
             width=width, alignment=alignment, invariant=invariant
         ](self._linear_offset(idx))
 
     @always_inline("nodebug")
     def store_linear[
-        width: Int = Self.element_size,
+        width: SIMDSize = Self.element_size,
         alignment: Int = align_of[SIMD[Self.dtype, width]](),
     ](
         self: TileTensor[mut=True, Self.dtype, ...],
@@ -762,10 +751,10 @@ struct TileTensor[
             idx: The multi-dimensional index.
             value: The SIMD vector to store.
         """
-        self.flat_store[alignment=alignment](self._linear_offset(idx), value)
+        self.raw_store[alignment=alignment](self._linear_offset(idx), value)
 
     @always_inline("nodebug")
-    def flat_load[
+    def raw_load[
         width: Int = 1,
         alignment: Int = align_of[Self.dtype](),
         invariant: Bool = _default_invariant[Self.mut](),
@@ -773,10 +762,10 @@ struct TileTensor[
     ](self, offset: Some[Indexer]) -> SIMD[Self.dtype, width]:
         """Load `width` elements starting at `ptr[offset]`, bypassing the layout.
 
-        This is a raw flat read against the underlying storage: the caller
-        is responsible for ensuring `offset` is a valid linear index into
+        This is a raw read against the underlying storage: the caller
+        is responsible for ensuring `offset` is a valid index into
         the backing buffer, independent of the tensor's layout. Useful for
-        kernels that treat the buffer as a flat array (copies, fills,
+        kernels that treat the buffer as a contiguous array (copies, fills,
         reductions over contiguous storage).
 
         Parameters:
@@ -801,7 +790,7 @@ struct TileTensor[
         ](_index(offset))
 
     @always_inline("nodebug")
-    def flat_store[
+    def raw_store[
         width: Int = 1,
         alignment: Int = align_of[Self.dtype](),
         non_temporal: Bool = False,
@@ -812,8 +801,8 @@ struct TileTensor[
     ) where Self.mut:
         """Store `width` elements at `ptr[offset]`, bypassing the layout.
 
-        This is a raw flat write against the underlying storage: the caller
-        is responsible for ensuring `offset` is a valid linear index into
+        This is a raw write against the underlying storage: the caller
+        is responsible for ensuring `offset` is a valid index into
         the backing buffer, independent of the tensor's layout.
 
         Parameters:
@@ -928,7 +917,7 @@ struct TileTensor[
         var result = 1
 
         comptime for i in range(Self.rank):
-            result *= self.layout.shape[i]().value()
+            result *= Int(self.layout.shape[i]().value())
         return result
 
     def write_to(self, mut w: Some[Writer]):
@@ -958,7 +947,7 @@ struct TileTensor[
         ```
         """
 
-        if self.layout.product() == 0:
+        if Int(self.layout.product()) == 0:
             return
 
         comptime if Self.flat_rank == 2:
@@ -995,6 +984,10 @@ struct TileTensor[
         Returns:
             A view into the original tensor representing the specified tile.
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile requires exactly one tile size per tensor dimension; got"
+            t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
         return _tile(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
@@ -1030,6 +1023,14 @@ struct TileTensor[
         Returns:
             A view into the original tensor representing the specified tile.
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile requires exactly one tile size per tensor dimension; got"
+            t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
+        comptime assert stride_layout.rank == Self.rank, String(
+            t"stride_layout rank {stride_layout.rank} must match tensor rank"
+            t" {Self.rank}"
+        )
         return _tile[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
         )
@@ -1080,6 +1081,10 @@ struct TileTensor[
         var t = tensor.tile(coord[2, 2](), coord[1, 0]())
         ```
         """
+        comptime assert tile_shape_types.size == Self.rank, String(
+            t"tile_shape rank {tile_shape_types.size} must match tensor rank"
+            t" {Self.rank}"
+        )
         return _tile(self, tile_shape, coordinates)
 
     @always_inline("nodebug")
@@ -1110,6 +1115,10 @@ struct TileTensor[
         Returns:
             Tuple of (tile, corner_coords, offset).
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile_with_offset requires one tile size per tensor dimension;"
+            t" got {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
         return _tile_with_offset(self, coord[*tile_sizes](), coordinates)
 
     @always_inline("nodebug")
@@ -1144,6 +1153,14 @@ struct TileTensor[
         Returns:
             Tuple of (tile, corner_coords, offset).
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile_with_offset requires one tile size per tensor dimension;"
+            t" got {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
+        comptime assert stride_layout.rank == Self.rank, String(
+            t"stride_layout rank {stride_layout.rank} must match tensor rank"
+            t" {Self.rank}"
+        )
         return _tile_with_offset[stride_layout=stride_layout](
             self, coord[*tile_sizes](), coordinates
         )
@@ -1256,6 +1273,10 @@ struct TileTensor[
         var t = tensor.tile[2, 2](1, 0)
         ```
         """
+        comptime assert tile_sizes.size == Self.rank, String(
+            t"tile requires exactly one tile size per tensor dimension; got"
+            t" {tile_sizes.size} tile sizes for tensor of rank {Self.rank}"
+        )
         var coordinates = DynamicCoord[Self.linear_idx_type, Self.rank]()
 
         comptime for i in range(Self.rank):
@@ -1442,6 +1463,9 @@ struct TileTensor[
         Returns:
             The size of dimension i as a scalar.
         """
+        comptime assert 0 <= i < Self.rank, String(
+            t"dim index {i} is out of bounds for tensor rank [0, {Self.rank})"
+        )
         return Scalar[Self.linear_idx_type](self.layout.shape[i]().value())
 
     @always_inline("nodebug")
@@ -1559,14 +1583,17 @@ struct TileTensor[
             ComptimeInt[2] in the type system.
         """
 
-        # Compute offset based on slice start indices and strides
-        var offset = 0
+        # Compute offset based on slice start indices and strides. Narrow-first
+        # multiply: keep index arithmetic at `linear_idx_type` precision.
+        var offset = Scalar[Self.linear_idx_type](0)
 
         comptime for i in range(slices.size):
             comptime slice_i = slices[i]
             comptime slice_start = slice_i.start.or_else(0)
-            var stride_i = self.layout.stride[i]().value()
-            offset += slice_start * stride_i
+            var stride_i = Scalar[Self.linear_idx_type](
+                self.layout.stride[i]().value()
+            )
+            offset += Scalar[Self.linear_idx_type](slice_start) * stride_i
 
         # Build new shape tuple with runtime types
         # Even though slice bounds are compile-time known, we use RuntimeInt
@@ -1636,10 +1663,14 @@ struct TileTensor[
             len(slices) == Self.rank
         ), "slice requires one (start, end) tuple per dimension"
 
-        var offset = 0
+        # Narrow-first multiply: keep index arithmetic at `linear_idx_type`
+        # precision.
+        var offset = Scalar[Self.linear_idx_type](0)
 
         comptime for i in range(Self.rank):
-            offset += slices[i][0] * self.layout.stride[i]().value()
+            offset += Scalar[Self.linear_idx_type](slices[i][0]) * Scalar[
+                Self.linear_idx_type
+            ](self.layout.stride[i]().value())
 
         comptime NewShapeTypes = _CoordToDynamic[
             Self.linear_idx_type, Self.LayoutType._shape_types
@@ -1916,8 +1947,8 @@ struct TileTensor[
         - May include runtime validation for dynamic shapes.
         """
         # Runtime validation for element count
-        assert (
-            self.num_elements() == new_shape.product()
+        assert self.num_elements() == Int(
+            new_shape.product()
         ), "reshape: total number of elements must match"
 
         var new_layout = row_major(new_shape)
@@ -2364,6 +2395,9 @@ struct NullableTileTensor[
         Returns:
             The size of dimension i as a scalar.
         """
+        comptime assert 0 <= i < Self.rank, String(
+            t"dim index {i} is out of bounds for tensor rank [0, {Self.rank})"
+        )
         return Scalar[Self.linear_idx_type](self.layout.shape[i]().value())
 
     @always_inline("nodebug")
@@ -2401,7 +2435,7 @@ struct NullableTileTensor[
         var result = 1
 
         comptime for i in range(Self.rank):
-            result *= self.layout.shape[i]().value()
+            result *= Int(self.layout.shape[i]().value())
         return result
 
     @always_inline("nodebug")
@@ -2516,7 +2550,7 @@ def stack_allocation[
 
 @always_inline
 def _pretty_print_elementwise[W: Writer](tensor: TileTensor, mut writer: W):
-    var n = tensor.layout.product()
+    var n = Int(tensor.layout.product())
     writer.write("[")
     for i in range(n):
         var offset = tensor.layout[linear_idx_type=tensor.linear_idx_type](
@@ -2539,14 +2573,14 @@ def _pretty_print_2d_tensor[
     var m_dim = tensor.layout.shape[0]()
     var n_dim = tensor.layout.shape[1]()
     writer.write("[")
-    for m in range(m_dim.value()):
+    for m in range(Int(m_dim.value())):
         writer.write("[")
-        for n in range(n_dim.value()):
+        for n in range(Int(n_dim.value())):
             writer.write(tensor[m, n])
-            if n < n_dim.value() - 1:
+            if n < Int(n_dim.value()) - 1:
                 writer.write(", ")
         writer.write("]")
-        if m < m_dim.value() - 1:
+        if m < Int(m_dim.value()) - 1:
             writer.write(", ")
     writer.write("]")
 
@@ -2589,22 +2623,32 @@ def _distribute[
         A view into the tensor for the specified thread.
     """
 
-    var offset: Int = 0
+    # Narrow-first multiply: accumulate the offset at the tensor's
+    # `linear_idx_type` so GPU codegen with narrow index types (e.g. uint32)
+    # doesn't route through 64-bit Int for every dim.
+    var offset = Scalar[data_layout_tensor.linear_idx_type](0)
 
     comptime for i in range(thread_layout.stride_types.size):
         comptime stride_i = thread_layout.stride_types[i].static_value
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
-        offset += thread_coord_i * data_layout_tensor.layout.stride[i]().value()
+        offset += Scalar[data_layout_tensor.linear_idx_type](
+            thread_coord_i
+        ) * Scalar[data_layout_tensor.linear_idx_type](
+            data_layout_tensor.layout.stride[i]().value()
+        )
 
     # Swizzling applies to the index of elements rather than scalars because
-    # the former is the unit in distribution.
+    # the former is the unit in distribution. Swizzle functions take Int, so
+    # widen at that boundary and narrow back after.
     var swizzled_offset = offset
 
     comptime if swizzle:
         comptime swizzle_fn = swizzle.value()
         comptime element_size = data_layout_tensor.element_size
-        swizzled_offset = swizzle_fn(offset // element_size) * element_size
+        swizzled_offset = Scalar[data_layout_tensor.linear_idx_type](
+            swizzle_fn(Int(offset) // element_size) * element_size
+        )
 
     comptime NewShapeTypes = _Divide[
         data_layout_tensor.LayoutType._shape_types,
@@ -2623,7 +2667,7 @@ def _distribute[
             UnsafePointer(to=shape[i]).init_pointee_copy(
                 rebind[NewShapeTypes[i]](
                     Idx(
-                        data_layout_tensor.layout.shape_coord()[i].value()
+                        Int(data_layout_tensor.layout.shape_coord()[i].value())
                         // thread_layout.shape_types[i].static_value
                     )
                 )
@@ -2632,7 +2676,7 @@ def _distribute[
             UnsafePointer(to=stride[i]).init_pointee_copy(
                 rebind[NewStrideTypes[i]](
                     Idx(
-                        data_layout_tensor.layout.stride_coord()[i].value()
+                        Int(data_layout_tensor.layout.stride_coord()[i].value())
                         * thread_layout.shape_types[i].static_value
                     )
                 )
@@ -2691,6 +2735,11 @@ def _distribute_with_offset[
     """
 
     # Use shape_types consistently for the IndexList size (must match return type)
+    # This variant returns the offset as `Int` so callers can consume it at
+    # full precision. Index arithmetic stays at `Int` here deliberately —
+    # narrowing to `linear_idx_type` first would truncate before the widening
+    # at the return boundary. Use `_distribute` (above) if narrow-precision
+    # pointer-offset arithmetic is what you want.
     var offset: Int = 0
     var thread_coords = IndexList[thread_layout.shape_types.size]()
 
@@ -2699,7 +2748,9 @@ def _distribute_with_offset[
         comptime shape_i = thread_layout.shape_types[i].static_value
         var thread_coord_i = (thread_id // stride_i) % shape_i
         thread_coords[i] = thread_coord_i
-        offset += thread_coord_i * data_layout_tensor.layout.stride[i]().value()
+        offset += thread_coord_i * Int(
+            data_layout_tensor.layout.stride[i]().value()
+        )
 
     # Swizzling applies to the index of elements rather than scalars because
     # the former is the unit in distribution.
@@ -2727,7 +2778,7 @@ def _distribute_with_offset[
             UnsafePointer(to=shape[i]).init_pointee_copy(
                 rebind[NewShapeTypes[i]](
                     Idx(
-                        data_layout_tensor.layout.shape_coord()[i].value()
+                        Int(data_layout_tensor.layout.shape_coord()[i].value())
                         // thread_layout.shape_types[i].static_value
                     )
                 )
@@ -2736,7 +2787,7 @@ def _distribute_with_offset[
             UnsafePointer(to=stride[i]).init_pointee_copy(
                 rebind[NewStrideTypes[i]](
                     Idx(
-                        data_layout_tensor.layout.stride_coord()[i].value()
+                        Int(data_layout_tensor.layout.stride_coord()[i].value())
                         * thread_layout.shape_types[i].static_value
                     )
                 )
@@ -2817,13 +2868,16 @@ def _tile[
         with the original tensor. Element types are propagated from the source tensor.
     """
 
-    var offset: Int = 0
+    # Narrow-first multiply: accumulate offset at `linear_idx_type` precision.
+    var offset = Scalar[data_layout_tensor.linear_idx_type](0)
 
     comptime for i in range(Coord[*coord_types].__len__()):
         offset += (
-            tile_coords[i].value()
-            * tile_shape[i].value()
-            * data_layout_tensor.layout.stride[i]().value()
+            Scalar[data_layout_tensor.linear_idx_type](tile_coords[i].value())
+            * Scalar[data_layout_tensor.linear_idx_type](tile_shape[i].value())
+            * Scalar[data_layout_tensor.linear_idx_type](
+                data_layout_tensor.layout.stride[i]().value()
+            )
         )
 
     var tile_layout = Layout(
@@ -2881,15 +2935,20 @@ def _tile_with_offset[
     """
 
     # Use TypeList[coord_types].size consistently (must match return type)
+    # `offset` and `corner_coords` are part of the return type (`Int` and
+    # `IndexList[...].element_type=int64`), so arithmetic stays at `Int` here.
+    # See `_tile` above for the narrow-precision variant.
     var offset: Int = 0
     var corner_coords = IndexList[coord_types.size]()
 
     comptime for i in range(coord_types.size):
-        corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
+        corner_coords[i] = Int(tile_coords[i].value()) * Int(
+            tile_shape[i].value()
+        )
         offset += (
-            tile_coords[i].value()
-            * tile_shape[i].value()
-            * data_layout_tensor.layout.stride[i]().value()
+            Int(tile_coords[i].value())
+            * Int(tile_shape[i].value())
+            * Int(data_layout_tensor.layout.stride[i]().value())
         )
 
     var tile_layout = Layout(
@@ -2949,13 +3008,16 @@ def _tile[
     vectorize/distribute which require all_dims_known.
     """
 
-    var offset: Int = 0
+    # Narrow-first multiply: accumulate offset at `linear_idx_type` precision.
+    var offset = Scalar[data_layout_tensor.linear_idx_type](0)
 
     comptime for i in range(Coord[*coord_types].__len__()):
         offset += (
-            tile_coords[i].value()
-            * tile_shape[i].value()
-            * data_layout_tensor.layout.stride[i]().value()
+            Scalar[data_layout_tensor.linear_idx_type](tile_coords[i].value())
+            * Scalar[data_layout_tensor.linear_idx_type](tile_shape[i].value())
+            * Scalar[data_layout_tensor.linear_idx_type](
+                data_layout_tensor.layout.stride[i]().value()
+            )
         )
 
     var tile_layout = Layout(
@@ -3009,15 +3071,19 @@ def _tile_with_offset[
 ]:
     """Like _tile_with_offset, but with explicit static strides."""
 
+    # `offset` and `corner_coords` are part of the return type; index
+    # arithmetic stays at `Int` for the same reason as `_tile_with_offset`.
     var offset: Int = 0
     var corner_coords = IndexList[coord_types.size]()
 
     comptime for i in range(coord_types.size):
-        corner_coords[i] = tile_coords[i].value() * tile_shape[i].value()
+        corner_coords[i] = Int(tile_coords[i].value()) * Int(
+            tile_shape[i].value()
+        )
         offset += (
-            tile_coords[i].value()
-            * tile_shape[i].value()
-            * data_layout_tensor.layout.stride[i]().value()
+            Int(tile_coords[i].value())
+            * Int(tile_shape[i].value())
+            * Int(data_layout_tensor.layout.stride[i]().value())
         )
 
     var tile_layout = Layout(
@@ -3108,8 +3174,14 @@ def _vectorize[
                 rebind[NewShapeTypes[i]](
                     Scalar[NewShapeTypes[i].DTYPE](
                         ceildiv(
-                            data_layout_tensor.layout.shape_coord()[i].value(),
-                            vector_shape[i].value(),
+                            Scalar[NewShapeTypes[i].DTYPE](
+                                data_layout_tensor.layout.shape_coord()[
+                                    i
+                                ].value()
+                            ),
+                            Scalar[NewShapeTypes[i].DTYPE](
+                                vector_shape[i].value()
+                            ),
                         )
                     )
                 )
@@ -3119,8 +3191,8 @@ def _vectorize[
                 rebind[NewStrideTypes[i]](
                     Scalar[NewStrideTypes[i].DTYPE](
                         data_layout_tensor.layout.stride_coord()[i].value()
-                        * vector_shape[i].value()
                     )
+                    * Scalar[NewStrideTypes[i].DTYPE](vector_shape[i].value())
                 )
             )
 

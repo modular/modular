@@ -372,8 +372,10 @@ def flare_mla_decoding[
         )
     )
 
-    var valid_length = TileTensor[DType.uint32, _, MutExternalOrigin](
-        None,
+    var valid_length = TileTensor(
+        UnsafePointer[
+            Scalar[DType.uint32], MutExternalOrigin
+        ].unsafe_dangling(),
         row_major(Coord(Idx(0))),
     )
 
@@ -3410,7 +3412,7 @@ def _k_cache_to_buffer[
 
     def copy_fn_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) unified register_passable {}:
+    ](idx: IndexList[rank]) unified register_passable:
         copy_fn[width, rank, alignment](idx)
 
     _elementwise_impl_gpu[simd_width=target_simd_width](

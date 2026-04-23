@@ -814,7 +814,7 @@ def derive_prologue_from_program(
         mut result: List[ScheduleEntry],
         op: OpDesc,
         mut slot: Int,
-    ) unified {}:
+    ):
         result.append(
             ScheduleEntry(
                 op=op,
@@ -825,7 +825,7 @@ def derive_prologue_from_program(
         )
         slot += 1
 
-    def _vm_cost(op: OpDesc, config: PipelineConfig) unified {} -> Int:
+    def _vm_cost(op: OpDesc, config: PipelineConfig) -> Int:
         return config.vm_per_channel(op.channel)
 
     var num_blocks = len(program.blocks)
@@ -838,7 +838,7 @@ def derive_prologue_from_program(
         k_off: KOffsetKind,
         config: PipelineConfig,
         mut slot: Int,
-    ) unified {}:
+    ):
         var vm = _vm_cost(gl, config)
         _emit(
             result,

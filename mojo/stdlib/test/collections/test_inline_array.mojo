@@ -82,6 +82,7 @@ def test_array_int() raises:
     var arr3: InlineArray[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
+    @parameter
     def test_init_fill[
         size: Int, batch_size: Int, dt: DType
     ](arg: Scalar[dt]) raises:
@@ -91,6 +92,7 @@ def test_array_int() raises:
         for i in range(size):
             assert_equal(arr[i], arg)
 
+    @parameter
     def test_init_fill_scalars[
         *dts: DType, sizes: List[Int], batch_sizes: List[Int]
     ]() raises:

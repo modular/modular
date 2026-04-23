@@ -532,8 +532,13 @@ class PagedKVCacheManager:
         # advance to the values for the next row. This should not be allocated
         # on pinned memory since it is exclusively accessed on the CPU and never
         # copied to the GPU.
+        absolute_max_cached_len = (
+            max_cached_len + self.params.num_eagle_speculative_tokens
+        )
         max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_prompt_len, max_cached_len
+            num_steps,
+            max_prompt_len,
+            absolute_max_cached_len,
         )
         # Copy shared LUT and cache_lengths to each TP shard's device buffer.
         num_tp_shards = len(replica.devices)
@@ -549,9 +554,22 @@ class PagedKVCacheManager:
         # tokens), i.e. `max_cached_len` here.
         resolved_metadata = (
             replica.attention_dispatch_resolver.resolve_for_replica(
-                batch_size, max_prompt_len, max_cached_len
+                batch_size,
+                max_prompt_len,
+                absolute_max_cached_len,
             )
         )
+
+        if self.params.num_eagle_speculative_tokens > 0:
+            draft_resolved_metadata: list[Buffer] | None = (
+                replica.attention_dispatch_resolver.resolve_for_replica(
+                    batch_size,
+                    1,
+                    absolute_max_cached_len,
+                )
+            )
+        else:
+            draft_resolved_metadata = None
 
         ret_list: list[KVCacheInputsPerDevice] = []
         for cache_idx in range(self._num_caches):
@@ -559,6 +577,11 @@ class PagedKVCacheManager:
 
             for tp_shard in range(num_tp_shards):
                 metadata = resolved_metadata[tp_shard]
+                draft_metadata = (
+                    draft_resolved_metadata[tp_shard]
+                    if draft_resolved_metadata is not None
+                    else None
+                )
                 block_device = device_buffer.values[tp_shard].device
                 if metadata.device not in (CPU(), block_device):
                     raise AssertionError(
@@ -580,6 +603,7 @@ class PagedKVCacheManager:
                             else None
                         ),
                         attention_dispatch_metadata=metadata,
+                        draft_attention_dispatch_metadata=draft_metadata,
                     )
                 )
 

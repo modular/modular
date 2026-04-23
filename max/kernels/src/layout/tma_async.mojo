@@ -1790,7 +1790,7 @@ struct TMATensorTile[
             dst: TileTensor in shared memory from which data will be copied.
             coords: The N-dimensional coordinates in the destination tensor.
         """
-        comptime assert coord_rank in (2, 3)
+        comptime assert coord_rank in (2, 3, 4)
 
         comptime if coord_rank == 2:
             self.async_store(dst, (Int(coords[0]), Int(coords[1])))
@@ -1798,6 +1798,16 @@ struct TMATensorTile[
             self.async_store_3d(
                 dst,
                 (Int(coords[0]), Int(coords[1]), Int(coords[2])),
+            )
+        elif coord_rank == 4:
+            self.async_store_4d(
+                dst,
+                (
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                ),
             )
 
     @always_inline
@@ -2463,6 +2473,64 @@ struct TMATensorTile[
             type_of(src).alignment % 128 == 0
         ), "TMA requires 128B alignment in shared memory"
 
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_dim3 = Self.desc_shape[3]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+        comptime num_copies_dim3 = ceildiv(Self.tile_shape[3], copy_dim3)
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
+                        comptime copy_offset: UInt32 = UInt32(
+                            _desc_offset[
+                                4,
+                                Index(
+                                    num_copies_dim0,
+                                    num_copies_dim1,
+                                    num_copies_dim2,
+                                    num_copies_dim3,
+                                ),
+                                Self.is_k_major,
+                            ](Index(n, m, i, j))
+                            * copy_size
+                        )
+
+                        cp_async_bulk_tensor_global_shared_cta(
+                            src.ptr + copy_offset,
+                            UnsafePointer(to=self.descriptor).bitcast[
+                                NoneType
+                            ](),
+                            Index(
+                                coords[0] + j * copy_dim3,
+                                coords[1] + i * copy_dim2,
+                                coords[2] + m * copy_dim1,
+                                coords[3] + n * copy_dim0,
+                            ),
+                        )
+
+    @always_inline
+    def async_store_4d(
+        self,
+        src: TileTensor[
+            dtype=Self.dtype, address_space=AddressSpace.SHARED, ...
+        ],
+        coords: Tuple[Int, Int, Int, Int],
+    ):
+        """
+        Schedules an asynchronous store from shared memory to global memory at 4D coordinates.
+
+        TileTensor overload - accepts TileTensor instead of LayoutTensor.
+        Assumes 128B alignment (TileTensor tiles are allocated with proper alignment).
+
+        Args:
+            src: TileTensor in shared memory from which data will be copied.
+            coords: The 4D coordinates in the destination tensor.
+        """
         comptime copy_dim0 = Self.desc_shape[0]
         comptime copy_dim1 = Self.desc_shape[1]
         comptime copy_dim2 = Self.desc_shape[2]
@@ -3693,12 +3761,12 @@ def create_tensor_tile[
                 owning=False,
             ),
             (
-                tensor.layout.shape[0]().value(),
-                tensor.layout.shape[1]().value(),
+                Int(tensor.layout.shape[0]().value()),
+                Int(tensor.layout.shape[1]().value()),
             ),
             (
-                tensor.layout.stride[0]().value(),
-                tensor.layout.stride[1]().value(),
+                Int(tensor.layout.stride[0]().value()),
+                Int(tensor.layout.stride[1]().value()),
             ),
             (__desc_shape[0], __desc_shape[1]),
         )
@@ -3712,14 +3780,14 @@ def create_tensor_tile[
                 owning=False,
             ),
             IndexList[3](
-                tensor.layout.shape[0]().value(),
-                tensor.layout.shape[1]().value(),
-                tensor.layout.shape[2]().value(),
+                Int(tensor.layout.shape[0]().value()),
+                Int(tensor.layout.shape[1]().value()),
+                Int(tensor.layout.shape[2]().value()),
             ),
             IndexList[3](
-                tensor.layout.stride[0]().value(),
-                tensor.layout.stride[1]().value(),
-                tensor.layout.stride[2]().value(),
+                Int(tensor.layout.stride[0]().value()),
+                Int(tensor.layout.stride[1]().value()),
+                Int(tensor.layout.stride[2]().value()),
             ),
             IndexList[3](
                 __desc_shape[0],
@@ -3737,16 +3805,16 @@ def create_tensor_tile[
                 owning=False,
             ),
             IndexList[4](
-                tensor.layout.shape[0]().value(),
-                tensor.layout.shape[1]().value(),
-                tensor.layout.shape[2]().value(),
-                tensor.layout.shape[3]().value(),
+                Int(tensor.layout.shape[0]().value()),
+                Int(tensor.layout.shape[1]().value()),
+                Int(tensor.layout.shape[2]().value()),
+                Int(tensor.layout.shape[3]().value()),
             ),
             IndexList[4](
-                tensor.layout.stride[0]().value(),
-                tensor.layout.stride[1]().value(),
-                tensor.layout.stride[2]().value(),
-                tensor.layout.stride[3]().value(),
+                Int(tensor.layout.stride[0]().value()),
+                Int(tensor.layout.stride[1]().value()),
+                Int(tensor.layout.stride[2]().value()),
+                Int(tensor.layout.stride[3]().value()),
             ),
             IndexList[4](
                 __desc_shape[0],
@@ -3765,18 +3833,18 @@ def create_tensor_tile[
                 owning=False,
             ),
             IndexList[5](
-                tensor.layout.shape[0]().value(),
-                tensor.layout.shape[1]().value(),
-                tensor.layout.shape[2]().value(),
-                tensor.layout.shape[3]().value(),
-                tensor.layout.shape[4]().value(),
+                Int(tensor.layout.shape[0]().value()),
+                Int(tensor.layout.shape[1]().value()),
+                Int(tensor.layout.shape[2]().value()),
+                Int(tensor.layout.shape[3]().value()),
+                Int(tensor.layout.shape[4]().value()),
             ),
             IndexList[5](
-                tensor.layout.stride[0]().value(),
-                tensor.layout.stride[1]().value(),
-                tensor.layout.stride[2]().value(),
-                tensor.layout.stride[3]().value(),
-                tensor.layout.stride[4]().value(),
+                Int(tensor.layout.stride[0]().value()),
+                Int(tensor.layout.stride[1]().value()),
+                Int(tensor.layout.stride[2]().value()),
+                Int(tensor.layout.stride[3]().value()),
+                Int(tensor.layout.stride[4]().value()),
             ),
             IndexList[5](
                 __desc_shape[0],

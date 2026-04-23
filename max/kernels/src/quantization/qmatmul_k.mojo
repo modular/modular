@@ -719,7 +719,7 @@ def _matmul_group_stream[
     a_q_bits_ptr: UnsafePointer[Int8, _],
     mut c_int32_group: _Accumulator[DType.int32, tile_m, tile_n, simd_width],
 ):
-    comptime assert tile_k.is_power_of_two() and tile_k <= 4
+    comptime assert Bool(tile_k.is_power_of_two()) and tile_k <= 4
 
     comptime if CompilationTarget.is_x86():
         return _matmul_group_stream_x86[group_size, stream_b_vals_fn](
@@ -1454,7 +1454,7 @@ def _matmul_Qb_K[
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(

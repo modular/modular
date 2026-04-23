@@ -25,7 +25,6 @@ from std.sys import bit_width_of
 
 from std.builtin.device_passable import DevicePassable
 from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
-from std.builtin.variadics import Variadic
 import std.format._utils as fmt
 
 from .static_tuple import StaticTuple
@@ -207,9 +206,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 
     @always_inline
     @implicit
-    def __init__[
-        *Ts: Movable & Intable
-    ](out self, elems: Tuple[*Ts.upcast[Movable]()]):
+    def __init__[*Ts: Movable & Intable](out self, elems: Tuple[*Ts]):
         """Constructs a static int tuple given a tuple of integers.
 
         Parameters:
@@ -234,7 +231,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    def __init__(out self, *elems: Int, __list_literal__: () = ()):
+    def __init__(out self, *elems: Int, __list_literal__: NoneType = None):
         """Constructs a static int tuple given a set of arguments.
 
         Args:

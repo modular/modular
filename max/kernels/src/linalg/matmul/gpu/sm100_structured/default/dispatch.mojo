@@ -67,6 +67,66 @@ comptime logger = Logger()
 
 
 @always_inline
+def dispatch_gemv[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    //,
+    transpose_b: Bool = False,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_lambda_wrapper: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    c: TileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    ctx: DeviceContext,
+) raises:
+    """Dispatch M=1 (or N=1) matmul to GEMV or SM100 GEMM based on (N, K).
+
+    For most M=1 shapes GEMV is preferred, but for certain large (N, K)
+    combinations the SM100 GEMM kernel achieves higher throughput. Add new
+    (N, K) pairs to `SM100_GEMV_SHAPES` as they are identified through benchmarking.
+
+    N=1 always routes to GEMV: SM100 TMA requires N * sizeof(c_type) % 16 == 0.
+    """
+    comptime static_N = c.static_shape[1]
+    comptime static_K = a.static_shape[1]
+
+    comptime static_NK = Index(static_N, static_K)
+
+    # (N, K) shapes where SM100 GEMM outperforms GEMV kernel.
+    comptime SM100_GEMV_SHAPES = [
+        Index(12288, 1536),
+        Index(7168, 8192),
+        Index(7168, 21504),
+        Index(7168, 18432),
+    ]
+
+    comptime if static_NK in SM100_GEMV_SHAPES:
+        var status = heuristic_and_outliers_dispatch[
+            transpose_b=transpose_b,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
+        ](c, a, b, ctx)
+
+        if status:
+            logger.info("------ Executing SM100 GEMV kernel ------")
+            return
+
+    logger.info("------ Executing GEMV Matmul------")
+    gemv_gpu[
+        transpose_b=transpose_b,
+        elementwise_lambda_fn=elementwise_lambda_wrapper,
+        pdl_level=pdl_level,
+    ](c, a, b, ctx)
+
+
+@always_inline
 def matmul_dispatch_sm100[
     c_type: DType,
     a_type: DType,
@@ -131,15 +191,15 @@ def matmul_dispatch_sm100[
             config=config,
         ](c, a, b, ctx)
 
-    # M=1 (or N=1): use GEMV split-K for both BF16 and FP8.
-    # static_N=1 is not supported on SM100 due to TMA requirements
-    # (N * size_of(c_type) % 16 == 0).
+    # M=1 (or N=1): dispatch to GEMV or SM100 based on (N, K).
+    # For certain large (N, K) shapes SM100 GEMM outperforms GEMV even at M=1.
     comptime if a_type in (DType.bfloat16, DType.float8_e4m3fn):
         if static_N == 1 or m == 1:
-            logger.info("------ Executing GEMV Matmul------")
-            gemv_gpu[
+            dispatch_gemv[
                 transpose_b=transpose_b,
-                elementwise_lambda_fn=elementwise_lambda_wrapper,
+                elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_lambda_wrapper=elementwise_lambda_wrapper,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, ctx)
             return

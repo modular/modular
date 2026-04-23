@@ -31,10 +31,10 @@ def _weight_stub() -> NonCallableMock:
     return w
 
 
-def test_gemma3multimodal_language_maps_hf_qkv_to_stacked_linear_namespace() -> (
-    None
-):
-    """HF checkpoints use self_attn.{{q,k,v}}_proj; graphs expect qkv_proj.{{q,k,v}}."""
+def test_gemma3multimodal_language_preserves_hf_qkv_proj_names() -> None:
+    """HF checkpoints use self_attn.{q,k,v}_proj; unfused StackedLinear exposes
+    its children under those same names, so the adapter must pass them through
+    unchanged after stripping the ``language_model.model.`` prefix."""
     state_dict = {
         "language_model.model.layers.0.self_attn.q_proj.weight": _weight_stub(),
         "language_model.model.layers.0.self_attn.k_proj.weight": _weight_stub(),
@@ -45,17 +45,18 @@ def test_gemma3multimodal_language_maps_hf_qkv_to_stacked_linear_namespace() -> 
 
     out = convert_mm(state_dict)  # type: ignore[arg-type]
 
-    assert "layers.0.self_attn.qkv_proj.q.weight" in out
-    assert "layers.0.self_attn.qkv_proj.k.weight" in out
-    assert "layers.0.self_attn.qkv_proj.v.weight" in out
-    assert "layers.1.self_attn.qkv_proj.q.weight_scale" in out
+    assert "layers.0.self_attn.q_proj.weight" in out
+    assert "layers.0.self_attn.k_proj.weight" in out
+    assert "layers.0.self_attn.v_proj.weight" in out
+    assert "layers.1.self_attn.q_proj.weight_scale" in out
     assert "unrelated.prefix.weight" not in out
 
 
-def test_gemma3multimodal_modulev3_language_maps_hf_qkv_to_stacked_linear_namespace() -> (
+def test_gemma3multimodal_modulev3_language_preserves_hf_qkv_proj_names() -> (
     None
 ):
-    """V3 uses language_model.layers.* after stripping language_model.model."""
+    """V3 uses language_model.layers.* after stripping language_model.model.,
+    and the q/k/v_proj names are passed through unchanged."""
     state_dict = {
         "language_model.model.layers.0.self_attn.q_proj.weight": _weight_stub(),
         "language_model.model.layers.0.self_attn.v_proj.weight": _weight_stub(),
@@ -63,5 +64,5 @@ def test_gemma3multimodal_modulev3_language_maps_hf_qkv_to_stacked_linear_namesp
 
     out = convert_mm_v3(state_dict)  # type: ignore[arg-type]
 
-    assert "language_model.layers.0.self_attn.qkv_proj.q.weight" in out
-    assert "language_model.layers.0.self_attn.qkv_proj.v.weight" in out
+    assert "language_model.layers.0.self_attn.q_proj.weight" in out
+    assert "language_model.layers.0.self_attn.v_proj.weight" in out

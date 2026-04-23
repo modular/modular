@@ -709,16 +709,7 @@ struct PythonTypeBuilder(Copyable):
         Raises:
             If the slot insertion fails.
         """
-
-        @always_inline
-        def raising_wrapper[
-            init_func: def(
-                out t: T, args: PythonObject, kwargs: PythonObject
-            ) thin
-        ](out t: T, args: PythonObject, kwargs: PythonObject) raises:
-            t = init_func(args, kwargs)
-
-        return self.def_py_init[raising_wrapper[init_func]]()
+        return self.def_py_init[_raising_py_init_wrapper[T, init_func]]()
 
     def def_py_init[
         T: Movable & ImplicitlyDestructible,
@@ -1024,6 +1015,14 @@ def _py_init_function_wrapper[
             error_type, error_message.as_c_string_slice().unsafe_ptr()
         )
         return -1
+
+
+@always_inline
+def _raising_py_init_wrapper[
+    T: Movable & ImplicitlyDestructible,
+    init_func: def(args: PythonObject, kwargs: PythonObject) thin -> T,
+](out t: T, args: PythonObject, kwargs: PythonObject) raises:
+    t = init_func(args, kwargs)
 
 
 @always_inline

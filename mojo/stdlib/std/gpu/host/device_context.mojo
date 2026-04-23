@@ -52,7 +52,6 @@ from std.sys.defines import _is_bool_like
 
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import DevicePassable
-from std.builtin.variadics import Variadic
 from std.compile.compile import CompiledFunctionInfo
 from std.reflection import get_linkage_name, get_type_name
 from std.gpu.host.compile import (
@@ -1918,7 +1917,7 @@ struct DeviceFunction[
     func_type: TrivialRegisterPassable,
     //,
     func: func_type,
-    declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
+    declared_arg_types: Optional[TypeList.of[Trait=AnyType]()._mlir_type],
     *,
     target: _TargetType = get_gpu_target(),
     compile_options: StaticString = CompilationTarget[
@@ -3755,7 +3754,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func_attribute: OptionalReg[FuncAttribute] = None,
         out result: DeviceFunction[
             func,
-            Optional[Variadic.TypesOfTrait[AnyType]](None),
+            None,
             target=Self.default_device_info.target(),
             compile_options=compile_options,
             link_options=link_options,
@@ -5219,11 +5218,10 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         func_type: TrivialRegisterPassable,
         //,
         func: func_type,
-        declared_arg_types: Optional[Variadic.TypesOfTrait[AnyType]],
         *Ts: DevicePassable,
     ](
         self,
-        f: DeviceFunction[func, declared_arg_types, ...],
+        f: DeviceFunction[func, ...],
         *args: *Ts,
         grid_dim: Dim,
         block_dim: Dim,
@@ -5236,9 +5234,8 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """Enqueues a compiled function for execution on this device.
 
         Parameters:
-            func_type: Something.
-            func: Something.
-            declared_arg_types: Something.
+            func_type: The type of the function type.
+            func: The function to execute.
             Ts: Argument dtypes.
 
         Args:
@@ -5609,7 +5606,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         @always_inline
-        def func_unified(ctx: Self) unified {}:
+        def func_unified(ctx: Self):
             try:
                 func(ctx)
             except e:
@@ -5754,7 +5751,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         @always_inline
-        def func_unified() unified {}:
+        def func_unified():
             try:
                 func()
             except e:
@@ -5847,7 +5844,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         @always_inline
-        def func_unified(ctx: Self, i: Int) unified {}:
+        def func_unified(ctx: Self, i: Int):
             try:
                 func(ctx, i)
             except e:

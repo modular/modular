@@ -84,11 +84,11 @@ def test_grouped_gemm_epilogue[
     print("\n--- Testing grouped GEMM with epilogue ---")
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " cta_group=",
         cta_group,
         " register_based_epilogue=",
@@ -108,9 +108,9 @@ def test_grouped_gemm_epilogue[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
@@ -193,8 +193,8 @@ def test_grouped_gemm_epilogue[
     rand(b_host.ptr, b_host.num_elements())
 
     # Initialize C with random values for epilogue test
-    for i in range(m.value()):
-        for j in range(n.value()):
+    for i in range(Int(m.value())):
+        for j in range(Int(n.value())):
             comptime assert c_host.flat_rank >= 2
             c_host[(Idx(i), Idx(j))] = Scalar[c_type](random_float64(-1, 1))
             c_host_original[(Idx(i), Idx(j))] = c_host[(Idx(i), Idx(j))]
@@ -227,9 +227,9 @@ def test_grouped_gemm_epilogue[
 
     # Problem sizes tensor
     var problem_sizes_host = alloc[Int32](max_groups * 4)
-    problem_sizes_host[0] = Int32(m.value())  # M
-    problem_sizes_host[1] = Int32(n.value())  # N
-    problem_sizes_host[2] = Int32(k.value())  # K
+    problem_sizes_host[0] = Int32(Int(m.value()))  # M
+    problem_sizes_host[1] = Int32(Int(n.value()))  # N
+    problem_sizes_host[2] = Int32(Int(k.value()))  # K
     problem_sizes_host[3] = Int32(1)  # L (batch)
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -279,7 +279,7 @@ def test_grouped_gemm_epilogue[
     # Compute total tiles
     comptime BM = config.block_tile_shape[0]
     comptime BN = mma_shape[1]
-    var total_tiles = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
+    var total_tiles = ceildiv(Int(m.value()), BM) * ceildiv(Int(n.value()), BN)
 
     # Create epilogue lambda optional
     comptime optional_lambda = Optional[elementwise_compute_lambda_type](
@@ -380,8 +380,8 @@ def test_grouped_gemm_epilogue[
     ]:
         return val + c_tensor_host_lt.load[width=width](idx).cast[_dtype]()
 
-    for i in range(m.value()):
-        for j in range(n.value()):
+    for i in range(Int(m.value())):
+        for j in range(Int(n.value())):
             comptime assert c_host_ref.flat_rank >= 2
             c_host_ref[(Idx(i), Idx(j))] = epilogue_add_c_host(
                 IndexList[2](i, j),

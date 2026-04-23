@@ -345,7 +345,7 @@ def test_kv_cache_2m_iadd_gpu[
         row_major(Idx(2 * total_slice_length), Idx[num_heads * head_dim]()),
     )
     for i in range(a_host.num_elements()):
-        a_host.flat_store(i, Scalar[dtype](i))
+        a_host.raw_store(i, Scalar[dtype](i))
 
     var layer_idx = 1
     kv_cache_2m_iadd_dispatch[target="gpu"](
@@ -528,7 +528,7 @@ def test_kv_cache_2m_iadd_cpu[
         row_major(Idx(2 * total_slice_length), Idx[num_heads * head_dim]()),
     )
     for i in range(a_host.num_elements()):
-        a_host.flat_store(i, Scalar[dtype](i))
+        a_host.raw_store(i, Scalar[dtype](i))
 
     var layer_idx = 1
     kv_cache_2m_iadd_dispatch[target="cpu"](

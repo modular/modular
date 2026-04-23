@@ -142,12 +142,12 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Args:
             unsafe_from_raw_pointer: A raw pointer previously returned from `ArcPointer.steal_data`.
 
-        ### Safety
+        **Safety:**
 
         The `unsafe_from_raw_pointer` argument *must* have been previously returned by a call
         to `ArcPointer.steal_data`. Any other pointer may result in undefined behaviour.
 
-        ### Example
+        **Example:**
 
         ```mojo
         from std.memory import ArcPointer
@@ -246,7 +246,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Returns:
             An `UnsafePointer` to the underlying `T` value.
 
-        ### Safety
+        **Safety:**
 
         To avoid leaking memory, this pointer must be converted back to an `ArcPointer`
         using `ArcPointer(unsafe_from_raw_pointer=ptr)`.

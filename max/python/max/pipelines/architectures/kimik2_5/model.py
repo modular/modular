@@ -289,8 +289,11 @@ class KimiK2_5Model(
                 // attn_tp_size
             )
 
+            is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
+            ep_dispatch_dtype = DType.uint8 if is_mxfp4 else dtype
+
             ep_kwargs: dict[str, Any] = dict(
-                dispatch_dtype=dtype,
+                dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
@@ -301,9 +304,9 @@ class KimiK2_5Model(
                 dispatch_quant_config=None,
             )
 
-            if config.n_shared_experts == 1:
+            if config.n_shared_experts == 1 and not is_mxfp4:
                 # Only enable shared expert fusion if the shared expert is of
-                # the same shape as routed experts.
+                # the same shape and dtype as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
             if quant_config is not None:
@@ -341,12 +344,18 @@ class KimiK2_5Model(
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 
-        if ep_size > 1:
-            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+        num_devices = len(self.devices)
+        if num_devices > 1:
+            if ep_size > 1:
+                attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+                moe_strategy = "EP"
+            else:
+                attn_strategy = "TP"
+                moe_strategy = "TP"
             logger.info(
                 f"KimiK2_5: data_parallel_degree={data_parallel_degree},"
-                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
-                f" strategy."
+                f" ep_size={ep_size}. Use {attn_strategy}-attention +"
+                f" {moe_strategy}-MoE strategy."
             )
 
         return model_config
@@ -609,10 +618,6 @@ class KimiK2_5Model(
 
         # Create the LM model first
         config = self._create_model_config(state_dict)
-
-        n_devices = len(self.devices)
-        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
-            raise ValueError("Only the EP strategy is supported.")
 
         self.ep_comm_initializer: EPCommInitializer | None = None
         # Skip EP initialization in virtual device mode (compilation-only)

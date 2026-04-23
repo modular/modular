@@ -35,6 +35,7 @@ from max.experimental import tensor
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
+from max.graph.ops.slice_tensor import SliceIndices
 
 from ..sharding.rules.conv import (
     conv2d_rule,
@@ -216,8 +217,7 @@ def functional(
             return spmd_dispatch(graph_op, redistributed, out_mappings)
 
         with ensure_context():
-            tv_args = map_tensors(lambda t: t.__tensorvalue__(), args)
-            result = graph_op(*tv_args, **kwargs)
+            result = graph_op(*args, **kwargs)
             return to_tensors(result)
 
     return wrapped
@@ -226,18 +226,34 @@ def functional(
 # ═════════════════════════════════════════════════════════════════════════
 #  Scalar promotion helper
 # ═════════════════════════════════════════════════════════════════════════
+# The underlying ``ops.add(tensor, 0.5)`` graph op accepts a Python number
+# fine, but the SPMD rule-dispatch path in ``functional()`` expects every
+# argument to be distributable (i.e. produce a ``TensorLayout`` via
+# ``tensor_to_layout``). For binary ops that can take a scalar operand
+# (``F.add(x, eps)`` inside RMSNorm, ``F.mul(x, 0.5)`` inside GELU, …) we
+# promote the scalar to a ``full_like`` Tensor *before* dispatch so the
+# rule always sees two layouts.
 
 
 def _binary_with_scalar_promotion(
     inner: Callable[..., object],
 ) -> Callable[..., Tensor]:
-    """Wrap a binary dispatch so that scalars are promoted to Tensors."""
+    """Wrap a binary dispatch so that scalars are promoted to Tensors.
+
+    Only the SPMD rule-dispatch path needs both args to be Tensors (so
+    they produce a TensorLayout). The single-device graph-op path handles
+    scalar + tensor natively — including int-dtype tensors, where eager
+    ``full_like(int_tensor, 0.5)`` would bad_cast a float into an int
+    constant. Gate the promotion on ``any_distributed`` to keep the
+    native path intact.
+    """
 
     def wrapper(lhs: Tensor | int | float, rhs: Tensor | int | float) -> Tensor:
-        if isinstance(lhs, (int, float)) and isinstance(rhs, Tensor):
-            lhs = full_like(rhs, float(lhs))
-        elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
-            rhs = full_like(lhs, float(rhs))
+        if any_distributed((lhs, rhs)):
+            if isinstance(lhs, (int, float)) and isinstance(rhs, Tensor):
+                lhs = full_like(rhs, lhs)
+            elif isinstance(rhs, (int, float)) and isinstance(lhs, Tensor):
+                rhs = full_like(lhs, rhs)
         result = inner(lhs, rhs)
         assert isinstance(result, Tensor)
         return result
@@ -249,37 +265,34 @@ def _binary_with_scalar_promotion(
 #  Elementwise — Binary (with scalar promotion)
 # ═════════════════════════════════════════════════════════════════════════
 
-_add = functional(ops.add, rule=linear_binary_rule)
-_sub = functional(ops.sub, rule=linear_binary_rule)
-_mul = functional(ops.mul, rule=binary_rule)
-_div = functional(ops.div, rule=binary_rule)
-_pow = functional(ops.pow, rule=binary_rule)
-_mod = functional(ops.mod, rule=binary_rule)
-
 #: Adds two tensors element-wise with SPMD distribution support.
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.add` for details.
-add = _binary_with_scalar_promotion(_add)
+add = _binary_with_scalar_promotion(
+    functional(ops.add, rule=linear_binary_rule)
+)
 #: Subtracts two tensors element-wise with SPMD distribution support.
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.sub` for details.
-sub = _binary_with_scalar_promotion(_sub)
+sub = _binary_with_scalar_promotion(
+    functional(ops.sub, rule=linear_binary_rule)
+)
 #: Multiplies two tensors element-wise with SPMD distribution support.
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.mul` for details.
-mul = _binary_with_scalar_promotion(_mul)
+mul = _binary_with_scalar_promotion(functional(ops.mul, rule=binary_rule))
 #: Divides two tensors element-wise with SPMD distribution support.
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.div` for details.
-div = _binary_with_scalar_promotion(_div)
+div = _binary_with_scalar_promotion(functional(ops.div, rule=binary_rule))
 #: Raises tensor elements to a power with SPMD distribution support.
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.pow` for details.
-pow = _binary_with_scalar_promotion(_pow)
+pow = _binary_with_scalar_promotion(functional(ops.pow, rule=binary_rule))
 #: Computes the modulo operation element-wise with SPMD distribution support.
 #: Scalars are promoted to tensors automatically.
 #: See :func:`max.graph.ops.mod` for details.
-mod = _binary_with_scalar_promotion(_mod)
+mod = _binary_with_scalar_promotion(functional(ops.mod, rule=binary_rule))
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Elementwise — Unary
@@ -561,8 +574,8 @@ def split(
     (last chunk may be smaller).  When it is a **list of ints**, splits
     into chunks with exactly those sizes.
     """
-    dim_size = int(x.shape[axis])
     if isinstance(split_size_or_sections, int):
+        dim_size = int(x.shape[axis])
         chunk_size = split_size_or_sections
         num_full, remainder = divmod(dim_size, chunk_size)
         split_sizes: list[int] = [chunk_size] * num_full
@@ -595,7 +608,7 @@ def _reduce_op(
     *,
     rule: Callable[..., tuple[tuple[object, ...], tuple[DeviceMapping, ...]]],
 ) -> Callable[..., Tensor]:
-    """Build a reduction wrapper matching the old ``functional.py`` semantics.
+    """Build a reduction wrapper matching the old ``functional`` semantics.
 
     When ``axis`` is an ``int``, delegates directly to the single-axis
     graph op (via ``functional()``).
@@ -631,7 +644,7 @@ def _reduce_elementwise_op(
     ``max(x)`` reduces along an axis; ``max(x, y)`` computes element-wise
     maximum.  The ``y`` argument disambiguates the two modes.
 
-    Matches old ``functional.py`` semantics: ``axis=None`` flattens to 1-D
+    Matches old ``functional`` semantics: ``axis=None`` flattens to 1-D
     then reduces on axis 0.
     """
     reduce_fn = _reduce_op(graph_op, rule=rule)
@@ -817,9 +830,14 @@ def _while_loop_graph(
             return [result.__tensorvalue__()]
         return _unwrap_list(result)
 
-    # Tensor satisfies TensorValueLike which ops.while_loop accepts at
-    # runtime, but mypy can't prove TensorValueLike <: Value[Any].
-    return ops.while_loop(initial_values, _pred, _body)  # type: ignore[arg-type]
+    # ops.while_loop has no auto-coercion; coerce TensorValueLike (incl.
+    # Tensor via __tensorvalue__) to TensorValue the same way _cond_graph
+    # coerces its predicate.
+    if isinstance(initial_values, Iterable):
+        unwrapped = [TensorValue(v) for v in initial_values]
+    else:
+        unwrapped = [TensorValue(initial_values)]
+    return ops.while_loop(unwrapped, _pred, _body)
 
 
 #: Repeatedly executes a body function while a condition holds.
@@ -865,7 +883,7 @@ def buffer_store(destination: Tensor, source: Tensor) -> None:
 def buffer_store_slice(
     destination: Tensor,
     source: Tensor,
-    indices: tuple[int | slice, ...],
+    indices: SliceIndices,
 ) -> None:
     """Sets a slice of a tensor buffer to new values. Distributed via SPMD.
 
@@ -912,11 +930,18 @@ roi_align = functional(ops.roi_align)
 
 def clamp(
     x: Tensor,
-    lower_bound: Tensor,
-    upper_bound: Tensor,
+    lower_bound: TensorValueLike,
+    upper_bound: TensorValueLike,
 ) -> Tensor:
     """Clamps tensor values to a specified range.
 
     Returns ``max(min(x, upper_bound), lower_bound)``.
     """
     return max(min(x, upper_bound), lower_bound)
+
+
+#: Alias for :func:`clamp`.
+clip = clamp
+#: Rebinds the shape of a tensor, asserting dimension consistency at runtime.
+#: See :func:`max.graph.ops.rebind` for details.
+rebind = functional(ops.rebind)

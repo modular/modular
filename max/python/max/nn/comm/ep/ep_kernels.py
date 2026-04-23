@@ -73,7 +73,7 @@ def _ep_dispatch_output_types(
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
 
-        if config.dispatch_dtype.is_float8():
+        if config.dispatch_dtype.is_float8() or quant_config.is_mxfp4:
             out_scales_type = quant_config.quantized_scales_type(
                 Shape([max_recv_tokens, config.hidden_size]), device_ref
             )
@@ -161,6 +161,9 @@ def call_ep_init(
         if config.dispatch_quant_config.is_nvfp4:
             parameters["dispatch_fmt_str"] = "NVFP4"
             parameters["dispatch_scale_dtype"] = DType.float8_e4m3fn
+        elif config.dispatch_quant_config.is_mxfp4:
+            parameters["dispatch_fmt_str"] = "MXFP4"
+            parameters["dispatch_scale_dtype"] = DType.float8_e8m0fnu
         elif config.dispatch_dtype.is_float8():
             parameters["dispatch_fmt_str"] = "BlockwiseFP8"
             parameters["dispatch_scale_dtype"] = DType.float32
@@ -359,7 +362,7 @@ def call_ep_dispatch_wait(
     output_last_dim = config.hidden_size
     if (
         config.dispatch_quant_config is not None
-        and config.dispatch_quant_config.is_nvfp4
+        and config.dispatch_quant_config.is_fp4
     ):
         output_last_dim //= 2
 
@@ -659,7 +662,7 @@ def call_ep_dispatch(
     token_last_dim = config.hidden_size
     if (
         config.dispatch_quant_config is not None
-        and config.dispatch_quant_config.is_nvfp4
+        and config.dispatch_quant_config.is_fp4
     ):
         token_last_dim //= 2
 
@@ -1097,6 +1100,9 @@ def fused_silu_quantized(
             input.device,
         )
 
+    elif quant_config.is_mxfp4:
+        op_name += ".mxfp4"
+        hidden_size //= 2  # Two FP4 elements are packed into one uint8 element
     elif out_type.is_float8():
         op_name += ".fp8"
     else:

@@ -121,10 +121,10 @@ def repeat_interleave[
         input_index[1] = offset_mapping[output_index[1]]
 
         var input_idx = collapsed_input.layout(Coord(input_index))
-        var input_value = collapsed_input.flat_load[width=width](input_idx)
+        var input_value = collapsed_input.raw_load[width=width](input_idx)
 
         var output_idx = collapsed_output.layout(Coord(output_index))
-        collapsed_output.flat_store(output_idx, input_value)
+        collapsed_output.raw_store(output_idx, input_value)
 
     elementwise[func, simd_width_of[output.dtype]()](
         coord_to_index_list(collapsed_output.layout.shape_coord())

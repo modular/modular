@@ -1321,7 +1321,7 @@ def variance[
 
     The mean value is used to avoid a second pass over the data:
 
-    ```
+    ```text
     variance(x) = sum((x - E(x))^2) / (size - correction)
     ```
 
@@ -1439,7 +1439,7 @@ def variance[
 ](src: Span[Scalar[dtype], _], correction: Int = 1) raises -> Scalar[dtype]:
     """Computes the variance value of the elements in a buffer.
 
-    ```
+    ```text
     variance(x) = sum((x - E(x))^2) / (size - correction)
     ```
 

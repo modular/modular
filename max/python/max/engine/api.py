@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
+from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
@@ -341,10 +342,15 @@ class InferenceSession:
     _impl: _InferenceSession
     # This is shared across sessions. Compilation is currently not thread safe.
     _compilation_lock = threading.Lock()
+    # DebugConfig is a process-wide singleton. Assigning it as a class
+    # attribute at import time means both ``InferenceSession.debug`` and
+    # ``session.debug`` return the same underlying object, and any
+    # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
+    debug: DebugConfig = _InferenceSession.debug
 
     def __init__(
         self,
-        devices: Iterable[Device],
+        devices: Iterable[Device] = (),
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
@@ -397,15 +403,26 @@ class InferenceSession:
             # Ignore errors if SIGUSR2 is already registered or unavailable
             pass
 
-        if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
-            self.set_mojo_log_level(env_val)
+        # Prefer the new max-debug.op-log-level config (covers MODULAR_MAX_DEBUG_OP_LOG_LEVEL
+        # env var, modular.cfg, and InferenceSession.debug.op_log_level Python setter).
+        # Fall back to the legacy MOJO_LOGGING_LEVEL env var.  The legacy
+        # fallback will be removed in a follow-up PR.
+        if log_level := (
+            _InferenceSession.debug.op_log_level
+            or os.getenv("MOJO_LOGGING_LEVEL")
+        ):
+            self.set_mojo_log_level(log_level)
 
-        if env_val := os.getenv("MOJO_ASSERT_LEVEL"):
+        # Same pattern for assert level.
+        if assert_level_str := (
+            _InferenceSession.debug.assert_level
+            or os.getenv("MOJO_ASSERT_LEVEL")
+        ):
             try:
-                assert_level = AssertLevel[env_val.upper()]
+                assert_level = AssertLevel[assert_level_str.upper()]
             except KeyError as e:
                 raise TypeError(
-                    f"Invalid assert level ({env_val}). Please use one of: {[x.name for x in AssertLevel]}"
+                    f"Invalid assert level ({assert_level_str}). Please use one of: {[x.name for x in AssertLevel]}"
                 ) from e
             self.set_mojo_assert_level(assert_level)
 
@@ -419,8 +436,14 @@ class InferenceSession:
         if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
             self.enable_per_tensor_fp8_quantize(val)
 
+        # Prefer the new max-debug.uninitialized-read-check config; fall
+        # back to the legacy MODULAR_MAX_UNINITIALIZED_READ_CHECK env var.
+        # The legacy fallback will be removed in a follow-up PR.
         if (
-            os.environ.get("MODULAR_MAX_UNINITIALIZED_READ_CHECK", "").lower()
+            _InferenceSession.debug.uninitialized_read_check
+            or os.environ.get(
+                "MODULAR_MAX_UNINITIALIZED_READ_CHECK", ""
+            ).lower()
             == "true"
         ):
             # Enable debug allocator poison

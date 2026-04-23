@@ -192,7 +192,7 @@ def run_broadcast_sweep[]() raises:
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
-        List(True, False, __list_literal__=()),
+        [True, False],
     ):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:

@@ -65,9 +65,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     benchmark: Bool = False,
     swapAB: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     if not benchmark:
         print(
@@ -85,9 +85,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)

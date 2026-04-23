@@ -30,6 +30,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
+    Type,
     Value,
     ops,
 )
@@ -311,7 +312,8 @@ def rope_split_store_ragged(
             f"expected freqs_cis to have rank 2, was {freqs_cis.rank}"
         )
 
-    output_dim = n_heads * kv_params.head_dim
+    head_dim = kv_params.head_dim
+    q_dim = n_heads * head_dim
 
     if not fuse:
         return _rope_split_store_ragged_unfused(
@@ -380,7 +382,7 @@ def rope_split_store_ragged(
         out_types=[
             TensorType(
                 dtype=qkv.dtype,
-                shape=qkv.shape[:-1] + [output_dim],
+                shape=qkv.shape[:-1] + [q_dim],
                 device=qkv.device,
             )
         ],
@@ -3584,7 +3586,10 @@ def rms_norm_value_cache(
 def moe_create_indices(
     topk_ids: TensorValue,
     num_local_experts: int,
-) -> tuple[TensorValue, TensorValue, TensorValue, TensorValue, TensorValue]:
+    *,
+    needs_scales_offset: bool = False,
+    scales_alignment: int = 128,
+) -> tuple[TensorValue, ...]:
     """Creates indices for the MoE layer.
 
     Args:
@@ -3602,37 +3607,53 @@ def moe_create_indices(
         - expert_usage_stats: The maximum number of tokens assigned to any expert,
             and the number of active experts.
     """
+
+    op_name = "mo.moe.create.indices"
+    if needs_scales_offset:
+        op_name += ".with.scales.offset"
+
+    out_types: list[Type[Any]] = [
+        TensorType(
+            dtype=DType.uint32,
+            shape=[topk_ids.shape[0]],
+            device=topk_ids.device,
+        ),  # token_expert_order
+        TensorType(
+            dtype=DType.uint32,
+            shape=[num_local_experts + 1],
+            device=topk_ids.device,
+        ),  # expert_start_indices
+        TensorType(
+            dtype=DType.uint32,
+            shape=[topk_ids.shape[0]],
+            device=topk_ids.device,
+        ),  # restore_token_order
+        TensorType(
+            dtype=DType.int32,
+            shape=[num_local_experts],
+            device=topk_ids.device,
+        ),  # expert_ids
+        TensorType(
+            dtype=DType.uint32, shape=[2], device=topk_ids.device
+        ),  # expert_usage_stats
+    ]
+
+    if needs_scales_offset:
+        out_types.append(
+            TensorType(
+                dtype=DType.uint32,
+                shape=[num_local_experts],
+                device=topk_ids.device,
+            ),
+        )
+
     results = ops.custom(
-        "mo.moe.create.indices",
+        op_name,
         device=topk_ids.device,
         values=[
             topk_ids,
         ],
-        out_types=[
-            TensorType(
-                dtype=DType.uint32,
-                shape=[topk_ids.shape[0]],
-                device=topk_ids.device,
-            ),  # token_expert_order
-            TensorType(
-                dtype=DType.uint32,
-                shape=[num_local_experts + 1],
-                device=topk_ids.device,
-            ),  # expert_start_indices
-            TensorType(
-                dtype=DType.uint32,
-                shape=[topk_ids.shape[0]],
-                device=topk_ids.device,
-            ),  # restore_token_order
-            TensorType(
-                dtype=DType.int32,
-                shape=[num_local_experts],
-                device=topk_ids.device,
-            ),  # expert_ids
-            TensorType(
-                dtype=DType.uint32, shape=[2], device=topk_ids.device
-            ),  # expert_usage_stats
-        ],
+        out_types=out_types,
     )
 
     return (
@@ -3641,6 +3662,7 @@ def moe_create_indices(
         results[2].tensor,
         results[3].tensor,
         results[4].tensor,
+        *([results[5].tensor] if needs_scales_offset else []),
     )
 
 
@@ -3792,6 +3814,151 @@ def grouped_matmul_ragged(
         out_types=[
             TensorType(
                 dtype=hidden_states.dtype,
+                shape=[hidden_states.shape[0], weight.shape[1]],
+                device=hidden_states.device,
+            ),
+        ],
+    )[0].tensor
+
+    return output
+
+
+def grouped_dynamic_scaled_mxfp4_matmul(
+    hidden_states: TensorValue,
+    weight: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    expert_start_indices: TensorValue,
+    expert_ids: TensorValue,
+    expert_usage_stats_host: TensorValue,
+    out_type: DType = DType.bfloat16,
+    estimated_total_m: TensorValue | None = None,
+) -> TensorValue:
+    """Performs grouped NVFP4 matmul for MoE layers.
+
+    Performs a grouped matmul with MXFP4 (4-bit) quantized inputs and weights.
+    The inputs are packed as uint8 (2 MXFP4 values per byte) with float8_e8m0fnu
+    scaling factors. MXFP4 uses fixed 1D block scaling with 32 elements per
+    scale factor along the K dimension.
+
+    ``hidden_states`` and ``expert_start_indices`` together implement the ragged
+    tensor representation for variable-length expert inputs.
+
+    Args:
+        hidden_states: The input activations with shape ``[total_tokens, K/2]``
+            where K is the unpacked hidden dimension. Dtype must be uint8
+            (packed MXFP4).
+        weight: The expert weights with shape ``[num_experts, N, K/2]``.
+            Dtype must be uint8 (packed MXFP4).
+        a_scales: Scaling factors for inputs with shape
+            ``[num_scale_rows, K/32]``. Dtype must be float8_e8m0fnu.
+        b_scales: Scaling factors for weights with shape
+            ``[num_experts, N, K/32]``. Dtype must be float8_e8m0fnu.
+        expert_start_indices: Indices indicating where each expert's tokens
+            start in ``hidden_states``.
+        expert_ids: The expert ID for each group.
+        expert_usage_stats_host: A tensor containing [max_tokens_per_expert,
+            num_active_experts].
+        out_type: Output dtype. Defaults to bfloat16.
+        estimated_total_m: The estimated total number of tokens.
+
+    Returns:
+        The matmul result with shape ``[total_tokens, N]`` and dtype ``out_type``.
+    """
+    if weight.rank != 3:
+        raise ValueError(f"expected weight of rank 3 but got {weight.rank}")
+
+    if hidden_states.rank != 2:
+        raise ValueError(
+            f"expected hidden_states of rank 2 but got {hidden_states.rank}"
+        )
+
+    weight_k = weight.shape[2]
+    hidden_k = hidden_states.shape[1]
+    if weight_k != hidden_k or weight.shape[0] != expert_ids.shape[0]:
+        raise ValueError(
+            "expected weight is of shape [num_experts, *, "
+            f"{hidden_k}] but got {weight.shape}"
+        )
+
+    if (hidden_states.dtype != DType.uint8) or (weight.dtype != DType.uint8):
+        raise TypeError(
+            "hidden_states and weight dtypes must be uint8 for MXFP4, but got "
+            f"{hidden_states.dtype}, {weight.dtype}"
+        )
+
+    if (a_scales.dtype != b_scales.dtype) or (
+        a_scales.dtype != DType.float8_e8m0fnu
+    ):
+        raise TypeError(
+            "a_scales and b_scales dtypes must be float8_e8m0fnu for MXFP4, "
+            f"but got {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if expert_ids.dtype != DType.int32:
+        raise TypeError(
+            f"expert_ids dtype must be int32, but got {expert_ids.dtype}"
+        )
+
+    if expert_ids.rank != 1:
+        raise ValueError(
+            f"expected expert_ids of rank 1 but got {expert_ids.rank}"
+        )
+    if expert_start_indices.dtype != DType.uint32:
+        raise TypeError(
+            "expert_start_indices dtype must be uint32, but got"
+            f" {expert_start_indices.dtype}"
+        )
+    if expert_start_indices.rank != 1:
+        raise ValueError(
+            "expected expert_start_indices of rank 1 but got"
+            f" {expert_start_indices.rank}"
+        )
+
+    if a_scales.rank != 2 or b_scales.rank != 3:
+        raise ValueError(
+            "expected a_scales of rank 2 and b_scales of rank 3 but got"
+            f" {a_scales.rank} and {b_scales.rank}"
+        )
+
+    MXFP4_SF_VECTOR_SIZE = 32
+
+    a_scales_dim_1 = ceildiv(
+        hidden_states.shape[1] * 2, Dim(MXFP4_SF_VECTOR_SIZE)
+    )
+    if a_scales.shape[1] != a_scales_dim_1:
+        raise ValueError(
+            "a_scales shape must be "
+            f"[*, {a_scales_dim_1}]"
+            f" but got {a_scales.shape}"
+        )
+
+    b_scales_dim_2 = ceildiv(weight.shape[2] * 2, Dim(MXFP4_SF_VECTOR_SIZE))
+    if (
+        b_scales.shape[0] != weight.shape[0]
+        or b_scales.shape[1] != weight.shape[1]
+        or b_scales.shape[2] != b_scales_dim_2
+    ):
+        raise ValueError(
+            "b_scales shape must be "
+            f"[{weight.shape[0]}, {weight.shape[1]}, {b_scales_dim_2}] but got {b_scales.shape}"
+        )
+
+    output = ops.custom(
+        "mo.grouped.matmul.block.scaled.mxfp4",
+        device=hidden_states.device,
+        values=[
+            hidden_states,
+            weight,
+            a_scales,
+            b_scales,
+            expert_start_indices,
+            expert_ids,
+            expert_usage_stats_host[1],
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type,
                 shape=[hidden_states.shape[0], weight.shape[1]],
                 device=hidden_states.device,
             ),
@@ -4684,6 +4851,65 @@ def dynamic_block_scaled_matmul_fp4(
     return result
 
 
+def dynamic_block_scaled_matmul_mxfp4(
+    a: TensorValue,
+    b: TensorValue,
+    a_scales: TensorValue,
+    b_scales: TensorValue,
+    out_type: DType = DType.bfloat16,
+) -> TensorValue:
+    """Performs a matmul of two FP4 tensors with 1D-block scaled scaling factors.
+
+    Args:
+        a: The first tensor to multiply.
+        b: The second tensor to multiply, must be transposed.
+        a_scales: The scaling factors for the first tensor.
+        b_scales: The scaling factors for the second tensor.
+
+    Returns:
+        The result of the matmul operation.
+    """
+    if a.rank != 2 or b.rank != 2:
+        raise ValueError("Both a and b must be rank 2 tensors")
+    if a_scales.rank != 2 or b_scales.rank != 2:
+        raise ValueError("Both a_scales and b_scales must be rank 2 tensors")
+
+    if a.shape[1] != b.shape[1]:
+        raise ValueError(
+            "The second dimension of b must match the second dimension of a"
+        )
+
+    if (a.dtype != b.dtype) or (a_scales.dtype != b_scales.dtype):
+        raise TypeError(
+            f"a and b dtypes {a.dtype}, {b.dtype} must match, "
+            f"as do a and b scales dtypes {a_scales.dtype}, {b_scales.dtype}"
+        )
+
+    if a.dtype != DType.uint8:
+        raise ValueError("A dtype must be uint8 (fp4-e2m1fnX2)")
+
+    if a_scales.dtype != DType.float8_e8m0fnu:
+        raise ValueError("a_scales dtype must be float8_e4m3fn")
+
+    result = ops.custom(
+        "mo.matmul.dynamic.block.scaled.mxfp4",
+        device=a.device,
+        values=[
+            a,
+            b,
+            a_scales,
+            b_scales,
+        ],
+        out_types=[
+            TensorType(
+                dtype=out_type, shape=[a.shape[0], b.shape[0]], device=a.device
+            )
+        ],
+    )[0].tensor
+
+    return result
+
+
 def mxfp4_dequant(
     packed_weights: TensorValue,
     scales: TensorValue,
@@ -4860,6 +5086,151 @@ def quantize_dynamic_block_scaled_fp4(
         parameters={
             "SF_VECTOR_SIZE": sf_vector_size,
         },
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def grouped_quantize_dynamic_block_scaled_fp4(
+    input: TensorValue,
+    row_offsets: TensorValue,
+    scales_offsets: TensorValue,
+    expert_ids: TensorValue,
+    sf_tensor: TensorValue,
+    sf_vector_size: int = 16,
+    scales_type: DType = DType.float8_e4m3fn,
+    out_type: DType = DType.uint8,
+) -> tuple[TensorValue, TensorValue]:
+    """Grouped dynamic FP4 quantization for MoE experts.
+
+    Quantizes a concatenated token tensor where different row ranges belong
+    to different experts, each with its own tensor-wise scale factor.
+
+    Args:
+        input: The concatenated input tensor. Shape: ``[total_tokens, K]``,
+            dtype ``bfloat16``.
+        row_offsets: Cumulative token offsets per expert.
+            Shape: ``[num_experts + 1]``, dtype ``uint32``.
+        scales_offsets: Per-expert scale tile offset corrections.
+            Shape: ``[num_experts]``, dtype ``uint32``.
+        expert_ids: Expert ID mapping (typically identity).
+            Shape: ``[num_experts]``, dtype ``int32``.
+        sf_tensor: Per-expert tensor-wise scale factors.
+            Shape: ``[num_experts]``, dtype ``float32``.
+        sf_vector_size: The block size for the scaling factors.
+        scales_type: Scale factor dtype. ``float8_e4m3fn`` for NVFP4.
+        out_type: Output dtype. ``uint8`` for packed FP4.
+
+    Returns:
+        The quantized tensor ``[total_tokens, K // 2]`` and scales in
+        rank-5 interleaved layout
+        ``[total_m_tiles, K_tiles, 32, 4, 4]``.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if not _is_sm10x_gpu():
+        # route to the fallback kernel
+        return quantize_dynamic_block_scaled_fp4(
+            input, sf_tensor[0], sf_vector_size, scales_type, out_type
+        )
+
+    SF_ATOM_M = [32, 4]
+    SF_ATOM_K = 4
+    SF_MN_GROUP_SIZE = SF_ATOM_M[0] * SF_ATOM_M[1]  # 128
+    SF_K_GROUP_SIZE = SF_ATOM_K * 16
+
+    total_m_tiles = ceildiv(input.shape[0], Dim(SF_MN_GROUP_SIZE))
+    total_m_tiles += expert_ids.shape[0]  # add one padding tile for each group
+    scales_shape: list[Dim | int] = [
+        total_m_tiles,
+        ceildiv(input.shape[1], Dim(SF_K_GROUP_SIZE)),
+        SF_ATOM_M[0],
+        SF_ATOM_M[1],
+        SF_ATOM_K,
+    ]
+
+    result = ops.custom(
+        "mo.grouped.quantize.dynamic.block.scaled",
+        device=input.device,
+        values=[input, row_offsets, scales_offsets, expert_ids, sf_tensor],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[input.shape[0], input.shape[1] // 2],
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=scales_shape,
+                device=input.device,
+            ),
+        ],
+    )
+
+    return result[0].tensor, result[1].tensor
+
+
+def quantize_dynamic_block_scaled_mxfp4(
+    input: TensorValue,
+    scales_type: DType = DType.float8_e8m0fnu,
+    out_type: DType = DType.uint8,  # fp4-e2m1fnX2
+) -> tuple[TensorValue, TensorValue]:
+    """Dynamically quantize the input tensor to fp4-e2m1fn.
+
+    Args:
+        input: The input tensor to quantize. Shape: [seq_len, hidden_size]
+        out_type: The type of the output tensor.
+        scales_type: The type of the scales tensor.
+
+    Returns:
+        The quantized tensor in [seq_len, hidden_size // 2] layout and the scales in
+        [seq_len, hidden_size // 32] layout.
+    """
+    if input.rank != 2:
+        raise ValueError("input tensor must be rank 2 tensor")
+
+    if input.dtype != DType.bfloat16:
+        raise ValueError("input tensor dtype must be bfloat16")
+
+    if out_type not in (DType.uint8,):
+        raise ValueError("out_type must be uint8 (fp4-e2m1fnX2)")
+
+    if scales_type not in (DType.float8_e8m0fnu,):
+        raise ValueError("scales_type must be float8_e8m0fnu for MXFP4")
+
+    MXFP4_SF_VECTOR_SIZE = 32
+
+    if int(input.shape[1]) % MXFP4_SF_VECTOR_SIZE != 0:
+        raise ValueError(
+            "input.shape[1] must be a multiple of MXFP4_SF_VECTOR_SIZE"
+        )
+
+    result = ops.custom(
+        "mo.quantize.dynamic.block.scaled.mxfp4",
+        device=input.device,
+        values=[input],
+        out_types=[
+            TensorType(
+                dtype=out_type,
+                shape=[
+                    input.shape[0],
+                    input.shape[1] // 2,
+                ],  # each output element (uint8) is 2 fp4-e2m1fn values
+                device=input.device,
+            ),
+            TensorType(
+                dtype=scales_type,
+                shape=[
+                    input.shape[0],
+                    ceildiv(input.shape[1], Dim(MXFP4_SF_VECTOR_SIZE)),
+                ],
+                device=input.device,
+            ),
+        ],
     )
 
     return result[0].tensor, result[1].tensor

@@ -26,10 +26,10 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     reduce_scatter,
 )
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     transfer_to as df_shard,
 )
 from max.experimental.realization_context import set_seed
@@ -8043,16 +8043,96 @@ class TestMutableStoreOps:
         expected[-4:-1] = slice_np
         np.testing.assert_array_equal(buf.to_numpy(), expected)
 
-    def test_buffer_store_slice_bfloat16_raises(self) -> None:
-        """Slice writes on bfloat16 raise NotImplementedError."""
+    def test_buffer_store_slice_bfloat16_cpu(self) -> None:
+        """F.buffer_store_slice works end-to-end on a bf16 CPU buffer."""
         from max.driver import Buffer
 
-        buf = Buffer.zeros([4, 4], DType.bfloat16, CPU())
-        src = Buffer.zeros([2, 2], DType.bfloat16, CPU())
+        # bf16 is 2 bytes/element. Build source/dest via uint16 bytes then
+        # view as bf16 to avoid DLPack entirely.
+        dst_u16 = np.zeros((4, 4), dtype=np.uint16)
+        src_u16 = np.array(
+            [[0x3F80, 0x4000], [0x4040, 0x4080]], dtype=np.uint16
+        )
+
+        buf = Buffer.from_numpy(dst_u16).view(DType.bfloat16)
+        src_buf = Buffer.from_numpy(src_u16).view(DType.bfloat16)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        # Compare via uint16 view: slice coords and element bytes match.
+        expected = np.zeros((4, 4), dtype=np.uint16)
+        expected[1:3, 1:3] = src_u16
+        np.testing.assert_array_equal(
+            buf.view(DType.uint16).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float8_e4m3fn_cpu(self) -> None:
+        """F.buffer_store_slice works end-to-end on a float8_e4m3fn CPU buffer."""
+        from max.driver import Buffer
+
+        # fp8 is 1 byte per element; build source/dest via uint8 bytes then
+        # view as fp8 to avoid DLPack entirely.
+        dst_bytes = np.zeros((4, 4), dtype=np.uint8)
+        src_bytes = np.array([[0x11, 0x22], [0x33, 0x44]], dtype=np.uint8)
+
+        buf = Buffer.from_numpy(dst_bytes).view(DType.float8_e4m3fn)
+        src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e4m3fn)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        # Compare via uint8 view: slice coords and element bytes match.
+        expected = np.zeros((4, 4), dtype=np.uint8)
+        expected[1:3, 1:3] = src_bytes
+        np.testing.assert_array_equal(
+            buf.view(DType.uint8).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float8_e5m2_cpu(self) -> None:
+        """F.buffer_store_slice works end-to-end on a float8_e5m2 CPU buffer."""
+        from max.driver import Buffer
+
+        dst_bytes = np.zeros((4, 4), dtype=np.uint8)
+        src_bytes = np.array([[0x55, 0x66], [0x77, 0x88]], dtype=np.uint8)
+
+        buf = Buffer.from_numpy(dst_bytes).view(DType.float8_e5m2)
+        src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e5m2)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.uint8)
+        expected[1:3, 1:3] = src_bytes
+        np.testing.assert_array_equal(
+            buf.view(DType.uint8).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float4_e2m1fn_raises(self) -> None:
+        """Slice writes on float4_e2m1fn still raise (packed 4-bit unsupported)."""
+        from max.driver import Buffer
+
+        buf = Buffer.zeros([4, 4], DType.float4_e2m1fn, CPU())
+        src = Buffer.zeros([2, 2], DType.float4_e2m1fn, CPU())
 
         # Realization happens on EagerRealizationContext exit, so the raise
         # must wrap the whole context.
-        with pytest.raises(NotImplementedError, match="bfloat16"):
+        with pytest.raises(NotImplementedError, match="float4_e2m1fn"):
             with (
                 rc.EagerRealizationContext(use_interpreter=True) as ctx,
                 realization_context(ctx),

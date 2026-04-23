@@ -29,16 +29,16 @@ from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental import random as max_random
 from max.experimental import realization_context as rc
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     allgather as all_gather,
 )
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     allreduce_sum as all_reduce_sum,
 )
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     reduce_scatter,
 )
-from max.experimental.distributed_functional import (
+from max.experimental.functional import (
     transfer_to as df_shard,
 )
 from max.experimental.realization_context import set_seed
@@ -3782,3 +3782,55 @@ class TestMutableStoreOpsGPU:
         expected = np.zeros(8, dtype=np.float32)
         expected[0:8:2] = slice_np
         np.testing.assert_array_equal(buf.to_numpy(), expected)
+
+    def test_buffer_store_slice_bfloat16_gpu(self) -> None:
+        """F.buffer_store_slice on a GPU bf16 buffer."""
+        gpu = Accelerator()
+
+        # Represent bf16 values via uint16 bytes so numpy can hold them.
+        # bf16 encoding of 1.0=0x3F80, 2.0=0x4000, 3.0=0x4040, 4.0=0x4080.
+        dst_u16 = np.zeros((4, 4), dtype=np.uint16)
+        src_u16 = np.array(
+            [[0x3F80, 0x4000], [0x4040, 0x4080]], dtype=np.uint16
+        )
+
+        buf = Buffer.from_numpy(dst_u16).view(DType.bfloat16).to(gpu)
+        src_buf = Buffer.from_numpy(src_u16).view(DType.bfloat16).to(gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.uint16)
+        expected[1:3, 1:3] = src_u16
+        np.testing.assert_array_equal(
+            buf.view(DType.uint16).to_numpy(), expected
+        )
+
+    def test_buffer_store_slice_float8_e4m3fn_gpu(self) -> None:
+        """F.buffer_store_slice on a GPU float8_e4m3fn buffer."""
+        gpu = Accelerator()
+
+        dst_bytes = np.zeros((4, 4), dtype=np.uint8)
+        src_bytes = np.array([[0x11, 0x22], [0x33, 0x44]], dtype=np.uint8)
+
+        buf = Buffer.from_numpy(dst_bytes).view(DType.float8_e4m3fn).to(gpu)
+        src_buf = Buffer.from_numpy(src_bytes).view(DType.float8_e4m3fn).to(gpu)
+
+        with (
+            rc.EagerRealizationContext(use_interpreter=True) as ctx,
+            realization_context(ctx),
+        ):
+            a = Tensor(storage=buf)
+            b = Tensor(storage=src_buf)
+            F.buffer_store_slice(a, b, [slice(1, 3), slice(1, 3)])
+
+        expected = np.zeros((4, 4), dtype=np.uint8)
+        expected[1:3, 1:3] = src_bytes
+        np.testing.assert_array_equal(
+            buf.view(DType.uint8).to_numpy(), expected
+        )

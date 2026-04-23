@@ -37,7 +37,7 @@ from std.utils import IndexList
 def _rope[
     dtype: DType,
     freq_dtype: DType,
-    width: Int,
+    width: SIMDSize,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
@@ -67,12 +67,12 @@ def apply_rope[
     dtype: DType,
     freq_dtype: DType,
     rank: Int,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     interleaved: Bool,
     alignment: Int,
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -119,7 +119,7 @@ def rope_ragged[
     *,
     interleaved: Bool,
     target: StaticString,
-    output_fn: def[width: Int, alignment: Int](
+    output_fn: def[width: SIMDSize, alignment: Int](
         idx: IndexList[3], val: SIMD[dtype, width]
     ) capturing -> None,
     mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
@@ -192,7 +192,7 @@ def rope_ragged[
                     var section_idx = 0
 
                     comptime for i in range(len(mrope_section.value())):
-                        comptime val = mrope_section.value()[i].value()
+                        comptime val = Int(mrope_section.value()[i].value())
                         if head_dim_idx < val:
                             section_idx = i
                             break

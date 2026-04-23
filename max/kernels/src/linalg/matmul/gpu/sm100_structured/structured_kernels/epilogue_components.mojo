@@ -892,7 +892,7 @@ struct EpilogueApplier[
                 var valid_bot_row = bot_row < self.M
 
                 if valid_top_row:
-                    elementwise_lambda_fn[epilogue_dtype](
+                    elementwise_lambda_fn[epilogue_dtype, 2](
                         IndexList[2](Int(top_row), Int(top_col)),
                         SIMD[epilogue_dtype, 2](
                             rebind[Scalar[epilogue_dtype]](elems[0]),
@@ -901,7 +901,7 @@ struct EpilogueApplier[
                     )
 
                 if valid_bot_row:
-                    elementwise_lambda_fn[epilogue_dtype](
+                    elementwise_lambda_fn[epilogue_dtype, 2](
                         IndexList[2](Int(bot_row), Int(bot_col)),
                         SIMD[epilogue_dtype, 2](
                             rebind[Scalar[epilogue_dtype]](elems[2]),
@@ -1725,9 +1725,9 @@ def shared_memory_epilogue_transpose[
                     [thread_shape, rest_shape], element_type=DType.uint32
                 ](
                     Int(0),
-                    crd[1].value(),
+                    Int(crd[1].value()),
                     Int(0),
-                    crd[3].value(),
+                    Int(crd[3].value()),
                     warp_j,
                     iter_j,
                     warp_i,
@@ -1775,7 +1775,7 @@ def shared_memory_epilogue_transpose[
                 if row < UInt32(Int(M)) and col < UInt32(Int(N)):
                     var val = ptr.load[width=simd_size, alignment=alignment]()
                     ptr.store[width=simd_size, alignment=alignment](
-                        compute_lambda_fn[alignment=alignment](
+                        compute_lambda_fn[alignment=simd_size](
                             (Int(row), Int(col)), val
                         )
                     )
@@ -1805,9 +1805,9 @@ def shared_memory_epilogue_transpose[
                     var coord = RuntimeTuple[
                         [thread_shape, rest_shape], element_type=DType.uint32
                     ](
-                        crd[0].value(),
+                        Int(crd[0].value()),
                         Int(0),
-                        crd[2].value(),
+                        Int(crd[2].value()),
                         iter_j,
                         warp_i,
                         iter_i,
@@ -1838,7 +1838,7 @@ def shared_memory_epilogue_transpose[
                             width=simd_size, alignment=alignment
                         ]()
                         ptr.store[width=simd_size, alignment=alignment](
-                            compute_lambda_fn[alignment=alignment](
+                            compute_lambda_fn[alignment=simd_size](
                                 (Int(row), Int(col)), val
                             )
                         )
@@ -1924,8 +1924,6 @@ def shared_memory_epilogue[
         lower_row += lane_row
 
         comptime for i in range(fragment_size):
-            comptime alignment = align_of[SIMD[c_type, simd_size]]()
-
             # Compute swizzled SMEM offsets, then un-swizzle to get logical coords
             var swz_offset_upper = upper_row * shared_n + col
             var swz_offset_lower = lower_row * shared_n + col
@@ -2014,7 +2012,7 @@ def shared_memory_epilogue[
                 Int(N)
             ):
                 c_smem_upper_frag[i, 0] = compute_lambda_fn[
-                    alignment=alignment
+                    alignment=simd_size
                 ](
                     (Int(gmem_upper_row), Int(gmem_upper_col)),
                     c_smem_upper_frag[i, 0],
@@ -2024,7 +2022,7 @@ def shared_memory_epilogue[
                 Int(N)
             ):
                 c_smem_lower_frag[i, 0] = compute_lambda_fn[
-                    alignment=alignment
+                    alignment=simd_size
                 ](
                     (Int(gmem_lower_row), Int(gmem_lower_col)),
                     c_smem_lower_frag[i, 0],

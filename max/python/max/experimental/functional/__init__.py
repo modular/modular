@@ -46,7 +46,6 @@ from max.driver import Device
 from max.dtype import DType
 from max.experimental.tensor import Tensor
 from max.graph import DeviceRef, Graph, TensorType, Type, ops
-from max.graph.value import Value
 
 # ── Collective ops ───────────────────────────────────────────────────────
 from .collective_ops import (
@@ -96,6 +95,7 @@ from .spmd_ops import (
     cast,
     chunk,
     clamp,
+    clip,
     complex_mul,
     concat,
     cond,
@@ -150,6 +150,7 @@ from .spmd_ops import (
     pow,
     prod,
     qmatmul,
+    rebind,
     relu,
     repeat_interleave,
     reshape,
@@ -255,7 +256,7 @@ def _load_custom_extensions(
 def custom(
     name: str,
     device: Device | DeviceRef,
-    values: Sequence[Value[Any]],
+    values: Sequence[Any],
     out_types: Sequence[Type[Any]],
     parameters: Mapping[str, bool | int | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,
@@ -278,7 +279,7 @@ def custom(
 def inplace_custom(
     name: str,
     device: Device | DeviceRef,
-    values: Sequence[Value[Any]],
+    values: Sequence[Any],
     out_types: Sequence[Type[Any]] | None = None,
     parameters: dict[str, bool | int | str | DType] | None = None,
     custom_extensions: str | Path | Sequence[str | Path] | None = None,

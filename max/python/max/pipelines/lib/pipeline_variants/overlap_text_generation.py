@@ -807,7 +807,9 @@ def build_realize_future_token_graph(
             else:
                 # TP > 1
                 assert spec_decode.signal_buffers is not None
-                cache_length_u32 = curr_cache_lenghts[0]
+                cache_length_u32 = ops.rebind(
+                    curr_cache_lenghts[0], ["curr_batch_size"]
+                )
                 cache_length_adjusted = (
                     cache_length_u32.cast(DType.int64) + batch_increments_i64
                 ).cast(DType.uint32)
@@ -851,6 +853,7 @@ class RealizeFutureTokenProcessor:
                 enable_dp=enable_dp,
             )
         )
+        self._enable_dp = enable_dp
         self._num_speculative_tokens = num_speculative_tokens
 
     def _compute_mappings(
@@ -963,9 +966,11 @@ class RealizeFutureTokenProcessor:
                 prev_batch.spec_decode.draft_tokens_to_verify_device
             )
             signal_buffers = getattr(model_inputs, "signal_buffers", None)
-            data_parallel_splits = getattr(
-                model_inputs, "data_parallel_splits", None
-            )
+
+            if self._enable_dp:
+                data_parallel_splits = model_inputs.data_parallel_splits
+            else:
+                data_parallel_splits = None
             if num_draft_tokens_to_verify == 0:
                 prev_batch_size = prev_generated_draft_tokens.shape[0]
                 prev_generated_draft_tokens = Buffer(
@@ -1264,10 +1269,6 @@ class OverlapTextGenerationPipeline(
             if self._spec_decode_state is not None
             else 0
         )
-        if num_speculative_tokens > 1:
-            raise ValueError(
-                "Speculative decoding with multiple tokens is not supported with Device Graph Capture."
-            )
 
         # For unified Eagle/MTP models, the graph merges prompt tokens with
         # draft tokens internally. Each request contributes 1 decode token
@@ -1401,13 +1402,9 @@ class OverlapTextGenerationPipeline(
         """
         if draft_tokens is not None:
             assert self._spec_decode_state is not None
-            num_speculative_steps = (
-                self._spec_decode_state.num_speculative_tokens
-            )
             num_draft_tokens_to_verify = draft_tokens.shape[1]
         else:
             assert self._spec_decode_state is None
-            num_speculative_steps = 0
             num_draft_tokens_to_verify = 0
 
         runner = self._graph_capture_runner

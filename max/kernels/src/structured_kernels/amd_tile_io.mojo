@@ -815,7 +815,7 @@ struct RegTileWriter[
             comptime dr, dc = divmod(i, dst_shape1)
             comptime dst_elem_offset = dr * dst_stride0 + dc * dst_stride1
 
-            var data = src_tile.flat_load[width=elem_size](src_offset)
+            var data = src_tile.raw_load[width=elem_size](src_offset)
             self.bc.store(
                 base_offset + Int32(dst_elem_offset),
                 data.cast[Self.dtype](),
@@ -868,9 +868,7 @@ struct RegTileWriter[
                 comptime dr, dc = divmod(i, type_of(dst_dist).static_shape[1])
                 comptime dst_elem_offset = dr * dst_stride0 + dc * dst_stride1
 
-                var data = src_tile.flat_load[width=elem_size](
-                    src_scalar_offset
-                )
+                var data = src_tile.raw_load[width=elem_size](src_scalar_offset)
                 self.bc.store(
                     base_offset + Int32(dst_elem_offset),
                     data.cast[Self.dtype](),
@@ -931,7 +929,7 @@ def _buffer_load_impl[
 
     comptime for i in range(M):
         comptime for j in range(N):
-            dst.flat_store[width=elem_size](
+            dst.raw_store[width=elem_size](
                 (i * dst_s0 + j * dst_s1) * elem_size,
                 bc.load[dst.dtype, elem_size](
                     base_offset,
@@ -998,10 +996,10 @@ def copy_local_to_shared[
             comptime for j in range(R1):
                 comptime src_idx = i + j * R0
                 comptime dst_off = i * s0 + j * s1
-                dst_dist.flat_store[width=elem_size](
+                dst_dist.raw_store[width=elem_size](
                     dst_off,
                     rebind[DstVec](
-                        src.flat_load[width=elem_size](src_idx * elem_size)
+                        src.raw_load[width=elem_size](src_idx * elem_size)
                     ),
                 )
     elif rank == 3:
@@ -1016,10 +1014,10 @@ def copy_local_to_shared[
                 comptime for k in range(R2):
                     comptime src_idx = i + j * R0 + k * R0 * R1
                     comptime dst_off = i * s0 + j * s1 + k * s2
-                    dst_dist.flat_store[width=elem_size](
+                    dst_dist.raw_store[width=elem_size](
                         dst_off,
                         rebind[DstVec](
-                            src.flat_load[width=elem_size](src_idx * elem_size)
+                            src.raw_load[width=elem_size](src_idx * elem_size)
                         ),
                     )
     else:
@@ -1115,9 +1113,9 @@ def blocked_copy_local_to_shared[
     comptime row_delta = tgr * cols_per_blk * simd_width
 
     comptime for v in range(vectors_per_thread):
-        dst.flat_store[width=simd_width](
+        dst.raw_store[width=simd_width](
             Int(base_offset + UInt32(v * row_delta)),
-            src.flat_load[width=simd_width](v * simd_width),
+            src.raw_load[width=simd_width](v * simd_width),
         )
 
 

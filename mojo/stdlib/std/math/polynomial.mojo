@@ -65,7 +65,8 @@ def _horner_evaluate[
     coefficients using the Horner scheme. The Horner scheme evaluates the
     polynomial at point x as `horner(x, coeffs)` where x is a scalar and coeffs
     is a list of coefficients [c0, c1, c2, ..., cn] by:
-    ```
+
+    ```text
     horner(x, coeffs)
         = c0 + x * (c1 + x * (c2 + x * (... + x * cn)))
         = fma(x, horner(x, coeffs[1:]), coeffs[0])

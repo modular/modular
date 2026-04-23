@@ -31,6 +31,7 @@ modular_py_library(
         requirement("transformers"),
         requirement("taskgroup"),
         requirement("requests"),
+        requirement("typing-extensions"),
     ],
 )
 

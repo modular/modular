@@ -232,25 +232,21 @@ class DeepseekV3NextN(Module):
                 for i in range(len(devices))
             ]
         else:
-            # TP or single-device case: rebind norm_embed and norm_hidden
-            # to use consistent per-device dimension names.
+            # TP or single-device case: rebind norm_embed and norm_hidden.
+            # Use a COMMON dim name so reduce-scatter/allgather (which
+            # require matching shapes) work in TP mode.
+            common_dim = f"{split_prefix}_seq_len"
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [
-                        f"{split_prefix}_seq_len_device_{i}",
-                        self.config.hidden_size,
-                    ],
+                    [common_dim, self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
             norm_hidden = [
                 ops.rebind(
                     norm_hidden[i],
-                    [
-                        f"{split_prefix}_seq_len_device_{i}",
-                        self.config.hidden_size,
-                    ],
+                    [common_dim, self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]

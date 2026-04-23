@@ -421,8 +421,8 @@ def test_prefill[
     ctx.synchronize()
     ctx.enqueue_copy(output_ptr, output_device_ptr)
 
-    var null_valid_length = TileTensor[DType.uint32, _, MutAnyOrigin](
-        None,
+    var dangling_valid_length = TileTensor(
+        UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
         row_major(Coord(Idx(0))),
     )
 
@@ -611,7 +611,7 @@ def test_prefill[
         v_ref_operand,
         CausalMask(),
         output_ref_device.to_layout_tensor(),
-        null_valid_length.to_layout_tensor(),
+        dangling_valid_length.to_layout_tensor(),
         scale,
         batch_size,
         seq_len,

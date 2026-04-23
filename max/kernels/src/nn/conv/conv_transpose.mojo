@@ -485,7 +485,7 @@ struct ConvTransposedPacked[
             ), "Don't support grouped transposed conv for now."
 
         # Number of partitions in n, ho_wo, c, f dimensions.
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
         var num_partitions = get_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
@@ -1379,7 +1379,7 @@ def conv_transposed_cpu[
     filter_packed: Bool,
     filter_is_cfrs: Bool,
     lambdas_have_fusion: Bool,
-    elementwise_lambda: def[dtype: DType, rank: Int, width: Int](
+    elementwise_lambda: def[dtype: DType, rank: Int, width: SIMDSize](
         IndexList[rank], SIMD[dtype, width]
     ) capturing -> None,
 ](
@@ -1433,7 +1433,7 @@ def conv_transposed_cpu[
             packed_filter_shape = IndexList[packed_filter_rank]()
 
             comptime for i in range(packed_filter_rank):
-                packed_filter_shape[i] = filter.layout.shape[i]().value()
+                packed_filter_shape[i] = Int(filter.layout.shape[i]().value())
 
         var packed_filter = TileTensor(
             packed_filter_ptr,
@@ -1474,7 +1474,7 @@ def conv_transposed_cpu[
 
                 var output_idx = output.layout(Coord(curr_coords))
 
-                var vec = output.flat_load[width=width](output_idx)
+                var vec = output.raw_load[width=width](output_idx)
                 elementwise_lambda(curr_coords, vec)
 
             vectorize[simd_size](f_size, body)
@@ -1549,7 +1549,7 @@ def conv_transposed_gpu[
         ](coords: IndexList[_rank]):
             comptime align = align_of[SIMD[output_type, _width]]()
             var idx = output_tmp.layout((Coord(coords)))
-            vec = output_tmp.flat_load[width=_width, alignment=align](idx)
+            vec = output_tmp.raw_load[width=_width, alignment=align](idx)
             epilogue(coords, vec)
 
         elementwise[

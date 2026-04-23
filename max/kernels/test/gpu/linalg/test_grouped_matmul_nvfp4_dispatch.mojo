@@ -825,6 +825,105 @@ def main() raises:
             ctx,
         )
 
+        # ============================================================
+        # 8. Kimi K2.5 TP=8 shapes
+        #    N=512, K=7168 (gate+up, TP-sharded on N)
+        #    N=7168, K=256 (down-proj, TP-sharded on K)
+        # ============================================================
+        print("\n=== Kimi K2.5 TP=8: N=512, K=7168 (gate+up) ===")
+
+        # 8a: Decode regime (avg_m = 1): 9 experts at 1 tok each
+        print("  8a: N=512, K=7168, decode 9 experts @ 1 tok")
+        _test_dispatch[9, 512, 7168](
+            9,
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            ctx,
+        )
+
+        # 8b: Decode with -1 masking (id<0 experts skipped by kernel)
+        print("  8b: N=512, K=7168, decode with -1 IDs mixed")
+        _test_dispatch[8, 512, 7168](
+            8,
+            [1, 1, 1, 1, 1, 1, 1, 1],
+            [0, -1, 2, -1, 4, -1, 6, -1],
+            ctx,
+        )
+
+        # 8c: Decode b8 pattern: shared (8 tok) + 8 routed (1 tok each)
+        print("  8c: N=512, K=7168, decode shared + 8 routed")
+        _test_dispatch[9, 512, 7168](
+            9,
+            [8, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            ctx,
+        )
+
+        # 8d: Small prefill regime (8 < avg_m <= 64): 8 experts @ 40 tok
+        print("  8d: N=512, K=7168, small prefill 8 experts @ 40 tok")
+        _test_dispatch[8, 512, 7168](
+            8,
+            [40, 40, 40, 40, 40, 40, 40, 40],
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            ctx,
+        )
+
+        # 8e: Large prefill regime (avg_m > 64): 4 experts @ 128 tok
+        print("  8e: N=512, K=7168, large prefill 4 experts @ 128 tok")
+        _test_dispatch[4, 512, 7168](
+            4,
+            [128, 128, 128, 128],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        print("\n=== Kimi K2.5 TP=8: N=7168, K=256 (down-proj) ===")
+
+        # 8f: Decode regime: 9 experts at 1 tok each
+        print("  8f: N=7168, K=256, decode 9 experts @ 1 tok")
+        _test_dispatch[9, 7168, 256](
+            9,
+            [1, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            ctx,
+        )
+
+        # 8g: Decode with -1 masking
+        print("  8g: N=7168, K=256, decode with -1 IDs mixed")
+        _test_dispatch[8, 7168, 256](
+            8,
+            [1, 1, 1, 1, 1, 1, 1, 1],
+            [0, -1, 2, -1, 4, -1, 6, -1],
+            ctx,
+        )
+
+        # 8h: Decode b8 pattern: shared + 8 routed
+        print("  8h: N=7168, K=256, decode shared + 8 routed")
+        _test_dispatch[9, 7168, 256](
+            9,
+            [8, 1, 1, 1, 1, 1, 1, 1, 1],
+            [0, 1, 2, 3, 4, 5, 6, 7, 8],
+            ctx,
+        )
+
+        # 8i: Small prefill: 8 experts @ 40 tok
+        print("  8i: N=7168, K=256, small prefill 8 experts @ 40 tok")
+        _test_dispatch[8, 7168, 256](
+            8,
+            [40, 40, 40, 40, 40, 40, 40, 40],
+            [0, 1, 2, 3, 4, 5, 6, 7],
+            ctx,
+        )
+
+        # 8j: Large prefill: 4 experts @ 128 tok
+        print("  8j: N=7168, K=256, large prefill 4 experts @ 128 tok")
+        _test_dispatch[4, 7168, 256](
+            4,
+            [128, 128, 128, 128],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         print("\n========================================")
         print("ALL DISPATCH TESTS PASSED!")
         print("========================================")

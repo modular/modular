@@ -69,7 +69,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     if not benchmark:
         print(
             t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
-            t" shape=({m.value()}, {n.value()}, {k.value()})"
+            t" shape=({Int(m.value())}, {Int(n.value())}, {Int(k.value())})"
             t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
             t" {cluster_shape[1]}, {cluster_shape[2]})"
             t" swapAB={swapAB} k_group_size={k_group_size}"
@@ -84,9 +84,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -108,12 +112,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(m.value()):
-            for k in range(k.value()):
+        for m in range(Int(m.value())):
+            for k in range(Int(k.value())):
                 comptime assert a_host.flat_rank >= 2
                 a_host[(Idx(m), Idx(k))] = Float32(m + k).cast[a_type]()
-        for n in range(n.value()):
-            for k in range(k.value()):
+        for n in range(Int(n.value())):
+            for k in range(Int(k.value())):
                 b_host[(Idx(n), Idx(k))] = Float32(n + k).cast[b_type]()
     else:
         rand(a_host.ptr, a_host.num_elements())

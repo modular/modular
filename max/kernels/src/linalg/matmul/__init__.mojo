@@ -186,7 +186,7 @@ def matmul[
             @parameter
             @always_inline
             def compute_lambda_wrapper[
-                _type: DType, _width: Int, *, alignment: Int = 1
+                _type: DType, _width: SIMDSize, *, alignment: Int = 1
             ](coords: IndexList[2], val: SIMD[_type, _width]):
                 comptime if elementwise_compute_lambda_fn:
                     comptime compute_lambda = elementwise_compute_lambda_fn.value()

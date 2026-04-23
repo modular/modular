@@ -167,7 +167,7 @@ struct MLA_SM100_Decode_KV_BF16[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
     @__name(
         t"sm100_mla_decode_kv_bf16_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
         mangle=True,
@@ -208,9 +208,9 @@ struct MLA_SM100_Decode_KV_BF16[
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112
-        var batch_size = Int(scalar_args.flat_load(0))
-        var q_max_seq_len = Int(scalar_args.flat_load(1))
-        var num_partitions = Int(scalar_args.flat_load(2))
+        var batch_size = Int(scalar_args.raw_load(0))
+        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var num_partitions = Int(scalar_args.raw_load(2))
         mask = mla_decode_pack.mask
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr

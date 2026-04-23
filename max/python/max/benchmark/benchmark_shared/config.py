@@ -210,17 +210,82 @@ class BaseBenchmarkConfig(ConfigFileModel):
         description="Print all input and outputs to console.",
     )
 
+    verbose: bool = Field(
+        default=False,
+        description="Enable detailed DEBUG logging.",
+    )
 
-class ServingBenchmarkConfig(BaseBenchmarkConfig):
+
+class BaseServingBenchmarkConfig(BaseBenchmarkConfig):
+    """Fields shared by every serving-style benchmark (text-gen, TTS, ...).
+
+    Sits between :class:`BaseBenchmarkConfig` and the concrete
+    :class:`ServingBenchmarkConfig` / :class:`TTSServingBenchmarkConfig`
+    classes. Only holds fields whose type *and* default align across both
+    serving codepaths so downstream configs can opt into shared behavior
+    without per-codepath overrides. Fields whose semantics diverge (e.g.
+    ``request_rate`` sweep strings vs floats) are intentionally left on the
+    concrete subclasses.
+    """
+
+    burstiness: float = Field(
+        default=1.0,
+        description="Burstiness factor (1.0 = Poisson process).",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    skip_test_prompt: bool = Field(
+        default=False,
+        description="Skip the test prompt. Useful when doing external profiling.",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    collect_gpu_stats: bool = Field(
+        default=True,
+        description="Enable GPU stats collection (NVIDIA only).",
+        json_schema_extra={"group": "Control Flags"},
+    )
+
+    lora_paths: list[str] = Field(
+        default_factory=list,
+        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    lora_uniform_traffic_ratio: float = Field(
+        default=0.0,
+        description=(
+            "Probability of selecting any LoRA uniformly at random (vs base model). "
+            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+    per_lora_traffic_ratio: list[float] = Field(
+        default_factory=list,
+        description=(
+            "Traffic percentages for each LoRA adapter in the benchmark. "
+            "Must have same length as lora_paths. Sum must not exceed 1.0. "
+            "Remainder goes to base model requests. "
+            "If specified, overrides lora_uniform_traffic_ratio."
+        ),
+        json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+
+class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
     """Configuration class for serving benchmarks (benchmark_serving.py).
 
-    Inherits from BaseBenchmarkConfig and adds serving-specific parameters:
+    Inherits shared serving fields (burstiness, LoRA traffic, GPU stats,
+    skip_test_prompt) from :class:`BaseServingBenchmarkConfig` and adds
+    serving-specific parameters:
+
     - Backend and API configuration
-    - Request configuration (concurrency, LoRA)
-    - Traffic control (request rate, burstiness, TTFT)
+    - Request configuration (concurrency, sweeps)
+    - Traffic control (request rate, TTFT)
     - Chat session configuration
     - Serving-specific dataset parameters
-    - GPU stats collection
+    - CPU and server stats collection
     """
 
     # Backend and API configuration (serving-specific)
@@ -424,12 +489,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         },
     )
 
-    burstiness: float = Field(
-        default=1.0,
-        description="Burstiness factor (1.0 = Poisson process).",
-        json_schema_extra={"group": "Traffic Control"},
-    )
-
     skip_first_n_requests: int | None = Field(
         default=None,
         description="Skip first N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
@@ -569,20 +628,6 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
             "group_description": "Boolean flags controlling benchmark behavior",
         },
     )
-    skip_test_prompt: bool = Field(
-        default=False,
-        description="Skip the test prompt. Useful when doing external profiling.",
-        json_schema_extra={
-            "group": "Control Flags",
-            "group_description": "Boolean flags controlling benchmark behavior",
-        },
-    )
-    collect_gpu_stats: bool = Field(
-        default=True,
-        description="Enable GPU stats collection for serving benchmarks.",
-        json_schema_extra={"group": "Control Flags"},
-    )
-
     collect_cpu_stats: bool = Field(
         default=True,
         description="Enable CPU stats collection for serving benchmarks.",
@@ -723,34 +768,285 @@ class ServingBenchmarkConfig(BaseBenchmarkConfig):
         json_schema_extra={"group": "Sweep Configuration"},
     )
 
-    lora_paths: list[str] = Field(
-        default_factory=list,
-        description="Paths to existing LoRA adapters. Format: 'path' or 'name=path'.",
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
-    lora_uniform_traffic_ratio: float = Field(
-        default=0.0,
-        description=(
-            "Probability of selecting any LoRA uniformly at random (vs base model). "
-            "Only used when per_lora_traffic_ratio is not specified. Range: 0.0-1.0."
-        ),
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
-    per_lora_traffic_ratio: list[float] = Field(
-        default_factory=list,
-        description=(
-            "Traffic percentages for each LoRA adapter in the benchmark. "
-            "Must have same length as lora_paths. Sum must not exceed 1.0. "
-            "Remainder goes to base model requests. "
-            "If specified, overrides lora_uniform_traffic_ratio."
-        ),
-        json_schema_extra={"group": "LoRA Configuration"},
-    )
-
     max_concurrent_lora_ops: int = Field(
         default=1,
         description="Maximum concurrent LoRA loading/unloading operations.",
         json_schema_extra={"group": "LoRA Configuration"},
+    )
+
+
+# ---------------------------------------------------------------------------
+# TTS Serving Benchmark Config
+# ---------------------------------------------------------------------------
+
+
+class TTSServingBenchmarkConfig(BaseServingBenchmarkConfig):
+    """Configuration for TTS serving benchmarks (benchmark_tts_serving.py).
+
+    Inherits shared serving fields (LoRA traffic, burstiness, GPU stats,
+    skip_test_prompt) from :class:`BaseServingBenchmarkConfig` and adds
+    TTS-specific parameters for speech LM, streaming, sampling, quality
+    evaluation, and profiling.
+    """
+
+    # -- Execution Options --------------------------------------------------
+
+    api: Literal["python", "http", "fake"] = Field(
+        default="python",
+        description="The type of inference API to benchmark.",
+        json_schema_extra={
+            "group": "Execution Options",
+            "group_description": "Controls how the benchmark is executed.",
+        },
+    )
+
+    derive_request_seeds: bool = Field(
+        default=True,
+        description=(
+            "If set, request seeds follow a pseudo-random sequence derived "
+            "from the given seed. Otherwise all request seeds equal the "
+            "given seed."
+        ),
+        json_schema_extra={"group": "Execution Options"},
+    )
+
+    min_duration_s: float | None = Field(
+        default=None,
+        description=(
+            "Minimum duration of the benchmark run in seconds. "
+            "Stops sending new requests once this duration is reached."
+        ),
+        json_schema_extra={"group": "Execution Options"},
+    )
+
+    continue_on_nan_inf: bool = Field(
+        default=False,
+        description=(
+            "Continue the benchmark run even if nan/inf is encountered "
+            "in generated audio chunks."
+        ),
+        json_schema_extra={"group": "Execution Options"},
+    )
+
+    # -- Workload Options ---------------------------------------------------
+
+    request_rate: float = Field(
+        default=float("inf"),
+        description=(
+            "Number of requests per second. If inf, all requests are sent "
+            "at time 0. Otherwise uses Poisson process for arrival times."
+        ),
+        json_schema_extra={
+            "group": "Workload Options",
+            "group_description": "Controls request generation and traffic shape.",
+        },
+    )
+
+    max_concurrency: int | None = Field(
+        default=None,
+        description="Maximum number of concurrent requests.",
+        json_schema_extra={"group": "Workload Options"},
+    )
+
+    workload_config: str = Field(
+        description="YAML file specifying the workload to benchmark.",
+        json_schema_extra={"group": "Workload Options"},
+    )
+
+    shuffle_data: bool = Field(
+        default=True,
+        description="Enable or disable shuffling data from the dataset.",
+        json_schema_extra={"group": "Workload Options"},
+    )
+
+    # -- SpeechLM Engine Options --------------------------------------------
+
+    speech_lm_model: str = Field(
+        default="meta-llama/Llama-3.2-1B-Instruct",
+        description="Name of the speech LM model.",
+        json_schema_extra={
+            "group": "SpeechLM Engine Options",
+            "group_description": "Configuration for the speech language model engine.",
+        },
+    )
+
+    speech_lm_max_model_len: int | None = Field(
+        default=None,
+        description="Maximum context length for the speech LM.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    speech_lm_max_num_batched_tokens: int = Field(
+        default=8192,
+        description="Maximum tokens per batch per forward pass through the speech LM.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    speech_lm_gpu_memory_utilization: float = Field(
+        default=0.5,
+        description="Ratio of GPU memory reserved for the speech LM.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    audio_decoder_weights: str | None = Field(
+        default=None,
+        description="Path to the audio decoder weights file.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    prepend_prompt_speech_tokens: Literal["never", "once", "rolling"] | None = (
+        Field(
+            default=None,
+            description="Whether to prepend audio prompt speech tokens when passed to decoder.",
+            json_schema_extra={"group": "SpeechLM Engine Options"},
+        )
+    )
+
+    quantization_encoding: Literal[
+        "float32",
+        "bfloat16",
+        "q4_k",
+        "q4_0",
+        "q6_k",
+        "float8_e4m3fn",
+        "float4_e2m1fnx2",
+        "gptq",
+    ] = Field(
+        default="bfloat16",
+        description="Quantization encoding to use for the speech LM.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    max_queue_size_tg: int | None = Field(
+        default=None,
+        description="Maximum number of requests in the decode queue.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    min_batch_size_tg: int | None = Field(
+        default=None,
+        description="Soft floor on decode batch size.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    ce_delay_ms: float | None = Field(
+        default=None,
+        description="Delay in milliseconds before starting prefill batch.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    enable_prioritize_first_decode: bool = Field(
+        default=False,
+        description="Always run TG batch with same requests after CE.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    max_num_loras: int | None = Field(
+        default=None,
+        description="Maximum number of loadable LoRAs in GPU memory.",
+        json_schema_extra={"group": "SpeechLM Engine Options"},
+    )
+
+    # -- Streaming Options --------------------------------------------------
+
+    streaming_block_size: int = Field(
+        default=30,
+        description="Block size in tokens for streaming between speechLM and audio decoder.",
+        json_schema_extra={
+            "group": "Streaming Options",
+            "group_description": "Controls audio streaming behavior.",
+        },
+    )
+
+    audio_processor_type: str | None = Field(
+        default=None,
+        description="Which processor to use for splitting audio chunks.",
+        json_schema_extra={"group": "Streaming Options"},
+    )
+
+    enable_streaming_audio_decoder: bool | None = Field(
+        default=None,
+        description="Whether to enable streaming audio decoder.",
+        json_schema_extra={"group": "Streaming Options"},
+    )
+
+    withhold_tokens: int | None = Field(
+        default=None,
+        description="Number of tokens to withhold from each chunk.",
+        json_schema_extra={"group": "Streaming Options"},
+    )
+
+    # -- Sampling Options ---------------------------------------------------
+
+    top_k: int = Field(
+        default=75,
+        description="Top-k value for speech LM sampling.",
+        json_schema_extra={
+            "group": "Sampling Options",
+            "group_description": "Sampling parameters for the speech LM.",
+        },
+    )
+
+    top_p: float = Field(
+        default=0.9,
+        description="Top-p value for speech LM sampling.",
+        json_schema_extra={"group": "Sampling Options"},
+    )
+
+    temperature: float = Field(
+        default=1.1,
+        description="Temperature value for speech LM sampling.",
+        json_schema_extra={"group": "Sampling Options"},
+    )
+
+    frequency_penalty: float = Field(
+        default=0.1,
+        description="Frequency penalty for speech LM sampling.",
+        json_schema_extra={"group": "Sampling Options"},
+    )
+
+    repetition_penalty: float = Field(
+        default=1.1,
+        description="Repetition penalty for speech LM sampling.",
+        json_schema_extra={"group": "Sampling Options"},
+    )
+
+    # -- Quality Evaluation Options -----------------------------------------
+
+    quality_eval_batch_size: int = Field(
+        default=50,
+        description="Batch size for audio quality evaluation.",
+        json_schema_extra={
+            "group": "Quality Evaluation Options",
+            "group_description": "Controls WER and DNSMOS quality evaluation.",
+        },
+    )
+
+    wer_model: str = Field(
+        default="openai/whisper-large-v3",
+        description="Whisper model for WER evaluation. Set to 'None' to disable.",
+        json_schema_extra={"group": "Quality Evaluation Options"},
+    )
+
+    dnsmos: bool = Field(
+        default=True,
+        description="Enable noise suppression score (DNSMOS) evaluation.",
+        json_schema_extra={"group": "Quality Evaluation Options"},
+    )
+
+    # -- Profiling Options --------------------------------------------------
+
+    skip_first_n_requests: int = Field(
+        default=0,
+        description="Number of requests to skip when measuring metrics.",
+        json_schema_extra={
+            "group": "Profiling Options",
+            "group_description": "Controls profiling, output, and result saving.",
+        },
+    )
+
+    result_file: str | None = Field(
+        default=None,
+        description="Path to save benchmark results in JSON format.",
+        json_schema_extra={"group": "Profiling Options"},
     )

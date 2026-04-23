@@ -192,11 +192,22 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
     mesh = target.mesh
     placements = target.to_placements()
 
-    # Replicated placements could use ops.distributed_broadcast on real
-    # multi-device meshes (one broadcast instead of N transfers).
     with ensure_context():
         tv = t.__tensorvalue__()
-        shard_tvs: list[TensorValue] = [tv]
+
+        # Fast path: transfer fully-Replicated tensor using single
+        # distributed_broadcast collective.
+        if mesh.num_devices > 1 and all(
+            isinstance(p, Replicated) for p in placements
+        ):
+            shard_tvs = _broadcast_replicated(tv, mesh)
+            return Tensor.from_shard_values(
+                shard_tvs, PlacementMapping(mesh, placements)
+            )
+
+        # General path: split along Sharded axes, duplicate along Replicated
+        # axes, then transfer each piece to its target device.
+        shard_tvs = [tv]
         for mesh_axis in range(mesh.ndim):
             p = placements[mesh_axis]
             n = mesh.mesh_shape[mesh_axis]
@@ -217,6 +228,22 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
         return Tensor.from_shard_values(
             shard_tvs, PlacementMapping(mesh, placements)
         )
+
+
+def _broadcast_replicated(
+    tv: TensorValue, mesh: DeviceMesh
+) -> list[TensorValue]:
+    """Broadcast values to every device using one collective op."""
+    signal_bufs = _signal_buffers(mesh)
+    if signal_bufs is None:
+        # If the device mesh is just CPUs, fall back to per-device transfers.
+        return [
+            ops.transfer_to(tv, DeviceRef.from_device(d)) for d in mesh.devices
+        ]
+    mesh_device_refs = [DeviceRef.from_device(d) for d in mesh.devices]
+    if tv.device not in mesh_device_refs:
+        tv = ops.transfer_to(tv, mesh_device_refs[0])
+    return ops.distributed_broadcast(tv, signal_bufs)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -251,6 +278,13 @@ def transfer_to(
         target = target.to_device()
     if isinstance(target, Device):
         target = PlacementMapping(DeviceMesh.single(target), (Replicated(),))
+
+    # Short-circuit for single-device tensors.
+    if t.real and not t.is_distributed and target.mesh.num_devices == 1:
+        mesh_device = target.mesh.devices[0]
+        if t.device == mesh_device:
+            return t
+        return Tensor(storage=t.driver_tensor.to(mesh_device))
 
     target_p = target.to_placements()
 

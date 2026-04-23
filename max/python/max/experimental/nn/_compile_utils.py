@@ -23,8 +23,9 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from max import driver, graph
-from max.driver import Accelerator, DLPackArray
-from max.experimental.distributed_functional import transfer_to
+from max.driver import Accelerator, Buffer, DLPackArray
+from max.engine import Model
+from max.experimental.functional import transfer_to
 from max.experimental.sharding import (
     DeviceMapping,
     DistributedType,
@@ -136,12 +137,19 @@ def _wrap_graph_inputs(
     return inputs
 
 
-def _unflatten_args(
+def flatten_input_buffers(
     args: Sequence[Any],
     input_slots: list[_InputSlot],
 ) -> list[Any]:
     """Flattens sharded call-time arguments into per-shard buffers."""
     flat: list[Any] = []
+    if len(args) != len(input_slots):
+        error = [
+            "Unable to flatten input arguments.",
+            f"Expected {len(input_slots)} arguments, got {len(args)}.",
+        ]
+        error.extend(_args_description(args, input_slots))
+        raise ValueError("\n".join(error))
     for arg, slot in zip(args, input_slots, strict=True):
         if (
             slot.dist is not None
@@ -346,3 +354,96 @@ def _detect_signals(
     if len(gpu_refs) < 2:
         return None
     return Signals(devices=gpu_refs)
+
+
+# ─── Engine-call diagnostics ──────────────────────────────────────────
+
+
+def _describe_arg(arg: Any) -> str:
+    """Format a single user-facing argument for an error message."""
+    if isinstance(arg, Tensor):
+        if arg.is_distributed:
+            return (
+                f"distributed Tensor(shape={list(arg.shape)}, "
+                f"dtype={arg.dtype}, placements={arg.placements}, "
+                f"shards={len(arg.local_shards)})"
+            )
+        return f"Tensor(shape={list(arg.shape)}, dtype={arg.dtype})"
+    if isinstance(arg, Buffer):
+        return f"Buffer(shape={list(arg.shape)}, dtype={arg.dtype})"
+    if arg is None:
+        return "None"
+    return type(arg).__name__
+
+
+def _describe_slot(slot: _InputSlot) -> str:
+    """Format an input slot's expectation for an error message."""
+    if slot.dist is not None:
+        return (
+            f"distributed Tensor(shape={list(slot.dist.shape)}, "
+            f"placements={slot.dist.placements}, "
+            f"expects {slot.count} shards)"
+        )
+    return "single-device Tensor"
+
+
+def _args_description(
+    user_args: Sequence[Any] | None, input_slots: Sequence[_InputSlot]
+) -> list[str]:
+    """Generates a description of the arguments for an error message."""
+    lines = []
+    if user_args is not None:
+        lines.append(
+            f"  Got {len(user_args)} positional arg(s), expected {len(input_slots)}."
+        )
+        if user_args:
+            lines.append("  Provided arguments:")
+            for i, arg in enumerate(user_args):
+                lines.append(f"    arg[{i}]: {_describe_arg(arg)}")
+    lines.append("  Expected arguments:")
+    for i, slot in enumerate(input_slots):
+        lines.append(f"    arg[{i}]: {_describe_slot(slot)}")
+    return lines
+
+
+def engine_call_error(
+    error: BaseException,
+    engine_model: Model,
+    user_args: Sequence[Any] | None,
+    flat_args: Sequence[Any],
+    input_slots: Sequence[_InputSlot],
+    signal_buffer_count: int,
+) -> TypeError:
+    """Wraps an engine call argument-binding error with diagnostics.
+
+    Args:
+        error: The original error from the engine call.
+        engine_model: The compiled :class:`~max.engine.Model`.
+        user_args: User-facing positional args (``None`` for ``execute_raw``,
+            which does not have a user-facing layer).
+        flat_args: Flattened buffers actually passed to the engine (includes
+            appended signal buffers). Empty when flattening itself failed.
+        input_slots: Per-user-arg slot descriptors from compile time.
+        signal_buffer_count: Number of trailing signal buffers in
+            ``flat_args``.
+
+    Returns:
+        A new ``TypeError`` chained to *error* with the diagnostic message.
+    """
+    expected_total = len(engine_model.input_metadata)
+    expected_user = expected_total - signal_buffer_count
+    got_total = len(flat_args)
+    got_user = got_total - signal_buffer_count
+
+    lines = [
+        f"Compiled model call failed to bind arguments ({error}).",
+        (
+            f"  Engine expects {expected_total} flat input(s) "
+            f"({expected_user} user args + {signal_buffer_count} signal buffer(s)); "
+            f"got {got_total} ({got_user} user args + {signal_buffer_count} signal buffer(s))."
+        ),
+    ]
+
+    lines.extend(_args_description(user_args, input_slots))
+
+    return TypeError("\n".join(lines))

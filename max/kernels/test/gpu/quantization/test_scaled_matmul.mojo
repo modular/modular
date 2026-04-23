@@ -36,11 +36,17 @@ def test_matmul_dynamic_scaled_fp8[
     scales_dtype: DType,
     transpose_b: Bool,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
-    var a_scales_size = 1 * m.value()
-    var b_scales_size = n.value() * 1 if transpose_b else 1 * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
+    var a_scales_size = 1 * Int(m.value())
+    var b_scales_size = (
+        Int(n.value()) * 1 if transpose_b else 1 * Int(n.value())
+    )
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
@@ -137,8 +143,8 @@ def test_matmul_dynamic_scaled_fp8[
 
     comptime assert c_host.flat_rank == 2
 
-    for i in range(m.value()):
-        for j in range(n.value()):
+    for i in range(Int(m.value())):
+        for j in range(Int(n.value())):
             assert_almost_equal(
                 c_host[i, j].cast[DType.float32](),
                 c_host_ref[i, j][0],
@@ -168,9 +174,13 @@ def test_matmul_dynamic_scaled_fp8_tensor[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     """Test tensor-granularity (per-tensor) scaling where a_scales and b_scales
     are both shape [1, 1]."""
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[in_dtype]](a_size)
@@ -246,8 +256,10 @@ def test_matmul_dynamic_scaled_fp8_tensor[
 
     # Build colwise/rowwise reference scales by broadcasting the tensor scalar.
     # a_ref_scales shape [1, M], b_ref_scales shape [N, 1] (when transpose_b).
-    var a_ref_scales_size = 1 * m.value()
-    var b_ref_scales_size = n.value() * 1 if transpose_b else 1 * n.value()
+    var a_ref_scales_size = 1 * Int(m.value())
+    var b_ref_scales_size = (
+        Int(n.value()) * 1 if transpose_b else 1 * Int(n.value())
+    )
     var a_ref_scales_host_ptr = alloc[Scalar[scales_dtype]](a_ref_scales_size)
     var b_ref_scales_host_ptr = alloc[Scalar[scales_dtype]](b_ref_scales_size)
 
@@ -296,8 +308,8 @@ def test_matmul_dynamic_scaled_fp8_tensor[
 
     comptime assert c_host.flat_rank == 2
 
-    for i in range(m.value()):
-        for j in range(n.value()):
+    for i in range(Int(m.value())):
+        for j in range(Int(n.value())):
             assert_almost_equal(
                 c_host[i, j].cast[DType.float32](),
                 c_host_ref[i, j][0],

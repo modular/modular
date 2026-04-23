@@ -88,7 +88,7 @@ def _argn[
 
         # don't over-schedule if parallel_size < _get_num_workers output
         var num_workers = _min(
-            _get_num_workers(input.num_elements()),
+            _get_num_workers(input.num_elements(), ctx=ctx),
             parallel_size,
         )
         chunk_size = ceildiv(parallel_size, num_workers)
@@ -101,7 +101,7 @@ def _argn[
         @parameter
         @always_inline
         def cmpeq[
-            dtype: DType, simd_width: Int
+            dtype: DType, simd_width: SIMDSize
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:
@@ -113,7 +113,7 @@ def _argn[
         @parameter
         @always_inline
         def cmp[
-            dtype: DType, simd_width: Int
+            dtype: DType, simd_width: SIMDSize
         ](a: SIMD[dtype, simd_width], b: SIMD[dtype, simd_width]) -> SIMD[
             DType.bool, simd_width
         ]:

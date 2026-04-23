@@ -433,8 +433,8 @@ def test_repack_Q4_0_for_sm8x[
 
     comptime group_size = 32
     comptime pack_factor = 8
-    var N = n.value()
-    var K = k.value()
+    var N = Int(n.value())
+    var K = Int(k.value())
     comptime BN = 128
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
@@ -626,9 +626,9 @@ def test_quantized[
     comptime static_K = KType.static_value
     comptime a_type = DType.bfloat16
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes

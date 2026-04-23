@@ -180,6 +180,11 @@ This version is still a work in progress.
   experimental eager interpreter. These complement the existing
   `mo.mutable.load` handler and enable eager execution of in-place buffer
   writes (full-tensor stores and slice-indexed stores).
+- Rewrote the eager-interpreter `mo.mutable.store.slice` handler to write
+  slices via a device-side Mojo kernel instead of a host numpy round-trip.
+  GPU buffers no longer full-buffer D→H→D on every call, and `bfloat16`
+  and `float8_*` dtypes are now supported. `float4_e2m1fn` remains
+  unsupported.
 - Added defensive `mo.gather_sum` handler to the experimental eager
   interpreter. This fused composite op (gather axis 0 + sum axis 1) is
   used by DLRM-style multi-hot embeddings; the handler prevents crashes
@@ -210,6 +215,16 @@ This version is still a work in progress.
   falling back to compilation.
 - Added `distributed_reducescatter_sum` collective to `distributed_functional`
   for hardware-accelerated reduce-and-scatter tensor distribution.
+- Added `max.nn.StackedLinear` for QKV-style stacked projections, with a
+  fused (`stacked=True`) and an unfused (`stacked=False`) layout. Unfused
+  mode opts into a new `Module._omit_module_attr_name` flag, which drops
+  the wrapper's own attribute name from descendant weight FQNs, so a
+  `self.qkv_proj = StackedLinear(names=["q_proj", "k_proj", "v_proj"],
+  stacked=False)` exposes weights at `self_attn.q_proj.weight` rather
+  than `self_attn.qkv_proj.q_proj.weight`. This lets HuggingFace
+  checkpoint names flow into models without per-architecture remapping
+  in their `weight_adapters.py`.
+
 - `Module.compile()` now accepts a `custom_extensions` parameter for loading
   custom Mojo kernel libraries at graph construction time, fixing validation
   failures for kernels with struct-level parameters.

@@ -2867,7 +2867,7 @@ def main_with_parsed_args(
     logging.basicConfig(
         format="%(asctime)s.%(msecs)03d %(levelname)s: %(name)s: %(message)s",
         datefmt="%H:%M:%S",
-        level=logging.INFO,
+        level=logging.DEBUG if args.verbose else logging.INFO,
     )
 
     logger.info(args)

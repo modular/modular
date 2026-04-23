@@ -365,12 +365,13 @@ modular_py_binary(
     testonly = True,
     srcs = ["pipelines_mteb.py"],
     data = ["//max/python/max/entrypoints:pipelines"],
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         "//max/python/max/entrypoints",
-        "//max/python/max/pipelines/architectures",
-        "//max/python/max/pipelines/dataprocessing",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
         requirement("click"),
+        requirement("numpy"),
         requirement("mteb"),
+        requirement("transformers"),
     ],
 )

@@ -42,7 +42,7 @@ from std.utils import IndexList, StaticTuple, product
 from .gather_scatter import normalize_neg_index
 
 comptime elementwise_epilogue_type = def[
-    c_type: DType, rank: Int, width: Int = 1, *, alignment: Int = 1
+    c_type: DType, rank: Int, width: SIMDSize = 1, *, alignment: Int = 1
 ](IndexList[rank], SIMD[c_type, width]) capturing -> None
 
 
@@ -752,9 +752,9 @@ def _concat_gpu_flat_kernel[
             var in_offset = (
                 outer_idx * input_concat_dim + local_concat
             ) * inner_size + inner_idx
-            output.flat_store[alignment=vec_width](
+            output.raw_store[alignment=vec_width](
                 vec_idx,
-                inputs[i].flat_load[
+                inputs[i].raw_load[
                     width=vec_width, alignment=vec_width, invariant=True
                 ](in_offset),
             )

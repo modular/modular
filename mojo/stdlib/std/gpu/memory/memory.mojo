@@ -689,6 +689,7 @@ def async_copy[
         ), "Non zero filling is supported only for 16B access."
 
         # Pack filling values into 4B registers.
+        @parameter
         @always_inline
         def _i32_repr[fill: Scalar[dtype]]() -> Int32:
             comptime if size_of[dtype]() == 1:

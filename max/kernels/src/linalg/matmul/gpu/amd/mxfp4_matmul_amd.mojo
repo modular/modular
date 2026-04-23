@@ -52,16 +52,24 @@ Entry point: mxfp4_block_scaled_matmul_amd()
 
 from std.math import ceildiv
 from std.memory import bitcast
+from std.sys import simd_width_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
+    barrier,
     block_idx,
     lane_id,
+    thread_idx,
     warp_id,
 )
 from std.gpu.host import DeviceContext
+from std.gpu.sync import (
+    AMDScheduleBarrierMask,
+    schedule_barrier,
+    schedule_group_barrier,
+)
 from layout import TensorLayout, TileTensor
-from layout.tile_layout import row_major
+from layout.tile_layout import row_major, col_major
 from layout.tile_tensor import stack_allocation
 
 from std.utils import IndexList, StaticTuple
@@ -70,9 +78,23 @@ from linalg.arch.amd.block_scaled_mma import (
     cdna4_block_scaled_mfma,
 )
 from structured_kernels.amd_tile_io import RegTileWriter
+from .amd_matmul_schedule import build_default_matmul_schedule
+from .amd_matmul_schedule import (
+    DefaultMatmulOps,
+    COMPUTE,
+    LOAD_DRAM,
+    LOAD_FRAG,
+    STORE_SMEM,
+)
+from pipeline.pipeline_dsl import ScheduleEntry
 
 # MXFP4: 32 MXFP4 elements per E8M0 scale.
 comptime MX_BLOCK_SIZE = 32
+
+comptime SCHED_MASK_DS_READ = 0
+comptime SCHED_MASK_DS_WRITE = 1
+comptime SCHED_MASK_VMEM_READ = 2
+comptime SCHED_MASK_MFMA = 3
 
 
 # ===----------------------------------------------------------------------=== #
@@ -86,9 +108,9 @@ struct BlockScaledMmaOp[
     num_n_mmas: Int,
     num_k_tiles: Int,
 ]:
-    """Register ownership + GMEM loading + block-scaled MFMA execution.
+    """Register ownership + block-scaled MFMA execution.
 
-    Loads packed uint8 A/B fragments from GMEM and executes
+    Loads packed uint8 A/B fragments from SMEM or GMEM and executes
     cdna4_block_scaled_mfma with per-lane E8M0 scale values.
 
     Scale operand model:
@@ -97,8 +119,12 @@ struct BlockScaledMmaOp[
       For 16x16x128: 64 lanes cover 16 rows x 4 K-groups.
         lane_row = lane_id % 16   (matrix row)
         lane_k_group = lane_id / 16  (K-group 0..3)
-      Each lane loads its own scale: scale[row, base_k + k_group].
-      The scale byte is placed in byte 0 of the Int32 word.
+
+      Scale packing: 4 spatial MMA tiles' scale bytes are packed into
+      one Int32 VGPR — byte i holds the scale for m_mma=i (A) or
+      n_mma=i (B). The MFMA byte-index selector (OP_SEL) picks the
+      correct byte for each MMA tile, so one scale load covers all
+      4 m_mma or n_mma positions with zero overhead.
     """
 
     comptime MMA_M = Self.mma_shape[0]
@@ -108,13 +134,8 @@ struct BlockScaledMmaOp[
     comptime packed_k_per_mma = Self.MMA_K // 2  # bytes consumed per MFMA
     comptime c_frag_size = (Self.MMA_M * Self.MMA_N) // WARP_SIZE  # 4
 
-    # Per-lane data width from the SMEM tile.
-    # 16x16x128 FP4: 16 rows x 64 packed bytes / 64 lanes = 16 bytes
-    # per lane of actual FP4 data.
-    # The MFMA operand VGPR is always SIMD[uint8, 32] (256 bits), but
-    # since 32 FP4 elements occupy only 128 bits, the remaining 128 bits are
-    # zeroed. We load 16 bytes from SMEM and zero-extend to 32 at the
-    # MFMA call site.
+    # Per-lane data width: 16 bytes of FP4 data, zero-extended to 32
+    # for the MFMA operand VGPR.
     comptime mma_frag_width: Int = 16
 
     # Scales: 4 E8M0 bytes per MFMA call (128 MXFP4 / 32 per scale = 4).
@@ -152,29 +173,19 @@ struct BlockScaledMmaOp[
         address_space=AddressSpace.LOCAL,
     ]
 
-    # Scale registers: per-lane packed Int32 words. Each lane holds 4
-    # E8M0 scale bytes (one per K-group) for that lane's matrix row.
-    # Stored per (m_mma, k_tile) or (n_mma, k_tile) combination.
-    # Uses int32 TileTensors in LOCAL for mutability.
-    comptime _a_scales_count = Self.num_m_mmas * Self.num_k_tiles
-    comptime _b_scales_count = Self.num_n_mmas * Self.num_k_tiles
-    comptime _a_scales_layout = row_major[1, Self._a_scales_count]()
-    comptime _b_scales_layout = row_major[1, Self._b_scales_count]()
-    var _a_scales: TileTensor[
-        DType.int32,
-        type_of(Self._a_scales_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-    var _b_scales: TileTensor[
-        DType.int32,
-        type_of(Self._b_scales_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
+    # Packed scale VGPRs: one Int32 for A, one for B. Byte i holds the
+    # scale for spatial MMA tile i (m_mma for A, n_mma for B).
+    var _a_scale_packed: Int32
+    var _b_scale_packed: Int32
 
     @always_inline
     def __init__(out self):
+        comptime assert (
+            Self.num_m_mmas <= 4
+        ), "num_m_mmas must be <= 4 for packed scales"
+        comptime assert (
+            Self.num_n_mmas <= 4
+        ), "num_n_mmas must be <= 4 for packed scales"
         self._a_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
             Self._a_reg_layout
         )
@@ -186,139 +197,115 @@ struct BlockScaledMmaOp[
         )
         comptime num_c = Self.num_m_mmas * Self.num_n_mmas * Self.c_frag_size
         comptime for i in range(num_c):
-            self._c_reg.flat_store(i, Scalar[DType.float32](0))
-        self._a_scales = stack_allocation[DType.int32, AddressSpace.LOCAL](
-            Self._a_scales_layout
-        )
-        self._b_scales = stack_allocation[DType.int32, AddressSpace.LOCAL](
-            Self._b_scales_layout
-        )
-        comptime for i in range(Self._a_scales_count):
-            self._a_scales.flat_store(i, Scalar[DType.int32](0))
-        comptime for i in range(Self._b_scales_count):
-            self._b_scales.flat_store(i, Scalar[DType.int32](0))
+            self._c_reg.raw_store(i, Scalar[DType.float32](0))
+        self._a_scale_packed = Int32(0)
+        self._b_scale_packed = Int32(0)
 
     @always_inline
     def accum_tile(self) -> ref[self._c_reg] type_of(self._c_reg):
         return self._c_reg
 
     @always_inline
-    def load_frag_from_gmem[
-        k_tile_idx: Int,
-        a_stride: Int,
-        b_stride: Int,
+    def load_frag_from_smem[
+        k_tile_idx: Int
     ](
         self,
-        a_gmem_ptr: UnsafePointer[Scalar[DType.uint8], _],
-        b_gmem_ptr: UnsafePointer[Scalar[DType.uint8], _],
-        a_m_offset: Int,
-        b_n_offset: Int,
-        k_byte_offset: Int,
+        a_smem_warp: TileTensor[
+            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
+        ],
+        b_smem_warp: TileTensor[
+            DType.uint8, _, _, address_space=AddressSpace.SHARED, ...
+        ],
     ):
-        """Load MXFP4 A/B fragments directly from GMEM (bypasses SMEM).
+        """Load MXFP4 A/B fragments from row-major SMEM for k-tile k_tile_idx.
 
-        Uses the row-major MFMA lane mapping from the CDNA4 ISA:
-          lane_row = lane_id % MMA_M
-          lane_chunk = lane_id / MMA_M
-          offset = lane_row * stride + lane_chunk * 16 + k_byte_offset
+        Uses tile to extract the [MMA_M, packed_k_per_mma] sub-tile,
+        vectorize groups 64 bytes into 4 x 16-byte elements, and
+        distribute with col_major[MMA_M, 4] assigns each lane its
+        16-byte fragment matching the MFMA native lane mapping.
         """
         comptime frag_w = Self.mma_frag_width  # 16
+        comptime mma_k_bytes = Self.packed_k_per_mma  # 64
+        comptime lane_layout = col_major[Self.MMA_M, WARP_SIZE // Self.MMA_M]()
 
-        var lane = Int(lane_id())
-        var lane_row = lane % Self.MMA_M
-        var lane_chunk = lane // Self.MMA_M
-
-        comptime for i in range(Self.num_m_mmas):
-            var a_idx = k_tile_idx * Self.num_m_mmas + i
-            var a_row = a_m_offset + i * Self.MMA_M + lane_row
-            var a_off = a_row * a_stride + k_byte_offset + lane_chunk * frag_w
-            self._a_reg.flat_store[width=frag_w](
-                a_idx * frag_w,
-                a_gmem_ptr.load[width=frag_w](a_off),
-            )
-
+        # B fragments first (for ds_read scheduling).
         comptime for i in range(Self.num_n_mmas):
             var b_idx = k_tile_idx * Self.num_n_mmas + i
-            var b_row = b_n_offset + i * Self.MMA_N + lane_row
-            var b_off = b_row * b_stride + k_byte_offset + lane_chunk * frag_w
-            self._b_reg.flat_store[width=frag_w](
-                b_idx * frag_w,
-                b_gmem_ptr.load[width=frag_w](b_off),
+            var b_frag = (
+                b_smem_warp.tile[Self.MMA_N, mma_k_bytes](i, k_tile_idx)
+                .vectorize[1, frag_w]()
+                .distribute[lane_layout](lane_id())
             )
+            self._b_reg.vectorize[1, frag_w]()[b_idx, 0] = b_frag[0, 0]
+
+        # A fragments.
+        comptime for i in range(Self.num_m_mmas):
+            var a_idx = k_tile_idx * Self.num_m_mmas + i
+            var a_frag = (
+                a_smem_warp.tile[Self.MMA_M, mma_k_bytes](i, k_tile_idx)
+                .vectorize[1, frag_w]()
+                .distribute[lane_layout](lane_id())
+            )
+            self._a_reg.vectorize[1, frag_w]()[a_idx, 0] = a_frag[0, 0]
 
     @always_inline
-    def load_scales(
-        self,
-        a_scale_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], _],
-        b_scale_ptr: UnsafePointer[Scalar[DType.float8_e8m0fnu], _],
-        a_m_base: Int,
-        b_n_base: Int,
-        k_tile_idx: Int,
-        scale_stride_a: Int,
-        scale_stride_b: Int,
+    def load_scales_from_smem(
+        mut self,
+        a_scale_smem_warp: TileTensor[
+            DType.uint8, address_space=AddressSpace.SHARED, ...
+        ],
+        b_scale_smem_warp: TileTensor[
+            DType.uint8, address_space=AddressSpace.SHARED, ...
+        ],
     ):
-        """Load per-lane E8M0 scale bytes for the MFMA.
+        """Load packed scale VGPRs from SMEM.
 
-        Each lane holds 32 FP4 elements and needs the matching scale.
-        Lane mapping for 16x16x128:
-          lane_row = lane % MMA_M     (matrix row, 0..15)
-          lane_k_group = lane / MMA_M (K-group, 0..3)
-        Scale index: scale_ptr[row * stride + base_k + lane_k_group]
+        Packs num_m_mmas (A) or num_n_mmas (B) scale bytes into one
+        Int32 each. Byte i holds the scale for spatial MMA tile i.
 
-        This gives full per-32-element MX compliance: 64 lanes x 1
-        scale each = 16 rows x 4 K-groups = 64 distinct scale values.
+        The scale SMEM tile is [WM/WN, scales_per_mma] uint8 row-major.
+        For each spatial tile i, this lane's scale byte is at:
+          row = i * MMA_M + lane_row, col = lane_k_group
+        We read one byte per tile and pack them into bytes 0..3.
 
-        Args:
-            a_scale_ptr: Base pointer to A scales [M, K//32].
-            b_scale_ptr: Base pointer to B scales [N, K//32].
-            a_m_base: Global M-row offset for this warp's first MMA tile.
-            b_n_base: Global N-row offset for this warp's first MMA tile.
-            k_tile_idx: Which k-tile we're processing.
-            scale_stride_a: Row stride of A scales tensor.
-            scale_stride_b: Row stride of B scales tensor.
+        The MFMA byte-index selector (a_scale_byte_index=m_mma,
+        b_scale_byte_index=n_mma) picks the correct byte — no shifts
+        or masks at consumption time.
         """
-        var base_scale_k = k_tile_idx * Self.scales_per_mma
-        var base_m = a_m_base
-        var base_n = b_n_base
-
         var lane = Int(lane_id())
         var lane_row = lane % Self.MMA_M
         var lane_k_group = lane // Self.MMA_M
 
-        # A scales: each lane loads scale for its own row + K-group.
+        var a_packed = Int32(0)
         comptime for m_mma in range(Self.num_m_mmas):
-            var row = base_m + m_mma * Self.MMA_M + lane_row
-            var sb = a_scale_ptr[
-                row * scale_stride_a + base_scale_k + lane_k_group
-            ]
-            var byte_val = bitcast[DType.uint8](sb)
-            self._a_scales.ptr[m_mma] = rebind[Scalar[DType.int32]](
-                Int32(UInt32(byte_val))
+            var smem_off = (
+                m_mma * Self.MMA_M + lane_row
+            ) * Self.scales_per_mma + lane_k_group
+            var byte_val = UInt32(a_scale_smem_warp.ptr[smem_off])
+            a_packed = a_packed | rebind[Scalar[DType.int32]](
+                byte_val << UInt32(m_mma * 8)
             )
+        self._a_scale_packed = a_packed
 
-        # B scales: same per-lane K-group mapping.
+        var b_packed = Int32(0)
         comptime for n_mma in range(Self.num_n_mmas):
-            var col = base_n + n_mma * Self.MMA_N + lane_row
-            var sb = b_scale_ptr[
-                col * scale_stride_b + base_scale_k + lane_k_group
-            ]
-            var byte_val = bitcast[DType.uint8](sb)
-            self._b_scales.ptr[n_mma] = rebind[Scalar[DType.int32]](
-                Int32(UInt32(byte_val))
+            var smem_off = (
+                n_mma * Self.MMA_N + lane_row
+            ) * Self.scales_per_mma + lane_k_group
+            var byte_val = UInt32(b_scale_smem_warp.ptr[smem_off])
+            b_packed = b_packed | rebind[Scalar[DType.int32]](
+                byte_val << UInt32(n_mma * 8)
             )
+        self._b_scale_packed = b_packed
 
     @always_inline
     def mma[k_tile_idx: Int](self):
         """Execute block-scaled MFMA for k-tile k_tile_idx.
 
-        The MFMA call swaps B→src_a and A→src_b to match the AMD
-        convention (gpu_mma(c, b, a, c)). The accumulator is stored
-        in row-major order [num_m_mmas, num_n_mmas * c_frag_size]
-        matching the output store's (m_mma, n_mma) indexing.
-
-        Loop order: outer=m (output M-tiles), inner=n (output N-tiles).
-        For each (m, n) pair, we read the A fragment for M-tile m and
-        B fragment for N-tile n, then pass B as src_a and A as src_b.
+        B→src_a, A→src_b (AMD MFMA convention).
+        The packed scale VGPRs hold one byte per spatial MMA tile.
+        a_scale_byte_index=m selects byte m from _a_scale_packed,
+        b_scale_byte_index=n selects byte n from _b_scale_packed.
         """
         comptime for m in range(Self.num_m_mmas):
             comptime for n in range(Self.num_n_mmas):
@@ -329,55 +316,49 @@ struct BlockScaledMmaOp[
                     + n * Self.c_frag_size
                 )
 
-                var a_data = self._a_reg.flat_load[width=Self.mma_frag_width](
+                var a_data = self._a_reg.raw_load[width=Self.mma_frag_width](
                     a_row * Self.mma_frag_width
                 )
-                var b_data = self._b_reg.flat_load[width=Self.mma_frag_width](
+                var b_data = self._b_reg.raw_load[width=Self.mma_frag_width](
                     b_row * Self.mma_frag_width
                 )
 
-                # Zero-extend to SIMD[uint8, 32] for the MFMA operand.
                 var a_frag = SIMD[DType.uint8, 32](0)
                 var b_frag = SIMD[DType.uint8, 32](0)
                 a_frag = a_frag.insert[offset=0](a_data)
                 b_frag = b_frag.insert[offset=0](b_data)
 
-                var c_frag = self._c_reg.flat_load[width=Self.c_frag_size](
-                    c_off
+                var c_frag = self._c_reg.raw_load[width=Self.c_frag_size](c_off)
+
+                cdna4_block_scaled_mfma[
+                    Int32(n),
+                    Int32(m),
+                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
+                ](
+                    c_frag,
+                    b_frag,
+                    a_frag,
+                    self._b_scale_packed,
+                    self._a_scale_packed,
                 )
 
-                var a_scale = rebind[Int32](self._a_scales.ptr[m])
-                var b_scale = rebind[Int32](self._b_scales.ptr[n])
-
-                # B→src_a (drives MFMA rows → N coords in output),
-                # A→src_b (drives MFMA cols → M coords in output).
-                cdna4_block_scaled_mfma[
-                    0,
-                    0,
-                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-                    CDNA4F8F6F4MatrixFormat.FLOAT4_E2M1,
-                ](c_frag, b_frag, a_frag, b_scale, a_scale)
-
-                self._c_reg.flat_store[width=Self.c_frag_size](c_off, c_frag)
+                self._c_reg.raw_store[width=Self.c_frag_size](c_off, c_frag)
 
 
 # ===----------------------------------------------------------------------=== #
 # MXFP4MatmulAMD — kernel struct
 # ===----------------------------------------------------------------------=== #
 
-# Fixed config for MXFP4: 16x16x128 MFMA is the only shape that
-# supports FLOAT4_E2M1 on CDNA4.
 comptime MXFP4_MMA_M = 16
 comptime MXFP4_MMA_N = 16
 comptime MXFP4_MMA_K = 128
 
-# Block tile shape: 128x128 output tile, BK=128 MXFP4 elements = 64 packed bytes.
 comptime MXFP4_BM = 128
 comptime MXFP4_BN = 128
 comptime MXFP4_BK_ELEMS = 128
 comptime MXFP4_BK_BYTES = MXFP4_BK_ELEMS // 2  # 64 packed bytes
 
-# Warp tile shape (4 warps: 2x2 grid).
 comptime MXFP4_WM = 64
 comptime MXFP4_WN = 64
 
@@ -395,6 +376,7 @@ struct MXFP4MatmulAMD:
 
     Uses cdna4_block_scaled_mfma with FLOAT4_E2M1 format directly.
     Single-buffer pipeline with schedule-driven prologue/kernel/epilogue.
+    SMEM is plain row-major (no blocked-product, no swizzle).
     """
 
     comptime BM = MXFP4_BM
@@ -420,6 +402,14 @@ struct MXFP4MatmulAMD:
     comptime packed_k_per_mma = Self.MMA_K // 2  # 64 bytes per MFMA
     comptime num_k_tiles: Int = 1  # one MFMA per BK tile
 
+    # DRAM→regs loading constants.
+    comptime simd_width = simd_width_of[DType.uint8]()  # 16
+    comptime k_tile_size = Self.BK_BYTES  # 64 bytes
+
+    # Scale tile: [BM, scales_per_mma] uint8 per BK iteration.
+    # scales_per_mma = MMA_K / 32 = 4 bytes per row.
+    comptime scales_per_mma = Self.MMA_K // MX_BLOCK_SIZE  # 4
+
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
             Int32(MXFP4_NUM_THREADS)
@@ -439,18 +429,7 @@ struct MXFP4MatmulAMD:
         sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
         sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
     ):
-        """MXFP4 block-scaled GEMM kernel.
-
-        All inputs/outputs are TileTensor. A and B are packed uint8
-        (K//2 columns). Scales are [rows, K//32] float8_e8m0fnu.
-
-        Args:
-            c: Output [M, N] float32.
-            a: Packed A [M, K//2] uint8.
-            b: Packed B [N, K//2] uint8 (transposed).
-            sfa: A scales [M, K//32] float8_e8m0fnu.
-            sfb: B scales [N, K//32] float8_e8m0fnu.
-        """
+        """MXFP4 block-scaled GEMM kernel with SMEM pipeline."""
         comptime BM = Self.BM
         comptime BN = Self.BN
         comptime BK_BYTES = Self.BK_BYTES
@@ -462,6 +441,8 @@ struct MXFP4MatmulAMD:
         comptime num_n_mmas = Self.num_n_mmas
         comptime c_frag_size = Self.c_frag_size
         comptime num_k_tiles = Self.num_k_tiles
+        comptime simd_width = Self.simd_width
+        comptime num_threads = Self.num_threads
 
         comptime K_BYTES = type_of(a).static_shape[1]  # K//2
         comptime N = type_of(b).static_shape[0]
@@ -469,11 +450,57 @@ struct MXFP4MatmulAMD:
         comptime assert K_BYTES > 0, "K (packed) must be known at compile time"
 
         comptime K_SCALES = type_of(sfa).static_shape[1]  # K//32
-        comptime scale_stride_a = K_SCALES
-        comptime scale_stride_b = K_SCALES
 
         var _warp_id = warp_id()
         var warp_m, warp_n = divmod(_warp_id, Self.num_warps_n)
+
+        # === GMEM views ===
+        var a_gmem = TileTensor(a.ptr.bitcast[Scalar[DType.uint8]](), a.layout)
+        var b_gmem = TileTensor(b.ptr.bitcast[Scalar[DType.uint8]](), b.layout)
+
+        # === SMEM tiles (row-major, no swizzle) ===
+        var a_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+            row_major[BM, BK_BYTES]()
+        )
+        var b_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+            row_major[BN, BK_BYTES]()
+        )
+
+        # Scale SMEM: [BM, scales_per_mma] and [BN, scales_per_mma] uint8.
+        # Each row's 4 scale bytes will be read as one coalesced Int32.
+        comptime scales_per_mma = Self.scales_per_mma
+        var sfa_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+            row_major[BM, scales_per_mma]()
+        )
+        var sfb_smem = stack_allocation[DType.uint8, AddressSpace.SHARED](
+            row_major[BN, scales_per_mma]()
+        )
+
+        # === DRAM→regs→SMEM loading ===
+        # Two-phase: LOAD_DRAM loads to register buffers, STORE_SMEM
+        # copies registers to SMEM. This keeps the schedule's barrier
+        # placement correct (barrier between STORE_SMEM and LOAD_FRAG).
+        #
+        # Thread distribution: row_major[load_rows, load_cols] maps each
+        # thread to a (row, col) position. Each thread loads loads_per_tile
+        # vector-width chunks, covering the full [BM, BK_BYTES] tile.
+        comptime load_thread_cols = BK_BYTES // simd_width
+        comptime load_thread_rows = num_threads // load_thread_cols
+        comptime load_layout = row_major[load_thread_rows, load_thread_cols]()
+        comptime loads_per_tile = BM // load_thread_rows
+        comptime reg_elems = BM * BK_BYTES // num_threads
+
+        # Block-row tiles spanning the full K dimension for tile-based indexing.
+        var a_blockrow = a_gmem.tile[BM, K_BYTES](block_idx.y, 0)
+        var b_blockrow = b_gmem.tile[BN, K_BYTES](block_idx.x, 0)
+
+        # Register buffers for DRAM loads (one per matrix).
+        var a_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+            row_major[1, reg_elems]()
+        )
+        var b_load_reg = stack_allocation[DType.uint8, AddressSpace.LOCAL](
+            row_major[1, reg_elems]()
+        )
 
         # === MMA operator ===
         var mma_op = BlockScaledMmaOp[
@@ -488,44 +515,186 @@ struct MXFP4MatmulAMD:
             c
         )
 
-        # === Direct GMEM loop (no SMEM, correctness-first) ===
-        # Load A/B tiles directly from global memory into registers
-        # using the MFMA's native row-major lane mapping, then execute
-        # the block-scaled MFMA. SMEM pipeline will be added back once
-        # this path produces correct results.
-        var a_m_base = Int(block_idx.y) * BM + warp_m * WM
-        var b_n_base = Int(block_idx.x) * BN + warp_n * WN
+        # === Pipeline helpers ===
+        var k_counter = 0
+        var k_scale_counter = 0
 
-        for k_iter in range(K_BYTES // BK_BYTES):
-            var k_byte_off = k_iter * BK_BYTES
+        @always_inline
+        @parameter
+        def load_tiles_from_dram():
+            """Load one BK-wide tile from DRAM to register buffers."""
+            var a_block = a_blockrow.tile[BM, BK_BYTES](0, k_counter)
+            var b_block = b_blockrow.tile[BN, BK_BYTES](0, k_counter)
+            var a_dist = a_block.vectorize[1, simd_width]().distribute[
+                load_layout
+            ](thread_idx.x)
+            var b_dist = b_block.vectorize[1, simd_width]().distribute[
+                load_layout
+            ](thread_idx.x)
+            comptime for v in range(loads_per_tile):
+                a_load_reg.raw_store[width=simd_width](
+                    v * simd_width, a_dist[v, 0]
+                )
+                b_load_reg.raw_store[width=simd_width](
+                    v * simd_width, b_dist[v, 0]
+                )
+            k_counter += 1
 
-            mma_op.load_frag_from_gmem[0, K_BYTES, K_BYTES](
-                a.ptr,
-                b.ptr,
-                a_m_base,
-                b_n_base,
-                k_byte_off,
-            )
+        @always_inline
+        @parameter
+        def copy_tiles_to_smem():
+            """Copy register buffers to SMEM in row-major order."""
+            var a_smem_dist = a_smem.vectorize[1, simd_width]().distribute[
+                load_layout
+            ](thread_idx.x)
+            var b_smem_dist = b_smem.vectorize[1, simd_width]().distribute[
+                load_layout
+            ](thread_idx.x)
+            comptime for v in range(loads_per_tile):
+                a_smem_dist[v, 0] = a_load_reg.raw_load[width=simd_width](
+                    v * simd_width
+                )
+                b_smem_dist[v, 0] = b_load_reg.raw_load[width=simd_width](
+                    v * simd_width
+                )
 
-            mma_op.load_scales(
-                sfa.ptr,
-                sfb.ptr,
-                a_m_base,
-                b_n_base,
-                k_iter,
-                scale_stride_a,
-                scale_stride_b,
-            )
+        @always_inline
+        @parameter
+        def load_scales_to_smem():
+            """Cooperatively load scale tiles from GMEM to SMEM.
 
-            mma_op.mma[0]()
+            Scale tile per BK iteration: [BM, scales_per_mma] for A and
+            [BN, scales_per_mma] for B, both uint8. Each row is 4 bytes.
+            Threads 0..BM-1 load A scales, threads BM..BM+BN-1 load B.
+            Each active thread loads one 4-byte row as an Int32, giving
+            coalesced 4-byte aligned GMEM reads.
+            """
+            var tid = Int(thread_idx.x)
+            var base_scale_k = k_scale_counter * scales_per_mma
+            var a_base_row = Int(block_idx.y) * BM
+            var b_base_row = Int(block_idx.x) * BN
+
+            if tid < BM:
+                var row = a_base_row + tid
+                var src_off = row * K_SCALES + base_scale_k
+                var src_word = sfa.ptr.bitcast[Scalar[DType.int32]]()[
+                    src_off // scales_per_mma
+                ]
+                sfa_smem.ptr.bitcast[Scalar[DType.int32]]()[tid] = src_word
+            if tid < BN:
+                var row = b_base_row + tid
+                var src_off = row * K_SCALES + base_scale_k
+                var src_word = sfb.ptr.bitcast[Scalar[DType.int32]]()[
+                    src_off // scales_per_mma
+                ]
+                sfb_smem.ptr.bitcast[Scalar[DType.int32]]()[tid] = src_word
+
+            k_scale_counter += 1
+
+        # === Schedule-driven pipeline ===
+        # The schedule prologue pre-loads 2 tiles, so we need at least 2
+        # K-iterations. For K with only 1 tile, fall back to a simple loop.
+        comptime a_loads_per_thread = BM // load_thread_rows
+        comptime b_loads_per_thread = BN // load_thread_rows
+
+        @always_inline
+        @parameter
+        def simple_k_loop():
+            """Fallback for small K where schedule prologue doesn't fit."""
+            for k_iter in range(K_BYTES // BK_BYTES):
+                load_tiles_from_dram()
+                load_scales_to_smem()
+                copy_tiles_to_smem()
+                barrier()
+
+                var a_warp = a_smem.tile[WM, BK_BYTES](warp_m, 0)
+                var b_warp = b_smem.tile[WN, BK_BYTES](warp_n, 0)
+                mma_op.load_frag_from_smem[0](a_warp, b_warp)
+
+                var sfa_warp = sfa_smem.tile[WM, scales_per_mma](warp_m, 0)
+                var sfb_warp = sfb_smem.tile[WN, scales_per_mma](warp_n, 0)
+                mma_op.load_scales_from_smem(sfa_warp, sfb_warp)
+
+                mma_op.mma[0]()
+                barrier()
+
+        @always_inline
+        @parameter
+        def scheduled_k_loop():
+            """Pipelined K-loop via build_default_matmul_schedule."""
+            comptime schedule = build_default_matmul_schedule[
+                num_k_tiles=num_k_tiles,
+                num_m_mmas=num_m_mmas,
+                num_n_mmas=num_n_mmas,
+                num_k_mmas=1,
+                MMA_M=MMA_M,
+                MMA_N=MMA_N,
+                a_loads_per_thread=a_loads_per_thread,
+                b_loads_per_thread=b_loads_per_thread,
+            ]()
+
+            @parameter
+            @always_inline
+            def _bind[entry: ScheduleEntry]():
+                comptime if entry.op.tag == LOAD_DRAM:
+                    load_tiles_from_dram()
+                elif entry.op.tag == STORE_SMEM:
+                    copy_tiles_to_smem()
+                    load_scales_to_smem()
+                elif entry.op.tag == LOAD_FRAG:
+                    var a_warp = a_smem.tile[WM, BK_BYTES](warp_m, 0)
+                    var b_warp = b_smem.tile[WN, BK_BYTES](warp_n, 0)
+                    mma_op.load_frag_from_smem[entry.op.subtile](a_warp, b_warp)
+                    var sfa_warp = sfa_smem.tile[WM, scales_per_mma](warp_m, 0)
+                    var sfb_warp = sfb_smem.tile[WN, scales_per_mma](warp_n, 0)
+                    mma_op.load_scales_from_smem(sfa_warp, sfb_warp)
+                elif entry.op.tag == COMPUTE:
+                    mma_op.mma[entry.op.subtile]()
+                elif entry.op.tag == DefaultMatmulOps.BARRIER.value:
+                    barrier()
+                elif entry.op.tag == DefaultMatmulOps.SCHEDULE_BARRIER.value:
+                    schedule_barrier()
+                elif entry.op.tag == (
+                    DefaultMatmulOps.SCHED_GROUP_BARRIER.value
+                ):
+                    comptime sub = entry.op.subtile
+                    comptime wait = entry.op.wait_value
+                    comptime if sub == SCHED_MASK_DS_READ:
+                        schedule_group_barrier(
+                            AMDScheduleBarrierMask.DS_READ, Int32(wait), 0
+                        )
+                    elif sub == SCHED_MASK_DS_WRITE:
+                        schedule_group_barrier(
+                            AMDScheduleBarrierMask.DS_WRITE, Int32(wait), 0
+                        )
+                    elif sub == SCHED_MASK_VMEM_READ:
+                        schedule_group_barrier(
+                            AMDScheduleBarrierMask.VMEM_READ, Int32(wait), 0
+                        )
+                    elif sub == SCHED_MASK_MFMA:
+                        schedule_group_barrier(
+                            AMDScheduleBarrierMask.MFMA, Int32(wait), 0
+                        )
+
+            # Prologue.
+            comptime for i in range(len(schedule.prologue)):
+                _bind[schedule.prologue[i]]()
+
+            # Main K-loop.
+            for _ in range(2, K_BYTES // BK_BYTES):
+                comptime for i in range(len(schedule.kernel)):
+                    _bind[schedule.kernel[i]]()
+
+            # Epilogue.
+            comptime for i in range(len(schedule.epilogue)):
+                _bind[schedule.epilogue[i]]()
+
+        if K_BYTES // BK_BYTES < 2:
+            simple_k_loop()
+        else:
+            scheduled_k_loop()
 
         # === Output store ===
-        # The MFMA uses (b_frag, a_frag) so its accumulator is laid
-        # out with the N-tile index in the outer (m) loop and M-tile
-        # index in the inner (n) loop. When reading the accumulator,
-        # accum row `m` corresponds to N-tile `m` and accum column
-        # group `n` to M-tile `n`. We swap the output tile indices
-        # so that accum(m, n) writes to output C(n, m).
         var c_reg = mma_op.accum_tile()
         var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)
         var c_warp = c_block.tile[WM, WN](warp_m, warp_n)

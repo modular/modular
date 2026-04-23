@@ -85,7 +85,7 @@ comptime logger = Logger()
 
 comptime elementwise_epilogue_type = def[
     c_type: DType,
-    width: Int,
+    width: SIMDSize,
     rank: Int,
     *,
     alignment: Int = 1,
@@ -166,8 +166,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
     comptime out_stride_types = type_of(result).LayoutType._stride_types
     comptime rank = tensor.rank
     comptime assert rank >= 3, "expecting at least rank-3 TileTensor"
-    var shape = Tuple[*out_shape_types.upcast[Movable]()]()
-    var strides = Tuple[*out_stride_types.upcast[Movable]()]()
+    var shape = Tuple[*out_shape_types]()
+    var strides = Tuple[*out_stride_types]()
 
     comptime for i in range(3):
         comptime idx = rank - 3 + i
@@ -199,11 +199,11 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 rebind[ShapeType](Idx[ShapeType.static_value]())
             )
         else:
-            var shape_val = tensor.layout.shape[idx]().value()
+            var shape_val = Int(tensor.layout.shape[idx]().value())
 
             comptime if i == 0:
                 comptime for batch_idx in range(rank - 3):
-                    shape_val *= tensor.layout.shape[batch_idx]().value()
+                    shape_val *= Int(tensor.layout.shape[batch_idx]().value())
 
             shape_ptr.init_pointee_copy(
                 rebind[ShapeType](
@@ -299,7 +299,7 @@ def _batched_matmul_cpu[
     var m = Int(c.dim[1]())
     var n = Int(c.dim[2]())
     var k = Int(a.dim[2]())
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
     # Prevent parallelizing tiny matrices, e.x. 1024x4x4x4.
     var max_num_tasks_batch = min(
         ceildiv(m * n * k * batch_size, get_min_task_size()), batch_size
@@ -392,7 +392,7 @@ def _batched_matmul_cpu[
 
             @parameter
             def elementwise_lambda_2d[
-                c_type: DType, width: Int, *, alignment: Int = 1
+                c_type: DType, width: SIMDSize, *, alignment: Int = 1
             ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
                 # the caller provided the elementwise epilogue def over the original
                 # buffer rank, not the collapsed buffer rank
@@ -547,9 +547,15 @@ def batched_matmul_kernel_gpu[
     k: Int,
 ):
     var batch_idx = block_idx.z
-    var a_ptr = a_tensor.ptr + batch_idx * a_tensor.layout.stride[0]().value()
-    var b_ptr = b_tensor.ptr + batch_idx * b_tensor.layout.stride[0]().value()
-    var c_ptr = c_tensor.ptr + batch_idx * c_tensor.layout.stride[0]().value()
+    var a_ptr = a_tensor.ptr + batch_idx * Int(
+        a_tensor.layout.stride[0]().value()
+    )
+    var b_ptr = b_tensor.ptr + batch_idx * Int(
+        b_tensor.layout.stride[0]().value()
+    )
+    var c_ptr = c_tensor.ptr + batch_idx * Int(
+        c_tensor.layout.stride[0]().value()
+    )
 
     comptime k_static = a_tensor.static_shape[2]
     comptime n_static = b_tensor.static_shape[1]
@@ -578,7 +584,7 @@ def batched_matmul_kernel_gpu[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()
@@ -682,7 +688,7 @@ def _batched_matmul_gpu[
                 @parameter
                 @__copy_capture(c_buf)
                 def elementwise_epilogue_fn_wrapper[
-                    dtype: DType, width: Int, *, alignment: Int = 1
+                    dtype: DType, width: SIMDSize, *, alignment: Int = 1
                 ](
                     out_coords: IndexList[2], val: SIMD[dtype, width]
                 ) capturing -> None:
@@ -1102,7 +1108,7 @@ def _bmm_sm100_blockwise_scaled_fp8_kernel[
 
     @parameter
     def elementwise_epilogue_fn_wrapper[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](out_coords: IndexList[2], val: SIMD[dtype, width]) capturing -> None:
         comptime if elementwise_lambda_fn:
             comptime elementwise_epilogue = elementwise_lambda_fn.value()

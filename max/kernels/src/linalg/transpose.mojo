@@ -35,10 +35,10 @@ def _transpose_inplace_4x4[
     comptime assert bufloat0.flat_rank == 2
 
     # Contiguous row-major 4x4: row i starts at offset i * 4.
-    var row0 = bufloat0.flat_load[width=4](0)
-    var row1 = bufloat0.flat_load[width=4](4)
-    var row2 = bufloat0.flat_load[width=4](8)
-    var row3 = bufloat0.flat_load[width=4](12)
+    var row0 = bufloat0.raw_load[width=4](0)
+    var row1 = bufloat0.raw_load[width=4](4)
+    var row2 = bufloat0.raw_load[width=4](8)
+    var row3 = bufloat0.raw_load[width=4](12)
 
     var tmp0 = row0.shuffle[0, 1, 4, 5](row1)
     var tmp1 = row2.shuffle[0, 1, 4, 5](row3)
@@ -50,10 +50,10 @@ def _transpose_inplace_4x4[
     var r2 = tmp2.shuffle[0, 2, 4, 6](tmp3)
     var r3 = tmp2.shuffle[1, 3, 5, 7](tmp3)
 
-    bufloat0.flat_store[width=4](0, r0)
-    bufloat0.flat_store[width=4](4, r1)
-    bufloat0.flat_store[width=4](8, r2)
-    bufloat0.flat_store[width=4](12, r3)
+    bufloat0.raw_store[width=4](0, r0)
+    bufloat0.raw_store[width=4](4, r1)
+    bufloat0.raw_store[width=4](8, r2)
+    bufloat0.raw_store[width=4](12, r3)
 
 
 def _transpose_inplace_8x8[
@@ -66,14 +66,14 @@ def _transpose_inplace_8x8[
     comptime assert bufloat0.flat_rank == 2
 
     # Contiguous row-major 8x8: row i starts at offset i * 8.
-    var row0 = bufloat0.flat_load[width=8](0)
-    var row1 = bufloat0.flat_load[width=8](8)
-    var row2 = bufloat0.flat_load[width=8](16)
-    var row3 = bufloat0.flat_load[width=8](24)
-    var row4 = bufloat0.flat_load[width=8](32)
-    var row5 = bufloat0.flat_load[width=8](40)
-    var row6 = bufloat0.flat_load[width=8](48)
-    var row7 = bufloat0.flat_load[width=8](56)
+    var row0 = bufloat0.raw_load[width=8](0)
+    var row1 = bufloat0.raw_load[width=8](8)
+    var row2 = bufloat0.raw_load[width=8](16)
+    var row3 = bufloat0.raw_load[width=8](24)
+    var row4 = bufloat0.raw_load[width=8](32)
+    var row5 = bufloat0.raw_load[width=8](40)
+    var row6 = bufloat0.raw_load[width=8](48)
+    var row7 = bufloat0.raw_load[width=8](56)
 
     @parameter
     def _apply_permute_0(
@@ -138,14 +138,14 @@ def _transpose_inplace_8x8[
     var r6 = _apply_permute_5(k130, k570)
     var r7 = _apply_permute_5(k131, k571)
 
-    bufloat0.flat_store[width=8](0, r0)
-    bufloat0.flat_store[width=8](8, r1)
-    bufloat0.flat_store[width=8](16, r2)
-    bufloat0.flat_store[width=8](24, r3)
-    bufloat0.flat_store[width=8](32, r4)
-    bufloat0.flat_store[width=8](40, r5)
-    bufloat0.flat_store[width=8](48, r6)
-    bufloat0.flat_store[width=8](56, r7)
+    bufloat0.raw_store[width=8](0, r0)
+    bufloat0.raw_store[width=8](8, r1)
+    bufloat0.raw_store[width=8](16, r2)
+    bufloat0.raw_store[width=8](24, r3)
+    bufloat0.raw_store[width=8](32, r4)
+    bufloat0.raw_store[width=8](40, r5)
+    bufloat0.raw_store[width=8](48, r6)
+    bufloat0.raw_store[width=8](56, r7)
 
 
 def _transpose_inplace_16x16[
@@ -222,22 +222,22 @@ def _transpose_inplace_16x16[
         ](other)
 
     # Contiguous row-major 16x16: row i starts at offset i * 16.
-    var row00 = bufloat0.flat_load[width=16](0)
-    var row01 = bufloat0.flat_load[width=16](16)
-    var row02 = bufloat0.flat_load[width=16](32)
-    var row03 = bufloat0.flat_load[width=16](48)
-    var row04 = bufloat0.flat_load[width=16](64)
-    var row05 = bufloat0.flat_load[width=16](80)
-    var row06 = bufloat0.flat_load[width=16](96)
-    var row07 = bufloat0.flat_load[width=16](112)
-    var row08 = bufloat0.flat_load[width=16](128)
-    var row09 = bufloat0.flat_load[width=16](144)
-    var row10 = bufloat0.flat_load[width=16](160)
-    var row11 = bufloat0.flat_load[width=16](176)
-    var row12 = bufloat0.flat_load[width=16](192)
-    var row13 = bufloat0.flat_load[width=16](208)
-    var row14 = bufloat0.flat_load[width=16](224)
-    var row15 = bufloat0.flat_load[width=16](240)
+    var row00 = bufloat0.raw_load[width=16](0)
+    var row01 = bufloat0.raw_load[width=16](16)
+    var row02 = bufloat0.raw_load[width=16](32)
+    var row03 = bufloat0.raw_load[width=16](48)
+    var row04 = bufloat0.raw_load[width=16](64)
+    var row05 = bufloat0.raw_load[width=16](80)
+    var row06 = bufloat0.raw_load[width=16](96)
+    var row07 = bufloat0.raw_load[width=16](112)
+    var row08 = bufloat0.raw_load[width=16](128)
+    var row09 = bufloat0.raw_load[width=16](144)
+    var row10 = bufloat0.raw_load[width=16](160)
+    var row11 = bufloat0.raw_load[width=16](176)
+    var row12 = bufloat0.raw_load[width=16](192)
+    var row13 = bufloat0.raw_load[width=16](208)
+    var row14 = bufloat0.raw_load[width=16](224)
+    var row15 = bufloat0.raw_load[width=16](240)
 
     var k00 = _apply_permute_0(row00, row01)
     var k01 = _apply_permute_1(row00, row01)
@@ -307,22 +307,22 @@ def _transpose_inplace_16x16[
     var r14 = _apply_permute_7(t06, t14)
     var r15 = _apply_permute_7(t07, t15)
 
-    bufloat0.flat_store[width=16](0, r00)
-    bufloat0.flat_store[width=16](16, r01)
-    bufloat0.flat_store[width=16](32, r02)
-    bufloat0.flat_store[width=16](48, r03)
-    bufloat0.flat_store[width=16](64, r04)
-    bufloat0.flat_store[width=16](80, r05)
-    bufloat0.flat_store[width=16](96, r06)
-    bufloat0.flat_store[width=16](112, r07)
-    bufloat0.flat_store[width=16](128, r08)
-    bufloat0.flat_store[width=16](144, r09)
-    bufloat0.flat_store[width=16](160, r10)
-    bufloat0.flat_store[width=16](176, r11)
-    bufloat0.flat_store[width=16](192, r12)
-    bufloat0.flat_store[width=16](208, r13)
-    bufloat0.flat_store[width=16](224, r14)
-    bufloat0.flat_store[width=16](240, r15)
+    bufloat0.raw_store[width=16](0, r00)
+    bufloat0.raw_store[width=16](16, r01)
+    bufloat0.raw_store[width=16](32, r02)
+    bufloat0.raw_store[width=16](48, r03)
+    bufloat0.raw_store[width=16](64, r04)
+    bufloat0.raw_store[width=16](80, r05)
+    bufloat0.raw_store[width=16](96, r06)
+    bufloat0.raw_store[width=16](112, r07)
+    bufloat0.raw_store[width=16](128, r08)
+    bufloat0.raw_store[width=16](144, r09)
+    bufloat0.raw_store[width=16](160, r10)
+    bufloat0.raw_store[width=16](176, r11)
+    bufloat0.raw_store[width=16](192, r12)
+    bufloat0.raw_store[width=16](208, r13)
+    bufloat0.raw_store[width=16](224, r14)
+    bufloat0.raw_store[width=16](240, r15)
 
 
 def _transpose_inplace_naive[
@@ -518,7 +518,7 @@ def _convert_transpose_perms_to_static_int_tuple[
     var simplified_perms = IndexList[rank]()
     # TODO: unroll
     for j in range(rank):
-        simplified_perms[j] = Int(perms.load(j)[0]._mlir_value)
+        simplified_perms[j] = Int(perms.load(j)[0])
     return simplified_perms
 
 
@@ -657,7 +657,7 @@ def _transpose_2d_parallel_tiled[
 
     var work = ceildiv(n_tiles, rows_per_worker)
 
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
 
     var num_tasks = min(work, num_threads)
 
@@ -771,7 +771,7 @@ def _transpose_4d_swap_middle_helper[
                     )
         return
     else:
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
 
         var num_tasks = min(work, num_threads)
 
@@ -897,6 +897,7 @@ def transpose_trivial_memcpy[
     input: TileTensor[
         mut=False, dtype, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     var src_ptr = input.ptr
     var dst_ptr = output.ptr
@@ -912,7 +913,7 @@ def transpose_trivial_memcpy[
 
     else:
         var work_units = ceildiv(total_size, min_work_per_task)
-        var num_tasks = min(work_units, parallelism_level())
+        var num_tasks = min(work_units, parallelism_level(ctx))
         var work_block_size = ceildiv(work_units, num_tasks)
 
         parallel_memcpy(
@@ -961,8 +962,8 @@ def _copy_with_strides[
         raise Error("out of range")
 
     var axis_dim = output_shape[axis]
-    var input_axis_stride: Int = Int(input_strides.load(axis)[0]._mlir_value)
-    var output_axis_stride: Int = Int(output_strides.load(axis)[0]._mlir_value)
+    var input_axis_stride: Int = Int(input_strides.load(axis)[0])
+    var output_axis_stride: Int = Int(output_strides.load(axis)[0])
 
     if axis + 1 == rank:
         var src_ptr = input_ptr + input_offset
@@ -1020,7 +1021,7 @@ def _copy_with_strides[
             next_output_offset += output_axis_stride
 
     else:
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
         var num_tasks = min(
             ceildiv(output_bytecount, min_work_per_task), num_threads
         )
@@ -1210,7 +1211,7 @@ def transpose[
 
     if simplified_rank == 1:
         # memcpy
-        return transpose_trivial_memcpy(output, input)
+        return transpose_trivial_memcpy(output, input, ctx)
     # TODO: Re-enable once #15947 is fixed.
     # elif simplified_rank == 2:
     #     # tiled transpose

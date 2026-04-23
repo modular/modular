@@ -14,12 +14,12 @@
 """Scaled Word Embedding for the ModuleV3 API."""
 
 from max.experimental import functional as F
-from max.experimental.nn.embedding import Embedding
+from max.experimental.nn.common_layers.embedding import VocabParallelEmbedding
 from max.experimental.tensor import Tensor
 
 
-class ScaledEmbedding(Embedding):
-    """An Embedding that multiplies lookup results by a scale factor.
+class ScaledEmbedding(VocabParallelEmbedding):
+    """A vocab-parallel embedding that scales results by a constant factor.
 
     Used by Gemma3 to scale token embeddings by ``sqrt(hidden_size)``.
     """
@@ -36,7 +36,4 @@ class ScaledEmbedding(Embedding):
         self.embed_scale = embed_scale
 
     def forward(self, indices: Tensor) -> Tensor:
-        result = super().forward(indices)
-        return result * F.constant(
-            self.embed_scale, result.dtype, device=result.device
-        )
+        return F.mul(super().forward(indices), self.embed_scale)

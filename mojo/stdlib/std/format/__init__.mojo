@@ -208,7 +208,7 @@ trait Writable(ImplicitlyDestructible):
         Args:
             writer: The destination for formatted output.
 
-        ## Example
+        **Example:**
 
         ```mojo
         @fieldwise_init
@@ -243,7 +243,7 @@ trait Writable(ImplicitlyDestructible):
         Args:
             writer: The destination for formatted output.
 
-        ## Example
+        **Example:**
 
         ```mojo
         @fieldwise_init

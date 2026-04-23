@@ -354,6 +354,9 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                             attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
                             ].attention_dispatch_metadata,
+                            draft_attention_dispatch_metadata=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_attention_dispatch_metadata,
                         )
                     )
 

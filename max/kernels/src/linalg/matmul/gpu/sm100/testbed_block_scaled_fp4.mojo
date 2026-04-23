@@ -133,9 +133,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * (KType.static_value // 2)
-    var b_size = n.value() * (KType.static_value // 2)
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * (KType.static_value // 2)
+    var b_size = Int(n.value()) * (KType.static_value // 2)
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -170,7 +170,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -179,7 +179,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -213,12 +213,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(m.value()):
-            for k in range(k.value() // 2):
+        for m in range(Int(m.value())):
+            for k in range(Int(k.value()) // 2):
                 comptime assert a_host.flat_rank >= 2
                 a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
-        for n in range(n.value()):
-            for k in range(k.value() // 2):
+        for n in range(Int(n.value())):
+            for k in range(Int(k.value()) // 2):
                 comptime assert b_host.flat_rank >= 2
                 b_host[(Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
     else:
@@ -280,20 +280,24 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
         comptime assert False, "Unsupported scales_dtype in FP4 testbed"
 
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    for idx0 in range(align_up(m.value(), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
-            0, align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+            0,
+            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_VECTOR_SIZE,
         ):
-            if idx0 >= m.value() or idx1 >= k.value():
+            if idx0 >= Int(m.value()) or idx1 >= Int(k.value()):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
-    for idx0 in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
-            0, align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+            0,
+            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_VECTOR_SIZE,
         ):
-            if idx0 >= n.value() or idx1 >= k.value():
+            if idx0 >= Int(n.value()) or idx1 >= Int(k.value()):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_tensor_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
@@ -331,7 +335,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     @__copy_capture(c_device_lt)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -408,7 +412,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     # When epilogue multiplies by 2, scale reference to match.
     comptime if normal_epilogue:
         for i in range(c_host_ref.num_elements()):
-            c_host_ref.ptr[i] = c_host_ref.ptr[i] * Scalar[c_type](2)
+            c_host_ref.raw_store(i, c_host_ref.raw_load(i) * Scalar[c_type](2))
 
     assert_almost_equal(
         c_host.ptr,

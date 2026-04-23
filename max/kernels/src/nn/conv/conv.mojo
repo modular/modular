@@ -514,7 +514,7 @@ struct ConvDirectNHWC[
             raise Error("filter count must be divisible by group count")
 
         # Number of partitions in n, ho_wo, c, f dimensions.
-        var num_threads = parallelism_level()
+        var num_threads = parallelism_level(ctx)
         var num_partitions = get_conv_num_partitions[
             micro_kernel_height, micro_kernel_f_size
         ](num_threads, conv_shape)
@@ -4503,7 +4503,7 @@ def conv_gpu[
                     @__copy_capture(hw, out_w)
                     def sm100_void_epilogue[
                         _dtype: DType,
-                        _width: Int,
+                        _width: SIMDSize,
                         *,
                         alignment: Int = 1,
                     ](coords_2d: IndexList[2], val: SIMD[_dtype, _width],):

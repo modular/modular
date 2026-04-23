@@ -89,7 +89,7 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    def __init__(out self, *ts: Self.T, __set_literal__: () = ()):
+    def __init__(out self, *ts: Self.T, __set_literal__: NoneType = None):
         """Construct a set from initial elements.
 
         Args:

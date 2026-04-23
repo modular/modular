@@ -154,7 +154,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
             self.extend(elements.take())
 
     def __init__(
-        out self, var *values: Self.ElementType, __list_literal__: () = ()
+        out self,
+        var *values: Self.ElementType,
+        __list_literal__: NoneType = None,
     ):
         """Constructs a deque from the given values.
 

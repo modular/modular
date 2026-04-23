@@ -59,6 +59,7 @@ _EXTRA_CONSTRAINTS = {
     "test_tensor_core_mi300x.mojo": ["//:mi300x_gpu"],
     "test_tensor_core_mi355x.mojo": ["//:mi355_gpu"],
     "test_tensor_core_amd2.mojo": ["//:amd_gpu"],
+    "test_apple_mma_fragment.mojo": ["//:apple_gpu"],  # MSTDL-2592
     "test_tensor_core_apple.mojo": ["//:apple_gpu"],
     "test_tensor_core_nvidia.mojo": ["//:nvidia_gpu"],
     "test_tiled_matmul_gpu.mojo": ["//:nvidia_gpu"],  # FIXME: KERN-1377

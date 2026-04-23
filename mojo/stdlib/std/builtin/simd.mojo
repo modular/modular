@@ -777,7 +777,7 @@ struct SIMD[dtype: DType, size: Int](
 
     @always_inline("nodebug")
     def __init__(
-        out self, *elems: Scalar[Self.dtype], __list_literal__: () = ()
+        out self, *elems: Scalar[Self.dtype], __list_literal__: NoneType = None
     ):
         """Constructs a SIMD vector via a variadic list of elements.
 

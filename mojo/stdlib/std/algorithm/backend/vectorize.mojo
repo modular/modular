@@ -84,7 +84,7 @@ def vectorize[
     You can also unroll the loop to potentially improve performance at the cost
     of binary size:
 
-    ```
+    ```mojo
     vectorize[closure, width, unroll_factor=2](size)
     ```
 
@@ -92,7 +92,7 @@ def vectorize[
     fewer arithmetic, comparison, and conditional jump operations. The assembly
     would look like this in pseudocode:
 
-    ```
+    ```text
     closure[4](0)
     closure[4](4)
     # Remainder loop won't unroll unless `size` is passed as a parameter
@@ -211,7 +211,7 @@ def vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```
+    ```mojo
     vectorize[simd_width, unroll_factor=2](size, closure)
     ```
 
@@ -219,7 +219,7 @@ def vectorize[
     in fewer arithmetic, comparison, and conditional jump operations. In
     pseudocode:
 
-    ```
+    ```text
     closure[4](0, 4)
     closure[4](4, 4)
     closure[4](8, 2)  # single predicated tail call
@@ -322,7 +322,7 @@ def vectorize[
     You can also unroll the main loop to potentially improve performance at the
     cost of binary size:
 
-    ```
+    ```mojo
     vectorize[width, size=size, unroll_factor=2](closure)
     ```
 
@@ -330,7 +330,7 @@ def vectorize[
     fewer arithmetic, comparison, and conditional jump operations. The assembly
     would look like this in pseudocode:
 
-    ```
+    ```text
     closure[4](0)
     closure[4](4)
     closure[2](8)

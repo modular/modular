@@ -17,12 +17,6 @@ from max.graph.weights import WeightData, Weights
 
 GEMMA3_LANGUAGE_SAFETENSOR_MAP: dict[str, str] = {
     "language_model.model.": "",
-    # Gemma3 attention uses a fused StackedLinear ``qkv_proj`` whose children
-    # are ``q``/``k``/``v``. Remap the HuggingFace per-projection weight
-    # names so ``load_state_dict(..., strict=True)`` finds them.
-    "self_attn.q_proj.": "self_attn.qkv_proj.q.",
-    "self_attn.k_proj.": "self_attn.qkv_proj.k.",
-    "self_attn.v_proj.": "self_attn.qkv_proj.v.",
 }
 
 # For the vision model

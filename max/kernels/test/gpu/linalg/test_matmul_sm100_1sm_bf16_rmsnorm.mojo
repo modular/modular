@@ -64,9 +64,9 @@ def test_rmsnorm_then_matmul[
     pdl_level: PDLLevel = PDLLevel(),
     prefetch_tiles_n: Int = 0,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     print(
         t"rmsnorm->matmul: dtype={a_type} shape=({M}, {N}, {K})"
@@ -143,7 +143,7 @@ def test_rmsnorm_then_matmul[
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[a_type, width]:
-        return a_raw_tensor.flat_load[width=width](
+        return a_raw_tensor.raw_load[width=width](
             a_raw_tensor.layout(Coord(coords))
         )
 
@@ -156,7 +156,7 @@ def test_rmsnorm_then_matmul[
     def output_fn_vendor[
         width: Int, alignment: Int
     ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
-        a_normed_vendor_tensor.flat_store[width=width, alignment=alignment](
+        a_normed_vendor_tensor.raw_store[width=width, alignment=alignment](
             a_normed_vendor_tensor.layout(Coord(coords)), val
         )
 
@@ -182,7 +182,7 @@ def test_rmsnorm_then_matmul[
     def output_fn_ours[
         width: Int, alignment: Int
     ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
-        a_normed_ours_tensor.flat_store[width=width, alignment=alignment](
+        a_normed_ours_tensor.raw_store[width=width, alignment=alignment](
             a_normed_ours_tensor.layout(Coord(coords)), val
         )
 
@@ -211,7 +211,7 @@ def test_rmsnorm_then_matmul[
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_ours_tensor.flat_store[
+        c_ours_tensor.raw_store[
             width=width, alignment=alignment * size_of[c_type]()
         ](c_ours_tensor.layout(Coord(idx)), rebind[SIMD[c_type, width]](val))
 

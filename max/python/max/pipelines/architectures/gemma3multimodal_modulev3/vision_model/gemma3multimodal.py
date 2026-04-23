@@ -15,12 +15,15 @@
 
 from __future__ import annotations
 
+from max.driver import CPU
 from max.dtype import DType
 from max.experimental import functional as F
 from max.experimental.nn import Module
+from max.experimental.nn.common_layers.kv_cache import PagedCacheValues
 from max.experimental.nn.norm.layer_norm import LayerNorm
+from max.experimental.sharding import PlacementMapping
 from max.experimental.tensor import Tensor
-from max.graph import TensorValue, ops
+from max.graph import TensorValue
 from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.transformer import ReturnLogits
 from max.pipelines.architectures.gemma3_modulev3.gemma3 import Gemma3TextModel
@@ -32,8 +35,37 @@ from .encoding import Gemma3VisionEncoder
 from .projection import Gemma3MultiModalProjector
 
 
+# TODO: This function uses a custom op, once we have better dispatch support for
+# custom ops, we can rewrite this.
+def merge_multimodal_embeddings_distributed(
+    inputs_embeds: Tensor,
+    image_embeddings: Tensor,
+    image_token_indices: Tensor,
+) -> Tensor:
+    """Merge multimodal embeddings distributedly."""
+    mesh = inputs_embeds.mesh
+    n = mesh.num_devices
+    embed_shards = inputs_embeds.local_shards
+    img_shards = image_embeddings.local_shards
+    idx_shards = image_token_indices.local_shards
+
+    merged_shards = []
+    for i in range(n):
+        merged_value = merge_multimodal_embeddings(
+            inputs_embeds=TensorValue(embed_shards[i]),
+            multimodal_embeddings=TensorValue(img_shards[i]),
+            image_token_indices=TensorValue(idx_shards[i]),
+        )
+        merged_shards.append(merged_value)
+
+    return Tensor.from_shard_values(
+        tuple(merged_shards),
+        PlacementMapping(mesh, inputs_embeds.placements),
+    )
+
+
 class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
-    """The Gemma3 multimodal language model (single-device, ModuleV3).
+    """The Gemma3 multimodal language model.
 
     Wraps :class:`Gemma3TextModel` to add multimodal embedding merge and
     KV cache unflattening from variadic args.
@@ -57,30 +89,37 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
         image_token_indices: Tensor,
         *variadic_args: Tensor,
     ) -> tuple[Tensor, ...]:
+        tokens = tokens.to(self.language_model.mesh)
+        return_n_logits = return_n_logits.to(self.language_model.mesh)
+        input_row_offsets = input_row_offsets.to(self.language_model.mesh)
+        image_embeddings = image_embeddings.to(self.language_model.mesh)
+        image_token_indices = image_token_indices.to(self.language_model.mesh)
+
         kv_inputs = iter(x._graph_value for x in variadic_args)
         kv_collections = (
             self.kv_params.get_symbolic_inputs().unflatten(kv_inputs).inputs
         )
+        kv_collection = PagedCacheValues.from_upstream(
+            kv_collections, tokens.mapping
+        )
 
         # Get text embeddings
         inputs_embeds = self.language_model.embed_tokens(tokens)
+        self.language_model.prepare_freq_cis(tokens.mesh)
 
-        # Merge image embeddings at pre-computed token positions
-        merged_value = merge_multimodal_embeddings(
-            inputs_embeds=TensorValue(inputs_embeds),
-            multimodal_embeddings=TensorValue(image_embeddings),
-            image_token_indices=TensorValue(image_token_indices),
+        # Merge image embeddings at pre-computed token positions.
+        merged = merge_multimodal_embeddings_distributed(
+            inputs_embeds, image_embeddings, image_token_indices
         )
-        merged = Tensor.from_graph_value(merged_value)
 
         # Run through transformer layers
         h = merged
         for idx, layer in enumerate(self.language_model.layers):
-            layer_idx_tensor = F.constant(idx, DType.uint32, device=h.device)
+            layer_idx_tensor = F.constant(idx, DType.uint32, device=CPU())
             h = layer(
                 layer_idx_tensor,
                 h,
-                kv_collections[0],
+                kv_collection,
                 input_row_offsets=input_row_offsets,
             )
 
@@ -90,32 +129,32 @@ class Gemma3LanguageModel(Module[..., tuple[Tensor, ...]]):
             self.language_model.norm(last_h)
         )
 
-        logits = None
-        offsets = None
+        logits: Tensor | None = None
+        offsets: Tensor | None = None
 
         if self.language_model.return_logits == ReturnLogits.VARIABLE:
-            return_n_logits_range = ops.range(
+            return_n_logits_range = F.range(
                 return_n_logits[0],
                 0,
                 -1,
                 out_dim="return_n_logits_range",
-                device=h.device,
+                device=CPU(),
                 dtype=DType.int64,
             )
             offsets = (
                 F.unsqueeze(input_row_offsets[1:], -1) - return_n_logits_range
             )
-            last_indices = F.reshape(offsets, shape=(-1,))
+            last_indices = offsets.reshape(shape=(-1,))
             last_tokens = F.gather(h, last_indices, axis=0)
             logits = self.language_model._compute_logits(
                 self.language_model.norm(last_tokens)
             )
-            offsets = ops.range(
+            offsets = F.range(
                 0,
-                TensorValue(last_indices.shape[0]) + return_n_logits[0],
+                last_indices.shape[0] + return_n_logits[0],
                 return_n_logits[0],
                 out_dim="logit_offsets",
-                device=h.device,
+                device=CPU(),
                 dtype=DType.int64,
             )
         elif self.language_model.return_logits == ReturnLogits.ALL:

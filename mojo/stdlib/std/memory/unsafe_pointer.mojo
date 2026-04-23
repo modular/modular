@@ -33,7 +33,6 @@ from std.builtin.device_passable import DevicePassable
 from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
-from std.builtin.variadics import Variadic
 from std.collections import OptionalReg
 from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames

@@ -195,7 +195,7 @@ def load_to_simd(
     ), "load_to_simd is supported only for tensors with known layout"
     comptime size = type_of(res).size
     return rebind[type_of(res)](
-        tensor.reshape[Layout(size)]().vectorize[size]()[0]
+        tensor.reshape[Layout(Int(size))]().vectorize[size]()[0]
     )
 
 
@@ -252,8 +252,8 @@ def _get_bounds(tensor: TileTensor) -> Int:
     var dim1 = Int(tensor.dim[1]())
     if dim0 == 0 or dim1 == 0:
         return 0
-    var stride0 = tensor.layout.stride[0]().value()
-    var stride1 = tensor.layout.stride[1]().value()
+    var stride0 = Int(tensor.layout.stride[0]().value())
+    var stride1 = Int(tensor.layout.stride[1]().value())
     return (dim0 - 1) * stride0 + (dim1 - 1) * stride1 + 1
 
 

@@ -20,10 +20,11 @@ from typing import Any, Generic, TypeVar
 
 from max.driver import Buffer
 from max.dtype import DType
+from max.experimental.tensor import Tensor
 from max.graph import BufferType, BufferValue, TensorType, TensorValue
 
-_Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer)
-_Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer)
+_Tensor = TypeVar("_Tensor", TensorValue, TensorType, Buffer, Tensor)
+_Buffer = TypeVar("_Buffer", BufferValue, BufferType, Buffer, Tensor)
 
 
 @dataclass
@@ -36,6 +37,7 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
     max_lengths: _Tensor
     kv_scales: _Buffer | None = None  # KV scales for FP8 quantization
     attention_dispatch_metadata: _Tensor | None = None
+    draft_attention_dispatch_metadata: _Tensor | None = None
 
     def __post_init__(self) -> None:
         tensor = self.attention_dispatch_metadata
@@ -63,6 +65,11 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
                 if self.attention_dispatch_metadata
                 else ()
             ),
+            *(
+                (self.draft_attention_dispatch_metadata,)
+                if self.draft_attention_dispatch_metadata
+                else ()
+            ),
         ]
 
     # TODO: FIX THIS HACK!!!
@@ -88,6 +95,9 @@ class KVCacheInputsPerDevice(Generic[_Tensor, _Buffer]):
             kv_scales=next(it) if self.kv_scales else None,
             attention_dispatch_metadata=next(it)
             if self.attention_dispatch_metadata
+            else None,
+            draft_attention_dispatch_metadata=next(it)
+            if self.draft_attention_dispatch_metadata
             else None,
         )
 

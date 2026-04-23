@@ -326,14 +326,10 @@ def _handle_mutable_store(
 def _handle_mutable_store_slice(
     op: mo.MutableStoreSliceOp, inputs: Sequence[Buffer | None]
 ) -> Sequence[Buffer | None]:
-    """Handle mo.mutable.store.slice by writing a slice into the buffer.
+    """Handle mo.mutable.store.slice via MOGG's MutableStoreSlice kernel.
 
     Operand order: ``(in_buffer, slice, start, stop, step, in_chain)``;
-    result is ``out_chain``. Uses numpy index semantics for start/stop/step.
-
-    Host buffers mutate in-place via the zero-copy ``to_numpy`` view.
-    Device buffers round-trip through host to preserve non-slice regions
-    since ``inplace_copy_from`` overwrites the whole destination.
+    result is ``out_chain``. Numpy slice semantics apply to start/stop/step.
 
     Args:
         op: The mutable store slice operation (unused).
@@ -353,37 +349,34 @@ def _handle_mutable_store_slice(
     assert isinstance(stop_buf, Buffer)
     assert isinstance(step_buf, Buffer)
 
-    # Buffer.to_numpy goes through DLPack, which rejects sub-byte and
-    # non-IEEE float formats.
+    # fp4 needs sub-byte addressing the kernel doesn't do yet.
     dtype = in_buffer.dtype
-    if (
-        dtype.is_float8()
-        or dtype is DType.bfloat16
-        or dtype is DType.float4_e2m1fn
-    ):
+    if dtype is DType.float4_e2m1fn:
         raise NotImplementedError(
             f"mo.mutable.store.slice interpreter handler does not yet "
             f"support dtype {dtype}"
         )
 
-    start_np = start_buf.to_numpy().astype(np.int64)
-    stop_np = stop_buf.to_numpy().astype(np.int64)
-    step_np = step_buf.to_numpy().astype(np.int64)
+    # fp8 isn't in dispatch_dtype; reinterpret as uint8 (same storage size,
+    # pure byte copy).
+    dst = in_buffer
+    src = slice_tensor
+    if dtype.is_float8():
+        dst = in_buffer.view(DType.uint8)
+        src = slice_tensor.view(DType.uint8)
 
-    slicer = tuple(
-        slice(int(start_np[i]), int(stop_np[i]), int(step_np[i]))
-        for i in range(len(start_np))
+    starts_list = [int(s) for s in start_buf.to_numpy().flatten()]
+    stops_list = [int(s) for s in stop_buf.to_numpy().flatten()]
+    steps_list = [int(s) for s in step_buf.to_numpy().flatten()]
+
+    ops.data_movement_ops.MutableStoreSlice(
+        dst,
+        src,
+        starts_list,
+        stops_list,
+        steps_list,
+        in_buffer.device._device_context_ptr(),
     )
-
-    if in_buffer.device.is_host:
-        # Zero-copy view: writing the slice mutates the buffer in place.
-        in_buffer.to_numpy()[slicer] = slice_tensor.to_numpy()
-    else:
-        # Device path: to_numpy already allocates a fresh host copy.
-        buffer_np = in_buffer.to_numpy()
-        buffer_np[slicer] = slice_tensor.to_numpy()
-        in_buffer.inplace_copy_from(Buffer.from_numpy(buffer_np))
-
     return [None]
 
 

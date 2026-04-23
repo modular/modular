@@ -97,11 +97,11 @@ def split[
 
         var idx = input.layout(Coord(input_coords))
 
-        var value = input.flat_load[width=width](idx)
+        var value = input.raw_load[width=width](idx)
 
         var output_ptr_idx = outputs[output_idx].layout(Coord(output_coords))
 
-        outputs[output_idx].flat_store(output_ptr_idx, value)
+        outputs[output_idx].raw_store(output_ptr_idx, value)
 
     # Can vectorize only if not splitting over last dim.
     if axis != input.rank - 1:

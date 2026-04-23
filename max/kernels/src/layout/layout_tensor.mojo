@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 """Provides the `LayoutTensor` type for representing multidimensional data.
 """
-from std.builtin.variadics import Variadic
 from std.math import align_up, ceildiv, exp
 from std.math.math import _Expable
 from std.math.uutils import umod, ufloordiv
@@ -2406,7 +2405,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: Int, store_alignment: Int = Self.alignment
+        width: SIMDSize, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         m: Int,
@@ -2471,7 +2470,7 @@ struct LayoutTensor[
                 "LayoutTensor store out of bounds: n=",
                 n,
                 ", width=",
-                width,
+                Int(width),
                 " (valid range for n+width: [0, ",
                 dim1,
                 "])",
@@ -2483,7 +2482,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def store[
-        width: Int, store_alignment: Int = Self.alignment
+        width: SIMDSize, store_alignment: Int = Self.alignment
     ](
         self: LayoutTensor[mut=True, Self.dtype, ...],
         coords: IndexList[...],
@@ -2528,7 +2527,7 @@ struct LayoutTensor[
 
     @always_inline("nodebug")
     def aligned_store[
-        width: Int
+        width: SIMDSize
     ](self: Self._AsMut, m: Int, n: Int, val: SIMD[Self.dtype, width],):
         """Store a SIMD vector with alignment guarantees to the tensor.
 
@@ -6847,7 +6846,7 @@ def copy_dram_to_sram_async[
     ](dst, src)
 
 
-comptime binary_op_type = def[dtype: DType, width: Int](
+comptime binary_op_type = def[dtype: DType, width: SIMDSize](
     lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]
 ) thin -> SIMD[dtype, width]
 """

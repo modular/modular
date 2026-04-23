@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import enum
 import functools
 from collections.abc import Callable, Sequence
 from typing import Any
@@ -90,25 +91,49 @@ def _unpack_kv_collections(
     )
 
 
+class ParallelismMode(enum.Enum):
+    """Parallelism strategy for a DeepseekV3 decoder layer.
+
+    Each mode determines which attention/MoE implementations are used and which
+    collective communication ops run after attention and after the MoE/MLP.
+    """
+
+    DP_EP = "dp_ep"
+    """DP attention + EP MoE.  No inter-device collectives in the residual path."""
+
+    TP_EP = "tp_ep"
+    """TP attention (skip allreduce) + EP MoE.  Reduce-scatter after attention
+    puts hidden states in sequence-parallel ``[S/P, H]`` form; allgather after
+    MoE restores ``[S, H]``."""
+
+    TP_TP = "tp_tp"
+    """TP attention (with allreduce) + TP MoE.  Standard allreduce after MoE."""
+
+
 def _validate_parallelism_config(config: DeepseekV3Config) -> None:
     """Validate parallelism configuration for DeepseekV3.
 
     Supported multi-GPU modes:
       - DP attention + EP MoE: ``data_parallel_degree == num_devices``
       - TP attention + EP MoE: ``data_parallel_degree == 1``
+      - TP attention + TP MoE: ``data_parallel_degree == 1``, no EP
     ``DeepseekV3Config.__post_init__`` already enforces
     ``data_parallel_degree in (1, num_devices)``.
     """
     num_devices = len(config.devices)
+    # TP+TP (data_parallel_degree == 1, no ep_config) is valid.
+    # Only require EP when using data-parallel attention on multiple GPUs.
     # Skip EP validation in virtual device mode (compilation-only) since EP
-    # will be disabled later due to NVSHMEM linking requirements
+    # will be disabled later due to NVSHMEM linking requirements.
     if (
         num_devices > 1
         and config.ep_config is None
+        and config.data_parallel_degree != 1
         and not is_virtual_device_mode()
     ):
         raise ValueError(
-            "Expert-parallel (ep_config) must be enabled for multi-GPU DeepseekV3."
+            "Expert-parallel (ep_config) must be enabled for multi-GPU"
+            " DeepseekV3 with data-parallel attention."
         )
 
 
@@ -296,7 +321,16 @@ class DeepseekV3DecoderLayer(Module):
         self.config = config
         self.ep_manager = ep_manager
         num_devices = len(config.devices)
-        self.use_tp_ep = config.data_parallel_degree == 1 and num_devices > 1
+
+        if num_devices <= 1:
+            self.mode = ParallelismMode.DP_EP
+        elif config.ep_config is not None:
+            if config.data_parallel_degree == 1:
+                self.mode = ParallelismMode.TP_EP
+            else:
+                self.mode = ParallelismMode.DP_EP
+        else:
+            self.mode = ParallelismMode.TP_TP
 
         # Create Multi-head Latent Attention layer.
         mla_kwargs: dict[str, Any] = dict(
@@ -336,20 +370,22 @@ class DeepseekV3DecoderLayer(Module):
             | type[DataParallelLatentAttentionWithRopeFp8]
             | type[TensorParallelLatentAttentionWithRope]
         )
-        if self.use_tp_ep:
-            # TP attention + EP MoE: shard heads across devices, use
-            # reduce-scatter after attention so hidden states stay in
-            # sequence-parallel [S/P, H] form between layers.
-            mla_kwargs["dtype"] = DType.bfloat16
-            mla_kwargs["skip_allreduce"] = True
-            mla_cls = TensorParallelLatentAttentionWithRope
-        else:
-            if use_fp8_mla:
-                mla_kwargs["quant_config"] = config.quant_config
-                mla_cls = DataParallelLatentAttentionWithRopeFp8
-            else:
+        match self.mode:
+            case ParallelismMode.TP_EP:
                 mla_kwargs["dtype"] = DType.bfloat16
-                mla_cls = DataParallelLatentAttentionWithRope
+                mla_kwargs["skip_allreduce"] = True
+                mla_cls = TensorParallelLatentAttentionWithRope
+            case ParallelismMode.TP_TP:
+                mla_kwargs["dtype"] = DType.bfloat16
+                mla_kwargs["skip_allreduce"] = False
+                mla_cls = TensorParallelLatentAttentionWithRope
+            case ParallelismMode.DP_EP:
+                if use_fp8_mla:
+                    mla_kwargs["quant_config"] = config.quant_config
+                    mla_cls = DataParallelLatentAttentionWithRopeFp8
+                else:
+                    mla_kwargs["dtype"] = DType.bfloat16
+                    mla_cls = DataParallelLatentAttentionWithRope
 
         self.self_attn = mla_cls(**mla_kwargs)
 
@@ -441,7 +477,11 @@ class DeepseekV3DecoderLayer(Module):
                 moe = MoE(**moe_kwargs)
 
             num_devices = len(config.devices)
-            if num_devices > 1:
+            if self.mode == ParallelismMode.TP_TP:
+                moe.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    num_devices
+                )
+            elif num_devices > 1:
                 moe.sharding_strategy = ShardingStrategy.expert_parallel(
                     num_devices
                 )
@@ -455,9 +495,14 @@ class DeepseekV3DecoderLayer(Module):
                 devices=config.devices,
                 quant_config=config.quant_config,
             )
-            mlp.sharding_strategy = ShardingStrategy.replicate(
-                len(config.devices)
-            )
+            if self.mode == ParallelismMode.TP_TP:
+                mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
+                    len(config.devices)
+                )
+            else:
+                mlp.sharding_strategy = ShardingStrategy.replicate(
+                    len(config.devices)
+                )
             return mlp
 
     def __call__(
@@ -520,17 +565,7 @@ class DeepseekV3DecoderLayer(Module):
             mla_prefill_metadata=mla_prefill_metadata,
         )
 
-        if self.use_tp_ep:
-            # xs is replicated across all devices. attn_outs[i] is device i's
-            # partial sum (TP allreduce was skipped). The reduce-scatter below
-            # sums contributions from all devices, so adding the residual on
-            # every device would count it `num_devices` times.
-            hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
-            hs = ops.reducescatter.sum(hs, signal_buffers, axis=0)
-        else:
-            hs = [
-                x + attn_out for x, attn_out in zip(xs, attn_outs, strict=True)
-            ]
+        hs = self._post_attention(xs, attn_outs, signal_buffers)
 
         # Post-attention norm (per-device)
         norm_outs = forward_sharded_layers(
@@ -544,13 +579,62 @@ class DeepseekV3DecoderLayer(Module):
 
         mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
-        hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
-
-        if self.use_tp_ep:
-            hs = ops.allgather(hs, signal_buffers, axis=0)
-            hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
+        hs = self._post_mlp(hs, mlp_outs, signal_buffers)
+        hs = [ops.rebind(h, x.shape) for h, x in zip(hs, xs, strict=True)]
 
         return hs
+
+    def _post_attention(
+        self,
+        xs: list[TensorValue],
+        attn_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Residual connection and collective after attention."""
+        match self.mode:
+            case ParallelismMode.TP_EP:
+                # attn_outs[i] is device i's partial sum (allreduce was
+                # skipped).  Add the residual only on device 0 so it isn't
+                # counted P times after the reduce-scatter.
+                hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+                return ops.reducescatter.sum(hs, signal_buffers, axis=0)
+            case ParallelismMode.DP_EP | ParallelismMode.TP_TP:
+                return [
+                    x + attn_out
+                    for x, attn_out in zip(xs, attn_outs, strict=True)
+                ]
+            case _:
+                raise ValueError(f"Unsupported parallelism mode: {self.mode}")
+
+    def _post_mlp(
+        self,
+        hs: list[TensorValue],
+        mlp_outs: list[TensorValue],
+        signal_buffers: list[BufferValue],
+    ) -> list[TensorValue]:
+        """Collective after MoE/MLP to restore the expected hidden-state layout."""
+        match self.mode:
+            case ParallelismMode.TP_EP:
+                hs = [
+                    h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)
+                ]
+                hs = ops.allgather(hs, signal_buffers, axis=0)
+                return hs
+            case ParallelismMode.TP_TP:
+                if len(self.config.devices) > 1:
+                    mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
+                    hs = [
+                        h + mlp_out
+                        for h, mlp_out in zip(hs, mlp_outs, strict=True)
+                    ]
+                    return hs
+                return hs
+            case ParallelismMode.DP_EP:
+                return [
+                    h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)
+                ]
+            case _:
+                raise ValueError(f"Unsupported parallelism mode: {self.mode}")
 
 
 class DeepseekV3(Module):

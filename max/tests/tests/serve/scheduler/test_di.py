@@ -18,7 +18,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TypeVar
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -63,7 +63,6 @@ from max.serve.worker_interface.zmq_queue import (
 )
 from tests.serve.scheduler.common import (
     FakeOverlapPipeline,
-    FakeSpecDecodePipeline,
     FakeTokenGeneratorPipeline,
     PagedKVCacheManager,
     create_kv_cache,
@@ -149,13 +148,13 @@ def create_di_scheduler(
     """Creates a DecodeScheduler and PrefillScheduler pair for testing.
 
     Args:
-        overlap_prefill: When True, the PrefillScheduler uses FakeOverlapPipeline,
-            which mimics the one-batch output lag of OverlapTextGenerationPipeline.
-        overlap_decode: When True, the DecodeScheduler uses FakeOverlapPipeline,
-            which mimics the one-batch output lag of OverlapTextGenerationPipeline.
-        spec_decode_prefill: When True, the PrefillScheduler uses
-            FakeSpecDecodePipeline, which mimics the unified Eagle pipeline
-            (overlap disabled, draft tokens populated on contexts).
+        overlap_prefill: Use FakeOverlapPipeline in overlap mode (one-batch
+            output lag). Combine with spec_decode_prefill for the overlap +
+            spec decode path (num_speculative_tokens=1).
+        overlap_decode: Use FakeOverlapPipeline on decode.
+        spec_decode_prefill: Populate draft tokens during prefill CE.
+            Combined with overlap_prefill=False, opts out of the two-phase
+            path (disable_overlap=True), matching num_speculative_tokens > 1.
         num_speculative_tokens: Number of draft tokens per step when
             spec_decode_prefill is True.
     """
@@ -221,16 +220,15 @@ def create_di_scheduler(
     )
 
     prefill_pipeline: FakeTokenGeneratorPipeline
-    if spec_decode_prefill:
-        prefill_pipeline = FakeSpecDecodePipeline(
+    if spec_decode_prefill or overlap_prefill:
+        prefill_pipeline = FakeOverlapPipeline(
             kv_cache_prefill,
             max_seq_len=max_seq_len,
             start_token_id=99,
-            num_speculative_tokens=num_speculative_tokens,
-        )
-    elif overlap_prefill:
-        prefill_pipeline = FakeOverlapPipeline(
-            kv_cache_prefill, max_seq_len=max_seq_len, start_token_id=99
+            num_speculative_tokens=(
+                num_speculative_tokens if spec_decode_prefill else 0
+            ),
+            disable_overlap=not overlap_prefill,
         )
     else:
         prefill_pipeline = FakeTokenGeneratorPipeline(
@@ -1428,6 +1426,13 @@ def test_overlap_di_both_sides_minimal_output() -> None:
     assert FUTURE_TOKEN not in all_tokens
 
 
+# Spec decode + disable_overlap=True: covers the PrefillScheduler's
+# synchronous branch. Production Eagle currently always runs with overlap
+# enabled (see the overlap + spec decode section below), so this section
+# tests the scheduler path only and can be removed if the sync path is
+# retired.
+
+
 def test_spec_decode_prefill_sends_token_and_draft_tokens() -> None:
     """When the prefill pipeline uses unified Eagle (spec decode), the
     PrefillResponse must carry both the generated token and draft tokens."""
@@ -1529,8 +1534,9 @@ def test_spec_decode_prefill_does_not_accumulate_pending_first_token() -> None:
     # Prefill executes first batch
     prefill.run_iteration()
 
-    # After processing, _pending_first_token must be empty because spec
-    # decode uses the synchronous path (not two-phase).
+    # Overlap disabled here → synchronous path, never populates
+    # _pending_first_token. Overlap + spec decode is covered separately
+    # in test_overlap_spec_decode_prefill_uses_two_phase_path.
     assert len(prefill._pending_first_token) == 0
 
     # Both requests should have initiated transfers
@@ -1589,10 +1595,176 @@ def test_load_prefill_scheduler_rejects_standalone_spec_decode() -> None:
 
 
 def test_load_prefill_scheduler_accepts_eagle_spec_decode() -> None:
-    """load_prefill_scheduler must not reject eagle speculative decoding."""
-    spec = SpeculativeConfig(speculative_method="eagle")
-    # The validation in load_prefill_scheduler only checks spec_config
-    # methods; verify those pass without raising.
-    assert spec.is_eagle()
-    assert not spec.is_standalone()
-    assert not spec.is_mtp()
+    """load_prefill_scheduler returns a PrefillScheduler for eagle spec decode.
+
+    PrefillScheduler is patched so the test stays a unit — it would otherwise
+    need a full KV cache, transfer engine, and NIXL agent.
+    """
+    pipeline = MagicMock()
+    pipeline.kv_manager = MagicMock()
+    config = MagicMock()
+    config.speculative = SpeculativeConfig(speculative_method="eagle")
+    sentinel = MagicMock(name="PrefillScheduler")
+
+    with (
+        patch(
+            "max.serve.scheduler.prefill_scheduler.PrefillScheduler",
+            return_value=sentinel,
+        ) as prefill_scheduler_cls,
+        patch("max.serve.scheduler.prefill_scheduler.PrefillDispatcherServer"),
+        patch(
+            "max.serve.scheduler.prefill_scheduler."
+            "TokenGenerationSchedulerConfig.from_pipeline_config",
+        ) as from_pipeline_config,
+    ):
+        result = load_prefill_scheduler(pipeline, config, MagicMock())
+
+    assert result is sentinel
+    prefill_scheduler_cls.assert_called_once()
+    from_pipeline_config.assert_called_once_with(config)
+
+
+def test_load_prefill_scheduler_accepts_mtp_spec_decode() -> None:
+    """load_prefill_scheduler accepts mtp spec decode just like eagle."""
+    pipeline = MagicMock()
+    pipeline.kv_manager = MagicMock()
+    config = MagicMock()
+    config.speculative = SpeculativeConfig(speculative_method="mtp")
+
+    with (
+        patch("max.serve.scheduler.prefill_scheduler.PrefillScheduler"),
+        patch("max.serve.scheduler.prefill_scheduler.PrefillDispatcherServer"),
+        patch(
+            "max.serve.scheduler.prefill_scheduler."
+            "TokenGenerationSchedulerConfig.from_pipeline_config",
+        ),
+    ):
+        load_prefill_scheduler(pipeline, config, MagicMock())
+
+
+# Overlap + speculative decoding on the prefill side: CE deferral and
+# draft-token publication must coexist (num_speculative_tokens=1 path).
+
+
+def test_overlap_spec_decode_prefill_uses_two_phase_path() -> None:
+    """With overlap enabled, spec decode requests flow through the two-phase
+    path (deferred CE → flush), not the synchronous shortcut."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        spec_decode_prefill=True,
+        overlap_prefill=True,
+    )
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+    assert not prefill.pipeline._disable_overlap
+
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+
+    # Iter 1: CE deferred; _pending_first_token tracks the request.
+    decode.run_iteration()
+    prefill.run_iteration()
+
+    assert len(prefill._pending_first_token) == 1
+    assert ctx.request_id in prefill._pending_first_token
+    assert prefill.pipeline.has_pending_outputs()
+
+
+def test_overlap_spec_decode_prefill_response_carries_draft_tokens() -> None:
+    """After the two-phase flush, the PrefillResponse carries both the real
+    generated token and the populated draft tokens."""
+    num_spec_tokens = 1
+    decode, prefill, server_addr, q = create_di_scheduler(
+        spec_decode_prefill=True,
+        overlap_prefill=True,
+        num_speculative_tokens=num_spec_tokens,
+    )
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+
+    # Iter 1: defer. Iter 2: flush + send PrefillResponse.
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert prefill.pipeline.has_pending_outputs()
+    prefill.run_iteration()
+    assert not prefill.pipeline.has_pending_outputs()
+
+    metadata = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(metadata, KVTransferEngineMetadata)
+    response = decode.dispatcher.recv_reply_nowait()
+    assert isinstance(response, PrefillResponse)
+    assert response.id == ctx.request_id
+    assert response.generated_token_id != FUTURE_TOKEN
+    assert response.draft_tokens is not None
+    assert len(response.draft_tokens) == num_spec_tokens
+
+
+def test_overlap_spec_decode_end_to_end() -> None:
+    """Full DI lifecycle with overlap + spec decode on the prefill side."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        spec_decode_prefill=True,
+        overlap_prefill=True,
+        num_speculative_tokens=1,
+    )
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    req_id = ctx.request_id
+    q.request_queue.put(ctx)
+
+    decode.run_iteration()
+    prefill.run_iteration()  # defer
+    prefill.run_iteration()  # flush
+    decode.run_iteration()
+
+    output1 = q.response_queue.get()
+    sch1 = output1[req_id]
+    assert not sch1.is_done
+    tok1 = sch1.result
+    assert isinstance(tok1, TextGenerationOutput)
+    assert tok1.tokens == [99]
+
+    output2 = q.response_queue.get()
+    sch2 = output2[req_id]
+    assert sch2.is_done
+    tok2 = sch2.result
+    assert isinstance(tok2, TextGenerationOutput)
+    assert tok2.tokens == [42, 43, 44, 45]
+
+
+def test_overlap_spec_decode_cancel_between_defer_and_resolve() -> None:
+    """Cancelling an overlap + spec-decode request between CE deferral and
+    flush emits no PrefillResponse and does not crash."""
+    decode, prefill, server_addr, q = create_di_scheduler(
+        spec_decode_prefill=True,
+        overlap_prefill=True,
+        num_speculative_tokens=1,
+    )
+    assert isinstance(prefill.pipeline, FakeOverlapPipeline)
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+
+    decode.run_iteration()
+    prefill.run_iteration()
+    assert prefill.pipeline.has_pending_outputs()
+
+    # Cancel while request sits in _pending_first_token.
+    prefill.handle_cancel_request(CancelRequest(id=ctx.request_id))
+
+    prefill.run_iteration()
+    assert not prefill.pipeline.has_pending_outputs()
+
+    while True:
+        try:
+            msg = decode.dispatcher.recv_reply_nowait()
+            assert not isinstance(msg, PrefillResponse), (
+                "Cancelled overlap+spec-decode request must not produce a "
+                "PrefillResponse"
+            )
+        except queue.Empty:
+            break

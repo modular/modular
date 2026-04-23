@@ -22,6 +22,7 @@ from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     ops,
 )
@@ -122,7 +123,7 @@ class Gemma3Attention(Module, Shardable):
                 self.kv_weight_dim,
                 self.kv_weight_dim,
             ],
-            names=["q", "k", "v"],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=devices[0],
             stacked=False,
@@ -191,21 +192,86 @@ class Gemma3Attention(Module, Shardable):
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention.
-        mask_variant = (
-            MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if bool((self.layer_idx + 1) % self.sliding_window_pattern)
-            else MHAMaskVariant.CAUSAL_MASK
-        )
-        attn_out = flash_attention_ragged(
-            self.kv_params,
-            input=xq,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
-            mask_variant=mask_variant,
-            scale=self.scale,
-            local_window_size=self.local_window_size,
-        )
+        #
+        # For multimodal models, global (non-sliding) attention layers use
+        # bidirectional masking (NULL_MASK) when image tokens are present
+        # during prefill.  This matches the HuggingFace reference where
+        # image tokens attend to each other without causal constraints.
+        # For a single decode token NULL_MASK and CAUSAL_MASK are
+        # equivalent, so this is safe to apply unconditionally at runtime
+        # via ops.cond.
+        image_token_indices = kwargs.get("image_token_indices")
+
+        if use_local:
+            # Local (sliding-window) layers always use the sliding mask.
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=kwargs["input_row_offsets"],
+                mask_variant=MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
+                scale=self.scale,
+                local_window_size=self.local_window_size,
+            )
+        elif image_token_indices is not None:
+            # Global layer in a multimodal model: switch mask at runtime.
+            # shape_to_tensor gives us the runtime dimension as a tensor so
+            # we can branch on it with ops.cond.
+            num_image_tokens = ops.shape_to_tensor(image_token_indices.shape)
+            has_images = num_image_tokens[0] > ops.constant(
+                0, DType.int64, device=DeviceRef.CPU()
+            )
+
+            out_type = TensorType(
+                dtype=xq.dtype,
+                shape=xq.shape,
+                device=xq.device,
+            )
+
+            def _bidirectional_attn() -> TensorValue:
+                return flash_attention_ragged(
+                    self.kv_params,
+                    input=xq,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    input_row_offsets=kwargs["input_row_offsets"],
+                    mask_variant=MHAMaskVariant.NULL_MASK,
+                    scale=self.scale,
+                    local_window_size=self.local_window_size,
+                )
+
+            def _causal_attn() -> TensorValue:
+                return flash_attention_ragged(
+                    self.kv_params,
+                    input=xq,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    input_row_offsets=kwargs["input_row_offsets"],
+                    mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                    scale=self.scale,
+                    local_window_size=self.local_window_size,
+                )
+
+            attn_out = ops.cond(
+                has_images,
+                [out_type],
+                _bidirectional_attn,
+                _causal_attn,
+            )[0].tensor
+        else:
+            # Text-only model: standard causal mask.
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=kwargs["input_row_offsets"],
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=self.scale,
+                local_window_size=self.local_window_size,
+            )
+
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
         return ret

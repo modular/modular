@@ -32,7 +32,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
         var idx = tensor.layout(Coord(index))
-        print(tensor.flat_load(idx))
+        print(tensor.raw_load(idx))
 
     elementwise[print_elements_lambda, 1](shape)
 
@@ -94,7 +94,7 @@ def test_slice[
         step_tensor[dim] = Scalar[DType.int](steps[dim])
 
     for i in range(numelems):
-        in_tensor.flat_store(i, Scalar[dtype](i))
+        in_tensor.raw_store(i, Scalar[dtype](i))
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(

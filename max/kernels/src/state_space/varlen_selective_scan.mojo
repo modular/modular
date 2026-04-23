@@ -100,7 +100,7 @@ def varlen_selective_state_update_gpu[
     # Determine state batch index
     var state_batch_idx = Int32(pid_b)
     if Bool(Int(has_state_batch_indices) != 0):
-        state_batch_idx = state_batch_indices.flat_load(pid_b)
+        state_batch_idx = state_batch_indices.raw_load(pid_b)
         # Check for padding
         if state_batch_idx == pad_slot_id:
             return
@@ -122,13 +122,15 @@ def varlen_selective_state_update_gpu[
         var x_offset = UInt32(
             pid_b * x_strides[0] + pid_h * x_strides[1] + m * x_strides[2]
         )
-        var x_val = Scalar[kernel_dtype](x.ptr[x_offset]).cast[DType.float32]()
+        var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[
+            DType.float32
+        ]()
 
         # Load dt value
         var dt_offset = UInt32(
             pid_b * dt_strides[0] + pid_h * dt_strides[1] + m * dt_strides[2]
         )
-        var dt_val = Scalar[kernel_dtype](dt.ptr[dt_offset]).cast[
+        var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
             DType.float32
         ]()
 
@@ -138,7 +140,7 @@ def varlen_selective_state_update_gpu[
                 pid_h * dt_bias_strides[0] + m * dt_bias_strides[1]
             )
             var bias_val = Scalar[kernel_dtype](
-                dt_bias.flat_load(dt_bias_offset)
+                dt_bias.raw_load(dt_bias_offset)
             ).cast[DType.float32]()
             dt_val += bias_val
 
@@ -154,7 +156,7 @@ def varlen_selective_state_update_gpu[
             var A_offset = UInt32(
                 pid_h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
             )
-            var A_val = Scalar[kernel_dtype](A.ptr[A_offset]).cast[
+            var A_val = Scalar[kernel_dtype](A.raw_load(A_offset)).cast[
                 DType.float32
             ]()
 
@@ -167,7 +169,7 @@ def varlen_selective_state_update_gpu[
                 + group_id * B_strides[1]
                 + n * B_strides[2]
             )
-            var B_val = Scalar[kernel_dtype](B.ptr[B_offset]).cast[
+            var B_val = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
                 DType.float32
             ]()
 
@@ -181,15 +183,15 @@ def varlen_selective_state_update_gpu[
                 + m * state_strides[2]
                 + n * state_strides[3]
             )
-            var state_val = Scalar[kernel_dtype](state.ptr[state_offset]).cast[
-                DType.float32
-            ]()
+            var state_val = Scalar[kernel_dtype](
+                state.raw_load(state_offset)
+            ).cast[DType.float32]()
 
             # Update state: state = state * dA + dB * x
             state_val = state_val * dA + dB * x_val
 
             # Store updated state
-            state.flat_store(
+            state.raw_store(
                 state_offset,
                 Scalar[kernel_dtype](state_val.cast[kernel_dtype]()),
             )
@@ -200,7 +202,7 @@ def varlen_selective_state_update_gpu[
                 + group_id * C_strides[1]
                 + n * C_strides[2]
             )
-            var C_val = Scalar[kernel_dtype](C.ptr[C_offset]).cast[
+            var C_val = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
                 DType.float32
             ]()
 
@@ -210,7 +212,7 @@ def varlen_selective_state_update_gpu[
         # Add skip connection if D is present
         if has_D:
             var D_offset = UInt32(pid_h * D_strides[0] + m * D_strides[1])
-            var D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[
+            var D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
                 DType.float32
             ]()
             out_val += x_val * D_val
@@ -220,7 +222,7 @@ def varlen_selective_state_update_gpu[
             var z_offset = UInt32(
                 pid_b * z_strides[0] + pid_h * z_strides[1] + m * z_strides[2]
             )
-            var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[
+            var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
                 DType.float32
             ]()
             out_val *= silu(z_val)
@@ -229,7 +231,7 @@ def varlen_selective_state_update_gpu[
         var out_offset = UInt32(
             pid_b * out_strides[0] + pid_h * out_strides[1] + m * out_strides[2]
         )
-        output.flat_store(
+        output.raw_store(
             out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
@@ -311,8 +313,8 @@ def varlen_selective_scan_fwd_gpu[
     var delta_softplus_bool = Bool(Int(delta_softplus) != 0)
 
     # Get sequence start and length
-    var seq_start = Int(query_start_loc.flat_load(b))
-    var seq_end = Int(query_start_loc.flat_load(b + 1))
+    var seq_start = Int(query_start_loc.raw_load(b))
+    var seq_end = Int(query_start_loc.raw_load(b + 1))
     var seq_len = seq_end - seq_start
 
     if seq_len <= 0:
@@ -321,7 +323,7 @@ def varlen_selective_scan_fwd_gpu[
     # Get cache index for this sequence
     var cache_idx = b
     if has_cache_indices:
-        cache_idx = Int(cache_indices.flat_load(b))
+        cache_idx = Int(cache_indices.raw_load(b))
         if cache_idx == Int(pad_slot_id):
             return
 
@@ -329,14 +331,14 @@ def varlen_selective_scan_fwd_gpu[
     var D_val = Float32(0.0)
     if has_D:
         var D_offset = UInt32(d * D_strides[0])
-        D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
+        D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[DType.float32]()
 
     var delta_bias_val = Float32(0.0)
     if has_delta_bias:
         var bias_offset = UInt32(d * delta_bias_strides[0])
-        delta_bias_val = Scalar[kernel_dtype](delta_bias.ptr[bias_offset]).cast[
-            DType.float32
-        ]()
+        delta_bias_val = Scalar[kernel_dtype](
+            delta_bias.raw_load(bias_offset)
+        ).cast[DType.float32]()
 
     # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
     var A_vals = SIMD[DType.float32, MAX_DSTATE](0.0)
@@ -344,7 +346,8 @@ def varlen_selective_scan_fwd_gpu[
     comptime for n in range(DSTATE):
         var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
         A_vals[n] = (
-            Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]() * LOG2E
+            Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
+            * LOG2E
         )
 
     # Determine group for this dim
@@ -357,7 +360,7 @@ def varlen_selective_scan_fwd_gpu[
     # Load initial state if requested
     var use_initial_state = False
     if has_initial_state_tensor:
-        var init_state_val = has_initial_state.flat_load(b)
+        var init_state_val = has_initial_state.raw_load(b)
         use_initial_state = Bool(init_state_val)
 
     if use_initial_state:
@@ -367,9 +370,9 @@ def varlen_selective_scan_fwd_gpu[
                 + d * ssm_states_strides[1]
                 + n * ssm_states_strides[2]
             )
-            state[n] = Scalar[kernel_dtype](ssm_states.ptr[state_offset]).cast[
-                DType.float32
-            ]()
+            state[n] = Scalar[kernel_dtype](
+                ssm_states.raw_load(state_offset)
+            ).cast[DType.float32]()
 
     # Process sequence
     for t in range(seq_len):
@@ -377,13 +380,15 @@ def varlen_selective_scan_fwd_gpu[
 
         # Load u value
         var u_offset = UInt32(d * u_strides[0] + global_t * u_strides[1])
-        var u_val = Scalar[kernel_dtype](u.ptr[u_offset]).cast[DType.float32]()
+        var u_val = Scalar[kernel_dtype](u.raw_load(u_offset)).cast[
+            DType.float32
+        ]()
 
         # Load delta value
         var delta_offset = UInt32(
             d * delta_strides[0] + global_t * delta_strides[1]
         )
-        var delta_val = Scalar[kernel_dtype](delta.ptr[delta_offset]).cast[
+        var delta_val = Scalar[kernel_dtype](delta.raw_load(delta_offset)).cast[
             DType.float32
         ]()
 
@@ -413,10 +418,10 @@ def varlen_selective_scan_fwd_gpu[
                 + global_t * C_strides[2]
             )
 
-            B_vals[n] = Scalar[kernel_dtype](B.ptr[B_offset]).cast[
+            B_vals[n] = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
                 DType.float32
             ]()
-            C_vals[n] = Scalar[kernel_dtype](C.ptr[C_offset]).cast[
+            C_vals[n] = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
                 DType.float32
             ]()
 
@@ -435,13 +440,13 @@ def varlen_selective_scan_fwd_gpu[
         # Apply gating with z if present, using optimized silu
         if has_z:
             var z_offset = UInt32(d * z_strides[0] + global_t * z_strides[1])
-            var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[
+            var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
                 DType.float32
             ]()
             output_val *= silu(z_val)
 
             # Write to z if z is present (vLLM convention: output written to z)
-            z.flat_store(
+            z.raw_store(
                 z_offset, Scalar[kernel_dtype](output_val.cast[kernel_dtype]())
             )
         else:
@@ -449,7 +454,7 @@ def varlen_selective_scan_fwd_gpu[
             var out_offset = UInt32(
                 d * out_strides[0] + global_t * out_strides[1]
             )
-            output.flat_store(
+            output.raw_store(
                 out_offset,
                 Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
             )
@@ -461,7 +466,7 @@ def varlen_selective_scan_fwd_gpu[
             + d * ssm_states_strides[1]
             + n * ssm_states_strides[2]
         )
-        ssm_states.flat_store(
+        ssm_states.raw_store(
             state_offset, Scalar[kernel_dtype](state[n].cast[kernel_dtype]())
         )
 
@@ -517,7 +522,7 @@ def varlen_selective_state_update_cpu[
         # Determine state batch index
         var state_batch_idx = Int32(b)
         if has_state_batch_indices_bool:
-            state_batch_idx = state_batch_indices.flat_load(b)
+            state_batch_idx = state_batch_indices.raw_load(b)
             if state_batch_idx == pad_slot_id:
                 return
 
@@ -527,13 +532,15 @@ def varlen_selective_state_update_cpu[
         var x_offset = UInt32(
             b * x_strides[0] + h * x_strides[1] + m * x_strides[2]
         )
-        var x_val = Scalar[kernel_dtype](x.ptr[x_offset]).cast[DType.float32]()
+        var x_val = Scalar[kernel_dtype](x.raw_load(x_offset)).cast[
+            DType.float32
+        ]()
 
         # Load dt value
         var dt_offset = UInt32(
             b * dt_strides[0] + h * dt_strides[1] + m * dt_strides[2]
         )
-        var dt_val = Scalar[kernel_dtype](dt.ptr[dt_offset]).cast[
+        var dt_val = Scalar[kernel_dtype](dt.raw_load(dt_offset)).cast[
             DType.float32
         ]()
 
@@ -543,7 +550,7 @@ def varlen_selective_state_update_cpu[
                 h * dt_bias_strides[0] + m * dt_bias_strides[1]
             )
             var bias_val = Scalar[kernel_dtype](
-                dt_bias.flat_load(dt_bias_offset)
+                dt_bias.raw_load(dt_bias_offset)
             ).cast[DType.float32]()
             dt_val += bias_val
 
@@ -559,7 +566,7 @@ def varlen_selective_state_update_cpu[
             var A_offset = UInt32(
                 h * A_strides[0] + m * A_strides[1] + n * A_strides[2]
             )
-            var A_val = Scalar[kernel_dtype](A.ptr[A_offset]).cast[
+            var A_val = Scalar[kernel_dtype](A.raw_load(A_offset)).cast[
                 DType.float32
             ]()
 
@@ -570,7 +577,7 @@ def varlen_selective_state_update_cpu[
             var B_offset = UInt32(
                 b * B_strides[0] + group_id * B_strides[1] + n * B_strides[2]
             )
-            var B_val = Scalar[kernel_dtype](B.ptr[B_offset]).cast[
+            var B_val = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
                 DType.float32
             ]()
 
@@ -584,15 +591,15 @@ def varlen_selective_state_update_cpu[
                 + m * state_strides[2]
                 + n * state_strides[3]
             )
-            var state_val = Scalar[kernel_dtype](state.ptr[state_offset]).cast[
-                DType.float32
-            ]()
+            var state_val = Scalar[kernel_dtype](
+                state.raw_load(state_offset)
+            ).cast[DType.float32]()
 
             # Update state
             state_val = state_val * dA + dB * x_val
 
             # Store updated state
-            state.flat_store(
+            state.raw_store(
                 state_offset,
                 Scalar[kernel_dtype](state_val.cast[kernel_dtype]()),
             )
@@ -601,7 +608,7 @@ def varlen_selective_state_update_cpu[
             var C_offset = UInt32(
                 b * C_strides[0] + group_id * C_strides[1] + n * C_strides[2]
             )
-            var C_val = Scalar[kernel_dtype](C.ptr[C_offset]).cast[
+            var C_val = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
                 DType.float32
             ]()
 
@@ -611,7 +618,7 @@ def varlen_selective_state_update_cpu[
         # Add skip connection if D is present
         if has_D:
             var D_offset = UInt32(h * D_strides[0] + m * D_strides[1])
-            var D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[
+            var D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
                 DType.float32
             ]()
             out_val += x_val * D_val
@@ -621,7 +628,7 @@ def varlen_selective_state_update_cpu[
             var z_offset = UInt32(
                 b * z_strides[0] + h * z_strides[1] + m * z_strides[2]
             )
-            var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[
+            var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
                 DType.float32
             ]()
             out_val *= silu(z_val)
@@ -630,7 +637,7 @@ def varlen_selective_state_update_cpu[
         var out_offset = UInt32(
             b * out_strides[0] + h * out_strides[1] + m * out_strides[2]
         )
-        output.flat_store(
+        output.raw_store(
             out_offset, Scalar[kernel_dtype](out_val.cast[kernel_dtype]())
         )
 
@@ -688,13 +695,15 @@ def varlen_selective_scan_fwd_cpu[
         var D_val = Float32(0.0)
         if has_D:
             var D_offset = UInt32(d * D_strides[0])
-            D_val = Scalar[kernel_dtype](D.ptr[D_offset]).cast[DType.float32]()
+            D_val = Scalar[kernel_dtype](D.raw_load(D_offset)).cast[
+                DType.float32
+            ]()
 
         var delta_bias_val = Float32(0.0)
         if has_delta_bias:
             var bias_offset = UInt32(d * delta_bias_strides[0])
             delta_bias_val = Scalar[kernel_dtype](
-                delta_bias.flat_load(bias_offset)
+                delta_bias.raw_load(bias_offset)
             ).cast[DType.float32]()
 
         # Pre-load A values for this dim and pre-multiply by LOG2E for faster exp2
@@ -703,7 +712,7 @@ def varlen_selective_scan_fwd_cpu[
         comptime for n in range(DSTATE):
             var A_offset = UInt32(d * A_strides[0] + n * A_strides[1])
             A_vals[n] = (
-                Scalar[kernel_dtype](A.ptr[A_offset]).cast[DType.float32]()
+                Scalar[kernel_dtype](A.raw_load(A_offset)).cast[DType.float32]()
                 * LOG2E
             )
 
@@ -711,8 +720,8 @@ def varlen_selective_scan_fwd_cpu[
 
         # Process each sequence
         for b in range(batch):
-            var seq_start = Int(query_start_loc.flat_load(b))
-            var seq_end = Int(query_start_loc.flat_load(b + 1))
+            var seq_start = Int(query_start_loc.raw_load(b))
+            var seq_end = Int(query_start_loc.raw_load(b + 1))
             var seq_len = seq_end - seq_start
 
             if seq_len <= 0:
@@ -720,7 +729,7 @@ def varlen_selective_scan_fwd_cpu[
 
             var cache_idx = b
             if has_cache_indices:
-                cache_idx = Int(cache_indices.flat_load(b))
+                cache_idx = Int(cache_indices.raw_load(b))
                 if cache_idx == Int(pad_slot_id):
                     continue
 
@@ -729,7 +738,7 @@ def varlen_selective_scan_fwd_cpu[
 
             var use_initial_state = False
             if has_initial_state_tensor:
-                var init_state_val = has_initial_state.flat_load(b)
+                var init_state_val = has_initial_state.raw_load(b)
                 use_initial_state = Bool(init_state_val)
 
             if use_initial_state:
@@ -740,7 +749,7 @@ def varlen_selective_scan_fwd_cpu[
                         + n * ssm_states_strides[2]
                     )
                     state[n] = Scalar[kernel_dtype](
-                        ssm_states.flat_load(state_offset)
+                        ssm_states.raw_load(state_offset)
                     ).cast[DType.float32]()
 
             # Process sequence
@@ -750,7 +759,7 @@ def varlen_selective_scan_fwd_cpu[
                 var u_offset = UInt32(
                     d * u_strides[0] + global_t * u_strides[1]
                 )
-                var u_val = Scalar[kernel_dtype](u.ptr[u_offset]).cast[
+                var u_val = Scalar[kernel_dtype](u.raw_load(u_offset)).cast[
                     DType.float32
                 ]()
 
@@ -761,7 +770,7 @@ def varlen_selective_scan_fwd_cpu[
                     d * out_strides[0] + global_t * out_strides[1]
                 )
                 var delta_val = Scalar[kernel_dtype](
-                    delta.flat_load(delta_offset)
+                    delta.raw_load(delta_offset)
                 ).cast[DType.float32]()
 
                 if has_delta_bias:
@@ -787,10 +796,10 @@ def varlen_selective_scan_fwd_cpu[
                         + global_t * C_strides[2]
                     )
 
-                    B_vals[n] = Scalar[kernel_dtype](B.ptr[B_offset]).cast[
+                    B_vals[n] = Scalar[kernel_dtype](B.raw_load(B_offset)).cast[
                         DType.float32
                     ]()
-                    C_vals[n] = Scalar[kernel_dtype](C.ptr[C_offset]).cast[
+                    C_vals[n] = Scalar[kernel_dtype](C.raw_load(C_offset)).cast[
                         DType.float32
                     ]()
 
@@ -809,17 +818,18 @@ def varlen_selective_scan_fwd_cpu[
                     var z_offset = UInt32(
                         d * z_strides[0] + global_t * z_strides[1]
                     )
-                    var z_val = Scalar[kernel_dtype](z.ptr[z_offset]).cast[
+                    var z_val = Scalar[kernel_dtype](z.raw_load(z_offset)).cast[
                         DType.float32
                     ]()
                     output_val *= silu(z_val)
-                    z.flat_store(
+                    z.raw_store(
                         z_offset,
                         Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
                     )
                 else:
-                    output.ptr[out_offset] = Scalar[kernel_dtype](
-                        output_val.cast[kernel_dtype]()
+                    output.raw_store(
+                        out_offset,
+                        Scalar[kernel_dtype](output_val.cast[kernel_dtype]()),
                     )
 
             # Store final state
@@ -829,8 +839,9 @@ def varlen_selective_scan_fwd_cpu[
                     + d * ssm_states_strides[1]
                     + n * ssm_states_strides[2]
                 )
-                ssm_states.ptr[state_offset] = Scalar[kernel_dtype](
-                    state[n].cast[kernel_dtype]()
+                ssm_states.raw_store(
+                    state_offset,
+                    Scalar[kernel_dtype](state[n].cast[kernel_dtype]()),
                 )
 
     sync_parallelize[worker](dim, ctx)

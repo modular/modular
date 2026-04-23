@@ -58,7 +58,7 @@ def _argsort_cpu[
     def fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.flat_store(
+        indices.raw_store(
             offset[0],
             iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
         )
@@ -289,6 +289,7 @@ def _argsort_gpu_impl[
     comptime BLOCK_SIZE = 256
 
     # Global merge step kernel (nested: simple enough, no shared memory).
+    @parameter
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
@@ -411,11 +412,11 @@ def _argsort_gpu[
         ](offset: IndexList[rank]):
             var i = offset[0]
 
-            indices.flat_store(
+            indices.raw_store(
                 i,
                 iota[indices.dtype, width](Scalar[indices.dtype](i)),
             )
-            input_copy.flat_store[alignment=simd_width_of[input_copy.dtype]()](
+            input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
                 i, input.ptr.load[width=width](i)
             )
 
@@ -460,20 +461,20 @@ def _argsort_gpu[
     ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
-            padded_indices.flat_store(
+            padded_indices.raw_store(
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
             )
-            padded_input.flat_store[
+            padded_input.raw_store[
                 alignment=simd_width_of[padded_input.dtype]()
-            ](i, input.flat_load[width=width](i))
+            ](i, input.raw_load[width=width](i))
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
         comptime UNKNOWN_VALUE = -1
-        padded_indices.flat_store(
+        padded_indices.raw_store(
             i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
         )
-        padded_input.flat_store(
+        padded_input.raw_store(
             i,
             SIMD[padded_input.dtype, width](
                 _sentinel_val[padded_input.dtype, ascending]()
@@ -498,8 +499,8 @@ def _argsort_gpu[
     def extract_indices[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.flat_store(
-            offset[0], padded_indices.flat_load[width=width](offset[0])
+        indices.raw_store(
+            offset[0], padded_indices.raw_load[width=width](offset[0])
         )
 
     # Extract the unpadded indices from the padded indices.

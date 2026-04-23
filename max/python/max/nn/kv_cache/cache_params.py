@@ -558,6 +558,13 @@ class KVCacheParams(KVCacheParamInterface):
                     # MHA reads 4-value metadata on CPU.
                     device=device if self.is_mla else DeviceRef.CPU(),
                 ),
+                draft_attention_dispatch_metadata=TensorType(
+                    DType.int64,
+                    shape=[3] if self.is_mla else [4],
+                    device=device if self.is_mla else DeviceRef.CPU(),
+                )
+                if self.num_eagle_speculative_tokens > 0
+                else None,
             )
             for device in devices
         ]

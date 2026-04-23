@@ -23,6 +23,9 @@ from max.driver import Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental import functional as F
+from max.experimental.sharding import (
+    DeviceMesh,
+)
 from max.graph import DeviceRef, TensorType
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
@@ -141,16 +144,19 @@ class Gemma3Model(
         ).to(self.devices[0])
 
         with CompilationTimer("model") as timer:
-            device0 = self.devices[0]
-            device_ref = DeviceRef(device0.label, device0.id)
+            n_devices = len(self.devices)
+            mesh = DeviceMesh(tuple(self.devices), (n_devices,), ("tp",))
+
             tokens_type = TensorType(
-                DType.int64, shape=["total_seq_len"], device=device_ref
+                DType.int64, shape=["total_seq_len"], device=self.devices[0]
             )
+
             input_row_offsets_type = TensorType(
                 DType.uint32,
                 shape=["input_row_offsets_len"],
-                device=device0,
+                device=self.devices[0],
             )
+
             return_n_logits_type = TensorType(
                 DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
             )
@@ -183,7 +189,7 @@ class Gemma3Model(
 
             with F.lazy():
                 nn_model = Gemma3(model_config, self.kv_params)
-                nn_model.to(self.devices[0])
+                nn_model.to(mesh)
 
             kv_inputs = self.kv_params.get_symbolic_inputs()
             flattened_kv_types = kv_inputs.flatten()

@@ -269,9 +269,8 @@ def grouped_matmul_block_scaled[
 
     # _b_scales: 6D -> 4D uint16 (1, num_experts*N_groups, K_groups, sf_atom_u16)
     # Global view always uses sf_atom_u16 (full atom); TMA tile may be smaller.
-    var sfb_dim0 = (
-        _b_scales.layout.shape[0]().value()
-        * _b_scales.layout.shape[1]().value()
+    var sfb_dim0 = Int(_b_scales.layout.shape[0]().value()) * Int(
+        _b_scales.layout.shape[1]().value()
     )
     var sfb_4d_shape = Coord(
         Idx[1](),

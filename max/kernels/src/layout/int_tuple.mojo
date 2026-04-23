@@ -327,17 +327,9 @@ struct _IntTupleIter[origin: ImmutOrigin](
             `StopIteration` when iteration is complete.
         """
         var idx = self.idx
+        self.idx += 1
         if idx >= len(self.src[]):
             raise StopIteration()
-        self.idx += 1
-        return self.src[][idx]
-
-    # FIXME(GENAI-359): Remove __next_old__ and __has_next__ once we figure out
-    # why doing so regresses code generation.
-    @always_inline
-    def __next_old__(mut self) -> Self.Element:
-        var idx = self.idx
-        self.idx += 1
         return self.src[][idx]
 
     @always_inline
@@ -556,7 +548,9 @@ struct IntTuple(
         self.validate_structure()
 
     @always_inline("nodebug")
-    def __init__(out self, *elements: IntTuple, __list_literal__: () = ()):
+    def __init__(
+        out self, *elements: IntTuple, __list_literal__: NoneType = None
+    ):
         """Initialize an `IntTuple` with nested IntTuples.
 
         Creates a hierarchical `IntTuple` containing the provided `IntTuple` elements,

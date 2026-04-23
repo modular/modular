@@ -1474,7 +1474,7 @@ def output_reg_to_smem_st_matrix[
             )
             var accum_smem_idx = swizzle(st_matrix_rt_layout(st_matrix_args))
             var offset = accum_smem_tile.ptr + accum_smem_idx
-            var output_frag = output_reg_tile.flat_load[width=8](
+            var output_frag = output_reg_tile.raw_load[width=8](
                 m_mma * o_frag_size + i * 8
             ).cast[output_type]()
             var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)

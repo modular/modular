@@ -1546,7 +1546,7 @@ def get_waves_per_eu(depth: Int) -> Int:
 # ===-----------------------------------------------------------------------===#
 
 
-@__llvm_metadata(`rocdl.waves_per_eu`=get_waves_per_eu(config.depth))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(config.depth)))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
         Int32(config.num_threads())
@@ -3153,7 +3153,7 @@ def mha_single_batch_pipelined[
 
 
 # Entry point for mha_decoding with batch_size > 1.
-@__llvm_metadata(`rocdl.waves_per_eu`=get_waves_per_eu(depth))
+@__llvm_metadata(`rocdl.waves_per_eu`=SIMDSize(get_waves_per_eu(depth)))
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )

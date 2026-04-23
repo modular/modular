@@ -13,7 +13,6 @@
 """Defines a Variant type."""
 
 from std.builtin.rebind import downcast
-from std.builtin.variadics import Variadic
 from std.compile import get_type_name
 from std.format._utils import (
     FormatStruct,
@@ -399,21 +398,18 @@ when eligible, falling back to the general discriminant-tagged storage."""
 
 
 struct Variant[*Ts: Movable](
-    Copyable where AllCopyable[*Ts.upcast[AnyType]()],
-    Equatable where AllEquatable[*Ts.upcast[AnyType]()],
-    Hashable where AllHashable[*Ts.upcast[AnyType]()],
+    Copyable where AllCopyable[*Ts],
+    Equatable where AllEquatable[*Ts],
+    Hashable where AllHashable[*Ts],
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
     # ImplicitlyCopyable refines Copyable, but the compiler can't infer
     # parent trait constraints from derived ones yet. Remove AllCopyable
     # from this where clause once that's fixed.
-    ImplicitlyCopyable where (
-        AllImplicitlyCopyable[*Ts.upcast[AnyType]()]
-        and AllCopyable[*Ts.upcast[AnyType]()]
-    ),
+    ImplicitlyCopyable where AllImplicitlyCopyable[*Ts] and AllCopyable[*Ts],
     ImplicitlyDestructible,
     Movable,
-    RegisterPassable where AllRegisterPassable[*Ts.upcast[AnyType]()],
-    Writable where AllWritable[*Ts.upcast[AnyType]()],
+    RegisterPassable where AllRegisterPassable[*Ts],
+    Writable where AllWritable[*Ts],
 ):
     """A union that can hold a runtime-variant value from a set of predefined
     types.
@@ -527,9 +523,7 @@ struct Variant[*Ts: Movable](
             implement `Copyable` enable copy semantics for the variant.
     """
 
-    comptime _Storage: _VariantStorage = _VariantStorageFor[
-        *Self.Ts.upcast[AnyType]()
-    ]
+    comptime _Storage: _VariantStorage = _VariantStorageFor[*Self.Ts]
 
     comptime __del__is_trivial = Self._Storage.__del__is_trivial
     comptime __copy_ctor_is_trivial = Self._Storage.__copy_ctor_is_trivial
@@ -540,7 +534,7 @@ struct Variant[*Ts: Movable](
 
     @staticmethod
     def _check[T: AnyType]():
-        comptime idx = _get_type_index[T, *Self.Ts.upcast[AnyType]()]()
+        comptime idx = _get_type_index[T, *Self.Ts]()
         comptime assert (
             idx != _InvalidTypeIndex
         ), "Type does not exist in Variant."
@@ -575,7 +569,7 @@ struct Variant[*Ts: Movable](
         # Variant[_NoneType, T] can't prove AllCopyable from conforms_to(T,
         # Copyable)). Using comptime assert as a workaround.
         comptime assert AllCopyable[
-            *Self.Ts.upcast[AnyType]()
+            *Self.Ts
         ], "Cannot copy Variant with non-copyable types"
         self._storage = Self._Storage(copy=copy._storage)
 
@@ -586,7 +580,7 @@ struct Variant[*Ts: Movable](
             take: The variant to move from.
         """
         comptime assert _all_movable[
-            *Self.Ts.upcast[AnyType]()
+            *Self.Ts
         ](), "Cannot move Variant with non-movable types"
         self._storage = Self._Storage(take=take._storage^)
 
@@ -597,7 +591,7 @@ struct Variant[*Ts: Movable](
             All types in `Ts` must conform to `ImplicitlyDestructible`.
         """
         comptime assert _all_implicitly_destructible[
-            *Self.Ts.upcast[AnyType]()
+            *Self.Ts
         ](), "Cannot call __del__ on Variant with explicitly destroyed types"
         self._storage^.__del__()
 
@@ -628,9 +622,7 @@ struct Variant[*Ts: Movable](
         return self.unsafe_get[T]()
 
     @always_inline
-    def __eq__(
-        self, other: Self
-    ) -> Bool where AllEquatable[*Self.Ts.upcast[AnyType]()]:
+    def __eq__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
         """Compares two variants for equality.
 
         Two variants are equal if they hold the same type and the held
@@ -653,9 +645,7 @@ struct Variant[*Ts: Movable](
         return False
 
     @always_inline
-    def __ne__(
-        self, other: Self
-    ) -> Bool where AllEquatable[*Self.Ts.upcast[AnyType]()]:
+    def __ne__(self, other: Self) -> Bool where AllEquatable[*Self.Ts]:
         """Compares two variants for inequality.
 
         Args:
@@ -666,9 +656,7 @@ struct Variant[*Ts: Movable](
         """
         return not self == other
 
-    def __hash__(
-        self, mut hasher: Some[Hasher]
-    ) where AllHashable[*Self.Ts.upcast[AnyType]()]:
+    def __hash__(self, mut hasher: Some[Hasher]) where AllHashable[*Self.Ts]:
         """Hashes the variant using the given hasher.
 
         The hash incorporates both the type discriminant and the held
@@ -691,9 +679,7 @@ struct Variant[*Ts: Movable](
 
     def _write_value_to[
         *, is_repr: Bool
-    ](self, mut writer: Some[Writer]) where AllWritable[
-        *Self.Ts.upcast[AnyType]()
-    ]:
+    ](self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
         comptime for i in range(Self.Ts.size):
             comptime T = Self.Ts[i]
             if self.isa[T]():
@@ -707,9 +693,7 @@ struct Variant[*Ts: Movable](
                 return
 
     @no_inline
-    def write_to(
-        self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.Ts.upcast[AnyType]()]:
+    def write_to(self, mut writer: Some[Writer]) where AllWritable[*Self.Ts]:
         """Writes the currently held variant value to the provided Writer.
 
         Args:
@@ -720,7 +704,7 @@ struct Variant[*Ts: Movable](
     @no_inline
     def write_repr_to(
         self, mut writer: Some[Writer]
-    ) where AllWritable[*Self.Ts.upcast[AnyType]()]:
+    ) where AllWritable[*Self.Ts]:
         """Write the string representation of the Variant.
 
         Args:
@@ -731,9 +715,9 @@ struct Variant[*Ts: Movable](
         def write_field(mut w: Some[Writer]):
             self._write_value_to[is_repr=True](w)
 
-        FormatStruct(writer, "Variant").params(
-            TypeNames[*Self.Ts.upcast[AnyType]()]()
-        ).fields[FieldsFn=write_field]()
+        FormatStruct(writer, "Variant").params(TypeNames[*Self.Ts]()).fields[
+            FieldsFn=write_field
+        ]()
 
     @always_inline
     def take[T: Movable](deinit self) -> T:

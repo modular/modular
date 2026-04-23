@@ -54,7 +54,7 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
 
 def cast_uint_to_fp4e2m1[
     in_dtype: DType,
-    in_width: Int,
+    in_width: SIMDSize,
     //,
     *,
     out_dtype: DType,
@@ -91,7 +91,7 @@ def cast_uint_to_fp4e2m1[
 
 def cast_fp_to_fp4e2m1[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
 ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
     comptime assert dtype in (
@@ -134,7 +134,7 @@ def cast_fp_to_fp4e2m1[
 
 
 def cast_fp32_to_fp4e2m1[
-    width: Int,
+    width: SIMDSize,
     //,
 ](x: SIMD[DType.float32, width]) -> UInt32:
     comptime assert (
@@ -180,7 +180,7 @@ cvt.rn.f16x2.e2m1x2 $0, byte0;
 
 @always_inline
 def cast_float_to_fp4e2m1_amd[
-    dtype: DType, width: Int, //
+    dtype: DType, width: SIMDSize, //
 ](input: SIMD[dtype, width], scale: Float32) -> UInt32:
     comptime assert (
         _cdna_4_or_newer()
@@ -213,7 +213,7 @@ def set_scale_factor[
     scales_layout: Layout,
     //,
     SF_VECTOR_SIZE: Int,
-    width: Int,
+    width: SIMDSize,
 ](
     scales_tensor: LayoutTensor[mut=True, scales_dtype, scales_layout, ...],
     row_idx: Int,
@@ -242,7 +242,7 @@ def set_scale_factor[
 
 def set_scale_factor[
     scales_dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     SF_VECTOR_SIZE: Int,
 ](
@@ -464,9 +464,9 @@ def convert_ref_scales_to_mxfp8_format[
     comptime assert a_scales_layout.rank() == 5, "a_scales must be 5D"
     comptime assert b_scales_layout.rank() == 5, "b_scales must be 5D"
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     # initialize a_scales_tensor and b_scales_tensor based on reference scales
     for m in range(M):

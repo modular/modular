@@ -993,7 +993,7 @@ def _matmul_qint4_m_1[
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(N, K, k_groups, work_count, num_workers)
@@ -1076,7 +1076,7 @@ def _matmul_qint4_m_any[
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(M, N, K, k_groups, work_count, num_workers)

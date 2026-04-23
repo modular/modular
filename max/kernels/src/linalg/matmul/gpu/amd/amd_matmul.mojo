@@ -395,9 +395,9 @@ struct AMDMatmul[
                             m_mma * num_n_mmas * c_frag_size
                             + n_mma * c_frag_size
                         )
-                        var v = c_reg.flat_load[width=c_frag_size](
-                            src_off
-                        ).cast[Self.c_type]()
+                        var v = c_reg.raw_load[width=c_frag_size](src_off).cast[
+                            Self.c_type
+                        ]()
 
                         comptime if MMA_M == 32:
                             for e in range(c_frag_size):
@@ -444,9 +444,9 @@ struct AMDMatmul[
                             m_mma * num_n_mmas * c_frag_size
                             + n_mma * c_frag_size
                         )
-                        var v = c_reg.flat_load[width=c_frag_size](
-                            src_off
-                        ).cast[Self.c_type]()
+                        var v = c_reg.raw_load[width=c_frag_size](src_off).cast[
+                            Self.c_type
+                        ]()
 
                         comptime if MMA_M == 32:
                             for e in range(c_frag_size):
@@ -458,7 +458,7 @@ struct AMDMatmul[
                                     + (e % 4)
                                 )
                                 if col < N:
-                                    c.flat_store(m * N + col, v[e])
+                                    c.raw_store(m * N + col, v[e])
                         else:
                             var n = (
                                 warp_tile_n
@@ -466,7 +466,7 @@ struct AMDMatmul[
                                 + lane_group * c_frag_size
                             )
                             if n < N:
-                                c.flat_store[width=c_frag_size](m * N + n, v)
+                                c.raw_store[width=c_frag_size](m * N + n, v)
         else:
             # Fast path: N is block-aligned, no OOB checks needed.
             var c_block = c.tile[BM, BN](block_idx.y, block_idx.x)

@@ -275,8 +275,11 @@ class NamedMapping(DeviceMapping):
     _unreduced: frozenset[str] = frozenset()
     _priorities: tuple[int | None, ...] = ()
     _memory_kind: str | None = None
+    _original_spec: tuple[SpecEntry, ...] | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "_original_spec", self._spec)
+
         # Resolve spec entries that reference axis names not present in the
         # mesh.  For example, a model defined with ("dp", "tp") placed on a
         # TP-only mesh will have "dp" silently replaced by None (Replicated).
@@ -328,6 +331,12 @@ class NamedMapping(DeviceMapping):
     def spec(self) -> tuple[SpecEntry, ...]:
         """The raw spec tuple (one entry per tensor dim)."""
         return self._spec
+
+    @property
+    def original_spec(self) -> tuple[SpecEntry, ...]:
+        """The caller-supplied spec before mesh resolution."""
+        assert self._original_spec is not None
+        return self._original_spec
 
     @property
     def unreduced(self) -> frozenset[str]:

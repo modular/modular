@@ -78,23 +78,28 @@ class TextEncoder(CompiledComponent):
         module.load_state_dict(state_dict, weight_alignment=1, strict=True)
 
         # Build graph with symbolic sequence length.
-        # Post-processing (slice to embed_seq_len, mask padding) is folded
-        # into the graph so the entire encode+postprocess runs on-device.
+        # The attention mask is derived from non-zero input_ids inside
+        # the graph so pad tokens are masked both during encoder attention
+        # and during output zeroing. Post-processing (slice to
+        # embed_seq_len, mask padding) is folded in so the entire
+        # encode+postprocess runs on-device.
         input_types = [
-            TensorType(DType.int64, ["batch", "seq_len"], device=self._device),
             TensorType(DType.int64, ["batch", "seq_len"], device=self._device),
         ]
         embed_len = self.embed_seq_len  # 226
         with Graph("umt5_encoder", input_types=input_types) as graph:
             input_ids = graph.inputs[0].tensor
-            attention_mask = graph.inputs[1].tensor
+
+            # WAN tokenizer pads with id=0; mark valid tokens as 1.
+            attention_mask = ops.cast(input_ids != 0, DType.int64)
+
             hidden_states = module(input_ids, attention_mask)
 
             # Slice to embed_seq_len along seq dim.
             # Tokenizer pads to 512, so seq_len >= embed_len is guaranteed.
             sliced = hidden_states[:, :embed_len, :]
 
-            # Zero out padding positions on-device.
+            # Zero out padding positions using the derived mask.
             mask_sliced = ops.cast(
                 attention_mask[:, :embed_len], hidden_states.dtype
             )
@@ -110,21 +115,18 @@ class TextEncoder(CompiledComponent):
     def __call__(
         self,
         token_ids: Buffer,
-        attention_mask: Buffer | None,
         num_videos_per_prompt: int,
         max_sequence_length: int | None = None,
     ) -> Buffer:
         """Encode text tokens into prompt embeddings.
 
         Runs the UMT5 encoder with on-device post-processing (slice to
-        ``embed_seq_len``, mask padding positions). Optionally repeats
-        for ``num_videos_per_prompt``.
+        ``embed_seq_len``, mask padding positions). The attention mask
+        is derived from non-zero ``token_ids`` inside the graph.
 
         Args:
             token_ids: Token IDs, shape ``(batch, seq)`` or ``(seq,)``
                 int64 on device.
-            attention_mask: Attention mask, shape ``(batch, seq)`` int64,
-                or ``None`` (all-ones mask used).
             num_videos_per_prompt: Number of videos per prompt for batching.
             max_sequence_length: Must equal ``embed_seq_len`` (226) or
                 ``None``. Compiled into the graph at init time.
@@ -142,25 +144,12 @@ class TextEncoder(CompiledComponent):
                 f"embed_seq_len={self.embed_seq_len}"
             )
 
-        # Ensure 2D inputs using Buffer metadata (no D2H transfer).
+        # Ensure 2D input using Buffer metadata (no D2H transfer).
         if token_ids.rank == 1:
             token_ids = token_ids.view(token_ids.dtype, [1, token_ids.shape[0]])
 
-        if attention_mask is not None:
-            if attention_mask.rank == 1:
-                attention_mask = attention_mask.view(
-                    attention_mask.dtype, [1, attention_mask.shape[0]]
-                )
-        else:
-            # Generate all-ones mask (small tensor: 1 x seq_len int64).
-            mask_np = np.ones(
-                [int(token_ids.shape[0]), int(token_ids.shape[1])],
-                dtype=np.int64,
-            )
-            attention_mask = Buffer.from_numpy(mask_np).to(self._device)
-
         # Run encoder + on-device post-processing (slice + mask).
-        raw = self._model.execute(token_ids, attention_mask)
+        raw = self._model.execute(token_ids)
         result = raw[0] if isinstance(raw, (list, tuple)) else raw
 
         # Repeat for num_videos_per_prompt (rare, typically 1).

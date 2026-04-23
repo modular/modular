@@ -71,7 +71,6 @@ methods.
 
 
 from std.builtin.globals import global_constant
-from std.builtin.variadics import Variadic
 from std.collections.string.string_slice import get_static_string
 from std.compile import get_type_name
 from std.utils import Variant
@@ -136,6 +135,7 @@ def _comptime_list_to_span[
 ]() -> Span[T, StaticConstantOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
+    @parameter
     def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 

@@ -50,6 +50,9 @@ modular_py_test(
         "conftest.py",
         "test_print_kv_cache.py",
     ],
+    tags = [
+        "manual",  # FIXME: Times out intermittently (SERVOPT-1327)
+    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         # Test takes too long on ASAN to run in presubmit

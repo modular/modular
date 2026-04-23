@@ -8,6 +8,9 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Mojo now uses `NoneType` instead of an empty tuple to mark constructor using
+  literals.
+
 - The ternary `if/else` expression now coerces each element to its contextual
   type when it is obvious. For example, this works instead of producing an
   error about incompatible metatypes:
@@ -76,6 +79,13 @@ This version is still a work in progress.
   def foo(*args: *SomeTypeList[Copyable]) -> Int: ...
   ```
 
+- T-strings can now be used in `comptime assert` messages:
+
+  ```mojo
+    def foo[i: Int]():
+        comptime assert i > 5, t"expected i > 5, got {i}"
+  ```
+
 ## Language changes
 
 - Variadic parameters lists are now passed instead of `ParameterList` and
@@ -112,6 +122,10 @@ This version is still a work in progress.
   available to the module.
 
 ## Library changes
+
+- The `Variadic` suite of low-level operation has been refactored and migrated
+  to being members of the `TypeList` and `ParameterList` types, making them more
+  ergonomic to work with and more accessible.
 
 - Atomic operations have moved to a dedicated `std.atomic` module. The
   `Consistency` type has been renamed to `Ordering` and its `MONOTONIC`
@@ -420,6 +434,14 @@ This version is still a work in progress.
   ```
 
 ## 🛠️ Fixed
+
+- Fixed pack inference failing with `could not infer type of parameter pack ...
+  given value with unresolved type` when passing list, dict, set, or slice
+  literals to a `*Ts`-bound variadic pack parameter (e.g.
+  `def foo[*Ts: Iterable](*args: *Ts)`). Pack inference now applies the same
+  default-type fallback that single-argument trait-bound parameters already
+  use, so `foo([1, 2, 3], [4, 5, 6])` resolves each literal to its default
+  type (e.g. `List[Int]`) before binding the pack.
 
 - Fixed `mojo` aborting at startup with `std::filesystem::filesystem_error`
   when `$HOME` is not traversable by the running UID (common in containerized

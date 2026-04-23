@@ -52,9 +52,9 @@ def test_warp_specialize_gemm_with_multicasting[
     use_tma_store: Bool = False,
     splits: Int = 2,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType,) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     comptime BM = block_tile_shape[0]
     comptime BN = block_tile_shape[1]
@@ -72,9 +72,9 @@ def test_warp_specialize_gemm_with_multicasting[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)

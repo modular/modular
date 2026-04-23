@@ -76,7 +76,7 @@ def _block_minmax[
     @always_inline
     @parameter
     def _reduce_fn[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         comptime if reduction_idx == 0:
             return warp.min(v)
@@ -114,7 +114,7 @@ def _block_reduce_pivot_bounds[
     @always_inline
     @parameter
     def _reduce_fn[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         comptime if reduction_idx < 2:
             return warp.sum(v)

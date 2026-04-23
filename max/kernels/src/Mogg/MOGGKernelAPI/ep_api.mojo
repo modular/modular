@@ -158,7 +158,6 @@ struct Struct_ep_init:
                 fp4_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout=RT_LAYOUT_2D,
-                scales_layout=RT_LAYOUT_2D,
                 scales_offset_layout=RT_LAYOUT_2D,
                 hidden_size,
                 top_k,
@@ -424,7 +423,6 @@ struct Struct_ep_dispatch_async_nvfp4:
             fp4_dtype=dispatch_dtype,
             scales_dtype=DType.float8_e4m3fn,
             output_layout=RT_LAYOUT_2D,
-            scales_layout=RT_LAYOUT_2D,
             scales_offset_layout=RT_LAYOUT_2D,
             hidden_size,
             top_k,
@@ -753,7 +751,10 @@ struct Struct_ep_dispatch_wait_nvfp4:
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var format_handler = NVFP4TokenFormat[hidden_size, top_k](
-            output_tokens_tensor, output_scales_tensor, scales_offsets_tensor
+            output_tokens_tensor,
+            output_scales_tensor,
+            scales_offsets_tensor,
+            context[],
         )
 
         ep_dispatch_wait_kernel_api[
@@ -953,7 +954,10 @@ struct Struct_ep_dispatch_nvfp4:
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
         var format_handler = NVFP4TokenFormat[hidden_size, top_k](
-            output_tokens_tensor, output_scales_tensor, scales_offsets_tensor
+            output_tokens_tensor,
+            output_scales_tensor,
+            scales_offsets_tensor,
+            context[],
         )
 
         ep_fused_dispatch_kernel_api[
@@ -1070,7 +1074,10 @@ struct DistributedEPDispatchNVFP4:
                 return rebind[Scalar[dtype]](in_scales[0].cast[dtype]())
 
             var format_handler = NVFP4TokenFormat[hidden_size, top_k](
-                out_tokens, out_scales, sc_offsets
+                out_tokens,
+                out_scales,
+                sc_offsets,
+                gpu_ctxs[index],
             )
 
             ep_fused_dispatch_kernel_api[
@@ -1672,7 +1679,7 @@ struct Struct_ep_combine_wait:
         @parameter
         @always_inline
         def output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
                 width=width, element_alignment=alignment
@@ -1749,7 +1756,7 @@ struct Struct_ep_combine:
         @parameter
         @always_inline
         def output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
                 width=width, element_alignment=alignment

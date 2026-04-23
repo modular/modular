@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from max.dtype import DType
@@ -30,10 +31,7 @@ from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
     increment_cache_lengths_from_counts,
 )
 from max.nn.comm import Signals
-from max.nn.kernels import (
-    compute_mla_dispatch_args_scalar,
-    eagle_prefill_shift_tokens,
-)
+from max.nn.kernels import eagle_prefill_shift_tokens
 from max.nn.kv_cache import (
     KVCacheInputsPerDevice,
     KVCacheParamInterface,
@@ -114,6 +112,8 @@ class Eagle3KimiK25Unified(Module):
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
         )
+        merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
+        merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
 
         host_merged_offsets = compute_host_merged_offsets(
             host_input_row_offsets, draft_tokens
@@ -133,7 +133,6 @@ class Eagle3KimiK25Unified(Module):
         logits = target_outputs[1]
         hidden_states = target_outputs[3]
         devices = self.config.devices
-        n_devs = len(devices)
 
         first_rejected, recovered, bonus = self.acceptance_sampler(
             draft_tokens, logits, seed=seed
@@ -153,6 +152,10 @@ class Eagle3KimiK25Unified(Module):
         # argmax so the draft model sees correct tokens at rejected positions.
         corrected_merged, corrected_offsets = self.merger(
             tokens, input_row_offsets, recovered
+        )
+        corrected_merged = ops.rebind(corrected_merged, ["merged_seq_len"])
+        corrected_offsets = ops.rebind(
+            corrected_offsets, ["input_row_offsets_len"]
         )
 
         # Shift the corrected merged sequence for the draft input.
@@ -196,14 +199,6 @@ class Eagle3KimiK25Unified(Module):
 
         device0 = devices[0]
         hidden_dim = self.draft.config.hidden_size
-
-        # In TP mode each device processes a subset of attention heads.
-        use_tp_ep = self.draft.config.data_parallel_degree == 1 and n_devs > 1
-        num_heads_per_dev = (
-            self.draft.config.num_attention_heads // n_devs
-            if use_tp_ep
-            else self.draft.config.num_attention_heads
-        )
 
         last_idx = merged_offsets[1:] - 1
         num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device0)
@@ -249,47 +244,24 @@ class Eagle3KimiK25Unified(Module):
             dtype=DType.uint32,
         )
 
-        batch_size_per_replica = (
-            data_parallel_splits[1:] - data_parallel_splits[:-1]
-        )
         one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to([1])
-
-        # Compute the metadata tensor to use for all draft steps 1-K
-        metadata_per_dev: list[TensorValue] = []
-        step_max_lengths_per_dev: list[TensorValue] = []
-        for i in range(n_devs):
-            orig_metadata = draft_kv_collections[i].attention_dispatch_metadata
-
-            orig_max_cache_length = (
-                draft_kv_collections[i]
-                .max_lengths[0, 1]
-                .cast(DType.uint32)
-                .broadcast_to([1])
-            )
-
-            upper_max_valid_length = orig_max_cache_length.cast(
-                DType.int64
-            ) + ops.constant(
-                self.num_draft_steps, DType.int64, DeviceRef.CPU()
-            ).reshape([1])
-
-            assert orig_metadata is not None
-            dev_metadata = compute_mla_dispatch_args_scalar(
-                batch_size=batch_size_per_replica[i].reshape([1]),
-                max_cache_valid_length=upper_max_valid_length,
-                q_max_seq_len=ops.constant(
-                    1, DType.int64, DeviceRef.CPU()
-                ).broadcast_to([1]),
-                num_heads=num_heads_per_dev,
-                device=devices[i],
-            ).to(devices[i])
-
-            step_max_lengths = ops.concat(
-                [one, upper_max_valid_length.cast(DType.uint32)], axis=-1
+        new_max_lengths = [
+            ops.concat(
+                [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
             ).reshape([1, 2])
+            for kv in draft_kv_collections
+        ]
 
-            metadata_per_dev.append(dev_metadata)
-            step_max_lengths_per_dev.append(step_max_lengths)
+        draft_kv_collections = [
+            replace(
+                kv,
+                max_lengths=max_lengths,
+                attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
+            )
+            for kv, max_lengths in zip(
+                draft_kv_collections, new_max_lengths, strict=True
+            )
+        ]
 
         next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
         all_draft_tokens = [next_draft_tokens]
@@ -297,17 +269,12 @@ class Eagle3KimiK25Unified(Module):
         for step in range(1, self.num_draft_steps):
             draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
 
-            step_kv: list[PagedCacheValues] = []
-            for i in range(n_devs):
-                step_kv.append(
-                    PagedCacheValues(
-                        kv_blocks=draft_kv_collections[i].kv_blocks,
-                        cache_lengths=cache_lengths_per_dev[i],
-                        lookup_table=draft_kv_collections[i].lookup_table,
-                        max_lengths=step_max_lengths_per_dev[i],
-                        attention_dispatch_metadata=metadata_per_dev[i],
-                    )
+            step_kv: list[PagedCacheValues] = [
+                replace(kv, cache_lengths=cl)
+                for kv, cl in zip(
+                    draft_kv_collections, cache_lengths_per_dev, strict=True
                 )
+            ]
 
             step_outputs = self.draft(
                 next_draft_tokens,

@@ -281,6 +281,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                             attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
                             ].attention_dispatch_metadata,
+                            draft_attention_dispatch_metadata=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_attention_dispatch_metadata,
                         )
                     )
 
@@ -313,6 +316,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all 3 graph outputs for speculative decoding."""
+        assert isinstance(model_inputs, UnifiedMTPDeepseekV3Inputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -329,6 +333,9 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         replica_batches: Sequence[Sequence[TextContext]],
         kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
+        draft_tokens: Buffer | None = None,
+        draft_kv_cache_buffers: list[Buffer] | None = None,
+        **kwargs,
     ) -> UnifiedMTPDeepseekV3Inputs:
         base = DeepseekV3Model.prepare_initial_token_inputs(
             self, replica_batches, kv_cache_inputs, return_n_logits
@@ -344,6 +351,8 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
             return_n_logits=base.return_n_logits,
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
+            draft_tokens=draft_tokens,
+            draft_kv_blocks=draft_kv_cache_buffers,
             seed=self._next_seed(),
         )
 

@@ -67,7 +67,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem"
-        t" shape=({m.value()}, {n.value()}, {k.value()})"
+        t" shape=({Int(m.value())}, {Int(n.value())}, {Int(k.value())})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size}"
@@ -81,9 +81,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
         )
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -105,14 +109,14 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for m_idx in range(m.value()):
-            for k_idx in range(k.value()):
+        for m_idx in range(Int(m.value())):
+            for k_idx in range(Int(k.value())):
                 comptime assert a_host.flat_rank >= 2
                 a_host[(Idx(m_idx), Idx(k_idx))] = Float32(m_idx + k_idx).cast[
                     a_type
                 ]()
-        for n_idx in range(n.value()):
-            for k_idx in range(k.value()):
+        for n_idx in range(Int(n.value())):
+            for k_idx in range(Int(k.value())):
                 b_host[(Idx(n_idx), Idx(k_idx))] = Float32(n_idx + k_idx).cast[
                     b_type
                 ]()
@@ -175,8 +179,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
 
     for i in range(c_host_ref.dim[0]()):
         for j in range(c_host_ref.dim[1]()):
-            comptime assert i.dtype.is_integral()
-            comptime assert j.dtype.is_integral()
+            comptime assert type_of(i).dtype.is_integral()
+            comptime assert type_of(j).dtype.is_integral()
             comptime assert c_host.flat_rank >= 2
             assert_equal(
                 c_host[(Idx(i), Idx(j))].cast[DType.float64](),

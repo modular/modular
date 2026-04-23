@@ -1863,7 +1863,7 @@ def _mha_sm100_enqueue[
         Int32(config.num_threads[True]())
     )
 )
-@__llvm_metadata(`nvvm.minctasm`=Int(1))
+@__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
 @__name(
     t"sm100_mha_1q_depth{config.depth}_{KVLUTType.dtype}_{output_type}_nqh{config.num_heads}_nkvh{config.num_heads // group}",
     mangle=True,
@@ -2671,6 +2671,7 @@ def _mha_sm100[
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
+        @parameter
         @always_inline
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)

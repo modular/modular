@@ -95,8 +95,8 @@ def test_dynamic_scaled_fp8_quant[
     var scales_shape = row_major(
         Coord(Idx[NType.static_value // group_size](), m)
     )
-    var total_size = m.value() * n.value()
-    var scales_size = (n.value() // group_size) * m.value()
+    var total_size = Int(m.value()) * Int(n.value())
+    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -147,8 +147,8 @@ def test_dynamic_scaled_fp8_quant[
     comptime assert scales_host.flat_rank == 2
 
     var max_scale = Scalar[scales_dtype](0)
-    for i in range(m.value()):
-        for j in range(n.value()):
+    for i in range(Int(m.value())):
+        for j in range(Int(n.value())):
             max_scale = max(
                 max_scale,
                 abs(in_host[i, j].cast[scales_dtype]()),
@@ -167,8 +167,8 @@ def test_dynamic_scaled_fp8_quant[
         scale_factor.cast[DType.float32](),
     )
 
-    for i in range(m.value()):
-        for j in range(n.value()):
+    for i in range(Int(m.value())):
+        for j in range(Int(n.value())):
             var in_val = in_host[i, j]
             var out_val = out_host[i, j]
             assert_equal(
@@ -199,8 +199,8 @@ def test_dynamic_fp8_quant[
     var scales_shape = row_major(
         Coord(Idx[NType.static_value // group_size](), m)
     )
-    var total_size = m.value() * n.value()
-    var scales_size = (n.value() // group_size) * m.value()
+    var total_size = Int(m.value()) * Int(n.value())
+    var scales_size = (Int(n.value()) // group_size) * Int(m.value())
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -248,8 +248,8 @@ def test_dynamic_fp8_quant[
 
     comptime assert in_host.flat_rank == 2
     comptime assert scales_host.flat_rank == 2
-    for i in range(m.value()):
-        for group_idx in range(n.value() // group_size):
+    for i in range(Int(m.value())):
+        for group_idx in range(Int(n.value()) // group_size):
             var group_max = Scalar[in_dtype](0)
             for j in range(group_size):
                 group_max = max(
@@ -313,8 +313,10 @@ def test_batched_dynamic_fp8_quant[
     var scales_shape = row_major(
         Coord(bs, Idx[KType.static_value // group_size](), m)
     )
-    var total_size = bs.value() * m.value() * k.value()
-    var scales_size = bs.value() * (k.value() // group_size) * m.value()
+    var total_size = Int(bs.value()) * Int(m.value()) * Int(k.value())
+    var scales_size = (
+        Int(bs.value()) * (Int(k.value()) // group_size) * Int(m.value())
+    )
 
     var in_host_ptr = alloc[Scalar[in_dtype]](total_size)
     var out_host_ptr = alloc[Scalar[out_dtype]](total_size)
@@ -355,8 +357,8 @@ def test_batched_dynamic_fp8_quant[
         scales_tensor,
         1200.0,
         ctx,
-        num_rows=m.value(),
-        batch_size=bs.value(),
+        num_rows=Int(m.value()),
+        batch_size=Int(bs.value()),
     )
 
     ctx.enqueue_copy(out_host_ptr, out_device)
@@ -365,9 +367,9 @@ def test_batched_dynamic_fp8_quant[
 
     comptime assert in_host.flat_rank == 3
     comptime assert scales_host.flat_rank == 3
-    for batch_idx in range(bs.value()):
-        for i in range(m.value()):
-            for group_idx in range(k.value() // group_size):
+    for batch_idx in range(Int(bs.value())):
+        for i in range(Int(m.value())):
+            for group_idx in range(Int(k.value()) // group_size):
                 var group_max = Scalar[in_dtype](0)
                 for j in range(group_size):
                     group_max = max(

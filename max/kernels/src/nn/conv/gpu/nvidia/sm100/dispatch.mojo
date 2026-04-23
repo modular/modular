@@ -231,7 +231,8 @@ def dispatch_sm100_conv2d[
 
         comptime if has_residual:
             var src_tt = TileTensor(
-                source_ptr,
+                # SAFETY: set when has_residual == True
+                source_ptr.unsafe_value(),
                 row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
             )
             conv2d_fprop_with_residual[

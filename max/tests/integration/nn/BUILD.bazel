@@ -62,7 +62,7 @@ modular_py_test(
     imports = ["."],
     per_test_tags = {
         "test_conv.py": ["skip-external-ci"],
-        "test_mlp.py": ["skip-external-ci"],
+        "test_mlp.py": ["manual"],
     },
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
@@ -156,7 +156,10 @@ modular_py_test(
     size = "enormous",
     srcs = glob(
         ["*_distributed_gpu.py"],
-        exclude = ["test_mlp_distributed_gpu.py"],
+        exclude = [
+            "test_mlp_distributed_gpu.py",
+            "test_tp_moe_nvfp4_distributed_gpu.py",
+        ],
     ) + ["conftest.py"],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.6",
@@ -335,6 +338,34 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/nn",
+        requirement("hypothesis"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_test(
+    name = "tp_moe_nvfp4_tests",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_tp_moe_nvfp4_distributed_gpu.py",
+    ],
+    exec_properties = {
+        "test.resources:gpu-memory": "4",
+    },
+    gpu_constraints = ["//:has_multi_gpu"],
+    imports = ["."],
+    tags = [
+        "gpu",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        "//max/tests/integration/test_common:graph_utils",
         requirement("hypothesis"),
         requirement("torch"),
     ],

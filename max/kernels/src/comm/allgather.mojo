@@ -239,7 +239,6 @@ def _allgather_p2p[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -302,7 +301,7 @@ def _allgather_p2p[
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
-    ctx.enqueue_function_experimental[allgather_p2p_kernel](
+    ctx.enqueue_function[allgather_p2p_kernel, allgather_p2p_kernel](
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,
@@ -311,7 +310,7 @@ def _allgather_p2p[
         my_rank,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
-        attributes=pdl_launch_attributes(pdl_level),
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 
@@ -323,7 +322,6 @@ def allgather[
     in_origin: Origin,
     out_layout: TensorLayout,
     out_origin: MutOrigin,
-    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[TileTensor[dtype, in_layout, in_origin], ngpus],
     output_buffers: InlineArray[
@@ -350,7 +348,6 @@ def allgather[
         in_origin: Origin of the input TileTensors.
         out_layout: Layout of the output TileTensors.
         out_origin: Origin of the output TileTensors.
-        pdl_level: Controls PDL behavior for P2P kernels.
 
     Args:
         input_buffers: Input buffers from ALL GPUs as TileTensors.
@@ -377,7 +374,7 @@ def allgather[
     if not is_p2p_enabled():
         return _allgather_naive(input_buffers, output_buffers, ctx)
     else:
-        return _allgather_p2p[rank=1, pdl_level=pdl_level](
+        return _allgather_p2p[rank=1](
             input_buffers,
             output_buffers,
             rank_sigs,

@@ -23,6 +23,8 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Generator
 
+from max import mlir
+from max._mlir_context import default_mlir_context
 from max.driver import Accelerator, Buffer
 from max.experimental import realization_context as rc
 from max.experimental import tensor
@@ -69,15 +71,19 @@ def ensure_context() -> Generator[None]:
 
     If a context of *any* kind already exists, it is re-used as-is.
     """
-    if tensor.current_realization_context(None) is not None:
-        yield
-        return
-    ctx: rc.EagerRealizationContext | rc.GraphRealizationContext = (
-        rc.GraphRealizationContext(Graph.current)
-        if in_graph_context()
-        else rc.EagerRealizationContext()
-    )
-    with ctx, tensor.realization_context(ctx):
+    with contextlib.ExitStack() as stack:
+        if mlir.Context.current is None:
+            stack.enter_context(default_mlir_context())
+        if tensor.current_realization_context(None) is not None:
+            yield
+            return
+        ctx: rc.EagerRealizationContext | rc.GraphRealizationContext = (
+            rc.GraphRealizationContext(Graph.current)
+            if in_graph_context()
+            else rc.EagerRealizationContext()
+        )
+        stack.enter_context(ctx)
+        stack.enter_context(tensor.realization_context(ctx))
         yield
 
 

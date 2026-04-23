@@ -30,7 +30,6 @@ operations.
 # ===-----------------------------------------------------------------------===#
 
 from std.builtin.rebind import downcast
-from std.builtin.variadics import Variadic
 
 
 @fieldwise_init

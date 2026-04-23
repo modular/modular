@@ -33,7 +33,7 @@ from max.experimental.nn.module import (
     _InputSlot,
     _OutputSlot,
     _reconstruct_outputs,
-    _unflatten_args,
+    flatten_input_buffers,
     module_dataclass,
 )
 from max.experimental.sharding import (
@@ -41,6 +41,7 @@ from max.experimental.sharding import (
     DistributedBufferType,
     DistributedTensorType,
     PlacementMapping,
+    Replicated,
     Sharded,
 )
 from max.experimental.tensor import Tensor
@@ -182,7 +183,7 @@ class TestFlattenInputTypes:
 
 
 # ═════════════════════════════════════════════════════════════════════════
-#  _unflatten_args
+#  flatten_input_buffers
 # ═════════════════════════════════════════════════════════════════════════
 
 
@@ -190,7 +191,7 @@ class TestUnflattenArgs:
     def test_non_distributed_passthrough(self) -> None:
         buf = Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
         slot = _InputSlot(start=0, count=1, dist=None)
-        flat = _unflatten_args([buf], [slot])
+        flat = flatten_input_buffers([buf], [slot])
         assert len(flat) == 1
         assert flat[0] is buf
 
@@ -199,7 +200,7 @@ class TestUnflattenArgs:
         dt = DistributedTensorType(DType.float32, [8, 4], mesh, [Sharded(0)])
         slot = _InputSlot(start=0, count=2, dist=dt)
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
-        flat = _unflatten_args([t], [slot])
+        flat = flatten_input_buffers([t], [slot])
         assert len(flat) == 2
         for item in flat:
             assert isinstance(item, Buffer)
@@ -212,7 +213,7 @@ class TestUnflattenArgs:
 
         buf = Buffer.zeros([3, 4], dtype=DType.float32, device=CPU())
         t = _make_realized_sharded([4, 4], 2, shard_axis=0)
-        flat = _unflatten_args([buf, t], [slot_plain, slot_dist])
+        flat = flatten_input_buffers([buf, t], [slot_plain, slot_dist])
         assert len(flat) == 3
         assert flat[0] is buf
         assert isinstance(flat[1], Buffer)
@@ -222,7 +223,7 @@ class TestUnflattenArgs:
         """Non-distributed Tensor with dist=None passes through unchanged."""
         slot = _InputSlot(start=0, count=1, dist=None)
         t = Tensor.zeros([4, 8], dtype=DType.float32, device=CPU())
-        flat = _unflatten_args([t], [slot])
+        flat = flatten_input_buffers([t], [slot])
         assert len(flat) == 1
         assert flat[0] is t
 
@@ -456,3 +457,165 @@ class TestCompiledModelAPI:
         call_arr = np.from_dlpack(call_result)
         raw_arr = np.from_dlpack(raw_result[0])
         assert call_arr.shape == raw_arr.shape
+
+    def test_call_missing_arg_raises_diagnostic(self) -> None:
+        """Calling with too few args raises an error."""
+        compiled = self._compile_identity()
+        with pytest.raises(ValueError) as excinfo:
+            compiled()  # identity needs 1 arg, gave 0
+        message = str(excinfo.value)
+        assert "Unable to flatten input arguments" in message
+        assert "Expected 1 arguments, got 0" in message
+
+    def test_execute_raw_missing_arg_raises_diagnostic(self) -> None:
+        """execute_raw() with too few buffers also reports counts in the error."""
+        compiled = self._compile_identity()
+        with pytest.raises(TypeError) as excinfo:
+            compiled.execute_raw()  # identity needs 1 buffer, gave 0
+        message = str(excinfo.value)
+        assert "Compiled model call failed" in message
+        assert "Engine expects" in message
+
+
+# ═════════════════════════════════════════════════════════════════════════
+#  Module.to: Device, DeviceMesh, DeviceMapping
+# ═════════════════════════════════════════════════════════════════════════
+
+
+@module_dataclass
+class _SimpleModule(Module[[Tensor], Tensor]):
+    """Simple module with a single parameter for testing."""
+
+    W: Tensor
+
+    def forward(self, x: Tensor) -> Tensor:
+        return x + self.W
+
+
+class TestModuleTo:
+    """Tests for Module.to with Device, DeviceMesh, and DeviceMapping."""
+
+    def test_to_device_backward_compat(self) -> None:
+        """Module.to(Device) should work as before."""
+        W = Tensor.ones([4], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        result = model.to(CPU())
+        assert result is model
+        assert model.device == CPU()
+        assert not model.W.is_distributed
+
+    def test_to_device_sets_module_device(self) -> None:
+        """Module.to(Device) sets the module's device property."""
+        W = Tensor.ones([4], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        model.to(CPU())
+        assert model.device == CPU()
+
+    def test_to_single_device_mesh(self) -> None:
+        """Module.to(DeviceMesh) with single device should transfer."""
+        W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        single_mesh = DeviceMesh(
+            devices=(CPU(),), mesh_shape=(1,), axis_names=("_",)
+        )
+        model.to(single_mesh)
+        assert model.device == CPU()
+        assert not model.W.is_distributed
+
+    def test_to_multi_device_mesh_unsharded(self) -> None:
+        """Module.to(DeviceMesh) with multi-device creates replicated params."""
+        W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        mesh = mesh_1d(2)
+        model.to(mesh)
+        assert model.device == CPU()  # Primary device
+        assert model.W.is_distributed
+        assert model.W.num_shards == 2
+        assert model.W.mapping.is_fully_replicated
+
+    def test_to_device_mapping_single_device(self) -> None:
+        """Module.to(DeviceMapping) with single-device mesh transfers."""
+        W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        single_mesh = DeviceMesh(
+            devices=(CPU(),), mesh_shape=(1,), axis_names=("_",)
+        )
+        mapping = PlacementMapping(single_mesh, (Replicated(),))
+        model.to(mapping)
+        assert model.device == CPU()
+        assert not model.W.is_distributed
+
+    def test_to_device_mapping_multi_device_replicated(self) -> None:
+        """Module.to(DeviceMapping) with Replicated replicates parameters."""
+        W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        mesh = mesh_1d(2)
+        mapping = PlacementMapping(mesh, (Replicated(),))
+        model.to(mapping)
+        assert model.device == CPU()  # Primary device
+        assert model.W.is_distributed
+        assert model.W.num_shards == 2
+        assert model.W.placements == (Replicated(),)
+
+    def test_to_device_mapping_multi_device_sharded(self) -> None:
+        """Module.to(DeviceMapping) with Sharded shards parameters."""
+        W = Tensor.ones([4, 8], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        mesh = mesh_1d(2)
+        mapping = PlacementMapping(mesh, (Sharded(0),))
+        model.to(mapping)
+        assert model.device == CPU()  # Primary device
+        assert model.W.is_distributed
+        assert model.W.num_shards == 2
+        assert model.W.placements == (Sharded(0),)
+        # Each shard should have half along axis 0
+        shards = model.W.local_shards
+        for s in shards:
+            assert list(s.shape) == [2, 8]
+
+    def test_to_multi_device_mesh(self) -> None:
+        """Module.to(DeviceMesh) on distributed param raises an error."""
+        # Create a module with distributed parameter
+        mesh1 = mesh_1d(2, "tp")
+        bufs = tuple(
+            Buffer.zeros([4, 8], dtype=DType.float32, device=CPU())
+            for _ in range(2)
+        )
+        W = Tensor._from_shards(bufs, mesh1, (Sharded(0),), global_shape=[8, 8])
+        model = _SimpleModule(W=W)
+
+        # Transfer to a different mesh with same shape
+        mesh2 = mesh_1d(2, "new_tp")
+        model.to(mesh2)
+        assert model.W.is_distributed
+        assert model.W.num_shards == 2
+        assert model.W.placements == (Sharded(0),)
+
+    def test_to_invalid_type_raises(self) -> None:
+        """Module.to with invalid type should raise TypeError."""
+        W = Tensor.ones([4], dtype=DType.float32, device=CPU())
+        model = _SimpleModule(W=W)
+        with pytest.raises(TypeError, match="expects Device, DeviceMesh"):
+            model.to("invalid")  # type: ignore[arg-type]
+
+    def test_to_applies_to_children(self) -> None:
+        """Module.to should recursively apply to child modules."""
+
+        @module_dataclass
+        class _ParentModule(Module[[Tensor], Tensor]):
+            child: _SimpleModule
+
+            def forward(self, x: Tensor) -> Tensor:
+                return self.child(x)
+
+        W = Tensor.ones([4], dtype=DType.float32, device=CPU())
+        child = _SimpleModule(W=W)
+        parent = _ParentModule(child=child)
+
+        mesh = mesh_1d(2)
+        parent.to(mesh)
+
+        # Both parent and child should have distributed parameters
+        assert parent.device == CPU()
+        assert parent.child.W.is_distributed
+        assert parent.child.W.num_shards == 2

@@ -39,7 +39,7 @@ from std.utils import IndexList
 def rope_value[
     dtype: DType,
     freq_dtype: DType,
-    width: Int,
+    width: SIMDSize,
 ](val: SIMD[dtype, width], freq: SIMD[freq_dtype, width]) -> SIMD[dtype, width]:
     x_re, x_im = val.cast[freq_dtype]().deinterleave()
     f_re, f_im = freq.deinterleave()
@@ -69,7 +69,7 @@ def rope_q_proj[
     dtype: DType,
     freq_dtype: DType,
     rank: Int,
-    width: Int,
+    width: SIMDSize,
     output_dtype: DType,
     //,
     *,
@@ -143,7 +143,7 @@ def rope_q_proj[
 def rope_k_cache[
     freq_dtype: DType,
     cache_t: KVCacheT,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     interleaved: Bool,
@@ -427,7 +427,7 @@ def fused_qk_rope_ragged[
                     var section_idx = 0
 
                     comptime for i in range(len(mrope_section.value())):
-                        comptime val = mrope_section.value()[i].value()
+                        comptime val = Int(mrope_section.value()[i].value())
                         if head_dim_idx < val:
                             section_idx = i
                             break

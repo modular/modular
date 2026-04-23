@@ -267,8 +267,8 @@ def apple_gemv[
     var transposed_b_ptr = Optional[
         UnsafePointer[Scalar[b.dtype], MutExternalOrigin]
     ]()
-    var transposed_b = TileTensor[b.dtype, _, MutExternalOrigin](
-        None,
+    var transposed_b = TileTensor(
+        UnsafePointer[Scalar[b.dtype], MutExternalOrigin].unsafe_dangling(),
         row_major(Coord(Idx(Int(0)), Idx(Int(0)))),
     )
 
@@ -504,7 +504,7 @@ def apple_batched_matmul[
         @parameter
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
-            c_type: DType, width: Int, *, alignment: Int = 1
+            c_type: DType, width: SIMDSize, *, alignment: Int = 1
         ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
             var local_batch_coords = batch_coords
             local_batch_coords[rank - 1] = out_coords[1]

@@ -135,9 +135,15 @@ def verify_matmul[
     shape_b: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = shape_c[0].value() * shape_c[1].value()
-    var a_size = shape_a[0].value() * shape_a[1].value()
-    var b_size = shape_b[0].value() * shape_b[1].value()
+    comptime assert shape_a.element_types[0].DTYPE.is_integral()
+    comptime assert shape_a.element_types[1].DTYPE.is_integral()
+    comptime assert shape_b.element_types[0].DTYPE.is_integral()
+    comptime assert shape_b.element_types[1].DTYPE.is_integral()
+    comptime assert shape_c.element_types[0].DTYPE.is_integral()
+    comptime assert shape_c.element_types[1].DTYPE.is_integral()
+    var c_size = Int(shape_c[0].value()) * Int(shape_c[1].value())
+    var a_size = Int(shape_a[0].value()) * Int(shape_a[1].value())
+    var b_size = Int(shape_b[0].value()) * Int(shape_b[1].value())
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var a_device_nd = TileTensor(a_device, row_major(shape_a))
@@ -152,8 +158,8 @@ def verify_matmul[
     init_vector_launch[a_type](b_device, b_size, init_type, ctx)
 
     # M, N, K dimensions for scales calculation
-    var M = shape_c[0].value()
-    var N = shape_c[1].value()
+    var M = Int(shape_c[0].value())
+    var N = Int(shape_c[1].value())
     comptime K = shape_a.element_types[
         1
     ].static_value * 2 if micro_scaling_mode == "nvfp4" else shape_a.element_types[
@@ -162,7 +168,7 @@ def verify_matmul[
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        Idx(ceildiv(shape_a[0].value(), SF_MN_GROUP_SIZE)),
+        Idx(ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE)),
         Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
@@ -387,20 +393,27 @@ def bench_matmul[
     verify: Bool,
     run_benchmark: Bool,
 ) raises:
+    comptime assert shape_a.element_types[0].DTYPE.is_integral()
+    comptime assert shape_a.element_types[1].DTYPE.is_integral()
+    comptime assert shape_b.element_types[0].DTYPE.is_integral()
+    comptime assert shape_b.element_types[1].DTYPE.is_integral()
+    comptime assert shape_c.element_types[0].DTYPE.is_integral()
+    comptime assert shape_c.element_types[1].DTYPE.is_integral()
+
     # Choose a size larger than the two times the L2 cache
     # 128 MiB is larger that twice the L2 cache on the A100, A10, and L4.
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
     def get_size(shape: Coord) -> Int:
-        return shape[0].value() * shape[1].value()
+        return Int(shape[0].value()) * Int(shape[1].value())
 
     # MXFP8 scale buffer allocation
     comptime scales_type = MXFP8_SF_DTYPE if micro_scaling_mode == "mxfp8" else NVFP4_SF_DTYPE
     comptime SF_VECTOR_SIZE = MXFP8_SF_VECTOR_SIZE if micro_scaling_mode == "mxfp8" else NVFP4_SF_VECTOR_SIZE
 
     # M, N, K dimensions for scales calculation
-    var M = shape_c[0].value()
-    var N = shape_c[1].value()
+    var M = Int(shape_c[0].value())
+    var N = Int(shape_c[1].value())
     comptime K = shape_a.element_types[
         1
     ].static_value * 2 if micro_scaling_mode == "nvfp4" else shape_a.element_types[
@@ -409,7 +422,7 @@ def bench_matmul[
 
     # Calculate scale buffer shapes - 5D tensors for MXFP8 format
     var a_scales_shape = Coord(
-        Idx(ceildiv(shape_a[0].value(), SF_MN_GROUP_SIZE)),
+        Idx(ceildiv(Int(shape_a[0].value()), SF_MN_GROUP_SIZE)),
         Idx[ceildiv(K, SF_VECTOR_SIZE * SF_ATOM_K)](),
         Idx[SF_ATOM_M[0]](),
         Idx[SF_ATOM_M[1]](),
@@ -669,7 +682,7 @@ def bench_mxfp4_amd[
     comptime N_VAL = NType.static_value
     comptime K_SCALES = K_ELEMS // 32
 
-    var M = m.value()
+    var M = Int(m.value())
     var a_size = M * K_PACKED
     var b_size = N_VAL * K_PACKED
     var c_size = M * N_VAL
