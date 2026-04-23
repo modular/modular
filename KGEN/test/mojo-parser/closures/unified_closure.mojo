@@ -1603,7 +1603,7 @@ def trigger[func: def(Int) capturing -> Int, xx:Int]() -> Int:
 
 # CHECK-LABEL: lit.struct.decl @"def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper"
 # CHECK: lit.alias.decl dtype: !DType = <__capture_dtype>
-# CHECK: lit.fn @"__call__[::Int,::DType](unified_closure::def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
+# CHECK: lit.fn @"__call__[::DType,::Int](unified_closure::def[dtype: DType, +, simd_width: Int]() -> SIMD[dtype, simd_width]_PtrWrapper[$0, $1])"
 # CHECK: {{.*}} = lit.call tail[!lit.generator<() -> !lit.struct<#SIMD <:!DType _dtype, :!Int simd_width>>>: bind_params(:!lit.generator<<"dtype": !DType, +, "simd_width": !Int>() -> !lit.struct<#SIMD <:!DType *(0,0), :!Int *(0,1)>>> Impl, :!DType _dtype, :!Int simd_width)]()
 # CHECK: kgen.witness "dtype" : !DType = __capture_dtype
 
@@ -1718,7 +1718,7 @@ def outer[
     ) unified {} -> LayoutTensor[dtype]:
         return LayoutTensor[dtype]()
 
-    # CHECK: :!DType dtype, :!Int E1>(%{{.*}}, %a)
+    # CHECK: :!DType dtype, :!Int E1{{.*}}>(%{{.*}}, %a)
     var x = inner(a)
 
 
@@ -1748,3 +1748,40 @@ def outer[
         buf: LayoutTensor[dtype, ...]
     ) unified {} -> LayoutTensor[dtype]:
         return LayoutTensor[dtype]()
+
+# // -----
+
+# COM: Verify Captures Are Prepended
+
+def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F) unified](impl:FuncType):
+    pass
+
+
+# CHECK-LABEL: lit.struct.decl @"def[A: Copyable, B: Copyable, #, C: Copyable](a: A, b: B, c: C) -> None_0_1_2_3"
+# CHECK: lit.fn @"__call__{{.*}}"<_A: !Copyable, _B: !Copyable, C: !Copyable, +>
+
+def top[A:Copyable, B:Copyable](aa:A, bb:B):
+    def closure[C: Copyable, //](a:A, b:B, c:C) unified {read}:
+        pass
+
+    closure(aa, bb, 3)
+    bind[A,B,type_of(closure)](closure)
+
+
+# // -----
+
+# COM: Verify Lazy Conformance
+
+def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F) unified](impl:FuncType):
+    pass
+
+# CHECK-LABEL: lit.struct.decl @"def[C: Copyable](a: String, b: String, c: C) -> None_0_1_2_3"
+# CHECK: lit.fn @"__call__$def
+# CHECK-NEXT: kgen.rebind %a : !lit.ref<:!Copyable _D, imm *"1_unnamed`"> to !lit.ref<!String, imm *"1_unnamed`">
+# CHECK-NEXT: kgen.rebind %b : !lit.ref<:!Copyable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">
+
+def top():
+    def closureConcrete[C: Copyable, //](a:String, b:String, c:C) unified {read}:
+        pass
+
+    bind[String,String,type_of(closureConcrete)](closureConcrete)
