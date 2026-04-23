@@ -1331,9 +1331,23 @@ modular_cc_library(
     tags = ["no-clang-tidy-headers"],
 )
 
+# Pure-C++ parser for the mangled Variant storage type-name, split out from
+# `MojoLLDB` so it can be unit-tested without pulling in LLDB.
+modular_cc_library(
+    name = "MojoVariantTypeNameParser",
+    srcs = ["lib/MojoLLDB/Language/Formatters/MojoVariantTypeNameParser.cpp"],
+    hdrs = ["lib/MojoLLDB/Language/Formatters/MojoVariantTypeNameParser.h"],
+    deps = [
+        "@llvm-project//llvm:Support",
+    ],
+)
+
 modular_shared_library(
     name = "MojoLLDB",
-    srcs = glob(["lib/MojoLLDB/**/*.cpp"]),
+    srcs = glob(
+        ["lib/MojoLLDB/**/*.cpp"],
+        exclude = ["lib/MojoLLDB/Language/Formatters/MojoVariantTypeNameParser.cpp"],
+    ),
     hdrs = glob(["lib/MojoLLDB/**/*.h"]),
     includes = [],
     deps = [
@@ -1341,6 +1355,7 @@ modular_shared_library(
         ":KGENDialect",
         ":MojoLLDBPublicHeaders",
         ":MojoTooling",
+        ":MojoVariantTypeNameParser",
         ":ObjectCompiler",
         ":TransformUtils",
         "//Init",
