@@ -212,7 +212,7 @@ def test_pad_reflect_nd[rank: Int, n: Int, verify: Bool = False]() raises:
 def main() raises:
     print("== test_pad_iterative")
 
-    def all[N: Int]() raises:
+    def _all[N: Int]() raises:
         bench[test_pad_constant_nd, 1, N, "test_pad_constant_1d"]()
         bench[test_pad_constant_nd, 2, N, "test_pad_constant_2d"]()
         bench[test_pad_constant_nd, 3, N, "test_pad_constant_3d"]()
@@ -223,11 +223,11 @@ def main() raises:
         bench[test_pad_reflect_nd, 3, N, "test_pad_reflect_3d"]()
         # bench[test_pad_reflect_nd, 4, N, "test_pad_reflect_4d"]()
 
-    # all[64]()
-    # all[128]()
-    # all[256]()
-    # all[512]()
-    # all[1024]()
+    # _all[64]()
+    # _all[128]()
+    # _all[256]()
+    # _all[512]()
+    # _all[1024]()
 
     test_pad_constant_nd[1, 64, True]()
     test_pad_constant_nd[2, 64, True]()

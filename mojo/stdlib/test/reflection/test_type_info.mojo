@@ -37,6 +37,7 @@ def test_get_linkage_name() raises:
 
 
 def test_get_linkage_name_nested() raises:
+    @parameter
     def nested_func(x: Int) -> Int:
         return x
 

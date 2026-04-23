@@ -5609,7 +5609,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         @always_inline
-        def func_unified(ctx: Self) unified {}:
+        def func_unified(ctx: Self):
             try:
                 func(ctx)
             except e:
@@ -5754,7 +5754,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         @always_inline
-        def func_unified() unified {}:
+        def func_unified():
             try:
                 func()
             except e:
@@ -5847,7 +5847,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
         """
 
         @always_inline
-        def func_unified(ctx: Self, i: Int) unified {}:
+        def func_unified(ctx: Self, i: Int):
             try:
                 func(ctx, i)
             except e:

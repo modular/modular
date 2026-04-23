@@ -1503,6 +1503,7 @@ def _mha_sm90[
                 comptime for col in range(num_cols_output):
                     vout[row, col] = vout[row, col] * c
 
+        @parameter
         @always_inline
         def elementwise_reciprocal(
             old_rowsum: type_of(rowsum), new_rowsum: type_of(rowsum)

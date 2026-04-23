@@ -372,9 +372,7 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    def is_2[
-        w: SIMDSize
-    ](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
+    def is_2[w: SIMDSize](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
         return v.eq(2)
 
     var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])

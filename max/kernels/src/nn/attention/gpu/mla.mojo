@@ -3412,7 +3412,7 @@ def _k_cache_to_buffer[
 
     def copy_fn_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) unified register_passable {}:
+    ](idx: IndexList[rank]) unified register_passable:
         copy_fn[width, rank, alignment](idx)
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
