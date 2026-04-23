@@ -17,7 +17,7 @@
 
 
 def outer() -> Int:
-    def stateless() unified {} -> Int:
+    def stateless() -> Int:
         return 123
 
     return stateless()
@@ -34,14 +34,14 @@ def outer() -> Int:
 
 
 def one() -> Int:
-    def stateless() unified {} -> Int:
+    def stateless() -> Int:
         return 123
 
     return stateless()
 
 
 def two() -> Int:
-    def stateless() unified {} -> Int:
+    def stateless() -> Int:
         return 456
 
     return stateless()
@@ -53,7 +53,7 @@ def two() -> Int:
 
 
 def outer() -> Int:
-    def stateless() raises unified {} -> Int:
+    def stateless() raises -> Int:
         return 123
 
 
@@ -73,7 +73,7 @@ def uses[T: def() unified -> Int](f: T) -> Int:
 
 
 def outer() -> Int:
-    def stateless() unified {} -> Int:
+    def stateless() -> Int:
         return 123
 
     return uses(stateless)
@@ -87,7 +87,7 @@ def outer() -> Int:
 
 
 def iter[v: Int]():
-    def unified_closure() unified {} -> Int:
+    def unified_closure() -> Int:
         return v
 
     unified_closure()

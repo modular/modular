@@ -306,7 +306,7 @@ def testClosure(a: Bool):
         return
 
     @always_inline
-    def thing() -> MemExample:
+    def thing() capturing -> MemExample:
         var x: MemExample  # expected-note {{'x' declared here}}
         return x  # expected-error {{use of uninitialized value 'x'}}
 

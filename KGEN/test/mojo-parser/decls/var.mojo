@@ -72,7 +72,7 @@ def test_nested_var_origin_mangling[x: Int](c: Bool):
         var y = x
 
     # CHECK: lit.fn *"nested()"
-    def nested():
+    def nested() capturing:
         # CHECK: lit.var.decl "y" var : !lit.ref<!Int, mut *"y`2x">
         var y = x
 

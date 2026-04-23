@@ -90,11 +90,11 @@ struct UnqualifiedStructParameterAccess[
     comptime my_alias = my_param
 
     def bar(self) -> Int:
-        def nested_fn():
+        def nested_fn() capturing:
             # expected-error @+1 {{unqualified access to struct parameter 'my_param'; use 'Self.my_param' instead}}
             comptime my_different_alias = my_param
 
-        def shadowing_nested_fn[my_param: Int]():
+        def shadowing_nested_fn[my_param: Int]() capturing:
             # There should be no warning here because the comptime is shadowed.
             comptime my_different_alias = my_param
 

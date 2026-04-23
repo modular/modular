@@ -28,7 +28,7 @@ struct A[x: Int, x_0: Int]:
         comptime yy = __mlir_attr.`22: index`
 
         # CHECK-LABEL: lit.fn *"bar{{.*}}<*"x`3x": !Int, x_2: !Int>
-        def bar[x: Int, x_2: Int]():
+        def bar[x: Int, x_2: Int]() capturing:
             # CHECK: lit.alias.decl *"z`3x1" = <3>
             comptime z = __mlir_attr.`3: index`
 
@@ -67,7 +67,7 @@ def test_nested_alias_mangling_2[x: Int](c: Bool):
         _ = y
 
     # CHECK: lit.fn *"nested()"
-    def nested():
+    def nested() capturing:
         # CHECK: lit.alias.decl *"y`2x"
         comptime y = x
         _ = y

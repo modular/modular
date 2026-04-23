@@ -66,7 +66,7 @@ __extension AnotherStruct:
 # CHECK-LABEL: lit.fn @"test_nested_function
 def test_nested_function():
     # CHECK-LABEL: lit.fn *"inner
-    def inner():
+    def inner() capturing:
         # CHECK: #StringLiteral <:string "inner">
         var name = __get_current_function_name()
         _ = name

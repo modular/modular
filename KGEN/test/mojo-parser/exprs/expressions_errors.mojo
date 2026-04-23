@@ -219,7 +219,7 @@ def test_func_type():
     comptime f9: def () thin raises String = throws_int
 
     def has_foo_kw(*, foo: Int): pass
-    # expected-error @+1 {{cannot implicitly convert 'def(*, foo: Int) -> None' value to 'def(*, bar: Int) -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'def has_foo_kw(*, foo: Int) -> None' value to 'def(*, bar: Int) -> None'}}
     var f10: def (*, bar: Int) thin -> None = has_foo_kw
 
 

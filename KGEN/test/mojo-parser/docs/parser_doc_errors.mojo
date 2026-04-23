@@ -275,7 +275,7 @@ def fn_unified_thin_closure():
     rules must not be enforced on it.
     """
 
-    def thin_closure(x: Int) unified {} -> Int:
+    def thin_closure(x: Int) -> Int:
         return x
 
 
