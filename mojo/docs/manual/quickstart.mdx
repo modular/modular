@@ -64,76 +64,34 @@ but we recommend either `pixi` or `uv`.
 
 </TabItem>
 
-<TabItem value="pip" label="pip">
-
-Create a project and install Mojo:
-
-```sh
-mkdir temperature-analyzer && cd temperature-analyzer
-python3 -m venv .venv && source .venv/bin/activate
-pip install mojo --extra-index-url https://modular.gateway.scarf.sh/simple/
-```
-
-</TabItem>
-
-<TabItem value="conda" label="conda">
-
-<Tabs groupId="os">
-
-<TabItem value="mac" label="macOS">
-1. If needed, install Conda:
-
-    ```sh
-    brew install miniconda
-    conda init zsh
-    source ~/.zshrc # Or other shell rc file
-    ```
-
-2. Create a project and install Mojo:
-
-    ```sh
-    conda create -n temperature-analyzer
-    conda activate temperature-analyzer
-    conda install -c conda-forge -c https://conda.modular.com/max/ mojo
-    ```
-
-</TabItem>
-
-<TabItem value="linux" label="Linux">
-
-1. If needed, install Conda:
-
-    ```sh
-    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
-    bash Miniconda3-latest-Linux-x86_64.sh
-    conda init bash
-    source ~/.bashrc # Or other shell rc file
-    ```
-
-2. Create a project and install Mojo:
-
-    ```sh
-    conda create -n temperature-analyzer
-    conda activate temperature-analyzer
-    conda install -c conda-forge -c https://conda.modular.com/max/ mojo
-    ```
-
-</TabItem>
-
-</Tabs>
-
-</TabItem>
-
 </Tabs>
 
 ## Try Mojo agent skills
 
-Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
-to generate more accurate Mojo code while learning Mojo:
+Mojo is an AI-first programming language. If you're using an AI
+coding assistant, you don't have to rely on whatever it
+remembers about Mojo.
+
+[Mojo agent skills](/mojo/tools/skills) give your AI tool
+up-to-date guidance about the language. They're maintained
+alongside Mojo and updated as it evolves, so your agent isn't
+limited by when the model was trained. This helps it generate
+code that compiles, follows current patterns, and matches how
+Mojo works today.
 
 ```bash
 npx skills add modular/skills
 ```
+
+Two skills are especially useful when you're getting started:
+
+- **Project setup** (`new-modular-project`): helps create and structure new Mojo
+  projects without manual setup
+- **Mojo syntax** (`mojo-syntax`): keeps generated code aligned with the
+  current language, even as it evolves
+
+You describe what you want to build. The skills keep the code
+accurate and up to date.
 
 ## Hello Mojo
 
