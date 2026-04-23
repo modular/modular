@@ -940,16 +940,6 @@ trait ImplicitlyDestructible:
 # ===-----------------------------------------------------------------------===#
 
 
-struct Variadic:
-    comptime TypesOfTrait[T: type_of(AnyType)] = _MLIR.KGENTypeListType[T]
-
-    # ===-----------------------------------------------------------------------===#
-    # Utils
-    # ===-----------------------------------------------------------------------===#
-
-    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts.values
-
-
 struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     TrivialRegisterPassable
 ):
