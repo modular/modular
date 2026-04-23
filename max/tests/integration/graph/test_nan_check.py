@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Integration tests for NaN/Inf detection via MODULAR_MAX_NAN_CHECK.
+"""Integration tests for NaN/Inf detection via max-debug.nan-check.
 
 These tests verify the end-to-end behavior of the NaN checking feature:
 - NaN detection triggers a fatal error with a diagnostic message
@@ -27,6 +27,7 @@ import os
 import re
 import subprocess
 import sys
+from collections.abc import Generator
 from pathlib import Path
 from typing import NamedTuple
 
@@ -40,6 +41,13 @@ from max.graph import DeviceRef, Graph, TensorType, ops
 _SCRIPTS_DIR = Path(__file__).parent / "nan_check_scripts"
 
 _has_gpu = accelerator_count() > 0
+
+
+@pytest.fixture(autouse=True)
+def _reset_debug_config() -> Generator[None, None, None]:
+    """Reset the DebugConfig singleton after each in-process test."""
+    yield
+    InferenceSession.debug.reset()
 
 
 class DeviceConfig(NamedTuple):
@@ -118,7 +126,7 @@ class TestNanCheckDetectsNan:
         result = _run_script_in_subprocess(
             _SCRIPTS_DIR / "produce_nan.py",
             env_vars={
-                "MODULAR_MAX_NAN_CHECK": "1",
+                "MODULAR_DEBUG": "nan-check",
                 "NAN_CHECK_TEST_DEVICE": device_config.name,
             },
         )
@@ -142,7 +150,7 @@ class TestNanCheckDetectsNan:
         result = _run_script_in_subprocess(
             _SCRIPTS_DIR / "produce_nan.py",
             env_vars={
-                "MODULAR_MAX_NAN_CHECK": "1",
+                "MODULAR_DEBUG": "nan-check",
                 "NAN_CHECK_TEST_DEVICE": device_config.name,
             },
         )
@@ -174,10 +182,9 @@ class TestNanCheckPassesCleanTensor:
     def test_clean_tensor_identity(
         self,
         device_config: DeviceConfig,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """An identity graph with valid values should complete normally."""
-        monkeypatch.setenv("MODULAR_MAX_NAN_CHECK", "1")
+        InferenceSession.debug.nan_check = True
 
         session = InferenceSession(devices=[device_config.device])
         graph = _build_identity_graph(device_config.device_ref)
@@ -198,10 +205,9 @@ class TestNanCheckPassesCleanTensor:
     def test_clean_tensor_relu(
         self,
         device_config: DeviceConfig,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A relu graph with valid values should complete normally."""
-        monkeypatch.setenv("MODULAR_MAX_NAN_CHECK", "1")
+        InferenceSession.debug.nan_check = True
 
         session = InferenceSession(devices=[device_config.device])
         graph = _build_relu_graph(device_config.device_ref)
@@ -220,10 +226,9 @@ class TestNanCheckPassesCleanTensor:
     def test_clean_division(
         self,
         device_config: DeviceConfig,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         """A division that does NOT produce NaN/Inf should pass cleanly."""
-        monkeypatch.setenv("MODULAR_MAX_NAN_CHECK", "1")
+        InferenceSession.debug.nan_check = True
 
         session = InferenceSession(devices=[device_config.device])
         graph = _build_div_graph(device_config.device_ref)
@@ -253,7 +258,7 @@ class TestNanCheckDetectsInf:
         result = _run_script_in_subprocess(
             _SCRIPTS_DIR / "produce_inf.py",
             env_vars={
-                "MODULAR_MAX_NAN_CHECK": "1",
+                "MODULAR_DEBUG": "nan-check",
                 "NAN_CHECK_TEST_DEVICE": device_config.name,
             },
         )
@@ -275,7 +280,7 @@ class TestNanCheckDetectsInf:
         result = _run_script_in_subprocess(
             _SCRIPTS_DIR / "produce_inf.py",
             env_vars={
-                "MODULAR_MAX_NAN_CHECK": "1",
+                "MODULAR_DEBUG": "nan-check",
                 "NAN_CHECK_TEST_DEVICE": device_config.name,
             },
         )
@@ -295,7 +300,7 @@ class TestNanCheckDetectsInf:
         result = _run_script_in_subprocess(
             _SCRIPTS_DIR / "produce_mixed.py",
             env_vars={
-                "MODULAR_MAX_NAN_CHECK": "1",
+                "MODULAR_DEBUG": "nan-check",
                 "NAN_CHECK_TEST_DEVICE": device_config.name,
             },
         )
@@ -323,7 +328,7 @@ class TestNanCheckNoOverheadWhenDisabled:
     def test_nan_produces_nan_without_abort(
         self, device_config: DeviceConfig
     ) -> None:
-        """Without MODULAR_MAX_NAN_CHECK, 0/0 should produce NaN silently."""
+        """Without max-debug.nan-check enabled, 0/0 should produce NaN silently."""
         session = InferenceSession(devices=[device_config.device])
         graph = _build_div_graph(device_config.device_ref)
         model = session.load(graph)
@@ -349,7 +354,7 @@ class TestNanCheckNoOverheadWhenDisabled:
     def test_inf_produces_inf_without_abort(
         self, device_config: DeviceConfig
     ) -> None:
-        """Without MODULAR_MAX_NAN_CHECK, 1/0 should produce Inf silently."""
+        """Without max-debug.nan-check enabled, 1/0 should produce Inf silently."""
         session = InferenceSession(devices=[device_config.device])
         graph = _build_div_graph(device_config.device_ref)
         model = session.load(graph)
@@ -369,17 +374,12 @@ class TestNanCheckNoOverheadWhenDisabled:
         assert result[2] == 3.0
         assert result[3] == 4.0
 
-    def test_disabled_when_env_unset(
+    def test_disabled_when_flag_off(
         self,
         device_config: DeviceConfig,
-        monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        """Ensure nan checking is off when MODULAR_MAX_NAN_CHECK is unset.
-
-        The implementation uses env var existence (GetEnv), not value.
-        Unsetting the var is the correct way to disable.
-        """
-        monkeypatch.delenv("MODULAR_MAX_NAN_CHECK", raising=False)
+        """Ensure nan checking is off when `InferenceSession.debug.nan_check` is False."""
+        InferenceSession.debug.nan_check = False
 
         session = InferenceSession(devices=[device_config.device])
         graph = _build_div_graph(device_config.device_ref)
