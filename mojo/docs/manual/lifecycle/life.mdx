@@ -372,7 +372,7 @@ struct HeapArray(Copyable):
         self.cap = size * 2
         self.data = alloc[Int](self.cap)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(val)
+            (self.data + i).init_pointee(copy=val)
 
     def __init__(out self, *, copy: Self):
         # Deep-copy the existing value
@@ -380,7 +380,7 @@ struct HeapArray(Copyable):
         self.cap = copy.cap
         self.data = alloc[Int](self.cap)
         for i in range(self.size):
-            (self.data + i).init_pointee_copy(copy.data[i])
+            (self.data + i).init_pointee(copy=copy.data[i])
         # The lifetime of `copy` continues unchanged
 
     def __del__(deinit self):
@@ -393,7 +393,7 @@ struct HeapArray(Copyable):
     def append(mut self, val: Int):
         # Update the array for demo purposes
         if self.size < self.cap:
-            (self.data + self.size).init_pointee_copy(val)
+            (self.data + self.size).init_pointee(copy=val)
             self.size += 1
         else:
             print("Out of bounds")

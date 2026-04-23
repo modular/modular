@@ -976,7 +976,7 @@ struct MoggAsyncPackHelper:
             UnsafePointer[UInt8, MutExternalOrigin],
         ](size_of[Type](), align_of[Type]())
 
-        dst_ptr.bitcast[Type]().init_pointee_move(data^)
+        dst_ptr.bitcast[Type]().init_pointee(take=data^)
 
         external_call["MGP_RT_CreateOwnedAsyncMojoValue", NoneType](
             dst_ptr,

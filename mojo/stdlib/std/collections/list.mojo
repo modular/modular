@@ -429,7 +429,7 @@ struct List[T: Copyable](
         # Transfer all of the elements into the List.
         @parameter
         def init_elt(idx: Int, var elt: Self.T):
-            (self._data + idx).init_pointee_move(elt^)
+            (self._data + idx).init_pointee(take=elt^)
 
         values^.consume_elements[init_elt]()
 
@@ -777,7 +777,7 @@ struct List[T: Copyable](
         if self._len >= self.capacity:
             self._realloc(self.capacity * 2 | Int(self.capacity == 0))
         self._annotate_increase()
-        self._unsafe_next_uninit_ptr().init_pointee_move(value^)
+        self._unsafe_next_uninit_ptr().init_pointee(take=value^)
         self._len += 1
 
     def insert(mut self, i: Int, var value: Self.T):
@@ -812,7 +812,7 @@ struct List[T: Copyable](
 
             var tmp = earlier_ptr.take_pointee()
             earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+            later_ptr.init_pointee(take=tmp^)
 
             earlier_idx -= 1
             later_idx -= 1
@@ -1051,7 +1051,7 @@ struct List[T: Copyable](
         self.reserve(new_size)
         self._annotate_increase(new_size - self._len)
         for i in range(self._len, new_size):
-            (self._data + i).init_pointee_copy(value)
+            (self._data + i).init_pointee(copy=value)
         self._len = new_size
 
     def resize(
@@ -1148,7 +1148,7 @@ struct List[T: Copyable](
 
             var tmp = earlier_ptr.take_pointee()
             earlier_ptr.init_pointee_move_from(later_ptr)
-            later_ptr.init_pointee_move(tmp^)
+            later_ptr.init_pointee(take=tmp^)
 
             earlier_idx += 1
             later_idx -= 1
@@ -1374,7 +1374,7 @@ struct List[T: Copyable](
         (self._data + idx).bitcast[
             downcast[Self.T, ImplicitlyDestructible]
         ]().destroy_pointee()
-        (self._data + idx).init_pointee_move(value^)
+        (self._data + idx).init_pointee(take=value^)
 
     def count(self, value: Self.T) -> Int where conforms_to(Self.T, Equatable):
         """Counts the number of occurrences of a value in the list.

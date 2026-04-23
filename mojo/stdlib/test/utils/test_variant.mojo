@@ -57,13 +57,13 @@ struct Poison(ImplicitlyCopyable):
         pass
 
     def __init__(out self, *, copy: Self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().init_pointee(take=True)
 
     def __init__(out self, *, deinit take: Self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().init_pointee(take=True)
 
     def __del__(deinit self):
-        _poison_ptr().init_pointee_move(True)
+        _poison_ptr().init_pointee(take=True)
 
 
 comptime TestVariant = Variant[MoveCopyCounter, Poison]

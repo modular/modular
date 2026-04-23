@@ -154,7 +154,7 @@ struct UnsafeMaybeUninit[T: AnyType](
         Args:
             value: The value to store in memory.
         """
-        self.unsafe_ptr().init_pointee_move(value^)
+        self.unsafe_ptr().init_pointee(take=value^)
 
     @always_inline
     def unsafe_assume_init_ref(ref self) -> ref[self._array] Self.T:

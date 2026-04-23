@@ -1036,7 +1036,7 @@ struct Dict[
         self._slots = alloc[DictEntry[Self.K, Self.V, Self.H]](self._capacity)
         for i in range(self._capacity):
             if _is_occupied(self._ctrl[i]):
-                (self._slots + i).init_pointee_copy((copy._slots + i)[])
+                (self._slots + i).init_pointee(copy=(copy._slots + i)[])
 
         # Copy the order array
         self._order = copy._order.copy()
@@ -1683,7 +1683,7 @@ struct Dict[
         if not found:
             var entry = DictEntry[H=Self.H](key.copy(), default^)
             self._set_ctrl(slot_idx, _h2(h))
-            (self._slots + slot_idx).init_pointee_move(entry^)
+            (self._slots + slot_idx).init_pointee(take=entry^)
             self._order.append(Int32(slot_idx))
             self._len += 1
             self._growth_left -= 1
@@ -1710,11 +1710,11 @@ struct Dict[
         if found:
             # Update existing entry: destroy old, move new in
             (self._slots + slot_idx).destroy_pointee()
-            (self._slots + slot_idx).init_pointee_move(entry^)
+            (self._slots + slot_idx).init_pointee(take=entry^)
         else:
             # New entry
             self._set_ctrl(slot_idx, _h2(entry.hash))
-            (self._slots + slot_idx).init_pointee_move(entry^)
+            (self._slots + slot_idx).init_pointee(take=entry^)
             self._order.append(Int32(slot_idx))
             self._len += 1
             self._growth_left -= 1
@@ -1842,7 +1842,7 @@ struct Dict[
                 var h2_val = _h2(entry.hash)
                 var new_slot = self._find_empty_slot(entry.hash)
                 self._set_ctrl(new_slot, h2_val)
-                (self._slots + new_slot).init_pointee_move(entry^)
+                (self._slots + new_slot).init_pointee(take=entry^)
                 self._order.append(Int32(new_slot))
 
         assert (
@@ -1910,7 +1910,7 @@ struct Dict[
                 # Target has another entry awaiting relocation; swap.
                 self._set_ctrl(target, _h2(entry.hash))
                 var displaced = (self._slots + target).take_pointee()
-                (self._slots + target).init_pointee_move(entry^)
+                (self._slots + target).init_pointee(take=entry^)
                 slot_map[source] = Int32(target)
 
                 entry = displaced^
@@ -1919,7 +1919,7 @@ struct Dict[
 
             # Target is EMPTY: final placement.
             self._set_ctrl(target, _h2(entry.hash))
-            (self._slots + target).init_pointee_move(entry^)
+            (self._slots + target).init_pointee(take=entry^)
             slot_map[source] = Int32(target)
 
         # Step 4: Update _order with new slot indices.

@@ -386,7 +386,7 @@ struct ObservableDel[origin: MutOrigin = MutAnyOrigin](ImplicitlyCopyable):
 
     def __del__(deinit self):
         """Sets the target flag to True when destroyed."""
-        self.target.init_pointee_move(True)
+        self.target.init_pointee(take=True)
 
 
 # ===----------------------------------------------------------------------=== #

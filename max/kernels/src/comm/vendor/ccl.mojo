@@ -275,7 +275,7 @@ def _get_global_comms(ngpus: Int) raises -> Communicators:
     var c = Communicators(ngpus=ngpus, comms=comms.copy())
 
     var ptr = alloc[Communicators](1)
-    ptr.init_pointee_move(c)
+    ptr.init_pointee(take=c)
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(NAME), ptr.bitcast[NoneType]()
     )

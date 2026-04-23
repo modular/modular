@@ -177,13 +177,13 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime StrideType = out_stride_types[i]
 
         comptime if StrideType.is_static_value:
-            stride_ptr.init_pointee_copy(
-                rebind[StrideType](Idx[StrideType.static_value]())
+            stride_ptr.init_pointee(
+                copy=rebind[StrideType](Idx[StrideType.static_value]())
             )
         else:
             var stride_val = tensor.layout.stride[idx]().value()
-            stride_ptr.init_pointee_copy(
-                rebind[StrideType](
+            stride_ptr.init_pointee(
+                copy=rebind[StrideType](
                     RuntimeInt[StrideType.DTYPE](
                         Scalar[StrideType.DTYPE](stride_val)
                     )
@@ -195,8 +195,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
         comptime ShapeType = out_shape_types[i]
 
         comptime if ShapeType.is_static_value:
-            shape_ptr.init_pointee_copy(
-                rebind[ShapeType](Idx[ShapeType.static_value]())
+            shape_ptr.init_pointee(
+                copy=rebind[ShapeType](Idx[ShapeType.static_value]())
             )
         else:
             var shape_val = tensor.layout.shape[idx]().value()
@@ -205,8 +205,8 @@ def _reshape_tile_tensor_with_batch_to_3d(
                 comptime for batch_idx in range(rank - 3):
                     shape_val *= tensor.layout.shape[batch_idx]().value()
 
-            shape_ptr.init_pointee_copy(
-                rebind[ShapeType](
+            shape_ptr.init_pointee(
+                copy=rebind[ShapeType](
                     RuntimeInt[ShapeType.DTYPE](
                         Scalar[ShapeType.DTYPE](shape_val)
                     )

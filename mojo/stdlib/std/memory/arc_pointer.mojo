@@ -127,7 +127,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
             value: The value to manage.
         """
         self._inner = alloc[Self._inner_type](1)
-        # Cannot use init_pointee_move as _ArcPointerInner isn't movable.
+        # Cannot use init_pointee(take=...) as _ArcPointerInner isn't movable.
         __get_address_as_uninit_lvalue(self._inner.address) = Self._inner_type(
             value^
         )

@@ -581,7 +581,7 @@ struct Optional[T: Movable](
         Args:
             target: The target pointer to store the device type.
         """
-        target.bitcast[Self]().init_pointee_copy(self)
+        target.bitcast[Self]().init_pointee(copy=self)
 
     @staticmethod
     def get_type_name() -> (
@@ -998,7 +998,7 @@ struct _NicheableOptionalRegStorage[
         comptime assert _type_is_eq[U, Self.T]()
         __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(self))
         var ptr = UnsafePointer(to=self.storage).bitcast[Self.T]()
-        ptr.init_pointee_move(rebind[Self.T](value))
+        ptr.init_pointee(take=rebind[Self.T](value))
 
     @always_inline
     def value[U: TrivialRegisterPassable](self) -> U:

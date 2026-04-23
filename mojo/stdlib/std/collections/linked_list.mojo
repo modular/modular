@@ -331,7 +331,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var addr = alloc[Node[Self.ElementType]](1)
         var value_ptr = UnsafePointer(to=addr[].value)
-        value_ptr.init_pointee_move(value^)
+        value_ptr.init_pointee(take=value^)
         addr[].prev() = self._tail
         addr[].next() = Self._NodePointer()
         if self._tail:
@@ -352,7 +352,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var node = _make_node[Self.ElementType](value^, None, self._head)
         var addr = alloc[Node[Self.ElementType]](1)
-        addr.init_pointee_move(node^)
+        addr.init_pointee(take=node^)
         if self:
             self._head.value()[].prev() = addr
         else:
@@ -549,8 +549,8 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
 
         if i == 0:
             var node = alloc[Node[Self.ElementType]](1)
-            node.init_pointee_move(
-                _make_node[Self.ElementType](
+            node.init_pointee(
+                take=_make_node[Self.ElementType](
                     elem^, Self._NodePointer(), Self._NodePointer()
                 )
             )

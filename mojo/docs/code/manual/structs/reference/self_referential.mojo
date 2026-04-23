@@ -35,7 +35,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     @staticmethod
     def make_node(value: Self.ElementType) -> Self.NodePointer:
         node_ptr = alloc[Self](1)
-        node_ptr.init_pointee_move(Self(value))
+        node_ptr.init_pointee(take=Self(value))
         return node_ptr
 
     # Constructs a `Node` with allocated memory, assigns a value, appends

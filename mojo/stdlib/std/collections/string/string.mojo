@@ -904,7 +904,7 @@ struct String(
             self.capacity() > self.byte_length()
         ), "String: capacity is not sufficient"
         var length = self.byte_length()
-        (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
+        (self.unsafe_ptr_mut() + length).init_pointee(take=byte)
         self.set_byte_length(length + 1)
 
     def append(mut self, codepoint: Codepoint):

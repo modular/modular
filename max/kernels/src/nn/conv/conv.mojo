@@ -3429,7 +3429,7 @@ def _get_cudnn_meta(
         return ptr
 
     var new_ptr_meta = alloc[CuDNNConvMeta](1)
-    new_ptr_meta.init_pointee_move(CuDNNConvMeta())
+    new_ptr_meta.init_pointee(take=CuDNNConvMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3540,7 +3540,7 @@ def _get_cached_cudnn_meta_nhwc_full(
         return ptr
 
     var new_ptr_meta = alloc[CachedCuDNNMetaNHWCFull](1)
-    new_ptr_meta.init_pointee_move(CachedCuDNNMetaNHWCFull())
+    new_ptr_meta.init_pointee(take=CachedCuDNNMetaNHWCFull())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3882,7 +3882,7 @@ def _get_cached_miopen_meta(
         return ptr
 
     var new_ptr_meta = alloc[CachedMIOpenMeta](1)
-    new_ptr_meta.init_pointee_move(CachedMIOpenMeta())
+    new_ptr_meta.init_pointee(take=CachedMIOpenMeta())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -5470,8 +5470,8 @@ def _conv3d_cudnn[
 
         # Store result in global cache.
         var ptr_entry = alloc[_Conv3dAlgoCacheEntry](1)
-        ptr_entry.init_pointee_move(
-            _Conv3dAlgoCacheEntry(
+        ptr_entry.init_pointee(
+            take=_Conv3dAlgoCacheEntry(
                 algo_value=rebind[Int8](algo),
                 workspace_size=workspace_size_var,
             )

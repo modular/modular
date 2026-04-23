@@ -817,9 +817,9 @@ def test_uninit_move_n_trivial() raises:
     # Test with trivial move type - should use memcpy, not call move constructor
     comptime Counter = MoveCounter[Int, trivial_move=True]
     var src = alloc[Counter](3)
-    (src + 0).init_pointee_move(Counter(10))
-    (src + 1).init_pointee_move(Counter(20))
-    (src + 2).init_pointee_move(Counter(30))
+    (src + 0).init_pointee(take=Counter(10))
+    (src + 1).init_pointee(take=Counter(20))
+    (src + 2).init_pointee(take=Counter(30))
 
     var dest = alloc[Counter](3)
 
@@ -844,9 +844,9 @@ def test_uninit_move_n_trivial() raises:
 def test_uninit_move_n_nontrivial() raises:
     # Test with non-trivial type that tracks moves
     var src = alloc[MoveCounter[String]](3)
-    (src + 0).init_pointee_move(MoveCounter("foo"))
-    (src + 1).init_pointee_move(MoveCounter("bar"))
-    (src + 2).init_pointee_move(MoveCounter("baz"))
+    (src + 0).init_pointee(take=MoveCounter("foo"))
+    (src + 1).init_pointee(take=MoveCounter("bar"))
+    (src + 2).init_pointee(take=MoveCounter("baz"))
 
     var dest = alloc[MoveCounter[String]](3)
 
@@ -874,9 +874,9 @@ def test_uninit_copy_n_trivial() raises:
     # Test with trivial copy type - should use memcpy, not call copy ctor
     comptime Counter = CopyCounter[Int, trivial_copy=True]
     var src = alloc[Counter](3)
-    src.init_pointee_move(Counter(0))
-    (src + 1).init_pointee_move(Counter(1))
-    (src + 2).init_pointee_move(Counter(2))
+    src.init_pointee(take=Counter(0))
+    (src + 1).init_pointee(take=Counter(1))
+    (src + 2).init_pointee(take=Counter(2))
 
     var dest = alloc[Counter](3)
 
@@ -902,9 +902,9 @@ def test_uninit_copy_n_trivial() raises:
 def test_uninit_copy_n_nontrivial() raises:
     # Test with non-trivial type that tracks copies
     var src = alloc[CopyCounter[String]](3)
-    src.init_pointee_move(CopyCounter("alpha"))
-    (src + 1).init_pointee_move(CopyCounter("beta"))
-    (src + 2).init_pointee_move(CopyCounter("gamma"))
+    src.init_pointee(take=CopyCounter("alpha"))
+    (src + 1).init_pointee(take=CopyCounter("beta"))
+    (src + 2).init_pointee(take=CopyCounter("gamma"))
 
     var dest = alloc[CopyCounter[String]](3)
 
@@ -941,9 +941,9 @@ def test_destroy_n_trivial() raises:
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](3)
-    (ptr + 0).init_pointee_move(Counter(counter_ptr))
-    (ptr + 1).init_pointee_move(Counter(counter_ptr))
-    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+    (ptr + 0).init_pointee(take=Counter(counter_ptr))
+    (ptr + 1).init_pointee(take=Counter(counter_ptr))
+    (ptr + 2).init_pointee(take=Counter(counter_ptr))
 
     # This should compile to nothing for trivial destructors
     destroy_n(ptr, count=3)
@@ -960,9 +960,9 @@ def test_destroy_n_nontrivial() raises:
     comptime Counter = DelCounter[origin_of(del_count)]
 
     var ptr = alloc[Counter](3)
-    (ptr + 0).init_pointee_move(Counter(counter_ptr))
-    (ptr + 1).init_pointee_move(Counter(counter_ptr))
-    (ptr + 2).init_pointee_move(Counter(counter_ptr))
+    (ptr + 0).init_pointee(take=Counter(counter_ptr))
+    (ptr + 1).init_pointee(take=Counter(counter_ptr))
+    (ptr + 2).init_pointee(take=Counter(counter_ptr))
 
     destroy_n(ptr, count=3)
     # Verify destructor was called for all 3 elements
@@ -994,7 +994,7 @@ def test_uninit_move_n_zero_count() raises:
 def test_uninit_copy_n_zero_count() raises:
     # Test with zero count - should be no-op
     var src = alloc[CopyCounter[String]](1)
-    src.init_pointee_move(CopyCounter("test"))
+    src.init_pointee(take=CopyCounter("test"))
 
     var dest = alloc[CopyCounter[String]](1)
 
@@ -1016,7 +1016,7 @@ def test_destroy_n_zero_count() raises:
     comptime Counter = DelCounter[origin_of(del_count), trivial_del=True]
 
     var ptr = alloc[Counter](1)
-    ptr.init_pointee_move(Counter(counter_ptr))
+    ptr.init_pointee(take=Counter(counter_ptr))
 
     destroy_n(ptr, count=0)
     # Destructor should NOT have been called - del_count should still be 0

@@ -650,7 +650,7 @@ struct IntervalTree[
         # Allocate memory for a new node and initialize it with the interval
         # and data
         var new_node = alloc[_IntervalNode[Self.T, Self.U]](1)
-        new_node.init_pointee_move(_IntervalNode(interval, data))
+        new_node.init_pointee(take=_IntervalNode(interval, data))
         self._len += 1
 
         # If the tree is empty, set the root to the new node and color it black.
