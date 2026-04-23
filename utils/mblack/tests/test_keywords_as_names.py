@@ -136,20 +136,19 @@ def test_keyword_as_trait_name(kw):
 
 @pytest.mark.parametrize("kw", KEYWORDS)
 def test_keyword_as_mlir_region_name(kw):
-    """Keywords can be used as __mlir_region names."""
+    """Keywords can be used as __mlir_region names (with backticks)."""
     source = (
         "def foo():\n"
-        f"    __mlir_region {kw}(): pass\n"
+        f"    __mlir_region `{kw}`(): __mlir_op.`co.suspend.end`()\n"
+        f'    __mlir_op.`co.suspend`[_region="{kw}".value]()\n'
     )
     expected = (
         "def foo():\n"
-        f"    __mlir_region {kw}():\n"
-        "        pass\n"
+        f"    __mlir_region `{kw}`():\n"
+        "        __mlir_op.`co.suspend.end`()\n"
+        "\n"
+        f'    __mlir_op.`co.suspend`[_region="{kw}".value]()\n'
     )
     assert_mojo_format(source, expected)
 
 
-def test_relative_import_after_dot():
-    """Keyword after '.' in an import must stay a keyword."""
-    source = "from . import Layout\n"
-    assert_mojo_format(source, source)

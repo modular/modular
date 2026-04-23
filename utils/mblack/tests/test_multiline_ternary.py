@@ -93,12 +93,14 @@ def test_multiline_ternary_if_no_space_before_paren():
     ternary continuation."""
     source = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10\n"
         "        if(b % 2) else 100\n"
         "    print(a)\n"
     )
     expected = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10 if (b % 2) else 100\n"
         "    print(a)\n"
     )
@@ -184,12 +186,14 @@ def test_multiline_ternary_with_comment_on_prev_line(spaces):
     ternary continuation, regardless of spacing before #."""
     source = (
         "def main():\n"
+        "    var b = 0\n"
         f"    var a = 10{spaces}# pick ten\n"
         "        if b % 2 else 100\n"
         "    print(a)\n"
     )
     expected = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10 if b % 2 else 100  # pick ten\n"
         "    print(a)\n"
     )
@@ -200,12 +204,14 @@ def test_multiline_ternary_with_comment_on_continuation_line():
     """A trailing comment on the continuation line should be preserved."""
     source = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10\n"
         "        if b % 2 else 100  # fallback\n"
         "    print(a)\n"
     )
     expected = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10 if b % 2 else 100  # fallback\n"
         "    print(a)\n"
     )
@@ -224,12 +230,14 @@ def test_multiline_ternary_with_comments_on_both_lines():
     """
     source = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10  # value\n"
         "        if b % 2 else 100  # fallback\n"
         "    print(a)\n"
     )
     expected = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10 if b % 2 else 100  # fallback  # value\n"
         "    print(a)\n"
     )
@@ -239,13 +247,23 @@ def test_multiline_ternary_with_comments_on_both_lines():
 def test_multiline_ternary_with_hash_in_string_and_comment():
     """A # inside a string literal must not be confused with a comment."""
     source = (
+        "def foo(x: String) -> Int:\n"
+        "    return 0\n"
+        "\n"
+        "\n"
         "def main():\n"
+        "    var bar = 0\n"
         '    var a = foo("a#b")  # note\n'
         "        if True else bar\n"
         "    print(a)\n"
     )
     expected = (
+        "def foo(x: String) -> Int:\n"
+        "    return 0\n"
+        "\n"
+        "\n"
         "def main():\n"
+        "    var bar = 0\n"
         '    var a = foo("a#b") if True else bar  # note\n'
         "    print(a)\n"
     )
@@ -273,6 +291,7 @@ def test_multiline_ternary_tab_indented():
     """Ternary continuation with tab indentation should be joined correctly."""
     source = (
         "def main():\n"
+        "\tvar b = 0\n"
         "\tvar a = 10\n"
         "\t\tif b % 2 else 100\n"
         "\tprint(a)\n"
@@ -280,6 +299,7 @@ def test_multiline_ternary_tab_indented():
     # mblack normalizes tabs to spaces in its output.
     expected = (
         "def main():\n"
+        "    var b = 0\n"
         "    var a = 10 if b % 2 else 100\n"
         "    print(a)\n"
     )
@@ -312,6 +332,8 @@ def test_multiline_if_statement_after_comment_not_joined():
     must not be mistaken for a ternary continuation."""
     source = (
         "def main():\n"
+        "    var n = 0\n"
+        "    var limit = 0\n"
         "    for i in range(0, n, 128):  # stride\n"
         "        if (\n"
         "            i < limit\n"
@@ -320,6 +342,8 @@ def test_multiline_if_statement_after_comment_not_joined():
     )
     expected = (
         "def main():\n"
+        "    var n = 0\n"
+        "    var limit = 0\n"
         "    for i in range(0, n, 128):  # stride\n"
         "        if i < limit:\n"
         "            print(i)\n"
@@ -336,7 +360,14 @@ def test_ternary_like_inside_brackets_not_joined():
     from mblib2to3.pgen2.driver import _normalize_mojo_source
 
     source = (
+        "def foo(v: Int) -> Int:\n"
+        "    return v\n"
+        "\n"
+        "\n"
         "def main():\n"
+        "    var cond = True\n"
+        "    var value = 0\n"
+        "    var other = 0\n"
         "    var x = foo(\n"
         "        value\n"
         "        if cond else other\n"
@@ -346,7 +377,14 @@ def test_ternary_like_inside_brackets_not_joined():
     # handles implicit line continuation inside brackets.
     assert _normalize_mojo_source(source) == source
     expected = (
+        "def foo(v: Int) -> Int:\n"
+        "    return v\n"
+        "\n"
+        "\n"
         "def main():\n"
+        "    var cond = True\n"
+        "    var value = 0\n"
+        "    var other = 0\n"
         "    var x = foo(value if cond else other)\n"
     )
     assert_mojo_format(source, expected)

@@ -49,9 +49,9 @@ def test_ref_origin_in_return_type_with_space():
 
 def test_ref_origin_multiple_origins():
     """Multiple origins should be formatted correctly."""
-    source = "def foo(ref[a, b] r: Int): pass"
+    source = "def foo[a: Origin, b: Origin](ref[a, b] r: Int): pass"
     expected = (
-        "def foo(ref[a, b] r: Int):\n"
+        "def foo[a: Origin, b: Origin](ref[a, b] r: Int):\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)
@@ -59,9 +59,9 @@ def test_ref_origin_multiple_origins():
 
 def test_ref_origin_with_space_before_param():
     """Ensure space is preserved between ] and parameter name."""
-    source = "def foo(ref[origin]r: Int): pass"
+    source = "def foo[origin: Origin](ref[origin]r: Int): pass"
     expected = (
-        "def foo(ref[origin] r: Int):\n"
+        "def foo[origin: Origin](ref[origin] r: Int):\n"
         "    pass\n"
     )
     assert_mojo_format(source, expected)
@@ -69,29 +69,59 @@ def test_ref_origin_with_space_before_param():
 
 def test_ref_origin_untyped_param():
     """Space after ref[origin] with untyped parameter (e.g., self)."""
-    source = "def barriers(ref[AddressSpace.SHARED]self): pass"
+    source = (
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def barriers(ref[AddressSpace.SHARED]self): pass\n"
+    )
     expected = (
-        "def barriers(ref[AddressSpace.SHARED] self):\n"
-        "    pass\n"
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def barriers(ref[AddressSpace.SHARED] self):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)
 
 
 def test_ref_origin_untyped_param_with_space():
     """Preserve correct spacing for untyped parameter."""
-    source = "def barriers(ref[AddressSpace.SHARED] self): pass"
+    source = (
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def barriers(ref[AddressSpace.SHARED] self): pass\n"
+    )
     expected = (
-        "def barriers(ref[AddressSpace.SHARED] self):\n"
-        "    pass\n"
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def barriers(ref[AddressSpace.SHARED] self):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)
 
 
 def test_ref_origin_untyped_param_with_extra_spaces():
     """Fix extra space between ref and [origin] for untyped parameter."""
-    source = "def barriers(ref [AddressSpace.SHARED] self): pass"
+    source = (
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def barriers(ref [AddressSpace.SHARED] self): pass\n"
+    )
     expected = (
-        "def barriers(ref[AddressSpace.SHARED] self):\n"
-        "    pass\n"
+        "from std.memory.pointer import AddressSpace\n"
+        "\n"
+        "\n"
+        "struct Foo:\n"
+        "    def barriers(ref[AddressSpace.SHARED] self):\n"
+        "        pass\n"
     )
     assert_mojo_format(source, expected)

@@ -10,12 +10,12 @@ from tests.util import assert_mojo_format
 def test_decorated_alias():
     source = (
         "struct Foo:\n"
-        "    @deprecated\n"
+        '    @deprecated("some message here")\n'
         "    alias  b =  6\n"
     )
     expected = (
         "struct Foo:\n"
-        "    @deprecated\n"
+        '    @deprecated("some message here")\n'
         "    alias b = 6\n"
     )
     assert_mojo_format(source, expected)
