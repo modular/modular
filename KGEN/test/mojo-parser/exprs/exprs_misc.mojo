@@ -111,7 +111,7 @@ def test_var_decl_patterns(c: Bool) raises:
     # the "fn" as part of the list (a function expression).
     _ = (1,)
 
-    def test():
+    def test() capturing:
         pass
 
 

@@ -1474,8 +1474,10 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     p.consumeIdentifier();
   }
 
-  // Temporary error while new closures are hidden behind unified effect
-  if (effects.isRegisterPassable() && !effects.isUnified()) {
+  // Temporary error while new closures are hidden behind unified effect.
+  // A following capture list shorthand (`{...}`) also implies unified.
+  if (effects.isRegisterPassable() && !effects.isUnified() &&
+      !(kind == ArgListKind::kArgList && p.getToken().is(Token::l_brace))) {
     SMLoc loc = p.getToken().getLoc();
     p.emitError(loc, "'register_passable' functions must be 'unified'");
     return failure();

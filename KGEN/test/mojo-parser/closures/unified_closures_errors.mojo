@@ -13,7 +13,7 @@ trait MyInterface:
 
 
 def make_closure(x: Int) -> Int:
-    def parametric[T: MyInterface](a: T) unified {}:
+    def parametric[T: MyInterface](a: T):
         # expected-error @below {{use of unknown declaration 'A'}}
         comptime X = A
         pass
@@ -30,12 +30,6 @@ def use(a:Mem):
 def foo(a: Mem):
     # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
     def closure() unified register_passable {var}:
-        use(a)
-
-
-def bar(a: Mem):
-    # expected-error @below {{'register_passable' functions must be 'unified'}}
-    def closure() register_passable {var}:
         use(a)
 
 # COM: ambiguous captures

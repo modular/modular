@@ -143,8 +143,8 @@ def stripping_raises():
     def fn_raises() raises:
         pass
 
-    # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'def fn_raises() raises -> None' value to 'def() -> None'}}
     var fp: def() thin = fn_raises
 
-    # expected-error @+1 {{cannot implicitly convert 'def() raises -> None' value to 'def() raises Int -> None'}}
+    # expected-error @+1 {{cannot implicitly convert 'def fn_raises() raises -> None' value to 'def() raises Int -> None'}}
     var fp2: def() thin raises Int = fn_raises

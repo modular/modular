@@ -1129,7 +1129,7 @@ def closureParameter[func: def () capturing -> __mlir_type.index]():
 
 # CHECK-LABEL: lit.fn @"closureParameterCaptures
 # CHECK-SAME: :*(0,0):
-# CHECK-SAME: func: !lit.generator<:origins:() capturing -> !kgen.none>
+# CHECK-SAME: *"func{{.*}}": !lit.generator<:origins:() capturing -> !kgen.none>
 def closureParameterCaptures[
     origins: OriginSet, //, func: def () capturing [origins] -> None
 ]():
@@ -1255,13 +1255,12 @@ def testParameterCapture(mut x: Int, mut y: Int):
 
 # CHECK-LABEL: lit.fn @"topLevelParamFn[index]()"<a_param>
 def topLevelParamFn[a_param: __mlir_type.index]():
-    # CHECK: lit.fn *"nestedFunction[index]()"<b_param>
     def nestedFunction[b_param: __mlir_type.index]():
         return
 
-    # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>() -> !kgen.none> = <*"nestedFunction[index]()">
+    # CHECK: lit.alias.decl *"thinref{{.*}}": !lit.generator<<"b_param": index>
     comptime thinref = nestedFunction
-    # CHECK: lit.call tail[{{.*}}: bind_params(:!lit.generator<<"b_param": index>() -> !kgen.none> *"nestedFunction[index]()", 2)]()
+    # CHECK: lit.call tail @decls::@"nestedFunction[index](){{.*}}"<2>()
     nestedFunction[Int(2)._mlir_value]()
 
     var value = 0
@@ -1278,13 +1277,12 @@ def topLevelParamFn[a_param: __mlir_type.index]():
 struct SomeParamStruct[c_param: Int]:
     # CHECK-LABEL: lit.fn @"topLevelParamFn{{.*}}<a_param: !Int>
     def topLevelParamFn[a_param: Int](self):
-        # CHECK: lit.fn *"nestedFunction{{.*}}"<b_param: !Int>
         def nestedFunction[b_param: Int]():
             return
 
-        # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>() -> !kgen.none> = <*"nestedFunction[{{.*}}Int]()">
+        # CHECK: lit.alias.decl *"reff{{.*}}": !lit.generator<<"b_param": !Int>
         comptime reff = nestedFunction
-        # CHECK: lit.call tail[{{.*}}: bind_params(:!lit.generator<<"b_param": !Int>() -> !kgen.none> *"nestedFunction[{{.*}}Int]()", {{.*}}2{{.*}})]()
+        # CHECK: lit.call tail @decls::@"nestedFunction[::Int](){{.*}}"<{{.*}}2{{.*}}>()
         nestedFunction[2]()
 
 
@@ -1313,8 +1311,7 @@ struct MyStruct:
 # CHECK-SAME: [mut *"__result__`"](?, %__result__:
 def getThing() -> MyStruct:
     # result slot parameter should get a different name to avoid conflict.
-    # CHECK: lit.fn *"localTest()"
-    # CHECK-SAME: [mut *"__result__`2x"](?, %__result___0[__result__]:
+    # CHECK: lit.call tail @decls::@"localTest(){{.*}}"[mut *"__result__`"]
     def localTest() -> MyStruct:
         return MyStruct()
 

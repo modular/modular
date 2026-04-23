@@ -57,8 +57,8 @@ def testThingWithStaticMethod():
 
 
 def top_level_fn(a: Int) raises:
-    # expected-error @below {{capturing nested functions must be declared 'unified'}}
     def bar[b: Int]() -> Int:
+      # expected-error @below {{Could not infer capture convention of the captured value a}}
       return a
 
 def use_non_copyable_type(a: ThingWithStaticMethod) raises:

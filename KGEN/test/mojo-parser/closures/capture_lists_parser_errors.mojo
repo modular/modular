@@ -8,8 +8,8 @@
 
 
 def make_closure(x: Int):
-    # CHECK: error: expected '{' to begin capture list
-    def my_closure(y: Int) unified -> Int:
+    # CHECK: Could not infer capture convention of the captured value x
+    def my_closure(y: Int) -> Int:
         return x + y
 
 

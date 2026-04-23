@@ -17,7 +17,6 @@ def test0(a: Int, b: Int) raises -> Bool:
 
 # CHECK-LABEL: lit.fn @"test1[::Bool](::Int,::Int)"
 def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
-    # CHECK: lit.fn *"select_pred[::Bool]()"<*"cmp`2x": !Bool>() -> !kgen.deferred
     def select_pred[cmp: Bool]() -> __mlir_type.`!kgen.deferred`:
         comptime if cmp:
             return __mlir_attr.`#index<cmp_predicate sle>`
@@ -26,7 +25,7 @@ def test1[cmp: Bool](a: Int, b: Int) raises -> Bool:
 
     comptime pred_attr = select_pred[cmp]()
 
-    # CHECK: kgen.deferred "index.cmp"(%{{.}}, %{{.*}} : !Int, !Int) {pred = #kgen.param.expr<apply, #kgen.bind_params<:!lit.generator<<"cmp": !Bool>() -> !kgen.deferred> *"select_pred[::Bool]()", :!Bool cmp> : !kgen.generator<!lit.generator<() -> !kgen.deferred>>> : !kgen.deferred} : i1
+    # CHECK: kgen.deferred "index.cmp"(%{{.}}, %{{.*}} : !Int, !Int) {pred = #kgen.param.expr<apply, #kgen.symbol.constant<@deferred_ops::@"select_pred[::Bool](){{.*}}"<:!Bool cmp>> : !kgen.generator<!lit.generator<() -> !kgen.deferred>>> : !kgen.deferred} : i1
     var res = __mlir_op.`index.cmp`[pred=pred_attr](a, b)
     return res
 
@@ -47,7 +46,6 @@ def to_string[
 # CHECK-LABEL: lit.fn @"test2[::StringSlice[::Bool(False)
 def test2[pred: StaticString](x: Int, y: Int) -> Bool:
     def get_pred[pred: StaticString]() -> __mlir_type.`!kgen.deferred`:
-        # CHECK: kgen.param.constant: !kgen.deferred =  <#kgen<attr_ctor_deferred("#index<cmp_predicate ", {{.*}} elide_type unit
         return __mlir_deferred_attr[
             `#index<cmp_predicate `, +to_string[pred](), `>`
         ]

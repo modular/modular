@@ -1674,11 +1674,32 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   if (fnSignature.parseArgumentListAndEffects(p, ArgListKind::kArgList))
     return failure();
 
+  auto hasParameterDecorator = [&]() {
+    return llvm::any_of(
+        decoratorExprs,
+        [](const std::pair<ExprNode *, LexerCursor> &decorator) {
+          auto *expr = decorator.first->getWithoutParens();
+          if (auto *declRef = dyn_cast<DeclRefNode>(expr))
+            return declRef->spelling == "parameter";
+          auto *call = dyn_cast<CallNode>(expr);
+          if (!call)
+            return false;
+          auto *callee =
+              dyn_cast<DeclRefNode>(call->callee->getWithoutParens());
+          return callee && callee->spelling == "parameter";
+        });
+  };
+  if (funcOp->getParentOfType<FnOp>() && !fnSignature.effects.isUnified() &&
+      !fnSignature.effects.isCapturing() && !hasParameterDecorator())
+    fnSignature.effects.setUnified();
   // TODO: effects parsing must be moved after captures parsing.
-  // A capture list must be specified for every unified closure.
+  // A capture list shorthand (`{...}`) implies the unified effect.
+  // Capturing and @parameter closures do not have capture lists.
   ParsedCaptureList captureSignature;
-  if (fnSignature.effects.isUnified() && captureSignature.parseCaptureList(p))
-    return failure();
+  if (fnSignature.effects.isUnified() && p.getToken().is(Token::l_brace)) {
+    if (captureSignature.parseCaptureList(p))
+      return failure();
+  }
 
   // Emit copies/casts for captures. Otherwise the incorrect lifetime rules will
   // be applied to the values in the closure.

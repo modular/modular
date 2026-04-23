@@ -863,11 +863,8 @@ world"
     var a25 = r"A\zB"            # CHECK: "A\\zB"
 
     # Issue #201: https://github.com/modular/mojo/issues/201
-    # CHECK: lit.fn *"hello{{.*}} {
     def hello() -> StaticString:
-        # CHECK: kgen.param.constant: {{.*}}#StringLiteral <:string "123">> = <*?>
         return "123"
-        # lit.end_fn
     # expected-warning @+1 {{'StringLiteral["other comment"]' value is unused; assign to '_' to discard the result}}
     """other comment"""
 

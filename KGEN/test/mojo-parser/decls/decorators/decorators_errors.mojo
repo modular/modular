@@ -20,7 +20,7 @@ def issue1242():
     var decorator: Int
 
     @decorator # expected-error {{cannot use a dynamic value in decorator}}
-    def on_message(): pass  # expected-error {{capturing nested functions must be declared 'unified'}}
+    def on_message() capturing: pass
 
 @invalid_dec # expected-error {{use of unknown declaration 'invalid_dec'}}
 def unknown_decorator(): pass
