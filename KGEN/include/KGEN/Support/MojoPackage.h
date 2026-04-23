@@ -24,27 +24,97 @@ struct MojoPackageVersion final {
   int patch = 0;
   std::string label = "";
 
+  bool hasValidLabel = true;
+  enum class ABRC {
+    Alpha = 0,
+    Beta,
+    RC,
+    None,
+  } abrc = ABRC::None;
+  std::optional<int> nABRC;
+  std::optional<int> postN;
+  std::optional<int> devN;
+
   MojoPackageVersion() = default;
   MojoPackageVersion(int maj, int min, int pat)
       : major(maj), minor(min), patch(pat) {}
 
-  MojoPackageVersion(const M::ModularVersion &version)
+  MojoPackageVersion(const M::ProjectVersion &version)
       : major(version.major), minor(version.minor), patch(version.patch),
-        label(version.label) {}
+        label(version.label) {
+    if (!(hasValidLabel = parseLabel())) {
+      // Reset the parsed label fields on error
+      abrc = ABRC::None;
+      nABRC.reset();
+      postN.reset();
+      devN.reset();
+    }
+  }
+
+  // Returns true on success, false on any consumeInteger failure; at exit,
+  // labelRef must be empty for the parse to be considered valid.
+  bool parseLabel() {
+    StringRef labelRef = label;
+    // Parse the label: [{a|b|rc}N][.postN][.devN]
+    if (labelRef.consume_front("alpha") || labelRef.consume_front("a"))
+      abrc = ABRC::Alpha;
+    else if (labelRef.consume_front("beta") || labelRef.consume_front("b"))
+      abrc = ABRC::Beta;
+    else if (labelRef.consume_front("rc") || labelRef.consume_front("c"))
+      abrc = ABRC::RC;
+    if (abrc != ABRC::None) {
+      int x;
+      if (labelRef.consumeInteger(10, x) || x < 0)
+        return false;
+      nABRC = x;
+    }
+    if (labelRef.consume_front(".post")) {
+      int x;
+      if (labelRef.starts_with('.') || labelRef.empty())
+        x = 0;
+      else if (labelRef.consumeInteger(10, x) || x < 0)
+        return false;
+      postN = x;
+    }
+    if (labelRef.consume_front(".dev")) {
+      int x;
+      if (labelRef.empty())
+        x = 0;
+      else if (labelRef.consumeInteger(10, x) || x < 0)
+        return false;
+      devN = x;
+    }
+    return labelRef.empty();
+  }
+
+  static auto makeVersionCmpKey(const MojoPackageVersion &ver) {
+    // The "abrc" slot normally sorts by enum value. But a `.dev` on a no-pre
+    // version is pre-pre-release, so it must sort *below* every explicit pre.
+    int preClass = (ver.abrc == ABRC::None && !ver.postN && ver.devN)
+                       ? -1
+                       : static_cast<int>(ver.abrc);
+    auto iABRCN = ver.nABRC.value_or(std::numeric_limits<int>::max());
+    auto iDevN = ver.devN.value_or(std::numeric_limits<int>::max());
+    auto iPostN = ver.postN.value_or(std::numeric_limits<int>::min());
+
+    // 0.26.3.devN < 1.0.0b1.devN < 1.0.0b1.devN+1 < 1.0.0b1 < 1.0.0b2.devN
+    // < 1.0.0b3 < 1.0.0rcN < 1.0.0 < 1.0.0.postN < 1.0.0.postN+1 < 1.1.0
+    return std::tuple(ver.major, ver.minor, ver.patch, preClass, iABRCN, iPostN,
+                      iDevN);
+  }
 
   bool operator<(const MojoPackageVersion &other) const {
-    return std::tie(major, minor, patch) <
-           std::tie(other.major, other.minor, other.patch);
+    return makeVersionCmpKey(*this) < makeVersionCmpKey(other);
   }
 
   bool operator>(const MojoPackageVersion &other) const {
-    return std::tie(major, minor, patch) >
-           std::tie(other.major, other.minor, other.patch);
+    return makeVersionCmpKey(*this) > makeVersionCmpKey(other);
   }
 
   bool operator==(const MojoPackageVersion &other) const {
-    return std::tie(major, minor, patch) ==
-           std::tie(other.major, other.minor, other.patch);
+    return std::tie(major, minor, patch, abrc, nABRC, postN, devN) ==
+           std::tie(other.major, other.minor, other.patch, other.abrc,
+                    other.nABRC, other.postN, other.devN);
   }
 
   // Format version for display
