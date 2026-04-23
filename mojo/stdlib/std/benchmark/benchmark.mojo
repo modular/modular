@@ -381,6 +381,54 @@ struct Report(Copyable, Defaultable):
                 result = self.runs[i].mean(unit)
         return result
 
+    def percentile(self, p: Float64, unit: String = Unit.s) -> Float64:
+        """Returns the p-th percentile of significant batch mean durations.
+
+        Collects the mean duration of each significant batch, sorts them, and
+        returns an interpolated value at the given percentile using linear
+        interpolation between adjacent sorted values.
+
+        Args:
+            p: The percentile to compute, in the range [0, 100].
+            unit: The time unit for example: ns, us, ms, s (default `s`).
+
+        Returns:
+            The p-th percentile of significant batch mean durations, or 0 if
+            there are no significant batches.
+
+        Example:
+
+        ```mojo
+        from std.benchmark import benchmark, Unit
+
+        fn my_fn():
+            pass
+
+        var report = benchmark.run[my_fn]()
+        print(report.percentile(50, Unit.ms))   # median
+        print(report.percentile(99, Unit.ms))   # p99 tail latency
+        ```
+        """
+        var values = List[Float64]()
+        for i in range(len(self.runs)):
+            if self.runs[i]._is_significant:
+                values.append(self.runs[i].mean(unit))
+        var n = len(values)
+        if n == 0:
+            return 0.0
+        sort(values[:])
+        if p <= 0:
+            return values[0]
+        if p >= 100:
+            return values[n - 1]
+        var index = p / 100.0 * Float64(n - 1)
+        var lower = Int(index)
+        var upper = lower + 1
+        if upper >= n:
+            return values[lower]
+        var frac = index - Float64(lower)
+        return values[lower] * (1.0 - frac) + values[upper] * frac
+
     def as_string(self, unit: String = Unit.s) -> String:
         """Converts the Report to a String.
 
