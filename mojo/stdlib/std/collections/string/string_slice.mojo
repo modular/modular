@@ -40,7 +40,7 @@ from std.sys import simd_width_of
 from std.ffi import c_char, CStringSlice
 from std.sys.intrinsics import likely, unlikely
 
-from std.bit import count_trailing_zeros
+from std.bit import count_leading_zeros, count_trailing_zeros
 from std.bit.mask import is_negative, splat
 from std.memory import (
     Span,
@@ -2371,10 +2371,49 @@ def _memrchr[
 ) -> Optional[
     UnsafePointer[Scalar[dtype], source.origin]
 ]:
-    for i in reversed(range(len(source))):
-        if source.unsafe_get(i) == char:
-            return source.unsafe_ptr() + i
+    if (
+        __is_run_in_comptime_interpreter
+        or len(source) < simd_width_of[Scalar[dtype]]()
+    ):
+        var ptr = source.unsafe_ptr()
+        for i in reversed(range(len(source))):
+            if ptr[i] == char:
+                return ptr + i
+        return {}
+    else:
+        return _memrchr_impl(source, char)
+
+
+@always_inline
+def _memrchr_impl[
+    dtype: DType, //
+](
+    source: Span[mut=False, Scalar[dtype], ...],
+    char: Scalar[dtype],
+) -> Optional[UnsafePointer[Scalar[dtype], source.origin]]:
+    var haystack = source.unsafe_ptr()
+    var length = len(source)
+    comptime bool_mask_width = simd_width_of[DType.bool]()
+    var first_needle = SIMD[dtype, bool_mask_width](char)
+    var vectorized_end = align_down(length, bool_mask_width)
+
+    for i in reversed(range(vectorized_end, length)):
+        if haystack[i] == char:
+            return haystack + i
+
+    var i = vectorized_end - bool_mask_width
+    while i >= 0:
+        var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
+        var mask = pack_bits(bool_mask)
+        if mask:
+            var last_pos = Int(
+                type_of(mask)(bool_mask_width - 1) - count_leading_zeros(mask)
+            )
+            return haystack + i + last_pos
+        i -= bool_mask_width
+
     return {}
+
 
 
 @always_inline
