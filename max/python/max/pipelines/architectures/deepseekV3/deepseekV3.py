@@ -603,6 +603,8 @@ class DeepseekV3DecoderLayer(Module):
                     x + attn_out
                     for x, attn_out in zip(xs, attn_outs, strict=True)
                 ]
+            case _:
+                raise ValueError(f"Unsupported parallelism mode: {self.mode}")
 
     def _post_mlp(
         self,
@@ -628,7 +630,11 @@ class DeepseekV3DecoderLayer(Module):
                     return hs
                 return hs
             case ParallelismMode.DP_EP:
-                return hs
+                return [
+                    h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)
+                ]
+            case _:
+                raise ValueError(f"Unsupported parallelism mode: {self.mode}")
 
 
 class DeepseekV3(Module):
