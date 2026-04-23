@@ -56,6 +56,7 @@ from std.gpu.sync import (
     syncwarp,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
+    schedule_barrier,
 )
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_tensor import _get_index_type
@@ -2109,12 +2110,10 @@ struct EPDispatchKernel[
         """Communication SM logic for dispatch_wait_kernel.
 
         Copies received tokens from the receive buffer to the output tensor.
-        The schedule is chosen at compile time from
-        `token_fmt_type.dispatch_wait_tile_shape[1]`: formats with a single
-        k-tile (BF16, BlockwiseFP8, MXFP4) use a static per-(local_expert,
-        rank) work assignment; the NVFP4 path, which sets
-        `dispatch_wait_tile_shape = (128, 2)`, uses the dynamic tile-claiming
-        scheduler required by its TMA-based tile copy.
+        Each SM is assigned to one local expert and dynamically claims tiles via
+        per-expert atomic counters. Tokens within a tile may come from multiple
+        source ranks; rank boundaries are resolved via the within-expert prefix
+        sums written by the auxiliary SM.
 
         Args:
             format_handler: Instance of token_fmt_type for token decoding.
@@ -2133,115 +2132,6 @@ struct EPDispatchKernel[
         comptime tile_size = Self.token_fmt_type.dispatch_wait_tile_shape[0]
         comptime sms_per_tile = Self.token_fmt_type.dispatch_wait_tile_shape[1]
 
-        comptime if sms_per_tile == 1:
-            # Static per-(local_expert, rank) schedule. Each block handles up
-            # to `n_wg_per_sm` pairs, split by warp into `wg_size`-warp work
-            # groups. The within-expert rank prefix sums (Region B) and the
-            # aligned expert starts in `row_offsets` are both published before
-            # the `ready_flag_offset` RELEASE, so reading them after the flag
-            # acquire is safe. Region A is intentionally NOT used here: its
-            # per-pair stores happen after the RELEASE and can hold a stale
-            # value from a prior invocation.
-            comptime n_wg_per_sm = ceildiv(
-                Self.n_experts, Self.n_dispatch_wait_comm_sms
-            )
-            comptime wg_size = Self.n_warps // n_wg_per_sm
-
-            var sm_id_s = block_idx.x
-            var tid_s = thread_idx.x
-            var wg_idx = ufloordiv(warp_id(), wg_size)
-            var global_wg_idx = sm_id_s * n_wg_per_sm + wg_idx
-            var warp_id_in_wg = umod(warp_id(), wg_size)
-
-            # Wait for the auxiliary SM to signal that all offsets are ready.
-            if warp_id() == 0:
-                var flag = _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                    atomic_counter + Self.ready_flag_offset
-                )
-                while flag != EP_DATA_READY_FLAG:
-                    flag = _counter_atomic.load[ordering=Ordering.ACQUIRE](
-                        atomic_counter + Self.ready_flag_offset
-                    )
-            barrier()
-
-            if wg_idx < n_wg_per_sm and global_wg_idx < Self.n_experts:
-                var local_expert_id_s = umod(
-                    global_wg_idx, Self.n_local_experts
-                )
-                var target_rank = ufloordiv(global_wg_idx, Self.n_local_experts)
-                var global_expert_idx_s = (
-                    Int(my_rank) * Self.n_local_experts + local_expert_id_s
-                )
-
-                var expert_start = Int(
-                    rebind[UInt32](
-                        row_offsets[local_expert_id_s + shared_expert_offset]
-                    )
-                )
-                var rp_base = (
-                    Self.rank_prefix_offset + local_expert_id_s * Self.n_ranks
-                )
-                var within_expert_end = Int(
-                    (atomic_counter + rp_base).load(target_rank)
-                )
-                var within_expert_start: Int = 0
-                if target_rank > 0:
-                    within_expert_start = Int(
-                        (atomic_counter + rp_base).load(target_rank - 1)
-                    )
-                var pair_token_count = within_expert_end - within_expert_start
-                var pair_start = expert_start + within_expert_start
-
-                for token_idx in range(
-                    warp_id_in_wg, pair_token_count, wg_size
-                ):
-                    var token_pos = pair_start + token_idx
-                    var recv_buf_ptr = recv_buf_p + Self.recv_buf_layout(
-                        (
-                            Idx(local_expert_id_s),
-                            Idx(target_rank),
-                            Idx(token_idx),
-                            Idx(0),
-                        )
-                    )
-
-                    format_handler.copy_msg_to_output_tensor(
-                        recv_buf_ptr,
-                        token_pos,
-                        local_expert_id_s + shared_expert_offset,
-                        token_pos - expert_start,
-                    )
-
-                    if lane_id() < Self.top_k:
-                        var src_topk_idx = bitcast[DType.uint16, 1](
-                            recv_buf_ptr.load[
-                                width=size_of[UInt16](),
-                                alignment=size_of[UInt16](),
-                            ](
-                                Self.token_fmt_type.topk_info_offset()
-                                + lane_id() * size_of[UInt16](),
-                            )
-                        )
-                        if UInt16(global_expert_idx_s) == src_topk_idx:
-                            var src_idx = bitcast[DType.int32, 1](
-                                recv_buf_ptr.load[
-                                    width=size_of[Int32](),
-                                    alignment=size_of[Int32](),
-                                ](Self.token_fmt_type.src_info_offset())
-                            )
-                            src_info[token_pos, 0] = src_idx
-                            src_info[token_pos, 1] = Int32(lane_id())
-
-            # Cleanup: the last SM to finish resets the flag.
-            if warp_id() == 0 and tid_s == 0:
-                var count = Atomic[scope=DEVICE_SCOPE].fetch_add[
-                    ordering=Ordering.RELAXED
-                ](atomic_counter + Self.cleanup_counter_offset, Int32(-1))
-                if count == 1:
-                    atomic_counter.store(Self.ready_flag_offset, Int32(0))
-            return
-
-        # Dynamic tile-claiming path: required for NVFP4's TMA tile copy.
         var sm_id = block_idx.x
         var tid = thread_idx.x
         var local_expert_id = umod(sm_id, Self.n_local_experts)
@@ -2267,7 +2157,7 @@ struct EPDispatchKernel[
             be called by a single thread.
             """
             return Atomic[scope=DEVICE_SCOPE].fetch_add[
-                ordering=Ordering.RELAXED
+                ordering=Ordering.ACQUIRE
             ](atomic_counter + Self.work_counter_offset + local_expert_id, 1)
 
         @always_inline
@@ -2301,6 +2191,9 @@ struct EPDispatchKernel[
                     )
                 )
                 smem_vals[1] = fetch_tile_id()
+            # TODO(KERN-2792): Investigate why AMD GPUs require this.
+            comptime if is_amd_gpu():
+                schedule_barrier()
 
             # Load within-expert rank prefix sums for this expert.
             var base = Self.rank_prefix_offset + local_expert_id * Self.n_ranks
@@ -2397,6 +2290,9 @@ struct EPDispatchKernel[
                 if warp_id() == 0:
                     if tid == 0:
                         smem_vals[1] = fetch_tile_id()
+                    # TODO(KERN-2792): Investigate why AMD GPUs require this.
+                    comptime if is_amd_gpu():
+                        schedule_barrier()
                     syncwarp()
                     fill_tok_rank_map(Int(smem_vals[1]), total_tokens)
                 barrier()
