@@ -7176,7 +7176,8 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            None, IndexList[2](0)
+            UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            IndexList[2](0),
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,

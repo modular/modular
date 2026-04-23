@@ -1260,7 +1260,8 @@ def mgp_buffer_get_cached(
     )
 
     var buffer = MutByteBuffer(
-        unsafe_cast[Type=Int8](buffer_data), Index(buffer_size)
+        buffer_data.unsafe_value().bitcast[Int8](),
+        Index(buffer_size),
     )
     var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
 
