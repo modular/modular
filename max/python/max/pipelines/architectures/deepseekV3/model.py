@@ -23,7 +23,7 @@ import numpy as np
 from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
@@ -619,12 +619,19 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 # all remaining arguments are for EP inputs
                 ep_model_inputs = list(variadic_args_iter)
 
+                # DeepseekV3.__call__ expects a per-device list for
+                # input_row_offsets
+                input_row_offsets_per_dev = list(
+                    ops.distributed_broadcast(
+                        devices_input_row_offsets.tensor, signal_buffers
+                    )
+                )
                 outputs = nn_model(
                     tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
                     return_n_logits.tensor,
-                    devices_input_row_offsets.tensor,
+                    input_row_offsets_per_dev,
                     host_input_row_offsets.tensor,
                     data_parallel_splits.tensor,
                     batch_context_lengths,

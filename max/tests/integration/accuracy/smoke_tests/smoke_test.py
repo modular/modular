@@ -133,6 +133,8 @@ MODEL_ALIASES = CaseInsensitiveDict({
         "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--devices gpu:0 "
+            "--draft-devices gpu:0 "
             "--speculative-method eagle"
         ),
     },

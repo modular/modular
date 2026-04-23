@@ -151,7 +151,6 @@ def deepseek_logits_postprocess(
     return_logits: ReturnLogits,
     return_hidden_states: ReturnHiddenStates,
     logits_scaling: float = 1.0,
-    duplicated_hs: bool = True,
     eagle3_captured_hs: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Logits postprocessing for DeepseekV3 and DeepseekV3NextN.
@@ -197,11 +196,10 @@ def deepseek_logits_postprocess(
             # Compute the range on device 0 and broadcast to all devices.
             # Using distributed_broadcast instead of per-device .to() copies
             # avoids cross-stream D2D event sync that breaks CUDA graph
-            # capture.
-            # TODO: Ideally we would compute the range on each gpu so no
-            # cross-gpu communication is needed at all. However, I ran into a
-            # weird graph error when I tried that:
-            #   "input device gpu:0 must match result device gpu:1 in rebind()"
+            # capture. Per-device ops.range with a shared out_dim was also
+            # attempted and hit "input device gpu:0 must match result device
+            # gpu:1 in rebind()" — the shared symbolic dim triggers a cross-
+            # device rebind downstream.
             return_n_logits_range = ops.range(
                 start=return_n_logits[0],
                 stop=0,
@@ -301,8 +299,6 @@ def deepseek_logits_postprocess(
         last_token_hs_distributed=last_token_distributed,
         all_hs_distributed=h,
         normalizer=norm_shards,
-        signal_buffers=signal_buffers,
-        duplicated_hs=duplicated_hs,
         eagle3_captured_hs=eagle3_captured_hs,
     )
 
@@ -749,7 +745,7 @@ class DeepseekV3(Module):
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
+        input_row_offsets: list[TensorValue],
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
@@ -775,7 +771,7 @@ class DeepseekV3(Module):
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
+        input_row_offsets: list[TensorValue],
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
@@ -792,13 +788,10 @@ class DeepseekV3(Module):
         # Broadcasting graph-time constants can hang when chained after
         # runtime-dependent collectives (GEX-3200).
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
-        if not input_row_offsets.device == devices[0]:
-            raise ValueError(
-                f"input_row_offsets must be located on {devices[0]}"
-            )
-        input_row_offsets_ = ops.distributed_broadcast(
-            input_row_offsets, signal_buffers
-        )
+        # ``input_row_offsets`` arrives pre-broadcast (per-device list) from
+        # the caller. The caller is responsible for producing one copy per
+        # device so we do not need a local distributed_broadcast here.
+        input_row_offsets_ = list(input_row_offsets)
 
         if self.config.data_parallel_degree > 1:
             # Split batch across devices for data-parallel attention.
@@ -968,7 +961,6 @@ class DeepseekV3(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            duplicated_hs=self.config.data_parallel_degree == 1,
             eagle3_captured_hs=eagle3_captured if eagle3_captured else None,
         )
 

@@ -161,7 +161,6 @@ def distributed_logits_postprocess(
         last_token_hs_distributed=last_token_h,
         all_hs_distributed=h,
         normalizer=norm_shards,
-        signal_buffers=signal_buffers,
     )
     return ret_val
 

@@ -776,8 +776,6 @@ class DeepseekV3_2(Module):
             last_token_hs_distributed=last_token_distributed,
             all_hs_distributed=h,
             normalizer=self.norm_shards,
-            signal_buffers=signal_buffers,
-            duplicated_hs=self.config.data_parallel_degree == 1,
         )
 
         return ret_val
