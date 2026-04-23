@@ -25,9 +25,11 @@
 #include <algorithm>
 #include <cassert>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <mutex>
 #include <optional>
+#include <sstream>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -64,6 +66,11 @@ static ErrorOrSuccess createPath(const std::filesystem::path &path) {
 }
 
 ErrorOr<Config> Config::open() {
+  // Parse MODULAR_DEBUG once so `max-debug.*` overrides are visible to every
+  // subsequent `maybeGetValue()` call — including from standalone Mojo
+  // binaries that never load the Python bindings' `DebugConfig`.
+  parseModularDebugEnv();
+
   // Cache the parsed config data to avoid repeated disk I/O.
   // We use std::call_once to ensure thread-safe one-time initialization.
   static std::once_flag initFlag;
@@ -332,6 +339,68 @@ std::optional<std::string> Config::getGlobalValueIfSet(StringRef key) {
   if (auto it = overrides.find(key.lower()); it != overrides.end())
     return it->second;
   return std::nullopt;
+}
+
+void Config::parseModularDebugEnv() {
+  static std::once_flag parseFlag;
+  std::call_once(parseFlag, [] {
+    const char *env = std::getenv("MODULAR_DEBUG");
+    if (!env || env[0] == '\0')
+      return;
+
+    // The meta `sensible` token expands to a curated debug bundle; keep
+    // this list in sync with `DebugConfig::setSensibleMode` in the Python
+    // bindings.
+    auto applySensibleMode = [] {
+      setGlobalValue("max-debug.sensible-mode", "true");
+      setGlobalValue("max-debug.nan-check", "true");
+      setGlobalValue("max-debug.assert-level", "all");
+      setGlobalValue("max-debug.device-sync-mode", "true");
+      setGlobalValue("max-debug.stack-trace-on-error", "true");
+      setGlobalValue("max-debug.stack-trace-on-crash", "true");
+      setGlobalValue("max-debug.source-tracebacks", "true");
+    };
+
+    std::istringstream stream(env);
+    std::string token;
+    while (std::getline(stream, token, ',')) {
+      // Trim whitespace.
+      size_t start = token.find_first_not_of(" \t");
+      size_t end = token.find_last_not_of(" \t");
+      if (start == std::string::npos)
+        continue;
+      token = token.substr(start, end - start + 1);
+
+      // key=value form routes to a Config value override.
+      size_t eq = token.find('=');
+      if (eq != std::string::npos) {
+        std::string key = token.substr(0, eq);
+        std::string value = token.substr(eq + 1);
+        if (key == "assert-level" || key == "op-log-level" ||
+            key == "print-style" || key == "ir-output-dir") {
+          setGlobalValue(("max-debug." + key), value);
+        } else {
+          llvm::errs() << "MODULAR_DEBUG: unknown option '" << key
+                       << "'; ignoring\n";
+        }
+        continue;
+      }
+
+      // Boolean flags and the `sensible` meta mode.
+      if (token == "sensible") {
+        applySensibleMode();
+      } else if (token == "nan-check" || token == "uninitialized-read-check" ||
+                 token == "device-sync-mode" ||
+                 token == "stack-trace-on-error" ||
+                 token == "stack-trace-on-crash" ||
+                 token == "source-tracebacks") {
+        setGlobalValue(("max-debug." + token), "true");
+      } else {
+        llvm::errs() << "MODULAR_DEBUG: unknown option '" << token
+                     << "'; ignoring\n";
+      }
+    }
+  });
 }
 
 /// Get the list of search paths, in order of preference.
