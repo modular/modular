@@ -58,6 +58,53 @@ def _maximum(alignments: InlineArray[Int, _]) -> Int:
     return result
 
 
+struct BufferPlanStats(ImplicitlyCopyable, Writable):
+    """Statistics produced by the buffer planning algorithm.
+
+    Holds the key metrics describing how effectively the planner used memory,
+    and implements `Writable` so it can be passed directly to a `Logger` or
+    any other writer.
+    """
+
+    var num_allocs: Int
+    """Total number of allocations planned."""
+    var num_reused: Int
+    """Number of allocations that reused an existing memory block."""
+    var watermark: Int
+    """High watermark: total bytes in the memory pool (final pool size)."""
+    var requested: Int
+    """Total bytes requested across all individual allocations."""
+
+    def __init__(
+        out self,
+        num_allocs: Int,
+        num_reused: Int,
+        watermark: Int,
+        requested: Int,
+    ):
+        self.num_allocs = num_allocs
+        self.num_reused = num_reused
+        self.watermark = watermark
+        self.requested = requested
+
+    def write_to(self, mut writer: Some[Writer]):
+        var reuse_pct = Float64(self.num_reused) / Float64(
+            self.num_allocs
+        ) * 100 if self.num_allocs > 0 else Float64(0)
+        var memory_saved = self.requested - self.watermark
+        var savings_pct = Float64(memory_saved) / Float64(
+            self.requested
+        ) * 100 if self.requested > 0 else Float64(0)
+        t"""mgp.buffer.plan stats:
+  Total Allocations: {self.num_allocs}
+  Reused Allocations: {self.num_reused} ({reuse_pct}%)
+  Total Allocation Size: {self.requested} bytes
+  Final Pool Size: {self.watermark} bytes
+  Memory Saved: {memory_saved} bytes ({savings_pct}%)""".write_to(
+            writer
+        )
+
+
 struct MemoryBlock[N: Int](Copyable, Movable):
     """Memory block used by buffer planning algorithm."""
 
@@ -101,6 +148,10 @@ struct BufferPlanState[
     # Computed allocation offsets for all allocations.
     var offsets: InlineArray[Int, Self.num_allocs]
     var pool_size: Int
+    # Sum of all allocation sizes passed to allocate_greedy.
+    var requested: Int
+    # Number of allocations that reused an existing memory block.
+    var num_reused: Int
 
     # The set of per-allocation shareable bitsets.
     var shareable_sets: InlineArray[BitSet[Self.num_allocs], Self.num_allocs]
@@ -119,6 +170,8 @@ struct BufferPlanState[
 
         self.allocated = 0
         self.pool_size = 0
+        self.requested = 0
+        self.num_reused = 0
         self.offsets = InlineArray[Int, Self.num_allocs](fill=0)
 
     @always_inline
@@ -127,6 +180,13 @@ struct BufferPlanState[
     ) -> Tuple[Int, InlineArray[Int, Self.num_allocs]]:
         assert self.allocated == Self.num_allocs
         return self.pool_size, self.offsets
+
+    @always_inline
+    def stats(self) -> BufferPlanStats:
+        """Returns a lightweight snapshot of planning statistics for logging."""
+        return BufferPlanStats(
+            Self.num_allocs, self.num_reused, self.pool_size, self.requested
+        )
 
     def find_block(
         self,
@@ -192,6 +252,7 @@ struct BufferPlanState[
                 best_block_idx
             ].shareable.intersection(self.shareable_set(result_idx))
             self.append_result(result_idx, self.blocks[best_block_idx].offset)
+            self.num_reused += 1
         else:
             self.allocate_new_block(result_idx, alloc_size)
 
@@ -202,11 +263,13 @@ struct BufferPlanState[
         comptime if not Self.enable_sharing:
             # No allocations can be shared; skip the greedy search entirely.
             for i, size in enumerate(sizes):
+                self.requested += size
                 self.allocate_new_block(i + start, size)
         else:
             comptime for i in range(sizes.size):
                 var alloc_size = sizes[i]
                 comptime result_idx = i + start
+                self.requested += alloc_size
 
                 comptime if Self.unshareable.test(result_idx):
                     # This allocation cannot share with any other; skip search.
