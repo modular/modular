@@ -47,6 +47,7 @@ from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
+from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.speech_token_pipeline import (
     SpeechTokenGenerationPipeline,
 )
@@ -307,6 +308,7 @@ def create_pipeline_with_lora(
             self._sampler_with_bitmask = None
             self._kv_manager = MagicMock()
             self._pinned_new_tokens = None
+            self._structured_output = StructuredOutputHelper(enabled=False)
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
             return TextGenerationPipeline(
@@ -337,6 +339,7 @@ def create_pipeline_with_lora(
             self.d2h_stream = MagicMock()
             self._kv_manager = MagicMock()
             self._pinned_new_tokens = None
+            self._structured_output = StructuredOutputHelper(enabled=False)
 
         with patch.object(
             SpeechTokenGenerationPipeline, "__init__", mock_speech_init

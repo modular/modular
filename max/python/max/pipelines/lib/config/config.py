@@ -921,10 +921,6 @@ class PipelineConfig(ConfigFileModel):
                     "(Disaggregated Inference). THIS IS EXPERIMENTAL.",
                     self.runtime.pipeline_role,
                 )
-            if self.sampling.enable_structured_output:
-                raise ValueError(
-                    "Structured outputs are not supported with the Overlap scheduler."
-                )
             if self.sampling.enable_variable_logits:
                 raise ValueError(
                     "Variable logits are not supported with the Overlap scheduler. "
@@ -944,8 +940,7 @@ class PipelineConfig(ConfigFileModel):
 
     def _is_eligible_for_overlap_serve_optimizations(self) -> bool:
         return (
-            not self.sampling.enable_structured_output
-            and not self.sampling.enable_variable_logits
+            not self.sampling.enable_variable_logits
             and not self.lora
             and self.model.device_specs[0].device_type != "cpu"
         )

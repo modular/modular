@@ -75,8 +75,11 @@ from typing import (
     runtime_checkable,
 )
 
+import llguidance.hf
+import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
+from llguidance import LLMatcher
 from max.driver import Buffer, DeviceEvent, DevicePinnedBuffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -119,6 +122,7 @@ from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     shape_to_scalar,
 )
 from max.profiler import Tracer, traced
+from transformers import PreTrainedTokenizerFast
 
 from ..speculative_decoding.base import SpeculativeDecodingMetrics
 from .text_generation import TextGenerationPipelineInterface, load_kv_manager
@@ -373,6 +377,14 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     spec_decode: AsyncSpecDecodeBatch | None = None
     """Extra outputs specific for speculative decoding async batch."""
 
+    overwrite_future: bool = True
+    """Whether to overwrite future tokens when processing outputs.
+
+    For normal overlap scheduling, this is True since we use placeholder future
+    tokens. For structured output, this is False since matchers track exact token
+    sequences and cannot use placeholder tokens.
+    """
+
     @traced
     def sync_and_process_outputs(
         self,
@@ -395,13 +407,14 @@ class AsyncBatch(Generic[TextGenerationContextType]):
 
         if self.spec_decode is None:
             # Update the context object, realizing the placeholder future tokens.
+            # Overlap scheduler only supports num_steps=1.
             batch_size = len(self.inputs.flat_batch)
             assert generated_tokens_np.shape == (batch_size,)
             outputs = update_context_and_prepare_responses(
                 generated_tokens_np.reshape((batch_size, 1)),
                 self.inputs.flat_batch,
                 num_steps=1,
-                overwrite_future=True,
+                overwrite_future=self.overwrite_future,
             )
             wrapped_outputs = _AsyncBatchOutput(output_dict=outputs)
         else:
@@ -1104,6 +1117,17 @@ class OverlapTextGenerationPipeline(
 
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
+        # Create a grammar compiler if constrained decoding is enabled
+        self.vocab_size: int | None = None
+        if pipeline_config.sampling.enable_structured_output:
+            assert hasattr(self.tokenizer, "delegate")
+            hf_tokenizer = self.tokenizer.delegate
+            assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
+            self.vocab_size = len(hf_tokenizer)
+            self._tokenizer_info = llguidance.hf.from_tokenizer(
+                hf_tokenizer, n_vocab=self.vocab_size
+            )
+
         session = InferenceSession(devices=[*self._devices])
         self.session = session
 
@@ -1176,21 +1200,50 @@ class OverlapTextGenerationPipeline(
                     self._pipeline_config.speculative.synthetic_acceptance_rate,
                 )
 
-        # Load sampler.
-        self._sampler: Model | None = (
-            session.load(
-                token_sampler(
-                    self._pipeline_config.sampling,
-                    device=DeviceRef.from_device(self._devices[0]),
+        # Load sampler(s). When structured output is enabled, we need two
+        # samplers: one with bitmask support and one without. This allows
+        # batches without structured output requests to use the faster path.
+        self._sampler_with_bitmask: Model | None = None
+        self._sampler_without_bitmask: Model | None = None
+        if not is_spec_decode:
+            if pipeline_config.sampling.enable_structured_output:
+                self._sampler_with_bitmask = session.load(
+                    token_sampler(
+                        pipeline_config.sampling,
+                        device=DeviceRef.from_device(self._devices[0]),
+                    )
                 )
-            )
-            if not is_spec_decode
-            else None
-        )
+                cfg_without_bitmask = copy.deepcopy(pipeline_config.sampling)
+                cfg_without_bitmask.enable_structured_output = False
+                self._sampler_without_bitmask = session.load(
+                    token_sampler(
+                        cfg_without_bitmask,
+                        device=DeviceRef.from_device(self._devices[0]),
+                    )
+                )
+            else:
+                self._sampler_without_bitmask = session.load(
+                    token_sampler(
+                        pipeline_config.sampling,
+                        device=DeviceRef.from_device(self._devices[0]),
+                    )
+                )
 
-        # Overlap pipeline doesn't use structured output, so no pinned buffer
-        # needed for async token transfers.
+        # Pre-allocate pinned buffer for D2H token copies only when structured
+        # output is enabled. This buffer is used for async token transfers in
+        # the guided decoding path. Allocated once and reused across batches.
         self._pinned_new_tokens: Buffer | None = None
+        if (
+            pipeline_config.sampling.enable_structured_output
+            and not self._devices[0].is_host
+        ):
+            max_batch_size = pipeline_config.runtime.max_batch_size
+            assert max_batch_size is not None, "max_batch_size must be set"
+            self._pinned_new_tokens = DevicePinnedBuffer(
+                shape=(max_batch_size,),
+                dtype=DType.int64,
+                device=self._devices[0],
+            )
 
         # Overlap scheduling specific initialization.
 
@@ -1248,6 +1301,82 @@ class OverlapTextGenerationPipeline(
     ]:
         """Returns the tokenizer used for building contexts and decoding."""
         return self._tokenizer
+
+    def update_for_structured_output(
+        self,
+        context: TextGenerationContextType,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        """Update context and logits bitmask for structured output.
+
+        If a ``json_schema`` is present and no matcher is set, this compiles a
+        grammar matcher and installs it on the context, then fills the per-request
+        token bitmask used to constrain the next-token distribution.
+
+        Note: Unlike TextGenerationPipeline, this does NOT support jump-ahead
+        tokens. Jump-ahead would require re-allocating KV cache blocks after the
+        scheduler's alloc() call and would break CUDA graph capture (which only
+        supports active_length=1). The bitmask constraint alone ensures valid
+        structured output.
+
+        Args:
+            context: Request context to update.
+            bitmask: Optional preallocated bitmask buffer; updated in-place.
+            index: Global position into the bitmask for this request.
+
+        Raises:
+            ValueError: If a JSON schema is provided but structured output is not
+                enabled via sampling configuration.
+        """
+        if context.json_schema and context.matcher is None:
+            if not self._pipeline_config.sampling.enable_structured_output:
+                raise ValueError(
+                    "json_schema provided but structured output (constrained decoding) is not enabled."
+                )
+
+            try:
+                serialized_grammar = LLMatcher.grammar_from_json_schema(
+                    context.json_schema,
+                )
+                matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
+                context.set_matcher(matcher)
+            except Exception as e:
+                msg = f"Json schema provided in request cannot be compiled to valid grammar. Update your json schema to produce valid structured output. From llguidance: {e}"
+                logger.warning(msg)
+                # Remove the json_schema so it doesn't try to load the grammar repeatedly.
+                context.json_schema = None  # type: ignore
+
+        if context.matcher:
+            # Update the bitmask for the context.
+            llguidance.numpy.fill_next_token_bitmask(
+                context.matcher, bitmask, index=index
+            )
+
+    def initialize_bitmask(
+        self, batch: list[TextGenerationContextType]
+    ) -> npt.NDArray[np.int32] | None:
+        """Allocates a per-request token bitmask for structured decoding.
+
+        Args:
+            batch: The generation contexts for the batch.
+
+        Returns:
+            A bitmask array of shape [batch_size, vocab_size] if structured
+            output is enabled; otherwise ``None``.
+        """
+        if not self._pipeline_config.sampling.enable_structured_output:
+            return None
+
+        if self.vocab_size is None:
+            raise ValueError("vocab_size must be set to use structured output")
+
+        if all(context.json_schema is None for context in batch):
+            return None
+
+        return llguidance.numpy.allocate_token_bitmask(
+            len(batch), self.vocab_size
+        )
 
     def has_pending_outputs(self) -> bool:
         """Returns True if there are pending outputs for the previous batch.
@@ -1399,6 +1528,13 @@ class OverlapTextGenerationPipeline(
         This handles both the non spec-decode and spec-decode paths. When running
         with spec-decode, you must provide the draft tokens even when there are
         no draft tokens to verify. In which case the shape is (batch_size, 0).
+
+        Args:
+            inputs: The text generation inputs.
+            draft_tokens: Optional draft tokens for speculative decoding.
+
+        Returns:
+            The model outputs containing logits and other inference results.
         """
         if draft_tokens is not None:
             assert self._spec_decode_state is not None
@@ -1528,18 +1664,42 @@ class OverlapTextGenerationPipeline(
 
         device0 = self._devices[0]
         assert not device0.is_host
-        assert self._sampler is not None
 
         flat_batch = inputs.flat_batch
-        with Tracer("FusedSamplingProcessor"):
-            sampling_processor = FusedSamplingProcessor(
-                sampler=self._sampler,
-                pipeline_config=self._pipeline_config,
-                context_batch=flat_batch,
-                num_steps=1,
-                device=device0,
-                pinned_new_tokens=self._pinned_new_tokens,
-            )
+
+        # Check for structured output - use appropriate sampler
+        bitmask = self.initialize_bitmask(flat_batch)
+        has_structured_output = bitmask is not None
+
+        if has_structured_output:
+            assert bitmask is not None  # for linter
+            # Initialize per-context bitmask state for structured output
+            for i, ctx in enumerate(flat_batch):
+                self.update_for_structured_output(ctx, bitmask, i)
+
+            assert self._sampler_with_bitmask is not None
+            with Tracer("fused_sampling_processor_w_bitmask"):
+                sampling_processor = FusedSamplingProcessor(
+                    sampler=self._sampler_with_bitmask,
+                    pipeline_config=self._pipeline_config,
+                    context_batch=flat_batch,
+                    num_steps=1,
+                    device=device0,
+                    pinned_new_tokens=self._pinned_new_tokens,
+                    bitmask=bitmask,
+                    vocab_size=self.vocab_size,
+                )
+        else:
+            assert self._sampler_without_bitmask is not None
+            with Tracer("fused_sampling_processor"):
+                sampling_processor = FusedSamplingProcessor(
+                    sampler=self._sampler_without_bitmask,
+                    pipeline_config=self._pipeline_config,
+                    context_batch=flat_batch,
+                    num_steps=1,
+                    device=device0,
+                    pinned_new_tokens=self._pinned_new_tokens,
+                )
 
         model_outputs = self._run_forward(inputs)
 
@@ -1598,6 +1758,9 @@ class OverlapTextGenerationPipeline(
             generated_tokens_device=generated_tokens_device,
             generated_tokens_host=generated_tokens_host,
             copy_event=copy_event,
+            # For structured output, don't overwrite future tokens since matchers
+            # can't use placeholder tokens. Use advance_token_buffer instead.
+            overwrite_future=not has_structured_output,
         )
 
     def _execute_spec_decode(
@@ -1753,7 +1916,7 @@ class OverlapTextGenerationPipeline(
             # If the batch is empty and execute_empty_batches is True, we will
             # only run the forward pass to ensure that the barrier point is reached
             # for EP + DP. We skip all output processing.
-            _ = self._run_forward(inputs)
+            self._run_forward(inputs)
             curr_batch = None
         else:
             curr_batch = None
@@ -1769,7 +1932,6 @@ class OverlapTextGenerationPipeline(
                     wrapped_outputs.spec_decode_metrics,
                 )
             outputs = wrapped_outputs.output_dict
-
             self._prev_batch = None
         else:
             # Empty outputs as there is no previous batch.
@@ -1777,7 +1939,10 @@ class OverlapTextGenerationPipeline(
 
         if curr_batch is not None:
             for context in inputs.flat_batch:
-                context.update_with_future_token()
+                # Skip future tokens for structured output - matchers track exact
+                # token sequences and can't use placeholder tokens.
+                if not context.matcher:
+                    context.update_with_future_token()
                 # TODO: these two fields should not both be named spec_decode_state...
                 if self._spec_decode_state is not None:
                     assert curr_batch.spec_decode is not None
@@ -1797,10 +1962,11 @@ class OverlapTextGenerationPipeline(
         self._kv_manager.step(inputs.batches)
 
         if curr_batch is not None:
-            if self._disable_overlap:
-                assert not outputs, (
-                    "Cannot have prev outputs when overlap is disabled"
-                )
+            # For structured output, we must sync immediately to advance the FSM
+            # state with the actual sampled token. The next iteration's bitmask
+            # computation depends on the FSM knowing the previous token.
+            has_structured_output = not curr_batch.overwrite_future
+            if self._disable_overlap or has_structured_output:
                 # Immediately synchronize after gpu execution and return the
                 # results of the current batch.
                 wrapped_outputs = curr_batch.sync_and_process_outputs()
@@ -1809,7 +1975,8 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.metrics.update(
                         wrapped_outputs.spec_decode_metrics,
                     )
-                outputs = wrapped_outputs.output_dict
+                # Merge current batch outputs with any previous batch outputs
+                outputs.update(wrapped_outputs.output_dict)
             else:
                 # Otherwise, delay the synchronization until the next step.
                 self._prev_batch = curr_batch

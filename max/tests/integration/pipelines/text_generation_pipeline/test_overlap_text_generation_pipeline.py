@@ -26,14 +26,17 @@ from max.pipelines.core import TextContext
 from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
+    AsyncBatch,
 )
 from max.pipelines.lib.registry import get_pipeline_for_task
 
 
 def test_throws_if_num_steps_gt_1() -> None:
+    """Overlap pipeline should reject num_steps > 1."""
     pipeline = OverlapTextGenerationPipeline.__new__(
         OverlapTextGenerationPipeline
     )
+    pipeline._pipeline_config = MagicMock()
     request_id = RequestID()
     ctx = TextContext(
         request_id=request_id,
@@ -167,3 +170,65 @@ def test_prefill_and_decode_gets_overlap_pipeline() -> None:
     )
     result = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
     assert result is OverlapTextGenerationPipeline[TextContext]
+
+
+def test_async_batch_sync_with_single_step_tokens() -> None:
+    """AsyncBatch.sync_and_process_outputs handles single-step token shapes."""
+
+    batch_size = 3
+
+    # Create mock contexts
+    contexts = []
+    for i in range(batch_size):
+        ctx = TextContext(
+            request_id=RequestID(f"req_{i}"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        contexts.append(ctx)
+
+    # Create mock inputs
+    mock_inputs = MagicMock()
+    mock_inputs.flat_batch = contexts
+
+    # Create single-step tokens buffer [batch_size]
+    generated_tokens = np.arange(batch_size, dtype=np.int64)
+
+    # Create mock host buffer
+    mock_host_buffer = MagicMock()
+    mock_host_buffer.to_numpy.return_value = generated_tokens
+
+    # Create mock event
+    mock_event = MagicMock()
+
+    # Create AsyncBatch
+    async_batch: AsyncBatch[TextContext] = AsyncBatch(
+        inputs=mock_inputs,
+        generated_tokens_device=MagicMock(),
+        generated_tokens_host=mock_host_buffer,
+        copy_event=mock_event,
+    )
+
+    # Patch update_context_and_prepare_responses to verify it's called correctly
+    with patch(
+        "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+        ".update_context_and_prepare_responses"
+    ) as mock_update:
+        mock_update.return_value = {}
+
+        async_batch.sync_and_process_outputs()
+
+        # Verify the function was called with correct arguments
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+
+        # Check positional args - tokens should be reshaped to [batch_size, 1]
+        tokens_arg = call_args[0][0]
+        assert tokens_arg.shape == (batch_size, 1)
+
+        contexts_arg = call_args[0][1]
+        assert contexts_arg == contexts
+
+        # Check keyword args
+        assert call_args[1]["num_steps"] == 1
+        assert call_args[1]["overwrite_future"] is True

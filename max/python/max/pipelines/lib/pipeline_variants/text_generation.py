@@ -23,11 +23,8 @@ from os import environ
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic
 
-import llguidance.hf
-import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
-from llguidance import LLMatcher
 from max.driver import Buffer, Device, DevicePinnedBuffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
@@ -59,9 +56,9 @@ from max.nn import ReturnLogits
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from max.profiler import Tracer, traced
 from max.support.algorithm import flatten2d
-from transformers import PreTrainedTokenizerFast
 
 from .utils import (
+    StructuredOutputHelper,
     calculate_num_steps,
     get_eos_tokens,
     update_context_and_prepare_responses,
@@ -177,17 +174,12 @@ class TextGenerationPipeline(
 
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
-        # Create a grammar compiler if constrained decoding is enabled
-        self.vocab_size = None
-
-        if pipeline_config.sampling.enable_structured_output:
-            assert hasattr(self.tokenizer, "delegate")
-            hf_tokenizer = self.tokenizer.delegate
-            assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
-            self.vocab_size = len(hf_tokenizer)
-            self._tokenizer_info = llguidance.hf.from_tokenizer(
-                hf_tokenizer, n_vocab=self.vocab_size
-            )
+        # Initialize structured output helper for constrained decoding.
+        self._structured_output = StructuredOutputHelper.from_tokenizer(
+            self.tokenizer,
+            pipeline_config.sampling.enable_structured_output,
+        )
+        self.vocab_size = self._structured_output.vocab_size
 
         # Initialize Session.
         session = InferenceSession(devices=[*self._devices])
@@ -322,36 +314,9 @@ class TextGenerationPipeline(
             ValueError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
-        if context.json_schema and context.matcher is None:
-            if not self._pipeline_config.sampling.enable_structured_output:
-                raise ValueError(
-                    "json_schema provided but constrained decoding is not enabled."
-                )
-
-            try:
-                serialized_grammar = LLMatcher.grammar_from_json_schema(
-                    context.json_schema,
-                )
-                matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
-                context.set_matcher(matcher)
-            except Exception as e:
-                msg = f"Json schema provided in request cannot be compiled to valid grammar.                 Please update your json schema to produce valid structured output. From llguidance: {e}"
-                logger.warning(msg)
-                # I am removing the json_schema, so it doesn't try to load the grammar repeatedly.
-                context.json_schema = None  # type: ignore
-
-        if context.matcher:
-            # Jump ahead in generation if possible.
-            # This is called at the START of execute(), so jump-ahead tokens
-            # will be included in the model input preparation.
-            jump_forward_tokens = context.matcher.compute_ff_tokens()
-            for token in jump_forward_tokens:
-                context.jump_ahead(token)
-
-            # Update the bitmask for the context.
-            llguidance.numpy.fill_next_token_bitmask(
-                context.matcher, bitmask, index=index
-            )
+        self._structured_output.update_context(
+            context, bitmask, index, support_jump_ahead=True
+        )
 
     def initialize_bitmask(
         self, batch: list[TextGenerationContextType]
@@ -365,18 +330,13 @@ class TextGenerationPipeline(
             A bitmask array of shape [batch_size, vocab_size] if structured
             output is enabled; otherwise ``None``.
         """
-        if not self._pipeline_config.sampling.enable_structured_output:
+        if not self._structured_output.enabled:
             return None
-
-        if self.vocab_size is None:
-            raise ValueError("vocab_size must be set to use structured output")
 
         if all(context.json_schema is None for context in batch):
             return None
 
-        return llguidance.numpy.allocate_token_bitmask(
-            len(batch), self.vocab_size
-        )
+        return self._structured_output.allocate_bitmask(len(batch))
 
     @traced
     def prepare_batch(
@@ -510,8 +470,8 @@ class TextGenerationPipeline(
 
             # Fill the updated bitmask for this context
             with Tracer("fill_next_token_bitmask"):
-                llguidance.numpy.fill_next_token_bitmask(
-                    context.matcher, bitmask, index=batch_idx
+                self._structured_output.fill_bitmask(
+                    context, bitmask, batch_idx
                 )
 
         with Tracer("sampling_processor_update_bitmask"):

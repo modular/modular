@@ -29,7 +29,12 @@ from max.interfaces import (
 )
 from max.pipelines import PipelineConfig, TextGenerationPipeline
 from max.pipelines.core import TextContext
-from max.pipelines.lib import MAXModelConfig, SamplingConfig, TextTokenizer
+from max.pipelines.lib import (
+    MAXModelConfig,
+    OverlapTextGenerationPipeline,
+    SamplingConfig,
+    TextTokenizer,
+)
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import PipelineRegistry
@@ -106,30 +111,42 @@ def test_smollm_with_structured_output_gpu(
     context: TextContext = asyncio.run(tokenizer.new_context(request))
 
     pipeline = pipeline_factory()
-    assert isinstance(pipeline, TextGenerationPipeline)
-    # SpeechTokenGenerationPipeline subclasses TextGenerationPipeline, so at
-    # this point MyPy thinks pipeline could be TextGenerationPipeline[Any] or
-    # SpeechTokenGenerationPipeline.  Unfortunately 'assert not isinstance' is
-    # not recognized by MyPy and it's not clear how else to get it out of that
-    # union without some force.  So we cast it off.  This is bad, ideally we
-    # wouldn't have to do this, but we boxed ourselves in here.
+    # Pipeline may be TextGenerationPipeline or OverlapTextGenerationPipeline
+    # depending on auto-enable settings. Both support structured output.
+    assert isinstance(
+        pipeline, (TextGenerationPipeline, OverlapTextGenerationPipeline)
+    )
+    # Cast for type checker - both have the same interface for what we need.
     pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
     kv_manager = pipeline.kv_manager
     kv_manager.claim(context.request_id, replica_idx=0)
 
-    tokens = []
-    while True:
+    tokens: list[int] = []
+    max_iterations = 60
+    for _ in range(max_iterations):
         inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
             batches=[[context]], num_steps=1
         )
         kv_manager.alloc(context, replica_idx=0, num_steps=1)
         response = pipeline.execute(inputs)
 
-        for token in response[request_id].tokens:
-            tokens.append(token)
+        # Handle overlap pipeline which may return empty response on first iteration
+        if request_id in response:
+            for token in response[request_id].tokens:
+                tokens.append(token)
 
-        if response[request_id].is_done:
-            break
+            if response[request_id].is_done:
+                break
+
+    # Flush remaining outputs with empty batch (for overlap pipeline)
+    if isinstance(pipeline, OverlapTextGenerationPipeline):
+        empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[]], num_steps=1
+        )
+        response = pipeline.execute(empty_inputs)
+        if request_id in response:
+            for token in response[request_id].tokens:
+                tokens.append(token)
 
     response_content = asyncio.run(
         tokenizer.decode(np.array(tokens), skip_special_tokens=True)
@@ -162,7 +179,12 @@ def test_multistep_structured_output_gpu(
             }
         ),
         sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
+        # Disable overlap scheduler: multi-step execution (num_steps > 1) is
+        # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
+        # Use force=True to prevent auto-enable from overriding our setting.
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1, enable_overlap_scheduler=False, force=True
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -254,7 +276,12 @@ def test_multi_step_guided_decoding_gpu(
             }
         ),
         sampling=SamplingConfig(enable_structured_output=True),
-        runtime=PipelineRuntimeConfig(max_batch_size=1),
+        # Disable overlap scheduler: multi-step execution (num_steps > 1) is
+        # only supported in TextGenerationPipeline, not OverlapTextGenerationPipeline.
+        # Use force=True to prevent auto-enable from overriding our setting.
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1, enable_overlap_scheduler=False, force=True
+        ),
     )
 
     tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
@@ -305,3 +332,114 @@ def test_multi_step_guided_decoding_gpu(
 
         if response[request_id].is_done:
             break
+
+
+def test_overlap_pipeline_structured_output_gpu(
+    pipeline_registry: PipelineRegistry,
+) -> None:
+    """Test overlap pipeline with structured output.
+
+    This verifies that the OverlapTextGenerationPipeline correctly handles
+    structured output (guided decoding) with single-step execution, producing
+    valid JSON output conforming to the schema.
+    """
+
+    revision = hf_repo_lock.revision_for_hf_repo(
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+    )
+    assert revision is not None
+    pipeline_config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=revision,
+                    max_length=8192,
+                )
+            }
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=1,
+            enable_overlap_scheduler=True,
+        ),
+    )
+
+    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+        pipeline_config
+    )
+    assert isinstance(tokenizer, TextTokenizer)
+
+    prompt = """Extract name and age from: 'Charlie Brown is 8 years old.'"""
+
+    request_id = RequestID("overlap_structured")
+    request = TextGenerationRequest(
+        model_name=pipeline_config.model.model_path,
+        request_id=request_id,
+        messages=[TextGenerationRequestMessage(role="user", content=prompt)],
+        sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+            },
+        ),
+    )
+
+    context: TextContext = asyncio.run(tokenizer.new_context(request))
+
+    pipeline = pipeline_factory()
+    # Verify we got the overlap pipeline
+    assert isinstance(pipeline, OverlapTextGenerationPipeline)
+    pipeline = cast(OverlapTextGenerationPipeline[TextContext], pipeline)
+    kv_manager = pipeline.kv_manager
+    kv_manager.claim(context.request_id, replica_idx=0)
+
+    tokens: list[int] = []
+    num_steps = 1  # Single-step execution for overlap pipeline
+    max_iterations = 60  # More iterations needed with single-step
+
+    for _ in range(max_iterations):
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[[context]], num_steps=num_steps
+        )
+        kv_manager.alloc(context, replica_idx=0, num_steps=num_steps)
+
+        # For structured output, overlap pipeline syncs immediately (no overlap)
+        # so results are returned in the same call, not delayed.
+        response = pipeline.execute(inputs)
+
+        if request_id in response:
+            for token in response[request_id].tokens:
+                tokens.append(token)
+            if response[request_id].is_done:
+                break
+
+    # For normal overlap (non-structured-output), this would flush pending outputs.
+    # For structured output with immediate sync, there are no pending outputs.
+    empty_inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+        batches=[[]], num_steps=1
+    )
+    response = pipeline.execute(empty_inputs)
+    if request_id in response:
+        for token in response[request_id].tokens:
+            tokens.append(token)
+
+    response_content = asyncio.run(
+        tokenizer.decode(np.array(tokens), skip_special_tokens=True)
+    )
+
+    # Verify valid JSON matching schema
+    result = json.loads(response_content)
+    assert "name" in result
+    assert "age" in result
+    assert isinstance(result["name"], str)
+    assert isinstance(result["age"], int)
