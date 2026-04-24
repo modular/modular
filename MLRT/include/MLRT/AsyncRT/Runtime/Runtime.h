@@ -354,19 +354,10 @@ public:
   /// Returns the runtime managing the work queue to which the callers thread
   /// is associated (ie the callers thread is either a worker thread for that
   /// runtime or is a 'main' thread which has donated itself to running work
-  /// items on behalf of the runtime). Returns null if no such runtime has been
-  /// associated.
-  static Runtime *getCurrentRuntimeOrNull() {
-    return CompactRuntimePtr::getCurrentRuntime().getOrNull();
-  }
-
-  /// As for getCurrentRuntimeOrNull, but assert fail if no runtime is
-  /// associated.
-  static Runtime &getCurrentRuntime() {
-    Runtime *runtime = getCurrentRuntimeOrNull();
-    assert(runtime && "no runtime is associated with the current thread");
-    return *runtime;
-  }
+  /// items on behalf of the runtime). If no runtime has been associated with
+  /// this thread but a global runtime exists, automatically associates this
+  /// thread with it. Returns null only if no global runtime exists at all.
+  static Runtime *getCurrentRuntimeOrNull();
 
   //===--------------------------------------------------------------------===//
   // Profiling

@@ -46,6 +46,21 @@ CompactRuntimePtr::CompactRuntimePtr(Runtime *runtime)
 // Runtime
 //===----------------------------------------------------------------------===//
 
+Runtime *Runtime::getCurrentRuntimeOrNull() {
+  // First check the thread-local Runtime pointer, set when Runtime is created
+  // for WorkQueue worker threads and the thread which created the Runtime, and
+  // if that's set use this.
+  if (CompactRuntimePtr tlsRuntimePtr = CompactRuntimePtr::getCurrentRuntime())
+    return tlsRuntimePtr.get();
+
+  // Next check if the Runtime exists by checking the global Runtime pointer,
+  // and if it does set the thread-local Runtime pointer and use that.
+  Runtime *globalRuntimePtr = getGlobalRuntimePointer();
+  if (globalRuntimePtr)
+    CompactRuntimePtr::setCurrentRuntime(CompactRuntimePtr(globalRuntimePtr));
+  return globalRuntimePtr;
+}
+
 Runtime::Runtime(CompactRuntimePtr runtimePtr,
                  std::unique_ptr<Allocator> allocator,
                  std::unique_ptr<WorkQueue> workQueue, RuntimeSource source,
