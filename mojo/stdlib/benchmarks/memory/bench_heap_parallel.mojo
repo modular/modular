@@ -60,7 +60,7 @@ def bench_heap_alloc_parallel(mut b: Bencher) raises:
         @always_inline
         def task_body(
             task_id: Int,
-        ) unified {mut checksum, read per_task,}:
+        ) {mut checksum, read per_task,}:
             var acc = Scalar[DType.int64](0)
             var j = 0
             while j < per_task:

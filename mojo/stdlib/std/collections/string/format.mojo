@@ -603,7 +603,7 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        def _format(idx: Int) unified {read self, read args, mut writer}:
+        def _format(idx: Int) {read self, read args, mut writer}:
             comptime for i in range(Ts.size):
                 if i == idx:
                     var flag = self.conversion_flag

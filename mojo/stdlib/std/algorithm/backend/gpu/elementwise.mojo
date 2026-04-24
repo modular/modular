@@ -107,7 +107,7 @@ def _elementwise_impl_gpu_clc[
     block_size: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
     elems_per_thread: Int,
     *,
     pdl_level: PDLLevel = _PDL_LEVEL,
@@ -315,7 +315,7 @@ def _elementwise_impl_gpu_grid_stride[
     threads_per_multiprocessor: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
     elems_per_thread: Int,
     *,
     pdl_level: PDLLevel = _PDL_LEVEL,
@@ -451,7 +451,7 @@ def _elementwise_impl_gpu[
     simd_width: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
     *,
     pdl_level: PDLLevel = PDLLevel(1),
     trace_description: StaticString = "",

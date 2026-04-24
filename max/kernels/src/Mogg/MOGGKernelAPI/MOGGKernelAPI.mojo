@@ -10591,7 +10591,7 @@ def task_id_for_device(device_id: Int) -> Int:
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
-    F: def[Int]() raises unified -> None,
+    F: def[Int]() raises -> None,
 ](func: F, dev_ctxs: DeviceContextPtrList) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 
@@ -10713,7 +10713,7 @@ struct DistributedAllReduceSum:
             @always_inline
             def launch_vendor_allreduce[
                 index: Int
-            ]() raises unified {
+            ]() raises {
                 read in_tensors,
                 read rank_sigs,
                 read dev_ctxs_input,
@@ -10758,7 +10758,7 @@ struct DistributedAllReduceSum:
         @always_inline
         def launch_allreduce[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -10920,7 +10920,7 @@ struct DistributedReduceScatterSum:
         @always_inline
         def launch_reducescatter[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -11048,7 +11048,7 @@ struct DistributedAllGather:
         @always_inline
         def launch_allgather[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read out_tensors,
             read rank_sigs,
@@ -11145,7 +11145,7 @@ struct DistributedBroadcast:
         @always_inline
         def launch_broadcast[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_buf,
             read rank_sigs,
             read dev_ctxs_input,
@@ -11233,10 +11233,9 @@ struct DistributedScatter:
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        @parameter
         def launch_scatter[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -11323,7 +11322,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         @always_inline
         def launch_fused_allreduce[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs,

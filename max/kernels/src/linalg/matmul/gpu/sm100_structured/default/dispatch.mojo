@@ -436,7 +436,7 @@ def select_and_launch_sm100_config[
     c_type: DType,
     a_type: DType,
     b_type: DType,
-    launch_type: def[config: MatmulConfig[...]]() raises unified -> None,
+    launch_type: def[config: MatmulConfig[...]]() raises -> None,
     //,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
@@ -547,7 +547,7 @@ def heuristic_and_outliers_dispatch[
     ctx: DeviceContext,
 ) raises -> Int:
     @always_inline
-    def launch_callback[config: MatmulConfig[...]]() unified raises {read}:
+    def launch_callback[config: MatmulConfig[...]]() raises {read}:
         _matmul_dispatch_sm100[
             transpose_b,
             rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](config),
@@ -938,7 +938,7 @@ def sm100_heuristic_and_outliers_dispatch[
     ctx: DeviceContext,
 ) raises -> Int:
     @always_inline
-    def launch_callback[config: MatmulConfig[...]]() unified raises {read}:
+    def launch_callback[config: MatmulConfig[...]]() raises {read}:
         blackwell_matmul_tma_umma_warp_specialized[
             transpose_b,
             config=rebind[MatmulConfig[a_type, b_type, c_type, transpose_b]](

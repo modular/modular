@@ -60,7 +60,7 @@ def test_runtime_unified_async_memory_result_raises() raises:
     print("== test_runtime_unified_async_memory_result_raises")
     var prefix = String("hello")
 
-    async def build_message() raises unified {mut prefix} -> String:
+    async def build_message() raises {mut prefix} -> String:
         return prefix + String(" world")
 
     var task = create_raising_task(build_message())

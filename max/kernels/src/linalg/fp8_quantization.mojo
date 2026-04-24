@@ -111,7 +111,7 @@ def quantize_static_scaled_fp8[
 
     def scaled_fp8_quant_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) unified register_passable {}:
+    ](idx: IndexList[rank]) register_passable {}:
         scaled_fp8_quant[width, rank, alignment](idx)
 
     _elementwise_impl_gpu[simd_width=target_simd_width](
@@ -1659,7 +1659,7 @@ def convert_e4m3fn_to_e4m3fnuz(
 
     def convert_kernel_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](idx: IndexList[rank]) unified register_passable {}:
+    ](idx: IndexList[rank]) register_passable {}:
         convert_kernel[width, rank, alignment](idx)
 
     _elementwise_impl_gpu[simd_width=target_simd_width](

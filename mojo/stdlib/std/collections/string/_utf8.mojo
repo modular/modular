@@ -408,7 +408,7 @@ struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
             raise StopIteration()
 
         @always_inline
-        def safe_get(i: Int) unified {read self} -> Byte:
+        def safe_get(i: Int) {read self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
         @always_inline

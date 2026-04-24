@@ -216,7 +216,7 @@ def elementwise[
 
     def func_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified register_passable {}:
+    ](indices: IndexList[rank]) register_passable {}:
         func[width, rank, alignment](indices)
 
     _elementwise_impl_cpu[
@@ -305,7 +305,7 @@ def elementwise[
 
     def func_unified[
         width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified register_passable {}:
+    ](indices: IndexList[rank]) register_passable {}:
         func[width, rank, alignment](indices)
 
     _elementwise_impl[
@@ -373,7 +373,7 @@ def elementwise[
 
             def gpu_func_unified[
                 width: Int, rank: Int, alignment: Int = 1
-            ](indices: IndexList[rank]) unified register_passable {}:
+            ](indices: IndexList[rank]) register_passable {}:
                 func[width, rank, alignment](indices)
 
             _elementwise_impl_gpu[
@@ -385,7 +385,7 @@ def elementwise[
 
             def cpu_func_unified[
                 width: Int, rank: Int, alignment: Int = 1
-            ](indices: IndexList[rank]) unified register_passable {}:
+            ](indices: IndexList[rank]) register_passable {}:
                 func[width, rank, alignment](indices)
 
             _elementwise_impl_cpu[
@@ -406,7 +406,7 @@ def _elementwise_impl[
     simd_width: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
     /,
     *,
     use_blocking_impl: Bool = False,

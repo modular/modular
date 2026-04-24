@@ -370,9 +370,7 @@ def _reduce_along_outer_dimension[
         for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            def reduce_chunk[
-                simd_width: Int
-            ](inner_dim_idx: Int) unified {read}:
+            def reduce_chunk[simd_width: Int](inner_dim_idx: Int) {read}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
                 ]()

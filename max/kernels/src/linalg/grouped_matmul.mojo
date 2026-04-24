@@ -740,7 +740,7 @@ def grouped_matmul_amd_kernel_launcher[
             var elements_to_process = thread_end - thread_start
 
             @always_inline
-            def process_elements[width: Int](idx: Int) unified {mut}:
+            def process_elements[width: Int](idx: Int) {mut}:
                 var elem_idx = thread_start + idx
                 var tile_row, tile_col = divmod(elem_idx, BN)
                 var local_row: UInt32 = UInt32(block_m * BM + tile_row)

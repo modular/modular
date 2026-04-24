@@ -385,7 +385,7 @@ def vectorize_flat[
         comptime size = shape[0]
 
         @always_inline
-        def vf[width: Int](i: Int) unified {var a, var b}:
+        def vf[width: Int](i: Int) {var a, var b}:
             f[width, int_stride_a, int_stride_b](a, b, i)
 
         vectorize[

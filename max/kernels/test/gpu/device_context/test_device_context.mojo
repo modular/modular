@@ -175,7 +175,7 @@ def test_enqueue_unified(ctx: DeviceContext) raises:
     var in0 = Span(ptr=in0_device.unsafe_ptr(), length=length)
     var in1 = Span(ptr=in1_device.unsafe_ptr(), length=length)
 
-    def vec_closure() unified register_passable {
+    def vec_closure() register_passable {
         var supplement, var in0, var in1, var output
     }:
         var tid = global_idx.x

@@ -23,7 +23,7 @@ from std.math import align_down
 
 @always_inline
 def vectorize[
-    func: def[width: Int](idx: Int) unified -> None,
+    func: def[width: Int](idx: Int) -> None,
     //,
     simd_width: Int,
     /,
@@ -60,7 +60,7 @@ def vectorize[
     def main():
         var p = alloc[Int32](size)
 
-        def closure[width: Int](i: Int) unified {mut}:
+        def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 
@@ -128,7 +128,7 @@ def vectorize[
 
 @always_inline
 def vectorize[
-    func: def[width: Int](idx: Int, evl: Int) unified -> None,
+    func: def[width: Int](idx: Int, evl: Int) -> None,
     //,
     simd_width: Int,
     /,
@@ -175,7 +175,7 @@ def vectorize[
     def main():
         var p = alloc[Int32](size)
 
-        def closure[width: Int](i: Int, evl: Int) unified {mut}:
+        def closure[width: Int](i: Int, evl: Int) {mut}:
             print("storing", evl, "of", width, "els at pos", i)
             var val = SIMD[DType.int32, width](i)
 
@@ -255,7 +255,7 @@ def vectorize[
 
 @always_inline
 def vectorize[
-    func: def[width: Int](idx: Int) unified -> None,
+    func: def[width: Int](idx: Int) -> None,
     //,
     simd_width: Int,
     /,
@@ -294,8 +294,8 @@ def vectorize[
     def main():
         var p = alloc[Int32](size)
 
-        # The closure can capture the `p` pointer with unified {mut}
-        def closure[width: Int](i: Int) unified {mut}:
+        # The closure can capture the `p` pointer with {mut}
+        def closure[width: Int](i: Int) {mut}:
             print("storing", width, "els at pos", i)
             p.store[width=width](i, i)
 

@@ -1322,7 +1322,7 @@ def iota[
     """
 
     @always_inline
-    def fill[width: Int](i: Int) unified {var offset, var buff}:
+    def fill[width: Int](i: Int) {var offset, var buff}:
         buff.store(i, iota[dtype, width](Scalar[dtype](offset + i)))
 
     vectorize[simd_width_of[dtype]()](len, fill)

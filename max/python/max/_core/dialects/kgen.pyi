@@ -2121,8 +2121,6 @@ class FnEffects(enum.Enum):
 
     refresult = 32
 
-    unified = 64
-
     register_passable = 128
 
     cabi = 512

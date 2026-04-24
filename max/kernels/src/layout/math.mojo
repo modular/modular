@@ -407,9 +407,7 @@ def mean[
     comptime if dst.dtype.is_integral():
 
         @always_inline
-        def normalize_integral[
-            simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n}:
+        def normalize_integral[simd_width: Int](idx: Int) {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -424,7 +422,7 @@ def mean[
         @always_inline
         def normalize_floating[
             simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n, var n_recip}:
+        ](idx: Int) {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )

@@ -4763,10 +4763,9 @@ def mha_splitk_reduce[
     )
     var base_ptr = intermediate_output.ptr + base_offset
 
-    @parameter
     def accum_fn[
         simd_width: Int
-    ](partition_idx: Int) unified {exp_sums, base_ptr, partition_stride, mut}:
+    ](partition_idx: Int) {exp_sums, base_ptr, partition_stride, mut}:
         var partition_exp_sum = exp_sums.vectorize[simd_width]()[
             partition_idx // simd_width
         ]
@@ -5056,7 +5055,7 @@ def _bmm0_bs[
 
         def accum_fn[
             width: Int
-        ](offset: Int) unified {q, y, num_heads, depth, k_ptr, mut}:
+        ](offset: Int) {q, y, num_heads, depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[k_type, width]]()
             var q_val = q.load[
                 width=width, alignment=align_of[SIMD[q_type, width]]()

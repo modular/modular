@@ -74,7 +74,7 @@ def bench_count_graphemes[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         var res = black_box(items).count_graphemes()
         keep(res)
 
@@ -88,7 +88,7 @@ def bench_count_codepoints[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         var res = black_box(items).count_codepoints()
         keep(res)
 
@@ -102,7 +102,7 @@ def bench_grapheme_iter[
     var items = make_string[length](filename + ".txt")
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         var count = 0
         for _ in black_box(items).graphemes():
             count += 1

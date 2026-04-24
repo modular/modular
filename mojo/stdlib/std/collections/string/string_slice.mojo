@@ -2522,8 +2522,10 @@ def _split[
     var items = 0
     var ptr = src_str.unsafe_ptr().as_immutable()
 
+    comptime PointerType = type_of(ptr)
+
     @always_inline("nodebug")
-    def _build_slice(p: type_of(ptr), start: Int, end: Int) -> S:
+    def _build_slice(p: PointerType, start: Int, end: Int) -> S:
         return S(ptr=p + start, length=end - start)
 
     while lhs <= str_byte_len:

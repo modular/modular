@@ -975,7 +975,7 @@ def _copy_with_strides[
             @always_inline
             def _copy[
                 simd_width: Int
-            ](offset: Int) unified {
+            ](offset: Int) {
                 var input_axis_stride,
                 var output_axis_stride,
                 mut dst_ptr,

@@ -376,10 +376,8 @@ trait TokenFormat(DevicePassable, ImplicitlyDestructible):
     def copy_msg_tile_to_output_tensor[
         extract_topk_info_func: def(
             UnsafePointer[UInt8, MutExternalOrigin], Int
-        ) unified -> None,
-        recv_buf_ptr_func: def(Int) unified -> UnsafePointer[
-            UInt8, MutExternalOrigin
-        ],
+        ) -> None,
+        recv_buf_ptr_func: def(Int) -> UnsafePointer[UInt8, MutExternalOrigin],
         //,
         n_warps: Int,
         shared_expert_offset: Int = 0,
@@ -1056,10 +1054,8 @@ struct NVFP4TokenFormat[
     def copy_msg_tile_to_output_tensor[
         extract_topk_info_func: def(
             UnsafePointer[UInt8, MutExternalOrigin], Int
-        ) unified -> None,
-        recv_buf_ptr_func: def(Int) unified -> UnsafePointer[
-            UInt8, MutExternalOrigin
-        ],
+        ) -> None,
+        recv_buf_ptr_func: def(Int) -> UnsafePointer[UInt8, MutExternalOrigin],
         //,
         n_warps: Int,
         shared_expert_offset: Int = 0,
@@ -2151,7 +2147,7 @@ struct EPDispatchKernel[
         ]()
 
         @always_inline
-        def fetch_tile_id() unified {read} -> Int32:
+        def fetch_tile_id() {read} -> Int32:
             """Fetch the start of the next tile for the current expert. Should
             be called by a single thread.
             """
@@ -2160,7 +2156,7 @@ struct EPDispatchKernel[
             ](atomic_counter + Self.work_counter_offset + local_expert_id, 1)
 
         @always_inline
-        def fill_tok_rank_map(tile_id: Int, _total: Int) unified {mut} -> None:
+        def fill_tok_rank_map(tile_id: Int, _total: Int) {mut} -> None:
             """Fill tok_rank_map for a tile. Must be called by warp 0 only,
             after rank_prefix is loaded."""
             var _tile_start = ufloordiv(tile_id, sms_per_tile) * tile_size
@@ -2224,7 +2220,7 @@ struct EPDispatchKernel[
             @always_inline
             def _recv_buf_ptr_for(
                 tok_local: Int,
-            ) unified {read} -> UnsafePointer[UInt8, MutExternalOrigin]:
+            ) {read} -> UnsafePointer[UInt8, MutExternalOrigin]:
                 """Return the pointer to the token in the receive buffer."""
                 var wep = tile_start + tok_local
                 var src_rank = Int(tok_rank_map[tok_local])
@@ -2244,7 +2240,7 @@ struct EPDispatchKernel[
             def extract_topk_info(
                 token_ptr: UnsafePointer[UInt8, MutExternalOrigin],
                 output_pos: Int,
-            ) unified {read} -> None:
+            ) {read} -> None:
                 """Extract the top-k info from the token ans save it to the
                 src_info tensor. Should be called by whole warp.
                 """
@@ -2360,7 +2356,7 @@ struct EPDispatchKernel[
             @always_inline
             def _send_buf_ptr_for(
                 tok_local: Int,
-            ) unified {read} -> UnsafePointer[UInt8, MutExternalOrigin]:
+            ) {read} -> UnsafePointer[UInt8, MutExternalOrigin]:
                 return send_buf_p + Self.send_buf_layout(
                     (Idx(tile_start + tok_local), Idx(0))
                 )
@@ -2369,7 +2365,7 @@ struct EPDispatchKernel[
             def extract_topk_info(
                 token_ptr: UnsafePointer[UInt8, MutExternalOrigin],
                 output_pos: Int,
-            ) unified {read} -> None:
+            ) {read} -> None:
                 pass
 
             format_handler.copy_msg_tile_to_output_tensor[

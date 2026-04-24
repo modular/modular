@@ -61,9 +61,7 @@ struct TString[
         var offset = 0
 
         @always_inline
-        def write_string() unified {
-            read encoded_bytes, read offset, mut writer
-        } -> Int:
+        def write_string() {read encoded_bytes, read offset, mut writer} -> Int:
             var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
@@ -225,7 +223,7 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var i = 0
 
     @always_inline
-    def peek_next_is(byte: Byte) unified {read} -> Bool:
+    def peek_next_is(byte: Byte) {read} -> Bool:
         return i + 1 < len(bytes) and bytes[i + 1] == byte
 
     while i < len(bytes):

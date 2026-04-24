@@ -847,7 +847,7 @@ struct Span[
     def count[
         dtype: DType,
         //,
-        F: def[w: SIMDSize](v: SIMD[dtype, w]) unified -> SIMD[DType.bool, w],
+        F: def[w: SIMDSize](v: SIMD[dtype, w]) -> SIMD[DType.bool, w],
     ](self: Span[Scalar[dtype], _], func: F) -> UInt:
         """Count the amount of times the function returns `True`.
 
@@ -867,9 +867,7 @@ struct Span[
         var length = len(self)
         var count = 0
 
-        def do_count[
-            width: Int
-        ](idx: Int) unified {mut count, read ptr, read func}:
+        def do_count[width: Int](idx: Int) {mut count, read ptr, read func}:
             var mask = func[width](ptr.load[width=width](idx))
             count += mask.reduce_bit_count()
 
@@ -967,13 +965,13 @@ struct Span[
             ```
         """
 
-        def _cmp(value: Self.T) unified {var} -> Int:
+        def _cmp(value: Self.T) {var} -> Int:
             return func(value)
 
         return self.binary_search_by(_cmp)
 
     def binary_search_by[
-        FuncType: def(Self.T) unified -> Int,
+        FuncType: def(Self.T) -> Int,
     ](self, func: FuncType) -> Optional[Int]:
         """Finds an element using binary search with a custom comparison function.
 
@@ -1003,7 +1001,7 @@ struct Span[
                 var span = Span(data)
 
                 # Search for "bb"
-                def cmp(elem: String) unified {} -> Int:
+                def cmp(elem: String) {} -> Int:
                     if elem < "bb":
                         return -1
                     elif elem > "bb":
