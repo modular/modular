@@ -2975,38 +2975,6 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
     }
   }
 
-  // Support subscripting a !kgen.param_list value, which are used in parameter
-  // lists.  This enables us to work with parameter backs in a more natural way,
-  // e.g. def thing[*Ts: Copyable & Movable]():
-  //      type = Ts[123]
-  // We should really remove this when going to a better parameter pack rep.
-  //
-  // FIXME(#13015): We shouldn't need this code. Variadic arguments should emit
-  // a standard library type that implements `__getitem__` and `__setitem__`.
-  if (auto variadic = sugarDynCast<ParamListType>(baseType)) {
-    // Attempt to convert the index.
-    if (operands.size() != 1 || operands[0].isKeywordOrUnpackedKeyword()) {
-      emitter.emitError(getLoc()) << "variadic can only be subscripted with a "
-                                     "single positional operand";
-      return {};
-    }
-
-    // We're going to emit the index as a PValue even if in a dynamic context.
-    auto paramEmitter = emitter.getParamEmitter(EC_Subscript);
-    CValue index = paramEmitter.emitIndex(operands[0].expr, EC_Subscript);
-    if (!index)
-      return {};
-    // Inside a parameter context, emit a parameter operator.
-    if (auto indexPV = index.getIfPValue())
-      if (auto basePV = baseValue.getIfPValue()) {
-        auto res = ParamListGetAttr::get(basePV, indexPV);
-        return emitter.emitResult(PValue(res), this, dest);
-      }
-    emitter.emitError(getLoc())
-        << "can only subscript variadics in parameter expressions";
-    return {};
-  }
-
   // Otherwise, if there is no symbol, it is just an LValue or RValue being
   // subscript, invoking a dynamic subscript with __getitem__ and __setitem__.
   return emitGetterSetterAccess(this, {baseValue, base}, operands, dest,
