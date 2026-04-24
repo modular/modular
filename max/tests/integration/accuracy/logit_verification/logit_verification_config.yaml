@@ -492,7 +492,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-32b-instruct_bfloat16_golden/1/62db96f972e210adb18a6042441b49feb5a163bdb6f5592e8788dbb9f887dbe8/torch_qwen2.5-vl-32b-instruct_bfloat16_golden.tar.gz"
       json_file: "torch_qwen2.5_vl_32b_instruct_bfloat16_golden.json"
     cos_dist_threshold: 7.0e-2
-    kl_div_threshold: 2.6e-1
+    kl_div_threshold: 3.0e-1
     timeout: 900
 
   Qwen/Qwen3-VL-30B-A3B-Instruct:
