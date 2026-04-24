@@ -84,6 +84,8 @@ def CanonicalizerPass(
     max_iterations: int = 10,
     max_num_rewrites: int = -1,
     test_convergence: bool = False,
+    cse_between_iterations: bool = False,
+    filter_dialects: Sequence[str] = [],
     disabled_patterns: Sequence[str] = [],
     enabled_patterns: Sequence[str] = [],
 ) -> max._core.Pass:
