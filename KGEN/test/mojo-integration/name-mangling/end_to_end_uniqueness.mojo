@@ -27,8 +27,8 @@ def make_me_unique[n: Int]():
 # Check also that the names are not sanitized or shortened, as this is not a
 # GPU target.
 
-# CHECK-DAG: {{^}}0this_name_is_long_and_will_clash_so_mangle_it_{{[0-9a-f]+}}:
-# CHECK-DAG: {{^}}0this_name_is_long_and_will_clash_so_mangle_it_{{[0-9a-f]+}}:
+# CHECK-DAG: {{^_?}}0this_name_is_long_and_will_clash_so_mangle_it_{{[0-9a-f]+}}:
+# CHECK-DAG: {{^_?}}0this_name_is_long_and_will_clash_so_mangle_it_{{[0-9a-f]+}}:
 
 
 def main() raises:
