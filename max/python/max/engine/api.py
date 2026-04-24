@@ -432,16 +432,9 @@ class InferenceSession:
         if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
             self.enable_per_tensor_fp8_quantize(val)
 
-        # Prefer the new max-debug.uninitialized-read-check config; fall
-        # back to the legacy MODULAR_MAX_UNINITIALIZED_READ_CHECK env var.
-        # The legacy fallback will be removed in a follow-up PR.
-        if (
-            _InferenceSession.debug.uninitialized_read_check
-            or os.environ.get(
-                "MODULAR_MAX_UNINITIALIZED_READ_CHECK", ""
-            ).lower()
-            == "true"
-        ):
+        # Read the uninit-read check from the max-debug.uninitialized-read-check
+        # Config key.
+        if _InferenceSession.debug.uninitialized_read_check:
             # Enable debug allocator poison
             existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
             if existing:

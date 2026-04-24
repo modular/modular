@@ -187,8 +187,10 @@ This version is still a work in progress.
   against the debug allocator's poison patterns (0xFF host fill and canonical
   qNaN device fill). A match triggers `abort()` with a descriptive message.
   When disabled (the default), zero runtime overhead. For MAX pipelines, set
-  `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` to enable both the debug
-  allocator and the load-time checks automatically.
+  `MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true` (or the
+  `max-debug.uninitialized-read-check` config key, or
+  `InferenceSession.debug.uninitialized_read_check = True`) to enable both the
+  debug allocator and the load-time checks automatically.
 
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.

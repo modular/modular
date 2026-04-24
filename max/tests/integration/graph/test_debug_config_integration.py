@@ -49,7 +49,6 @@ def _run_script(
     # TEST_TMPDIR is used for config file discovery in tests.
     for key in [
         "MODULAR_DEBUG",
-        "MODULAR_MAX_UNINITIALIZED_READ_CHECK",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE",
         "MOJO_ASSERT_LEVEL",
         "MODULAR_HOME",
