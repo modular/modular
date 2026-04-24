@@ -152,10 +152,11 @@ COMPILERRT_VISIBILITY_EXPORT int KGEN_CompilerRT_GetStackTrace(char **strings,
 
   int isEnabled = enabled.load();
   if (isEnabled == -1) {
-    isEnabled = isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_ERROR",
-                                    "max-debug.stack-trace-on-error")
-                    ? 1
-                    : 0;
+    auto configOr = M::Config::open();
+    bool enabledBool =
+        !configOr.isError() &&
+        configOr->getValueAsBool("max-debug.stack-trace-on-error", false);
+    isEnabled = enabledBool ? 1 : 0;
     enabled.store(isEnabled);
   }
 

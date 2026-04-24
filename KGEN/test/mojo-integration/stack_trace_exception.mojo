@@ -41,7 +41,8 @@ def main():
         else:
             print(
                 "stack trace was not collected. Enable stack trace collection"
-                " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
+                " with environment variable"
+                " `MODULAR_DEBUG=stack-trace-on-error`"
             )
 
     try:
@@ -54,26 +55,27 @@ def main():
         else:
             print(
                 "stack trace was not collected. Enable stack trace collection"
-                " with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`"
+                " with environment variable"
+                " `MODULAR_DEBUG=stack-trace-on-error`"
             )
 
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 %t > %t.log
+# RUN: MODULAR_DEBUG=stack-trace-on-error %t > %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL %s
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_ERROR=0 %t > %t.log
+# RUN: %t > %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL-NO-STACK %s
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level none -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 %t > %t.log
+# RUN: MODULAR_DEBUG=stack-trace-on-error %t > %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O3-NONE %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 %t > %t.log
+# RUN: MODULAR_DEBUG=stack-trace-on-error %t > %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level none -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 %t > %t.log
+# RUN: MODULAR_DEBUG=stack-trace-on-error %t > %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O0-NONE %s
 
 # O3-FULL-LABEL: stack trace of gotcha!
@@ -92,10 +94,10 @@ def main():
 # O3-FULL-NEXT: #{{.*}} main
 
 # O3-FULL-NO-STACK-LABEL: stack trace of gotcha!
-# O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+# O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MODULAR_DEBUG=stack-trace-on-error`
 
 # O3-FULL-NO-STACK-LABEL: stack trace of nested gotcha!
-# O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MOJO_ENABLE_STACK_TRACE_ON_ERROR`
+# O3-FULL-NO-STACK: stack trace was not collected. Enable stack trace collection with environment variable `MODULAR_DEBUG=stack-trace-on-error`
 
 # O3-NONE-LABEL: stack trace of gotcha!
 # O3-NONE: #{{.*}} KGEN_CompilerRT_GetStackTrace
