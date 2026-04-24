@@ -418,10 +418,18 @@ class BlockManager:
         # to the block size.
         num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
-        # Commit these blocks into the prefix cache, collecting newly
-        # committed blocks for a single batched save to the connector.
-        new_bids: list[int] = []
-        new_hashes: list[int] = []
+        # Commit blocks into the prefix cache, grouping contiguous runs
+        # of new blocks with their parent hash for the connector.
+        # When a block already exists in the device prefix cache (dup),
+        # it breaks the current run; the dup's hash becomes the parent
+        # of the next new block.
+        current_parent = (
+            req_hashes[num_committed_blocks - 1]
+            if num_committed_blocks > 0
+            else 0
+        )
+        run_bids: list[int] = []
+        run_hashes: list[int] = []
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
             block_hash = req_hashes[block_idx]
@@ -431,12 +439,21 @@ class BlockManager:
             )
             if new_block is not None:
                 req_blocks[block_idx] = new_block
+                if run_bids:
+                    self.connector.save(
+                        run_bids, run_hashes, parent_seq_hash=current_parent
+                    )
+                    run_bids = []
+                    run_hashes = []
+                current_parent = block_hash
             else:
-                new_bids.append(block.bid)
-                new_hashes.append(block_hash)
+                run_bids.append(block.bid)
+                run_hashes.append(block_hash)
 
-        if new_bids:
-            self.connector.save(new_bids, new_hashes)
+        if run_bids:
+            self.connector.save(
+                run_bids, run_hashes, parent_seq_hash=current_parent
+            )
 
         # Update committed index managed by BlockManager.
         self.req_to_committed_idx[ctx.request_id] = (

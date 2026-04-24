@@ -32,7 +32,14 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 import msgspec
-from dkv import BlockDescriptor, DKVClient, ReadBlocksResult
+from dkv import (
+    BlockDescriptor,
+    DKVClient,
+    DKVNotReadyError,
+    DKVTransportError,
+    ReadBlocksResult,
+    RequestState,
+)
 from max._core import nixl
 from max.driver import Device
 from max.interfaces import RequestID, TextGenerationContext
@@ -208,8 +215,9 @@ class DKVConnector:
         # Per-request read result (need decrement after the read transfer completes)
         self._held_blocks: dict[str, ReadBlocksResult] = {}
 
-        # Write pipeline: each entry is one save() call's (block_ids, hashes).
-        self._pending_acquires: list[tuple[list[int], list[int]]] = []
+        # Write pipeline: each entry is one save() call's
+        # (parent_seq_hash, block_ids, hashes).
+        self._pending_acquires: list[tuple[int, list[int], list[int]]] = []
         self._pending_writes: list[_PendingWrite] = []
         self._inflight_writes: list[_InflightWrite] = []
 
@@ -322,6 +330,24 @@ class DKVConnector:
                 resp.agent_name,
                 dkv_hostname,
                 resp.backend or "(not reported)",
+            )
+        except DKVNotReadyError as exc:
+            # Server is still warming up (G2 index load). Mark degraded
+            # so the next sync() cycle triggers a reconnect + retry of
+            # this exchange, instead of permanently falling back.
+            self._set_needs_reconnect(f"dKV not ready: {exc.reason}")
+            logger.info(
+                "dKV reports not-ready (%s); will retry after cooldown",
+                exc.reason,
+            )
+        except DKVTransportError as exc:
+            # Transport failure during handshake. Also schedule retry.
+            self._set_needs_reconnect(
+                f"exchange_metadata transport ({exc.request_state.value})"
+            )
+            logger.warning(
+                "dKV NIXL auto-discovery transport failure; will retry",
+                exc_info=True,
             )
         except Exception:
             logger.warning(
@@ -531,10 +557,20 @@ class DKVConnector:
             self._state = _ConnectorState.DEGRADED
             return False
 
-        # Re-exchange NIXL metadata (optional, RPC-only mode is valid).
+        # Transition to HEALTHY before auto-discovery so that any
+        # _set_needs_reconnect call inside auto_discover (e.g. for
+        # NotReady) can flip us back to DEGRADED and queue another
+        # retry. If auto_discover succeeds, we stay HEALTHY.
+        self._state = _ConnectorState.HEALTHY
         self._try_auto_discover_metadata()
 
-        self._state = _ConnectorState.HEALTHY
+        if self._state != _ConnectorState.HEALTHY:
+            logger.info(
+                "dKV reconnection partially succeeded (RPC ready, NIXL"
+                " handshake deferred)"
+            )
+            return False
+
         if self._default_remote_metadata is not None:
             logger.info("dKV reconnection succeeded (NIXL mode)")
         else:
@@ -722,6 +758,31 @@ class DKVConnector:
             )
             return []
 
+        # NIXL transfers read from the DRAM slab, so bail if any block
+        # landed on G2 (disk). This can happen if the server offloaded
+        # the block between lookup() and read_blocks().
+        # TODO(CLIN-1097): implement the G2 read path — dKV exposes
+        # DiskLocation with file_id + offset that can be mmap'd from
+        # the shared host volume. Today we skip these blocks, which
+        # means any cached prefix that got spilled to disk is invisible
+        # to MAX. Blocks on disk surface as soon as DRAM pressure
+        # triggers offloading.
+        if read_result.disk_locations:
+            logger.warning(
+                "dKV returned %d disk-tier blocks which cannot be read over"
+                " NIXL; skipping load. Consider disabling G2 offload or"
+                " implementing a G2 read path.",
+                len(read_result.disk_locations),
+            )
+            try:
+                self._client.decrement_blocks(read_result)
+            except Exception:
+                logger.warning(
+                    "Failed to release dKV pins after G2 skip",
+                    exc_info=True,
+                )
+            return []
+
         try:
             transfers: list[TransferReqData] = []
             engine = self._ensure_engine()
@@ -791,13 +852,16 @@ class DKVConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
         """Queue device blocks for deferred acquire in flush()."""
         if not self._is_healthy():
             return
         if not block_hashes:
             return
-        self._pending_acquires.append((list(block_ids), list(block_hashes)))
+        self._pending_acquires.append(
+            (parent_seq_hash, list(block_ids), list(block_hashes))
+        )
 
     @traced
     def sync(self) -> None:
@@ -962,10 +1026,11 @@ class DKVConnector:
     def _flush_pending_acquires(self) -> None:
         """Acquire all blocks queued by save().
 
-        Merges all pending batches into a single ``BlockSequence``
-        with ``parent_seq_hash=0``, deduplicating hashes so the
-        server doesn't over-allocate. Sends one batched
-        ``acquire_blocks`` RPC.
+        Each ``save()`` call produces a sequence with a parent hash
+        and ordered block hashes. The server chains blocks within each
+        sequence (first block parents to the explicit parent, subsequent
+        blocks chain to their predecessor). Sequences are sent in a
+        single batched ``acquire_blocks`` RPC.
         """
         batches = self._pending_acquires
         self._pending_acquires = []
@@ -973,21 +1038,20 @@ class DKVConnector:
         if not batches:
             return
 
-        # Deduplicate hashes across batches: the server's pre-scan
-        # counts each occurrence as needing a slot, so duplicates
-        # would over-allocate and can false-exhaust the pool.
-        seen: dict[int, int] = {}  # hash -> first block_id
-        for bids, hashes in batches:
-            for bid, h in zip(bids, hashes, strict=False):
-                if h not in seen:
-                    seen[h] = bid
-        all_hashes = list(seen.keys())
-        all_bids = [seen[h] for h in all_hashes]
+        # Build (parent_seq_hash, seq_hashes) tuples and a parallel
+        # list of block_ids for mapping responses back to device pages.
+        sequences: list[tuple[int, list[int]]] = []
+        all_bids: list[int] = []
+        for parent, bids, hashes in batches:
+            sequences.append((parent, hashes))
+            all_bids.extend(bids)
+
+        total_hashes = len(all_bids)
 
         try:
             t0 = time.monotonic()
             descriptors, newly_acquired = self._client.acquire_blocks(
-                sequences=[(0, all_hashes)],
+                sequences=sequences,
             )
             self._rpc_acquire_latency_total_ms += (time.monotonic() - t0) * 1000
             self._rpc_acquire_latency_count += 1
@@ -995,25 +1059,32 @@ class DKVConnector:
             self._set_needs_reconnect(f"acquire_blocks transport: {exc}")
             logger.warning(
                 "Failed to acquire %d blocks from dKV",
-                len(all_hashes),
+                total_hashes,
                 exc_info=True,
             )
             return
         except Exception:
+            # Most common business-error failure here is
+            # ``DKVServerError("parent not found in cache")`` when the
+            # parent block was evicted server-side between a previous
+            # iteration's register and this acquire. We drop the batch
+            # rather than retrying; see CLIN-1098 for the design
+            # discussion (status-quo is to rely on pool sizing).
             logger.warning(
                 "Failed to acquire %d blocks from dKV",
-                len(all_hashes),
+                total_hashes,
                 exc_info=True,
             )
             return
 
-        if len(descriptors) != len(all_bids) or len(newly_acquired) != len(
-            all_bids
+        if (
+            len(descriptors) != total_hashes
+            or len(newly_acquired) != total_hashes
         ):
             logger.warning(
                 "dKV acquire response length mismatch: "
                 "requested %d, got %d descriptors, %d flags",
-                len(all_bids),
+                total_hashes,
                 len(descriptors),
                 len(newly_acquired),
             )
@@ -1032,7 +1103,7 @@ class DKVConnector:
         if skipped > 0:
             logger.debug(
                 "dKV acquire: %d new, %d existing (skipped WRITE)",
-                len(all_bids) - skipped,
+                total_hashes - skipped,
                 skipped,
             )
 
@@ -1284,11 +1355,28 @@ class DKVConnector:
     def _safe_register_blocks(
         self, descriptors: Sequence[BlockDescriptor]
     ) -> None:
-        """Register blocks with dKV, releasing them on failure."""
+        """Register blocks with dKV, releasing them on failure.
+
+        On transport failure we inspect ``request_state`` to decide
+        whether the register reached the server. If it did, the blocks
+        may already be READABLE and ``release_blocks`` would be a no-op
+        warning on the server side; skip it.
+        """
         try:
             self._client.register_blocks(descriptors)
-        except (ConnectionError, TimeoutError) as exc:
-            self._set_needs_reconnect(f"register_blocks transport: {exc}")
+        except DKVTransportError as exc:
+            self._set_needs_reconnect(
+                f"register_blocks transport ({exc.request_state.value})"
+            )
+            if exc.request_state == RequestState.SENT:
+                logger.warning(
+                    "register_blocks send succeeded but recv failed for %d"
+                    " blocks; server likely transitioned them to READABLE;"
+                    " skipping release",
+                    len(descriptors),
+                    exc_info=True,
+                )
+                return
             logger.warning(
                 "Failed to register %d blocks, releasing",
                 len(descriptors),

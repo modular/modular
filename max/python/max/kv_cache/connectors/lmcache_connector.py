@@ -819,6 +819,7 @@ class LMCacheConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
         """Queue device blocks for save to LMCache.
 
