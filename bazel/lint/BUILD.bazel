@@ -49,6 +49,13 @@ command(
     command = ":ruff-wrapper",
 )
 
+command(
+    name = "ruff.fix-fast",
+    arguments = ["fix"],
+    command = ":ruff-wrapper",
+    environment = {"FAST": "1"},
+)
+
 alias(
     name = "rumdl",
     actual = select({
@@ -177,7 +184,6 @@ multirun(
 COMMON_FIX_COMMANDS = [
     ":buildifier.fix",
     ":check_licenses.fix",
-    ":ruff.fix",
     ":rumdl.fix",
 ]
 
@@ -186,6 +192,7 @@ multirun(
     buffer_output = True,
     commands = COMMON_FIX_COMMANDS + [
         ":mblack.fix-fast",
+        ":ruff.fix-fast",
     ],
     jobs = 0,
 )
@@ -195,6 +202,7 @@ multirun(
     buffer_output = True,
     commands = COMMON_FIX_COMMANDS + [
         ":mblack.fix",
+        ":ruff.fix",
     ],
     jobs = 0,
 )

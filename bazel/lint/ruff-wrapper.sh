@@ -20,17 +20,37 @@ cd "$BUILD_WORKSPACE_DIRECTORY"
 
 binary=$(find "$binary_root" -name ruff | head -n 1)
 
-result=0
-if [[ $1 == "check" ]]; then
-    shift
-    "$binary" format --check --quiet --diff "$@" || result=$?
-    "$binary" check --quiet "$@" || result=$?
-elif [[ $1 == "fix" ]]; then
-    shift
-    "$binary" format "$@" || result=$?
-    "$binary" check --fix "$@" || result=$?
-else
-    echo "Unknown subcommand '$1' to Ruff wrapper" >&2
-    result=1
+# In FAST mode, only process tracked files changed since the merge-base with
+# origin/main so that untracked scratch files are left alone. When FAST is
+# unset, fast_files stays empty and expands to no extra args below.
+fast_files=""
+if [[ -n "${FAST:-}" ]]; then
+    merge_base=$(git merge-base origin/main HEAD 2>/dev/null || true)
+    fast_files=$(git diff --diff-filter=d --name-only ${merge_base:+"$merge_base"} -- '*.py' '*.pyi')
+    if [[ -z "$fast_files" ]]; then
+        exit 0
+    fi
 fi
+
+result=0
+case "$1" in
+    check)
+        shift
+        # shellcheck disable=SC2086
+        "$binary" format --check --quiet --diff "$@" $fast_files || result=$?
+        # shellcheck disable=SC2086
+        "$binary" check --quiet "$@" $fast_files || result=$?
+        ;;
+    fix)
+        shift
+        # shellcheck disable=SC2086
+        "$binary" format "$@" $fast_files || result=$?
+        # shellcheck disable=SC2086
+        "$binary" check --fix "$@" $fast_files || result=$?
+        ;;
+    *)
+        echo "Unknown subcommand '$1' to Ruff wrapper" >&2
+        result=1
+        ;;
+esac
 exit $result
