@@ -525,9 +525,9 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
   FunctionType funcType =
       FunctionType::get(b.getContext(), argTypes, closureInitData.results());
   SmallVector<ParamDeclAttr> allParams;
-  append_range(allParams, closureInitData.getClosureInit().getInputParams());
   for (auto capturedParam : closureInitData.getCapturedParamDecls())
     allParams.push_back(capturedParam);
+  append_range(allParams, closureInitData.getClosureInit().getInputParams());
 
   SmallVector<ArgConvention> conventions;
   ArgConvention selfConvention =
@@ -567,17 +567,16 @@ LogicalResult ClosureLifter::liftCallFunction(OpBuilder &b,
         ArrayAttr::get(b.getContext(), adjusted));
   }
 
-  // Remap the symbol to not include the self param by only using input params
-  // and binding the final parameter.
-  SmallVector<TypedAttr> boundParams = llvm::map_to_vector(
-      closureInitData.getClosureInit().getInputParams(),
-      [&](ParamDeclAttr attr) -> TypedAttr {
-        return UnboundAttr::get(b.getContext(), attr.getType());
-      });
+  // Remap the symbol to not include the self param. `boundParams` order
+  // matches `allParams`: captures are `ParamDeclRef` (enclosing values), then
+  // unbound type params for the closure's explicit parameters.
+  SmallVector<TypedAttr> boundParams;
   for (auto capturedParam : closureInitData.getCapturedParamDecls()) {
     boundParams.push_back(ParamDeclRefAttr::get(capturedParam.getName(),
                                                 capturedParam.getType()));
   }
+  for (ParamDeclAttr attr : closureInitData.getClosureInit().getInputParams())
+    boundParams.push_back(UnboundAttr::get(b.getContext(), attr.getType()));
 
   Region &body = liftedWrapper.getBodyRegion();
   body.takeBody(region);

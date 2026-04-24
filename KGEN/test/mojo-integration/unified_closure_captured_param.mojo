@@ -173,6 +173,65 @@ def testNestedClosureCapture[RR: Coord](r: RR, x: Int):
 
 
 # ===----------------------------------------------------------------------=== #
+# Nested def closure: capture outer type param (A) with inner param (C)
+# ===----------------------------------------------------------------------=== #
+
+
+trait _NestedCapPrintable(ImplicitlyCopyable):
+    def string(self) -> String:
+        ...
+
+    @staticmethod
+    def makeIt(x: Int) -> Self:
+        ...
+
+
+@fieldwise_init
+struct _NestedCapStringWrapper(_NestedCapPrintable):
+    var x: String
+
+    def string(self) -> String:
+        return self.x
+
+    @staticmethod
+    def makeIt(x: Int) -> Self:
+        return _NestedCapStringWrapper(String(x))
+
+
+@fieldwise_init
+struct _NestedCapHasParam[T: _NestedCapPrintable](ImplicitlyCopyable):
+    var x: Self.T
+
+    def foo(self):
+        print(self.x.string())
+
+
+def _testNestedCapture[A: _NestedCapPrintable]():
+    def closure[C: _NestedCapHasParam[A]]() unified {read}:
+        var m = materialize[C]()
+        m.foo()
+
+    _consume[
+        A,
+        A.makeIt(1),
+        A.makeIt(2),
+        type_of(closure),
+    ](closure)
+
+
+def _consume[
+    A: _NestedCapPrintable,
+    implA: A,
+    implB: A,
+    FuncType: def[C: _NestedCapHasParam[A]]() unified,
+](impl: FuncType):
+    comptime AA = _NestedCapHasParam[A](implA)
+    comptime BB = _NestedCapHasParam[A](implB)
+    impl[AA]()
+    impl[BB]()
+
+
+# ===----------------------------------------------------------------------=== #
 # Lazy Conformance
 # ===----------------------------------------------------------------------=== #
 
@@ -250,3 +309,6 @@ def main() raises:
     testLazyConformanceManyCaptures(polar, x, one)
     # CHECK: Cart: 1 , 2
     testLazyConformanceSuperset(x)
+    # CHECK: 1
+    # CHECK: 2
+    _testNestedCapture[_NestedCapStringWrapper]()
