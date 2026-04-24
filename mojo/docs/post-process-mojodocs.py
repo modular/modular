@@ -148,14 +148,21 @@ def assemble_changelog(base_path: str) -> None:
             "".join(_remove_empty_headings(nightly_lines)).rstrip() + "\n"
         )
         # Also write the nightly notes to a separate nightly.md file
-        # Replace the MD heading with frontmatter title and date
+        # Replace the MD heading with frontmatter title, date, and version
         pst = timezone(timedelta(hours=-8))
         today_pst = datetime.now(pst).strftime("%Y-%m-%d")
-        nightly_page = re.sub(
-            r"^# .+\n*",
-            f"---\ntitle: Mojo nightly\ndate: {today_pst}\n---\n\n",
-            nightly_content,
-        )
+        version = ""
+        build_version_path = os.path.join(base_path, "build_version.js")
+        if os.path.exists(build_version_path):
+            with open(build_version_path) as f:
+                m = re.search(r'"([^"]+)"', f.read())
+                if m:
+                    version = m.group(1)
+        frontmatter = f"---\ntitle: Mojo nightly\ndate: {today_pst}\n"
+        if version:
+            frontmatter += f"version: {version}\n"
+        frontmatter += "---\n\n"
+        nightly_page = re.sub(r"^# .+\n*", frontmatter, nightly_content)
         with open(os.path.join(changelog_dir, "nightly.md"), "w") as f:
             f.write(nightly_page)
 

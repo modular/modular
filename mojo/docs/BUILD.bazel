@@ -43,6 +43,9 @@ genrule(
   mv mojosite/mojo/* mojosite/
   rm -rf mojosite/mojo
 
+  # Place build version file early so post-process can read it
+  cp $(location :build_version_js) mojosite/build_version.js
+
   # Post-process before restructuring (script expects original paths)
   chmod -R +w mojosite
   $(location :post-process-mojodocs) mojosite
@@ -61,9 +64,6 @@ genrule(
   rm -rf internal_tmp
   mv mojosite/redirects.js mojosite/docs/redirects.js
   rm mojosite/docs/lib.mdx
-
-  # Place build version file at the tar root (which install_docs extracts to mojosite/docs/)
-  cp $(location :build_version_js) mojosite/build_version.js
 
   # Generate final output
   cd mojosite
