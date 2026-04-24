@@ -24,8 +24,10 @@ from std.math import ceildiv
 from std.random import rand
 
 from std.gpu.host import DeviceContext
-from layout import Layout, LayoutTensor
+from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from nn.conv.conv import conv3d_gpu_naive_ndhwc_qrscf, conv3d_cudnn
+from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
+from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 
 from std.utils.index import IndexList
 
@@ -173,6 +175,8 @@ def bench_conv3d[
     var filter_qrscf_dev = ctx.enqueue_create_buffer[dtype](filter_size)
     var filter_fcqrs_dev = ctx.enqueue_create_buffer[dtype](filter_size)
     var output_naive_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_im2col_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_1x1x1_dev = ctx.enqueue_create_buffer[dtype](output_size)
     var output_cudnn_dev = ctx.enqueue_create_buffer[dtype](output_size)
 
     ctx.enqueue_copy(input_dev, input_host)
@@ -193,6 +197,38 @@ def bench_conv3d[
     )
     var output_cudnn_buf = LayoutTensor[dtype, output_layout](
         output_cudnn_dev.unsafe_ptr()
+    )
+
+    # TileTensor views for the im2col+matmul dispatcher.
+    var input_tt = TileTensor(
+        input_dev.unsafe_ptr(),
+        row_major(
+            Coord(
+                IndexList[5](batch, in_depth, in_height, in_width, in_channels)
+            )
+        ),
+    )
+    var filter_qrscf_tt = TileTensor(
+        filter_qrscf_dev.unsafe_ptr(),
+        row_major(
+            Coord(
+                IndexList[5](
+                    filter_q, filter_r, filter_s, in_channels, out_channels
+                )
+            )
+        ),
+    )
+    var output_im2col_tt = TileTensor(
+        output_im2col_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
+        ),
+    )
+    var output_1x1x1_tt = TileTensor(
+        output_1x1x1_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
+        ),
     )
 
     # Naive kernel launch config.
@@ -229,6 +265,30 @@ def bench_conv3d[
             grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
             block_dim=(block_size, block_size, 1),
         )
+        _ = dispatch_im2col_matmul_conv3d[
+            dtype, dtype, dtype, filter_is_fcrs=False
+        ](
+            input_tt,
+            filter_qrscf_tt,
+            output_im2col_tt,
+            stride_idx,
+            dilation_idx,
+            pad_idx,
+            1,
+            ctx,
+        )
+        _ = dispatch_1x1x1_matmul_conv3d[
+            dtype, dtype, dtype, filter_is_fcrs=False
+        ](
+            input_tt,
+            filter_qrscf_tt,
+            output_1x1x1_tt,
+            stride_idx,
+            dilation_idx,
+            pad_idx,
+            1,
+            ctx,
+        )
         conv3d_cudnn[dtype, dtype, dtype](
             input_buf,
             filter_fcqrs_buf,
@@ -260,6 +320,87 @@ def bench_conv3d[
     var naive_ms = Float64(naive_ns) / 1e6 / Float64(num_iters)
     var naive_tflops = Float64(flops) / (naive_ms / 1000) / 1e12
 
+    # Probe once outside the timing loop: if the dispatcher declines the
+    # shape (e.g. 1x1x1, grouped), we skip Phase 2 numbers entirely rather
+    # than timing a no-op returning False.
+    var im2col_handled = dispatch_im2col_matmul_conv3d[
+        dtype, dtype, dtype, filter_is_fcrs=False
+    ](
+        input_tt,
+        filter_qrscf_tt,
+        output_im2col_tt,
+        stride_idx,
+        dilation_idx,
+        pad_idx,
+        1,
+        ctx,
+    )
+    ctx.synchronize()
+
+    var im2col_ms: Float64 = 0.0
+    var im2col_tflops: Float64 = 0.0
+    if im2col_handled:
+
+        @parameter
+        @__copy_capture(input_tt, filter_qrscf_tt, output_im2col_tt)
+        def im2col_bench() raises:
+            _ = dispatch_im2col_matmul_conv3d[
+                dtype, dtype, dtype, filter_is_fcrs=False
+            ](
+                input_tt,
+                filter_qrscf_tt,
+                output_im2col_tt,
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
+            )
+
+        var im2col_ns = ctx.execution_time[im2col_bench](num_iters)
+        im2col_ms = Float64(im2col_ns) / 1e6 / Float64(num_iters)
+        im2col_tflops = Float64(flops) / (im2col_ms / 1000) / 1e12
+
+    # Probe once for the 1x1x1 matmul fast path. Declines on anything
+    # that isn't a 1x1x1 / stride=1 / zero-padding shape.
+    var p1x1x1_handled = dispatch_1x1x1_matmul_conv3d[
+        dtype, dtype, dtype, filter_is_fcrs=False
+    ](
+        input_tt,
+        filter_qrscf_tt,
+        output_1x1x1_tt,
+        stride_idx,
+        dilation_idx,
+        pad_idx,
+        1,
+        ctx,
+    )
+    ctx.synchronize()
+
+    var p1x1x1_ms: Float64 = 0.0
+    var p1x1x1_tflops: Float64 = 0.0
+    if p1x1x1_handled:
+
+        @parameter
+        @__copy_capture(input_tt, filter_qrscf_tt, output_1x1x1_tt)
+        def p1x1x1_bench() raises:
+            _ = dispatch_1x1x1_matmul_conv3d[
+                dtype, dtype, dtype, filter_is_fcrs=False
+            ](
+                input_tt,
+                filter_qrscf_tt,
+                output_1x1x1_tt,
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
+            )
+
+        var p1x1x1_ns = ctx.execution_time[p1x1x1_bench](num_iters)
+        p1x1x1_ms = Float64(p1x1x1_ns) / 1e6 / Float64(num_iters)
+        p1x1x1_tflops = Float64(flops) / (p1x1x1_ms / 1000) / 1e12
+
     @parameter
     @__copy_capture(input_buf, filter_fcqrs_buf, output_cudnn_buf)
     def cudnn_bench() raises:
@@ -278,19 +419,139 @@ def bench_conv3d[
     var cudnn_ms = Float64(cudnn_ns) / 1e6 / Float64(num_iters)
     var cudnn_tflops = Float64(flops) / (cudnn_ms / 1000) / 1e12
 
-    var ratio = naive_ms / cudnn_ms
+    # Cross-validate outputs as a correctness sanity check.
+    var output_naive_host = alloc[Scalar[dtype]](output_size)
+    var output_cudnn_host = alloc[Scalar[dtype]](output_size)
+    ctx.enqueue_copy(output_naive_host, output_naive_dev)
+    ctx.enqueue_copy(output_cudnn_host, output_cudnn_dev)
+    ctx.synchronize()
+
+    var max_diff_naive_vs_cudnn: Float32 = 0.0
+    for i in range(output_size):
+        var b = output_cudnn_host[i].cast[DType.float32]()
+        var c = output_naive_host[i].cast[DType.float32]()
+        var d2 = abs(c - b)
+        if d2 > max_diff_naive_vs_cudnn:
+            max_diff_naive_vs_cudnn = d2
+
+    output_naive_host.free()
+    output_cudnn_host.free()
+
+    var max_diff_im2col_vs_cudnn: Float32 = 0.0
+    if im2col_handled:
+        var output_im2col_host = alloc[Scalar[dtype]](output_size)
+        var output_cudnn_host2 = alloc[Scalar[dtype]](output_size)
+        ctx.enqueue_copy(output_im2col_host, output_im2col_dev)
+        ctx.enqueue_copy(output_cudnn_host2, output_cudnn_dev)
+        ctx.synchronize()
+        for i in range(output_size):
+            var a = output_im2col_host[i].cast[DType.float32]()
+            var b = output_cudnn_host2[i].cast[DType.float32]()
+            var d1 = abs(a - b)
+            if d1 > max_diff_im2col_vs_cudnn:
+                max_diff_im2col_vs_cudnn = d1
+        output_im2col_host.free()
+        output_cudnn_host2.free()
+
+    var max_diff_1x1x1_vs_cudnn: Float32 = 0.0
+    if p1x1x1_handled:
+        var output_1x1x1_host = alloc[Scalar[dtype]](output_size)
+        var output_cudnn_host3 = alloc[Scalar[dtype]](output_size)
+        ctx.enqueue_copy(output_1x1x1_host, output_1x1x1_dev)
+        ctx.enqueue_copy(output_cudnn_host3, output_cudnn_dev)
+        ctx.synchronize()
+        for i in range(output_size):
+            var a = output_1x1x1_host[i].cast[DType.float32]()
+            var b = output_cudnn_host3[i].cast[DType.float32]()
+            var d1 = abs(a - b)
+            if d1 > max_diff_1x1x1_vs_cudnn:
+                max_diff_1x1x1_vs_cudnn = d1
+        output_1x1x1_host.free()
+        output_cudnn_host3.free()
+
     print(
-        "  Naive Mojo: ",
+        "  Naive Mojo : ",
         naive_ms,
         " ms  (",
         naive_tflops,
         " TFLOPS)",
         sep="",
     )
+    if im2col_handled:
+        print(
+            "  im2col+gemm: ",
+            im2col_ms,
+            " ms  (",
+            im2col_tflops,
+            " TFLOPS)",
+            sep="",
+        )
+    else:
+        print("  im2col+gemm: (dispatcher declined; naive handles this shape)")
+    if p1x1x1_handled:
+        print(
+            "  1x1x1 mm   : ",
+            p1x1x1_ms,
+            " ms  (",
+            p1x1x1_tflops,
+            " TFLOPS)",
+            sep="",
+        )
+    else:
+        print(
+            "  1x1x1 mm   : (dispatcher declined; not a 1x1x1 / s=1 / p=0"
+            " shape)"
+        )
     print(
-        "  cuDNN:      ", cudnn_ms, " ms  (", cudnn_tflops, " TFLOPS)", sep=""
+        "  cuDNN      : ", cudnn_ms, " ms  (", cudnn_tflops, " TFLOPS)", sep=""
     )
-    print("  Naive / cuDNN: ", ratio, "x slower  (lower is better)", sep="")
+    if im2col_handled:
+        print(
+            "  im2col / cuDNN: ",
+            im2col_ms / cudnn_ms,
+            "x  (lower is better)",
+            sep="",
+        )
+    if p1x1x1_handled:
+        print(
+            "  1x1x1 / cuDNN: ",
+            p1x1x1_ms / cudnn_ms,
+            "x  (lower is better)",
+            sep="",
+        )
+    # Combined max-diff line.
+    if p1x1x1_handled and im2col_handled:
+        print(
+            "  max |1x1x1 - cuDNN|: ",
+            max_diff_1x1x1_vs_cudnn,
+            "    max |im2col - cuDNN|: ",
+            max_diff_im2col_vs_cudnn,
+            "    max |naive - cuDNN|: ",
+            max_diff_naive_vs_cudnn,
+            sep="",
+        )
+    elif p1x1x1_handled:
+        print(
+            "  max |1x1x1 - cuDNN|: ",
+            max_diff_1x1x1_vs_cudnn,
+            "    max |naive - cuDNN|: ",
+            max_diff_naive_vs_cudnn,
+            sep="",
+        )
+    elif im2col_handled:
+        print(
+            "  max |im2col - cuDNN|: ",
+            max_diff_im2col_vs_cudnn,
+            "    max |naive - cuDNN|: ",
+            max_diff_naive_vs_cudnn,
+            sep="",
+        )
+    else:
+        print(
+            "  max |naive - cuDNN|: ",
+            max_diff_naive_vs_cudnn,
+            sep="",
+        )
     print()
 
     input_host.free()
@@ -300,6 +561,8 @@ def bench_conv3d[
     _ = filter_qrscf_dev^
     _ = filter_fcqrs_dev^
     _ = output_naive_dev^
+    _ = output_im2col_dev^
+    _ = output_1x1x1_dev^
     _ = output_cudnn_dev^
 
 

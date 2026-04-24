@@ -134,6 +134,8 @@ from .conv_utils import (
     get_partition,
     reorder_padding,
 )
+from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
+from .gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from layout import lt_to_tt
@@ -4755,6 +4757,48 @@ def conv_gpu[
                 ctx,
             )
         else:
+            # Phase A (1x1x1 fast path): direct _matmul_gpu for bf16 1x1x1
+            # convs with stride=1, dilation=1, zero padding, groups=1.
+            # Covers WAN post_quant_conv and every conv_shortcut.
+            if dispatch_1x1x1_matmul_conv3d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[3]](stride),
+                rebind[IndexList[3]](dilation),
+                rebind[IndexList[3]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+            # Phase 2 path: explicit im2col + _matmul_gpu for bf16 3D convs.
+            # Covers 3x3x3, 3x1x1, etc. and falls back to the naive kernel on
+            # shapes it can't handle (grouped, dilated, non-bf16, etc.).
+            if dispatch_im2col_matmul_conv3d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[3]](stride),
+                rebind[IndexList[3]](dilation),
+                rebind[IndexList[3]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
             var grid_dim_x = ceildiv(
                 output_lt.dim[2]() * output_lt.dim[3](), block_size
             )  # h * w / block size for 3d
