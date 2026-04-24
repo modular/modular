@@ -740,6 +740,85 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self._check_valid_index(idx)
         return self._unchecked_get_byte(idx)
 
+    def __getitem__(self, *, grapheme: ContiguousSlice) -> Self:
+        """Gets a substring at the specified grapheme-cluster positions.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen (see `graphemes()`). Slicing by
+        grapheme requires a forward scan of the string and is O(n) in the
+        byte length; use `byte=` slicing when you already have byte
+        offsets.
+
+        Out-of-range ends are clamped to the end of the string. Negative
+        indices are not supported.
+
+        Args:
+            grapheme: A slice specifying the grapheme-cluster range of the
+                new substring.
+
+        Returns:
+            A new `StringSlice` covering the requested grapheme range.
+
+        Examples:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "café" decomposed: 'c', 'a', 'f', 'e' + combining acute.
+        # 5 codepoints, 4 graphemes.
+        var s = StringSlice("cafe\\u{0301}")
+        assert_equal(s[grapheme=0:3], "caf")
+        assert_equal(s[grapheme=3:4], "e\\u{0301}")
+        assert_equal(s[grapheme=3:], "e\\u{0301}")
+        assert_equal(s[grapheme=:], s)
+        ```
+        """
+        var start_idx = grapheme.start.or_else(0)
+        debug_assert[assert_mode="safe"](
+            start_idx >= 0, "grapheme start index must be non-negative"
+        )
+
+        var iter = self.graphemes()
+        var start_bytes = 0
+        var i = 0
+
+        # Skip `start_idx` graphemes to find the starting byte offset.
+        while i < start_idx:
+            var g = iter.next()
+            if not g:
+                break
+            start_bytes += g.unsafe_value().byte_length()
+            i += 1
+
+        if not grapheme.end:
+            return Self(
+                unsafe_from_utf8=Span[Byte, Self.origin](
+                    ptr=self._slice.unsafe_ptr() + start_bytes,
+                    length=self._slice.__len__() - start_bytes,
+                )
+            )
+
+        var end_idx = grapheme.end.unsafe_value()
+        debug_assert[assert_mode="safe"](
+            end_idx >= start_idx,
+            "grapheme end index must be >= start index",
+        )
+
+        var end_bytes = start_bytes
+        while i < end_idx:
+            var g = iter.next()
+            if not g:
+                break
+            end_bytes += g.unsafe_value().byte_length()
+            i += 1
+
+        return Self(
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                ptr=self._slice.unsafe_ptr() + start_bytes,
+                length=end_bytes - start_bytes,
+            )
+        )
+
     @always_inline
     def _check_valid_index(self, idx: Int):
         # Show source location where user provided incorrect index by skipping

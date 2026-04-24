@@ -153,6 +153,15 @@ This version is still a work in progress.
   the grapheme cluster count. This correctly handles combining marks, emoji ZWJ
   sequences, flag emoji, Hangul syllables, and other multi-codepoint clusters.
 
+- `StringSlice` now supports slicing by grapheme cluster via the `grapheme=`
+  keyword argument, mirroring the existing `byte=` indexer. For example,
+  `s[grapheme=0:3]` returns a `StringSlice` covering the first three grapheme
+  clusters, and `s[grapheme=i:i+1]` extracts the *i*-th grapheme. Out-of-range
+  ends are clamped to the end of the string; negative indices are not supported.
+  Because grapheme boundaries are discovered by a forward scan, this operation
+  is O(n) in the byte length — prefer `byte=` slicing when you already have
+  byte offsets.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 

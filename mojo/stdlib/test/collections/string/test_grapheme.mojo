@@ -275,6 +275,90 @@ def test_keycap_sequence() raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# grapheme=: slice indexer
+# ===----------------------------------------------------------------------=== #
+
+
+def test_grapheme_slice_ascii() raises:
+    var s = StringSlice("Hello")
+    assert_equal(s[grapheme=0:5], "Hello")
+    assert_equal(s[grapheme=0:1], "H")
+    assert_equal(s[grapheme=1:4], "ell")
+    assert_equal(s[grapheme=4:5], "o")
+    assert_equal(s[grapheme=:], "Hello")
+    assert_equal(s[grapheme=:3], "Hel")
+    assert_equal(s[grapheme=2:], "llo")
+
+
+def test_grapheme_slice_empty_ranges() raises:
+    var s = StringSlice("Hello")
+    assert_equal(s[grapheme=0:0], "")
+    assert_equal(s[grapheme=3:3], "")
+    assert_equal(s[grapheme=5:5], "")
+
+
+def test_grapheme_slice_out_of_range_clamps() raises:
+    var s = StringSlice("Hi")
+    # End past the string clamps to the end.
+    assert_equal(s[grapheme=0:99], "Hi")
+    # Start at/after the end yields empty.
+    assert_equal(s[grapheme=2:99], "")
+    assert_equal(s[grapheme=5:], "")
+
+
+def test_grapheme_slice_empty_string() raises:
+    var s = StringSlice("")
+    assert_equal(s[grapheme=:], "")
+    assert_equal(s[grapheme=0:0], "")
+    assert_equal(s[grapheme=0:5], "")
+
+
+def test_grapheme_slice_combining_mark() raises:
+    # "café" decomposed: 'c','a','f','e' + combining acute (U+0301).
+    # 5 codepoints but 4 graphemes; the 4th grapheme spans 3 bytes.
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var decomposed = String("caf") + e_acute
+    var s = StringSlice(decomposed)
+    assert_equal(s.count_graphemes(), 4)
+    assert_equal(s[grapheme=0:3], "caf")
+    assert_equal(s[grapheme=3:4], e_acute)
+    assert_equal(s[grapheme=3:], e_acute)
+    assert_equal(s[grapheme=:4], String("caf") + e_acute)
+
+
+def test_grapheme_slice_emoji_zwj() raises:
+    # "a" + family ZWJ sequence + "b": 3 graphemes, but 9 codepoints.
+    var family = _string_from_codepoints(
+        0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466
+    )
+    var s = String("a") + family + String("b")
+    var slc = StringSlice(s)
+    assert_equal(slc.count_graphemes(), 3)
+    assert_equal(slc[grapheme=0:1], "a")
+    assert_equal(slc[grapheme=1:2], family)
+    assert_equal(slc[grapheme=2:3], "b")
+    assert_equal(slc[grapheme=0:2], String("a") + family)
+
+
+def test_grapheme_slice_flag_emoji() raises:
+    # US flag: two Regional Indicators = 1 grapheme, 8 bytes.
+    var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
+    var s = String("A") + flag + String("B")
+    var slc = StringSlice(s)
+    assert_equal(slc.count_graphemes(), 3)
+    assert_equal(slc[grapheme=1:2], flag)
+    assert_equal(slc[grapheme=0:3], String("A") + flag + String("B"))
+
+
+def test_grapheme_slice_crlf() raises:
+    # CR+LF is a single grapheme cluster.
+    var s = StringSlice("a\r\nb")
+    assert_equal(s.count_graphemes(), 3)
+    assert_equal(s[grapheme=1:2], "\r\n")
+    assert_equal(s[grapheme=0:2], "a\r\n")
+
+
+# ===----------------------------------------------------------------------=== #
 # Test runner
 # ===----------------------------------------------------------------------=== #
 
