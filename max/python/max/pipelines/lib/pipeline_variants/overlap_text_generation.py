@@ -164,6 +164,29 @@ class _UnifiedEagleInputs(Protocol):
     draft_tokens: Buffer | None
     draft_kv_blocks: list[Buffer] | None
 
+    temperature: Buffer | None
+    top_k: Buffer | None
+    max_k: Buffer | None
+    top_p: Buffer | None
+    min_top_p: Buffer | None
+
+
+@dataclass
+class _SpecDecodeSamplingBuffers:
+    """Per-batch sampling parameter buffers for stochastic target acceptance.
+
+    Per-batch tensors (``temperature``, ``top_k``, ``top_p``) are prefix
+    views of persistent device buffers, providing stable base pointers
+    required by graph capture. The 0-d scalars (``max_k``, ``min_top_p``)
+    live on the host and are fresh each execute.
+    """
+
+    temperature: Buffer
+    top_k: Buffer
+    max_k: Buffer
+    top_p: Buffer
+    min_top_p: Buffer
+
 
 def _get_draft_kv_blocks(
     draft_kv_manager: PagedKVCacheManager,
@@ -212,6 +235,15 @@ class SpecDecodeState:
 
     A stable buffer must be used for inputs to device graphs."""
 
+    persistent_temperature: Buffer
+    """Persistent per-batch temperature for stochastic target acceptance."""
+
+    persistent_top_k: Buffer
+    """Persistent per-batch top_k values."""
+
+    persistent_top_p: Buffer
+    """Persistent per-batch top_p values."""
+
     @classmethod
     def load(
         cls,
@@ -256,13 +288,28 @@ class SpecDecodeState:
         )
 
         assert pipeline_config.runtime.max_batch_size is not None
+        total_max_batch = (
+            pipeline_config.runtime.max_batch_size
+            * pipeline_config.model.data_parallel_degree
+        )
         persistent_draft_tokens = Buffer(
             dtype=DType.int64,
-            shape=(
-                pipeline_config.runtime.max_batch_size
-                * pipeline_config.model.data_parallel_degree,
-                num_speculative_tokens,
-            ),
+            shape=(total_max_batch, num_speculative_tokens),
+            device=model.devices[0],
+        )
+        persistent_temperature = Buffer(
+            dtype=DType.float32,
+            shape=(total_max_batch,),
+            device=model.devices[0],
+        )
+        persistent_top_k = Buffer(
+            dtype=DType.int64,
+            shape=(total_max_batch,),
+            device=model.devices[0],
+        )
+        persistent_top_p = Buffer(
+            dtype=DType.float32,
+            shape=(total_max_batch,),
             device=model.devices[0],
         )
 
@@ -272,6 +319,9 @@ class SpecDecodeState:
             draft_kv_blocks=draft_kv_blocks,
             metrics=spec_decoding_metrics,
             persistent_draft_tokens=persistent_draft_tokens,
+            persistent_temperature=persistent_temperature,
+            persistent_top_k=persistent_top_k,
+            persistent_top_p=persistent_top_p,
         )
 
 
@@ -1496,6 +1546,18 @@ class OverlapTextGenerationPipeline(
                     self._spec_decode_state.draft_kv_blocks
                 )
 
+                warmup_flat_batch = [
+                    ctx for replica in replica_batches for ctx in replica
+                ]
+                sampling_buffers = self._build_spec_decode_sampling_buffers(
+                    warmup_flat_batch
+                )
+                model_inputs.temperature = sampling_buffers.temperature
+                model_inputs.top_k = sampling_buffers.top_k
+                model_inputs.max_k = sampling_buffers.max_k
+                model_inputs.top_p = sampling_buffers.top_p
+                model_inputs.min_top_p = sampling_buffers.min_top_p
+
             yield model_inputs
 
     def warmup_graph_capture(self) -> None:
@@ -1549,10 +1611,73 @@ class OverlapTextGenerationPipeline(
         graph_capture_runner.warmup_pre_ready()
         logger.info("Completed serve device graph capture warmup.")
 
+    def _build_spec_decode_sampling_buffers(
+        self,
+        context_batch: list[TextGenerationContextType],
+    ) -> _SpecDecodeSamplingBuffers:
+        """Fill persistent sampling buffers for the current batch."""
+        assert self._spec_decode_state is not None
+        batch_size = len(context_batch)
+        device0 = self._devices[0]
+
+        temperature_np = np.fromiter(
+            (ctx.sampling_params.temperature for ctx in context_batch),
+            dtype=np.float32,
+            count=batch_size,
+        )
+        top_k_np = np.fromiter(
+            (ctx.sampling_params.top_k for ctx in context_batch),
+            dtype=np.int64,
+            count=batch_size,
+        )
+        top_p_np = np.fromiter(
+            (ctx.sampling_params.top_p for ctx in context_batch),
+            dtype=np.float32,
+            count=batch_size,
+        )
+
+        temperature_pinned = DevicePinnedBuffer(
+            shape=(batch_size,), dtype=DType.float32, device=device0
+        )
+        temperature_pinned.to_numpy()[:] = temperature_np
+        top_k_pinned = DevicePinnedBuffer(
+            shape=(batch_size,), dtype=DType.int64, device=device0
+        )
+        top_k_pinned.to_numpy()[:] = top_k_np
+        top_p_pinned = DevicePinnedBuffer(
+            shape=(batch_size,), dtype=DType.float32, device=device0
+        )
+        top_p_pinned.to_numpy()[:] = top_p_np
+
+        temperature_view = self._spec_decode_state.persistent_temperature[
+            :batch_size
+        ]
+        temperature_view.inplace_copy_from(temperature_pinned)
+
+        top_k_view = self._spec_decode_state.persistent_top_k[:batch_size]
+        top_k_view.inplace_copy_from(top_k_pinned)
+
+        top_p_view = self._spec_decode_state.persistent_top_p[:batch_size]
+        top_p_view.inplace_copy_from(top_p_pinned)
+
+        max_k = Buffer.from_numpy(np.array(int(top_k_np.max()), dtype=np.int64))
+        min_top_p = Buffer.from_numpy(
+            np.array(float(top_p_np.min()), dtype=np.float32)
+        )
+
+        return _SpecDecodeSamplingBuffers(
+            temperature=temperature_view,
+            top_k=top_k_view,
+            max_k=max_k,
+            top_p=top_p_view,
+            min_top_p=min_top_p,
+        )
+
     def _run_forward(
         self,
         inputs: TextGenerationInputs[TextGenerationContextType],
         draft_tokens: Buffer | None = None,
+        sampling_buffers: _SpecDecodeSamplingBuffers | None = None,
     ) -> ModelOutputs:
         """Runs the forward pass for the provided inputs and returns the ModelOutputs.
 
@@ -1563,6 +1688,8 @@ class OverlapTextGenerationPipeline(
         Args:
             inputs: The text generation inputs.
             draft_tokens: Optional draft tokens for speculative decoding.
+            sampling_buffers: Optional persistent sampling buffers for
+                speculative decoding. Required when ``draft_tokens`` is set.
 
         Returns:
             The model outputs containing logits and other inference results.
@@ -1647,6 +1774,12 @@ class OverlapTextGenerationPipeline(
             model_inputs.draft_kv_blocks = (
                 self._spec_decode_state.draft_kv_blocks
             )
+            assert sampling_buffers is not None
+            model_inputs.temperature = sampling_buffers.temperature
+            model_inputs.top_k = sampling_buffers.top_k
+            model_inputs.max_k = sampling_buffers.max_k
+            model_inputs.top_p = sampling_buffers.top_p
+            model_inputs.min_top_p = sampling_buffers.min_top_p
 
         if (
             self._prev_batch is not None
@@ -1871,7 +2004,15 @@ class OverlapTextGenerationPipeline(
         )
         draft_tokens_device.inplace_copy_from(draft_tokens_pinned)
 
-        outputs = self._run_forward(inputs, draft_tokens=draft_tokens_device)
+        sampling_buffers = self._build_spec_decode_sampling_buffers(
+            context_batch
+        )
+
+        outputs = self._run_forward(
+            inputs,
+            draft_tokens=draft_tokens_device,
+            sampling_buffers=sampling_buffers,
+        )
         assert isinstance(outputs, UnifiedEagleOutputs)
 
         draft_tokens_pinned.inplace_copy_from(draft_tokens_device)
