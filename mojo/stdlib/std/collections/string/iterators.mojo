@@ -363,25 +363,22 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
         var input = StringSlice("123")
         var iter = input.codepoints()
 
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
+        assert_equal(iter.peek_next().value(), Codepoint("1"))
 
         # A call to `next()` return the same value as `peek_next()` had,
         # but also advance the iterator.
-        assert_equal(iter.next().value(), Codepoint.ord("1"))
+        assert_equal(iter.next().value(), Codepoint("1"))
 
         # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
+        assert_equal(iter.peek_next().value(), Codepoint("2"))
         ```
         """
         if self._slice.byte_length() > 0:
             # SAFETY: Will not read out of bounds because `_slice` is guaranteed
             #   to contain valid UTF-8.
-            codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
-                self._slice._slice
-            )
-            return codepoint
+            return Codepoint(unsafe_parse_first=self._slice)
         else:
             return None
 
@@ -399,7 +396,7 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
 
         if result:
             # SAFETY: We just checked that `result` holds a value
-            var char_len = result.unsafe_value().utf8_byte_length()
+            var char_len = result.unsafe_value().byte_length()
             # Advance the pointer in _slice.
             self._slice._slice._data += char_len
             # Decrement the byte-length of _slice.
@@ -532,9 +529,9 @@ struct GraphemeSliceIter[
 
         while remaining.byte_length() > 0:
             var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-                remaining._slice
+                remaining
             )
-            if _is_grapheme_break(state, cp.to_u32()):
+            if _is_grapheme_break(state, cp):
                 count += 1
 
             remaining._slice._data += num_bytes
@@ -560,14 +557,12 @@ struct GraphemeSliceIter[
         var consumed = 0
 
         # Decode the first codepoint of this grapheme cluster.
-        var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            self._slice._slice
-        )
+        var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(self._slice)
 
         if not self._state_primed:
             # First call, or state is not yet primed: feed this codepoint
             # to the state machine to establish the initial state.
-            _ = _is_grapheme_break(self._state, cp.to_u32())
+            _ = _is_grapheme_break(self._state, cp)
         # else: state was already updated for this codepoint when the
         # previous next() detected the break. Skip re-feeding.
 
@@ -576,13 +571,13 @@ struct GraphemeSliceIter[
         # Continue consuming codepoints until we hit a break.
         var found_break = False
         while consumed < total_bytes:
-            var remaining = Span[Byte, Self.origin](
+            var remaining = StringSlice(
                 ptr=self._slice.unsafe_ptr() + consumed,
                 length=total_bytes - consumed,
             )
             cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(remaining)
 
-            if _is_grapheme_break(self._state, cp.to_u32()):
+            if _is_grapheme_break(self._state, cp):
                 # Found a break — the grapheme ends before this codepoint.
                 # The state machine has already been updated with this
                 # codepoint, so mark as primed for the next call.

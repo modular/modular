@@ -25,34 +25,34 @@ from std.collections.string._unicode_lookups import (
 from std.memory import Span
 
 
-def _uppercase_mapping_index(rune: Codepoint) -> Int:
+def _uppercase_mapping_index(rune: UInt32) -> Int:
     """Return index for upper case mapping or -1 if no mapping is given."""
     return _to_index[has_uppercase_mapping](rune)
 
 
-def _uppercase_mapping2_index(rune: Codepoint) -> Int:
+def _uppercase_mapping2_index(rune: UInt32) -> Int:
     """Return index for upper case mapping converting the rune to 2 runes, or -1 if no mapping is given.
     """
     return _to_index[has_uppercase_mapping2](rune)
 
 
-def _uppercase_mapping3_index(rune: Codepoint) -> Int:
+def _uppercase_mapping3_index(rune: UInt32) -> Int:
     """Return index for upper case mapping converting the rune to 3 runes, or -1 if no mapping is given.
     """
     return _to_index[has_uppercase_mapping3](rune)
 
 
-def _lowercase_mapping_index(rune: Codepoint) -> Int:
+def _lowercase_mapping_index(rune: UInt32) -> Int:
     """Return index for lower case mapping or -1 if no mapping is given."""
     return _to_index[has_lowercase_mapping](rune)
 
 
 @always_inline
-def _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
+def _to_index[lookup: List[UInt32, ...]](rune: UInt32) -> Int:
     """Find index of rune in lookup with binary search.
     Returns -1 if not found."""
 
-    var result = Span(materialize[lookup]())._binary_search_index(rune.to_u32())
+    var result = Span(materialize[lookup]())._binary_search_index(rune)
 
     if result:
         return Int(result.unsafe_value())
@@ -64,7 +64,7 @@ def _to_index[lookup: List[UInt32, ...]](rune: Codepoint) -> Int:
 #   Refactor this to return a Span[Codepoint, StaticConstantOrigin], so that the
 #   return `UInt` count and fixed-size `InlineArray` are not necessary.
 def _get_uppercase_mapping(
-    char: Codepoint,
+    char: UInt32,
 ) -> Optional[Tuple[UInt, InlineArray[Codepoint, 3]]]:
     """Returns the 1, 2, or 3 character sequence that is the uppercase form of
     `char`.
@@ -97,10 +97,10 @@ def _get_uppercase_mapping(
     return None
 
 
-def _get_lowercase_mapping(char: Codepoint) -> Optional[Codepoint]:
+def _get_lowercase_mapping(char: UInt32) -> Optional[Codepoint]:
     var index: Optional[UInt] = Span(
         materialize[has_lowercase_mapping]()
-    )._binary_search_index(char.to_u32())
+    )._binary_search_index(char)
 
     if index:
         # SAFETY: We just checked that `result` is present.
@@ -127,17 +127,18 @@ def is_uppercase(s: StringSlice[mut=False, _]) -> Bool:
     """
     var found = False
     for char in s.codepoints():
-        var index = _lowercase_mapping_index(char)
+        var c = char.to_u32()
+        var index = _lowercase_mapping_index(c)
         if index != -1:
             found = True
             continue
-        index = _uppercase_mapping_index(char)
+        index = _uppercase_mapping_index(c)
         if index != -1:
             return False
-        index = _uppercase_mapping2_index(char)
+        index = _uppercase_mapping2_index(c)
         if index != -1:
             return False
-        index = _uppercase_mapping3_index(char)
+        index = _uppercase_mapping3_index(c)
         if index != -1:
             return False
     return found
@@ -156,19 +157,20 @@ def is_lowercase(s: StringSlice[mut=False, _]) -> Bool:
     """
     var found = False
     for char in s.codepoints():
-        var index = _uppercase_mapping_index(char)
+        var c = char.to_u32()
+        var index = _uppercase_mapping_index(c)
         if index != -1:
             found = True
             continue
-        index = _uppercase_mapping2_index(char)
+        index = _uppercase_mapping2_index(c)
         if index != -1:
             found = True
             continue
-        index = _uppercase_mapping3_index(char)
+        index = _uppercase_mapping3_index(c)
         if index != -1:
             found = True
             continue
-        index = _lowercase_mapping_index(char)
+        index = _lowercase_mapping_index(c)
         if index != -1:
             return False
     return found
@@ -187,7 +189,7 @@ def to_lowercase(s: StringSlice[mut=False, _]) -> String:
     var input_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s.as_bytes()[input_offset:]
+            s[byte=input_offset:]
         )
         var lowercase_char_opt = _get_lowercase_mapping(rune_and_size[0])
         if lowercase_char_opt is None:
@@ -215,7 +217,7 @@ def to_uppercase(s: StringSlice[mut=False, _]) -> String:
     var input_offset = 0
     while input_offset < s.byte_length():
         var rune_and_size = Codepoint.unsafe_decode_utf8_codepoint(
-            s.as_bytes()[input_offset:]
+            s[byte=input_offset:]
         )
         var uppercase_replacement_opt = _get_uppercase_mapping(rune_and_size[0])
 

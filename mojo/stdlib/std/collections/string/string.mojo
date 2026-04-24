@@ -908,19 +908,6 @@ struct String(
         (self.unsafe_ptr_mut() + length).init_pointee_move(byte)
         self.set_byte_length(length + 1)
 
-    def append(mut self, codepoint: Codepoint):
-        """Append a codepoint to the string.
-
-        Args:
-            codepoint: The codepoint to append.
-        """
-        self._clear_nul_terminator()
-        var length = self.byte_length()
-        var new_length = length + codepoint.utf8_byte_length()
-        self.reserve(new_length)
-        _ = codepoint.unsafe_write_utf8(self.unsafe_ptr_mut() + length)
-        self.set_byte_length(new_length)
-
     def __radd__(self, other: StringSlice[mut=False, _]) -> String:
         """Creates a string by prepending another string slice to the start.
 
@@ -1088,9 +1075,9 @@ struct String(
 
         var s = "abc"
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
-        assert_equal(iter.__next__(), Codepoint.ord("b"))
-        assert_equal(iter.__next__(), Codepoint.ord("c"))
+        assert_equal(iter.__next__(), Codepoint("a"))
+        assert_equal(iter.__next__(), Codepoint("b"))
+        assert_equal(iter.__next__(), Codepoint("c"))
         with assert_raises():
             _ = iter.__next__() # raises StopIteration
         ```
@@ -1106,7 +1093,7 @@ struct String(
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         with assert_raises():
@@ -2038,6 +2025,7 @@ struct String(
 # ===----------------------------------------------------------------------=== #
 
 
+@always_inline
 def ord(s: StringSlice) -> Int:
     """Returns an integer that represents the codepoint of a single-character
     string.
@@ -2053,8 +2041,16 @@ def ord(s: StringSlice) -> Int:
 
     Returns:
         An integer representing the code point of the given character.
+
+    Notes:
+        This function aborts if the string has a byte length of 0.
     """
-    return Int(Codepoint.ord(s))
+    var s_len = s.byte_length()
+    if s_len == 0:
+        abort("ord: input string must not be empty")
+    var cp, byte_length = Codepoint.unsafe_decode_utf8_codepoint(s)
+    assert byte_length == s_len, "input string must be one character"
+    return Int(cp)
 
 
 # ===----------------------------------------------------------------------=== #
