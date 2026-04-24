@@ -1047,7 +1047,7 @@ def mogg_async_pack_borrow[
 ](
     borrower: AnyAsyncValueRefPtr,
     buffer: DynamicTensor[dtype, buffer_rank],
-    mem: TensorBufferRefPtr,
+    mem: Optional[TensorBufferRefPtr],
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
@@ -1078,7 +1078,7 @@ def mogg_async_pack_borrow[
 ](
     borrower: AnyAsyncValueRefPtr,
     buffer: TensorBufferRefPtr,
-    mem: TensorBufferRefPtr,
+    mem: Optional[TensorBufferRefPtr],
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
