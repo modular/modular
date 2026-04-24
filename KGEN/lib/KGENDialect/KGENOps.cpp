@@ -25,6 +25,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/FunctionImplementation.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/Support/DebugStringHelper.h"
 #include "llvm/ADT/APFloat.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/TypeSwitch.h"
@@ -700,8 +701,8 @@ void StructGeneratorOp::getFieldTypes(SmallVectorImpl<TypedAttr> &types,
   auto structType = cast<StructInstanceType>(getValueDomainType());
   for (StructDefFieldAttr field : structType.getFields()) {
     // Convert from !kgen.type to (eg) AnyType.
-    auto asType = ParamType::get(field.getTypeValue());
-    types.push_back(TypeParamAttr::get(asType, metaType));
+    types.push_back(
+        ParamOperatorAttr::getRebind(field.getTypeValue(), metaType));
   }
 }
 
@@ -2037,6 +2038,14 @@ LogicalResult ClosureInitOp::verify() {
       return emitOpError(
           "expected symbol constant attribute or unit attribute");
   }
+
+  if (getCaptureNames().size() != getCaptureTypes().size()) {
+    return emitOpError("number of capture names doesn't match number of "
+                       "capture types, names: " +
+                       mlir::debugString(getCaptureNames()) +
+                       ", types: " + mlir::debugString(getCaptureTypes()));
+  }
+
   // If type is pointer it must be a pointer to a closure type and it cannot
   // be register passable.
   if (auto ptr = dyn_cast<PointerType>(getResult().getType())) {
@@ -2058,6 +2067,7 @@ LogicalResult ClosureInitOp::verify() {
     else
       return success();
   }
+
   return emitOpError("expected closure type");
 }
 

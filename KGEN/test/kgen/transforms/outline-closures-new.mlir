@@ -482,7 +482,7 @@ kgen.generator @del(%arg0: !kgen.pointer<struct<(index, pointer<index>)>> owned_
 
 #type_value = #kgen.type<typevalue<#kgen.genref<@"foo::fn"<:!kgen.param_closure<@"foo" "fn"> #kgen.closure<@"foo" "fn">>>>, !kgen.closure<@"foo", "fn" escaping>> : !kgen.type
 
-// CHECK-LABEL: kgen.struct.generator @"foo::fn"<C, D> = struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>
+// CHECK-LABEL: kgen.struct.generator @"foo::fn"<C, D> = struct_inst<"foo::fn" memoryOnly>
 kgen.struct.generator @"foo::fn"<CAPTURES: !kgen.param_closure<@"foo" "fn">> = !kgen.closure<@"foo", "fn" escaping>{
     kgen.conformance @"AnyType" {
       // CHECK: kgen.witness "__del__" : (!kgen.pointer<struct<(struct<(index, pointer<index>)>, struct<(index, pointer<index>)>) memoryOnly>> deinit_mem) -> !kgen.none = @foo__del__fn<C, D>
@@ -938,7 +938,7 @@ kgen.generator @bar<C: type>(%arg0: index) {
 
 // COM: Verify that repeated nested closure references hidden behind aliased
 // COM: register-passable closure values do not get cached as parameterless.
-// CHECK: kgen.struct.generator @"foo::_kernelWrapper3"<FuncType: type> = struct<(struct<(FuncType)>)>{
+// CHECK: kgen.struct.generator @"foo::_kernelWrapper3"<FuncType: type> = struct_inst<"foo::_kernelWrapper3">
 
 #type_value_inner = #kgen.type<typevalue<#kgen.genref<@"foo::_kernel"<:!kgen.param_closure<@foo "_kernel"> #kgen.closure<@foo "_kernel">>>>, !kgen.closure<@foo, "_kernel" register_passable>> : !kgen.type
 #type_value_outer = #kgen.type<typevalue<#kgen.genref<@"foo::_kernelWrapper2"<:!kgen.param_closure<@foo "_kernelWrapper2"> #kgen.closure<@foo "_kernelWrapper2">>>>, !kgen.closure<@foo, "_kernelWrapper2" register_passable>> : !kgen.type
@@ -997,7 +997,7 @@ kgen.generator @foo<FuncType: type, flag: i1>(%arg1: !kgen.param<FuncType>) {
 
 // COM: Verify that an aliased register-passable closure captured without any
 // COM: body use still contributes its transitive captured parameters.
-// CHECK: kgen.struct.generator @"foo::_kernelWrapper3"<FuncType: type> = struct<(struct<(FuncType)>)>{
+// CHECK: kgen.struct.generator @"foo::_kernelWrapper3"<FuncType: type> = struct_inst<"foo::_kernelWrapper3">
 
 kgen.struct.generator @"foo::_kernel"<CAPTURES: !kgen.param_closure<@foo "_kernel">> = !kgen.closure<@foo, "_kernel" register_passable> {
   kgen.conformance @closure_trait {
@@ -1040,6 +1040,48 @@ kgen.generator @foo<FuncType: type>(%arg1: !kgen.param<FuncType>) {
     kgen.return %5 : index
   } : (!kgen.closure<@foo, "_kernel" register_passable>), !kgen.pointer<!kgen.closure<@foo, "_kernelWrapper3" register_passable>>
 
+  kgen.return
+}
+
+// -----
+
+// COM: Test that a TypeParamAttr whose typeValue is a ClosureType is correctly
+// COM: lowered in the outer struct generator's field. This exercises the
+// COM: TypeParamAttr replacement added to closureTypeReplacer. The outer
+// COM: closure captures an inner register-passable closure by value; since the
+// COM: capture has no explicit name/type in the closure.init, it produces
+// COM: TypeParamAttr(ClosureType) for the struct field. After lowering, the
+// COM: field should hold a TypeParamAttr wrapping the inner closure's genref
+// COM: and struct type (printed as #type_value by the attribute alias printer).
+
+kgen.struct.generator @"foo::inner_fn"<CAPTURES: !kgen.param_closure<@foo "inner_fn">> = !kgen.closure<@foo, "inner_fn" register_passable> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.closure<@foo, "inner_fn" register_passable>) -> index = #kgen.closure.symbol<@foo, "inner_fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "inner_fn"> CAPTURES>>
+  }
+}
+
+kgen.struct.generator @"foo::outer_fn"<CAPTURES: !kgen.param_closure<@foo "outer_fn">> = !kgen.closure<@foo, "outer_fn" nonescaping> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@foo, "outer_fn" nonescaping>> read_mem) -> index = #kgen.closure.symbol<@foo, "outer_fn", #kgen.closure_method<call>, <:!kgen.param_closure<@foo "outer_fn"> CAPTURES>>
+  }
+  kgen.conformance @AnyType {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@foo, "outer_fn" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@foo, "outer_fn", #kgen.closure_method<del>, <:!kgen.param_closure<@foo "outer_fn"> CAPTURES>>
+  }
+  kgen.conformance @Movable {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@foo, "outer_fn" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@foo, "outer_fn" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@foo, "outer_fn", #kgen.closure_method<move>, <:!kgen.param_closure<@foo "outer_fn"> CAPTURES>>
+  }
+}
+
+// CHECK: kgen.struct.generator @"foo::outer_fn" = struct_inst<"foo::outer_fn" memoryOnly>
+kgen.generator @foo<X: index>(%val: index) {
+  %0 = kgen.closure.init(%val)() -> index {
+    kgen.return %val : index
+  } : (index), !kgen.pointer<!kgen.closure<@foo, "inner_fn" register_passable>>
+  %1 = pop.load %0 : !kgen.pointer<!kgen.closure<@foo, "inner_fn" register_passable>>
+  %2 = kgen.closure.init(%1)() -> index {
+    %c0 = kgen.param.constant: index = <0>
+    kgen.return %c0 : index
+  } : (!kgen.closure<@foo, "inner_fn" register_passable>), !kgen.pointer<!kgen.closure<@foo, "outer_fn" nonescaping>>
   kgen.return
 }
 

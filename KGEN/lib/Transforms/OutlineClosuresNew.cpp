@@ -153,6 +153,7 @@ struct ClosureLifter {
   /// Pair the closure type with the struct type of the generated capture struct
   /// so that the closure types can be replaced.
   DenseMap<ClosureType, Type> closureTypeToStructTypes;
+  DenseMap<ClosureType, Type> closureTypeToStructInstTypes;
 
   /// True if built with debug metadata.
   bool debugBuild;
@@ -213,7 +214,8 @@ private:
   /// implicit self argument of struct type.
   Value liftRegPassableClosure(OpBuilder &b, ClosureInitData &data,
                                ArrayRef<Capture> captureMechanisms,
-                               Type loweredClosureType);
+                               Type loweredClosureType,
+                               Type loweredClosureInstType);
   /// Lift a closure with no captures. We can skip the loading/storing of
   /// captures and the self type is none or opaque pointer, depending on the
   /// register passable flag.
@@ -225,7 +227,8 @@ private:
   Value liftNonRegPassableClosure(OpBuilder &b,
                                   ClosureInitData &closureInitData,
                                   ArrayRef<Capture> captureMechanisms,
-                                  Type loweredClosureType);
+                                  Type loweredClosureType,
+                                  Type loweredClosureInstType);
   /// Given closure metadata, lift the region of the closure init into a top
   /// level function.
   LogicalResult liftCallFunction(OpBuilder &b, ClosureInitData &data,
@@ -255,7 +258,7 @@ private:
   /// instance.
   Value liftClosure(OpBuilder &b, ClosureInitData &closureInitData,
                     ArrayRef<Capture> captureMechanisms,
-                    Type loweredClosureType,
+                    Type loweredClosureType, Type loweredClosureInstType,
                     function_ref<Value(Capture, int, Value)> replacementFn);
 
   llvm::SetVector<ParamDeclAttr>
@@ -647,6 +650,7 @@ void ClosureLifter::storeCaptures(OpBuilder &b, Value captureStruct,
 Value ClosureLifter::liftClosure(
     OpBuilder &b, ClosureInitData &closureInitData,
     ArrayRef<Capture> captureMechanisms, Type loweredClosureType,
+    Type loweredClosureInstType,
     function_ref<Value(Capture, int, Value)> replacementFn) {
   Region &region = closureInitData.region();
   Location loc = closureInitData.getClosureInit().getLoc();
@@ -676,13 +680,18 @@ Value ClosureLifter::liftClosure(
   storeCaptures(b, captureStruct, closureInitData, captureMechanisms);
   closureTypeToStructTypes[closureInitData.getClosureType()] =
       loweredClosureType;
+
+  closureTypeToStructInstTypes[closureInitData.getClosureType()] =
+      loweredClosureInstType;
+
   return captureStruct;
 }
 
 Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
                                             ClosureInitData &closureInitData,
                                             ArrayRef<Capture> captureMechanisms,
-                                            Type loweredClosureType) {
+                                            Type loweredClosureType,
+                                            Type loweredClosureInstType) {
   Location loc = closureInitData.getLiftedLocation();
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
     return KGEN::StructExtractOp::create(b, loc, captureStructArg,
@@ -690,8 +699,9 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
         ->getResults()
         .front();
   };
-  Value captureStruct = liftClosure(b, closureInitData, captureMechanisms,
-                                    loweredClosureType, replacementFn);
+  Value captureStruct =
+      liftClosure(b, closureInitData, captureMechanisms, loweredClosureType,
+                  loweredClosureInstType, replacementFn);
   if (!captureStruct)
     return {};
   return POP::LoadOp::create(b, closureInitData.getClosureInit()->getLoc(),
@@ -700,7 +710,8 @@ Value ClosureLifter::liftRegPassableClosure(OpBuilder &b,
 
 Value ClosureLifter::liftNonRegPassableClosure(
     OpBuilder &b, ClosureInitData &closureInitData,
-    ArrayRef<Capture> captureMechanisms, Type loweredClosureType) {
+    ArrayRef<Capture> captureMechanisms, Type loweredClosureType,
+    Type loweredClosureInstType) {
   auto replacementFn = [&](Capture capture, int index, Value captureStructArg) {
     Value replacement = KGEN::StructGEPOp::create(
         b, closureInitData.getLiftedLocation(), captureStructArg, index);
@@ -709,8 +720,9 @@ Value ClosureLifter::liftNonRegPassableClosure(
                                         replacement);
     return replacement;
   };
-  Value captureStruct = liftClosure(b, closureInitData, captureMechanisms,
-                                    loweredClosureType, replacementFn);
+  Value captureStruct =
+      liftClosure(b, closureInitData, captureMechanisms, loweredClosureType,
+                  loweredClosureInstType, replacementFn);
   Location loc = stripParameterRefsFromLoc(closureInitData.getLiftedLocation());
   if (!captureStruct)
     return {};
@@ -751,6 +763,9 @@ Value ClosureLifter::liftThinClosure(OpBuilder &b,
 
   closureTypeToStructTypes[closureInitData.getClosureType()] =
       loweredClosureType;
+  closureTypeToStructInstTypes[closureInitData.getClosureType()] =
+      loweredClosureType;
+
   b.setInsertionPoint(closureInitData.getClosureInit());
   Location loc = closureInitData.getClosureInit()->getLoc();
   return isRegisterPassable
@@ -973,16 +988,50 @@ ClosureLifter::liftClosureInit(ClosureInitOp closureInit, GeneratorOp generator,
         StructType::get(b.getContext(), fieldTypes,
                         memoryKind != ClosureMemoryKind::TRIVIAL &&
                             memoryKind != ClosureMemoryKind::REGISTER_PASSABLE);
+
+    // Build StructInstanceType with named fields. Both the name and type value
+    // are looked up by Value so the ordering matches captureMechanisms (which
+    // may differ from closureInit.getCaptures() due to
+    // getUsedValuesDefinedAbove ordering).
+    DenseMap<Value, std::pair<StringAttr, TypedAttr>> captureToNameAndType;
+    ArrayAttr captureNamesArr = closureInit.getCaptureNames();
+    ArrayAttr captureTypesArr = closureInit.getCaptureTypes();
+    for (auto [val, nameAttr, typeAttr] : llvm::zip(
+             closureInit.getCaptures(), captureNamesArr, captureTypesArr)) {
+      captureToNameAndType[val] = {cast<StringAttr>(nameAttr),
+                                   cast<TypedAttr>(typeAttr)};
+    }
+
+    MLIRContext *ctx = b.getContext();
+    SmallVector<StructDefFieldAttr> fieldDecls;
+    for (auto &capture : captureMechanisms) {
+      if (auto it = captureToNameAndType.find(capture.origin);
+          it != captureToNameAndType.end()) {
+        StringAttr name = it->second.first;
+        TypedAttr typeValue = it->second.second;
+        fieldDecls.push_back(StructDefFieldAttr::get(name, typeValue));
+      }
+    }
+    bool isMemoryOnly = memoryKind != ClosureMemoryKind::TRIVIAL &&
+                        memoryKind != ClosureMemoryKind::REGISTER_PASSABLE;
+
+    Type loweredClosureInstType = StructInstanceType::get(
+        structGeneratorOp.getSymNameAttr(),
+        /*paramNames=*/{},
+        /*paramValues=*/{}, fieldDecls, BoolAttr::get(ctx, isMemoryOnly));
+
     switch (memoryKind) {
     case ClosureMemoryKind::TRIVIAL:
-      replacement = liftRegPassableClosure(
-          b, closureInitData, captureMechanisms, loweredClosureType);
+      replacement =
+          liftRegPassableClosure(b, closureInitData, captureMechanisms,
+                                 loweredClosureType, loweredClosureInstType);
       break;
     case ClosureMemoryKind::REGISTER_PASSABLE:
     case ClosureMemoryKind::ESCAPING:
     case ClosureMemoryKind::NONESCAPING:
-      replacement = liftNonRegPassableClosure(
-          b, closureInitData, captureMechanisms, loweredClosureType);
+      replacement =
+          liftNonRegPassableClosure(b, closureInitData, captureMechanisms,
+                                    loweredClosureType, loweredClosureInstType);
       break;
     }
   }
@@ -1051,6 +1100,27 @@ void OutlineClosuresNewPass::runOnOperation() {
         return signalPassFailure();
     }
   }
+
+  DenseMap<ClosureType, StructGeneratorOp> closureTypeToStructGen;
+  for (auto structGeneratorOp : theModule.getOps<StructGeneratorOp>()) {
+    // replace the parameters of the struct with the captures
+    if (ClosureType closureType =
+            dyn_cast<ClosureType>(structGeneratorOp.getValueDomainType())) {
+      ClosureLifter::ClosureParentKey key{closureType.getParentSymbol(),
+                                          closureType.getName()};
+      auto captures = lifter.paramCaptureToStructAttr.find(key);
+      SmallVector<ParamDeclAttr> inputParams;
+      llvm::append_range(inputParams, captures->second);
+      structGeneratorOp.setInputParams(inputParams);
+
+      auto it = lifter.closureTypeToStructInstTypes.find(closureType);
+      if (it != lifter.closureTypeToStructInstTypes.end()) {
+        structGeneratorOp.setValueDomainType(it->second);
+        closureTypeToStructGen.insert({closureType, structGeneratorOp});
+      }
+    }
+  }
+
   // nested operations appear first.
   mlir::AttrTypeReplacer closureTypeReplacer;
   closureTypeReplacer.addReplacement([&](ClosureType closureType) -> Type {
@@ -1060,6 +1130,26 @@ void OutlineClosuresNewPass::runOnOperation() {
     mlir::emitError(theModule.getLoc())
         << "no type found for closure type " << closureType;
     return closureType;
+  });
+
+  closureTypeReplacer.addReplacement([&](TypeParamAttr attr) -> Attribute {
+    if (auto closureType = dyn_cast<ClosureType>(attr.getTypeValue())) {
+      auto it = lifter.closureTypeToStructTypes.find(closureType);
+      auto genIt = closureTypeToStructGen.find(closureType);
+      if (genIt != closureTypeToStructGen.end() &&
+          it != lifter.closureTypeToStructTypes.end()) {
+        auto genref = TypeGeneratorRefAttr::get(
+            SymbolRefAttr::get(genIt->second.getSymNameAttr()),
+            genIt->second.getMetaType());
+        auto result = TypeParamAttr::get(TypeValueType::get(genref), it->second,
+                                         attr.getType());
+        return result;
+      } else {
+        mlir::emitError(theModule.getLoc())
+            << "no symbol or generator found " << closureType;
+      }
+    }
+    return attr;
   });
 
   closureTypeReplacer.addReplacement(
@@ -1107,19 +1197,6 @@ void OutlineClosuresNewPass::runOnOperation() {
     if (isa<ModuleOp>(operation))
       return WalkResult::advance();
     if (isa<GeneratorOp, StructGeneratorOp>(operation)) {
-      if (StructGeneratorOp structGeneratorOp =
-              dyn_cast<StructGeneratorOp>(operation)) {
-        // replace the parameters of the struct with the captures
-        if (ClosureType closureType =
-                dyn_cast<ClosureType>(structGeneratorOp.getValueDomainType())) {
-          ClosureLifter::ClosureParentKey key{closureType.getParentSymbol(),
-                                              closureType.getName()};
-          auto captures = lifter.paramCaptureToStructAttr.find(key);
-          SmallVector<ParamDeclAttr> inputParams;
-          llvm::append_range(inputParams, captures->second);
-          structGeneratorOp.setInputParams(inputParams);
-        }
-      }
       closureTypeReplacer.recursivelyReplaceElementsIn(operation, true, true,
                                                        true);
     }

@@ -223,7 +223,8 @@ void LITLowerer::lowerLITOps(FnOp func) {
           closureInit.getFuncTypeGenerator(), closureInit.getFunctionType(),
           closureInit.getCaptures(),
           ArrayAttr::get(b.getContext(), captureConventions), parameters,
-          closureInit.getInlineLevel(), closureInit.getNestedFnScopeAttr(),
+          closureInit.getInlineLevel(), closureInit.getCaptureTypesAttr(),
+          closureInit.getCaptureNamesAttr(), closureInit.getNestedFnScopeAttr(),
           closureInit.getLLVMMetadataArray(),
           closureInit.getLLVMArgMetadataArray(),
           closureInit.getHoistedCapturesAttr());
