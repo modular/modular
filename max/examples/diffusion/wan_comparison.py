@@ -29,6 +29,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import base64
+import contextlib
 import gc
 import io
 import json
@@ -96,113 +97,218 @@ from PIL import Image
 #   720p/49f   → ~77 GB   (seq_len ~47k)
 #   720p/81f   → ~80 GB   (seq_len ~76k)
 #
-# 1-frame image generation configs (height, width, num_frames, steps).
-# Run these first to establish a text-to-image baseline.
-IMAGE_CONFIGS: list[tuple[int, int, int, int]] = [
-    (1152, 2048, 1, 20),
-    (1536, 2048, 1, 20),
-    (2048, 2048, 1, 20),
+# Default negative prompt from the official Wan repo
+# (`wan/configs/shared_config.py` → `sample_neg_prompt`).  The model was
+# trained/tuned with this as the "empty" negative; omitting it produces
+# visibly over-saturated, jittery, low-detail output.
+WAN_DEFAULT_NEGATIVE_PROMPT = (
+    "色调艳丽，过曝，静态，细节模糊不清，字幕，风格，作品，画作，画面，静止，"  # noqa: RUF001
+    "整体发灰，最差质量，低质量，JPEG压缩残留，丑陋的，残缺的，多余的手指，"  # noqa: RUF001
+    "画得不好的手部，画得不好的脸部，畸形的，毁容的，形态畸形的肢体，手指融合，"  # noqa: RUF001
+    "静止不动的画面，杂乱的背景，三条腿，背景人很多，倒着走"  # noqa: RUF001
+)
+
+# Reused for the "with vs without Wan default negative prompt" A/B: slot 3
+# runs the default negative, slot 7 forces an empty negative.  Keep the two
+# in lockstep so the only varying input is the negative prompt.
+_FORGE_PROMPT = (
+    "A grizzled blacksmith hammers a white-hot sword blank on a"
+    " blackened anvil in a shadowy stone-walled forge, sparks"
+    " erupting in bright orange arcs with every strike. His"
+    " soot-streaked hands grip the hammer and iron tongs with"
+    " practiced precision; the glowing billet hisses as he plunges"
+    " it briefly into a water trough, steam boiling up around him."
+    " The camera holds a steady chest-level medium shot, locked on"
+    " the anvil, framing just above his shoulders and just below the"
+    " hearth. A roaring forge fire radiates warm rim light across"
+    " his leather apron; the background falls into near-black void."
+    " High-contrast chiaroscuro firelight, saturated amber and"
+    " charcoal palette, 50mm lens shallow depth of field,"
+    " ember-laden atmosphere, Game-of-Thrones-grade gritty realism,"
+    " 35mm film, photorealistic, 24fps."
+)
+
+# Flat list of benchmark iterations.  Each entry is a dict with all params
+# needed to build a `BenchmarkRequest`.  `negative_prompt` semantics:
+#
+#   * ``None`` — use the CLI ``--negative-prompt`` (defaults to
+#     ``WAN_DEFAULT_NEGATIVE_PROMPT``).
+#   * ``""``   — force an empty negative prompt regardless of the CLI flag.
+#   * any str  — use this literal negative prompt.
+#
+# Slots 3 and 7 are the forge A/B: same prompt, same config, only the
+# negative prompt differs.  Keep those two in lockstep.
+REQUESTS: list[dict[str, Any]] = [
+    # 0 — golden retriever portrait (image)
+    {
+        "height": 1152,
+        "width": 2048,
+        "num_frames": 1,
+        "num_inference_steps": 20,
+        "prompt": (
+            "A muscular golden retriever stands knee-deep in shallow"
+            " turquoise surf at low tide, body angled slightly toward the"
+            " camera with head turned to the horizon. Salt-soaked fur clings"
+            " to her flanks, a single water droplet caught on her chin."
+            " Foam laps gently around her paws without breaking. The camera"
+            " holds a steady low-angle three-quarter portrait, framing her"
+            " against an empty sunset sky. Warm golden-hour rim light rakes"
+            " across her coat; a distant headland softens into creamy"
+            " bokeh. Amber and teal palette, volumetric sea haze, 85mm"
+            " portrait lens with gentle anamorphic flares, cinematic"
+            " beach-commercial grade, 35mm film emulation, photorealistic"
+            " still."
+        ),
+        "negative_prompt": None,
+    },
+    # 1 — Shibuya neon portrait (image)
+    {
+        "height": 1536,
+        "width": 2048,
+        "num_frames": 1,
+        "num_inference_steps": 20,
+        "prompt": (
+            "A young woman in a glossy red vinyl raincoat stands paused"
+            " under a translucent umbrella on a rain-slicked Shibuya"
+            " backstreet just after midnight, looking up at towering kanji"
+            " neon above her. Her face is lit by pink and cyan glow from"
+            " the reflected signs. Wet pavement mirrors the entire neon"
+            " lattice, creating a second inverted city beneath her feet."
+            " Warm window interiors bleed over cold asphalt. The camera"
+            " holds a steady waist-level portrait, slightly wide framing"
+            " with lampposts flanking her silhouette. Cyberpunk"
+            " teal-and-magenta split-tone grade, anamorphic lens flares,"
+            " 50mm compression, shallow depth of field, Blade Runner-"
+            "inspired, photorealistic still."
+        ),
+        "negative_prompt": None,
+    },
+    # 2 — lotus macro still life (image)
+    {
+        "height": 2048,
+        "width": 2048,
+        "num_frames": 1,
+        "num_inference_steps": 20,
+        "prompt": (
+            "A single pristine white lotus flower floats on a glass-still"
+            " black pond at first light, fully bloomed and petals fanned"
+            " wide to reveal a golden pollen-dusted core. A single perfect"
+            " dew droplet rests at the tip of the topmost petal. Drifting"
+            " mist hovers just above the water surface, softened by a low"
+            " dawn sun. The camera holds a locked overhead macro"
+            " composition, the flower centered against concentric"
+            " lily-pad ripples. Soft diffused dawn light, pale gold and"
+            " jade palette, volumetric rays piercing thin mist, 100mm"
+            " macro lens, razor-sharp focus on the dew drop, creamy bokeh"
+            " background, meditative sacred mood, high-end nature"
+            " documentary photography, photorealistic still."
+        ),
+        "negative_prompt": None,
+    },
+    # 3 — forge (A/B pair with slot 7, uses CLI negative prompt)
+    {
+        "height": 1280,
+        "width": 720,
+        "num_frames": 49,
+        "num_inference_steps": 50,
+        "prompt": _FORGE_PROMPT,
+        "negative_prompt": None,
+    },
+    # 4 — rocket launch (480p portrait, 121f)
+    {
+        "height": 832,
+        "width": 480,
+        "num_frames": 121,
+        "num_inference_steps": 50,
+        "prompt": (
+            "At first light a colossal rocket ignites on its tropical"
+            " launchpad, erupting a billowing white column of steam and"
+            " orange flame that roars outward across scorched concrete."
+            " The rocket trembles, strains, then lifts off, accelerating"
+            " upward with a searing plume trailing behind it. The camera"
+            " starts low at ground level looking up, tilts steeply upward"
+            " following the ascent, then cranes alongside the rocket's"
+            " body as it punches through low clouds into the pink and gold"
+            " dawn sky. Heat distortion ripples against the rocket's skin."
+            " Volumetric exhaust plumes, atmospheric haze, rim-lit"
+            " contrails, 65mm anamorphic lens, IMAX-grade deep contrast,"
+            " epic sci-fi realism, 24fps photorealistic."
+        ),
+        "negative_prompt": None,
+    },
+    # 5 — F1 at Monaco (480p landscape, 121f)
+    {
+        "height": 480,
+        "width": 832,
+        "num_frames": 121,
+        "num_inference_steps": 50,
+        "prompt": (
+            "A Formula 1 car barrels into a wet Monaco hairpin at full"
+            " throttle, carbon-fiber bodywork streaked with rain, rear tires"
+            " kicking up dense rooster tails of mist behind it. The driver"
+            " countersteers on the edge of grip as the chassis skitters"
+            " sideways through the apex. Armco barriers and tricolor"
+            " trackside signage flash past in strobing streaks, reflected"
+            " across the glossy livery. The camera holds a locked trackside"
+            " pan, tight on the car as it clips the apex, then whips with"
+            " the chassis through the corner exit. Overcast Monte Carlo"
+            " daylight diffuses silver off wet tarmac; bright neon team"
+            " colors pop against grey stone walls. Anamorphic 100mm"
+            " telephoto with motion blur, desaturated teal-and-red sport"
+            " broadcast grade, 35mm film emulation, photorealistic, 24fps."
+        ),
+        "negative_prompt": None,
+    },
+    # 6 — medieval castle (no negative prompt)
+    {
+        "height": 720,
+        "width": 1280,
+        "num_frames": 49,
+        "num_inference_steps": 50,
+        "prompt": (
+            "A sprawling stone medieval castle perches on a mist-shrouded"
+            " granite hilltop at the break of dawn. Thick cold fog rolls"
+            " through the valley below and slowly retreats to reveal"
+            " towers, crenellations, and weathered battlements as light"
+            " intensifies. A flock of ravens bursts from the highest spire"
+            " in a wide sweep of black wings. The camera begins with a wide"
+            " establishing crane shot high above the mist, then slowly"
+            " descends and pushes forward toward the iron gate. Deep blue"
+            " dawn gradually warms into amber golden light; volumetric rays"
+            " pierce the retreating fog. Epic and majestic, Lord-of-the-"
+            "Rings-grade cinematic landscape, 18mm wide-angle anamorphic,"
+            " 4K, photorealistic, 24fps."
+        ),
+        "negative_prompt": "",
+    },
+    # 7 — forge (A/B pair with slot 3, forces empty negative prompt)
+    {
+        "height": 1280,
+        "width": 720,
+        "num_frames": 49,
+        "num_inference_steps": 50,
+        "prompt": _FORGE_PROMPT,
+        "negative_prompt": "",
+    },
 ]
 
-VARIED_CONFIGS: list[tuple[int, int, int, int]] = [
-    # --- Image configs (1 frame) — run first ---
-    *IMAGE_CONFIGS,
-    # --- Tier 2: Medium 720p (80-90 GB) ---
-    (720, 1280, 81, 50),  # ~80 GB — standard 720p, 81 frames
-    (720, 1280, 49, 30),  # ~77 GB — 720p short clip
-    # --- Tier 1: Small / fast (well under 80 GB) ---
-    (480, 832, 81, 50),  # ~76 GB — standard 480p
-    (480, 832, 49, 30),  # ~74 GB — baseline sanity check
-]
 
-# Prompts following the Wan2.1 recommended formula:
-#   Subject (description) + Scene (environment) + Motion (action/speed)
-#   + Camera Language (shot/angle/movement) + Atmosphere + Style
-# Each prompt is ~80-100 words with a single coherent scene, explicit
-# motion description, and camera direction — the patterns that Wan
-# responds to best.  Varying lengths also stress the text encoder.
-VARIED_PROMPTS: list[str] = [
-    # 1 — Short/simple: animal + nature + subtle motion + static shot
-    (
-        "A golden retriever with wet fur runs joyfully through shallow"
-        " ocean waves on a sandy beach at sunset. Water splashes around"
-        " its paws with each stride. The camera holds a low-angle"
-        " tracking shot following the dog from the side. Warm golden"
-        " hour lighting, cinematic color grading, photorealistic style."
-    ),
-    # 2 — Medium: human subject + urban scene + walking motion + tracking
-    (
-        "A young woman in a red raincoat walks slowly through a"
-        " rain-soaked Tokyo street at night. Neon signs in Japanese"
-        " reflect off the wet pavement, casting pink and blue light"
-        " across her face. The camera follows her from behind in a"
-        " smooth tracking shot. Raindrops are visible falling through"
-        " the neon glow. Moody, atmospheric, cyberpunk aesthetic,"
-        " shallow depth of field."
-    ),
-    # 3 — Nature + transformation + slow motion
-    (
-        "A single white lotus flower slowly blooms in a still dark pond,"
-        " its petals unfurling one by one over the course of the clip."
-        " Morning mist drifts across the water surface. The camera"
-        " holds a close-up macro shot, gradually pulling back to reveal"
-        " the surrounding lily pads. Soft diffused lighting, serene"
-        " and meditative atmosphere, nature documentary style."
-    ),
-    # 4 — Aerial/drone + landscape + large motion
-    (
-        "An aerial drone shot slowly flies over a winding turquoise"
-        " river cutting through a dense tropical rainforest. Flocks"
-        " of white birds scatter from the treetops as the camera"
-        " passes overhead. The river reflects the golden light of late"
-        " afternoon. The camera moves forward steadily, tilting down"
-        " to follow the river's curve. Lush green canopy, warm"
-        " cinematic lighting, epic documentary style, 4K detail."
-    ),
-    # 5 — Sci-fi + interior + floating motion + camera drift
-    (
-        "An astronaut in a white spacesuit floats weightlessly inside a"
-        " dimly lit space station module. Loose tools and droplets of"
-        " water drift slowly around her. Sunlight streams through a"
-        " circular window, casting a sharp beam across the cabin and"
-        " illuminating dust particles in the air. The camera drifts"
-        " gently forward toward the astronaut. Quiet, contemplative"
-        " atmosphere, photorealistic, soft volumetric lighting."
-    ),
-    # 6 — Food/product + macro + subtle motion + static
-    (
-        "A steaming cup of black coffee sits on a rustic wooden table"
-        " in a cozy morning kitchen. Wisps of steam rise and curl"
-        " slowly from the dark liquid surface. Warm sunlight streams"
-        " through a nearby window, casting long soft shadows across"
-        " the table. The camera holds a static close-up, shallow"
-        " depth of field with a bokeh background of kitchen shelves."
-        " Warm, inviting atmosphere, photorealistic still life style."
-    ),
-    # 7 — Fantasy/stylized + dynamic motion + orbital camera
-    (
-        "Two anthropomorphic cats wearing colorful boxing gloves and"
-        " protective headgear exchange rapid punches on a small"
-        " spotlighted boxing ring. One cat dodges with a quick lean"
-        " while the other throws a wide hook. The camera orbits slowly"
-        " around the ring at eye level. Dramatic overhead stage"
-        " lighting with visible light beams, energetic and playful"
-        " atmosphere, Pixar-style 3D animation, vibrant saturated"
-        " colors."
-    ),
-    # 8 — Longest: complex scene + multiple details + cinematic
-    (
-        "A sprawling medieval castle perched on a misty hilltop at the"
-        " break of dawn. Thick fog rolls through the valley below,"
-        " slowly revealing the stone walls and towers as the morning"
-        " light intensifies. A flock of birds takes flight from the"
-        " tallest tower. The camera begins with a wide establishing"
-        " shot, then slowly pushes forward through the mist toward"
-        " the castle gate. Cold blue morning light gradually warming"
-        " to golden tones, epic and majestic atmosphere, cinematic"
-        " aerial photography style, high detail."
-    ),
-]
+class _Tee:
+    """Fan writes out to multiple streams — used with
+    ``contextlib.redirect_stdout`` to mirror the summary block to a file
+    while still printing to the terminal."""
+
+    def __init__(self, *streams: Any) -> None:
+        self._streams = streams
+
+    def write(self, data: str) -> int:
+        for stream in self._streams:
+            stream.write(data)
+        return len(data)
+
+    def flush(self) -> None:
+        for stream in self._streams:
+            stream.flush()
 
 
 @dataclass
@@ -350,6 +456,10 @@ class BenchmarkRequest:
     num_inference_steps: int
     prompt: str
     negative_prompt: str = ""
+    # When True, this request is part of the no-negative-prompt comparison
+    # set.  CLI overrides (`--negative-prompt`, shape overrides) must not
+    # inject a negative prompt into it.
+    force_no_negative: bool = False
 
     @property
     def config_key(self) -> tuple[int, int, int, int]:
@@ -361,17 +471,27 @@ class BenchmarkRequest:
         )
 
 
-def _build_requests() -> list[BenchmarkRequest]:
-    """Build one request per prompt, cycling through VARIED_CONFIGS."""
+def _build_requests(cli_negative_prompt: str) -> list[BenchmarkRequest]:
+    """Materialize `REQUESTS` into `BenchmarkRequest`s.
+
+    Per-entry ``negative_prompt`` of ``None`` uses the CLI default; ``""``
+    forces an empty negative; any other string is used verbatim.
+    """
     return [
         BenchmarkRequest(
-            height=VARIED_CONFIGS[i % len(VARIED_CONFIGS)][0],
-            width=VARIED_CONFIGS[i % len(VARIED_CONFIGS)][1],
-            num_frames=VARIED_CONFIGS[i % len(VARIED_CONFIGS)][2],
-            num_inference_steps=VARIED_CONFIGS[i % len(VARIED_CONFIGS)][3],
-            prompt=VARIED_PROMPTS[i],
+            height=r["height"],
+            width=r["width"],
+            num_frames=r["num_frames"],
+            num_inference_steps=r["num_inference_steps"],
+            prompt=r["prompt"],
+            negative_prompt=(
+                cli_negative_prompt
+                if r["negative_prompt"] is None
+                else r["negative_prompt"]
+            ),
+            force_no_negative=r["negative_prompt"] == "",
         )
-        for i in range(len(VARIED_PROMPTS))
+        for r in REQUESTS
     ]
 
 
@@ -439,9 +559,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--torch-compile",
-        action="store_true",
-        default=False,
-        help="Enable torch.compile on the diffusers pipeline components.",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help=(
+            "Enable torch.compile on the diffusers pipeline components "
+            "(default on). Pass --no-torch-compile to run eager."
+        ),
     )
     parser.add_argument(
         "--skip-diffusers",
@@ -483,8 +606,23 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--negative-prompt",
         type=str,
-        default="",
-        help="Negative prompt for all requests.",
+        default=WAN_DEFAULT_NEGATIVE_PROMPT,
+        help=(
+            "Negative prompt for all requests. Defaults to the official Wan "
+            "negative prompt (from `wan/configs/shared_config.py`). Pass an "
+            "empty string to disable."
+        ),
+    )
+    parser.add_argument(
+        "--shift",
+        type=float,
+        default=None,
+        help=(
+            "Flow-matching shift (`flow_shift`) for the diffusers scheduler. "
+            "Official recipes: 12.0 for Wan2.2 T2V-A14B, 5.0 for Wan2.1 T2V "
+            "720p, 3.0 for Wan2.1 T2V 480p. If unset, uses whatever ships in "
+            "the HF scheduler config."
+        ),
     )
     parser.add_argument(
         "--weight-path",
@@ -664,6 +802,20 @@ def _load_diffusers_pipeline(model_id: str, args: argparse.Namespace) -> Any:
         model_id, vae=vae, torch_dtype=torch.bfloat16, low_cpu_mem_usage=True
     ).to("cuda")
 
+    # The HF checkpoint only ships `shared.weight` for the UMT5 text encoder
+    # but its `config.json` sets `tie_word_embeddings=false`, so transformers
+    # randomly initializes `encoder.embed_tokens.weight` on load.  Force the
+    # tie to recover correct text conditioning — without this every prompt
+    # produces garbled output.
+    pipe.text_encoder.encoder.embed_tokens.weight = (
+        pipe.text_encoder.shared.weight
+    )
+
+    if args.shift is not None:
+        pipe.scheduler = pipe.scheduler.from_config(
+            pipe.scheduler.config, flow_shift=args.shift
+        )
+
     if args.torch_compile:
         # Compile key components for performance.
         if hasattr(pipe, "text_encoder") and pipe.text_encoder is not None:
@@ -688,6 +840,54 @@ def _load_diffusers_pipeline(model_id: str, args: argparse.Namespace) -> Any:
                 pipe.vae, mode="max-autotune", fullgraph=True
             )
     return pipe
+
+
+def _list_output_dir(output_dir: str | None, label: str) -> None:
+    """Log the sorted contents of the output dir so it's obvious whether
+    saves from the prior phase actually landed and whether anything is
+    being clobbered between phases."""
+    if output_dir is None or not os.path.isdir(output_dir):
+        return
+    entries = sorted(os.listdir(output_dir))
+    print(f"\n  Output dir contents {label} ({output_dir}):")
+    if not entries:
+        print("    (empty)")
+        return
+    for name in entries:
+        path = os.path.join(output_dir, name)
+        if os.path.isfile(path):
+            size_mb = os.path.getsize(path) / (1024 * 1024)
+            print(f"    {name:60s} {size_mb:7.2f} MB")
+        else:
+            print(f"    {name}/")
+
+
+def _torch_pipe_kwargs(
+    req: BenchmarkRequest,
+    args: argparse.Namespace,
+    generator: torch.Generator,
+) -> dict[str, Any]:
+    """Kwargs for `diffusers.WanPipeline.__call__`.
+
+    Kept in one place so warmup and timed loops pass identical args, and
+    so parity with the MAX request body built in `_build_max_inputs` is
+    verifiable at a glance.  `guidance_scale_2` is only forwarded when
+    set — diffusers raises if it's passed on a single-expert Wan 2.1
+    pipeline (no `boundary_ratio` configured).
+    """
+    kwargs: dict[str, Any] = {
+        "prompt": req.prompt,
+        "negative_prompt": req.negative_prompt or None,
+        "height": req.height,
+        "width": req.width,
+        "num_frames": req.num_frames,
+        "num_inference_steps": req.num_inference_steps,
+        "guidance_scale": args.guidance_scale,
+        "generator": generator,
+    }
+    if args.guidance_scale_2 is not None:
+        kwargs["guidance_scale_2"] = args.guidance_scale_2
+    return kwargs
 
 
 def _video_to_numpy(output: Any) -> np.ndarray:
@@ -736,16 +936,7 @@ def run_diffusers(
             flush=True,
         )
         generator = torch.Generator(device="cpu").manual_seed(args.seed)
-        pipe(
-            prompt=req.prompt,
-            negative_prompt=req.negative_prompt or None,
-            height=req.height,
-            width=req.width,
-            num_frames=req.num_frames,
-            num_inference_steps=req.num_inference_steps,
-            guidance_scale=args.guidance_scale,
-            generator=generator,
-        )
+        pipe(**_torch_pipe_kwargs(req, args, generator))
         torch.cuda.synchronize()
 
     result = TimingResult()
@@ -783,16 +974,7 @@ def run_diffusers(
             # Full pipeline timing (diffusers doesn't easily split preprocess/execute).
             torch.cuda.synchronize()
             t0 = time.perf_counter()
-            output = pipe(
-                prompt=req.prompt,
-                negative_prompt=req.negative_prompt or None,
-                height=req.height,
-                width=req.width,
-                num_frames=req.num_frames,
-                num_inference_steps=req.num_inference_steps,
-                guidance_scale=args.guidance_scale,
-                generator=generator,
-            )
+            output = pipe(**_torch_pipe_kwargs(req, args, generator))
             torch.cuda.synchronize()
             t_total = time.perf_counter() - t0
 
@@ -814,9 +996,16 @@ def run_diffusers(
                         f"_{req.num_frames}f_{req.num_inference_steps}s"
                     )
                     fname = _save_output(frames, output_dir, prefix)
-                    print(f"    saved: {fname}")
+                    full_path = os.path.join(output_dir, fname)
+                    size_mb = (
+                        os.path.getsize(full_path) / (1024 * 1024)
+                        if os.path.exists(full_path)
+                        else -1.0
+                    )
+                    print(f"    saved: {fname} ({size_mb:.2f} MB)")
                 except Exception as e:
                     print(f"    WARNING: Failed to save output: {e}")
+                    print(f"    traceback:\n{traceback.format_exc()}")
         except Exception as e:
             error_msg = str(e)
             mem_at_error = GPUMemorySnapshot.capture()
@@ -1089,7 +1278,13 @@ def run_max(
                         )
                         stacked = np.stack(frames)
                         fname = _save_output(stacked, output_dir, prefix)
-                        print(f"    saved: {fname}")
+                        full_path = os.path.join(output_dir, fname)
+                        size_mb = (
+                            os.path.getsize(full_path) / (1024 * 1024)
+                            if os.path.exists(full_path)
+                            else -1.0
+                        )
+                        print(f"    saved: {fname} ({size_mb:.2f} MB)")
         except Exception as e:
             error_msg = str(e)
             mem_at_error = GPUMemorySnapshot.capture_nvidia_smi()
@@ -1159,6 +1354,7 @@ def _print_per_iteration(
 
     header = (
         f"    {'Config':>22s}"
+        f"  {'Neg':>4s}"
         f"  {'Prompt':>42s}"
         f"  {'Preprocess':>10s}  {'Execute':>10s}  {'Total':>10s}"
         f"  {'Peak GPU':>8s}  {'Status':>8s}"
@@ -1171,6 +1367,11 @@ def _print_per_iteration(
             f"{req.width:4d}x{req.height:<4d} {req.num_frames:3d}f"
             f" {req.num_inference_steps:2d}s"
         )
+        neg_str = (
+            "no"
+            if (req.force_no_negative or not req.negative_prompt)
+            else "yes"
+        )
         if i in failed_indices:
             error_msg = next(msg for idx, _, msg in result.errors if idx == i)
             short_err = (
@@ -1178,6 +1379,7 @@ def _print_per_iteration(
             )
             line = (
                 f"    {config_str:>22s}"
+                f"  {neg_str:>4s}"
                 f"  {_truncate_prompt(req.prompt, 42):>42s}"
                 f"  {'---':>10s}  {'---':>10s}  {'---':>10s}"
                 f"  {'---':>8s}  FAILED"
@@ -1199,6 +1401,7 @@ def _print_per_iteration(
             )
             line = (
                 f"    {config_str:>22s}"
+                f"  {neg_str:>4s}"
                 f"  {_truncate_prompt(req.prompt, 42):>42s}"
                 f"  {pp:10.2f}  {ex:10.2f}  {tot:10.2f}"
                 f"  {mem:>8s}  OK"
@@ -1222,20 +1425,23 @@ def main(argv: list[str] | None = None) -> int:
 
     # Build the benchmark request list.
     if args.single_prompt:
-        cfg = VARIED_CONFIGS[0]
+        first = REQUESTS[0]
         requests = [
             BenchmarkRequest(
-                height=args.height or cfg[0],
-                width=args.width or cfg[1],
-                num_frames=args.num_frames or cfg[2],
-                num_inference_steps=args.num_inference_steps or cfg[3],
+                height=args.height or first["height"],
+                width=args.width or first["width"],
+                num_frames=args.num_frames or first["num_frames"],
+                num_inference_steps=(
+                    args.num_inference_steps or first["num_inference_steps"]
+                ),
                 prompt=args.single_prompt,
                 negative_prompt=args.negative_prompt,
             )
         ]
     else:
-        requests = _build_requests()
-        # Apply per-request overrides if specified.
+        requests = _build_requests(args.negative_prompt)
+        # Apply per-request CLI overrides if specified.  Negative prompt
+        # behavior is preserved: `force_no_negative` rows stay empty.
         if (
             args.height
             or args.width
@@ -1247,10 +1453,12 @@ def main(argv: list[str] | None = None) -> int:
                     height=args.height or req.height,
                     width=args.width or req.width,
                     num_frames=args.num_frames or req.num_frames,
-                    num_inference_steps=args.num_inference_steps
-                    or req.num_inference_steps,
+                    num_inference_steps=(
+                        args.num_inference_steps or req.num_inference_steps
+                    ),
                     prompt=req.prompt,
-                    negative_prompt=args.negative_prompt,
+                    negative_prompt=req.negative_prompt,
+                    force_no_negative=req.force_no_negative,
                 )
                 for req in requests
             ]
@@ -1280,10 +1488,16 @@ def main(argv: list[str] | None = None) -> int:
             f.write(f"seed: {args.seed}\n")
             f.write(f"reproduce with: --seed {args.seed}\n\n")
             for i, req in enumerate(requests):
+                neg_flag = (
+                    "no"
+                    if (req.force_no_negative or not req.negative_prompt)
+                    else "yes"
+                )
                 f.write(
                     f"iter {i}: {req.width}x{req.height},"
                     f" {req.num_frames} frames,"
-                    f" {req.num_inference_steps} steps\n"
+                    f" {req.num_inference_steps} steps,"
+                    f" negative_prompt={neg_flag}\n"
                 )
                 f.write(f"  prompt: {req.prompt}\n\n")
         print(f"  Saved prompt manifest: {prompts_path}")
@@ -1301,114 +1515,147 @@ def main(argv: list[str] | None = None) -> int:
             gc.collect()
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
+        _list_output_dir(output_dir, "after torch phase")
 
     if not args.skip_max:
+        _list_output_dir(output_dir, "before MAX phase")
         try:
             max_result = run_max(args, requests, output_dir)
         except Exception as e:
             print(f"ERROR running MAX: {e}", file=sys.stderr)
             traceback.print_exc()
+        _list_output_dir(output_dir, "after MAX phase")
 
-    # Summary header
-    print("\n" + "=" * 60)
-    model_name = (
-        args.model.rsplit("/", 1)[-1] if "/" in args.model else args.model
-    )
-    print(
-        f"{model_name} Text-to-Video Performance Comparison"
-        f" — {datetime.now():%Y-%m-%d}"
-    )
-    print("=" * 60)
-    _print_gpu_info()
-    print(f"  model            : {args.model}")
-    print(f"  seed             : {args.seed}")
-    print("  mode             : Text-to-Video")
-    print(f"  guidance scale   : {args.guidance_scale}")
-    if args.guidance_scale_2 is not None:
-        print(f"  guidance scale 2 : {args.guidance_scale_2}")
-    print(f"  warmup runs      : {args.num_warmups}")
-    print(f"  timed iterations : {len(requests)}")
-    print()
-    print("  Torch config:")
-    compile_mode = (
-        "torch.compile (max-autotune)"
-        if args.torch_compile
-        else "eager (no compile)"
-    )
-    print(f"    mode           : {compile_mode}")
-    print("    dtype          : BF16")
-    print()
-    print("  MAX config:")
-    max_dtype = (
-        args.quantization_encoding.upper()
-        if args.quantization_encoding
-        else "BF16"
-    )
-    print(f"    dtype          : {max_dtype}")
-    print()
-
-    # Print theoretical memory estimates for all configs.
-    print("  Theoretical memory estimates per config:")
-    print(
-        f"    {'Config':>24s}  {'Seq Len':>10s}  {'Latent Shape':>24s}"
-        f"  {'Workspace':>9s}  {'Sched St':>9s}  {'VAE Dec':>8s}"
-        f"  {'Est Total':>10s}"
-    )
-    for req in requests:
-        t = _compute_theoretical_memory(req.height, req.width, req.num_frames)
-        total_est = sum(
-            v for k, v in t.items() if isinstance(v, float) and k != "seq_len"
+    # Mirror the summary block to `summary.txt` in the output dir (if any)
+    # so results can be retrieved later.  Without --no-output the file
+    # lands next to the generated frames.
+    summary_path: str | None = None
+    summary_file: Any = None
+    if output_dir is not None:
+        summary_path = os.path.join(output_dir, "summary.txt")
+        summary_file = open(summary_path, "w")
+        summary_ctx: contextlib.AbstractContextManager[Any] = (
+            contextlib.redirect_stdout(_Tee(sys.stdout, summary_file))
         )
-        cfg_label = (
-            f"{req.width}x{req.height} {req.num_frames}f"
-            f" {req.num_inference_steps}s"
-        )
-        print(
-            f"    {cfg_label:>24s}"
-            f"  {int(t['seq_len']):>10,}"
-            f"  {t['latent_shape']:>24s}"
-            f"  {t['workspace_peak']:>8.1f}G"
-            f"  {t['scheduler_latent_state']:>8.2f}G"
-            f"  {t['vae_decode_output']:>7.02f}G"
-            f"  {total_est:>9.1f}G"
-        )
-    print()
+    else:
+        summary_ctx = contextlib.nullcontext()
 
-    if diffusers_result:
-        _print_summary("Diffusers (PyTorch)", diffusers_result)
-    if max_result:
-        _print_summary("MAX", max_result)
-
-    if diffusers_result:
-        _print_per_iteration(
-            "Diffusers (PyTorch)",
-            diffusers_result,
-            requests,
-        )
-    if max_result:
-        _print_per_iteration("MAX", max_result, requests)
-
-    if diffusers_result and max_result:
-        d_mean = statistics.mean(diffusers_result.total_durations)
-        m_mean = statistics.mean(max_result.total_durations)
-        speedup = d_mean / m_mean if m_mean > 0 else float("inf")
-        per_iter_speedups = [
-            d / m if m > 0 else float("inf")
-            for d, m in zip(
-                diffusers_result.total_durations,
-                max_result.total_durations,
-                strict=True,
+    try:
+        with summary_ctx:
+            # Summary header
+            print("\n" + "=" * 60)
+            model_name = (
+                args.model.rsplit("/", 1)[-1]
+                if "/" in args.model
+                else args.model
             )
-        ]
-        min_speedup = min(per_iter_speedups)
-        max_speedup = max(per_iter_speedups)
-        print()
-        print("  Speedup (MAX vs Diffusers):")
-        print(f"    avg: {speedup:.2f}x")
-        print(f"    min: {min_speedup:.2f}x")
-        print(f"    max: {max_speedup:.2f}x")
+            print(
+                f"{model_name} Text-to-Video Performance Comparison"
+                f" — {datetime.now():%Y-%m-%d}"
+            )
+            print("=" * 60)
+            _print_gpu_info()
+            print(f"  model            : {args.model}")
+            print(f"  seed             : {args.seed}")
+            print("  mode             : Text-to-Video")
+            print(f"  guidance scale   : {args.guidance_scale}")
+            if args.guidance_scale_2 is not None:
+                print(f"  guidance scale 2 : {args.guidance_scale_2}")
+            print(f"  warmup runs      : {args.num_warmups}")
+            print(f"  timed iterations : {len(requests)}")
+            print()
+            print("  Torch config:")
+            compile_mode = (
+                "torch.compile (max-autotune)"
+                if args.torch_compile
+                else "eager (no compile)"
+            )
+            print(f"    mode           : {compile_mode}")
+            print("    dtype          : BF16")
+            print()
+            print("  MAX config:")
+            max_dtype = (
+                args.quantization_encoding.upper()
+                if args.quantization_encoding
+                else "BF16"
+            )
+            print(f"    dtype          : {max_dtype}")
+            print()
 
-    print()
+            # Print theoretical memory estimates for all configs.
+            print("  Theoretical memory estimates per config:")
+            print(
+                f"    {'Config':>24s}  {'Seq Len':>10s}"
+                f"  {'Latent Shape':>24s}"
+                f"  {'Workspace':>9s}  {'Sched St':>9s}  {'VAE Dec':>8s}"
+                f"  {'Est Total':>10s}"
+            )
+            for req in requests:
+                t = _compute_theoretical_memory(
+                    req.height, req.width, req.num_frames
+                )
+                total_est = sum(
+                    v
+                    for k, v in t.items()
+                    if isinstance(v, float) and k != "seq_len"
+                )
+                cfg_label = (
+                    f"{req.width}x{req.height} {req.num_frames}f"
+                    f" {req.num_inference_steps}s"
+                )
+                print(
+                    f"    {cfg_label:>24s}"
+                    f"  {int(t['seq_len']):>10,}"
+                    f"  {t['latent_shape']:>24s}"
+                    f"  {t['workspace_peak']:>8.1f}G"
+                    f"  {t['scheduler_latent_state']:>8.2f}G"
+                    f"  {t['vae_decode_output']:>7.02f}G"
+                    f"  {total_est:>9.1f}G"
+                )
+            print()
+
+            if diffusers_result:
+                _print_summary("Diffusers (PyTorch)", diffusers_result)
+            if max_result:
+                _print_summary("MAX", max_result)
+
+            if diffusers_result:
+                _print_per_iteration(
+                    "Diffusers (PyTorch)",
+                    diffusers_result,
+                    requests,
+                )
+            if max_result:
+                _print_per_iteration("MAX", max_result, requests)
+
+            if diffusers_result and max_result:
+                d_mean = statistics.mean(diffusers_result.total_durations)
+                m_mean = statistics.mean(max_result.total_durations)
+                speedup = d_mean / m_mean if m_mean > 0 else float("inf")
+                per_iter_speedups = [
+                    d / m if m > 0 else float("inf")
+                    for d, m in zip(
+                        diffusers_result.total_durations,
+                        max_result.total_durations,
+                        strict=True,
+                    )
+                ]
+                min_speedup = min(per_iter_speedups)
+                max_speedup = max(per_iter_speedups)
+                print()
+                print("  Speedup (MAX vs Diffusers):")
+                print(f"    avg: {speedup:.2f}x")
+                print(f"    min: {min_speedup:.2f}x")
+                print(f"    max: {max_speedup:.2f}x")
+
+            print()
+    finally:
+        if summary_file is not None:
+            summary_file.close()
+
+    if summary_path is not None:
+        print(f"  Saved summary to: {summary_path}")
+
     return 0
 
 

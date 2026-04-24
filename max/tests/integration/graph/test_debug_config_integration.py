@@ -20,11 +20,6 @@ These tests verify that each debug option can be enabled via:
 And that the priority ordering (Python API > env var > config file) is
 respected.
 
-Backward compatibility with legacy env vars (``MODULAR_MAX_NAN_CHECK``,
-``MOJO_ASSERT_LEVEL``, etc.) is preserved at each individual reader site,
-not through DebugConfig — consequently those legacy env vars do *not*
-show up in ``InferenceSession.debug.*``, so they're not tested here.
-
 All env-var and config-file tests run in subprocesses so the parent
 process state is not mutated.
 """
@@ -54,7 +49,6 @@ def _run_script(
     # TEST_TMPDIR is used for config file discovery in tests.
     for key in [
         "MODULAR_DEBUG",
-        "MODULAR_MAX_NAN_CHECK",
         "MODULAR_MAX_UNINITIALIZED_READ_CHECK",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE",
         "MODULAR_MAX_DEBUG",

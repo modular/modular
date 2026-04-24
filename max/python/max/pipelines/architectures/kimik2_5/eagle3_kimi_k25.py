@@ -225,11 +225,11 @@ class Eagle3KimiK25(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        fused_target_hs: TensorValue,
+        fused_target_hs: list[TensorValue],
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
+        input_row_offsets: list[TensorValue],
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
@@ -239,49 +239,38 @@ class Eagle3KimiK25(Module):
 
         Args:
             tokens: Input token IDs.
-            fused_target_hs: Hidden states — either concatenated from 3
-                target layers (shape ``[seq, hidden_size * 3]``) or from a
-                previous draft step (shape ``[seq, hidden_size]``). The
-                ``fc`` projection is applied only when the last dimension
-                is ``hidden_size * 3``.
+            fused_target_hs: Per-device hidden states — either the 3 fused
+                target-layer captures (shape ``[local_seq, hidden_size * 3]``
+                per device) or the previous draft step's output (shape
+                ``[local_seq, hidden_size]`` per device). The caller must
+                produce per-device tensors already sharded to each device's
+                local DP batch; the ``fc`` projection runs per-device when
+                the last dim is ``hidden_size * 3``.
             split_prefix: Prefix for symbolic dim names. Must be unique per
                 graph invocation to avoid dim conflicts between prefill
                 (step 0) and decode (step 1+).
         """
         devices = self.config.devices
 
-        fused_hs = ops.distributed_broadcast(fused_target_hs, signal_buffers)
-        if fused_target_hs.shape[-1] != self.config.hidden_size:
+        fused_hs: list[TensorValue] = list(fused_target_hs)
+        if fused_hs[0].shape[-1] != self.config.hidden_size:
             fused_hs = forward_sharded_layers(self.fc_shards, fused_hs)
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
-        input_row_offsets_ = ops.distributed_broadcast(
-            input_row_offsets.to(devices[0]), signal_buffers
-        )
+        input_row_offsets_ = list(input_row_offsets)
 
         if self.use_data_parallel_attention:
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
-            unsplit_row_offsets = input_row_offsets_
-
             h_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
                 h_embed,
-                unsplit_row_offsets,
+                input_row_offsets_,
                 host_offsets_i64,
                 data_parallel_splits,
                 prefix=split_prefix,
             )
-            fused_hs, _ = split_batch_replicated(
-                devices,
-                fused_hs,
-                unsplit_row_offsets,
-                host_offsets_i64,
-                data_parallel_splits,
-                prefix=split_prefix,
-            )
-
             h_embed = [
                 ops.rebind(
                     h_embed[i],
@@ -467,8 +456,6 @@ class Eagle3KimiK25(Module):
             last_token_hs_distributed=last_token_distributed,
             all_hs_distributed=hs,
             normalizer=self.norm_shards,
-            signal_buffers=signal_buffers,
-            duplicated_hs=not self.use_data_parallel_attention,
         )
 
         return ret_val

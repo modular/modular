@@ -13,7 +13,13 @@
 """InternVL vision-language architecture for multimodal text generation."""
 
 from .arch import internvl_arch
-from .model import InternVLModel
-from .model_config import InternVLConfig
+from .model import InternVLInputs, InternVLModel
+from .model_config import InternVLConfig, VisionConfig
 
-__all__ = ["InternVLConfig", "InternVLModel", "internvl_arch"]
+__all__ = [
+    "InternVLConfig",
+    "InternVLInputs",
+    "InternVLModel",
+    "VisionConfig",
+    "internvl_arch",
+]

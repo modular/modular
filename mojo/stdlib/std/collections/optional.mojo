@@ -499,20 +499,6 @@ struct Optional[T: Movable](
             raise EmptyOptionalError[Self.T]()
         return self.unsafe_value()
 
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(Bool),
-    ](self) -> Bool:
-        """Merge with other bools in an expression.
-
-        Parameters:
-            other_type: The type of the bool to merge with.
-
-        Returns:
-            A Bool after merging with the specified `other_type`.
-        """
-        return self.__bool__()
-
     def _write_to[
         *, is_repr: Bool
     ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
@@ -1142,20 +1128,6 @@ struct OptionalReg[T: TrivialRegisterPassable](
         """
         return self.__bool__()
 
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(Bool),
-    ](self) -> Bool:
-        """Merge with other bools in an expression.
-
-        Parameters:
-            other_type: The type of the bool to merge with.
-
-        Returns:
-            A Bool after merging with the specified `other_type`.
-        """
-        return self.__bool__()
-
     # ===-------------------------------------------------------------------===#
     # Trait implementations
     # ===-------------------------------------------------------------------===#
@@ -1215,3 +1187,46 @@ struct OptionalReg[T: TrivialRegisterPassable](
         out result: type_of(self).T,
     ):
         result = UnsafePointer(to=self).bitcast[type_of(result)]()[]
+
+    @deprecated(
+        "Cannot directly dereference an `OptionalReg[UnsafePointer]`."
+        " Unwrap the optional first with `.value()` (aborts if NULL) or"
+        " `.unsafe_value()` (unchecked), then index the pointer, e.g."
+        " `p.unsafe_value()[]` instead of `p[]`."
+    )
+    @doc_hidden
+    def __getitem__[
+        type: AnyType,
+        origin: Origin,
+        address_space: AddressSpace,
+        //,
+    ](
+        self: OptionalReg[
+            UnsafePointer[type, origin, address_space=address_space]
+        ],
+    ):
+        comptime assert (
+            False
+        ), "Cannot directly dereference an `OptionalReg[UnsafePointer]`"
+
+    @deprecated(
+        "Cannot index directly into an `OptionalReg[UnsafePointer]`. Unwrap the"
+        " optional first with `.value()` (aborts if NULL) or `.unsafe_value()`"
+        " (unchecked), then index the pointer, e.g. `p.unsafe_value()[i]`"
+        " instead of `p[i]`."
+    )
+    @doc_hidden
+    def __getitem__[
+        type: AnyType,
+        origin: Origin,
+        address_space: AddressSpace,
+        //,
+    ](
+        self: OptionalReg[
+            UnsafePointer[type, origin, address_space=address_space]
+        ],
+        offset: Some[Indexer],
+    ):
+        comptime assert (
+            False
+        ), "Cannot index directly into an `OptionalReg[UnsafePointer]`"

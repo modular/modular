@@ -9,4 +9,5 @@ max.pipelines.architectures.bert
 
 .. automodule:: max.pipelines.architectures.bert
    :members:
+   :imported-members:
    :show-inheritance:

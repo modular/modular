@@ -239,6 +239,18 @@ def test_ord() raises:
     assert_equal(ord(StringSlice("➿")), 10175)
     assert_equal(ord(StringSlice("🔥")), 128293)
 
+    # `\xhh` and `\ooo` escapes denote Unicode code points (not raw bytes),
+    # so values >= 0x80 are encoded to UTF-8 and `ord` recovers the original
+    # value.
+    assert_equal(ord("\x1c"), 0x1C)
+    assert_equal(ord("\x1e"), 0x1E)
+    assert_equal(ord("\x7f"), 0x7F)
+    assert_equal(ord("\x85"), 0x85)  # U+0085 NEL
+    assert_equal(ord("\xa0"), 0xA0)  # U+00A0 NBSP
+    assert_equal(ord("\xff"), 0xFF)
+    assert_equal(ord("\205"), 0x85)  # octal form of U+0085 NEL
+    assert_equal(ord("\377"), 0xFF)  # octal form of U+00FF
+
 
 def test_chr() raises:
     assert_equal("\0", chr(0))

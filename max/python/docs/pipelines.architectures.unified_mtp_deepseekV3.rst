@@ -9,4 +9,5 @@ max.pipelines.architectures.unified_mtp_deepseekV3
 
 .. automodule:: max.pipelines.architectures.unified_mtp_deepseekV3
    :members:
+   :imported-members:
    :show-inheritance:

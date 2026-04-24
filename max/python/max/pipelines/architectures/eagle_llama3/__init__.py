@@ -15,4 +15,7 @@
 from .arch import eagle_llama_arch
 from .model import EagleLlama3Model
 
-__all__ = ["EagleLlama3Model", "eagle_llama_arch"]
+__all__ = [
+    "EagleLlama3Model",
+    "eagle_llama_arch",
+]

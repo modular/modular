@@ -13,12 +13,15 @@
 """Kimi K2.5 mixture-of-experts architecture for text generation."""
 
 from .arch import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
-from .model import KimiK2_5Model
-from .model_config import KimiK2_5Config
+from .model import KimiK2_5Model, KimiK2_5ModelInputs
+from .model_config import KimiK2_5Config, KimiK2_5TextConfig, VisionConfig
 
 __all__ = [
     "KimiK2_5Config",
     "KimiK2_5Model",
+    "KimiK2_5ModelInputs",
+    "KimiK2_5TextConfig",
+    "VisionConfig",
     "eagle3_kimik25_arch",
     "kimik2_5_arch",
     "kimivl_arch",

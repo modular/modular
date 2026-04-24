@@ -75,7 +75,7 @@ HF_MODELS: dict[str, set[str]] = {
     "meta-llama/Llama-3.2-1B-Instruct": MULTI,
     "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
-    "MiniMaxAI/MiniMax-M2.7": NON_XL | {"8xMI355"},
+    "MiniMaxAI/MiniMax-M2.7": NON_XL | {"8xMI355", "sglang"},
     "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
     "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
     "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
@@ -117,13 +117,9 @@ CUSTOM_MODELS: dict[str, set[str]] = {
     "nvidia/Kimi-K2.5-NVFP4__no_vision": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
     "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI | {"vllm", "sglang"},
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": MULTI | {"vllm", "sglang"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"8xMI355"},
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": NON_XL | {"8xMI355"},
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"8xMI355"},
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep_1_draft_token": NON_XL | {"8xMI355"},
     "nvidia/Kimi-K2.5-NVFP4__eagle": NON_XL | {"8xMI355"},
-    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": NON_XL | {"8xMI355"},
     "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
 }
 

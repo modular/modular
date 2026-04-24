@@ -3925,7 +3925,7 @@ struct Matmul:
             _dtype, _width
         ]:
             return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda(
+                c._fused_compute_output_lambda[element_alignment=alignment](
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
             )
@@ -3988,7 +3988,9 @@ struct BatchMatmul:
             comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
             comptime if has_compute_lambda:
-                var output = c._fused_compute_output_lambda(
+                var output = c._fused_compute_output_lambda[
+                    element_alignment=alignment
+                ](
                     rebind[IndexList[c.rank]](coords),
                     rebind[SIMD[c.dtype, _width]](val),
                 )
@@ -7176,7 +7178,8 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            None, IndexList[2](0)
+            UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            IndexList[2](0),
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -9153,7 +9156,7 @@ struct Struct_matmul_dynamic_block_scaled:
             _dtype, _width
         ]:
             return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda(
+                c._fused_compute_output_lambda[element_alignment=alignment](
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
             )

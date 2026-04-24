@@ -713,6 +713,24 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             curr = curr.value()[].next()
 
     @always_inline
+    def get_nth[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
+        """Get the element at the specified index.
+
+        Parameters:
+            I: The type of index to use.
+
+        Args:
+            idx: The index of the element to get.
+
+        Returns:
+            The element at the specified index.
+
+        Notes:
+            Time Complexity: O(n/2) in len(self).
+        """
+        return self._get_node_ptr(idx).value()[].value
+
+    @always_inline
     def _get_node_ptr[I: Indexer, //](ref self, idx: I) -> Self._NodePointer:
         """Get an optional pointer to the node at the specified index.
 
@@ -729,7 +747,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             This method optimizes traversal by starting from either the head or
             tail depending on which is closer to the target index.
 
-            Time Complexity: O(n) in len(self).
+            Time Complexity: O(n/2) in len(self).
         """
         var i = index(idx)
         var l = len(self)
@@ -745,25 +763,6 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
             for _ in range(l - i - 1):
                 curr = curr.value()[].prev()
             return curr
-
-    # TODO(MSTDL-2576): remove this method to avoid accidentally quadratic for-loops
-    @always_inline
-    def __getitem__[I: Indexer](ref self, idx: I) -> ref[self] Self.ElementType:
-        """Get the element at the specified index.
-
-        Parameters:
-            I: The type of index to use.
-
-        Args:
-            idx: The index of the element to get.
-
-        Returns:
-            The element at the specified index.
-
-        Notes:
-            Time Complexity: O(n) in len(self).
-        """
-        return self._get_node_ptr(idx).value()[].value
 
     def __len__(self) -> Int:
         """Get the number of elements in the list.

@@ -9,4 +9,5 @@ max.pipelines.architectures.qwen3_embedding_modulev3
 
 .. automodule:: max.pipelines.architectures.qwen3_embedding_modulev3
    :members:
+   :imported-members:
    :show-inheritance:

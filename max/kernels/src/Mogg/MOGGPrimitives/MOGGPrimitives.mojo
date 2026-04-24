@@ -11,6 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.logger import Logger
 from std.math import fma
 from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
@@ -43,10 +44,11 @@ from tensor.managed_tensor_slice import DynamicTensor, get_kernel_simd_width
 
 from std.utils import Index, IndexList, StaticTuple
 
-from .buffer_plan import BufferPlanState
+from .buffer_plan import BufferPlanState, BufferPlanStats
 
 comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
 comptime ImmutByteBuffer = DynamicTensor[DType.int8, 1]
+comptime logger = Logger()
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
@@ -517,11 +519,16 @@ def mgp_buffer_plan[
     # If all sizes are static, then we can avoid materializing the allocator
     # state.
     comptime if num_runtime_sizes == 0:
+        comptime stats = state.stats()
+        logger.debug(stats)
+
         comptime results = state.take_results()
         return results
     else:
         var runtime_state = materialize[state]()
         runtime_state.allocate_greedy[start=num_static_sizes](runtime_sizes)
+
+        logger.debug(runtime_state.stats())
         return runtime_state^.take_results()
 
 
@@ -1253,7 +1260,8 @@ def mgp_buffer_get_cached(
     )
 
     var buffer = MutByteBuffer(
-        unsafe_cast[Type=Int8](buffer_data), Index(buffer_size)
+        buffer_data.unsafe_value().bitcast[Int8](),
+        Index(buffer_size),
     )
     var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
 

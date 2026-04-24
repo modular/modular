@@ -56,7 +56,6 @@ from std.gpu.sync import (
     syncwarp,
     cp_async_bulk_commit_group,
     cp_async_bulk_wait_group,
-    schedule_barrier,
 )
 from layout import Coord, Idx, TensorLayout, TileTensor, row_major
 from layout.tile_tensor import _get_index_type
@@ -1102,25 +1101,25 @@ struct NVFP4TokenFormat[
         var scales_tok = w + SF_ATOM_M[0] * sub_warp_id
         var oob = scales_tok >= tile_token_count
 
-        var scales_gmem_ptr = UnsafePointer[
-            Scalar[Self.scales_dtype], MutExternalOrigin
+        comptime n_scales_per_token = (
+            Self.hid_dim // NVFP4_SF_VECTOR_SIZE // Self._n_k_tiles
+        )
+        comptime n_scales_simd_per_token = n_scales_per_token // SF_ATOM_K
+
+        var scales_gmem_ptr = Optional[
+            UnsafePointer[Scalar[Self.scales_dtype], MutExternalOrigin]
         ]()
         if not oob:
             scales_gmem_ptr = (
                 recv_buf_ptr_functor(scales_tok) + Self.scales_offset()
             ).bitcast[Scalar[Self.scales_dtype]]()
-
-        comptime n_scales_per_token = (
-            Self.hid_dim // NVFP4_SF_VECTOR_SIZE // Self._n_k_tiles
-        )
-        comptime n_scales_simd_per_token = n_scales_per_token // SF_ATOM_K
-        scales_gmem_ptr += n_scales_per_token * k_tile_idx
+            scales_gmem_ptr.unsafe_value() += n_scales_per_token * k_tile_idx
 
         comptime for i in range(0, n_scales_simd_per_token, sub_warp_size):
             var _i = i + lane_in_sub_warp
             var scales_simd = SIMD[Self.scales_dtype, SF_ATOM_K](0.0)
             if not oob:
-                scales_simd = scales_gmem_ptr.load[
+                scales_simd = scales_gmem_ptr.unsafe_value().load[
                     width=SF_ATOM_K, invariant=True, alignment=SF_ATOM_K
                 ](_i * SF_ATOM_K)
 
@@ -2191,9 +2190,6 @@ struct EPDispatchKernel[
                     )
                 )
                 smem_vals[1] = fetch_tile_id()
-            # TODO(KERN-2792): Investigate why AMD GPUs require this.
-            comptime if is_amd_gpu():
-                schedule_barrier()
 
             # Load within-expert rank prefix sums for this expert.
             var base = Self.rank_prefix_offset + local_expert_id * Self.n_ranks
@@ -2290,9 +2286,6 @@ struct EPDispatchKernel[
                 if warp_id() == 0:
                     if tid == 0:
                         smem_vals[1] = fetch_tile_id()
-                    # TODO(KERN-2792): Investigate why AMD GPUs require this.
-                    comptime if is_amd_gpu():
-                        schedule_barrier()
                     syncwarp()
                     fill_tok_rank_map(Int(smem_vals[1]), total_tokens)
                 barrier()

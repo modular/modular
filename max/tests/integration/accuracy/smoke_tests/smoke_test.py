@@ -82,90 +82,57 @@ EvalSamples = list[dict[str, Any]]
 # fmt: off
 MODEL_ALIASES = CaseInsensitiveDict({
     "google/gemma-4-26B-A4B-it__no_dgc": {
-        "hf_model_path": "google/gemma-4-26B-A4B-it",
         "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
     },
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": "--prefer-module-v3",
     },
     "meta-llama/Llama-3.2-1B-Instruct__modulev3": {
-        "hf_model_path": "meta-llama/Llama-3.2-1B-Instruct",
         "max_serve_args": "--prefer-module-v3",
     },
     "unsloth/gpt-oss-20b-BF16__modulev3": {
-        "hf_model_path": "unsloth/gpt-oss-20b-BF16",
         "max_serve_args": "--prefer-module-v3",
     },
     "microsoft/Phi-3.5-mini-instruct__modulev3": {
-        "hf_model_path": "microsoft/Phi-3.5-mini-instruct",
         "max_serve_args": "--prefer-module-v3",
     },
     "microsoft/phi-4__modulev3": {
-        "hf_model_path": "microsoft/phi-4",
         "max_serve_args": "--prefer-module-v3",
     },
     "google/gemma-3-4b-it__modulev3": {
-        "hf_model_path": "google/gemma-3-4b-it",
         "max_serve_args": "--prefer-module-v3",
     },
     "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
     },
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": "--data-parallel-degree 1",
     },
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": "--ep-size 1 --data-parallel-degree 1",
     },
     "nvidia/Kimi-K2.5-NVFP4__with_vision": {  # MODELS-1066
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
     },
     "nvidia/Kimi-K2.5-NVFP4__no_vision": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
     },
     "meta-llama/Llama-3.1-8B-Instruct__eagle": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--devices gpu:0 "
+            "--draft-devices gpu:0 "
             "--speculative-method eagle"
         ),
     },
-    # Llama Eagle + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "meta-llama/Llama-3.1-8B-Instruct__eagle_1_draft_token": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
-        "max_serve_args": (
-            "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 1"
-        ),
-    },
     "nvidia/DeepSeek-V3.1-NVFP4__mtp": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": (
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
             "--num-speculative-tokens 3"
-        ),
-    },
-    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_1_draft_token": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
-        "max_serve_args": (
-            "--speculative-method eagle "
-            "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
         ),
     },
     "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
         "max_serve_args": (
             "--data-parallel-degree 1 "
             "--speculative-method eagle "
@@ -173,19 +140,7 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--num-speculative-tokens 3"
         ),
     },
-    # Deepseek MTP + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep_1_draft_token": {
-        "hf_model_path": "nvidia/DeepSeek-V3.1-NVFP4",
-        "max_serve_args": (
-            "--data-parallel-degree 1 "
-            "--speculative-method eagle "
-            "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
-        ),
-    },
     "nvidia/Kimi-K2.5-NVFP4__eagle": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--draft-trust-remote-code "
@@ -201,27 +156,7 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--max-num-steps 1"
         ),
     },
-    # Kimi Eagle + CUDA Graph only works when num_speculative_tokens == 1
-    # TODO: Remove this config once we support CUDA Graph for >1 draft tokens
-    "nvidia/Kimi-K2.5-NVFP4__eagle_1_draft_token": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
-        "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--draft-data-parallel-degree 8 "
-            "--draft-quantization-encoding bfloat16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 1 "
-            "--kv-cache-format float8_e4m3fn "
-            "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
-        ),
-    },
     "nvidia/Kimi-K2.5-NVFP4__eagle_tp": {
-        "hf_model_path": "nvidia/Kimi-K2.5-NVFP4",
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--draft-trust-remote-code "
@@ -723,7 +658,7 @@ def smoke_test(
 
     model = hf_model_path.strip()
     alias = MODEL_ALIASES.get(model)
-    hf_model_path = alias["hf_model_path"] if alias else model
+    hf_model_path = model.rsplit("__", 1)[0] if alias else model
     hf_model_path = resolve_canonical_repo_id(hf_model_path)
     if alias and framework in ["max-ci", "max"]:
         serve_extra_args = (

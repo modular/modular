@@ -538,6 +538,17 @@ def _get_tuning_list_sm100_bf16() -> List[TuningConfigSM100]:
             block_swizzle_size=8,
             rasterize_order=RasterOrder(1),
         ),
+        TuningConfigSM100(
+            M=12,
+            M_end=64 + 1,
+            N=20480,
+            K=7168,
+            mma_shape=Index(128, 160, 16),
+            cta_group=2,
+            cluster_shape=Index(2, 1, 1),
+            block_swizzle_size=0,
+            rasterize_order=RasterOrder(1),
+        ),
     ]
 
 

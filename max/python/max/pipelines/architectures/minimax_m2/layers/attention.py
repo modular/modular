@@ -35,6 +35,7 @@ from max.nn.attention.attention_with_rope import _compute_shard_range
 from max.nn.kernels import (
     flash_attention_ragged,
     fused_qk_ragged_rope,
+    fused_qkv_ragged_matmul,
     rms_norm_key_cache,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
@@ -67,7 +68,7 @@ class MiniMaxM2Attention(Module, Shardable):
         scale: float,
         qk_norm_eps: float = 1e-6,
         norm_dtype: DType,
-        quant_config: QuantConfig,
+        quant_config: QuantConfig | None = None,
     ) -> None:
         super().__init__()
         self.rope = rope
@@ -270,18 +271,29 @@ class MiniMaxM2Attention(Module, Shardable):
         total_seq_len = x.shape[0]
         wqkv = self.wqkv
 
-        xq = quantized_fused_qkv_matmul(
-            kv_params=self.kv_params,
-            x=x,
-            wqkv=wqkv,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=input_row_offsets,
-            n_heads=self.n_heads,
-            quant_config=self.quant_config,
-            weight_scale=self._qkv_weight_scale(),
-            bias=None,
-        )
+        if self.quant_config is not None:
+            xq = quantized_fused_qkv_matmul(
+                kv_params=self.kv_params,
+                x=x,
+                wqkv=wqkv,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=input_row_offsets,
+                n_heads=self.n_heads,
+                quant_config=self.quant_config,
+                weight_scale=self._qkv_weight_scale(),
+                bias=None,
+            )
+        else:
+            xq = fused_qkv_ragged_matmul(
+                kv_params=self.kv_params,
+                input=x,
+                input_row_offsets=input_row_offsets,
+                wqkv=wqkv,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                n_heads=self.n_heads,
+            )
 
         # xq: [total_seq_len, n_heads, head_dim]
         xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))

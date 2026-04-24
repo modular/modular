@@ -23,14 +23,13 @@ from std.builtin.globals import global_constant
 
 
 struct _MLIR:
+    comptime KGENTypeType = __mlir_type.`!kgen.type`
+
     comptime POPArrayType[
         size: __mlir_type.index, elt_type: AnyType
     ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
 
-    comptime KGENParamListType[elt_type: AnyType] = __mlir_type[
-        `!kgen.param_list<`, elt_type, `>`
-    ]
-    comptime KGENTypeListType[elt_type: type_of(AnyType)] = __mlir_type[
+    comptime KGENParamListType[elt_type: Self.KGENTypeType] = __mlir_type[
         `!kgen.param_list<`, elt_type, `>`
     ]
 
@@ -39,7 +38,7 @@ struct _MLIR:
 # ParameterList and TypeList Utilities
 # ===-----------------------------------------------------------------------===#
 
-comptime _IntToValueGeneratorType[ToT: AnyType] = __mlir_type[
+comptime _IntToXGeneratorType[ToT: _MLIR.KGENTypeType] = __mlir_type[
     `!lit.generator<<"Idx":`,
     Int,
     `>`,
@@ -47,91 +46,13 @@ comptime _IntToValueGeneratorType[ToT: AnyType] = __mlir_type[
     `>`,
 ]
 
-comptime _IntToTypeGeneratorType[
-    Trait: type_of(AnyType),
-] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `> `,
-    Trait,
-    `>`,
-]
-
-comptime _TypeToValueGeneratorType[
-    Trait: type_of(AnyType), ValueType: AnyType
-] = __mlir_type[
-    `!lit.generator<<"Elt": `,
-    +Trait,
-    `> `,
-    +ValueType,
-    `>`,
-]
-"""Maps a conforming element type to a compile-time value."""
-
-comptime _TypePredicateGenerator[T: type_of(AnyType)] = __mlir_type[
-    `!lit.generator<<"Type": `,
-    T,
-    `>`,
-    Bool,
-    `>`,
-]
-"""Generator type for type predicates.
-
-A predicate takes a type and returns a boolean indicating whether to keep it.
-
-Parameters:
-    T: The trait that the types conform to.
-"""
-
-comptime _TypeIndexPredicateGenerator[T: type_of(AnyType)] = __mlir_type[
-    `!lit.generator<<"Elt": `,
-    T,
-    `, "Idx":`,
-    Int,
-    `>`,
-    Bool,
-    `>`,
-]
-"""Generator type for indexed type predicates.
-
-A predicate takes an element type and its index in the list and returns whether
-to retain that element in the filtered list.
-
-Parameters:
-    T: The trait that the types conform to.
-"""
-
-comptime _TypeIndexReducerGenerator[
-    T: type_of(AnyType), Acc: AnyType
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Acc,
-    `, "From": `,
-    +T,
-    `, "Idx":`,
-    Int,
-    `>`,
-    +Acc,
-    `>`,
-]
-"""Generator type for index-aware type reductions.
-
-A reducer combines an accumulator, the current element type, and that element's
-index in the list into the next accumulator.
-
-Parameters:
-    T: The trait that the element types conform to.
-    Acc: The accumulator and result type.
-"""
-
-
 # ===-----------------------------------------------------------------------===#
 # TypeList
 # ===-----------------------------------------------------------------------===#
 
 
 struct TypeList[
-    Trait: type_of(AnyType), //, values: _MLIR.KGENTypeListType[Trait]
+    Trait: type_of(AnyType), //, values: _MLIR.KGENParamListType[Trait]
 ](Sized, TrivialRegisterPassable):
     """A compile-time list of types conforming to a common trait.
 
@@ -165,7 +86,7 @@ struct TypeList[
     ```
     """
 
-    comptime _mlir_type = _MLIR.KGENTypeListType[Self.Trait]
+    comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
     """The low-level MLIR type of the type list."""
 
     comptime size: Int = Int(
@@ -205,7 +126,7 @@ struct TypeList[
                 `#kgen.upcast<`,
                 existing.values,
                 `> : `,
-                _MLIR.KGENTypeListType[Self.Trait],
+                _MLIR.KGENParamListType[Self.Trait],
             ],
         ],
     ) where __mlir_attr[
@@ -250,7 +171,7 @@ struct TypeList[
         Trait: type_of(AnyType),
         ToT: Trait,
         //,
-        ToWrap: _IntToTypeGeneratorType[Trait],
+        ToWrap: _IntToXGeneratorType[Trait],
         idx: __mlir_type.index,
     ] = ToWrap[Int(mlir_value=idx)]
 
@@ -259,7 +180,7 @@ struct TypeList[
         ToT: Trait,
         //,
         count: Int,
-        Mapper: _IntToTypeGeneratorType[Trait],
+        Mapper: _IntToXGeneratorType[Trait],
     ] = TypeList[
         Trait=Trait,
         __mlir_attr[
@@ -268,7 +189,7 @@ struct TypeList[
             `,`,
             Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
             `> : `,
-            _MLIR.KGENTypeListType[Trait],
+            _MLIR.KGENParamListType[Trait],
         ],
     ]
     """Builds a type list by applying an index-to-type mapper `count` times.
@@ -297,13 +218,13 @@ struct TypeList[
 
     # Note: this is _concat instead of concat because it takes MLIR typelists
     comptime _concat[
-        Trait: type_of(AnyType), //, *Ts: _MLIR.KGENTypeListType[Trait]
+        Trait: type_of(AnyType), //, *Ts: _MLIR.KGENParamListType[Trait]
     ] = TypeList[
         __mlir_attr[
             `#kgen.param_list.concat<`,
             Ts.values,
             `> :`,
-            _MLIR.KGENTypeListType[Trait],
+            _MLIR.KGENParamListType[Trait],
         ]
     ]
     """Form a TypeList from the concatenation of multiple MLIR type lists.
@@ -333,10 +254,32 @@ struct TypeList[
         FromAndTo: AnyType,
         ToWrap: Self._ReducerGeneratorType[FromAndTo],
         PrevV: FromAndTo,
-        VA: _MLIR.KGENTypeListType[Self.Trait],
-        idx: SIMDSize,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: Int,
     ] = ToWrap[PrevV, TypeList[VA].__getitem_param__[idx]]
     """Adapts a (prev, element) reducer to the variadic reduce index signature."""
+
+    comptime _ReduceVariadicIdxGeneratorTypeGenerator[
+        Prev: AnyType
+    ] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +Prev,
+        `, "From": `,
+        _MLIR.KGENParamListType[Self.Trait],
+        `, "Idx":`,
+        SIMDSize,
+        `>`,
+        +Prev,
+        `>`,
+    ]
+    comptime _IndexToIntWrap[
+        ReduceT: AnyType,
+        ToWrap: Self._ReduceVariadicIdxGeneratorTypeGenerator[ReduceT],
+        PrevV: ReduceT,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: __mlir_type.index,
+    ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+    """Wrapper for type -> value."""
 
     comptime reduce[
         FromAndTo: AnyType,
@@ -349,8 +292,7 @@ struct TypeList[
         `,`,
         Self.values,
         `,`,
-        _IndexToIntWrap[
-            Self.Trait,
+        Self._IndexToIntWrap[
             FromAndTo,
             Self._DiscardIndexWrapper[FromAndTo, Reducer, ...],
             ...,
@@ -367,11 +309,23 @@ struct TypeList[
             `[prev: FromAndTo, element: Self.Trait] -> FromAndTo`.
     """
 
+    comptime _TypeIndexReducerGenerator[Acc: AnyType] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +Acc,
+        `, "From": `,
+        +Self.Trait,
+        `, "Idx":`,
+        Int,
+        `>`,
+        +Acc,
+        `>`,
+    ]
+
     comptime _PassIndexReducerWrapper[
         FromAndTo: AnyType,
-        ToWrap: _TypeIndexReducerGenerator[Self.Trait, FromAndTo],
+        ToWrap: Self._TypeIndexReducerGenerator[FromAndTo],
         PrevV: FromAndTo,
-        VA: _MLIR.KGENTypeListType[Self.Trait],
+        VA: _MLIR.KGENParamListType[Self.Trait],
         list_idx: Int,
     ] = ToWrap[
         PrevV,
@@ -384,15 +338,14 @@ struct TypeList[
         FromAndTo: AnyType,
         //,
         BaseVal: FromAndTo,
-        Reducer: _TypeIndexReducerGenerator[Self.Trait, FromAndTo],
+        Reducer: Self._TypeIndexReducerGenerator[FromAndTo],
     ] = __mlir_attr[
         `#kgen.param_list.reduce<`,
         BaseVal,
         `,`,
         Self.values,
         `,`,
-        _IndexToIntWrap[
-            Self.Trait,
+        Self._IndexToIntWrap[
             FromAndTo,
             Self._PassIndexReducerWrapper[FromAndTo, Reducer, ...],
             ...,
@@ -412,8 +365,23 @@ struct TypeList[
             `[prev: FromAndTo, element: Self.Trait, idx: Int] -> FromAndTo`.
     """
 
+    comptime _TypePredicateGenerator = __mlir_type[
+        `!lit.generator<<"Type": `,
+        Self.Trait,
+        `>`,
+        Bool,
+        `>`,
+    ]
+    """Generator type for type predicates.
+
+    A predicate takes a type and returns a boolean indicating whether to keep it.
+
+    Parameters:
+        T: The trait that the types conform to.
+    """
+
     comptime _AnySatisfiesReducer[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
         last_value: Bool,
         this_element: Self.Trait,
     ] = last_value or predicate[this_element]
@@ -421,7 +389,7 @@ struct TypeList[
     @always_inline("builtin")
     @staticmethod
     def any_satisfies[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
     ]() -> Bool:
         """Returns true if `predicate` holds for at least one type in this list.
 
@@ -438,7 +406,7 @@ struct TypeList[
         ]
 
     comptime _AllSatisfiesReducer[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
         last_value: Bool,
         this_element: Self.Trait,
     ] = last_value and predicate[this_element]
@@ -446,7 +414,7 @@ struct TypeList[
     @always_inline("builtin")
     @staticmethod
     def all_satisfies[
-        predicate: _TypePredicateGenerator[Self.Trait],
+        predicate: Self._TypePredicateGenerator,
     ]() -> Bool:
         """Returns true if `predicate` holds for every type in this list.
 
@@ -514,29 +482,28 @@ struct TypeList[
             The generator type is `[T: Trait] -> To`.
     """
 
-    comptime _TypeIndexToTypeGenerator[
-        ToTrait: type_of(AnyType),
-    ] = __mlir_type[
+    comptime _TypeIndexPredicateGenerator = __mlir_type[
         `!lit.generator<<"Elt": `,
         Self.Trait,
         `, "Idx":`,
         Int,
         `>`,
-        ToTrait,
+        Bool,
         `>`,
     ]
-    """Generator type for index-aware type-to-type maps.
+    """Generator type for indexed type predicates.
 
-    Maps an element type and its list index to an output type.
+    A predicate takes an element type and its index in the list and returns whether
+    to retain that element in the filtered list.
 
     Parameters:
-        ToTrait: The trait of the mapped output types.
+        T: The trait that the types conform to.
     """
 
     comptime _FilterIdxTabulator[
-        Predicate: _TypeIndexPredicateGenerator[Self.Trait],
+        Predicate: Self._TypeIndexPredicateGenerator,
         idx: Int,
-    ]: _MLIR.KGENTypeListType[Self.Trait] = TypeList.of[
+    ]: _MLIR.KGENParamListType[Self.Trait] = TypeList.of[
         Trait=Self.Trait, Self.__getitem_param__[idx]
     ]().values if Predicate[
         Self.__getitem_param__[idx], idx
@@ -545,7 +512,7 @@ struct TypeList[
     ]().values
 
     comptime filter_idx[
-        Predicate: _TypeIndexPredicateGenerator[Self.Trait],
+        Predicate: Self._TypeIndexPredicateGenerator,
     ] = TypeList._concat[
         *ParameterList.tabulate[
             Self.size,
@@ -566,9 +533,18 @@ struct TypeList[
         A `TypeList` of the same trait containing the kept elements in order.
     """
 
+    comptime _TypeToValueGeneratorType[ValueType: AnyType] = __mlir_type[
+        `!lit.generator<<"Elt": `,
+        +Self.Trait,
+        `> `,
+        +ValueType,
+        `>`,
+    ]
+    """Maps a conforming element type to a compile-time value."""
+
     comptime _MapToValuesGeneratorType[
         ValueType: AnyType,
-    ] = _TypeToValueGeneratorType[Self.Trait, ValueType]
+    ] = Self._TypeToValueGeneratorType[ValueType]
 
     comptime _MapToValuesIntTabulator[
         ValueType: AnyType,
@@ -643,34 +619,6 @@ struct TypeList[
             The number of elements on the TypeList.
         """
         return Self.size
-
-
-comptime _ReduceVariadicIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": `,
-    _MLIR.KGENTypeListType[From],
-    `, "Idx":`,
-    SIMDSize,
-    `>`,
-    +Prev,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: _MLIR.KGENTypeListType[AnyType], idx: SIMDSize] -> Prev,
-"""
-
-comptime _IndexToIntWrap[
-    From: type_of(AnyType),
-    ReduceT: AnyType,
-    ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
-    PrevV: ReduceT,
-    VA: _MLIR.KGENTypeListType[From],
-    idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
-"""Wrapper for type -> value."""
 
 
 # ===-----------------------------------------------------------------------===#
@@ -868,7 +816,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     comptime _IndexToIntTabulateWrap[
         ToT: AnyType,
         //,
-        ToWrap: _IntToValueGeneratorType[ToT],
+        ToWrap: _IntToXGeneratorType[ToT],
         idx: __mlir_type.index,
     ]: ToT = ToWrap[Int(mlir_value=idx)]
 
@@ -876,7 +824,7 @@ struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
         type: AnyType,
         //,
         count: Int,
-        Mapper: _IntToValueGeneratorType[type],
+        Mapper: _IntToXGeneratorType[type],
     ] = ParameterList[
         type=type,
         __mlir_attr[

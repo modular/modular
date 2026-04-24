@@ -765,36 +765,37 @@ struct EpilogueApplier[
             var elem3 = frag[offset + 3]
 
             comptime if Self.transpose_c:
-                elem0 = compute_lambda_fn[epilogue_dtype, 1](
+                frag[offset] = compute_lambda_fn[epilogue_dtype, 1](
                     IndexList[2](Int(top_col), Int(top_row)), elem0
                 )
-                elem1 = compute_lambda_fn[epilogue_dtype, 1](
+                frag[offset + 1] = compute_lambda_fn[epilogue_dtype, 1](
                     IndexList[2](Int(top_col + 1), Int(top_row)), elem1
                 )
-                elem2 = compute_lambda_fn[epilogue_dtype, 1](
+                frag[offset + 2] = compute_lambda_fn[epilogue_dtype, 1](
                     IndexList[2](Int(bot_col), Int(bot_row)), elem2
                 )
-                elem3 = compute_lambda_fn[epilogue_dtype, 1](
+                frag[offset + 3] = compute_lambda_fn[epilogue_dtype, 1](
                     IndexList[2](Int(bot_col + 1), Int(bot_row)), elem3
                 )
             else:
-                elem0 = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(top_row), Int(top_col)), elem0
+                elem01 = compute_lambda_fn[epilogue_dtype, 2](
+                    IndexList[2](Int(top_row), Int(top_col)),
+                    SIMD[epilogue_dtype, 2](
+                        rebind[Scalar[epilogue_dtype]](elem0),
+                        rebind[Scalar[epilogue_dtype]](elem1),
+                    ),
                 )
-                elem1 = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(top_row), Int(top_col + 1)), elem1
+                elem23 = compute_lambda_fn[epilogue_dtype, 2](
+                    IndexList[2](Int(bot_row), Int(bot_col)),
+                    SIMD[epilogue_dtype, 2](
+                        rebind[Scalar[epilogue_dtype]](elem2),
+                        rebind[Scalar[epilogue_dtype]](elem3),
+                    ),
                 )
-                elem2 = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(bot_row), Int(bot_col)), elem2
-                )
-                elem3 = compute_lambda_fn[epilogue_dtype, 1](
-                    IndexList[2](Int(bot_row), Int(bot_col + 1)), elem3
-                )
-
-            frag[offset] = elem0
-            frag[offset + 1] = elem1
-            frag[offset + 2] = elem2
-            frag[offset + 3] = elem3
+                frag[offset] = elem01[0]
+                frag[offset + 1] = elem01[1]
+                frag[offset + 2] = elem23[0]
+                frag[offset + 3] = elem23[1]
 
     @always_inline
     def apply_to_both_fragments[

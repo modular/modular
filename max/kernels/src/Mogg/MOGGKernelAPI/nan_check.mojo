@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""NaN/Inf detection kernels for the MODULAR_MAX_NAN_CHECK feature.
+"""NaN/Inf detection kernels for the max-debug.nan-check feature.
 
 These kernels are registered as custom ops in MOGGKernelAPI and inserted
 by the NanCheckPass compiler pass. The architecture is:

@@ -20,6 +20,7 @@ from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
     CodepointSliceIter,
+    GraphemeSliceIter,
     _to_string_list,
     _unsafe_strlen,
 )
@@ -1154,6 +1155,27 @@ struct String(
             A reversed iterator of references to the string elements.
         """
         return CodepointSliceIter[origin_of(self), forward=False](self)
+
+    def graphemes(self) -> GraphemeSliceIter[origin_of(self)]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+        """
+        return StringSlice(self).graphemes()
+
+    def count_graphemes(self) -> Int:
+        """Count the number of grapheme clusters in this string.
+
+        This is an O(n) operation.
+
+        Returns:
+            The number of grapheme clusters.
+        """
+        return StringSlice(self).count_graphemes()
 
     @always_inline("nodebug")
     def unsafe_ptr(

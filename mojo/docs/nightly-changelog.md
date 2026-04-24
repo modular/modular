@@ -147,6 +147,12 @@ This version is still a work in progress.
 
 - `assert_raises` now catches custom `Writable` error types, not just `Error`.
 
+- Added UAX #29 grapheme cluster segmentation to `String` and `StringSlice`.
+  New APIs: `graphemes()` returns a `GraphemeSliceIter` that yields each
+  user-perceived "character" as a `StringSlice`, and `count_graphemes()` returns
+  the grapheme cluster count. This correctly handles combining marks, emoji ZWJ
+  sequences, flag emoji, Hangul syllables, and other multi-codepoint clusters.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 
@@ -382,6 +388,10 @@ This version is still a work in progress.
   print(mapped) # Optional("43")
   ```
 
+- Added `std.memory.forget_deinit()` to enable low-level code to skip the usual
+  requirement to run a destructor for a value. This function should be used
+  rarely, when building low-level abstractions.
+
 - `parallelize`, `parallelize_over_rows` (in
   `std.algorithm.backend.cpu.parallelize`) and the `elementwise` overloads in
   `std.algorithm.functional` now accept an optional trailing
@@ -484,3 +494,13 @@ This version is still a work in progress.
 - Fixed `Process.run()` not inheriting the parent's environment variables.
   Child processes spawned via `Process.run()` now correctly receive the
   parent's environment.
+
+- Fixed `\xhh` and `\ooo` escape sequences in string literals being
+  interpreted as raw bytes instead of Unicode code points, which produced
+  malformed UTF-8 for values `>= 0x80`. The escapes now match Python `str`
+  semantics (and the existing `\u`/`\U` handling): `"\x85"` encodes U+0085
+  (NEL) as two UTF-8 bytes and `ord("\x85")` returns `133` instead of `5`.
+  Code that relied on `\xhh` to emit a single raw byte for non-ASCII values
+  must construct the bytes explicitly (for example via a `List[Byte]`
+  literal).
+  ([Issue #2842](https://github.com/modular/modular/issues/2842))

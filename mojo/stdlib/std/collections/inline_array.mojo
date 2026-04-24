@@ -161,7 +161,6 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
             src=take._array.unsafe_ptr() + take._index,
             count=Self.size - take._index,
         )
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(take))
 
     @always_inline
     def __del__(deinit self):
@@ -187,7 +186,7 @@ struct _InlineArrayIterOwned[T: Copyable, size: Int](
 
         # Mark the array as destroyed so InlineArray.__del__ doesn't
         # double-destroy the elements we already handled.
-        __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(array))
+        std.memory.forget_deinit(array^)
 
     @always_inline
     def __iter__(var self) -> Self.IteratorOwnedType:

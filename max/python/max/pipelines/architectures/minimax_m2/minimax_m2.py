@@ -108,10 +108,17 @@ class MiniMaxM2TransformerBlock(Module):
     ) -> None:
         super().__init__()
         assert config.quant_config is not None, (
-            "MiniMax-M2 requires FP8 quantization"
+            "MiniMax-M2 requires quantized weights (FP8 or NVFP4)"
         )
         self.devices = config.devices
         num_devices = len(config.devices)
+
+        attn_dtype = config.attn_dtype or config.dtype
+        attn_is_quantized = (
+            attn_dtype == config.dtype and config.quant_config is not None
+        )
+        attn_quant_config = config.quant_config if attn_is_quantized else None
+        attn_linear_cls = linear_cls if attn_is_quantized else Linear
 
         # Attention layer with per-layer QK norm
         self.self_attn = MiniMaxM2Attention(
@@ -120,13 +127,13 @@ class MiniMaxM2TransformerBlock(Module):
             hidden_size=config.hidden_size,
             kv_params=config.kv_params,
             layer_idx=layer_idx,
-            dtype=config.dtype,
+            dtype=attn_dtype,
             rope=rope,
-            linear_cls=linear_cls,
+            linear_cls=attn_linear_cls,
             devices=config.devices,
             scale=config.attention_multiplier,
             norm_dtype=config.norm_dtype or config.dtype,
-            quant_config=config.quant_config,
+            quant_config=attn_quant_config,
         )
         self.self_attn.sharding_strategy = ShardingStrategy.replicate(
             num_devices

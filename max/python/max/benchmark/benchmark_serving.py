@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import dataclasses
 import hashlib
 import json
 import logging
@@ -1493,6 +1494,90 @@ async def run_single_turn_benchmark(
     return outputs
 
 
+async def prime_prefix_turns(
+    sessions: Sequence[ChatSession],
+    request_driver: RequestDriver,
+    model_id: str,
+    api_url: str,
+    max_chat_len: int,
+    temperature: float | None,
+    top_p: float | None,
+    top_k: int | None,
+    max_sessions: int | None = None,
+) -> None:
+    """Prime the server's KV cache for sessions with prefix turns.
+
+    Sends one request per session with the full prefix context and
+    max_tokens=1. Runs before the benchmark timer so priming doesn't
+    affect measured throughput or duration.
+
+    Sessions beyond ``max_sessions`` are skipped because the multiturn /
+    kv-cache-stress runners reset ``prefix_turns=0`` for them anyway
+    (they represent new conversations arriving mid-benchmark).
+    """
+    if max_sessions is not None:
+        sessions = sessions[:max_sessions]
+    sessions_with_prefix = [s for s in sessions if s.prefix_turns > 0]
+    if not sessions_with_prefix:
+        return
+
+    logger.info(
+        f"Priming prefix turns for {len(sessions_with_prefix)} sessions..."
+    )
+
+    async def _prime_session(session: ChatSession) -> None:
+        messages = session.messages
+        prefix_end_idx = session.prefix_turns * 2
+        message_history: list[dict[str, Any]] = []
+        chat_len = 0
+        content_idx = 0
+        while content_idx < prefix_end_idx and content_idx + 1 < len(messages):
+            chat_len += messages[content_idx].num_tokens
+            output_len = messages[content_idx + 1].num_tokens
+            if chat_len + output_len > max_chat_len:
+                break
+            message_history.append(
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": messages[content_idx].content,
+                        }
+                    ],
+                }
+            )
+            assistant_content = messages[content_idx + 1].content
+            if not assistant_content:
+                assistant_content = " ".join(["token"] * max(output_len, 1))
+            message_history.append(
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": assistant_content}],
+                }
+            )
+            chat_len += output_len
+            content_idx += 2
+        if message_history:
+            prime_input = RequestFuncInput(
+                model=model_id,
+                session_id=str(session.id),
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                prompt=message_history,
+                images=[],
+                api_url=api_url,
+                prompt_len=chat_len,
+                max_tokens=1,
+                ignore_eos=True,
+            )
+            await request_driver.request(prime_input)
+
+    await asyncio.gather(*(_prime_session(s) for s in sessions_with_prefix))
+    logger.info("Prefix turns priming complete.")
+
+
 async def run_multiturn_benchmark(
     *,
     chat_sessions: Sequence[ChatSession],
@@ -1572,8 +1657,16 @@ async def run_multiturn_benchmark(
                 run_prefix_len=run_prefix_len,
             )
 
+    # New conversations arriving mid-benchmark start from turn 0.
+    sessions = [
+        dataclasses.replace(s, prefix_turns=0)
+        if max_concurrency and idx >= max_concurrency
+        else s
+        for idx, s in enumerate(chat_sessions)
+    ]
+
     tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
-    for idx, chat_session in enumerate(chat_sessions):
+    for idx, chat_session in enumerate(sessions):
         if warmup_delay_ms > 0 and max_concurrency and idx < max_concurrency:
             await asyncio.sleep(warmup_delay_ms / 1000)
         tasks.append(
@@ -1707,6 +1800,10 @@ async def run_kv_cache_stress_benchmark(
                 idx, chat_session = session_queue.get_nowait()
             except asyncio.QueueEmpty:
                 return
+
+            # New conversations arriving mid-benchmark start from turn 0.
+            if idx >= max_concurrent_conversations:
+                chat_session = dataclasses.replace(chat_session, prefix_turns=0)
 
             lora_id = (
                 lora_manager.get_lora_for_request(idx) if lora_manager else None
@@ -2286,15 +2383,44 @@ async def benchmark(
         if trace_path:
             start_trace(trace_path, trace_session)
 
-        benchmark_start_time = time.perf_counter_ns()
-        if max_benchmark_duration_s is None:
-            benchmark_should_end_time = None
-        else:
-            benchmark_should_end_time = benchmark_start_time + int(
-                max_benchmark_duration_s * 1e9
+        # Create pbar for actual benchmark runs
+        pbar = create_benchmark_pbar(disable_tqdm=disable_tqdm, samples=samples)
+
+        # Create base driver and wrap with ProgressBarRequestDriver if pbar is provided
+        base_driver: RequestDriver = request_driver_class(tokenizer=tokenizer)
+        request_driver: RequestDriver = (
+            ProgressBarRequestDriver(base_driver, pbar)
+            if pbar is not None
+            else base_driver
+        )
+
+        # Prime prefix turns before the benchmark timer starts. Only the
+        # initial concurrent population keeps its prefix_turns; sessions
+        # arriving mid-benchmark get reset to 0 and don't need priming.
+        # Bound: kv-cache-stress uses max_concurrent_conversations;
+        # multiturn uses max_concurrency (may be None for unbounded, in
+        # which case all sessions keep prefix_turns and are all primed).
+        if isinstance(samples, ChatSamples):
+            assert tokenizer is not None
+            prime_bound = (
+                max_concurrent_conversations
+                if max_concurrent_conversations is not None
+                else max_concurrency
+            )
+            await prime_prefix_turns(
+                sessions=samples.chat_sessions,
+                request_driver=base_driver,
+                model_id=model_id,
+                api_url=api_url,
+                max_chat_len=tokenizer.model_max_length,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                max_sessions=prime_bound,
             )
 
-        # Capture baseline server metrics before benchmark starts
+        # Capture baseline server metrics after priming so priming requests
+        # don't affect the delta calculation.
         baseline_endpoints: Mapping[str, ParsedMetrics] = {}
         if collect_server_stats:
             try:
@@ -2307,20 +2433,25 @@ async def benchmark(
                     f"Failed to capture baseline server metrics: {e}"
                 )
 
-        # Create pbar for actual benchmark runs
-        pbar = create_benchmark_pbar(disable_tqdm=disable_tqdm, samples=samples)
-
-        # Create base driver and wrap with ProgressBarRequestDriver if pbar is provided
-        base_driver: RequestDriver = request_driver_class(tokenizer=tokenizer)
-        request_driver: RequestDriver = (
-            ProgressBarRequestDriver(base_driver, pbar)
-            if pbar is not None
-            else base_driver
-        )
-
         if benchmark_task == "text-generation" and _is_vllm_backend(backend):
             spec_decode_metrics_before = fetch_spec_decode_metrics(
                 backend, base_url
+            )
+
+        # Marker consumed by utils/benchmarking/serving/analyze_batch_logs.py
+        # to slice the batch log by concurrency and exclude warmup/test-prompt
+        # phases.
+        logger.info(
+            f"=== BATCH LOG MARKER: Benchmark started "
+            f"(max_concurrency={max_concurrency}, "
+            f"request_rate={request_rate}) ==="
+        )
+        benchmark_start_time = time.perf_counter_ns()
+        if max_benchmark_duration_s is None:
+            benchmark_should_end_time = None
+        else:
+            benchmark_should_end_time = benchmark_start_time + int(
+                max_benchmark_duration_s * 1e9
             )
 
         try:
@@ -2630,6 +2761,28 @@ def flush_prefix_cache(
             " skipping cache flush."
         )
     elif response.status_code != 200:
+        # Mammoth's proxy wraps engine 404s in a 502 with per-endpoint statuses
+        # in the JSON body; treat unanimous 404s the same as a direct 404 above
+        # (e.g. vLLM builds without /reset_prefix_cache exposed).
+        try:
+            body = response.json() if response.content else None
+        except ValueError:
+            body = None
+        results = body.get("results") if isinstance(body, dict) else None
+        if (
+            isinstance(results, list)
+            and results
+            and all(
+                isinstance(r, dict) and r.get("statusCode") == 404
+                for r in results
+            )
+        ):
+            logger.warning(
+                f"Prefix cache reset is not supported at {api_url} "
+                "(proxy reported 404 from all engine endpoints);"
+                " skipping cache flush."
+            )
+            return
         raise RuntimeError(
             f"Failed to flush prefix cache for backend {backend} at {api_url}: "
             f"status={response.status_code} body={response.text}"

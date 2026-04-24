@@ -1,5 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "install_docs", "modular_py_binary", "modular_versioned_expand_template", "pkg_filegroup", "pkg_files", "strip_prefix")
 
 # gazelle:default_visibility //oss/modular/docs:__subpackages__
 
@@ -12,9 +12,20 @@ install_docs(
     target = ":mojodocs",
 )
 
+modular_versioned_expand_template(
+    name = "build_version_js",
+    out = "build_version.js",
+    substitutions = {},
+    tags = ["manual"],
+    template = "build_version.js.tmpl",
+)
+
 genrule(
     name = "mojodocs",
-    srcs = [":mojosite"],
+    srcs = [
+        ":mojosite",
+        ":build_version_js",
+    ],
     outs = ["mojodocs.tar"],
     cmd = """
   # Unpack inputs for processing
@@ -43,6 +54,9 @@ genrule(
   rm -rf internal_tmp
   mv mojosite/redirects.js mojosite/docs/redirects.js
   rm mojosite/docs/lib.mdx
+
+  # Place build version file at the tar root (which install_docs extracts to mojosite/docs/)
+  cp $(location :build_version_js) mojosite/build_version.js
 
   # Generate final output
   cd mojosite
@@ -76,6 +90,7 @@ pkg_files(
             "code/**",
             "internal/**",
             "post-process-mojodocs.py",
+            "build_version.js.tmpl",
         ],
     ),
     prefix = "mojo",

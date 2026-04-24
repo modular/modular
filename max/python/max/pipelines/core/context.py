@@ -335,17 +335,21 @@ class TextContext:
     def update_with_future_token(self) -> None:
         """Append a placeholder future token to the generated tokens.
 
-        This is primarily used for overlap scheduling.
+        This is primarily used for overlap scheduling. For structured output
+        contexts (those with a matcher), only the token buffer is advanced.
+        The FSM will be advanced later when the future token is realized
+        with the actual generated token.
         """
-        if self.matcher:
-            raise ValueError(
-                "Cannot use future tokens when a matcher is present."
-            )
-
         if self.tokens.all[-1] == FUTURE_TOKEN:
             raise ValueError("Cannot have multiple future tokens.")
 
-        self.update(new_token=FUTURE_TOKEN)
+        if self.matcher is not None:
+            # For structured output, only advance the token buffer.
+            # The FSM cannot accept placeholder tokens and will be
+            # advanced with the real token in sync_and_process_outputs().
+            self.advance_token_buffer(FUTURE_TOKEN)
+        else:
+            self.update(new_token=FUTURE_TOKEN)
 
     def realize_future_token(
         self, new_token: int, log_probabilities: LogProbabilities | None = None

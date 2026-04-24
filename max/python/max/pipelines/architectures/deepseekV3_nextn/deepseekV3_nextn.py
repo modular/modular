@@ -161,11 +161,11 @@ class DeepseekV3NextN(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        hidden_state: TensorValue,
+        hidden_state: list[TensorValue],
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
+        input_row_offsets: list[TensorValue],
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
@@ -181,31 +181,17 @@ class DeepseekV3NextN(Module):
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
-        # broadcast hidden_state to all devices
-        hidden_states = ops.distributed_broadcast(hidden_state, signal_buffers)
+        hidden_states = list(hidden_state)
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
-        input_row_offsets_ = ops.distributed_broadcast(
-            input_row_offsets.to(devices[0]), signal_buffers
-        )
-        # Both norm_embed and norm_hidden are replicated (full batch on each
-        # device). In the DP case, split both before concatenating.
+        input_row_offsets_ = list(input_row_offsets)
         if self.use_data_parallel_attention:
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
-            unsplit_row_offsets = input_row_offsets_
             norm_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
                 norm_embed,
-                unsplit_row_offsets,
-                host_offsets_i64,
-                data_parallel_splits,
-                prefix=split_prefix,
-            )
-            norm_hidden, _ = split_batch_replicated(
-                devices,
-                norm_hidden,
-                unsplit_row_offsets,
+                input_row_offsets_,
                 host_offsets_i64,
                 data_parallel_splits,
                 prefix=split_prefix,
@@ -321,7 +307,6 @@ class DeepseekV3NextN(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            duplicated_hs=not self.use_data_parallel_attention,
         )
 
     def input_types(

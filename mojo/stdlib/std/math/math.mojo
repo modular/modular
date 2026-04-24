@@ -43,6 +43,8 @@ from std.memory import Span
 from std.utils.numerics import FPUtils, isnan, nan
 from std.utils.static_tuple import StaticTuple
 
+from std._plugin import CurrentPlugin
+
 from .constants import log2e
 from .polynomial import polynomial_evaluate
 
@@ -617,6 +619,9 @@ def exp[
     """
 
     comptime neg_ln2 = -0.69314718055966295651160180568695068359375
+
+    comptime if CurrentPlugin.exp_fn:
+        return comptime (CurrentPlugin.exp_fn.value())(x)
 
     comptime if is_gpu():
         comptime if dtype in (DType.float16, DType.float32):

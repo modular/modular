@@ -202,7 +202,7 @@ trait ImplicitlyDestructible:
 
 comptime __SomeImpl[Trait: type_of(AnyType), T: Trait] = T
 comptime __SomeTypeListImpl[
-    Trait: type_of(AnyType), values: _MLIR.KGENTypeListType[Trait]
+    Trait: type_of(AnyType), values: _MLIR.KGENParamListType[Trait]
 ] = TypeList[Trait=Trait, values]()
 
 comptime Some[Trait: type_of(AnyType)] = __SomeImpl[Trait, ...]

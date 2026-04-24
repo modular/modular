@@ -13,7 +13,13 @@
 """Qwen3 transformer architecture for text generation."""
 
 from .arch import qwen3_arch, qwen3_moe_arch
-from .model import Qwen3Model
+from .model import Qwen3Inputs, Qwen3Model
 from .model_config import Qwen3Config
 
-__all__ = ["Qwen3Config", "Qwen3Model", "qwen3_arch", "qwen3_moe_arch"]
+__all__ = [
+    "Qwen3Config",
+    "Qwen3Inputs",
+    "Qwen3Model",
+    "qwen3_arch",
+    "qwen3_moe_arch",
+]

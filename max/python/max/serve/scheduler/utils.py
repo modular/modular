@@ -88,6 +88,10 @@ class BatchMetrics:
     nixl_read_gib_per_s: float = 0.0
     nixl_write_gib_per_s: float = 0.0
 
+    # When True, ``batch_execution_time_s`` is the execution time of the
+    # previous batch (i.e. the overlap scheduler is active).
+    batch_execution_time_is_previous: bool = False
+
     @classmethod
     def create(
         cls,
@@ -100,6 +104,7 @@ class BatchMetrics:
         num_terminated_reqs: int,
         total_preemption_count: int,
         speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = len(inputs.flat_batch)
@@ -253,6 +258,7 @@ class BatchMetrics:
             rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
             nixl_read_gib_per_s=nixl_read_gib_per_s,
             nixl_write_gib_per_s=nixl_write_gib_per_s,
+            batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 
     def pretty_format(self) -> str:
@@ -314,6 +320,12 @@ class BatchMetrics:
                 f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
             )
 
+        exec_label = (
+            "Previous Execution"
+            if self.batch_execution_time_is_previous
+            else "Execution"
+        )
+
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
             f"Terminated: {self.terminated_reqs} reqs, "
@@ -323,7 +335,7 @@ class BatchMetrics:
             f"Prompt Tput: {_to_human_readable_throughput(self.prompt_throughput)}, "
             f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
             f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)}, "
-            f"Execution: {to_human_readable_latency(self.batch_execution_time_s)} | "
+            f"{exec_label}: {to_human_readable_latency(self.batch_execution_time_s)} | "
             f"{kv_str}"
             f"{host_kv_str}"
             f"{dkv_str}"
@@ -342,9 +354,10 @@ class BatchMetrics:
             int(self.total_kv_blocks * self.used_kv_pct)
         )
         METRICS.cache_num_total_blocks(self.total_kv_blocks)
-        METRICS.cache_hit_rate(self.cache_hit_rate)
-        METRICS.cache_hits(self.cache_hit_tokens)
-        METRICS.cache_misses(self.cache_miss_tokens)
+        if self.batch_type == BatchType.CE:
+            METRICS.cache_hit_rate(self.cache_hit_rate)
+            METRICS.cache_hits(self.cache_hit_tokens)
+            METRICS.cache_misses(self.cache_miss_tokens)
 
         if self.nixl_read_latency_avg_ms > 0:
             METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
@@ -399,6 +412,7 @@ class SchedulerLogger:
         num_terminated_reqs: int,
         total_preemption_count: int,
         speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        batch_execution_time_is_previous: bool = False,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -411,6 +425,10 @@ class SchedulerLogger:
             num_pending_reqs: The number of pending requests.
             total_preemption_count: The total number of preemptions.
             speculative_decoding_metrics: The speculative decoding metrics, if any.
+            batch_execution_time_is_previous: When True, ``batch_execution_time_s``
+                is the execution time of the previous batch (the overlap
+                scheduler is active); the log line will read
+                ``Previous Execution:`` instead of ``Execution:``.
 
         Returns:
             None
@@ -426,6 +444,7 @@ class SchedulerLogger:
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=total_preemption_count,
             speculative_decoding_metrics=speculative_decoding_metrics,
+            batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 
         # Always publish metrics.

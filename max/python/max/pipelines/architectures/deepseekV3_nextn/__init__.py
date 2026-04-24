@@ -13,11 +13,12 @@
 """DeepSeek-V3 NextN multi-token prediction draft model for speculative decoding."""
 
 from .arch import deepseekV3_nextn_arch
-from .model import DeepseekV3NextNModel
+from .model import DeepseekV3NextNInputs, DeepseekV3NextNModel
 from .model_config import DeepseekV3NextNConfig
 
 __all__ = [
     "DeepseekV3NextNConfig",
+    "DeepseekV3NextNInputs",
     "DeepseekV3NextNModel",
     "deepseekV3_nextn_arch",
 ]

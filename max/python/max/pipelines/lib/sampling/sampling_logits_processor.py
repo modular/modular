@@ -233,9 +233,8 @@ class FusedSamplingProcessor:
         """Update the GPU bitmask with new FSM state for multi-step execution.
 
         This method unpacks the packed-int bitmask from llguidance, copies it
-        to the pinned host buffer, and transfers it to the GPU. This enables
-        multi-step execution with guided decoding by keeping the bitmask
-        synchronized with the FSM state after each token is sampled.
+        to the pinned host buffer, and transfers it to the GPU. This keeps the
+        bitmask synchronized with the FSM state after each token is sampled.
 
         Args:
             packed_bitmask: Packed int32 bitmask from

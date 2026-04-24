@@ -13,12 +13,16 @@
 """FLUX.2 diffusion architecture for image generation."""
 
 from .arch import (
+    Flux2ArchConfig,
     flux2_klein_modulev3_arch,
     flux2_modulev3_arch,
 )
 from .model import Flux2TransformerModel
+from .model_config import Flux2Config
 
 __all__ = [
+    "Flux2ArchConfig",
+    "Flux2Config",
     "Flux2TransformerModel",
     "flux2_klein_modulev3_arch",
     "flux2_modulev3_arch",

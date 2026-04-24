@@ -16,8 +16,8 @@ from std.collections.dict import (
     DictKeyError,
     EmptyDictError,
     OwnedKwargsDict,
-    _GROUP_WIDTH,
 )
+from std.collections._swisstable import GROUP_WIDTH
 
 from std.hashlib import Hasher, default_comp_time_hasher
 
@@ -897,12 +897,12 @@ def test_reversed_items() raises:
 
 
 def test_minimum_capacity() raises:
-    """The minimum capacity is _GROUP_WIDTH (16) for SIMD correctness."""
+    """The minimum capacity is GROUP_WIDTH (16) for SIMD correctness."""
     var d = Dict[Int, Int](capacity=16)
-    assert_true(d._capacity >= _GROUP_WIDTH)
-    # Default constructor also gets at least _GROUP_WIDTH capacity
+    assert_true(d._reserved() >= GROUP_WIDTH)
+    # Default constructor also gets at least GROUP_WIDTH capacity
     var d2 = Dict[Int, Int]()
-    assert_true(d2._capacity >= _GROUP_WIDTH)
+    assert_true(d2._reserved() >= GROUP_WIDTH)
 
 
 def test_inplace_rehash() raises:

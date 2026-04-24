@@ -144,6 +144,14 @@ class TokenGenerationScheduler(Scheduler):
         if not (inputs or self.support_empty_batches or has_pending_outputs):
             return SchedulerProgress.NO_PROGRESS
 
+        # When the overlap pipeline is actually overlapping, the wall-clock
+        # time measured below reflects the previous batch's sync, not the
+        # current batch. Flag it so the logger emits "Previous Execution:".
+        is_overlap_active = (
+            isinstance(self.pipeline, OverlapTextGenerationPipeline)
+            and self.pipeline.overlap_active
+        )
+
         # Schedule the batch
         t0 = time.monotonic()
         if len(inputs.flat_batch) > 0:
@@ -167,6 +175,7 @@ class TokenGenerationScheduler(Scheduler):
             speculative_decoding_metrics=self.pipeline.spec_decode_metrics()
             if hasattr(self.pipeline, "spec_decode_metrics")
             else None,
+            batch_execution_time_is_previous=is_overlap_active,
         )
 
         for cancelled_id in get_cancelled_reqs(self.cancel_queue):

@@ -302,8 +302,8 @@ class Gemma3VisionModel(Module):
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
-        """Processes vision inputs through the Gemma3 vision tower and produces a
-        sequence of image embeddings"""
+        """Processes vision inputs through the Gemma3 vision tower and produces
+        a sequence of image embeddings"""
         hidden_states: TensorValue | Sequence[TensorValue] = [
             embed(pixels)
             for embed, pixels in zip(

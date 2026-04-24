@@ -167,14 +167,14 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
 
     ```mojo
     @fieldwise_init
-    struct Point(ImplicitlyCopyable)
+    struct Point(ImplicitlyCopyable):
         var x: Int
         var y: Int
 
     def main():
         var p = Point(5, 10)
 
-        # Perform an implicit copy of `p
+        # Perform an implicit copy of `p`.
         var p2 = p
     ```
     """

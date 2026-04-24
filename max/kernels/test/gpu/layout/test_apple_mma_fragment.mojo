@@ -149,7 +149,7 @@ def fragment_load_kernel(
     var rb = UInt16(((Int(lid) & 7) >> 1) + ((Int(lid) & 16) >> 2))
     var cb = UInt16(((Int(lid) & 1) << 2) + (Int(lid) & 8))
 
-    var row_stride = tile.layout.stride[0]().value()
+    var row_stride = Int(tile.layout.stride[0]().value())
     var offset_lo = Int(rb) * row_stride + Int(cb)
     var offset_hi = offset_lo + 8 * row_stride
 

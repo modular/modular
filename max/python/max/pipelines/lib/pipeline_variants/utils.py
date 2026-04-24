@@ -16,9 +16,14 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
+import llguidance.hf
+import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
+from llguidance import LLMatcher
 from max.interfaces import (
     GenerationStatus,
     LogProbabilities,
@@ -27,7 +32,10 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.lib.utils import upper_bounded_default
-from transformers import AutoConfig
+from transformers import AutoConfig, PreTrainedTokenizerFast
+
+if TYPE_CHECKING:
+    from max.interfaces import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -270,3 +278,147 @@ def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
         msg = f"eos_token_id in huggingface_config is neither int or list: {hf_eos_tokens}"
         logger.warning(msg)
         return set([eos_token_id])
+
+
+@dataclass
+class StructuredOutputHelper:
+    """Helper for structured output (constrained decoding) in text generation pipelines.
+
+    Encapsulates grammar compilation and bitmask management, consolidating
+    shared logic between TextGenerationPipeline and OverlapTextGenerationPipeline.
+
+    Attributes:
+        enabled: Whether structured output is enabled.
+        vocab_size: Vocabulary size from the tokenizer, or None if disabled.
+    """
+
+    enabled: bool = False
+    vocab_size: int | None = None
+    _tokenizer_info: Any = field(default=None, repr=False)
+
+    @classmethod
+    def from_tokenizer(
+        cls,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+        enable_structured_output: bool,
+    ) -> StructuredOutputHelper:
+        """Create a helper from a tokenizer.
+
+        Args:
+            tokenizer: A pipeline tokenizer with a HuggingFace delegate attribute.
+            enable_structured_output: Whether structured output is enabled.
+
+        Returns:
+            A configured StructuredOutputHelper instance.
+        """
+        if not enable_structured_output:
+            return cls(enabled=False)
+
+        assert hasattr(tokenizer, "delegate")
+        hf_tokenizer = tokenizer.delegate
+        assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
+        vocab_size = len(hf_tokenizer)
+        tokenizer_info = llguidance.hf.from_tokenizer(
+            hf_tokenizer, n_vocab=vocab_size
+        )
+        return cls(
+            enabled=True,
+            vocab_size=vocab_size,
+            _tokenizer_info=tokenizer_info,
+        )
+
+    def update_context(
+        self,
+        context: TextGenerationContextType,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+        support_jump_ahead: bool = True,
+    ) -> None:
+        """Update context and bitmask for structured output.
+
+        If a json_schema is present and no matcher is set, this compiles a
+        grammar matcher and installs it on the context. Optionally applies
+        jump-ahead tokens, then fills the per-request token bitmask.
+
+        Args:
+            context: Request context to update.
+            bitmask: Preallocated bitmask buffer; updated in-place.
+            index: Position in the bitmask for this request.
+            support_jump_ahead: Whether to apply jump-ahead tokens. Set to
+                False for overlap scheduling where jump-ahead would break
+                CUDA graph capture.
+
+        Raises:
+            ValueError: If a JSON schema is provided but structured output
+                is not enabled.
+        """
+        if context.json_schema and context.matcher is None:
+            if not self.enabled:
+                raise ValueError(
+                    "json_schema provided but structured output is not enabled."
+                )
+
+            try:
+                serialized_grammar = LLMatcher.grammar_from_json_schema(
+                    context.json_schema,
+                )
+                matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
+                context.set_matcher(matcher)
+            except Exception as e:
+                msg = (
+                    f"Json schema provided in request cannot be compiled to "
+                    f"valid grammar. Update your json schema to produce valid "
+                    f"structured output. From llguidance: {e}"
+                )
+                logger.warning(msg)
+                # Remove json_schema so we don't retry compilation repeatedly.
+                context.json_schema = None  # type: ignore
+
+        if context.matcher:
+            if support_jump_ahead:
+                # Jump ahead in generation if possible.
+                jump_forward_tokens = context.matcher.compute_ff_tokens()
+                for token in jump_forward_tokens:
+                    context.jump_ahead(token)
+
+            # Fill the bitmask for this context.
+            self.fill_bitmask(context, bitmask, index)
+
+    def allocate_bitmask(
+        self,
+        batch_size: int,
+    ) -> npt.NDArray[np.int32]:
+        """Allocate a token bitmask for the given batch size.
+
+        Args:
+            batch_size: Number of requests in the batch.
+
+        Returns:
+            A bitmask array of shape [batch_size, ceil(vocab_size/32)].
+
+        Raises:
+            ValueError: If vocab_size is not set.
+        """
+        if self.vocab_size is None:
+            raise ValueError("vocab_size must be set to allocate bitmask")
+        return llguidance.numpy.allocate_token_bitmask(
+            batch_size, self.vocab_size
+        )
+
+    def fill_bitmask(
+        self,
+        context: TextGenerationContextType,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        """Fill the bitmask for a context's matcher.
+
+        Args:
+            context: Request context with a matcher.
+            bitmask: Bitmask buffer to update in-place.
+            index: Position in the bitmask for this request.
+        """
+        if context.matcher:
+            llguidance.numpy.fill_next_token_bitmask(
+                context.matcher, bitmask, index=index
+            )

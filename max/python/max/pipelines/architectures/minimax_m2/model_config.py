@@ -55,6 +55,10 @@ class MiniMaxM2Config(Llama3Config):
     """Data type for the gate linear layer. Detected from state dict
     during finalize()."""
 
+    attn_dtype: DType | None = None
+    """Data type for attention weights. Detected from state dict
+    during finalize()."""
+
     ep_config: EPConfig | None = None
     """Expert parallelism configuration. None means no EP (single-GPU)."""
 

@@ -9,4 +9,5 @@ max.pipelines.architectures.z_image_modulev3
 
 .. automodule:: max.pipelines.architectures.z_image_modulev3
    :members:
+   :imported-members:
    :show-inheritance:

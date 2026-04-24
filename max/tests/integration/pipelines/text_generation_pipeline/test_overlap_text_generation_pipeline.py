@@ -23,17 +23,21 @@ from max.interfaces import (
     TokenBuffer,
 )
 from max.pipelines.core import TextContext
+from max.pipelines.core.context import FUTURE_TOKEN
 from max.pipelines.lib import OverlapTextGenerationPipeline
 from max.pipelines.lib.pipeline_variants.overlap_text_generation import (
     _MAX_GRAPH_CAPTURE_BATCH_SIZE,
+    AsyncBatch,
 )
 from max.pipelines.lib.registry import get_pipeline_for_task
 
 
 def test_throws_if_num_steps_gt_1() -> None:
+    """Overlap pipeline should reject num_steps > 1."""
     pipeline = OverlapTextGenerationPipeline.__new__(
         OverlapTextGenerationPipeline
     )
+    pipeline._pipeline_config = MagicMock()
     request_id = RequestID()
     ctx = TextContext(
         request_id=request_id,
@@ -167,3 +171,283 @@ def test_prefill_and_decode_gets_overlap_pipeline() -> None:
     )
     result = get_pipeline_for_task(PipelineTask.TEXT_GENERATION, config)
     assert result is OverlapTextGenerationPipeline[TextContext]
+
+
+def test_async_batch_sync_with_single_step_tokens() -> None:
+    """AsyncBatch.sync_and_process_outputs handles single-step token shapes."""
+
+    batch_size = 3
+
+    # Create mock contexts
+    contexts = []
+    for i in range(batch_size):
+        ctx = TextContext(
+            request_id=RequestID(f"req_{i}"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        contexts.append(ctx)
+
+    # Create mock inputs
+    mock_inputs = MagicMock()
+    mock_inputs.flat_batch = contexts
+
+    # Create single-step tokens buffer [batch_size]
+    generated_tokens = np.arange(batch_size, dtype=np.int64)
+
+    # Create mock host buffer
+    mock_host_buffer = MagicMock()
+    mock_host_buffer.to_numpy.return_value = generated_tokens
+
+    # Create mock event
+    mock_event = MagicMock()
+
+    # Create AsyncBatch
+    async_batch: AsyncBatch[TextContext] = AsyncBatch(
+        inputs=mock_inputs,
+        generated_tokens_device=MagicMock(),
+        generated_tokens_host=mock_host_buffer,
+        copy_event=mock_event,
+    )
+
+    # Patch update_context_and_prepare_responses to verify it's called correctly
+    with patch(
+        "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+        ".update_context_and_prepare_responses"
+    ) as mock_update:
+        mock_update.return_value = {}
+
+        async_batch.sync_and_process_outputs()
+
+        # Verify the function was called with correct arguments
+        mock_update.assert_called_once()
+        call_args = mock_update.call_args
+
+        # Check positional args - tokens should be reshaped to [batch_size, 1]
+        tokens_arg = call_args[0][0]
+        assert tokens_arg.shape == (batch_size, 1)
+
+        contexts_arg = call_args[0][1]
+        assert contexts_arg == contexts
+
+        # Check keyword args
+        assert call_args[1]["num_steps"] == 1
+        assert call_args[1]["overwrite_future"] is True
+
+
+class TestUpdateWithFutureTokenStructuredOutput:
+    """Tests for update_with_future_token behavior with structured output."""
+
+    def test_skips_fsm_when_matcher_present(self) -> None:
+        """update_with_future_token should NOT advance FSM when matcher is present.
+
+        For structured output, the FSM cannot accept placeholder tokens (-999).
+        The FSM will be advanced later with the real token.
+        """
+
+        ctx = TextContext(
+            request_id=RequestID("test"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        # Set up a mock matcher
+        mock_matcher = MagicMock()
+        mock_matcher.consume_token = MagicMock(return_value=True)
+        ctx._matcher = mock_matcher
+
+        initial_length = len(ctx.tokens.all)
+
+        # Call update_with_future_token
+        ctx.update_with_future_token()
+
+        # Token buffer should have FUTURE_TOKEN appended
+        assert len(ctx.tokens.all) == initial_length + 1
+        assert ctx.tokens.all[-1] == FUTURE_TOKEN
+
+        # FSM (matcher.consume_token) should NOT have been called
+        mock_matcher.consume_token.assert_not_called()
+
+        # On the other hand, update_with_future_token should advance FSM when no matcher present.
+        # For non-structured output, the standard update() path is used
+        ctx = TextContext(
+            request_id=RequestID("test"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        # No matcher set (ctx.matcher is None)
+        assert ctx.matcher is None
+
+        initial_length = len(ctx.tokens.all)
+
+        # Call update_with_future_token
+        ctx.update_with_future_token()
+
+        # Token buffer should have FUTURE_TOKEN appended
+        assert len(ctx.tokens.all) == initial_length + 1
+        assert ctx.tokens.all[-1] == FUTURE_TOKEN
+
+
+class TestSyncAndProcessOutputsStructuredOutput:
+    """Tests for sync_and_process_outputs with structured output."""
+
+    def test_advances_fsm_with_real_token(self) -> None:
+        """sync_and_process_outputs should advance FSM with real token for structured output.
+
+        When syncing the previous batch, the FSM should be advanced with the
+        actual sampled token (not the placeholder).
+        """
+        batch_size = 2
+        real_tokens = np.array([100, 200], dtype=np.int64)
+
+        # Create contexts with mock matchers
+        contexts = []
+        for i in range(batch_size):
+            ctx = TextContext(
+                request_id=RequestID(f"req_{i}"),
+                max_length=1000,
+                tokens=TokenBuffer(np.array([42, 67, 21])),
+            )
+            mock_matcher = MagicMock()
+            mock_matcher.consume_token = MagicMock(return_value=True)
+            ctx._matcher = mock_matcher
+            contexts.append(ctx)
+
+        # Create mock inputs
+        mock_inputs = MagicMock()
+        mock_inputs.flat_batch = contexts
+
+        # Create mock host buffer with real tokens
+        mock_host_buffer = MagicMock()
+        mock_host_buffer.to_numpy.return_value = real_tokens
+        mock_host_buffer.shape = real_tokens.shape
+
+        # Create mock event
+        mock_event = MagicMock()
+
+        # Create AsyncBatch
+        async_batch: AsyncBatch[TextContext] = AsyncBatch(
+            inputs=mock_inputs,
+            generated_tokens_device=MagicMock(),
+            generated_tokens_host=mock_host_buffer,
+            copy_event=mock_event,
+        )
+
+        # Patch update_context_and_prepare_responses
+        with patch(
+            "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+            ".update_context_and_prepare_responses"
+        ) as mock_update:
+            mock_update.return_value = {}
+
+            async_batch.sync_and_process_outputs()
+
+            # Verify FSM was advanced with real tokens for each context
+            for i, ctx in enumerate(contexts):
+                assert ctx._matcher is not None
+                ctx._matcher.consume_token.assert_called_once_with(
+                    int(real_tokens[i])
+                )
+
+    def test_updates_bitmask_for_continuing_requests(self) -> None:
+        """sync_and_process_outputs should update bitmask for requests continuing to next batch."""
+        real_token = np.array([100], dtype=np.int64)
+
+        # Create context with mock matcher
+        ctx = TextContext(
+            request_id=RequestID("continuing_req"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        mock_matcher = MagicMock()
+        mock_matcher.consume_token = MagicMock(return_value=True)
+        ctx._matcher = mock_matcher
+
+        # Previous batch inputs
+        mock_inputs = MagicMock()
+        mock_inputs.flat_batch = [ctx]
+
+        # Create mock host buffer
+        mock_host_buffer = MagicMock()
+        mock_host_buffer.to_numpy.return_value = real_token
+        mock_host_buffer.shape = real_token.shape
+
+        # Create mock StructuredOutputHelper
+        mock_structured_output = MagicMock()
+
+        # Create AsyncBatch for previous batch
+        async_batch: AsyncBatch[TextContext] = AsyncBatch(
+            inputs=mock_inputs,
+            generated_tokens_device=MagicMock(),
+            generated_tokens_host=mock_host_buffer,
+            copy_event=MagicMock(),
+            structured_output=mock_structured_output,
+        )
+
+        # Current batch also contains this request (continuing)
+        curr_flat_batch = [ctx]
+        bitmask = np.zeros((1, 10), dtype=np.int32)
+        mock_sampling_processor = MagicMock()
+
+        with patch(
+            "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+            ".update_context_and_prepare_responses"
+        ) as mock_update:
+            mock_update.return_value = {}
+
+            async_batch.sync_and_process_outputs(
+                curr_flat_batch=curr_flat_batch,
+                bitmask=bitmask,
+                sampling_processor=mock_sampling_processor,
+            )
+
+            # Verify bitmask was filled for continuing request via StructuredOutputHelper
+            mock_structured_output.fill_bitmask.assert_called_once_with(
+                ctx,
+                bitmask,
+                0,  # curr_idx = 0
+            )
+
+            # Verify bitmask was transferred to device
+            mock_sampling_processor.update_bitmask.assert_called_once_with(
+                bitmask
+            )
+
+    def test_skips_fsm_for_chunked_prefill(self) -> None:
+        """sync_and_process_outputs should skip FSM advancement for actively chunked contexts."""
+        real_token = np.array([100], dtype=np.int64)
+
+        # Create context with mock matcher that is actively chunked
+        ctx = TextContext(
+            request_id=RequestID("chunked_req"),
+            max_length=1000,
+            tokens=TokenBuffer(np.array([42, 67, 21])),
+        )
+        ctx.tokens._actively_chunked = True  # Simulate chunked prefill
+        mock_matcher = MagicMock()
+        mock_matcher.consume_token = MagicMock(return_value=True)
+        ctx._matcher = mock_matcher
+
+        mock_inputs = MagicMock()
+        mock_inputs.flat_batch = [ctx]
+
+        mock_host_buffer = MagicMock()
+        mock_host_buffer.to_numpy.return_value = real_token
+        mock_host_buffer.shape = real_token.shape
+
+        async_batch: AsyncBatch[TextContext] = AsyncBatch(
+            inputs=mock_inputs,
+            generated_tokens_device=MagicMock(),
+            generated_tokens_host=mock_host_buffer,
+            copy_event=MagicMock(),
+        )
+
+        with patch(
+            "max.pipelines.lib.pipeline_variants.overlap_text_generation"
+            ".update_context_and_prepare_responses"
+        ) as mock_update:
+            mock_update.return_value = {}
+
+            async_batch.sync_and_process_outputs()
+
+            # FSM should NOT be advanced for actively chunked context
+            mock_matcher.consume_token.assert_not_called()

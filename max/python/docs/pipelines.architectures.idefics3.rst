@@ -9,4 +9,5 @@ max.pipelines.architectures.idefics3
 
 .. automodule:: max.pipelines.architectures.idefics3
    :members:
+   :imported-members:
    :show-inheritance:

@@ -30,7 +30,7 @@
 
 from std.memory import UnsafeMaybeUninit
 from std.os import abort
-from std.reflection import offset_of
+from std.reflection import offset_of, call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 # ===----------------------------------------------------------------------=== #
@@ -448,7 +448,7 @@ struct DelCounter[counter_origin: ImmutOrigin, *, trivial_del: Bool = False](
 
 
 @fieldwise_init
-struct AbortOnDel(ImplicitlyCopyable):
+struct AbortOnDel(Copyable):
     """Type that aborts if its destructor is called.
 
     Used to test that destructors are not called in certain scenarios.
@@ -457,9 +457,13 @@ struct AbortOnDel(ImplicitlyCopyable):
     var value: Int
     """Test value payload."""
 
+    @always_inline
     def __del__(deinit self):
         """Aborts the program if called."""
-        abort("We should never call the destructor of AbortOnDel")
+        abort(
+            "We should never call the destructor of AbortOnDel",
+            location=call_location(),
+        )
 
 
 # ===----------------------------------------------------------------------=== #

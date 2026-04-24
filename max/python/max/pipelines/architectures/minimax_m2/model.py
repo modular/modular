@@ -195,7 +195,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             attention_bias=self.attention_bias,
         )
 
-        # Detect gate dtype and correction bias dtype from state dict
+        # Detect dtypes from state dict
         for k, v in state_dict.items():
             if k.endswith("mlp.gate.gate_score.weight"):
                 model_config.gate_dtype = v.dtype
@@ -204,6 +204,11 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         for k, v in state_dict.items():
             if k.endswith("mlp.gate.e_score_correction_bias"):
                 model_config.correction_bias_dtype = v.dtype
+                break
+
+        for k, v in state_dict.items():
+            if k.endswith("self_attn.q_proj.weight"):
+                model_config.attn_dtype = v.dtype
                 break
 
         # Create EP config for multi-GPU MoE
@@ -218,7 +223,7 @@ class MiniMaxM2Model(AlwaysSignalBuffersMixin, LlamaModelBase):
             self.pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
         )
         model_config.ep_config = EPConfig(
-            dispatch_dtype=DType.float8_e4m3fn,
+            dispatch_dtype=model_config.dtype,
             combine_dtype=DType.bfloat16,
             hidden_size=model_config.hidden_size,
             top_k=model_config.num_experts_per_tok,

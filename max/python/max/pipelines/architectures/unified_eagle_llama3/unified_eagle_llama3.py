@@ -207,7 +207,9 @@ class UnifiedEagleLlama3(Module):
             merged_offsets,
         )
         # logits       : [B*(K+1), V] (K+1 logits per request)
-        # hidden_states: [S+B*K, H] (all-token hs)
+        # hidden_states: [S+B*K, H]. ``extract_hs`` flattens per-device
+        # hs into positional tuple elements; single-device here so the
+        # hs is at index 3.
         logits = target_outputs[1]
         hidden_states = target_outputs[3]
 
@@ -273,7 +275,7 @@ class UnifiedEagleLlama3(Module):
         self.draft.return_logits = ReturnLogits.LAST_TOKEN
 
         # logits       : [B*(K+1), V] (K+1 logits per request)
-        # hidden_states: [S+B*K, H] (all-token hs)
+        # hidden_states: [S+B*K, H] (single-device, single TensorValue).
         logits = draft_outputs[1]
         hs = draft_outputs[3]
 

@@ -38,9 +38,30 @@ _LIT_TESTS = [
     )
     for src in glob(
         ["**/*.mojo"],
-        exclude = _LIT_TESTS,
+        exclude = _LIT_TESTS + [
+            # Bundled as a helper src into the conformance test below.
+            "_grapheme_conformance_data.mojo",
+            "test_grapheme_conformance.mojo",
+        ],
     )
 ]
+
+mojo_test(
+    name = "test_grapheme_conformance.mojo.test",
+    srcs = [
+        "_grapheme_conformance_data.mojo",
+        "test_grapheme_conformance.mojo",
+    ],
+    copts = [
+        "--debug-level",
+        "full",
+    ],
+    main = "test_grapheme_conformance.mojo",
+    deps = [
+        "@mojo//:std",
+        "@mojo//:test_utils",
+    ],
+)
 
 lit_tests(
     name = "lit_tests",

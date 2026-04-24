@@ -127,6 +127,7 @@ def generate_rst(dir_name: str) -> str:
         "",
         f".. automodule:: {mod}",
         "   :members:",
+        "   :imported-members:",
         "   :show-inheritance:",
     ]
 

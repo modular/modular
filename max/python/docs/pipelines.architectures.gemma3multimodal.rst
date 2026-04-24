@@ -9,4 +9,5 @@ max.pipelines.architectures.gemma3multimodal
 
 .. automodule:: max.pipelines.architectures.gemma3multimodal
    :members:
+   :imported-members:
    :show-inheritance:

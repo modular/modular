@@ -172,6 +172,7 @@ const mojoSidebars = {
         'mojo/reference/mojo-simple-statements',
         'mojo/reference/mojo-compound-statements',
         'mojo/reference/mojo-function-declarations',
+        'mojo/reference/mojo-struct-declarations',
       ],
     },
     {

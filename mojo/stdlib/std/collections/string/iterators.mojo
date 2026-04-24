@@ -17,6 +17,10 @@ from std.collections.string._utf8 import (
     _utf8_first_byte_sequence_length,
     _is_utf8_continuation_byte,
 )
+from std.collections.string._grapheme_break import (
+    _GraphemeBreakState,
+    _is_grapheme_break,
+)
 
 
 struct CodepointSliceIter[
@@ -402,3 +406,195 @@ struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
             self._slice._slice._len -= char_len
 
         return result
+
+
+struct GraphemeSliceIter[
+    mut: Bool,
+    //,
+    origin: Origin[mut=mut],
+](ImplicitlyCopyable, Iterable, Iterator, Sized):
+    """Iterator over grapheme clusters in a string, yielding each cluster as a
+    `StringSlice`.
+
+    A grapheme cluster is what a user would typically think of as a single
+    "character" on screen. This includes combining character sequences, emoji
+    with modifiers, flag sequences, and other multi-codepoint grapheme clusters
+    as defined by UAX #29.
+
+    Parameters:
+        mut: Whether the slice is mutable.
+        origin: The origin of the underlying string data.
+
+    Note: Only forward iteration is supported. Backward grapheme iteration
+    would require a different algorithm since the UAX #29 state machine is
+    inherently forward-scanning.
+
+    Note: `len()` is an O(n) operation that must scan all remaining bytes
+    to count grapheme boundaries. Avoid calling it in a loop; prefer
+    iterating with `for g in s.graphemes()` or calling `next()` until
+    `None`.
+
+    # TODO: Add a SIMD fast path for ASCII runs — every ASCII byte is its
+    # own grapheme, so chunks of `< 0x80` bytes can be counted directly
+    # without entering the state machine.
+    # TODO: Add `next_back()` for reverse grapheme iteration (needed for
+    # cursor movement, backspace, rtrim). Approach: back up a bounded
+    # number of codepoints to a safe restart point, then scan forward.
+
+    Example:
+
+    ```mojo
+    %# from testing import assert_equal
+    var text = String("cafe\\u{0301}")  # "café" with combining accent
+    var count = 0
+    for grapheme in text.graphemes():
+        count += 1
+    # count == 4: c, a, f, e + combining acute (2 codepoints, 1 grapheme)
+    assert_equal(count, 4)
+    ```
+    """
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    """The iterator type.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
+    comptime Element = StringSlice[Self.origin]
+    """The element type yielded by iteration."""
+
+    var _slice: StringSlice[Self.origin]
+    """Remaining bytes to iterate over."""
+
+    var _state: _GraphemeBreakState
+    """UAX #29 segmentation state."""
+
+    var _state_primed: Bool
+    """True if the state machine already processed the first codepoint of
+    the next grapheme (from the previous break detection)."""
+
+    @doc_hidden
+    def __init__(out self, str_slice: StringSlice[Self.origin]):
+        """Construct from a string slice.
+
+        Args:
+            str_slice: The string slice to iterate over.
+        """
+        self._slice = str_slice
+        self._state = _GraphemeBreakState()
+        self._state_primed = False
+
+    # ===-------------------------------------------------------------------===#
+    # Trait implementations
+    # ===-------------------------------------------------------------------===#
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Return an iterator over grapheme clusters.
+
+        Returns:
+            A copy of this iterator.
+        """
+        return self.copy()
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> StringSlice[Self.origin]:
+        """Get the next grapheme cluster.
+
+        Returns:
+            The next grapheme cluster as a `StringSlice`.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
+        """
+        if self._slice.byte_length() <= 0:
+            raise StopIteration()
+        return self.next().value()
+
+    def __len__(self) -> Int:
+        """Return the number of remaining grapheme clusters.
+
+        This is an O(n) operation that scans all remaining bytes to count
+        grapheme cluster boundaries.
+
+        Returns:
+            The number of grapheme clusters remaining.
+        """
+        # The state machine reports a break at start-of-text (GB1) via its
+        # initial `prev_gbp = GBP_CONTROL`, so every grapheme cluster --
+        # including the first -- is signalled by a `True` return.
+        var count = 0
+        var state = _GraphemeBreakState()
+        var remaining = self._slice
+
+        while remaining.byte_length() > 0:
+            var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+                remaining._slice
+            )
+            if _is_grapheme_break(state, cp.to_u32()):
+                count += 1
+
+            remaining._slice._data += num_bytes
+            remaining._slice._len -= num_bytes
+
+        return count
+
+    # ===-------------------------------------------------------------------===#
+    # Methods
+    # ===-------------------------------------------------------------------===#
+
+    def next(mut self) -> Optional[StringSlice[Self.origin]]:
+        """Get the next grapheme cluster, or `None` if exhausted.
+
+        Returns:
+            The next grapheme cluster as a `StringSlice`, or `None`.
+        """
+        if self._slice.byte_length() <= 0:
+            return None
+
+        var start_ptr = self._slice.unsafe_ptr()
+        var total_bytes = self._slice.byte_length()
+        var consumed = 0
+
+        # Decode the first codepoint of this grapheme cluster.
+        var cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
+            self._slice._slice
+        )
+
+        if not self._state_primed:
+            # First call, or state is not yet primed: feed this codepoint
+            # to the state machine to establish the initial state.
+            _ = _is_grapheme_break(self._state, cp.to_u32())
+        # else: state was already updated for this codepoint when the
+        # previous next() detected the break. Skip re-feeding.
+
+        consumed += num_bytes
+
+        # Continue consuming codepoints until we hit a break.
+        var found_break = False
+        while consumed < total_bytes:
+            var remaining = Span[Byte, Self.origin](
+                ptr=self._slice.unsafe_ptr() + consumed,
+                length=total_bytes - consumed,
+            )
+            cp, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(remaining)
+
+            if _is_grapheme_break(self._state, cp.to_u32()):
+                # Found a break — the grapheme ends before this codepoint.
+                # The state machine has already been updated with this
+                # codepoint, so mark as primed for the next call.
+                found_break = True
+                break
+
+            consumed += num_bytes
+
+        self._state_primed = found_break
+
+        # Advance the slice past this grapheme cluster.
+        self._slice._slice._data += consumed
+        self._slice._slice._len -= consumed
+
+        return StringSlice[Self.origin](ptr=start_ptr, length=consumed)

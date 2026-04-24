@@ -81,6 +81,8 @@ const maxSidebars = {
             "max/develop/tensors",
             "max/develop/dtypes",
             "max/develop/basic-ops",
+            "max/develop/broadcasting",
+            "max/develop/indexing",
           ],
         },
         {

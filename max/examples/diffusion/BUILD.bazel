@@ -33,12 +33,17 @@ modular_py_binary(
 modular_py_binary(
     name = "wan_comparison",
     srcs = ["wan_comparison.py"],
+    ignore_extra_deps = [
+        # Required at runtime by diffusers for device dispatch
+        requirement("accelerate"),
+    ],
     deps = [
         "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/architectures",
         "//max/python/max/pipelines/lib",
+        requirement("accelerate"),
         requirement("av"),
         requirement("diffusers"),
         requirement("numpy"),

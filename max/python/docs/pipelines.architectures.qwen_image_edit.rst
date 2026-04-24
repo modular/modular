@@ -9,4 +9,5 @@ max.pipelines.architectures.qwen_image_edit
 
 .. automodule:: max.pipelines.architectures.qwen_image_edit
    :members:
+   :imported-members:
    :show-inheritance:
