@@ -172,23 +172,11 @@ This version is still a work in progress.
   abort("something went wrong", location=loc)
   ```
 
-- `abort(message)` now prints its message on Nvidia and AMDGPU, including
-  block and thread IDs. Previously, the message was silently suppressed on
-  these GPUs. On Apple GPU, the message is silently suppressed for now.
-
 - `SourceLocation` fields (`line`, `col`, `file_name`) are now private.
   Use the new accessor methods `line()`, `column()`, and `file_name()` instead.
 
 - Fixed default alignment in `TileTensor.load()` and `TileTensor.store()` to
   use the caller-specified `width` parameter instead of `Self.element_size`.
-
-- Added uninitialized memory read detection for float loads. When compiled
-  with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, every float load is checked
-  against the debug allocator's poison patterns (0xFF host fill and canonical
-  qNaN device fill). A match triggers `abort()` with a descriptive message.
-  When disabled (the default), zero runtime overhead. For MAX pipelines, set
-  `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` to enable both the debug
-  allocator and the load-time checks automatically.
 
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.
@@ -273,6 +261,8 @@ This version is still a work in progress.
   - Added owned overloads of `enumerate()`, `zip()`, `map()`, `peekable()`,
     `take_while()`, `drop_while()`, `product()`, and `cycle()` that consume the
     input iterable.
+
+- Added `InlineArray.fill(value)` to set all elements to a given value.
 
 - `CStringSlice` can no longer represent a null pointer. To represent
   nullability use `Optional[CStringSlice]` which is guaranteed to have the same
@@ -370,8 +360,7 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
-- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
-  or `String.count_codepoints()`.
+- Added `InlineArray.fill(value)` to set all elements to a given value.
 
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
