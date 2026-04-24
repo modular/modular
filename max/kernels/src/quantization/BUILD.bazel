@@ -8,8 +8,8 @@ mojo_library(
     docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [
+        "//max:layout",
         "//max:linalg",
-        "//max:structured_kernels",
         "@mojo//:std",
     ],
 )

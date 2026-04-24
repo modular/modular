@@ -7,12 +7,11 @@ mogg_lib_deps = [
     "//max:layout",
     "//max:linalg",
     "//max:nn",
-    "//max:pipeline",
     "//max:quantization",
-    "//max:structured_kernels",
     "//max:tensor",
     "//max:compiler_internal",
     "//max:shmem",
+    "//max:comm",
     "@mojo//:std",
 ]
 
@@ -20,5 +19,5 @@ mojo_library(
     name = "MOGGKernelAPI",
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = False,
-    deps = mogg_lib_deps + ["//max:MOGGPrimitives"],
+    deps = mogg_lib_deps,
 )

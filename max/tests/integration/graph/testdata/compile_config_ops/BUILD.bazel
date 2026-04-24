@@ -14,7 +14,6 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:compiler",
-        "//max:register",
         "//max:tensor",
         "@mojo//:std",
     ],

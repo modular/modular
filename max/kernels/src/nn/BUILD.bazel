@@ -19,6 +19,7 @@ mojo_library(
         "//max:register",
         "//max:shmem",
         "//max:structured_kernels",
+        "//max:tensor",
         "@mojo//:std",
     ],
 )

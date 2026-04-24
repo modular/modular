@@ -10,7 +10,6 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:layout",
-        #TODO: Remove once GEX-1879 and GEX-1842 are done
-        "//max:register",
+        "@mojo//:std",
     ],
 )

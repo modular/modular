@@ -13,7 +13,6 @@ mojo_library(
     srcs = glob(["**/*.mojo"]),
     validate_missing_docs = False,
     deps = [
-        "//max:MOGGPrimitives",
         "//max:compiler_internal",
         "//max:tensor",
         "@mojo//:std",
