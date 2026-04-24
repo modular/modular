@@ -49,3 +49,23 @@ def test_functional_op_in_background_thread() -> None:
     assert not errors, f"op raised in background thread: {errors[0]!r}"
     assert len(result) == 1
     assert list(result[0].shape) == [4, 8]
+
+
+def test_lazy_context_in_background_thread() -> None:
+    result: list[Tensor] = []
+    errors: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            with F.lazy():
+                result.append(_run_simple_op())
+        except BaseException as exc:
+            errors.append(exc)
+
+    t = threading.Thread(target=target)
+    t.start()
+    t.join()
+
+    assert not errors, f"op raised in background thread: {errors[0]!r}"
+    assert len(result) == 1
+    assert list(result[0].shape) == [4, 8]

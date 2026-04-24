@@ -14,7 +14,8 @@
 from __future__ import annotations
 
 import atexit
-from collections.abc import Callable
+import contextlib
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import ParamSpec, TypeVar
 
@@ -46,6 +47,22 @@ def call_with_default_mlir_context(
         with _DEFAULT_MLIR_CONTEXT:
             return fn(*args, **kwargs)
     return fn(*args, **kwargs)
+
+
+@contextlib.contextmanager
+def ensure_default_mlir_context() -> Generator[None]:
+    """Ensure the default MLIR context is entered for the current thread.
+
+    Sister to :func:`call_with_default_mlir_context` for use as a context
+    manager. ``mlir.Context.current`` is thread-local; background threads
+    do not automatically have the default context entered. This enters it
+    only if no context is already active.
+    """
+    if mlir.Context.current is None:
+        with _DEFAULT_MLIR_CONTEXT:
+            yield
+    else:
+        yield
 
 
 class MLIRThreadPoolExecutor(ThreadPoolExecutor):
