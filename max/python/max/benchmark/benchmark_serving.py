@@ -115,6 +115,7 @@ from max.benchmark.benchmark_shared.request import (
     RequestFuncInput,
     RequestFuncOutput,
     get_request_driver_class,
+    measured_window_duration,
 )
 from max.benchmark.benchmark_shared.server_metrics import (
     collect_benchmark_metrics,
@@ -521,7 +522,6 @@ def print_lora_benchmark_results(
 
 def print_benchmark_summary(
     metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
-    benchmark_duration: float,
     request_rate: float,
     max_concurrency: int | None,
     achieved_request_rate: float,
@@ -537,7 +537,7 @@ def print_benchmark_summary(
     print("{:<40} {:<10}".format("Successful requests:", metrics.completed))
     print("{:<40} {:<10}".format("Failed requests:", metrics.failures))
     print(
-        "{:<40} {:<10.2f}".format("Benchmark duration (s):", benchmark_duration)
+        "{:<40} {:<10.2f}".format("Benchmark duration (s):", metrics.duration)
     )
     if isinstance(metrics, BenchmarkMetrics):
         print(
@@ -1058,11 +1058,6 @@ def calculate_metrics(
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
 ) -> tuple[BenchmarkMetrics, list[int]]:
     actual_output_lens: list[int] = []
-    nonempty_response_chunks = 0
-    total_input = 0
-    max_input = 0
-    max_output = 0
-    max_total = 0
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
     itls: list[float] = []
@@ -1083,25 +1078,37 @@ def calculate_metrics(
             failures += 1
             failed_responses.append(o)
 
-    completed = len(successful)
+    total_successful = len(successful)
 
-    for o, output_len in successful:
-        total_input += o.prompt_len
+    for _, output_len in successful:
         actual_output_lens.append(output_len)
+
+    end = (
+        total_successful - skip_last_n_requests
+        if skip_last_n_requests > 0
+        else total_successful
+    )
+    measured = successful[skip_first_n_requests:end]
+
+    # Aggregate token/chunk stats over the measured slice only. Skipped
+    # warmup/tail requests contribute neither their tokens nor their wall
+    # time to throughput metrics, so TPM-style numbers reflect the
+    # intended steady-state portion of the run.
+    total_input = 0
+    total_output = 0
+    nonempty_response_chunks = 0
+    max_input = 0
+    max_output = 0
+    max_total = 0
+    for o, output_len in measured:
+        total_input += o.prompt_len
+        total_output += output_len
         nonempty_response_chunks += 1 if o.ttft != 0 else 0
         nonempty_response_chunks += len(o.itl)
         max_input = max(max_input, o.prompt_len)
         max_output = max(max_output, output_len)
         max_total = max(max_total, o.prompt_len + output_len)
 
-    end = (
-        completed - skip_last_n_requests
-        if skip_last_n_requests > 0
-        else completed
-    )
-    measured = successful[skip_first_n_requests:end]
-
-    for o, output_len in measured:
         tpots += o.tpot
         itls += o.itl
         ttfts.append(o.ttft)
@@ -1113,17 +1120,17 @@ def calculate_metrics(
 
     _warn_on_request_failures(
         outputs=outputs,
-        completed=completed,
+        completed=total_successful,
         failures=failures,
         failed_responses=failed_responses,
     )
 
-    measured_count = len(ttfts)
-    if measured_count == 0 and completed > 0:
+    measured_count = len(measured)
+    if measured_count == 0 and total_successful > 0:
         warnings.warn(
             (
-                f"All {completed} successful requests were excluded by"
-                f" skip_first_n_requests={skip_first_n_requests} and"
+                f"All {total_successful} successful requests were excluded"
+                f" by skip_first_n_requests={skip_first_n_requests} and"
                 f" skip_last_n_requests={skip_last_n_requests}."
                 " Consider running a longer benchmark."
             ),
@@ -1141,6 +1148,13 @@ def calculate_metrics(
             stacklevel=2,
         )
 
+    # Duration over the measured window: first measured submit to last
+    # measured complete. Mirrors the steady-state block's window math so
+    # skipped warmup/tail wall time does not pollute throughput.
+    measured_duration = measured_window_duration(
+        (o for o, _ in measured), fallback=dur_s
+    )
+
     (
         peak_gpu_memory_mib,
         available_gpu_memory_mib,
@@ -1151,15 +1165,15 @@ def calculate_metrics(
     )
 
     metrics = BenchmarkMetrics(
-        duration=dur_s,
-        completed=completed,
+        duration=measured_duration,
+        completed=measured_count,
         failures=failures,
         total_input=total_input,
-        total_output=sum(actual_output_lens),
+        total_output=total_output,
         nonempty_response_chunks=nonempty_response_chunks,
         max_concurrency=max_concurrency or len(outputs),
         max_concurrent_conversations=max_concurrent_conversations,
-        request_throughput=completed / dur_s,
+        request_throughput=measured_count / measured_duration,
         # Use specialized metric classes that handle percentile calculations automatically
         input_throughput=ThroughputMetrics(
             input_throughputs or [float("nan")], unit="tok/s"
@@ -1190,11 +1204,9 @@ def calculate_metrics(
     )
 
     # Override TPOT mean with weighted average: sum(ITL) / decode_tokens.
-    # This is more accurate than mean-of-means since it properly weights
-    # by tokens returned per response. Decode tokens = total output - completed,
-    # since each request's first token is from prefill (TTFT), not decode.
-    total_output_tokens = sum(actual_output_lens)
-    decode_tokens = total_output_tokens - completed
+    # Decode tokens = measured output - measured count, since each
+    # request's first token is prefill (TTFT), not decode.
+    decode_tokens = total_output - measured_count
     if decode_tokens > 0 and itls:
         metrics.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
 
@@ -1215,6 +1227,7 @@ def calculate_pixel_generation_metrics(
     latencies: list[float] = []
     total_generated_outputs = 0
     failed_responses: list[PixelGenerationRequestFuncOutput] = []
+    successful: list[PixelGenerationRequestFuncOutput] = []
 
     for output in outputs:
         if output.cancelled:
@@ -1223,6 +1236,7 @@ def calculate_pixel_generation_metrics(
             completed += 1
             latencies.append(output.latency)
             total_generated_outputs += output.num_generated_outputs
+            successful.append(output)
         else:
             failures += 1
             failed_responses.append(output)
@@ -1242,12 +1256,16 @@ def calculate_pixel_generation_metrics(
         gpu_metrics=gpu_metrics,
     )
 
+    # Use the first-submit -> last-complete window so setup/teardown
+    # around the actual requests doesn't inflate the denominator.
+    measured_duration = measured_window_duration(successful, fallback=dur_s)
+
     return PixelGenerationBenchmarkMetrics(
-        duration=dur_s,
+        duration=measured_duration,
         completed=completed,
         failures=failures,
         max_concurrency=max_concurrency or len(outputs),
-        request_throughput=completed / dur_s,
+        request_throughput=completed / measured_duration,
         total_generated_outputs=total_generated_outputs,
         latency_ms=StandardPercentileMetrics(
             latencies or [float("nan")], scale_factor=1000.0, unit="ms"
@@ -2661,7 +2679,6 @@ async def benchmark(
 
     print_benchmark_summary(
         metrics=metrics,
-        benchmark_duration=benchmark_duration,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         achieved_request_rate=achieved_request_rate,
