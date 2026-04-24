@@ -213,6 +213,41 @@ This version is still a work in progress.
   instead of aborting when a symbol is not found. This allows callers to handle
   missing symbols gracefully.
 
+- `UnsafePointer` is now non-null by design. See the
+  [non-null pointer proposal](https://github.com/modular/modular/blob/main/mojo/proposals/non-null-pointer.md)
+  for the full design and migration timeline.
+
+  The default null constructor `__init__(out self)` and `__bool__(self)` method
+  are now deprecated, and `UnsafePointer` no longer conforms to `Defaultable` or
+  `Boolable`.
+
+  To migrate, express nullability explicitly with
+  `Optional[UnsafePointer[...]]`, which has the same layout as `UnsafePointer`
+  (the null address is the `None` niche) so nullable pointers remain
+  zero-overhead and can be used across C-FFIs.
+
+  ```mojo
+  # Before: null default construction
+  var ptr = UnsafePointer[Int, origin]()
+
+  # After: express absence with Optional
+  var ptr: Optional[UnsafePointer[Int, origin]] = None
+
+  # Before: Bool-based null check
+  if ptr:
+      use(ptr[])
+
+  # After: check the Optional, then unwrap
+  if ptr:
+      use(ptr.value()[])
+  ```
+
+  If you specifically need a non-null placeholder for a field that will be
+  populated later (for example, a buffer that is allocated on demand) use
+  `UnsafePointer.unsafe_dangling()`, which returns a well-aligned but dangling
+  pointer. Note that `unsafe_dangling()` is not a null sentinel: types that
+  lazily allocate must track initialization separately.
+
 - GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
 

@@ -251,7 +251,7 @@ def test_indexing_simd() raises:
 
 def test_bool() raises:
     var nullptr = UnsafeNullablePointer[Int, MutExternalOrigin]()
-    var ptr = alloc[Int](1)
+    var ptr: UnsafeNullablePointer[Int, MutExternalOrigin] = alloc[Int](1)
 
     assert_true(ptr.__bool__())
     assert_false(nullptr.__bool__())

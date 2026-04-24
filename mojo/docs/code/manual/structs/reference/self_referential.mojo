@@ -22,13 +22,13 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     comptime NodePointer = UnsafePointer[Self, MutExternalOrigin]
 
     var value: Optional[Self.ElementType]  # The `Node`'s value
-    var next: Self.NodePointer  # Pointer to the next `Node`
+    var next: Optional[Self.NodePointer]  # Pointer to the next `Node`
 
     # Uses an `Optional` value to allow 'empty' Node construction
     # that can be moved into newly allocated memory
     def __init__(out self, value: Optional[Self.ElementType] = None):
         self.value = value
-        self.next = Self.NodePointer()
+        self.next = {}
 
     # Constructs a `Node` with a `value` with heap allocation and
     # returns a pointer to the new `Node`.
@@ -43,18 +43,21 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     def append(mut self, value: Self.ElementType):
         # Free chain if replacing `next`
         if self.next:
-            self.next[].free_chain()
-            self.next.destroy_pointee()
-            self.next.free()
+            var next_ptr = self.next.value()
+            next_ptr[].free_chain()
+            next_ptr.destroy_pointee()
+            next_ptr.free()
 
         self.next = Self.make_node(value)
 
     # Prints the list starting at this pointer's pointee
     @staticmethod
-    def print_list(node_ptr: Self.NodePointer):
-        if not node_ptr:
+    def print_list(node: Optional[Self.NodePointer]):
+        if not node:
             print("Empty list")
             return
+
+        var node_ptr = node.value()
 
         current_value: Optional[Self.ElementType] = node_ptr[].value
         if current_value:
@@ -69,9 +72,10 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     def free_chain(self):
         current = self.next
         while current:
-            next_node = current[].next
-            current.destroy_pointee()
-            current.free()
+            var current_ptr = current.value()
+            next_node = current_ptr[].next
+            current_ptr.destroy_pointee()
+            current_ptr.free()
             current = next_node
 
 
@@ -82,7 +86,7 @@ def main():
     current = list_head
     for idx in range(1, len(values), 1):
         current[].append(values[idx])
-        current = current[].next
+        current = current[].next.value()
 
     ListNode.print_list(list_head)
 

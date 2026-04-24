@@ -37,34 +37,28 @@ from std.testing import (
 
 
 def _mutable_pointer(p: MutUnsafePointer[Int, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _parameterized_pointer(p: UnsafePointer[Int, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _named_origin[
     mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[Int, origin, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
@@ -219,9 +213,6 @@ def test_bitcast() raises:
 
 
 def test_unsafepointer_string() raises:
-    var nullptr = UnsafePointer[Int, MutExternalOrigin]()
-    assert_equal(String(nullptr), "0x0")
-
     var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
@@ -372,16 +363,6 @@ def test_indexing_simd() raises:
     assert_equal(ptr[Int32(3)], 3)
     assert_equal(ptr[Int64(1)], 1)
     assert_equal(ptr[Int64(3)], 3)
-
-    ptr.free()
-
-
-def test_bool() raises:
-    var nullptr = UnsafePointer[Int, MutExternalOrigin]()
-    var ptr = alloc[Int](1)
-
-    assert_true(ptr.__bool__())
-    assert_false(nullptr.__bool__())
 
     ptr.free()
 
@@ -613,15 +594,8 @@ def test_unsafe_from_address() raises:
     var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
     assert_equal(ptr2[], 42)
 
-    var ptr3 = UnsafePointer[Int, MutExternalOrigin](unsafe_from_address=42)
-    assert_true(ptr3)
-
 
 def test_write_to() raises:
-    check_write_to(
-        UnsafePointer[Int, MutAnyOrigin](), expected="0x0", is_repr=False
-    )
-
     var x = 42
     check_write_to(UnsafePointer(to=x), contains="0x", is_repr=False)
 
@@ -630,15 +604,6 @@ def test_write_to() raises:
 
 
 def test_write_repr_to() raises:
-    check_write_to(
-        UnsafePointer[Int, MutAnyOrigin](),
-        expected=(
-            "UnsafePointer[mut=True, Int,"
-            " address_space=AddressSpace.GENERIC](0x0)"
-        ),
-        is_repr=True,
-    )
-
     var x = 42
     check_write_to(
         UnsafePointer(to=x),

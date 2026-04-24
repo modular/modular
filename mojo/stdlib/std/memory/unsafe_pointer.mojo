@@ -343,9 +343,7 @@ struct UnsafePointer[
     *,
     address_space: AddressSpace = AddressSpace.GENERIC,
 ](
-    Boolable,
     Comparable,
-    Defaultable,
     DevicePassable,
     ImplicitlyCopyable,
     Intable,
@@ -364,8 +362,9 @@ struct UnsafePointer[
 
     Important things to know:
 
-    - This pointer is unsafe and nullable. No bounds checks; reading before
-      writing is undefined.
+    - This pointer is unsafe and non-nullable by design. To model a nullable pointer,
+      use `Optional[UnsafePointer[...]]`, which shares the same layout (the null
+      address is the `None` niche) so it remains zero-overhead.
     - It does not own existing memory. When memory is heap-allocated with
       `alloc()`, you must call `.free()`.
     - For simple read/write access, use `(ptr + i)[]` or `ptr[i]` where `i`
@@ -445,6 +444,35 @@ struct UnsafePointer[
     # Mojo will destroy it when the `foo` lifetime ends
     ```
 
+    Model a nullable pointer with `Optional`:
+
+    `UnsafePointer` is non-nullable by design, so nullability must be modeled
+    explicitly with `Optional[UnsafePointer[T, origin]]`. This keeps the same
+    layout as `Optional` stores the null address as its `None` niche, so there
+    is no overhead compared to a raw pointer.
+
+    ```mojo
+    # A field that may or may not point to a heap-allocated Int.
+    var maybe_ptr: Optional[UnsafePointer[Int, MutExternalOrigin]] = None
+
+    # Maybe populate it later.
+    if some_condition():
+        maybe_ptr = alloc[Int](1)
+
+    # Check for absence, then unwrap to use the pointer.
+    if maybe_ptr:
+        var ptr = maybe_ptr.value()
+        ptr.init_pointee_move(42)
+        print(ptr[])  # => 42
+        ptr.free()
+    ```
+
+    If you instead need a non-null placeholder for a field that will be
+    populated on demand (for example, a buffer that is allocated lazily),
+    use `UnsafePointer.unsafe_dangling()`. Note that `unsafe_dangling()` is
+    not a null sentinel — it returns an aligned but dangling address, so
+    types that lazily allocate must track initialization separately.
+
     Parameters:
         mut: Whether the origin is mutable.
         type: The type the pointer points to.
@@ -486,8 +514,22 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline("nodebug")
+    @deprecated(
+        "UnsafePointer() no longer constructs a null pointer. To model a"
+        " null pointer use `Optional[UnsafePointer[...]]`, which stores"
+        " the null address as its niche value and lets you check for absence"
+        " with `== None` / `!= None`. If you need a non-null sentinel for"
+        " delayed initialization (e.g. a buffer that will be allocated later),"
+        " use `UnsafePointer.unsafe_dangling()` instead."
+    )
     def __init__(out self):
-        """Create a null pointer."""
+        """Create a null pointer.
+
+        Deprecated: `UnsafePointer` is non-null by design. To model a
+        nullable pointer use `Optional[UnsafePointer[...]]`. If you need a
+        non-null sentinel for delayed initialization, use
+        `UnsafePointer.unsafe_dangling()` instead.
+        """
         self = Self(_unsafe_null=())
 
     @always_inline("nodebug")
@@ -959,20 +1001,22 @@ struct UnsafePointer[
     # ===-------------------------------------------------------------------===#
 
     @always_inline
+    @deprecated(
+        "UnsafePointer is non-null by design, so Bool(ptr) is no longer"
+        " meaningful. To model a null pointer, use"
+        " `Optional[UnsafePointer[...]]` and check with `Bool(opt_ptr)` / `!="
+        " None`."
+    )
     def __bool__(self) -> Bool:
         """Return true if the pointer is non-null.
 
-        Returns:
-            Whether the pointer is null.
-        """
-        return self._is_not_null()
-
-    @always_inline
-    def _is_not_null(self) -> Bool:
-        """Check if the pointer is non-null.
+        Deprecated: `UnsafePointer` is non-null by design, so `Bool(ptr)` is
+        no longer meaningful. To model a nullable pointer, use
+        `Optional[UnsafePointer[...]]` and check with `Bool(opt_ptr)` or
+        `!= None`.
 
         Returns:
-            True if the pointer is non-null, False otherwise.
+            True if the pointer address is non-zero, False otherwise.
         """
         return Int(self) != 0
 
@@ -1863,10 +1907,10 @@ struct UnsafePointer[
     ](self: UnsafePointer[T, _]) where type_of(self).mut:
         """Destroy the pointed-to value.
 
-        The pointer must not be null, and the pointer memory location is assumed
-        to contain a valid initialized instance of `type`.  This is equivalent to
-        `_ = self.take_pointee()` but doesn't require `Movable` and is
-        more efficient because it doesn't invoke a move constructor.
+        The pointer must point to a valid, initialized instance of `type`.
+        This is equivalent to `_ = self.take_pointee()` but doesn't require
+        `Movable` and is more efficient because it doesn't invoke a move
+        constructor.
 
         Parameters:
             T: Pointee type that can be destroyed implicitly (without
@@ -1903,8 +1947,7 @@ struct UnsafePointer[
     ](self: UnsafePointer[T, _]) -> T where type_of(self).mut:
         """Move the value at the pointer out, leaving it uninitialized.
 
-        The pointer must not be null, and the pointer memory location is assumed
-        to contain a valid initialized instance of `T`.
+        The pointer must point to a valid, initialized instance of `T`.
 
         This performs a _consuming_ move, ending the origin of the value stored
         in this pointer memory location. Subsequent reads of this pointer are
@@ -2012,11 +2055,11 @@ struct UnsafePointer[
 
         Safety:
 
-        * `self` and `src` must be non-null
-        * `src` must contain a valid, initialized instance of `T`
-        * The pointee contents of `self` should be uninitialized. If `self` was
-          previously written with a valid value, that value will be be
-          overwritten and its destructor will NOT be run.
+        * `src` must point to a valid, initialized instance of `T`.
+        * `self` must point to writable memory for `T`. The pointee contents
+          of `self` should be uninitialized; if `self` was previously written
+          with a valid value, that value will be overwritten and its
+          destructor will NOT be run.
 
         Parameters:
             T: The type the pointer points to, which must be `Movable`.
