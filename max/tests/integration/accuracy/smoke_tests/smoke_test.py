@@ -111,9 +111,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": {
         "max_serve_args": "--ep-size 1 --data-parallel-degree 1",
     },
-    "nvidia/Kimi-K2.5-NVFP4__with_vision": {  # MODELS-1066
-        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
-    },
     "nvidia/Kimi-K2.5-NVFP4__no_vision": {
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
     },
@@ -146,23 +143,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--draft-trust-remote-code "
             "--draft-devices gpu:0,1,2,3,4,5,6,7 "
             "--draft-data-parallel-degree 8 "
-            "--draft-quantization-encoding bfloat16 "
-            "--speculative-method eagle "
-            "--num-speculative-tokens 3 "
-            "--kv-cache-format float8_e4m3fn "
-            "--device-memory-utilization 0.75 "
-            "--max-batch-input-tokens 4096 "
-            "--max-length 163840 "
-            "--max-num-steps 1"
-        ),
-    },
-    "nvidia/Kimi-K2.5-NVFP4__eagle_tp": {
-        "max_serve_args": (
-            "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--data-parallel-degree 1 "
-            "--draft-data-parallel-degree 1 "
             "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
             "--num-speculative-tokens 3 "

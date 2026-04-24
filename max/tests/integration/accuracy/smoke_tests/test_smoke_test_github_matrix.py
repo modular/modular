@@ -45,6 +45,18 @@ def test_custom_models_defined_in_model_aliases() -> None:
     )
 
 
+def test_model_aliases_in_custom_models() -> None:
+    missing = [
+        k
+        for k in smoke_test.MODEL_ALIASES
+        if k not in smoke_test_github_matrix.CUSTOM_MODELS
+    ]
+    assert not missing, (
+        f"MODEL_ALIASES keys must have a corresponding entry in "
+        f"smoke_test_github_matrix.CUSTOM_MODELS: {missing}"
+    )
+
+
 def test_smoke_test_github_matrix_b200_max_ci() -> None:
     runner = CliRunner()
     result = runner.invoke(
