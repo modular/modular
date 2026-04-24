@@ -14,11 +14,13 @@ modular_py_test(
         exclude = [
             "mojo_runtime_background_thread_subprocess_asyncio.py",
             "mojo_runtime_background_thread_subprocess_thread.py",
+            "mojo_runtime_foreign_thread_subprocess.py",
             "test_flashinfer_cubin.py",
             "test_interpreter.py",
             "test_interpreter_ops.py",
             "test_interpreter_ops_gpu.py",
             "test_mojo_runtime_background_thread_import.py",
+            "test_mojo_runtime_foreign_thread.py",
         ],
     ),
     args = [
@@ -67,6 +69,28 @@ modular_py_test(
     deps = [
         "//max/python/max:_core",
         "//max/python/max/_interpreter_ops",
+        "//max/python/max/driver",
+        "//max/python/max/engine",
+        requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_mojo_runtime_foreign_thread",
+    srcs = [
+        "mojo_runtime_foreign_thread_subprocess.py",
+        "test_mojo_runtime_foreign_thread.py",
+    ],
+    ignore_extra_deps = [
+        "//max/python/max:_core",
+        requirement("numpy"),
+    ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: MOCO-2411
+    deps = [
+        "//max/python/max:_core",
         "//max/python/max/driver",
         "//max/python/max/engine",
         requirement("numpy"),
@@ -162,6 +186,7 @@ test_suite(
         ":test_interpreter",
         ":test_interpreter_ops",
         ":test_mojo_runtime_background_thread_import",
+        ":test_mojo_runtime_foreign_thread",
         "//max/tests/tests/_core_mojo:tests",
         "//max/tests/tests/benchmark:tests",
         "//max/tests/tests/driver:tests",
