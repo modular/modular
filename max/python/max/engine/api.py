@@ -409,11 +409,8 @@ class InferenceSession:
         if log_level := _InferenceSession.debug.op_log_level:
             self.set_mojo_log_level(log_level)
 
-        # Same pattern for assert level.
-        if assert_level_str := (
-            _InferenceSession.debug.assert_level
-            or os.getenv("MOJO_ASSERT_LEVEL")
-        ):
+        # Read the assert level from the max-debug.assert-level Config key.
+        if assert_level_str := _InferenceSession.debug.assert_level:
             try:
                 assert_level = AssertLevel[assert_level_str.upper()]
             except KeyError as e:

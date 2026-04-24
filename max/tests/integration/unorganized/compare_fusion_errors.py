@@ -81,7 +81,8 @@ def main() -> None:
         f" {os.environ.get('MODULAR_DEVICE_CONTEXT_SYNC_MODE', 'not set')}"
     )
     print(
-        f"MOJO_ASSERT_LEVEL: {os.environ.get('MOJO_ASSERT_LEVEL', 'not set')}"
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL:"
+        f" {os.environ.get('MODULAR_MAX_DEBUG_ASSERT_LEVEL', 'not set')}"
     )
 
     # Launch all scenarios in parallel.

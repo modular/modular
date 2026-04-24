@@ -50,7 +50,7 @@ def _run_script(
     for key in [
         "MODULAR_DEBUG",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE",
-        "MOJO_ASSERT_LEVEL",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL",
         "MODULAR_HOME",
         "MODULAR_DERIVED_PATH",
     ]:

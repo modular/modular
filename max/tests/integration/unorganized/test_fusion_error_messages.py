@@ -140,7 +140,7 @@ def test_crash_scenario(
 
 @pytest.mark.skipif(accelerator_count() == 0, reason="Requires GPU")
 def test_sqrt_negative_fused_ops() -> None:
-    """sqrt(negative) in a fused kernel — may trigger assertion with MOJO_ASSERT_LEVEL=all."""
+    """sqrt(negative) in a fused kernel — may trigger assertion with MODULAR_MAX_DEBUG_ASSERT_LEVEL=all."""
     output = _get_scenario_result("sqrt_negative")
     assert output, "Subprocess produced no output"
 
@@ -148,7 +148,7 @@ def test_sqrt_negative_fused_ops() -> None:
     if "no_error" in data:
         if data.get("has_nan"):
             pytest.skip(
-                "sqrt(negative) produced NaN, not assertion (set MOJO_ASSERT_LEVEL=all)"
+                "sqrt(negative) produced NaN, not assertion (set MODULAR_MAX_DEBUG_ASSERT_LEVEL=all)"
             )
         else:
             pytest.skip("No assertion triggered")

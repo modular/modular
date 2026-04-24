@@ -350,7 +350,7 @@ modular_py_test(
     env = {
         "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
-        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
     gpu_constraints = ["//:has_gpu"] + select({
@@ -380,7 +380,7 @@ modular_py_test(
     env = {
         "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
-        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
     gpu_constraints = ["//:has_gpu"] + select({
