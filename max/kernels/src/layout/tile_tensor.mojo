@@ -13,7 +13,7 @@
 """TileTensor type for structured memory access with compile-time layout information."""
 
 from std.math import ceildiv
-from std.sys import align_of, simd_width_of, is_gpu
+from std.sys import align_of, simd_width_of, is_gpu, size_of
 from std.os import abort
 
 from std.builtin.builtin_slice import ContiguousSlice
@@ -63,6 +63,33 @@ from .coord import (
 @always_inline
 def _default_invariant[mut: Bool]() -> Bool:
     return is_gpu() and mut == False
+
+
+def _copy_widen_factor[
+    dtype: DType,
+    element_size: Int,
+    dst_row_major: Bool,
+    src_row_major: Bool,
+    num_elements: Int,
+]() -> Int:
+    """Returns the SIMD widen factor for `TileTensor.copy`.
+
+    Returns the number of elements to load/store together in a single
+    SIMD op. Returns 1 (no widening) unless both tensors are row-major
+    and element_size == 1, so that successive chunks cover contiguous
+    memory when walked in raw scalar order.
+    """
+
+    comptime if not dst_row_major or not src_row_major or element_size != 1:
+        return 1
+
+    comptime native = simd_width_of[dtype]()
+    var w = native
+    while w > 1:
+        if num_elements % w == 0:
+            return w
+        w //= 2
+    return 1
 
 
 @fieldwise_init
@@ -919,6 +946,116 @@ struct TileTensor[
         comptime for i in range(Self.rank):
             result *= Int(self.layout.shape[i]().value())
         return result
+
+    def copy(
+        self,
+        other: TileTensor[
+            dtype=Self.dtype, element_size=Self.element_size, ...
+        ],
+    ) where Self.mut:
+        """Copy data from another tensor into this tensor.
+
+        Performs an element-by-element copy from `other` into `self`,
+        respecting the layouts of both tensors. Each logical element is
+        loaded from `other` using its layout and stored into `self` using
+        `self`'s layout, so the copy works correctly even when the tensors
+        have different shapes or strides (as long as they agree on total
+        element count).
+
+        When both tensors have fully static layouts, matching inner
+        dimensions, and unit stride along the innermost axis, the copy
+        widens to SIMD loads/stores of up to `simd_width_of[dtype]()`
+        elements at a time.
+
+        Constraints:
+
+        - Both tensors must have statically known shapes with matching total
+            element count.
+
+        Args:
+            other: The source tensor to copy data from. Must have the same
+                `dtype`, `element_size`, and total number of elements as
+                `self`.
+        """
+        comptime src_static = Coord[
+            *type_of(other).LayoutType._shape_types
+        ].static_product
+        comptime dst_static = Coord[
+            *Self.LayoutType._shape_types
+        ].static_product
+
+        comptime assert (
+            src_static == dst_static
+        ), "TileTensor.copy requires matching total element count"
+
+        comptime num_elements = dst_static
+
+        comptime widen = _copy_widen_factor[
+            dtype=Self.dtype,
+            element_size=Self.element_size,
+            dst_row_major=Self.is_row_major,
+            src_row_major=type_of(other).is_row_major,
+            num_elements=num_elements,
+        ]()
+
+        comptime width = Self.element_size * widen
+        comptime alignment = align_of[
+            SIMD[Self.dtype, width]
+        ]() if is_gpu() else 1
+
+        comptime if widen > 1:
+            # Widening requires both tensors to be gap-free with unit
+            # inner stride. In that case the underlying memory is a
+            # `num_elements * element_size`-scalar contiguous run on
+            # each side, so we walk raw pointer offsets in chunks of
+            # `width` scalars instead of indexing through the layout
+            # (whose flat-index unravel is first-dim-fastest and
+            # doesn't step by 1 in memory for rank >= 2).
+            comptime num_scalars = num_elements * Self.element_size
+            comptime num_chunks = num_scalars // width
+            var src_ptr = other.ptr
+            var dst_ptr = self.ptr.mut_cast[True]()
+            comptime for i in range(num_chunks):
+                dst_ptr.store[alignment=alignment](
+                    i * width,
+                    src_ptr.load[width=width, alignment=alignment](i * width),
+                )
+        else:
+            comptime for i in range(num_elements):
+                var src_offset = other.layout(Idx[i]())
+                var dst_offset = self.layout(Idx[i]())
+                self.ptr.mut_cast[True]().store[alignment=alignment](
+                    dst_offset,
+                    other.ptr.load[
+                        width=Self.element_size, alignment=alignment
+                    ](src_offset),
+                )
+
+    def _distance(
+        self,
+        addr: UnsafePointer[
+            mut=False,
+            Scalar[Self.dtype],
+            address_space=Self.address_space,
+            ...,
+        ],
+    ) -> Scalar[Self.linear_idx_type]:
+        """Calculate the element-wise distance between this tensor's pointer
+        and another pointer.
+
+        Computes the number of elements (not bytes) between this tensor's
+        pointer and `addr`. Useful for determining offsets within a larger
+        memory allocation.
+
+        Args:
+            addr: The target pointer to calculate the distance to.
+
+        Returns:
+            The number of elements between `self.ptr` and `addr`.
+        """
+        return Scalar[Self.linear_idx_type](
+            (Int(self.ptr) - Int(addr)) // size_of[Self.dtype]()
+        )
 
     def write_to(self, mut w: Some[Writer]):
         """Format and write the tensor's contents to a writer.
