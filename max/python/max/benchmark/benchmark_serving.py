@@ -2419,14 +2419,6 @@ async def benchmark(
                 max_sessions=prime_bound,
             )
 
-        benchmark_start_time = time.perf_counter_ns()
-        if max_benchmark_duration_s is None:
-            benchmark_should_end_time = None
-        else:
-            benchmark_should_end_time = benchmark_start_time + int(
-                max_benchmark_duration_s * 1e9
-            )
-
         # Capture baseline server metrics after priming so priming requests
         # don't affect the delta calculation.
         baseline_endpoints: Mapping[str, ParsedMetrics] = {}
@@ -2444,6 +2436,22 @@ async def benchmark(
         if benchmark_task == "text-generation" and _is_vllm_backend(backend):
             spec_decode_metrics_before = fetch_spec_decode_metrics(
                 backend, base_url
+            )
+
+        # Marker consumed by utils/benchmarking/serving/analyze_batch_logs.py
+        # to slice the batch log by concurrency and exclude warmup/test-prompt
+        # phases.
+        logger.info(
+            f"=== BATCH LOG MARKER: Benchmark started "
+            f"(max_concurrency={max_concurrency}, "
+            f"request_rate={request_rate}) ==="
+        )
+        benchmark_start_time = time.perf_counter_ns()
+        if max_benchmark_duration_s is None:
+            benchmark_should_end_time = None
+        else:
+            benchmark_should_end_time = benchmark_start_time + int(
+                max_benchmark_duration_s * 1e9
             )
 
         try:
