@@ -31,7 +31,7 @@ def main() raises:
 
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 %t > %t.log || true
+# RUN: MODULAR_DEBUG=stack-trace-on-error %t > %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL %s
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level full -o %t 2>&1
