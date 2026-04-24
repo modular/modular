@@ -18,7 +18,7 @@ from std.math.uutils import udivmod
 
 from std.os import abort
 from std.ffi import _get_global_or_null, external_call
-from std.sys.info import align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of, size_of
 
 from _cudnn.cnn_infer import (
     cudnnConvolutionForward,
@@ -4837,11 +4837,21 @@ def conv3d_gpu_naive_ndhwc_qrscf[
         return
 
     # ============= convolution =============
+    # Input is NDHWC (C innermost, contiguous). Vectorize C_in loads as 128-bit
+    # wide SIMD reads. Filter is QRSCF (F innermost, so the C axis is strided
+    # by F); we keep scalar filter loads since they're cache-hot across
+    # repeated use but assemble them into a SIMD register so the dot product
+    # uses a single fused multiply-add chain per chunk.
+    comptime accum_type = get_accum_type[output_type]()
+    # 128-bit load is the widest single-thread GPU transaction; pick the
+    # element count that fills it for this dtype.
+    comptime vec_w = 16 // size_of[input_type]()
+
     for co in range(C_out):
-        comptime accum_type = get_accum_type[output_type]()
-        var value = Scalar[accum_type](0)
         var g = co // F_per_group
         var ci_base = g * C_per_group
+        var simd_value = SIMD[accum_type, vec_w](0)
+        var scalar_value = Scalar[accum_type](0)
 
         for q in range(Q):
             for r in range(R):
@@ -4851,17 +4861,33 @@ def conv3d_gpu_naive_ndhwc_qrscf[
                     var w_in = w_out_idx * stride_w + s * dil_w - pad_w
 
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-                        for ci in range(C_per_group):
-                            value += (
+                        var ci = 0
+                        while ci + vec_w <= C_per_group:
+                            var in_vec = input.load[width=vec_w](
+                                IndexList[5](n, d_in, h_in, w_in, ci_base + ci)
+                            ).cast[accum_type]()
+                            var flt_vec = SIMD[accum_type, vec_w](0)
+
+                            comptime for k in range(vec_w):
+                                flt_vec[k] = filter.load[width=1](
+                                    IndexList[5](q, r, s, ci + k, co)
+                                )[0].cast[accum_type]()
+                            simd_value = simd_value + in_vec * flt_vec
+                            ci += vec_w
+                        while ci < C_per_group:
+                            scalar_value += (
                                 input.load[width=1](
                                     IndexList[5](
                                         n, d_in, h_in, w_in, ci_base + ci
                                     )
-                                ).cast[accum_type]()
+                                )[0].cast[accum_type]()
                                 * filter.load[width=1](
                                     IndexList[5](q, r, s, ci, co)
-                                ).cast[accum_type]()
+                                )[0].cast[accum_type]()
                             )
+                            ci += 1
+
+        var value = simd_value.reduce_add() + scalar_value
 
         comptime if maybe_epilogue_func:
             comptime epilogue_func = maybe_epilogue_func.value()

@@ -29,6 +29,8 @@ def test_conv3d_gpu[
     stride: IndexList[3],
     dilation: IndexList[3],
     pad: IndexList[3],
+    rtol: Float64 = 1e-4,
+    atol: Float64 = 1e-4,
 ](ctx: DeviceContext) raises:
     print("test_conv3d: Testing 3D Convolution")
     comptime N = Int(input_layout.shape[0])
@@ -74,9 +76,14 @@ def test_conv3d_gpu[
     rand[dtype](input_host, input_size)
     rand[dtype](filter_host, filter_size)
 
-    # run reference implementation
-    Naive2dConvolution[dtype, dtype, dtype].run(
-        output_ref_host,
+    # Run the CPU reference at the same precision the GPU kernel uses for
+    # its accumulator (fp32 for bf16 inputs), then narrow back to `dtype`.
+    # Without this, a bf16 reference reduction drifts far outside any
+    # reasonable tolerance for non-trivial channel counts.
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    Naive2dConvolution[accum_dtype, dtype, dtype].run(
+        output_ref_accum_host,
         input_host,
         filter_host,
         Index(N, D_out, H_out, W_out, F),  # output shape
@@ -89,6 +96,9 @@ def test_conv3d_gpu[
         IndexList[3](dilation[0], dilation[1], dilation[2]),
         1,  # num_groups
     )
+    for i in range(output_size):
+        output_ref_host[i] = output_ref_accum_host[i].cast[dtype]()
+    output_ref_accum_host.free()
     # allocate device memory
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -143,7 +153,7 @@ def test_conv3d_gpu[
     try:
         for i in range(output_size):
             assert_almost_equal(
-                output_ref_host[i], output_gpu_host[i], rtol=1e-4, atol=1e-4
+                output_ref_host[i], output_gpu_host[i], rtol=rtol, atol=atol
             )
         print("RESULT: PASS - All elements match within tolerance")
     except:
@@ -225,4 +235,77 @@ def main() raises:
             IndexList[3](2, 2, 2),  # stride - downsampling
             IndexList[3](1, 1, 1),  # dilation
             IndexList[3](1, 1, 1),  # padding
+        ](ctx)
+
+        # --- bfloat16 coverage ---
+        # WAN VAE post_quant_conv: 1x1x1, C_in=16, F=16.
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(1, 1, 1, 16, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # WAN VAE conv_in: 3x3x3, C_in=16, F=96 (early-level Residual).
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(3, 3, 3, 16, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # WAN VAE mid Residual: 3x3x3, C_in=96, F=96. Exercises main vec loop.
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 8, 8, 96),
+            Layout.row_major(3, 3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # WAN VAE time_conv temporal: 3x1x1, C_in=192, F=384.
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 0, 0),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # Tail-only C_in case (C_in < vec_w=8 for bf16).
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 6, 6, 3),
+            Layout.row_major(3, 3, 3, 3, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # Main + tail C_in case (C_in = vec_w + remainder).
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 6, 6, 10),
+            Layout.row_major(3, 3, 3, 10, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
         ](ctx)
