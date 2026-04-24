@@ -541,3 +541,6 @@ This version is still a work in progress.
   must construct the bytes explicitly (for example via a `List[Byte]`
   literal).
   ([Issue #2842](https://github.com/modular/modular/issues/2842))
+
+- Fixed incorrect data layout for `MI250X` AMDGPU architectures.
+  ([Issue #6451](https://github.com/modular/modular/issues/6451)
