@@ -1589,6 +1589,10 @@ LogicalResult StructGEPOp::verify() {
       // field 0 becomes an identity operation.
       if (getContainer().getType() == getType())
         return success();
+
+      if (isa<ParamType>(elementType))
+        return success();
+
       return emitOpError("constant index requires pointer to concrete struct "
                          "type, got ")
              << elementType;
