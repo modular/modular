@@ -10,113 +10,45 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""MLA (Multi-Latent Attention) prefill kernel for gfx950.
 
+Double-buffered MLA prefill with K_rope support. Uses TileTensor
+throughout — no LayoutTensor in the public or internal API.
+
+Two-phase QK matmul per tile:
+  Phase 1 (nope): Q[:,:depth] @ K^T
+  Phase 2 (rope): Q[:,depth:q_depth] @ K_rope^T
+"""
+
+from std.math.uutils import ufloordiv
 from std.sys import align_of, simd_width_of
 from std.sys.intrinsics import readfirstlane, _type_is_eq
-from std.math.uutils import ufloordiv
-
-from std.gpu import block_idx
 from std.gpu import warp_id as get_warp_id
 from std.memory import bitcast, stack_allocation
 from layout.swizzle import Swizzle
 from nn.attention.mha_mask import CausalMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
-from nn.attention.mha_utils import MHAConfig
-
-from std.utils import IndexList
 from std.utils.numerics import get_accum_type
 
-from .attention import AttentionConfig
-from .mha import (
-    Attention,
-    KVBuffer as GFX950KVBuffer,
-    MHAAttentionConfig,
-    barrier as gfx950_barrier,
-    block_sync_lds_direct_load,
-)
+from .attention import Attention
+from .kv_buffer import KVBuffer
+from .mha_prefill import barrier, block_sync_lds_direct_load
 from .mma import TiledMmaOp
-
-
-@fieldwise_init
-struct MLAAttentionConfig[token_gen: Bool, config: MHAConfig](AttentionConfig):
-    # share shared memory for k and v
-    # depth=512 with BN=128: separate K+V = 256KB > 160KB LDS limit.
-    # Share K/V SMEM (max(K,V) = 128KB + 4KB P = 132KB, fits 1 WG).
-    comptime shared_kv = Self.token_gen and Self.config.depth > 256
-    # shared memory for the full tile vs BK blocks
-    comptime full_kv = True
-    # pad the depth for v smem
-    comptime depth_padded = False
-    # double shared memory for k and v (prefill only; decode uses single buffer)
-    comptime double_buffer = not Self.token_gen
-    # double buffer K only for decode with small BN (V stays single-buffered).
-    # BN=128 uses single-buffer K to fit 2 WGs in MI355's 160KB LDS.
-    comptime double_buffer_k_only = (
-        Self.token_gen and Self.config.block_n() <= 64
-    )
-
-    @staticmethod
-    @always_inline
-    def q_head_idx() -> Int:
-        return block_idx.y if Self.token_gen else MHAAttentionConfig[
-            Self.token_gen, Self.config, 1
-        ].q_head_idx()
-
-    @staticmethod
-    @always_inline
-    def q_tile_idx() -> Int:
-        return Self.q_head_idx() if Self.token_gen else MHAAttentionConfig[
-            Self.token_gen, Self.config, 1
-        ].q_tile_idx()
-
-    @staticmethod
-    @always_inline
-    def kv_head_idx() -> Int:
-        return 0 if Self.token_gen else MHAAttentionConfig[
-            Self.token_gen, Self.config, 1
-        ].kv_head_idx()
-
-    @staticmethod
-    @always_inline
-    def get_mma_shape() -> IndexList[3]:
-        return MHAAttentionConfig[
-            Self.token_gen, Self.config, 1
-        ].get_mma_shape()
-
-    @staticmethod
-    @always_inline
-    def get_q_offset[q_depth: Int]() -> UInt32:
-        return UInt32(
-            q_depth
-            * (
-                block_idx.x
-                + Self.config.num_heads
-                * Self.q_tile_idx()
-                * Self.config.block_m()
-            ) if not Self.token_gen else q_depth
-            * Self.q_tile_idx()
-            * Self.config.block_m()
-        )
-
-    @staticmethod
-    @always_inline
-    def get_output_offset[output_depth: Int]() -> UInt32:
-        return Self.get_q_offset[output_depth]()
 
 
 __extension Attention:
     @always_inline
-    def mla_prefill_gfx950[
+    def mla_prefill[
         k_rope_t: MHAOperand,
         //,
     ](mut self, k_rope: k_rope_t):
         """Double-buffered gfx950 MLA prefill with K_rope support.
 
         Uses gfx950 double-buffered KVBuffer for K, V, and K_rope
-        (DRAM→SMEM direct). K_rope has its own SMEM double-buffer.
+        (DRAM->SMEM direct). K_rope has its own SMEM double-buffer.
         Two-phase QK matmul:
-        Phase 1 (nope): Q[:,:depth] @ K^T  (gfx950 KVBuffer path)
-        Phase 2 (rope): Q[:,depth:q_depth] @ K_rope^T  (gfx950 KVBuffer path)
+        Phase 1 (nope): Q[:,:depth] @ K^T  (KVBuffer path)
+        Phase 2 (rope): Q[:,depth:q_depth] @ K_rope^T  (KVBuffer path)
         """
         comptime cache_num_heads = 1
         comptime cache_depth = 576
@@ -142,10 +74,10 @@ __extension Attention:
             readfirstlane(bitcast[DType.int32](UInt32(get_warp_id())))
         )
 
-        # K buffer (nope): depth=128, double-buffered gfx950 style
-        var k_buffer = GFX950KVBuffer[
+        # K buffer (nope): depth=128, double-buffered gfx950 style.
+        comptime KBufT = KVBuffer[
+            kv_t=Self.k_t,
             mma_shape=Self.mma_shape,
-            k_group_size=Self.k_group_size,
             swizzle=k_swizzle,
             BN=Self.BN,
             WN=Self.WN,
@@ -154,19 +86,20 @@ __extension Attention:
             depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=True,
-        ](
+        ]
+        var k_buffer = KBufT(
             self.k,
             self.batch_idx,
             self.kv_head_idx(),
-            self.smem_manager.get_k_ptr[type_of(self.k).dtype](),
+            KBufT.SmemParentType(self.k_smem_ptr, KBufT._SmemParentLayout()),
             self.num_keys,
             warp_id,
         )
 
-        # V buffer: depth=128, double-buffered gfx950 style
-        var v_buffer = GFX950KVBuffer[
+        # V buffer: depth=128, double-buffered gfx950 style.
+        comptime VBufT = KVBuffer[
+            kv_t=Self.v_t,
             mma_shape=Self.mma_shape,
-            k_group_size=Self.k_group_size,
             swizzle=None,
             BN=Self.BN,
             WN=Self.WN,
@@ -175,11 +108,12 @@ __extension Attention:
             depth=Self.depth,
             kv_num_heads=Self.num_heads // Self.group,
             transpose=False,
-        ](
+        ]
+        var v_buffer = VBufT(
             self.v,
             self.batch_idx,
             self.kv_head_idx(),
-            self.smem_manager.get_v_ptr[type_of(self.v).dtype](),
+            VBufT.SmemParentType(self.v_smem_ptr, VBufT._SmemParentLayout()),
             self.num_keys,
             warp_id,
         )
@@ -196,9 +130,9 @@ __extension Attention:
             address_space=AddressSpace.SHARED,
             alignment=alignment,
         ]()
-        var k_rope_buffer = GFX950KVBuffer[
+        comptime KRopeBufT = KVBuffer[
+            kv_t=k_rope_t,
             mma_shape=Self.mma_shape,
-            k_group_size=Self.k_group_size,
             swizzle=k_swizzle,
             BN=Self.BN,
             WN=Self.WN,
@@ -209,16 +143,19 @@ __extension Attention:
             transpose=True,
             cache_depth=cache_depth,
             head_dim_offset=cache_depth - rope_depth,
-        ](
+        ]
+        var k_rope_buffer = KRopeBufT(
             k_rope,
             self.batch_idx,
             ufloordiv(Int(self.kv_head_idx()), cache_group),
-            k_rope_smem_ptr,
+            KRopeBufT.SmemParentType(
+                k_rope_smem_ptr, KRopeBufT._SmemParentLayout()
+            ),
             self.num_keys,
             warp_id,
         )
 
-        comptime accum_type = get_accum_type[type_of(self.k).dtype]()
+        comptime accum_type = get_accum_type[Self.k_t.dtype]()
 
         # Phase 1: Q_nope @ K^T (depth // BK iterations)
         @always_inline
@@ -226,9 +163,8 @@ __extension Attention:
         def mma_qk_nope():
             comptime MmaOp = TiledMmaOp[
                 accum_type,
-                q_type,
+                Self.q_type,
                 Self.mma_shape,
-                group_size=Self.k_group_size,
                 transpose_b=True,
             ]
             self.zero_p_buffer[0]()
@@ -237,7 +173,7 @@ __extension Attention:
                 comptime for k_mma in range(Self.num_k_mmas2):
                     MmaOp.mma[swap_a_b=Self.swap_a_b](
                         self.q_buffer.mma_tile[i, k_mma](),
-                        k_buffer.mma_subtile[k_mma, i](),
+                        k_buffer.get_mma_tile[k_mma, i](),
                         self.p_reg_buffer.stage_tile[0](),
                     )
 
@@ -247,9 +183,8 @@ __extension Attention:
         def mma_qk_rope():
             comptime MmaOp = TiledMmaOp[
                 accum_type,
-                q_type,
+                Self.q_type,
                 Self.mma_shape,
-                group_size=Self.k_group_size,
                 transpose_b=True,
             ]
             comptime nope_tiles = Self.depth // Self.BK
@@ -258,7 +193,7 @@ __extension Attention:
                 comptime for k_mma in range(k_rope_buffer.num_k_mmas2):
                     MmaOp.mma[swap_a_b=Self.swap_a_b](
                         self.q_buffer.mma_tile[nope_tiles + i, k_mma](),
-                        k_rope_buffer.mma_subtile[k_mma, i](),
+                        k_rope_buffer.get_mma_tile[k_mma, i](),
                         self.p_reg_buffer.stage_tile[0](),
                     )
 
@@ -267,9 +202,8 @@ __extension Attention:
         def mma_pv():
             comptime PVMmaOp = TiledMmaOp[
                 accum_type,
-                q_type,
+                Self.q_type,
                 Self.mma_shape,
-                group_size=Self.k_group_size,
                 transpose_b=True,
             ]
 
@@ -277,7 +211,7 @@ __extension Attention:
                 comptime for k_mma in range(v_buffer.num_k_mmas2):
                     PVMmaOp.mma[swap_a_b=Self.swap_a_b](
                         self.p_reg_buffer.mma_tile[i, k_mma, 0](),
-                        v_buffer.mma_subtile[k_mma, i](),
+                        v_buffer.get_mma_tile[k_mma, i](),
                         self.out_reg_buffer.reg_tile,
                     )
 
@@ -323,9 +257,7 @@ __extension Attention:
                 block_sync_lds_direct_load[vmcnt=v_buffer.vm_instrs_per_load]()
             else:
                 block_sync_lds_direct_load[vmcnt=0]()
-            gfx950_barrier[
-                schedule_barrier_before=False, schedule_barrier_after=False
-            ]()
+            barrier()
 
             # Skip fully masked tiles for non-causal masks.
             comptime if has_interior_full_mask:
@@ -337,17 +269,14 @@ __extension Attention:
                         _ = k_buffer.load_from_dram[next_slot]()
                         _ = k_rope_buffer.load_from_dram[next_slot]()
                         _ = v_buffer.load_from_dram[next_slot]()
-                        gfx950_barrier[
-                            schedule_barrier_before=False,
-                            schedule_barrier_after=False,
-                        ]()
+                        barrier()
                     return
 
-            # Load K (nope) from shared → registers and compute Q_nope @ K^T
+            # Load K (nope) from shared -> registers and compute Q_nope @ K^T
             k_buffer.load_from_shared(slot)
             mma_qk_nope()
 
-            # Load K_rope from shared → registers and compute Q_rope @ K_rope^T
+            # Load K_rope from shared -> registers and compute Q_rope @ K_rope^T
             k_rope_buffer.load_from_shared(slot)
             mma_qk_rope()
 
@@ -369,10 +298,7 @@ __extension Attention:
                     + k_rope_buffer.vm_instrs_per_load
                     + v_buffer.vm_instrs_per_load
                 ]()
-            gfx950_barrier[
-                schedule_barrier_before=False,
-                schedule_barrier_after=False,
-            ]()
+            barrier()
 
             v_buffer.load_from_shared(slot)
 
@@ -389,21 +315,8 @@ __extension Attention:
         if num_tiles % 2 != 0:
             process_tile[0, False]()
 
-        # Apply final softmax denominator and store
+        # Apply final softmax denominator and store.
         self.out_reg_buffer.apply_softmax_denominator(
             self.softmax.rowsum_tensor
         )
         self.store_output()
-
-    @always_inline
-    def mla_decoding(
-        mut self,
-        exp_sum_ptr: UnsafePointer[
-            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
-        ],
-        qk_max_ptr: UnsafePointer[
-            Scalar[get_accum_type[Self.q_type]()], MutAnyOrigin
-        ],
-        num_partitions: Int,
-    ):
-        self.mha_decoding(exp_sum_ptr, qk_max_ptr, num_partitions)

@@ -10,8 +10,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""AMD CDNA GPU attention kernels for GFX942/GFX950 architectures.
+"""TileTensor-native attention kernels for AMD gfx950 (MI355X).
 
-Includes MHA prefill/decode, MLA, matrix-multiply-accumulate primitives,
-shared-memory buffers, and softmax helpers. RDNA kernels are in amd_rdna/.
+This module provides gfx950-only attention implementation using
+TileTensor throughout. Supports MHA prefill (depth=64, 128, 256, 512),
+MHA decode (token generation), MLA prefill, and MLA decode.
 """

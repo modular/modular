@@ -28,6 +28,7 @@ underlying GPU architecture.
 from std.collections.string.string_slice import get_static_string
 from std.atomic import Ordering
 from std.ffi import external_call
+from std.gpu._utils import to_i32
 from std.sys import (
     is_amd_gpu,
     is_gpu,
@@ -931,6 +932,7 @@ struct AMDBufferResource(TrivialRegisterPassable):
         *,
         width: Int = 1,
         cache_policy: CacheOperation = CacheOperation.ALWAYS,
+        async_copies: Bool = False,
     ](
         self,
         vector_offset: Int32,
@@ -945,10 +947,35 @@ struct AMDBufferResource(TrivialRegisterPassable):
         Copies from global memory to shared memory (aka LDS) bypassing storing to
         register.
 
+        Uses the `.ptr.` form (descriptor as `ptr addrspace(8)`) over the
+        legacy `<4 x i32>` form. Both lower to the same MUBUF
+        `buffer_load_*_lds` instruction on gfx9x/CDNA, but the `.ptr.`
+        form exposes the descriptor as a typed pointer so
+        `ScopedNoAliasAA` / `SIInsertWaitcnts` can reason about it. The
+        legacy form produced a 0.76-abs MLA decode regression at
+        output[0,0,0,0] when used from attention DMAs — the `.ptr.`
+        form is MLA-safe.
+
         Parameters:
             dtype: The dtype of the data to be loaded.
             width: The SIMD vector width.
             cache_policy: Cache operation policy controlling cache behavior at all levels.
+            async_copies: If True, attach the `amdgpu.AsyncCopies` alias
+                scope to the load — unlocks `ScopedNoAliasAA`-driven
+                optimizations (LICM, CSE, reordering) and, on AMDGPU,
+                the vmcnt relaxation in `SIInsertWaitcnts` (LLVM
+                PR #74537): a later `ds_read` tagged `noalias` against
+                the same scope can skip `s_waitcnt vmcnt(0)`. Only set
+                True when (a) every LDS read of this data carries the
+                matching `noalias` tag, AND (b) the kernel maintains an
+                explicit runtime fence (`s_waitcnt vmcnt(0)` +
+                `s_barrier`) — scheduling hints like
+                `s_sched_group_barrier` do NOT qualify. Defaults to
+                False (safe for all callers). Future extension: the
+                backend can bucket up to 8 distinct scopes independently
+                (LDSDMAStores slots), so more scope variants could be
+                added here if a kernel wants multiple independent DMA
+                streams.
 
         Args:
             vector_offset: Vector memory offset in elements (per thread).
@@ -965,17 +992,60 @@ struct AMDBufferResource(TrivialRegisterPassable):
         var vector_offset_bytes = vector_offset * Int32(size_of[dtype]())
         var scalar_offset_bytes = scalar_offset * Int32(size_of[dtype]())
 
-        llvm_intrinsic[
-            "llvm.amdgcn.raw.buffer.load.lds", NoneType, has_side_effect=True
-        ](
-            self.desc,
-            shared_ptr,
-            Int32(bytes),
-            vector_offset_bytes,
-            scalar_offset_bytes,
-            Int32(0),
-            aux,
-        )
+        # Convert the SIMD[uint32, 4] descriptor to a `ptr addrspace(8)`
+        # so the `.ptr.` form of the intrinsic accepts it.
+        var desc_ptr = UnsafePointer[
+            Scalar[DType.bfloat16],
+            MutAnyOrigin,
+            address_space=AddressSpace.BUFFER_RESOURCE,
+        ].unsafe_dangling()
+        var ptr_to_ptr = UnsafePointer(to=desc_ptr)
+        var ptr_to_simd = UnsafePointer(to=self.desc)
+        ptr_to_ptr[0] = ptr_to_simd.bitcast[
+            UnsafePointer[
+                Scalar[DType.bfloat16],
+                MutAnyOrigin,
+                address_space=AddressSpace.BUFFER_RESOURCE,
+            ]
+        ]()[0]
+
+        comptime if not async_copies:
+            # No alias-scope metadata — clean `llvm_intrinsic` call path.
+            llvm_intrinsic[
+                "llvm.amdgcn.raw.ptr.buffer.load.lds",
+                NoneType,
+                has_side_effect=True,
+            ](
+                desc_ptr,
+                shared_ptr,
+                Int32(bytes),
+                vector_offset_bytes,
+                scalar_offset_bytes,
+                Int32(0),
+                aux,
+            )
+        else:
+            # Attach `amdgpu.AsyncCopies` alias scope via the
+            # `rocdl.raw.ptr.buffer.load.lds` MLIR op (the `llvm_intrinsic`
+            # wrapper can't attach arbitrary attrs).
+            var desc_ptr_llvm = __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=__mlir_type.`!llvm.ptr<8>`
+            ](desc_ptr)
+            var shared_ptr3 = __mlir_op.`builtin.unrealized_conversion_cast`[
+                _type=__mlir_type.`!llvm.ptr<3>`
+            ](shared_ptr)
+            __mlir_op.`rocdl.raw.ptr.buffer.load.lds`[
+                alias_scopes=__mlir_attr.`[#llvm.alias_scope<id= "amdgpu.AsyncCopies", domain=#llvm.alias_scope_domain<id = "amdgpu.AsyncOps">>]`,
+                _type=None,
+            ](
+                desc_ptr_llvm,
+                shared_ptr3,
+                to_i32(Int32(bytes)),
+                to_i32(vector_offset_bytes),
+                to_i32(scalar_offset_bytes),
+                to_i32(Int32(0)),
+                to_i32(aux),
+            )
 
     @always_inline("nodebug")
     def store[

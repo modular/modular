@@ -107,7 +107,8 @@ from std.utils.static_tuple import StaticTuple
 
 from nn.attention.mha_utils import get_start_and_end_for_partitions
 from nn.softmax import _online_softmax_iter_for_mma_output
-from .amd.mla import Attention, MLAAttentionConfig
+from .amd_structured.mla_decode import Attention
+from .amd_structured.mla_prefill import Attention
 from .nvidia.sm100.mla_prefill import mla_sm100_prefill
 from std.gpu.host.info import B200, _is_sm10x_gpu
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
@@ -845,17 +846,15 @@ def mla_decoding[
             k_group_size=group,
         )
 
-        comptime attention_config = MLAAttentionConfig[True, config]()
-
         var attention = Attention[
             config,
             group,
-            True,
-            False,
+            False,  # sink
+            token_gen=True,
             q_depth=depth,
             output_depth=depth_v,
+            mla_mode=True,
         ](
-            attention_config,
             output_ptr + output_batch_offset,
             q_ptr + q_batch_offset,
             k,
@@ -868,7 +867,7 @@ def mla_decoding[
             num_keys,
             0,
         )
-        attention.mla_decoding(
+        attention.mla_decode(
             exp_sum_batch_ptr,
             qk_max_batch_ptr,
             num_partitions,
@@ -2366,9 +2365,7 @@ def mla_prefill[
             batch_idx,
         )
     elif is_amd_gpu():
-        comptime attention_config = MLAAttentionConfig[False, config]()
-        var attention = Attention[config, 1, False, False, q_depth=q_depth](
-            attention_config,
+        var attention = Attention[config, 1, False, q_depth=q_depth](
             output_ptr + o_batch_offset,
             q_ptr + q_batch_offset,
             k,
@@ -2382,7 +2379,7 @@ def mla_prefill[
             Int(start_pos),
             Int(cache_start_pos),
         )
-        attention.mla_prefill_gfx950(
+        attention.mla_prefill(
             k_rope,
         )
     else:
