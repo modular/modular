@@ -811,16 +811,29 @@ def flash_attention_dispatch[
                 var max_cache_valid_length_value = (
                     dispatch_metadata.max_cache_valid_length
                 )
+                var partition_num_keys = max_cache_valid_length_value
+                comptime if mask_t.check_mask_during_decoding:
+                    if partition_num_keys > 0:
+                        partition_num_keys -= Int(
+                            mask_functor.start_column[BM, BN, k_t.page_size](
+                                UInt32(partition_num_keys - 1)
+                            )
+                        )
+                        if partition_num_keys <= 0:
+                            partition_num_keys = 1
 
                 var num_partitions_value: Int
                 if num_partitions:
                     num_partitions_value = num_partitions.value()
-                elif dispatch_metadata.num_partitions > 0:
+                elif (
+                    dispatch_metadata.num_partitions > 0
+                    and partition_num_keys == max_cache_valid_length_value
+                ):
                     num_partitions_value = dispatch_metadata.num_partitions
                 else:
                     num_partitions_value = get_mha_decoding_num_partitions[
                         num_heads, group
-                    ](batch_size, max_cache_valid_length_value, ctx)
+                    ](batch_size, partition_num_keys, ctx)
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)

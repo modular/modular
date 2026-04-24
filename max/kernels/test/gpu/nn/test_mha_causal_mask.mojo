@@ -508,6 +508,19 @@ def main() raises:
                 group=16,
             ](1, 2008, CausalMask(), ctx)
 
+        # Regression: window=512 over 1025 keys has visible window <= window
+        # size, which previously picked a decode split-K partition count
+        # based on the raw cache length (1025 > 512 -> 2 partitions) and
+        # produced NaNs. Using the visible-window key count instead picks
+        # a single partition and keeps the output finite.
+        comptime if depth == 128:
+            test[
+                DType.bfloat16,
+                depth,
+                96,
+                group=12,
+            ](1, 1025, SlidingWindowCausalMask[512](), ctx)
+
         # CausalPaddingMask tests: allocate valid_lengths on device.
         @parameter
         def make_vl(
