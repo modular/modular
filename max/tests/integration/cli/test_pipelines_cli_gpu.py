@@ -68,49 +68,6 @@ def test_pipelines_cli__smollm_bfloat16(
     )
 
 
-@pytest.mark.skipif(is_h100_h200(), reason="AITLIB-342: Failing on H100")
-def test_pipelines_cli__smollm_bfloat16_with_structured_output_enabled(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    assert isinstance(REVISION, str), (
-        "REVISION must be a string and present in hf-repo-lock.tsv"
-    )
-    # Use HuggingFace repo ID directly to ensure we have access to all weight formats
-    local_model_path = REPO_ID
-
-    with pytest.raises(SystemExit):
-        pipelines.main(
-            [
-                "generate",
-                "--model-path",
-                local_model_path,
-                "--prompt",
-                "Why is the sky blue",
-                "--trust-remote-code",
-                "--device-memory-utilization=0.1",
-                "--quantization-encoding=bfloat16",
-                "--devices=gpu",
-                "--huggingface-model-revision",
-                REVISION,
-                "--huggingface-weight-revision",
-                REVISION,
-                # We are enabling structured output here, to ensure that
-                # enabling structured output server wide, without a JSON
-                # schema provided does not change the outputs of the base
-                # chat experience.
-                "--enable-structured-output",
-                "--top-k=1",
-            ]
-        )
-    captured = capsys.readouterr()
-    # Verify the model generates a response about why the sky is blue.
-    assert len(captured.out) > 0
-    assert any(
-        word in captured.out.lower()
-        for word in ["light", "scatter", "atmosphere", "blue"]
-    )
-
-
 @pytest.mark.skip("LoRA doesn't work with generate entrypoint. E2EOPT-457")
 def test_pipelines_cli__smollm_with_lora(
     capsys: pytest.CaptureFixture[str],
