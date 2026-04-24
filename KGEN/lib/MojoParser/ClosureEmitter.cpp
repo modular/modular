@@ -867,7 +867,7 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
   auto populateTraitFn = [&](ClosureParent &closureParent) -> FnOp {
     FnOp traitFnOp = closureParent.getDefiningOp(moduleDecl);
     b.setInsertionPointToEnd(&declOp.getFields().front());
-    FnTypeGeneratorType wrappedSignature =
+    FnTypeGeneratorType implCallSig =
         specializeSignature(traitFnOp, selfType, *shared.declResolver);
     auto [op, parameters, result] =
         pushBackTraitFunctionImpl(traitFnOp, structDecl);
@@ -915,7 +915,6 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
       return valueOverSelf;
     };
     SmallVector<TypedAttr> paramArgs;
-    FnTypeGeneratorType implCallSig = wrappedSignature;
     if (needsRebinding) {
       // Bind the alias parameters to the auxiliary parameters
       SmallVector<TypedAttr> auxiliary = llvm::to_vector(
@@ -923,12 +922,15 @@ ASTDecl *ClosureEmitter::createStructWrapper(ASTDecl &moduleDecl,
             auto ptr = paramToAliasValue.find(p.getName());
             if (ptr != paramToAliasValue.end())
               return ptr->getSecond();
-            paramArgs.push_back(ParamDeclRefAttr::get(p));
-            return UnboundAttr::get(ctx, p.getType());
+            Type paramType = cast<Type>(aliasReplacer.replace(p.getType()));
+            TypedAttr argument = ParamOperatorAttr::getRebind(
+                ParamDeclRefAttr::get(p), paramType);
+            paramArgs.push_back(argument);
+            return UnboundAttr::get(ctx, argument.getType());
           }));
       // remove the auxiliary parameters from the impl call function type by
       // specializing on aliases.
-      implCallSig = wrappedSignature.getSpecializedGenerator(
+      implCallSig = implCallSig.getSpecializedGenerator(
           auxiliary, &shared.getEvaluationContext(), op.getLoc());
     } else {
       llvm::append_range(
@@ -1729,9 +1731,9 @@ ASTDecl *ClosureEmitter::createClosureTrait(
     // parameters (e.g. "T") in terms of the alias members of closure type C
     SmallVector<ParamDeclAttr> sigParams(
         populateParametersFromFnGeneratorType(sig));
-    SmallVector<ParamDeclAttr> parameters;
     SmallVector<PogMetadataAttr> extendedPogs;
     DenseMap<StringRef, ParamDeclAttr> aliasNameToParam;
+    SmallVector<ParamDeclAttr> parameters;
     for (auto [aliasName, aliasType] : aliasMembers) {
       StringAttr nameAttr = builder.getStringAttr("_" + Twine(aliasName));
       ParamDeclAttr param = ParamDeclAttr::get(ctx, nameAttr, aliasType);
@@ -1740,7 +1742,6 @@ ASTDecl *ClosureEmitter::createClosureTrait(
       extendedPogs.push_back(
           PogMetadataAttr::get(nameAttr, PassingKind::Inferred));
     }
-    llvm::append_range(parameters, sigParams);
     llvm::append_range(extendedPogs, sig.getParamListAttrs().getPogs());
     PogListAttr extendedParamListAttrs = PogListAttr::get(
         ctx, extendedPogs, sig.getParamListAttrs().getOrigVariadicConvention());
@@ -1757,6 +1758,11 @@ ASTDecl *ClosureEmitter::createClosureTrait(
         return ParamDeclRefAttr::get(it->second);
       return getWitness;
     });
+    llvm::append_range(parameters,
+                       llvm::map_range(sigParams, [&](ParamDeclAttr p) {
+                         return cast<ParamDeclAttr>(
+                             aliasReplacer.replace(replacer.replace(p)));
+                       }));
     SmallVector<Type> argumentTypes;
     llvm::append_range(
         argumentTypes, llvm::map_range(sig.getArguments(), [&](Type original) {
