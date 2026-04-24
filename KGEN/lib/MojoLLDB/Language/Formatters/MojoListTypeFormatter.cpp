@@ -29,9 +29,9 @@ lldb::ValueObjectSP MojoListSyntheticFrontEnd::GetChildAtIndex(uint32_t idx) {
   if (idx >= size)
     return ValueObjectSP();
   uint64_t addr = start + (idx * elementSize);
-  return CreateValueObjectFromAddress(llvm::formatv("[{0}]", idx).str(), addr,
-                                      m_backend.GetExecutionContextRef(),
-                                      elementType);
+  return CreateChildValueObjectFromAddress(
+      llvm::formatv("[{0}]", idx).str(), addr,
+      m_backend.GetExecutionContextRef(), elementType);
 }
 
 lldb::ChildCacheState MojoListSyntheticFrontEnd::Update() {
