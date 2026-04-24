@@ -2312,9 +2312,9 @@ def _memchr_impl[
 
     for i in range(0, vectorized_end, bool_mask_width):
         var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
-        var mask = pack_bits(bool_mask)
-        if mask:
-            return haystack + Int(type_of(mask)(i) + count_trailing_zeros(mask))
+        var pos = bool_mask.first_true()
+        if pos >= 0:
+            return haystack + i + pos
 
     for i in range(vectorized_end, length):
         if haystack[i] == char:
