@@ -39,13 +39,13 @@
 
 
 def make_closure(x: Int):
-    def my_closure(y: Int) unified {var x} -> Int:
+    def my_closure(y: Int) {var x} -> Int:
         return x + y
 
 
 # // -----
 
-# COM: Verify Nested unified closures are supported
+# COM: Verify Nested closures are supported
 
 
 # CHECK: lit.trait.decl @"def(y: Int) -> Int"
@@ -55,8 +55,8 @@ def make_closure(x: Int):
 
 
 def make_closure(x: Int):
-    def my_closure(y: Int) unified {var x} -> Int:
-        def my_nested_closure(z: Int) unified {var x} -> Int:
+    def my_closure(y: Int) {var x} -> Int:
+        def my_nested_closure(z: Int) {var x} -> Int:
             return x
 
         return x + y
@@ -71,12 +71,12 @@ def make_closure(x: Int):
 
 
 def make_closure(x: Int):
-    def my_closure(y: Int) unified {var} -> Int:
+    def my_closure(y: Int) {var} -> Int:
         return y
 
 
 def make_identical_closure(x: Int):
-    def my_closure(y: Int) unified {var} -> Int:
+    def my_closure(y: Int) {var} -> Int:
         return y
 
 
@@ -101,7 +101,7 @@ struct Foo[T: Movable, b: T]:
 
 
 def make_closure(x: Int) -> Int:
-    def parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) unified {var}:
+    def parametric[T: MyInterface, b: T, c: Foo[T, b]](a: T) {var}:
         pass
 
     return x
@@ -130,7 +130,7 @@ def make_closure(x: Int) -> Int:
 def make_closure(x: Int) -> Int:
     def mutate[
         lt: Origin[mut=True]
-    ](a: Pointer[String, lt]._mlir_type, b: String) unified {var}:
+    ](a: Pointer[String, lt]._mlir_type, b: String) {var}:
         pass
 
     return x
@@ -158,7 +158,7 @@ trait MyInterface:
 
 
 def make_closure(x: Int) -> Int:
-    def parametric[T: MyInterface](a: T) unified {var}:
+    def parametric[T: MyInterface](a: T) {var}:
         pass
 
     return x
@@ -184,7 +184,7 @@ def make_closure(x: Int):
     # CHECK-NEXT: [[WRAPPER:%.*]] = lit.var.decl "my_closure" var : !lit.ref<!lit.struct<[[T:#.*]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *"[[L1:.*]]">
     # CHECK-NEXT: lit.call {{.*}}::@"def(y: Int) -> Int_{{.*}}"::@"__init__($0$)"[mut *"[[L0]]", mut *"[[L1]]"]<:[[TRAIT]] {{.*}}, :origin.set {}>([[RAW_CLOSURE]], [[WRAPPER]]) : !lit.generator<[2]("impl": !lit.ref<!kgen.closure<@{{.*}}::make_closure{{.*}}", "my_closure" nonescaping>, mut *[0,0]> owned_in_mem, |, ?, "self": !lit.ref<!lit.struct<[[T]] <:[[TRAIT]] {{.*}}, :origin.set {}>>, mut *[0,1]> byref_result) -> !kgen.none>
 
-    def my_closure(y: Int) unified {var x} -> Int:
+    def my_closure(y: Int) {var x} -> Int:
         return x + y
 
 
@@ -199,7 +199,7 @@ def make_closure(x: Int):
 # CHECK-NEXT: %0 = lit.call tail[!lit.generator<[1](!lit.ref<:!Int f, mut *[0,0]> read_mem, |, "y": !Int1) capturing -> !Int1>: #kgen.get_witness<:!Int f, "def(y: Int) -> Int", "__call__{{.*}}">][imm *"myFunc`"](%myFunc, %x)
 # CHECK-NEXT: lit.ownership.use %0
 # CHECK-NEXT: %none = kgen.param.constant: none = <#kgen.none>
-def take_closure[f: def(y: Int) unified -> Int](myFunc: f, x: Int):
+def take_closure[f: def(y: Int) -> Int](myFunc: f, x: Int):
     _ = myFunc(x)
 
 
@@ -208,21 +208,16 @@ def take_closure[f: def(y: Int) unified -> Int](myFunc: f, x: Int):
 # COM: Ensure the transformed parameters are propagated into the underlying closure trait.
 
 
-# CHECK-DAG: [[TRAIT:!Int_AnyType_ImplicitlyDestructible_Movable.*]] = !lit.trait<@"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@Movable>
+# CHECK-DAG: [[TRAIT:!Int_AnyType_ImplicitlyDestructible_Movable.*]] = !lit.trait<@"def(y: Int) -> Int", @{{.*}}::@AnyType, @{{.*}}::@ImplicitlyDestructible, @{{.*}}::@Movable>
 # CHECK-DAG: [[TRAIT2:!Int.*]] = !lit.trait<@"def(y: Int) -> Int">
 # CHECK-DAG: [[INT:!Int.*]] = !lit.struct<@{{.*}}::@Int>
-# CHECK-DAG: [[TRAIT3:!Int.*]] = !lit.trait<@"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) -> Int">
 
-
-# CHECK: lit.trait.decl @"def[closure2: def(y: Int) -> Int](impl: closure2, y: Int) -> Int"
-# CHECK-NEXT: lit.fn @"__call__{{.*}}"<closure2: [[TRAIT2]]>
-# CHECK-SAME: [mut *"self`", imm *"[[L0:.*]]`"]
-# CHECK-SAME: (%0[*""]: !lit.ref<:[[TRAIT3]] *"_Self{{.*}}, mut *"self`"> read_mem, |
-# CHECK-SAME:, %impl: !lit.ref<:[[TRAIT2]] closure2, imm *"[[L0]]`"> read_mem, %y: [[INT]]) capturing -> [[INT]]
-def take_closure[closure1: def(y: Int) unified -> Int](x: Int):
+# CHECK: lit.trait.decl @"def(y: Int) -> Int"
+# CHECK: lit.fn *"nested[def(y: Int) -> Int]($0,::Int)"<closure2: [[TRAIT2]]>
+def take_closure[closure1: def(y: Int) -> Int](x: Int):
     def nested[
-        closure2: def(y: Int) unified -> Int
-    ](impl: closure2, y: Int) unified {var x} -> Int:
+        closure2: def(y: Int) -> Int
+    ](impl: closure2, y: Int) {var x} -> Int:
         return x
 
 
@@ -238,9 +233,9 @@ def take_closure[closure1: def(y: Int) unified -> Int](x: Int):
 
 
 def take_closures[
-    closure1: def(y: Int) unified -> Int,
+    closure1: def(y: Int) -> Int,
     T: Int,
-    closure2: def(y: Int, z: Int) unified -> Int,
+    closure2: def(y: Int, z: Int) -> Int,
     U: Int,
 ](impl1: closure1, impl2: closure2, x: Int):
     pass
@@ -259,7 +254,7 @@ def take_closures[
 # CHECK-SAME: (%impl: !lit.ref<:!Int x, imm *"[[L0]]"> read_mem
 # TODO: remove the 'do_not_dce_int' argument (MOCO 2461)
 def nested[
-    x: def[y: def(z: Int) unified -> Int](impl: y, u: Int) unified -> Int, //
+    x: def[y: def(z: Int) -> Int](impl: y, u: Int) -> Int, //
 ](impl: x, do_not_dce_int: Int):
     pass
 
@@ -284,7 +279,7 @@ def nested[
 # CHECK: kgen.conformance @"def(z: Int) -> Int" {
 # CHECK-NEXT: kgen.witness "__call__{{.*}}"
 def bindIt(x: Int, y: Int) -> Int:
-    def myclosure(z: Int) unified {var x, var y} -> Int:
+    def myclosure(z: Int) {var x, var y} -> Int:
         return x + y + z
 
 
@@ -302,7 +297,7 @@ def bindIt(x: Int, y: Int) -> Int:
 
 # CHECK: lit.file_module
 def bindIt() -> Int:
-    def myclosure[my_param: AnyType](z: Int) unified {var}:
+    def myclosure[my_param: AnyType](z: Int) {var}:
         pass
 
 
@@ -336,7 +331,7 @@ def bindIt() -> Int:
 def make_closure(x: Int) -> Int:
     def mutate[
         lt: Origin[mut=True]
-    ](a: Pointer[String, lt]._mlir_type, b: String) unified {var}:
+    ](a: Pointer[String, lt]._mlir_type, b: String) {var}:
         pass
 
     return x
@@ -351,7 +346,7 @@ def make_closure(x: Int) -> Int:
 
 def nonemptyOriginSet(mut byRefMut: String):
     # CHECK: lit.call {{.*}}::@"def() -> None_{{.*}}"::@"__init__({{.*}})"[{{.*}}]<:[[TRAIT]] {{.*}}, :origin.set {mut *"byRefMut`"}>
-    def myclosure() unified {mut byRefMut}:
+    def myclosure() {mut byRefMut}:
         pass
 
 
@@ -368,12 +363,12 @@ def nonemptyOriginSet(mut byRefMut: String):
 # CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"def(x: Int) -> Int_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
-def takeIt[C: def(Int) unified -> Int](closure: C):
+def takeIt[C: def(Int) -> Int](closure: C):
     _ = closure(3)
 
 
 def bindIt(z: Int):
-    def myclosure(x: Int) unified {var} -> Int:
+    def myclosure(x: Int) {var} -> Int:
         return z
 
     takeIt[type_of(myclosure)](myclosure)
@@ -392,12 +387,12 @@ def bindIt(z: Int):
 # CHECK-SAME: rebind(:!lit.generator<[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "x": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"def(x: Int) -> Int_{{.*}}"::@"__call__{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set>)
 
 
-def takeIt[C: Copyable & def(y: Int) unified -> Int](closure: C):
+def takeIt[C: Copyable & def(y: Int) -> Int](closure: C):
     _ = closure(3)
 
 
 def bindIt(z: Int):
-    def myclosure(x: Int) unified {var} -> Int:
+    def myclosure(x: Int) {var} -> Int:
         return z
 
     takeIt[type_of(myclosure)](myclosure)
@@ -408,11 +403,11 @@ def bindIt(z: Int):
 # COM: Verify that all closures are rebound when closure traits are combined or inherited
 
 
-def takeIt[C: (def(Bool) unified -> Int) & def(Int) unified -> Int](closure: C):
+def takeIt[C: (def(Bool) -> Int) & def(Int) -> Int](closure: C):
     _ = closure(3)
 
 
-trait BoolWrapper(def(Bool) unified -> Int):
+trait BoolWrapper(def(Bool) -> Int):
     pass
 
 
@@ -424,7 +419,7 @@ trait BoolWrapper(def(Bool) unified -> Int):
 
 # CHECK: kgen.conformance @"def(Int) -> Int"
 # CHECK:kgen.witness "__call__($0,::Int)" : !lit.generator<[1](!lit.ref<!MultipleClosure, mut *[0,0]> read_mem, !Int1, |) capturing -> !Int1> = rebind(:!lit.generator<[1]("self": !lit.ref<!MultipleClosure, imm *[0,0]> read_mem, "x": !Int1) capturing -> !Int1> @{{.*}}::@MultipleClosure::@"__call__({{.*}}::MultipleClosure,::Int)")
-struct MultipleClosure(BoolWrapper, Movable, def(Int) unified -> Int):
+struct MultipleClosure(BoolWrapper, Movable, def(Int) -> Int):
     def __init__(out self):
         pass
 
@@ -455,13 +450,13 @@ def bindIt(z: Int):
 # CHECK-SAME: rebind(:!lit.generator<<"a": [[INT]]>[1](!lit.ref<!lit.struct<[[T]] <:[[TRAIT1]] impl, :origin.set origin_set>>, mut *[0,0]> read_mem, |, "b": [[INT]]) capturing -> [[INT]]> @{{.*}}::@"def[a: Int](b: Int) -> Int_{{.*}}"::@"__call__[::Int]({{.*}}::def[a: Int](b: Int) -> Int_{{.*}}"<:[[TRAIT1]] impl, :origin.set origin_set, :[[INT]] ?>)
 
 
-def takeIt[C: def[x: Int](y: Int) unified -> Int](closure: C):
+def takeIt[C: def[x: Int](y: Int) -> Int](closure: C):
     # see MOCO-2606
     _ = closure.__call__[2](3)
 
 
 def bindIt(z: Int):
-    def myclosure[a: Int](b: Int) unified {var} -> Int:
+    def myclosure[a: Int](b: Int) {var} -> Int:
         return z
 
     takeIt[type_of(myclosure)](myclosure)
@@ -474,7 +469,7 @@ def bindIt(z: Int):
 
 # CHECK: [[TRAIT:!Int_AnyType.*]] = !lit.trait<@"def(x: Int) -> Int"
 # CHECK: lit.struct.decl @custom([[TRAIT]])
-struct custom(def(x: Int) unified -> Int):
+struct custom(def(x: Int) -> Int):
     def __call__(self, x: Int) capturing -> Int:
         return x
 
@@ -522,14 +517,14 @@ def useIt(var x: OneOfAKind):
 
 @no_inline
 def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
-    def aThing(x: Int) unified {var z, var cm} -> Int:
+    def aThing(x: Int) {var z, var cm} -> Int:
         return z + x
 
     takeItImplicit(aThing)
     takeIt(aThing)
 
     # COM: uncopyable version can still implement the def(x:Int) -> Int trait
-    def anotherThing(x: Int) unified {var ^} -> Int:
+    def anotherThing(x: Int) {var ^} -> Int:
         useIt(one^)
         return x
 
@@ -550,7 +545,7 @@ def giveIt(z: Int, cm: CopyMe, var one: OneOfAKind):
 # CHECK: lit.struct.decl @"def{{.*}} -> T_{{.*}}"
 # CHECK: kgen.witness "T" : !TrivialRegisterPassable = #kgen.get_witness<:!{{.*}} impl, "def{{.*}} -> T", "T">
 def makeIt[T: TrivialRegisterPassable](a: T):
-    def parametric() unified {var a} -> T:
+    def parametric() {var a} -> T:
         return a
 
 
@@ -565,7 +560,7 @@ def conditionallyDevicePassable(x: Int):
     # CHECK-NEXT: kgen.witness "_is_convertible_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "_to_device_type{{.*}}" : !lit.generator
     # CHECK-NEXT: kgen.witness "get_type_name{{.*}}" : !lit.generator
-    def device_passable() unified register_passable {var} -> Int:
+    def device_passable() register_passable {var} -> Int:
         return x
 
 
@@ -582,13 +577,13 @@ trait DoIt:
 # CHECK: lit.trait.decl @"def{{.*}} -> None"
 # CHECK-NEXT: lit.alias.decl T: !DoIt
 struct House[T: DoIt]:
-    def aMethod[C: def(x: Self.T) unified](self, impl: C):
+    def aMethod[C: def(x: Self.T)](self, impl: C):
         pass
 
 
 # CHECK: lit.trait.decl @"def{{.*}} -> None"
 # CHECK-NEXT: lit.alias.decl TT: !DoIt
-def useIt[TT: DoIt, C: def(x: TT) unified](impl: C):
+def useIt[TT: DoIt, C: def(x: TT)](impl: C):
     pass
 
 
@@ -602,7 +597,7 @@ def useIt[TT: DoIt, C: def(x: TT) unified](impl: C):
 
 
 def addTrivialRegisterPassable(x: Int):
-    def closure() unified register_passable {var} -> Int:
+    def closure() register_passable {var} -> Int:
         return x
 
 
@@ -635,7 +630,7 @@ struct MiniSpan[dtype_tag: Int]:
     var value: Int
 
     def count[
-        F: def[w: Int](vec: ToySIMD[Self.dtype_tag, w]) unified -> ToyMask[
+        F: def[w: Int](vec: ToySIMD[Self.dtype_tag, w]) -> ToyMask[
             Self.dtype_tag, w
         ]
     ](self, func: F) -> Int:
@@ -660,7 +655,7 @@ def repro_top_level():
 
 # // -----
 
-# COM: Verify nested captured unified closures get conformance for count's
+# COM: Verify nested captured closures get conformance for count's
 # COM: closure trait.
 
 
@@ -687,7 +682,7 @@ struct MiniSpan[dtype_tag: Int]:
     var value: Int
 
     def count[
-        F: def[u: Int](vec: ToySIMD[Self.dtype_tag, u]) unified -> ToyMask[
+        F: def[u: Int](vec: ToySIMD[Self.dtype_tag, u]) -> ToyMask[
             Self.dtype_tag, u
         ]
     ](self, func: F) -> Int:
@@ -703,7 +698,7 @@ def repro_capturing():
 
     def is_vec_a_capturing[
         u: Int
-    ](vec: ToySIMD[1, u]) unified {var capture} -> ToyMask[1, u]:
+    ](vec: ToySIMD[1, u]) {var capture} -> ToyMask[1, u]:
         _ = vec
         _ = capture
         return ToyMask[1, u](0)
@@ -736,7 +731,7 @@ struct Store[E: ElemLike]:
     var value: Int
 
     def apply[
-        F: def[n: Int](item: Box[Self.E, n]) unified -> Box[Self.E, n]
+        F: def[n: Int](item: Box[Self.E, n]) -> Box[Self.E, n]
     ](self, func: F) -> Int:
         return 0
 
@@ -750,7 +745,7 @@ def repro_nested_type_param():
 
     def apply_concrete[
         n: Int
-    ](item: Box[ConcreteElem, n]) unified {var capture} -> Box[ConcreteElem, n]:
+    ](item: Box[ConcreteElem, n]) {var capture} -> Box[ConcreteElem, n]:
         _ = item
         _ = capture
         return Box[ConcreteElem, n](0)
@@ -769,7 +764,7 @@ def print(x: Int):
 
 
 def callee[
-    func: def[width: Int, rank: Int, alignment: Int = 1]() unified -> None,
+    func: def[width: Int, rank: Int, alignment: Int = 1]() -> None,
     //,
     simd_width: Int,
 ](shape: Int, ctx: Int, closure: func):
@@ -785,7 +780,7 @@ def main() raises:
     @always_inline
     def my_func[
         simd_width: Int, rank: Int, alignment: Int = 1
-    ]() unified {read x}:
+    ]() {read x}:
         print(x)
 
     callee[simd_width=4](10, 11, my_func)
@@ -814,13 +809,13 @@ struct V[dtype: Int, width: Int](RegisterPassable):
 # CHECK-NEXT: kgen.witness "dtype" :{{.*}} = {42}
 def callee[
     dtype: Int,
-    F: def[width: Int]() unified register_passable -> V[dtype, width],
+    F: def[width: Int]() register_passable -> V[dtype, width],
 ](closure: F):
     var result = closure[4]()
 
 
 def rebindResult():
-    def my_closure[width: Int]() unified register_passable {} -> V[42, width]:
+    def my_closure[width: Int]() register_passable {} -> V[42, width]:
         return V[42, width](0)
 
     callee[42](my_closure)
@@ -841,7 +836,7 @@ struct ToyIndex[size: Int](RegisterPassable):
 
 def variadic_callee[
     rank: Int,
-    map_fn: def(ToyIndex[rank]) unified -> Tuple[
+    map_fn: def(ToyIndex[rank]) -> Tuple[
         ToyIndex[rank],
         ToyIndex[rank],
     ],
@@ -859,7 +854,7 @@ def repro_variadic_attr():
 
     def my_map_fn(
         point: ToyIndex[2],
-    ) unified {read x} -> Tuple[ToyIndex[2], ToyIndex[2]]:
+    ) {read x} -> Tuple[ToyIndex[2], ToyIndex[2]]:
         return ToyIndex[2](), ToyIndex[2]()
 
     variadic_callee[2, type_of(my_map_fn)](my_map_fn)
@@ -885,7 +880,7 @@ struct Container[p: Pair](RegisterPassable):
 
 def struct_callee[
     tag: Int,
-    F: def() unified -> Container[Pair(tag, 0)],
+    F: def() -> Container[Pair(tag, 0)],
 ](closure: F):
     var result = closure()
 
@@ -897,7 +892,7 @@ def struct_callee[
 def repro_struct_attr():
     var x = 10
 
-    def my_fn() unified {read x} -> Container[Pair(2, 0)]:
+    def my_fn() {read x} -> Container[Pair(2, 0)]:
         return Container[Pair(2, 0)](x)
 
     struct_callee[2, type_of(my_fn)](my_fn)
@@ -922,7 +917,7 @@ def identity(x: Int) -> Int:
 
 def symbol_callee[
     tag: Int,
-    C: def() unified -> Dispatch[identity],
+    C: def() -> Dispatch[identity],
 ](closure: C):
     var result = closure()
 
@@ -933,7 +928,7 @@ def symbol_callee[
 def repro_symbol_attr():
     var x = 10
 
-    def my_fn() unified {read x} -> Dispatch[identity]:
+    def my_fn() {read x} -> Dispatch[identity]:
         return Dispatch[identity](x)
 
     symbol_callee[1, type_of(my_fn)](my_fn)
@@ -964,14 +959,14 @@ struct Vec[tag: Int, size: Width](TrivialRegisterPassable):
 
 def repro_rebind_nonref_operand[
     tag: Int,
-    F: def[w: Width](v: Vec[tag, w]) unified -> Bool,
+    F: def[w: Width](v: Vec[tag, w]) -> Bool,
 ](func: F):
     # CHECK: lit.fn @"__call__[::Int,::Int](unified_closure::def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool_{{.*}}%val: !lit.struct<#Vec <:!Int _tag,
     # CHECK: [[REBIND:%.*]] = kgen.rebind %val : !lit.struct<#Vec <:!Int _tag
     # CHECK-SAME: to !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
     # CHECK: lit.call[{{.*}}"val": !lit.struct<#Vec <:!Int #kgen.get_witness<:!{{.*}} impl, "def[tag: Int, #, w: Int](val: Vec[tag, w]) -> Bool", "tag">
     # CHECK-SAME: ]{{.*}}(%{{.*}}, [[REBIND]])
-    def body[w: Int](val: Vec[tag, w]) unified {read func} -> Bool:
+    def body[w: Int](val: Vec[tag, w]) {read func} -> Bool:
         return func[w=w](val)
 
     _ = body
@@ -1024,17 +1019,17 @@ struct Container[N: Int]:
     pass
 
 
-def takes[T: Int, F: def(x: Container[T]) unified](impl: F):
+def takes[T: Int, F: def(x: Container[T])](impl: F):
     impl(Container[T]())
 
 
 def takes2[
-    T: Int, U: Int, F: def(x: Container[T], y: Container[U]) unified
+    T: Int, U: Int, F: def(x: Container[T], y: Container[U])
 ](impl: F):
     impl(Container[T](), Container[U]())
 
 
-def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
+def takes_w[T: Int, F: def(w: Container[T])](impl: F):
     impl(Container[T]())
 
 
@@ -1044,7 +1039,7 @@ def defines[T: Coord](foo: HasParam[T]):
     # CHECK-NOT: kgen.param.declare E2
     comptime S = foo.P
 
-    def closure(x: Container[S]) unified {var}:
+    def closure(x: Container[S]) {var}:
         pass
 
     takes[S, type_of(closure)](closure)
@@ -1054,10 +1049,10 @@ def defines[T: Coord](foo: HasParam[T]):
 def defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
     comptime S = foo.P
 
-    def closure(w: Container[S]) unified {var}:
+    def closure(w: Container[S]) {var}:
         comptime Q = bar.P
 
-        def closure2(x: Container[Q], y: Container[S]) unified {var}:
+        def closure2(x: Container[Q], y: Container[S]) {var}:
             pass
 
         takes2[Q, S, type_of(closure2)](closure2)
@@ -1099,7 +1094,7 @@ struct Container[N: Int]:
 
 
 def takes[
-    T: Int, F: def[R: Coord](x: Container[T], r: HasParam[R]) unified
+    T: Int, F: def[R: Coord](x: Container[T], r: HasParam[R])
 ](impl: F):
     impl[Cartesian](Container[T](), HasParam[Cartesian](Cartesian(1, 2)))
 
@@ -1111,21 +1106,21 @@ def foo[T: Coord](foo: HasParam[T]):
 
     # CHECK: lit.closure.init
     # CHECK-NEXT: kgen.param.declare E2
-    def closure[R: Coord](x: Container[S], r: HasParam[R]) unified {var}:
-        def closure2(x: Container[S]) unified {var}:
+    def closure[R: Coord](x: Container[S], r: HasParam[R]) {var}:
+        def closure2(x: Container[S]) {var}:
             pass
 
         comptime SS = r.P
 
         def closure3[
             R3: Coord
-        ](x: Container[SS], r3: HasParam[R3]) unified {var}:
+        ](x: Container[SS], r3: HasParam[R3]) {var}:
             pass
 
         takes[SS, type_of(closure3)](closure3)
 
     # CHECK-NOT: kgen.param.declare E3
-    def closure4[R4: Coord](x: Container[S], r4: HasParam[R4]) unified {var}:
+    def closure4[R4: Coord](x: Container[S], r4: HasParam[R4]) {var}:
         pass
 
     takes[S, type_of(closure)](closure)
@@ -1142,7 +1137,7 @@ struct Container[N: Int]:
     pass
 
 
-def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
+def takes_w[T: Int, F: def(w: Container[T])](impl: F):
     impl(Container[T]())
 
 
@@ -1150,7 +1145,7 @@ def takes_w[T: Int, F: def(w: Container[T]) unified](impl: F):
 def defines_expression[X: Int, Y: Int]():
     # CHECK: kgen.param.declare E1: !Int
     # CHECK-NOT: kgen.param.declare E1
-    def closure(ww: Container[X + Y]) unified {var}:
+    def closure(ww: Container[X + Y]) {var}:
         pass
 
     takes_w[X + Y, type_of(closure)](closure)
@@ -1167,7 +1162,7 @@ struct Container[N: Int]:
 
 
 def takes_w[
-    F: def[X: Int, Y: Int](w: Container[(X + Y) + (X + Y)]) unified
+    F: def[X: Int, Y: Int](w: Container[(X + Y) + (X + Y)])
 ](impl: F):
     pass
 
@@ -1175,7 +1170,7 @@ def takes_w[
 # CHECK-LABEL: lit.fn @"no_hoist
 def no_hoist():
     # CHECK-NOT: kgen.param.declare E1
-    def closure[X: Int, Y: Int](ww: Container[(X + Y) + (X + Y)]) unified {var}:
+    def closure[X: Int, Y: Int](ww: Container[(X + Y) + (X + Y)]) {var}:
         pass
 
     takes_w[type_of(closure)](closure)
@@ -1197,7 +1192,7 @@ def copyIt[X: Copyable](x: X):
 def thing(foo: Foo):
     # CHECK: kgen.conformance @"std::builtin::{{.*}}::Copyable"
     # CHECK-NEXT: kgen.witness "__init__(copy:$0)" : !lit.generator<[2](*, "copy":
-    def thing() unified {var}:
+    def thing() {var}:
         _ = foo
 
 
@@ -1209,7 +1204,7 @@ def thing(foo: Foo):
 
 @always_inline
 def dispatch[
-    FuncType: def() unified register_passable -> None, //
+    FuncType: def() register_passable -> None, //
 ](func: FuncType):
     pass
 
@@ -1246,11 +1241,11 @@ def foo(x: Int):
     def map[
         T: CollectionElement,
         U: CollectionElement,
-        func: def(x: T) unified -> U,
+        func: def(x: T) -> U,
     ](item: T, closure: func,) -> U:
         return closure(item)
 
-    def double(x: Int) unified {mut} -> Int:
+    def double(x: Int) {mut} -> Int:
         return x * 2
 
     _ = map[Int, Int, type_of(double)](x, double)
@@ -1275,21 +1270,21 @@ trait DoB:
 # CHECK-DAG: !lit.trait<@"def[T: DoA](y: T) -> None">
 # CHECK-DAG: !lit.trait<@"def[T: DoA, #](y: T) -> None">
 def foo[T: DoA](x: T):
-    def closure(y: T) unified {var}:
+    def closure(y: T) {var}:
         pass
 
-    def closure2[T: DoA](y: T) unified {var}:
+    def closure2[T: DoA](y: T) {var}:
         pass
 
 
 def bar[T: DoB](x: T):
-    def closure(y: T) unified {var}:
+    def closure(y: T) {var}:
         pass
 
 
 # // -----
 
-# COM: Verify that @__llvm_metadata on a unified closure is preserved on the op
+# COM: Verify that @__llvm_metadata on a closure is preserved on the op
 
 # CHECK: LLVMMetadataArray = ["nvvm.maxntid", #pop.array<256> : !pop.array<1, i32>]
 
@@ -1298,7 +1293,7 @@ def metadata_closure(x: Int):
     @__llvm_metadata(
         `nvvm.maxntid`=__mlir_attr.`#pop.array<256> : !pop.array<1, i32>`
     )
-    def _kernel() unified register_passable {var x} -> Int:
+    def _kernel() register_passable {var x} -> Int:
         return x
 
     _ = _kernel()
@@ -1306,7 +1301,7 @@ def metadata_closure(x: Int):
 
 # // -----
 
-# COM: Verify that @__llvm_arg_metadata on a unified closure is preserved
+# COM: Verify that @__llvm_arg_metadata on a closure is preserved
 
 # CHECK: LLVMArgMetadataArray
 # CHECK-SAME: "nvvm.grid_constant", unit
@@ -1314,7 +1309,7 @@ def metadata_closure(x: Int):
 
 def arg_metadata_closure(x: Int):
     @__llvm_arg_metadata(x, `nvvm.grid_constant`)
-    def _kernel(x: Int) unified register_passable {var} -> Int:
+    def _kernel(x: Int) register_passable {var} -> Int:
         return x
 
     _ = _kernel(x)
@@ -1337,11 +1332,11 @@ struct NonTrivialPayload(ImplicitlyCopyable, RegisterPassable):
 
 
 def call_inner[
-    F: ImplicitlyCopyable & def(Int) unified register_passable -> Int
+    F: ImplicitlyCopyable & def(Int) register_passable -> Int
 ](f: F, x: Int) -> Int:
     var payload = NonTrivialPayload(1)
 
-    def outer(y: Int) unified register_passable {var f, var payload} -> Int:
+    def outer(y: Int) register_passable {var f, var payload} -> Int:
         return f(y) + payload.value
 
     return outer(x)
@@ -1364,11 +1359,11 @@ struct TrivialPayload(TrivialRegisterPassable):
 
 
 def call_inner[
-    F: TrivialRegisterPassable & def(Int) unified register_passable -> Int
+    F: TrivialRegisterPassable & def(Int) register_passable -> Int
 ](f: F, x: Int) -> Int:
     var payload = TrivialPayload(1)
 
-    def outer(y: Int) unified register_passable {var f, var payload} -> Int:
+    def outer(y: Int) register_passable {var f, var payload} -> Int:
         return f(y) + payload.value
 
     return outer(x)
@@ -1385,7 +1380,7 @@ def captures_with_default_convention():
     # COM: c
     # CHECK-SAME: %{{.*}}[{{.*}} move])
     # COM: d is omitted because it uses default convention.
-    def my_fn() unified {mut a, b, c^, read}:
+    def my_fn() {mut a, b, c^, read}:
         pass
 
 # // -----
@@ -1396,7 +1391,7 @@ def captures_with_default_convention():
 def trigger_dtype():
     comptime k = 64
 
-    def nonsense(n: Int) unified {} -> DType:
+    def nonsense(n: Int) {} -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1411,7 +1406,7 @@ def trigger_dtype():
 
 # // -----
 
-# COM: Verify unified async closures use an async trait name and async call op.
+# COM: Verify async closures use an async trait name and async call op.
 
 # CHECK-DAG: lit.trait.decl @"def() async -> None"
 # CHECK-DAG: sourceName = #debuginfo.source_name<"def() async -> None">
@@ -1422,7 +1417,7 @@ def trigger_dtype():
 def async_unified_closure():
     var value = 0
 
-    async def inc() unified {mut value}:
+    async def inc() {mut value}:
         value += 1
 
     _ = inc()
@@ -1436,7 +1431,7 @@ def async_unified_closure():
 # CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
 def trigger_dtype_implicit_origin[n: Int]():
-    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+    def nonsense[U: AnyType, //](impl: U) {} -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1450,7 +1445,7 @@ def trigger_dtype_implicit_origin[n: Int]():
 
 # // -----
 #
-# COM: Verify promoted stateless unified closures can bind captured params
+# COM: Verify promoted stateless closures can bind captured params
 # COM: before satisfying thin function generic constraints.
 
 # CHECK-LABEL: lit.fn @"trigger_promoted_params{{.*}}"<n: !Int>() -> !kgen.none
@@ -1461,7 +1456,7 @@ def takesThin[FuncType: def[U: AnyType, //](impl: U) thin -> DType]():
 
 
 def trigger_promoted_params[n: Int]():
-    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+    def nonsense[U: AnyType, //](impl: U) {} -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1473,7 +1468,7 @@ def trigger_promoted_params[n: Int]():
 
 # // -----
 
-# COM: Verify promoted stateless unified closures create a function wrapper
+# COM: Verify promoted stateless closures create a function wrapper
 # COM: when passed as a value to a thin-compatible parameter.
 
 # CHECK-LABEL: lit.fn @"trigger_promoted_param_wrapper{{.*}}"<n: !Int>() -> !kgen.none
@@ -1482,14 +1477,14 @@ def trigger_promoted_params[n: Int]():
 # CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
-def takesFatVale[FuncType: def[U: AnyType, //](impl: U) unified -> DType](
+def takesFatVale[FuncType: def[U: AnyType, //](impl: U) -> DType](
     impl: FuncType
 ):
     _ = impl("here")
 
 
 def trigger_promoted_param_wrapper[n: Int]():
-    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+    def nonsense[U: AnyType, //](impl: U) -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1507,7 +1502,7 @@ def trigger_promoted_param_wrapper[n: Int]():
 # CHECK: lit.alias.decl *"dtype{{.*}}": !DType = <apply(:!lit.generator<[1]("impl": !lit.ref<!String, imm #lit.comptime.origin> read_mem) -> !DType> rebind(:!lit.generator<[1]("impl": !lit.ref<!String, imm *[0,0]> read_mem) -> !DType> @{{.*}}::@"nonsense{{.*}}"<:!Int n, :!AnyType !String>)
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
 def trigger_dtype_implicit_origin[n: Int]():
-    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+    def nonsense[U: AnyType, //](impl: U) -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1532,7 +1527,7 @@ def takesThin[FuncType: def[U: AnyType, //](impl: U) thin -> DType]():
 
 
 def trigger_promoted_params[n: Int]():
-    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+    def nonsense[U: AnyType, //](impl: U) -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1553,14 +1548,14 @@ def trigger_promoted_params[n: Int]():
 # CHECK: %[[WRAP_IMM:.*]] = lit.ref.immut %[[WRAP]]
 # CHECK: lit.call @{{.*}}::@"takesFatVale{{.*}}"{{.*}}(%[[WRAP_IMM]])
 # CHECK-LABEL: lit.fn @"nonsense{{.*}}"<n: !Int, U: !AnyType, +>[imm *{{.*}}](%impl:
-def takesFatVale[FuncType: def[U: AnyType, //](impl: U) unified -> DType](
+def takesFatVale[FuncType: def[U: AnyType, //](impl: U) -> DType](
     impl: FuncType
 ):
     _ = impl("here")
 
 
 def trigger_promoted_param_wrapper[n: Int]():
-    def nonsense[U: AnyType, //](impl: U) unified {} -> DType:
+    def nonsense[U: AnyType, //](impl: U) -> DType:
         if n >= 64:
             return DType.int32
         elif n >= 32:
@@ -1577,14 +1572,19 @@ def trigger_promoted_param_wrapper[n: Int]():
 # COM: parameter.
 
 def take_closure_param[
-    C: def[n: Int](arg: Int) unified -> Int
+    C: def[n: Int](arg: Int) -> Int
 ](impl: C) -> Int:
     return impl[3](4)
 
 
-def trigger[func: def(Int) capturing -> Int, xx:Int]() -> Int:
-    def wrapped_ok[n: Int](arg: Int) unified {} -> Int:
-        return func(xx) + n
+@parameter
+def legacy(arg0: Int) -> Int:
+    return arg0 + 3
+
+
+def trigger[xx: Int, func: def(Int) capturing -> Int]() -> Int:
+    def wrapped_ok[n: Int](arg: Int) -> Int:
+        return func(arg) + xx
 
     # CHECK-LABEL: lit.fn @"trigger
     # CHECK: lit.alias.decl *"X`": !Int1 = <apply(
@@ -1597,7 +1597,7 @@ def trigger[func: def(Int) capturing -> Int, xx:Int]() -> Int:
 
 # // -----
 
-# COM: Verify promoted top-level unified functions with captured parameters
+# COM: Verify promoted top-level functions with captured parameters
 # COM: build a wrapper whose Impl type is self-contained while preserving the
 # COM: promoted function symbol's native parameter ordering.
 
@@ -1617,7 +1617,7 @@ def trigger[func: def(Int) capturing -> Int, xx:Int]() -> Int:
 def local_higher_order[
     rank: Int,
     dtype: DType,
-    compute_init: def[simd_width: Int]() unified -> SIMD[dtype, simd_width],
+    compute_init: def[simd_width: Int]() -> SIMD[dtype, simd_width],
 ](
     compute_init_closure: compute_init,
 ):
@@ -1627,7 +1627,7 @@ def local_higher_order[
 def trigger[rank: Int, dtype: DType]():
     def compute_init2[
         simd_width: Int
-    ]() unified {} -> SIMD[dtype, simd_width]:
+    ]() -> SIMD[dtype, simd_width]:
         return SIMD[dtype, simd_width](0)
 
     local_higher_order[rank, dtype, type_of(compute_init2)](compute_init2)
@@ -1641,7 +1641,7 @@ struct MyList[T:AnyType]:
 
 # CHECK: lit.fn @"thinClosure{{.*}}"<T: !AnyType, +, *"list`2x": !lit.struct<#MyList <:!AnyType T>>>() -> !Int
 def callIt[T:AnyType, list: MyList[T]]():
-    def thinClosure[list: MyList[T]]() unified {} -> Int:
+    def thinClosure[list: MyList[T]]() -> Int:
         return 1
     comptime x = thinClosure[list]()
 
@@ -1663,7 +1663,7 @@ def target[
         point: IndexList[rank],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) unified -> SIMD[dtype, simd_width],
+    ) -> SIMD[dtype, simd_width],
 ](
     compute_func: ComputeFnType,
 ) raises:
@@ -1684,7 +1684,7 @@ def repro_stencil_indirect_call[
         point: IndexList[rank],
         val: SIMD[dtype, simd_width],
         result: SIMD[dtype, simd_width],
-    ) unified {} -> SIMD[dtype, simd_width]:
+    ) -> SIMD[dtype, simd_width]:
         _ = point
         return val + result
 
@@ -1715,7 +1715,7 @@ def outer[
 
     def inner(
         buf: LayoutTensor[dtype, ...]
-    ) unified {} -> LayoutTensor[dtype]:
+    ) -> LayoutTensor[dtype]:
         return LayoutTensor[dtype]()
 
     # CHECK: :!DType dtype, :!Int E1{{.*}}>(%{{.*}}, %a)
@@ -1746,14 +1746,14 @@ def outer[
     # CHECK: {hoistedCaptures = #kgen<param.decls[E1 : !Int]>}
     def inner(
         buf: LayoutTensor[dtype, ...]
-    ) unified {} -> LayoutTensor[dtype]:
+    ) -> LayoutTensor[dtype]:
         return LayoutTensor[dtype]()
 
 # // -----
 
 # COM: Verify Captures Are Prepended
 
-def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F) unified](impl:FuncType):
+def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F)](impl:FuncType):
     pass
 
 
@@ -1761,7 +1761,7 @@ def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F) unifie
 # CHECK: lit.fn @"__call__{{.*}}"<_A: !Copyable, _B: !Copyable, C: !Copyable, +>
 
 def top[A:Copyable, B:Copyable](aa:A, bb:B):
-    def closure[C: Copyable, //](a:A, b:B, c:C) unified {read}:
+    def closure[C: Copyable, //](a:A, b:B, c:C) {read}:
         pass
 
     closure(aa, bb, 3)
@@ -1772,7 +1772,7 @@ def top[A:Copyable, B:Copyable](aa:A, bb:B):
 
 # COM: Verify Lazy Conformance
 
-def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F) unified](impl:FuncType):
+def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F)](impl:FuncType):
     pass
 
 # CHECK-LABEL: lit.struct.decl @"def[C: Copyable](a: String, b: String, c: C) -> None_0_1_2_3"
@@ -1781,7 +1781,7 @@ def bind[D:Copyable, E:Copyable, FuncType: def[F:Copyable](a:D, b:E, c:F) unifie
 # CHECK-NEXT: kgen.rebind %b : !lit.ref<:!Copyable _E, imm *"2_unnamed`"> to !lit.ref<!String, imm *"2_unnamed`">
 
 def top():
-    def closureConcrete[C: Copyable, //](a:String, b:String, c:C) unified {read}:
+    def closureConcrete[C: Copyable, //](a:String, b:String, c:C) {read}:
         pass
 
     bind[String,String,type_of(closureConcrete)](closureConcrete)

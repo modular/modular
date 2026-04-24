@@ -36,7 +36,7 @@ struct AdapteeParts {
 /// a where clause constraint. Contains the closure parameter name and the
 /// alias representing the external reference.
 struct ClosureExternalRef {
-  /// The closure-typed parameter (e.g., "C" in `C: def(T) unified -> T`)
+  /// The closure-typed parameter (e.g., "C" in `C: def(T) -> T`)
   ParamDeclAttr closureParam;
   /// The alias in the closure trait representing the external param reference
   AliasDeclOp aliasOp;
@@ -53,7 +53,7 @@ public:
   /// references from the outer scope where the closure was defined.
   ///
   /// Example:
-  ///   def useIt[T: Coord, C: def(T) unified -> T](impl: C, arg: T)
+  ///   def useIt[T: Coord, C: def(T) -> T](impl: C, arg: T)
   ///
   /// The closure trait for `C` will have an alias `T` in its body. This
   /// function collects that alias along with the closure param `C`.
@@ -80,7 +80,7 @@ public:
                               unsigned numPrependedCaptures,
                               SMLoc nestedFunctionOrTypeLocation);
 
-  /// Promote a stateless unified closure decl to a top-level function decl.
+  /// Promote a stateless closure decl to a top-level function decl.
   ASTDecl *
   promoteStatelessClosure(ASTDecl &nestedFnDecl,
                           ArrayRef<ParamDeclRefAttr> paramCaptures = {});
@@ -102,7 +102,7 @@ public:
   getClosureTraitKey(FnTypeGeneratorType rawSignature);
   ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
                                    llvm::function_ref<ASTDecl *()> creation);
-  /// Canonicalize a unified-closure signature and hoist expression-shaped
+  /// Canonicalize a closure signature and hoist expression-shaped
   /// parameters into parent-scope `kgen.param.declare` entries.
   FnTypeGeneratorType hoistParamExpressionsForClosureTrait(
       FnTypeGeneratorType sig, ASTDecl &closureDecl, Location insertLoc);
@@ -130,7 +130,7 @@ public:
                                bool isStateless, FnTypeGeneratorType sig = {});
 
   /// Given a trait decl and a function signature, generate a struct that can
-  /// wrap a function pointer to be used as a unified closure.
+  /// wrap a function pointer to be used as a closure.
   ASTDecl *createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
                                  FnTypeGeneratorType signatureType,
                                  SMLoc location);

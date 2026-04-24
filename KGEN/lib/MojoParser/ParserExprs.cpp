@@ -1358,12 +1358,6 @@ ParseResult ExprParser::parseFunctionType(ExprNode *&result) {
                                               ArgListKind::kFnTypeArgList))
     return failure();
 
-  if (!fnSignature.effects.isCapturing() && !fnSignature.effects.isUnified() &&
-      !fnSignature.isThin) {
-    emitWarning(baseLoc, "function pointer type without 'thin' is deprecated; "
-                         "add 'thin' before '->'");
-  }
-
   // Parse the capture origin set if present.
   ExprNode *originExpr = nullptr;
   if (consumeIf(Token::l_square)) {

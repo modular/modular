@@ -229,6 +229,12 @@ public:
   ///
   /// constraint_clauses ::= ("where" expression string_literal?)*
   ParseResult parseConstraintsIfPresent(ParserBase &p);
+
+  /// Returns true when a function type should be interpreted as a closure
+  /// trait rather than a thin function pointer or legacy capturing function.
+  bool isClosureFunctionType() const {
+    return !effects.isCapturing() && !isThin;
+  }
 };
 
 /// This is all the state built up when parsing a capture signature.
@@ -236,6 +242,9 @@ class ParsedCaptureList {
 public:
   /// Any arguments specified.
   SmallVector<std::tuple<StringRef, CaptureConvention, SMLoc>> parsedCaptures;
+
+  /// True if a `{...}` capture list was written explicitly.
+  bool hasExplicitCaptureList = false;
 
   /// default capture convention, if exists.
   std::optional<CaptureConvention> captureAllByConvention;

@@ -11,7 +11,7 @@ def identity(x: Int) -> Int:
     return x
 
 
-# expected-warning @+1 {{function pointer type without 'thin' is deprecated; add 'thin' before '->'}}
+# expected-error @below {{cannot implicitly convert 'def identity(x: Int) -> Int' value to 'def(Int) -> Int'}}
 comptime invalid_bare_fn_type: def(Int) -> Int = identity
 
 

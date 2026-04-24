@@ -393,14 +393,12 @@ def logsoftmax[
     pass
 
 
-# COM: Verify that unified closure parameter types render with their full signature,
+# COM: Verify that closure parameter types render with their full signature,
 # COM: not just the bare keyword.
 # CHECK: "signature": "vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func)",
 
 
-def vectorize_unified[
-    func: def[width: Int](idx: Int) unified -> None
-](closure: func):
+def vectorize_unified[func: def[width: Int](idx: Int) -> None](closure: func):
     pass
 
 

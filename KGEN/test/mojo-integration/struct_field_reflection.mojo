@@ -51,7 +51,7 @@ def closure_fields():
     var a: Int32 = 42
     var b: Int32 = 27
 
-    def test() unified {var a, var b} -> Int32:
+    def test() {var a, var b} -> Int32:
         return a + b
 
     # COM: reset `b` value to be 31

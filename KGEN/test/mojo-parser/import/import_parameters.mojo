@@ -28,5 +28,5 @@ def ref_param_in_arg(x: ParameterizedType) -> ParameterizedType[x.value]:
     # CHECK-SAME: "y": !lit.ref<{{.*}}#ParameterizedType <:!Int *(0,0)>
     comptime def_type: def(
         x: ParameterizedType, y: ParameterizedType[x.value]
-    ) -> None = nested
+    ) thin -> None = nested
     return x

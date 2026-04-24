@@ -58,6 +58,11 @@ using namespace M;
 using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
+static bool usesClosurePipeline(FnOp fn) {
+  return fn->getParentOfType<FnOp>() && !fn.isOptionalSymbol() &&
+         !fn.getFuncTypeGenerator().isCapturing();
+}
+
 LogicalResult ExprNode::emitDestructuringPValue(PValue value,
                                                 IREmitter &emitter) const {
   emitter.emitError(
@@ -1303,7 +1308,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
   }
   if (needsCapture) {
     FnOp parent = cast<FnOp>(nearestEscapingFnOrNone->getIfOperation());
-    if (parent.getFuncTypeGenerator().isUnified()) {
+    if (usesClosurePipeline(parent)) {
       if (!emitter.shared.captureInstanceExistsInScope(*nearestEscapingFnOrNone,
                                                        spelling)) {
         CaptureConvention defaultConvention =
@@ -1315,7 +1320,7 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
                                                  spelling, expr->getLoc());
           if (!decl)
             return {};
-        } else {
+        } else if (emitter.builder) {
           // There is no default set nor this capture was registered already.
           // This is an error.
           emitter.shared.emitError(
@@ -4323,7 +4328,7 @@ AnyValue FunctionTypeNode::emitIR(ValueDest &dest, IREmitter &emitter) const {
   signature = signature.replaceImplicitOriginsWithIndexes(
       tcSignature.implicitOriginDecls);
 
-  if (argList.effects.isUnified()) {
+  if (argList.isClosureFunctionType()) {
     ASTDecl *trait = emitter.shared.getOrCreateClosureTrait(
         getLoc(), *emitter.getDeclScope().getNearestDeclOfType<FileModuleOp>(),
         signature);

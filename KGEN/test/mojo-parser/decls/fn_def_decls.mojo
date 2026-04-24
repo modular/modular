@@ -89,7 +89,7 @@ def variadic_param_after_default[
 # CHECK-SAME: <x: !Int, y: !Int, +>
 def inferred_params[x: Int, y: Int, //]():
     # CHECK-NEXT: !lit.generator<<"x": !Int, "y": !Int, +>() -> !kgen.none> = <@
-    comptime def_type: def[x: Int, y: Int, //] () -> None = inferred_params
+    comptime def_type: def[x: Int, y: Int, //] () thin -> None = inferred_params
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_regular
@@ -98,7 +98,7 @@ def inferred_params_regular[x: Int, //, y: Int]():
     # CHECK-NEXT: !lit.generator<<"x": !Int, +, "y": !Int>() -> !kgen.none> = <@
     comptime def_type: def[
         x: Int, //, y: Int
-    ] () -> None = inferred_params_regular
+    ] () thin -> None = inferred_params_regular
 
 
 # CHECK-LABEL: lit.fn @"inferred_params_pos_only

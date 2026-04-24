@@ -40,14 +40,14 @@ struct MovableMem(ImplicitlyCopyable):
         return self.str1 + self.str2
 
 
-def takeIt[T: def() unified -> String](state: T):
+def takeIt[T: def() -> String](state: T):
     print("captures: ", state())
 
 
 def main() raises:
     var byCopy: String = String(unsafe_from_utf8=argv()[1].as_bytes())
 
-    def mutateCopy() unified {var byCopy} -> String:
+    def mutateCopy() {var byCopy} -> String:
         byCopy += ".v2"
         return byCopy
 
@@ -58,7 +58,7 @@ def main() raises:
 
     var byMutRef: String = String(unsafe_from_utf8=argv()[2].as_bytes())
 
-    def mutateRef() unified {mut byMutRef} -> String:
+    def mutateRef() {mut byMutRef} -> String:
         byMutRef += ".v2"
         return byMutRef
 
@@ -69,7 +69,7 @@ def main() raises:
 
     var byRef: String = String(unsafe_from_utf8=argv()[3].as_bytes())
 
-    def immRef() unified {read byRef} -> String:
+    def immRef() {read byRef} -> String:
         return byRef
 
     # CHECK: captures: CC
@@ -83,7 +83,7 @@ def main() raises:
     var x: String = argv()[4]
     var mem = Mem(x, x)
 
-    def myclosure() unified {var} -> String:
+    def myclosure() {var} -> String:
         return mem.to_string()
 
     # CHECK: captures:  foofoo
@@ -92,7 +92,7 @@ def main() raises:
 
     # COM: Copyable closures
     @no_inline
-    def copyMem() unified {var^}:
+    def copyMem() {var^}:
         print(movableMem.to_string())
 
     # CHECK: copied mem

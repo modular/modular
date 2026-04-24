@@ -68,7 +68,7 @@ def outer() -> Int:
 # CHECK: lit.fn @"stateless()`{{.*}}"()
 
 
-def uses[T: def() unified -> Int](f: T) -> Int:
+def uses[T: def() -> Int](f: T) -> Int:
     return f()
 
 

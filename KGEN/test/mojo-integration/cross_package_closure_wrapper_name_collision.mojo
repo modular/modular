@@ -17,7 +17,7 @@ from containsDupe import *
 
 
 def main() raises:
-    def identical() unified {var} -> String:
+    def identical() {var} -> String:
         return "hello"
 
     # CHECK: hello

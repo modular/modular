@@ -5,13 +5,13 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def consume[F: def() unified -> String](func: F):
+def consume[F: def() -> String](func: F):
     print(func())
 
 
 @no_inline
 def package_anchor():
-    def identical() unified {var} -> String:
+    def identical() {var} -> String:
         return "hello"
 
     consume(identical)

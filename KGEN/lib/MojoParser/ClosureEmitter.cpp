@@ -51,6 +51,11 @@ static constexpr char kToDeviceType[] = "_to_device_type";
 static constexpr char kIsDeviceTypeConvertible[] =
     "_is_convertible_to_device_type";
 static constexpr char kDeviceType[] = "device_type";
+
+static bool usesClosurePipeline(FnOp fn) {
+  return fn->getParentOfType<FnOp>() && !fn.isOptionalSymbol() &&
+         !fn.getFuncTypeGenerator().isCapturing();
+}
 } // namespace
 
 static FnOp getFnOpNamed(TraitDeclOp traitDecl, StringRef name) {
@@ -589,9 +594,8 @@ ClosureEmitter::pushBackTraitFunctionImpl(FnOp traitFnOp, ASTDecl &structDecl,
       wrapperSignature.getArgListAttrs(), result,
       traitFnOp.getSpecialFunctionKind(), structDecl.getLoc(), b,
       /*constraints=*/{},
-      wrapperSignature.getFnEffects().setUnified(false).setRegisterPassable(
-          false),
-      "", synthetic, traitFnOp.getInlineLevel());
+      wrapperSignature.getFnEffects().setRegisterPassable(false), "", synthetic,
+      traitFnOp.getInlineLevel());
   return {op, parameters, result};
 }
 
@@ -1113,7 +1117,7 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
       cast<FnTypeGeneratorType>(getCanonicalType(selfContainedSignature));
 
   // The struct we're trying to create looks like this:
-  // struct FnClosureWrapper[Impl: def() -> Int](`def() unified -> Int`):
+  // struct FnClosureWrapper[Impl: def() -> Int](`def() -> Int`):
   //   def __init__(self):
   //     pass
   //   def __call__(self) -> Int:
@@ -1694,7 +1698,7 @@ ClosureEmitter::getClosureTraitKey(FnTypeGeneratorType rawSignature) {
   FnTypeGeneratorType key = FnTypeGeneratorType::get(
       canonicalSig.getInputParamTypes(), canonicalSig.getValues(),
       canonicalSig.getArgConventions(),
-      canonicalSig.getFnEffects().setUnified(false).setCapturing(false),
+      canonicalSig.getFnEffects().setCapturing(false),
       canonicalSig.getFnMetadata(), canonicalSig.getMetadata());
   return {key, capturedRefs.size()};
 }
@@ -1776,11 +1780,8 @@ ASTDecl *ClosureEmitter::createClosureTrait(
         sig.getArgConventions(), sig.getArgListAttrs(), result,
         SpecialFunctionKind::kNormal, nestedFunctionOrTypeLocation, builder,
         /*constraints=*/{},
-        sig.getFnEffects()
-            .setUnified(false)
-            .setRegisterPassable(false)
-            .setCapturing(true),
-        "", true, InlineLevel::Always);
+        sig.getFnEffects().setRegisterPassable(false).setCapturing(true), "",
+        true, InlineLevel::Always);
     builder.setInsertionPointToEnd(&fnOp.getBodyRegion().front());
     UnreachableOp::create(builder);
     functions.insert({callName, fnOp.getSymNameAttr()});
@@ -1848,14 +1849,13 @@ ASTDecl *ClosureEmitter::promoteStatelessClosure(
   }
   bool shouldBeCapturing = nestedSignature.isCapturing() ||
                            hasCapturingParameterType(shared, promotedParams);
-  // The promoted signature will not have the unified/register_passable effects.
+  // The promoted signature will not have register_passable; capturing is set
+  // from the promoted form.
   FnTypeGeneratorType promotedSignature = FnTypeGeneratorType::get(
       nestedSignature.getInputParamTypes(), nestedSignature.getValues(),
       nestedSignature.getArgConventions(),
-      nestedSignature.getFnEffects()
-          .setUnified(false)
-          .setRegisterPassable(false)
-          .setCapturing(shouldBeCapturing),
+      nestedSignature.getFnEffects().setRegisterPassable(false).setCapturing(
+          shouldBeCapturing),
       nestedSignature.getFnMetadata(), nestedSignature.getMetadata());
 
   OpBuilder builder = moduleDecl->getDeclEndBuilder();
@@ -2353,7 +2353,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
     }
   }
 
-  ASTDecl *closureWrapperDecl = shared.getOrCreateUnifiedClosureWrapper(
+  ASTDecl *closureWrapperDecl = shared.getOrCreateClosureWrapper(
       nestedFnDecl.getLoc(), closureSig, &moduleDecl, isCopyable,
       highestCaptureConvention, captures.empty());
   StructDeclOp wrapper =
@@ -2379,16 +2379,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   auto refType = RefType::get(closureType, ParamDeclRefAttr::get(origin));
   FnTypeGeneratorType original = nestedFn.getFuncTypeGenerator();
   // TODO: Remove capturing when legacy closures are removed
-  FnTypeGeneratorType withoutUnified = FnTypeGeneratorType::get(
+  FnTypeGeneratorType closureBodySignature = FnTypeGeneratorType::get(
       original.getInputParamTypes(), original.getValues(),
       original.getArgConventions(),
-      original.getFnEffects()
-          .setUnified(false)
-          .setRegisterPassable(false)
-          .setCapturing(true),
+      original.getFnEffects().setRegisterPassable(false).setCapturing(true),
       original.getFnMetadata(), original.getMetadata());
   auto [capturedRefs, _] =
-      DeclResolver::createSelfContainedSignature(withoutUnified);
+      DeclResolver::createSelfContainedSignature(closureBodySignature);
   llvm::MapVector<StringRef, Type> aliases;
   for (ParamDeclRefAttr reference : capturedRefs) {
     auto [_, inserted] =
@@ -2424,7 +2421,7 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   }
 
   auto closure = LIT::ClosureInitOp::create(
-      builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
+      builder, opLoc, refType, closureBodySignature, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
       witnessTable, ArrayAttr::get(ctx, captureTypes),
@@ -2577,7 +2574,7 @@ ASTDecl *ClosureEmitter::addCaptureValue(ASTDecl &closure, SMLoc location,
   ASTDecl *fnParentDecl = closure.getParentDecl()->getNearestDeclOfType<FnOp>();
   auto parentFn = cast<FnOp>(fnParentDecl->getIfOperation());
   ASTDecl *result = nullptr;
-  if (parentFn.getFuncTypeGenerator().isUnified())
+  if (usesClosurePipeline(parentFn))
     result = addCaptureValue(shared, *fnParentDecl, name, location);
 
   if (!result) {

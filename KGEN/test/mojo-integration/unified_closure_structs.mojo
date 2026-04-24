@@ -25,7 +25,7 @@ trait ATrait(Movable):
         ...
 
 
-struct AStruct[func: def(x: Int) unified -> Int](ATrait):
+struct AStruct[func: def(x: Int) -> Int](ATrait):
     var myFunc: Self.func
 
     def __init__(out self, var x: Self.func):
@@ -40,7 +40,7 @@ def takeIt[T: ATrait](impl: T):
 
 
 # COM: Test the capturing effect is propagated through to trait methods
-trait DefinesClosure(def(z: Int) unified -> Int):
+trait DefinesClosure(def(z: Int) -> Int):
     pass
 
 
@@ -52,11 +52,11 @@ struct DefinesClosureImpl(DefinesClosure):
         return z + self.x
 
 
-def takeIt[f: def(z: Int) unified -> Int](impl: f, y: Int):
+def takeIt[f: def(z: Int) -> Int](impl: f, y: Int):
     print(impl(y))
 
 
-# COM: Ensure unified closures work when a RegisterPassable struct forwards
+# COM: Ensure closures work when a RegisterPassable struct forwards
 # COM: a concrete type argument through a generic closure parameter.
 @fieldwise_init
 struct RegPassWrapper[U: RegisterPassable & ImplicitlyDestructible](
@@ -64,14 +64,12 @@ struct RegPassWrapper[U: RegisterPassable & ImplicitlyDestructible](
 ):
     var u: Self.U
 
-    def apply_fn[
-        FuncType: def(Self.U) unified -> Bool
-    ](self, func: FuncType) -> Bool:
+    def apply_fn[FuncType: def(Self.U) -> Bool](self, func: FuncType) -> Bool:
         return func(self.u)
 
 
 def testRegisterPassableUnifiedClosureAdaptor():
-    def always_true(x: Int) unified {} -> Bool:
+    def always_true(x: Int) {} -> Bool:
         return True
 
     var wrapper = RegPassWrapper(5)
@@ -83,7 +81,7 @@ def main() raises:
     var one = atol(argv()[2])
     var four = atol(argv()[3])
 
-    def myclosure(x: Int) unified {var y} -> Int:
+    def myclosure(x: Int) {var y} -> Int:
         return y + x
 
     var s = AStruct(myclosure^)
@@ -93,6 +91,6 @@ def main() raises:
     var impl = DefinesClosureImpl(one)
     takeIt(impl, four)
 
-    # COM: Ensure RegisterPassable struct can forward args through unified closure adaptor
+    # COM: Ensure RegisterPassable struct can forward args through closure adaptor
     # CHECK: True
     testRegisterPassableUnifiedClosureAdaptor()

@@ -62,14 +62,14 @@ def use_trait[T: PackageTrait](x: UseTrait, y: T):
 # function in the test_package_trait package. The signatures of these closures
 # must match so that the closure trait is first loaded from the package.
 def my_vectorize[
-    func: def[x: Int, y: Int, z: Int](idx: Int) unified -> None
+    func: def[x: Int, y: Int, z: Int](idx: Int) -> None
 ](closure: func):
     closure[0, 1, 1](0)
 
 
 # CHECK-LABEL: lit.fn @"my_test
 def my_test():
-    def foo[width: Int, x: Int, y: Int](idx: Int) unified {var}:
+    def foo[width: Int, x: Int, y: Int](idx: Int) {var}:
         print(width + x + y)
 
     my_vectorize(foo)

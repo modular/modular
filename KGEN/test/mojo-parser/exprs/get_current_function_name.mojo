@@ -78,8 +78,8 @@ def test_nested_function():
 def test_unified_clsoures():
     var capture = 1
 
-    def closure[param: Int](arg: Int) unified {var capture}:
-        def nested_closure[param: Int](arg: Int) unified {var capture}:
+    def closure[param: Int](arg: Int) {var capture}:
+        def nested_closure[param: Int](arg: Int) {var capture}:
             _ = param + arg + capture
             # CHECK: #StringLiteral <:string "nested_closure">
             var name = __get_current_function_name()

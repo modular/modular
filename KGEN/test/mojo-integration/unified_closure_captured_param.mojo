@@ -57,12 +57,12 @@ struct Polar(Coord):
 struct DefinesParam[T: Coord, R: Coord]:
     var state: Self.T
 
-    def method[C: def(arg: Self.T) unified -> Self.R](self, impl: C) -> Self.R:
+    def method[C: def(arg: Self.T) -> Self.R](self, impl: C) -> Self.R:
         return impl(self.state)
 
 
 def testCapturedParamFromStruct[T: Coord, R: Coord](t: T, r: R):
-    def closureImpl(arg: T) unified {var} -> R:
+    def closureImpl(arg: T) {var} -> R:
         t.prettyPrint()
         return r
 
@@ -75,14 +75,12 @@ def testCapturedParamFromStruct[T: Coord, R: Coord](t: T, r: R):
 # ===----------------------------------------------------------------------=== #
 
 
-def func[
-    T: Coord, R: Coord, C: def(arg: T) unified -> R
-](impl: C, state: T) -> R:
+def func[T: Coord, R: Coord, C: def(arg: T) -> R](impl: C, state: T) -> R:
     return impl(state)
 
 
 def testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
-    def closureImpl(arg: T) unified {var} -> R:
+    def closureImpl(arg: T) {var} -> R:
         t.prettyPrint()
         return r
 
@@ -95,16 +93,16 @@ def testCapturedParamFromFn[T: Coord, R: Coord](t: T, r: R):
 
 
 def funcWithNestedCall[
-    T: Coord, R: Coord, C: def(arg: T) unified -> R
+    T: Coord, R: Coord, C: def(arg: T) -> R
 ](impl: C, state: T) -> R:
-    def kernel() unified {read} -> R:
+    def kernel() {read} -> R:
         return impl(state)
 
     return kernel()
 
 
 def testCapturedParamFromNestedCall[T: Coord, R: Coord](t: T, r: R):
-    def closureImpl(arg: T) unified {var} -> R:
+    def closureImpl(arg: T) {var} -> R:
         t.prettyPrint()
         return r
 
@@ -116,15 +114,13 @@ def testCapturedParamFromNestedCall[T: Coord, R: Coord](t: T, r: R):
 # ===----------------------------------------------------------------------=== #
 
 
-def hasParam[
-    R: Coord, C: def[TT: Coord](arg: TT) unified -> R
-](impl: C, x: Int) -> R:
+def hasParam[R: Coord, C: def[TT: Coord](arg: TT) -> R](impl: C, x: Int) -> R:
     var state = Sphere(x, x)
     return impl(state)
 
 
 def testCapturedParamWithOtherParamsFromFn[R: Coord](t: Int, r: R):
-    def closureImpl[TT: Coord](arg: TT) unified {var} -> R:
+    def closureImpl[TT: Coord](arg: TT) {var} -> R:
         arg.prettyPrint()
         return r
 
@@ -144,12 +140,12 @@ def testTopLevelConcreteWithOtherParams(t: Int):
 # ===----------------------------------------------------------------------=== #
 # Captured Param Default
 # ===----------------------------------------------------------------------=== #
-def funcWithDefault[R: Coord, C: def[N: Int = 3]() unified -> R](impl: C) -> R:
+def funcWithDefault[R: Coord, C: def[N: Int = 3]() -> R](impl: C) -> R:
     return impl()
 
 
 def testCapturedParamFromFnWithDefault[R: Coord](r: R):
-    def closureImpl[N: Int = 3]() unified {var} -> R:
+    def closureImpl[N: Int = 3]() {var} -> R:
         print(N)
         return r
 
@@ -162,8 +158,8 @@ def testCapturedParamFromFnWithDefault[R: Coord](r: R):
 
 
 def testNestedClosureCapture[RR: Coord](r: RR, x: Int):
-    def l1[R: Coord](arg0: R) unified {var} -> R:
-        def l2[TT: Coord](arg: TT) unified {var} -> R:
+    def l1[R: Coord](arg0: R) {var} -> R:
+        def l2[TT: Coord](arg: TT) {var} -> R:
             arg.prettyPrint()
             return arg0
 
@@ -207,7 +203,7 @@ struct _NestedCapHasParam[T: _NestedCapPrintable](ImplicitlyCopyable):
 
 
 def _testNestedCapture[A: _NestedCapPrintable]():
-    def closure[C: _NestedCapHasParam[A]]() unified {read}:
+    def closure[C: _NestedCapHasParam[A]]() {read}:
         var m = materialize[C]()
         m.foo()
 
@@ -223,7 +219,7 @@ def _consume[
     A: _NestedCapPrintable,
     implA: A,
     implB: A,
-    FuncType: def[C: _NestedCapHasParam[A]]() unified,
+    FuncType: def[C: _NestedCapHasParam[A]](),
 ](impl: FuncType):
     comptime AA = _NestedCapHasParam[A](implA)
     comptime BB = _NestedCapHasParam[A](implB)
@@ -237,7 +233,7 @@ def _consume[
 
 
 def testLazyConformance[NOT_T: Coord](something: NOT_T):
-    def closureImpl(arg1: NOT_T) unified {var} -> Sphere:
+    def closureImpl(arg1: NOT_T) {var} -> Sphere:
         something.prettyPrint()
         return Sphere(33, 34)
 
@@ -249,7 +245,7 @@ def manyCaptures[
     A: Coord,
     B: Coord,
     D: Coord,
-    F: def[C: Coord](a: A, b: B, c: C) unified -> D,
+    F: def[C: Coord](a: A, b: B, c: C) -> D,
 ](impl: F, arg1: A, arg2: B, r: Int):
     var polar = Polar(r, r)
     var result = impl(arg1, arg2, polar)
@@ -257,7 +253,7 @@ def manyCaptures[
 
 
 def testLazyConformanceManyCaptures[BB: Coord](arg: BB, a0: Cartesian, r: Int):
-    def closure[CC: Coord](a1: Cartesian, b1: BB, c1: CC) unified {var} -> BB:
+    def closure[CC: Coord](a1: Cartesian, b1: BB, c1: CC) {var} -> BB:
         a1.prettyPrint()
         b1.prettyPrint()
         return arg
@@ -265,13 +261,13 @@ def testLazyConformanceManyCaptures[BB: Coord](arg: BB, a0: Cartesian, r: Int):
     manyCaptures[Cartesian, BB, BB, type_of(closure)](closure, a0, arg, r)
 
 
-def superset[B: Coord, D: Coord, F: def(b: B) unified -> D](impl: F, arg: B):
+def superset[B: Coord, D: Coord, F: def(b: B) -> D](impl: F, arg: B):
     var result = impl(arg)
     result.prettyPrint()
 
 
 def testLazyConformanceSuperset[BB: Coord & Euclidean](arg: BB):
-    def closure(b1: BB) unified {var} -> BB:
+    def closure(b1: BB) {var} -> BB:
         return arg
 
     superset[BB, BB, type_of(closure)](closure, arg)

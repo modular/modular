@@ -29,7 +29,7 @@ def implicit_variable_decls(a: Int) -> Int:
     return b
 
 
-comptime IntToFloat32Type = def (:Int) -> FloatDyn
+comptime IntToFloat32Type = def (:Int) thin -> FloatDyn
 
 
 def takeIntToFloat32Param[f: IntToFloat32Type]():
@@ -678,12 +678,12 @@ def call_test_typed_raises_fn() raises Int:
 def test_typed_raises_fn8() raises Int -> String:
     pass
 
-def parametric_raise_example[ErrorType: AnyType](fp: def () raises ErrorType) raises ErrorType:
+def parametric_raise_example[ErrorType: AnyType](fp: def () thin raises ErrorType) raises ErrorType:
     fp()
 
 # Test that parametric types raise the correct concrete error type.
 # CHECK-LABEL: lit.fn @"call_parametric_raise_example
-def call_parametric_raise_example[GenTy: AnyType](func_ptr: def () raises GenTy):
+def call_parametric_raise_example[GenTy: AnyType](func_ptr: def () thin raises GenTy):
     # CHECK:  lit.var.decl "err_int" var : !lit.ref<!Int,
     def raise_int() raises Int: pass
     try:
@@ -886,27 +886,27 @@ def initializersAsFunctions():
     # CHECK-NEXT: %def_ptr1 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<("_a": !Int) -> !MyInt> @decls::@MyInt::@"__init__(::Int)")]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr1
-    var def_ptr1: def (:Int) -> MyInt = MyInt.__init__
+    var def_ptr1: def (:Int) thin -> MyInt = MyInt.__init__
 
     # Register passable non-trivial.
 
     # CHECK-NEXT: %def_ptr2 = lit.var.decl "def_ptr2"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[!lit.generator<() -> !StructExample>: @decls::@StructExample::@"__init__()"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr2
-    var def_ptr2: def () -> StructExample = StructExample.__init__
+    var def_ptr2: def () thin -> StructExample = StructExample.__init__
 
     # CHECK-NEXT: %def_ptr4 = lit.var.decl "def_ptr4"
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure{{.*}}@StructExample::@"__init__(copy:{{.*}}"]()
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr4
     var def_ptr4: def (
         *, copy: StructExample
-    ) -> StructExample = StructExample.__init__
+    ) thin -> StructExample = StructExample.__init__
 
     # Memory
     # CHECK-NEXT: %def_ptr5 = lit.var.decl
     # CHECK-NEXT: [[TMP:%.*]] = kgen.create_closure[{{.*}}:!lit.generator<[1]("a": !Int, ?, "self": !lit.ref<!StructWithInit, mut *[0,0]> byref_result) -> !kgen.none> @decls::@StructWithInit::@"__init__(::Int)")
     # CHECK-NEXT: lit.ref.store [[TMP]], %def_ptr5
-    var def_ptr5: def (Int) -> StructWithInit = StructWithInit.__init__
+    var def_ptr5: def (Int) thin -> StructWithInit = StructWithInit.__init__
 
 
 # CHECK-LABEL: lit.struct.decl @DelegatingInitMem

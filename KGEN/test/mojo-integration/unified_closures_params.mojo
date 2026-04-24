@@ -9,9 +9,7 @@ from std.sys import argv
 from std.memory.pointer import AddressSpace, _GPUAddressSpace
 
 
-def hasOrigin[
-    F: def[T: MutOrigin](TypeWithOrigin[T]) unified -> None, //
-](f: F):
+def hasOrigin[F: def[T: MutOrigin](TypeWithOrigin[T]) -> None, //](f: F):
     f[MutAnyOrigin](TypeWithOrigin[MutAnyOrigin]())
 
 
@@ -23,13 +21,13 @@ struct TypeWithOrigin[T: MutOrigin](ImplicitlyCopyable, Movable):
         self.isMutable = Self.T.mut
 
 
-def takeIt[f: ImplicitlyCopyable & def(z: Int) unified -> Int](impl: f, y: Int):
+def takeIt[f: ImplicitlyCopyable & def(z: Int) -> Int](impl: f, y: Int):
     print(impl(y))
 
 
 @no_inline
 def aThing[f: def(Int) capturing -> Int](y: Int):
-    def aClosure(z: Int) unified {var} -> Int:
+    def aClosure(z: Int) {var} -> Int:
         return f(y)
 
     takeIt(aClosure, y)
@@ -49,7 +47,7 @@ def itCaptures[THREE: Int](one: Int, four: Int):
         @__copy_capture(one, four)
         @parameter
         def aParam2(zz: Int) -> Int:
-            def thing(z: Int) unified {var zz} -> Int:
+            def thing(z: Int) {var zz} -> Int:
                 return zz
 
             takeIt(thing, four)
@@ -81,7 +79,7 @@ struct Polar[y: Int](Coordinate, ImplicitlyCopyable):
 
 
 def useDefinesCapturingParamClosure[
-    X: Coordinate & ImplicitlyCopyable, C: def() unified -> X
+    X: Coordinate & ImplicitlyCopyable, C: def() -> X
 ](impl: C):
     var coordinate = impl()
     coordinate.prettyPrint()
@@ -90,11 +88,11 @@ def useDefinesCapturingParamClosure[
 def definesCapturingParamClosure[
     X: Coordinate & ImplicitlyCopyable
 ](something: X, one: Int) raises:
-    def closureImpl() unified {var} -> X:
+    def closureImpl() {var} -> X:
         return something
 
     # COM: check that concrete types can conform to traits with aliases
-    def closureConcreteImpl() unified {var} -> Cartesian:
+    def closureConcreteImpl() {var} -> Cartesian:
         return Cartesian(one, one)
 
     useDefinesCapturingParamClosure[X, type_of(closureImpl)](closureImpl)
@@ -105,16 +103,14 @@ def definesCapturingParamClosure[
 
 def usesParamRefClosure[
     T: Coordinate & ImplicitlyCopyable,
-    C: def[x: Int, Y: Coordinate](xx: T, unused: Y) unified -> Polar[x],
+    C: def[x: Int, Y: Coordinate](xx: T, unused: Y) -> Polar[x],
 ](impl: C, value: T):
     var result = impl[3, Cartesian](value, Cartesian(3, 3))
     result.prettyPrint()
 
 
 def definesParamRefClosure[T: Coordinate & ImplicitlyCopyable](value: T):
-    def closureImpl[
-        x: Int, Y: Coordinate
-    ](xx: T, unused: Y) unified {var} -> Polar[x]:
+    def closureImpl[x: Int, Y: Coordinate](xx: T, unused: Y) {var} -> Polar[x]:
         _ = value
         return Polar[x](x)
 
@@ -122,13 +118,13 @@ def definesParamRefClosure[T: Coordinate & ImplicitlyCopyable](value: T):
 
 
 def takesThin[
-    T: ImplicitlyCopyable & Writable, FuncType: def(T) unified
+    T: ImplicitlyCopyable & Writable, FuncType: def(T) -> None
 ](impl: FuncType, x: T):
     impl(x)
 
 
 def callTakesThin[T: ImplicitlyCopyable & Writable](x: T):
-    def takesItem(item: T) unified {}:
+    def takesItem(item: T):
         print(item)
 
     takesThin[T, type_of(takesItem)](takesItem, x)
@@ -144,7 +140,7 @@ def main() raises:
 
     # Ensure origins are lowered
     # CHECK: True
-    def closure[T: MutOrigin](_bar: TypeWithOrigin[T]) unified {read}:
+    def closure[T: MutOrigin](_bar: TypeWithOrigin[T]) {read}:
         print(_bar.isMutable)
 
     hasOrigin(closure)

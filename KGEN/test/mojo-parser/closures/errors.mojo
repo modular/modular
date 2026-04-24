@@ -6,13 +6,13 @@
 # RUN: %parse-mojo-isolated -verify-diagnostics %s
 
 
-# expected-error @+1 {{the 'escaping' function effect is no longer supported; use 'unified' closures instead}}
+# expected-error @+1 {{the 'escaping' function effect is no longer supported}}
 def escaping_effect_is_rejected(closure: def() escaping -> None):
     pass
 
 
 def escaping_on_nested_decl_is_rejected():
-    # expected-error @below {{the 'escaping' function effect is no longer supported; use 'unified' closures instead}}
+    # expected-error @below {{the 'escaping' function effect is no longer supported}}
     def myclosure() escaping:
         pass
 

@@ -272,11 +272,11 @@ struct CutDownVariadicPack[element_trait: type_of(AnyType), //,
                            *element_types: element_trait]:
 
     # CHECK: lit.fn @"each_hack
-    def each_hack[i: Int, func: def[T: Self.element_trait] (T) -> None](self):
+    def each_hack[i: Int, func: def[T: Self.element_trait] (T) thin -> None](self):
         # Test that we can infer the type of 'T' from the argument.
         # CHECK-NEXT: [[REFVAL:%.*]] = lit.call {{.*}}get_element{{.*}}(%self)
         # CHECK-NEXT: [[REF:%.*]] = lit.call {{.*}}Pointer::@"__getitem__{{.*}}([[REFVAL]])
-        # CHECK-NEXT: lit.call{{.*}} func, 
+        # CHECK-NEXT: lit.call{{.*}} func,
         # CHECK-SAME: :!kgen.param<:!lit.anytrait<!AnyType> element_trait> #kgen.param_list.get<:param_list<:!lit.anytrait<!AnyType> element_trait>
         # CHECK-SAME: element_types{{.*}}([[REF]])
         func(self.get_element[i]()[])

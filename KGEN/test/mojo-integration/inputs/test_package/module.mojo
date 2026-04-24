@@ -77,7 +77,7 @@ def exported_func():
 # declaration will first be pulled from this package. Thus the signatures of
 # the two closures must match.
 def call_closure[
-    func: def[x: Int, y: Int, z: Int](idx: Int) unified -> None,
+    func: def[x: Int, y: Int, z: Int](idx: Int) -> None,
     //,
     simd_width: Int,
 ](size: Int, closure: func):

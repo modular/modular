@@ -54,7 +54,7 @@ def test_through_pointer():
     # Taking the address of a abi("C") function gives the C-ABI function's
     # address (in-place rewrite, no rename).  The existing call_indirect
     # coercion path then applies C ABI coercion at the call site.
-    var fp: def(FloatPair) abi("C") -> FloatPair = mojo_add_one
+    var fp: def(FloatPair) thin abi("C") -> FloatPair = mojo_add_one
     var r = fp(FloatPair(3.0, 4.0))
     print(r.x, r.y)
 
