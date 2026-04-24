@@ -75,9 +75,7 @@ def main() -> None:
         print("ERROR: MODULAR_KERNEL_VERIFICATION_OPS_PATH not set.")
         sys.exit(1)
 
-    print(
-        f"MODULAR_MAX_DEBUG: {os.environ.get('MODULAR_MAX_DEBUG', 'not set')}"
-    )
+    print(f"MODULAR_DEBUG: {os.environ.get('MODULAR_DEBUG', 'not set')}")
     print(
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE:"
         f" {os.environ.get('MODULAR_DEVICE_CONTEXT_SYNC_MODE', 'not set')}"

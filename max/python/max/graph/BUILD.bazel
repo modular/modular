@@ -21,6 +21,5 @@ modular_py_library(
         "//max/python/max/mlir",
         "@mojo//:python",
         requirement("numpy"),
-        requirement("pyyaml"),
     ],
 )

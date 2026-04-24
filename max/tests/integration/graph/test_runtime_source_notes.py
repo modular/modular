@@ -41,7 +41,8 @@ def test_runtime_error_includes_python_stack_trace(
     """Verify that runtime CUDA errors include Python stack trace from graph construction.
 
     This test validates that when:
-    - MODULAR_MAX_DEBUG=True (at build time)
+    - `max-debug.source-tracebacks` is enabled at build time (for example,
+      via `MODULAR_DEBUG=source-tracebacks`)
     - MODULAR_DEVICE_CONTEXT_SYNC_MODE=1 (at runtime)
 
     Runtime GPU errors include "Source Traceback:" with the Python call stack
@@ -86,7 +87,7 @@ def test_runtime_error_includes_python_stack_trace(
     assert "Source Traceback:" in error_message, (
         f"Expected 'Source Traceback:' in error message.\n"
         f"Got: {error_message}\n\n"
-        f"Hint: Ensure MODULAR_MAX_DEBUG=True was set at build time."
+        f"Hint: Ensure MODULAR_DEBUG=source-tracebacks was set at build time."
     )
 
     # Verify stack trace includes the function where the op was created

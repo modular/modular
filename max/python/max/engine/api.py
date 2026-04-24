@@ -591,8 +591,10 @@ class InferenceSession:
                         "Failed to compile the model. Please file an issue, "
                         "all models should be correct by construction and "
                         "this error should have been caught during construction.\n"
-                        "For more detailed failure information run with the "
-                        "environment variable `MODULAR_MAX_DEBUG=True`."
+                        "For more detailed failure information enable the "
+                        "`max-debug.source-tracebacks` config key (for example, "
+                        "`Graph.debug.source_tracebacks = True` or "
+                        "`MODULAR_DEBUG=source-tracebacks`)."
                     ) from e
         else:
             raise RuntimeError("The model is not a valid path or module.")

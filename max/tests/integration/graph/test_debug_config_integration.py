@@ -51,7 +51,6 @@ def _run_script(
         "MODULAR_DEBUG",
         "MODULAR_MAX_UNINITIALIZED_READ_CHECK",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE",
-        "MODULAR_MAX_DEBUG",
         "MOJO_ASSERT_LEVEL",
         "MODULAR_HOME",
         "MODULAR_DERIVED_PATH",
@@ -440,29 +439,15 @@ class TestReaderMigration:
     """The migrated reader sites see values set via the new Config keys."""
 
     def test_graph_source_tracebacks_via_modular_debug(self) -> None:
-        # graph.py's MODULAR_MAX_DEBUG now reads from
-        # InferenceSession.debug.source_tracebacks (which goes through
-        # Config, picking up MODULAR_DEBUG=source-tracebacks) in addition
-        # to the legacy MODULAR_MAX_DEBUG env var.
+        # graph.py's _SOURCE_TRACEBACKS_ENABLED reads from
+        # InferenceSession.debug.source_tracebacks, which goes through
+        # Config and picks up MODULAR_DEBUG=source-tracebacks.
         result = _run_script(
             """\
             from max.graph import graph
-            assert graph.MODULAR_MAX_DEBUG is True
+            assert graph._SOURCE_TRACEBACKS_ENABLED is True
             print("PASS")
             """,
             env_overrides={"MODULAR_DEBUG": "source-tracebacks"},
-        )
-        _assert_pass(result)
-
-    def test_graph_source_tracebacks_via_legacy_env_var(self) -> None:
-        # Legacy MODULAR_MAX_DEBUG env var still works via the fallback in
-        # graph.py, independent of the new Config key.
-        result = _run_script(
-            """\
-            from max.graph import graph
-            assert graph.MODULAR_MAX_DEBUG is True
-            print("PASS")
-            """,
-            env_overrides={"MODULAR_MAX_DEBUG": "True"},
         )
         _assert_pass(result)
