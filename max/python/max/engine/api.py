@@ -403,14 +403,10 @@ class InferenceSession:
             # Ignore errors if SIGUSR2 is already registered or unavailable
             pass
 
-        # Prefer the new max-debug.op-log-level config (covers MODULAR_MAX_DEBUG_OP_LOG_LEVEL
-        # env var, modular.cfg, and InferenceSession.debug.op_log_level Python setter).
-        # Fall back to the legacy MOJO_LOGGING_LEVEL env var.  The legacy
-        # fallback will be removed in a follow-up PR.
-        if log_level := (
-            _InferenceSession.debug.op_log_level
-            or os.getenv("MOJO_LOGGING_LEVEL")
-        ):
+        # Read the op log level from the max-debug.op-log-level config key
+        # (covers MODULAR_MAX_DEBUG_OP_LOG_LEVEL env var, modular.cfg, and
+        # InferenceSession.debug.op_log_level Python setter).
+        if log_level := _InferenceSession.debug.op_log_level:
             self.set_mojo_log_level(log_level)
 
         # Same pattern for assert level.
