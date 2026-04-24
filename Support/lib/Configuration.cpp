@@ -29,7 +29,6 @@
 #include <filesystem>
 #include <mutex>
 #include <optional>
-#include <sstream>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -361,24 +360,25 @@ void Config::parseModularDebugEnv() {
       setGlobalValue("max-debug.source-tracebacks", "true");
     };
 
-    std::istringstream stream(env);
-    std::string token;
-    while (std::getline(stream, token, ',')) {
+    llvm::StringRef envRef(env);
+    while (!envRef.empty()) {
+      // Split on comma.
+      auto [tokenRef, rest] = envRef.split(',');
+      envRef = rest;
+
       // Trim whitespace.
-      size_t start = token.find_first_not_of(" \t");
-      size_t end = token.find_last_not_of(" \t");
-      if (start == std::string::npos)
+      tokenRef = tokenRef.trim(" \t");
+      if (tokenRef.empty())
         continue;
-      token = token.substr(start, end - start + 1);
 
       // key=value form routes to a Config value override.
-      size_t eq = token.find('=');
-      if (eq != std::string::npos) {
-        std::string key = token.substr(0, eq);
-        std::string value = token.substr(eq + 1);
+      size_t eq = tokenRef.find('=');
+      if (eq != llvm::StringRef::npos) {
+        llvm::StringRef key = tokenRef.substr(0, eq);
+        llvm::StringRef value = tokenRef.substr(eq + 1);
         if (key == "assert-level" || key == "op-log-level" ||
             key == "print-style" || key == "ir-output-dir") {
-          setGlobalValue(("max-debug." + key), value);
+          setGlobalValue(("max-debug." + key).str(), value.str());
         } else {
           llvm::errs() << "MODULAR_DEBUG: unknown option '" << key
                        << "'; ignoring\n";
@@ -387,16 +387,16 @@ void Config::parseModularDebugEnv() {
       }
 
       // Boolean flags and the `sensible` meta mode.
-      if (token == "sensible") {
+      if (tokenRef == "sensible") {
         applySensibleMode();
-      } else if (token == "nan-check" || token == "uninitialized-read-check" ||
-                 token == "device-sync-mode" ||
-                 token == "stack-trace-on-error" ||
-                 token == "stack-trace-on-crash" ||
-                 token == "source-tracebacks") {
-        setGlobalValue(("max-debug." + token), "true");
+      } else if (llvm::is_contained({"nan-check", "uninitialized-read-check",
+                                     "device-sync-mode", "stack-trace-on-error",
+                                     "stack-trace-on-crash",
+                                     "source-tracebacks"},
+                                    tokenRef)) {
+        setGlobalValue(("max-debug." + tokenRef).str(), "true");
       } else {
-        llvm::errs() << "MODULAR_DEBUG: unknown option '" << token
+        llvm::errs() << "MODULAR_DEBUG: unknown option '" << tokenRef
                      << "'; ignoring\n";
       }
     }
