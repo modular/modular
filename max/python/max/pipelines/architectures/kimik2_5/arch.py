@@ -13,8 +13,7 @@
 
 from max.graph.weights import WeightsFormat
 from max.interfaces import InputModality, PipelineTask
-from max.pipelines.core import TextContext
-from max.pipelines.lib import SupportedArchitecture, TextTokenizer
+from max.pipelines.lib import SupportedArchitecture
 from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
@@ -107,8 +106,8 @@ eagle3_kimik25_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     pipeline_model=Eagle3KimiK25Model,
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
+    tokenizer=KimiK2_5VLTokenizer,
+    context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
