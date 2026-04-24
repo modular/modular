@@ -57,6 +57,11 @@ class UnifiedEagleLlama3Values:
     kv_collection: PagedCacheValues
     draft_kv_blocks: BufferValue
     seed: TensorValue
+    temperature: TensorValue
+    top_k: TensorValue
+    max_k: TensorValue
+    top_p: TensorValue
+    min_top_p: TensorValue
 
 
 class UnifiedEagleLlama3(Module):
@@ -70,6 +75,7 @@ class UnifiedEagleLlama3(Module):
         self.acceptance_sampler = AcceptanceSampler(
             synthetic_acceptance_rate=config.speculative_config.synthetic_acceptance_rate,
             num_draft_steps=self.num_draft_steps,
+            use_stochastic=True,
         )
         self.num_devices = 1
 
@@ -100,8 +106,14 @@ class UnifiedEagleLlama3(Module):
             draft_tokens,
             # draft kvcache
             draft_kv_blocks,
-            # synthetic acceptance seed (scalar int64 on CPU)
+            # stochastic acceptance seed (scalar int64 on CPU)
             seed,
+            # sampling params for stochastic acceptance
+            temperature,
+            top_k,
+            max_k,
+            top_p,
+            min_top_p,
         ) = inputs
 
         target_kv_collection = PagedCacheValues(
@@ -121,16 +133,19 @@ class UnifiedEagleLlama3(Module):
             kv_collection=target_kv_collection,
             draft_kv_blocks=draft_kv_blocks.buffer,
             seed=seed.tensor,
+            temperature=temperature.tensor,
+            top_k=top_k.tensor,
+            max_k=max_k.tensor,
+            top_p=top_p.tensor,
+            min_top_p=min_top_p.tensor,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
         """Input types for the unified graph.
 
-        The trailing ``ops.random.SeedType`` is a scalar int64 reserved for
-        stochastic sub-modules. It is currently consumed only by synthetic
-        acceptance sampling, but is always present so the graph signature
-        is stable and additional stochastic paths can reuse the same
-        input. Bound per-execute to a fresh value by the pipeline model.
+        Order: tokens, input_row_offsets, return_n_logits, target_kv_cache,
+               draft_tokens, draft_kv_blocks, seed, temperature, top_k,
+               max_k, top_p, min_top_p.
         """
         device_ref = self.config.target.devices[0]
 
@@ -155,6 +170,20 @@ class UnifiedEagleLlama3(Module):
         assert len(draft_kv_inputs.inputs) == 1
         draft_kv_blocks = draft_kv_inputs.inputs[0].kv_blocks
 
+        temperature_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        top_k_type = TensorType(
+            DType.int64, shape=["batch_size"], device=device_ref
+        )
+        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
+        top_p_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        min_top_p_type = TensorType(
+            DType.float32, shape=[], device=DeviceRef.CPU()
+        )
+
         return (
             tokens_type,
             input_row_offsets_type,
@@ -163,6 +192,11 @@ class UnifiedEagleLlama3(Module):
             draft_tokens_type,
             draft_kv_blocks,
             ops.random.SeedType,
+            temperature_type,
+            top_k_type,
+            max_k_type,
+            top_p_type,
+            min_top_p_type,
         )
 
     def __call__(
@@ -219,7 +253,14 @@ class UnifiedEagleLlama3(Module):
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
         num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
-            draft_tokens, logits, seed=inputs.seed
+            draft_tokens,
+            logits,
+            seed=inputs.seed,
+            temperature=inputs.temperature,
+            top_k=inputs.top_k,
+            max_k=inputs.max_k,
+            top_p=inputs.top_p,
+            min_top_p=inputs.min_top_p,
         )
 
         # target_tokens: [B, K+1]

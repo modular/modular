@@ -59,12 +59,17 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
-    """Per-execute int64 scalar seed reserved for stochastic sub-modules.
+    """Per-execute int64 scalar seed consumed by the stochastic acceptance
+    sampler (and, when enabled, the synthetic benchmarking sampler)."""
 
-    Currently only consumed by synthetic acceptance sampling, but always
-    bound so the graph signature is stable and additional stochastic
-    paths can reuse the same input.
-    """
+    temperature: Buffer | None = None
+    top_k: Buffer | None = None
+    max_k: Buffer | None = None
+    top_p: Buffer | None = None
+    min_top_p: Buffer | None = None
+    """Per-batch sampling parameters consumed by the stochastic acceptance
+    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
+    ``[batch_size]`` tensors on the primary device."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -80,6 +85,19 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
             buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
+        if self.draft_tokens is not None:
+            assert self.temperature is not None
+            assert self.top_k is not None
+            assert self.max_k is not None
+            assert self.top_p is not None
+            assert self.min_top_p is not None
+            buffers += (
+                self.temperature,
+                self.top_k,
+                self.max_k,
+                self.top_p,
+                self.min_top_p,
+            )
         return buffers
 
 
