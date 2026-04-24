@@ -102,8 +102,10 @@ from linalg.fp4_quantization import (
     block_scales_interleave,
     quantize_mxfp4_amd,
     quantize_dynamic_block_scaled_mxfp4,
-    matmul_dynamic_block_scaled_mxfp4,
-    grouped_matmul_block_scaled_mxfp4,
+)
+from linalg.matmul.gpu.amd import (
+    mxfp4_block_scaled_matmul_amd,
+    mxfp4_grouped_matmul_amd,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -9047,7 +9049,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        grouped_matmul_block_scaled_mxfp4(
+        mxfp4_grouped_matmul_amd(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
@@ -9214,7 +9216,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp4:
             " block scaled support"
         )
 
-        matmul_dynamic_block_scaled_mxfp4(
+        mxfp4_block_scaled_matmul_amd(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),

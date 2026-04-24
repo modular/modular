@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Benchmark for MXFP4 dequant-then-FP8 grouped matmul on AMD CDNA GPUs.
 
-Benchmarks the full mxfp4_grouped_matmul_amd pipeline:
+Benchmarks the full mxfp4_dequant_grouped_matmul_amd pipeline:
   1. Dequant MXFP4 packed uint8 expert weights + E8M0 scales to FP8
   2. Cast BF16 activations to FP8
   3. FP8 grouped GEMM via grouped_matmul
@@ -50,8 +50,8 @@ from internal_utils._utils import InitializationType, init_vector_launch
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.matmul.gpu.amd.mxfp4_grouped_matmul_amd import (
-    mxfp4_grouped_matmul_amd,
+from linalg.matmul.gpu.amd.mxfp4_dequant_grouped_matmul_amd import (
+    mxfp4_dequant_grouped_matmul_amd,
 )
 from linalg.matmul.gpu.amd.mxfp4_dequant_matmul_amd import _cast_bf16_to_fp8
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -79,7 +79,7 @@ def bench_mxfp4_grouped_matmul[
     verify: Bool,
     run_benchmark: Bool,
 ) raises:
-    """Benchmark the full mxfp4_grouped_matmul_amd pipeline."""
+    """Benchmark the full mxfp4_dequant_grouped_matmul_amd pipeline."""
     comptime packed_K = K // 2
     comptime scale_K = ceildiv(K, 32)
     comptime fp8_type = DType.float8_e4m3fn
@@ -174,7 +174,7 @@ def bench_mxfp4_grouped_matmul[
     @parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
-        mxfp4_grouped_matmul_amd(
+        mxfp4_dequant_grouped_matmul_amd(
             c_tt,
             a_tt,
             b_packed_tt,

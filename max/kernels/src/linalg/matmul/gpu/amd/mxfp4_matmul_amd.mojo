@@ -417,19 +417,24 @@ struct MXFP4MatmulAMD:
     )
     @staticmethod
     def run[
+        out_dtype: DType,
         c_layout: TensorLayout,
         a_layout: TensorLayout,
         b_layout: TensorLayout,
         sfa_layout: TensorLayout,
         sfb_layout: TensorLayout,
     ](
-        c: TileTensor[DType.float32, c_layout, MutAnyOrigin],
+        c: TileTensor[out_dtype, c_layout, MutAnyOrigin],
         a: TileTensor[DType.uint8, a_layout, ImmutAnyOrigin],
         b: TileTensor[DType.uint8, b_layout, ImmutAnyOrigin],
         sfa: TileTensor[DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin],
         sfb: TileTensor[DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin],
     ):
-        """MXFP4 block-scaled GEMM kernel with SMEM pipeline."""
+        """MXFP4 block-scaled GEMM kernel with SMEM pipeline.
+
+        Accumulates in float32 internally. Output is cast to out_dtype
+        during the store epilogue.
+        """
         comptime BM = Self.BM
         comptime BN = Self.BN
         comptime BK_BYTES = Self.BK_BYTES
@@ -511,9 +516,8 @@ struct MXFP4MatmulAMD:
         ]()
 
         # === Output writer ===
-        var c_writer = RegTileWriter[DType.float32, MMA_M, WARP_SIZE // MMA_M](
-            c
-        )
+        # RegTileWriter casts from float32 accumulators to out_dtype.
+        var c_writer = RegTileWriter[out_dtype, MMA_M, WARP_SIZE // MMA_M](c)
 
         # === Pipeline helpers ===
         var k_counter = 0
@@ -716,43 +720,40 @@ struct MXFP4MatmulAMD:
 
 def mxfp4_block_scaled_matmul_amd(
     c: TileTensor[mut=True, ...],
-    a: TileTensor,
-    b: TileTensor,
-    a_scales: TileTensor,
-    b_scales: TileTensor,
+    a: TileTensor[mut=False, DType.uint8, ...],
+    b: TileTensor[mut=False, DType.uint8, ...],
+    a_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
+    b_scales: TileTensor[mut=False, DType.float8_e8m0fnu, ...],
     ctx: DeviceContext,
 ) raises:
     """Launch native MXFP4 block-scaled matmul on AMD CDNA4.
 
     Uses cdna4_block_scaled_mfma with FLOAT4_E2M1 directly — no
     dequantization to FP8. Both A and B must be packed uint8 with
-    E8M0 scaling factors.
+    E8M0 scaling factors. Accumulates in float32, casts to c.dtype
+    during the store epilogue.
 
     Args:
-        c: Output [M, N] float32.
+        c: Output [M, N] (any float dtype, e.g. float32 or bfloat16).
         a: Packed A [M, K//2] uint8 (two MXFP4 elements per byte).
         b: Packed B [N, K//2] uint8 (transposed, two MXFP4 per byte).
         a_scales: A scales [M, K//32] float8_e8m0fnu.
         b_scales: B scales [N, K//32] float8_e8m0fnu.
         ctx: Device context for kernel launch.
     """
-    comptime assert c.dtype == DType.float32, "output must be float32"
-    comptime assert a.dtype == DType.uint8, "A must be uint8 (packed MXFP4)"
-    comptime assert b.dtype == DType.uint8, "B must be uint8 (packed MXFP4)"
-    comptime assert (
-        a_scales.dtype == DType.float8_e8m0fnu
-    ), "A scales must be float8_e8m0fnu"
-    comptime assert (
-        b_scales.dtype == DType.float8_e8m0fnu
-    ), "B scales must be float8_e8m0fnu"
 
     var M = Int(c.dim[0]())
     comptime N = type_of(c).static_shape[1]
 
+    if M == 0 or N == 0:
+        return
+
     comptime BM = MXFP4MatmulAMD.BM
     comptime BN = MXFP4MatmulAMD.BN
 
+    comptime out_dtype = type_of(c).dtype
     comptime kernel = MXFP4MatmulAMD.run[
+        out_dtype,
         type_of(c).LayoutType,
         type_of(a).LayoutType,
         type_of(b).LayoutType,

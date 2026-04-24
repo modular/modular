@@ -10,137 +10,229 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""MXFP4 grouped matmul on AMD CDNA GPUs via dequant-to-FP8 + FP8 grouped GEMM.
+"""Native MXFP4 grouped matmul on AMD CDNA4 via block-scaled MFMA.
 
-Dequantizes MXFP4 expert weights to FP8, casts BF16 activations to FP8, then
-dispatches to the AMD FP8 grouped GEMM via grouped_matmul.
-
-The grouped matmul computes:
+Grouped matmul for Mixture of Experts (MoE):
   for i in range(num_active_experts):
     C[offsets[i]:offsets[i+1], :] =
         A[offsets[i]:offsets[i+1], :] @ B[expert_ids[i], :, :].T
 
-where B weights are stored as packed MXFP4 (uint8) with E8M0 scales, and
-A activations are BF16. Both are dequantized/cast to FP8 before the GEMM.
+Uses block_idx.z for expert dispatch and MXFP4MatmulAMD.run per-expert.
+
+Entry point: mxfp4_grouped_matmul_amd()
 """
 
 from std.math import ceildiv
+from std.gpu import (
+    MAX_THREADS_PER_BLOCK_METADATA,
+    block_idx,
+)
 from std.gpu.host import DeviceContext
 
-from layout import Coord, Idx, TileTensor, row_major
+from layout import Coord, Idx, TensorLayout, TileTensor
+from layout.tile_layout import row_major
 
-from linalg.mxfp4_dequant import dequant_mxfp4, _cast_bf16_to_fp8
-from linalg.grouped_matmul import grouped_matmul
+from std.utils import StaticTuple
+
+from .mxfp4_matmul_amd import MXFP4MatmulAMD
+
+
+# ===----------------------------------------------------------------------=== #
+# Device kernel
+# ===----------------------------------------------------------------------=== #
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](
+        Int32(MXFP4MatmulAMD.num_threads)
+    )
+)
+def mxfp4_grouped_matmul_amd_kernel[
+    out_dtype: DType,
+    LayoutC: TensorLayout,
+    LayoutA: TensorLayout,
+    LayoutB: TensorLayout,
+    LayoutSFA: TensorLayout,
+    LayoutSFB: TensorLayout,
+    AOffsetsLayout: TensorLayout,
+    ExpertIdsLayout: TensorLayout,
+](
+    c_tensor: TileTensor[mut=True, out_dtype, LayoutC, MutAnyOrigin],
+    a_tensor: TileTensor[DType.uint8, LayoutA, ImmutAnyOrigin],
+    b_tensor: TileTensor[DType.uint8, LayoutB, ImmutAnyOrigin],
+    sfa_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFA, ImmutAnyOrigin],
+    sfb_tensor: TileTensor[DType.float8_e8m0fnu, LayoutSFB, ImmutAnyOrigin],
+    a_offsets: TileTensor[
+        mut=False, DType.uint32, AOffsetsLayout, ImmutAnyOrigin
+    ],
+    expert_ids: TileTensor[
+        mut=False, DType.int32, ExpertIdsLayout, ImmutAnyOrigin
+    ],
+    num_active_experts: Int,
+):
+    """MXFP4 grouped matmul kernel with expert dispatch via block_idx.z.
+
+    b_tensor and sfb_tensor are flattened from 3D to 2D:
+      b: [num_experts*N, K//2], sfb: [num_experts*N, K//32]
+    """
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
+
+    comptime N = c_tensor.static_shape[1]
+    comptime K_BYTES = b_tensor.static_shape[1]  # K//2
+    comptime K_SCALES = sfa_tensor.static_shape[1]  # K//32
+
+    comptime BM = MXFP4MatmulAMD.BM
+
+    var M = a_offsets[block_idx.z + 1] - a_offsets[block_idx.z]
+    if M == 0 or N == 0:
+        return
+    var expert_id = expert_ids[block_idx.z]
+    var a_start_row = a_offsets[block_idx.z]
+
+    if expert_id == -1:
+        return
+
+    # Grid Y is ceildiv(max_tokens_per_experts, BM); skip blocks past this
+    # expert's M rows (other experts may be shorter than max_tokens).
+    if block_idx.y >= ceildiv(Int(M), BM):
+        return
+
+    var c_ptr = c_tensor.ptr + a_start_row * UInt32(N)
+    var a_ptr = a_tensor.ptr + a_start_row * UInt32(K_BYTES)
+    var b_ptr = b_tensor.ptr + expert_id * Int32(N) * Int32(K_BYTES)
+    var sfa_ptr = sfa_tensor.ptr + a_start_row * UInt32(K_SCALES)
+    var sfb_ptr = sfb_tensor.ptr + expert_id * Int32(N) * Int32(K_SCALES)
+
+    var c_tile = TileTensor(c_ptr, row_major(Coord(Idx(Int(M)), Idx[N]())))
+    var a_tile = TileTensor(
+        a_ptr, row_major(Coord(Idx(Int(M)), Idx[K_BYTES]()))
+    )
+    var b_tile = TileTensor(b_ptr, row_major[N, K_BYTES]())
+    var sfa_tile = TileTensor(
+        sfa_ptr, row_major(Coord(Idx(Int(M)), Idx[K_SCALES]()))
+    )
+    var sfb_tile = TileTensor(sfb_ptr, row_major[N, K_SCALES]())
+
+    MXFP4MatmulAMD.run[
+        out_dtype,
+        type_of(c_tile).LayoutType,
+        type_of(a_tile).LayoutType,
+        type_of(b_tile).LayoutType,
+        type_of(sfa_tile).LayoutType,
+        type_of(sfb_tile).LayoutType,
+    ](c_tile, a_tile, b_tile, sfa_tile, sfb_tile)
+
+
+# ===----------------------------------------------------------------------=== #
+# Public entry point
+# ===----------------------------------------------------------------------=== #
 
 
 def mxfp4_grouped_matmul_amd(
-    c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    a: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b_packed: TileTensor[address_space=AddressSpace.GENERIC, ...],
-    b_scales: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    c: TileTensor[mut=True, ...],
+    a: TileTensor[DType.uint8, ...],
+    b: TileTensor[DType.uint8, ...],
+    a_scales: TileTensor[DType.float8_e8m0fnu, ...],
+    b_scales: TileTensor[DType.float8_e8m0fnu, ...],
     a_offsets: TileTensor[
         mut=False, DType.uint32, address_space=AddressSpace.GENERIC, ...
     ],
     expert_ids: TileTensor[
         mut=False, DType.int32, address_space=AddressSpace.GENERIC, ...
     ],
-    max_num_tokens_per_expert: Int,
     num_active_experts: Int,
-    total_num_tokens: Int,
     ctx: DeviceContext,
 ) raises:
-    """MXFP4 grouped matmul: dequant B weights, cast A to FP8, FP8 grouped GEMM.
+    """Launch native MXFP4 grouped matmul on AMD CDNA4.
+
+    Grouped matmul for MoE: dispatches one expert per block_idx.z,
+    using MXFP4MatmulAMD.run per expert slice.
 
     Args:
-        c: Output [total_tokens, N] in bfloat16.
-        a: Activations [total_tokens, K] in bfloat16.
-        b_packed: Expert weights [num_experts, N, K//2] in uint8 (packed MXFP4).
-        b_scales: Weight scales [num_experts, N, K//32] in float8_e8m0fnu.
-        a_offsets: Token offsets [num_active_experts+1] in uint32.
-        expert_ids: Expert indices [num_active_experts] in int32.
-        max_num_tokens_per_expert: Maximum tokens per expert (for grid dim).
+        c: Output [total_tokens, N].
+        a: Packed activations [total_tokens, K//2] uint8.
+        b: Expert weights [num_experts, N, K//2] uint8.
+        a_scales: Activation scales [total_tokens, K//32] float8_e8m0fnu.
+        b_scales: Weight scales [num_experts, N, K//32] float8_e8m0fnu.
+        a_offsets: Token offsets [num_active_experts+1] uint32.
+        expert_ids: Expert indices [num_active_experts] int32.
         num_active_experts: Number of active experts.
-        total_num_tokens: Total number of tokens across all experts.
         ctx: Device context.
     """
-    comptime c_type = c.dtype
-    comptime a_type = a.dtype
-    comptime b_type = b_packed.dtype
-    comptime b_scales_type = b_scales.dtype
-
-    comptime assert c_type == DType.bfloat16, "output must be bfloat16"
-    comptime assert a_type == DType.bfloat16, "activations must be bfloat16"
-    comptime assert b_type == DType.uint8, "weights must be uint8 (packed FP4)"
-    comptime assert (
-        b_scales_type == DType.float8_e8m0fnu
-    ), "scales must be float8_e8m0fnu"
-
-    comptime assert b_packed.flat_rank == 3, "b_packed must be rank 3"
+    comptime assert b.flat_rank == 3, "b must be rank 3"
     comptime assert b_scales.flat_rank == 3, "b_scales must be rank 3"
+    comptime assert a_offsets.flat_rank == 1, "a_offsets must be rank 1"
+    comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
 
-    comptime num_experts = b_packed.static_shape[0]
-    comptime static_N = b_packed.static_shape[1]
-    comptime packed_K = b_packed.static_shape[2]
-    comptime static_K = packed_K * 2
-    comptime fp8_type = DType.float8_e4m3fn
+    comptime num_experts = b.static_shape[0]
+    comptime N = b.static_shape[1]
+    comptime K_BYTES = b.static_shape[2]  # K//2
 
-    # Step 1: Dequantize all expert weights from MXFP4 to FP8.
-    # B_packed is [num_experts, N, K//2], B_scales is [num_experts, N, K//32].
-    # We dequant into a flat [num_experts*N, K] FP8 buffer, then reshape to
-    # 3D [num_experts, N, K] for grouped_matmul.
-    var b_fp8_buf = ctx.enqueue_create_buffer[fp8_type](
-        num_experts * static_N * static_K
+    comptime num_experts_sf = b_scales.static_shape[0]
+    comptime N_sf = b_scales.static_shape[1]
+    comptime K_SCALES = b_scales.static_shape[2]  # K//32
+
+    var a_i = TileTensor(
+        a.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a.layout,
+    )
+    var b_2d = TileTensor(
+        b.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        row_major[num_experts * N, K_BYTES](),
+    )
+    var a_scales_i = TileTensor(
+        a_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a_scales.layout,
+    )
+    var sfb_2d = TileTensor(
+        b_scales.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        row_major[num_experts_sf * N_sf, K_SCALES](),
+    )
+    var a_off_i = TileTensor(
+        a_offsets.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        a_offsets.layout,
+    )
+    var expert_ids_i = TileTensor(
+        expert_ids.ptr.as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+        expert_ids.layout,
     )
 
-    comptime scale_K = ceildiv(static_K, 32)
-    for e in range(num_experts):
-        var b_packed_expert = TileTensor(
-            b_packed.ptr + e * static_N * packed_K,
-            row_major[static_N, packed_K](),
-        )
-        var b_scales_expert = TileTensor(
-            b_scales.ptr + e * static_N * scale_K,
-            row_major[static_N, scale_K](),
-        )
-        var b_fp8_expert = TileTensor(
-            b_fp8_buf.unsafe_ptr() + e * static_N * static_K,
-            row_major((Idx[static_N](), Idx[static_K]())),
-        )
-        dequant_mxfp4(
-            ctx,
-            b_fp8_expert,
-            b_packed_expert,
-            b_scales_expert,
-            num_rows=static_N,
-            num_cols=static_K,
-        )
+    # Use total token count as an upper bound for per-expert M.
+    # The kernel already guards against out-of-range blocks via
+    # block_idx.y >= ceildiv(expert_M, BM), so over-launching is safe.
+    var total_tokens = Int(c.dim[0]())
+    if total_tokens == 0:
+        return
 
-    # Step 2: Cast all BF16 activations to FP8.
-    var a_fp8_buf = ctx.enqueue_create_buffer[fp8_type](
-        total_num_tokens * static_K
-    )
-    var a_fp8_tt = TileTensor(
-        a_fp8_buf, row_major((Idx(total_num_tokens), Idx[static_K]()))
-    )
-    _cast_bf16_to_fp8(ctx, a_fp8_tt, a, total_num_tokens, static_K)
+    comptime BM = MXFP4MatmulAMD.BM
+    comptime BN = MXFP4MatmulAMD.BN
+    comptime out_dtype = type_of(c).dtype
 
-    # Step 3: FP8 grouped GEMM.
-    var b_fp8_tt = TileTensor(
-        b_fp8_buf,
-        row_major[num_experts, static_N, static_K](),
-    )
+    comptime kernel = mxfp4_grouped_matmul_amd_kernel[
+        out_dtype,
+        type_of(c).LayoutType,
+        type_of(a_i).LayoutType,
+        type_of(b_2d).LayoutType,
+        type_of(a_scales_i).LayoutType,
+        type_of(sfb_2d).LayoutType,
+        type_of(a_off_i).LayoutType,
+        type_of(expert_ids_i).LayoutType,
+    ]
 
-    grouped_matmul(
+    ctx.enqueue_function[kernel, kernel](
         c,
-        a_fp8_tt,
-        b_fp8_tt,
-        a_offsets,
-        expert_ids,
-        max_num_tokens_per_expert,
+        a_i,
+        b_2d,
+        a_scales_i,
+        sfb_2d,
+        a_off_i,
+        expert_ids_i,
         num_active_experts,
-        ctx,
+        grid_dim=(
+            ceildiv(N, BN),
+            ceildiv(total_tokens, BM),
+            num_active_experts,
+        ),
+        block_dim=MXFP4MatmulAMD.num_threads,
     )
-
-    # Keep temp buffers alive through async GEMM enqueue.
-    _ = b_fp8_buf^
-    _ = a_fp8_buf^
