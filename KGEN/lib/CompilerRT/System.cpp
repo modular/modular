@@ -131,10 +131,12 @@ bool isStackTraceEnabled(const char *envVar, const char *configKey,
 
 COMPILERRT_EXPORT
 COMPILERRT_VISIBILITY_EXPORT void KGEN_CompilerRT_PrintStackTraceOnFault() {
-  if (!isStackTraceEnabled("MOJO_ENABLE_STACK_TRACE_ON_CRASH",
-                           "max-debug.stack-trace-on-crash", true)) {
+  auto configOr = M::Config::open();
+  bool enabled =
+      configOr.isError() ||
+      configOr->getValueAsBool("max-debug.stack-trace-on-crash", true);
+  if (!enabled)
     return;
-  }
   llvm::sys::PrintStackTraceOnErrorSignal("", false);
 }
 
