@@ -429,10 +429,10 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-02
     timeout: 1200
 
-  mistral-community/pixtral-12b-bfloat16:
+  mistral-experimental/pixtral-12b-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
-    pipeline: "mistral-community/pixtral-12b"
+    pipeline: "mistral-experimental/pixtral-12b"
     compatible_with: [gpu]
     encoding: bfloat16
     tags: []

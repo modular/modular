@@ -30,7 +30,7 @@ pixtral_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     input_modalities={InputModality.TEXT, InputModality.IMAGE},
-    example_repo_ids=["mistral-community/pixtral-12b"],
+    example_repo_ids=["mistral-experimental/pixtral-12b"],
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",

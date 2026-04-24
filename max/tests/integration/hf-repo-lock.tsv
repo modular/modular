@@ -90,7 +90,7 @@ meta-llama/Llama-3.3-70B-Instruct	6f6073b423013f6a7d4d9f39144961bfbfbc386b
 meta-llama/Meta-Llama-3-8B-Instruct	5f0b02c75b57c5855da9ae460ce51323ea669d8a
 microsoft/Phi-3.5-mini-instruct	3145e03a9fd4cdd7cd953c34d9bbf7ad606122ca
 microsoft/phi-4	187ef0342fff0eb3333be9f00389385e95ef0b61
-mistral-community/pixtral-12b	c2756cbbb9422eba9f6c5c439a214b0392dfc998
+mistral-experimental/pixtral-12b	c2756cbbb9422eba9f6c5c439a214b0392dfc998
 mistralai/Mistral-Nemo-Instruct-2407	8aedd450f2583e9c67fae1929f6936b8fc5aef9c
 mistralai/Mistral-Small-3.1-24B-Instruct-2503	4b8dd8aae705887db5295fcbff4aedbb92d682eb
 modularai/Llama-3.1-405B-Instruct-autofp8	435ff92ae25721f0839ecd6848fb9b008bb173e5

@@ -646,7 +646,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
 class PixtralPipelineOracle(PipelineOracle):
     def __init__(self) -> None:
         super().__init__()
-        self.model_path = "mistral-community/pixtral-12b"
+        self.model_path = "mistral-experimental/pixtral-12b"
         self.max_length = 8192
 
     @property
@@ -1550,7 +1550,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
         "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
-    "mistral-community/pixtral-12b": PixtralPipelineOracle(),
+    "mistral-experimental/pixtral-12b": PixtralPipelineOracle(),
     "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",
         config_params={"max_length": 512},
