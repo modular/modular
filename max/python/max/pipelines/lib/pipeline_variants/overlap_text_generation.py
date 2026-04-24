@@ -2112,12 +2112,17 @@ class OverlapTextGenerationPipeline(
         model_outputs: ModelOutputs | None = None
 
         if inputs:
-            # Run the entire forward pass and output processing if the batch has
-            # at least one request.
-            sampling_processor, bitmask = self._create_sampling_processor(
-                inputs.flat_batch
-            )
-            model_outputs = self._run_forward(inputs)
+            # Spec-decode handles sampling internally.
+            # Remove the condition below when SERVOPT-992 is resolved.
+            if self._spec_decode_state is not None:
+                curr_batch = self._execute_spec_decode(inputs)
+            else:
+                # Run the entire forward pass and output processing if the
+                # batch has at least one request.
+                sampling_processor, bitmask = self._create_sampling_processor(
+                    inputs.flat_batch
+                )
+                model_outputs = self._run_forward(inputs)
 
         elif self.pipeline_config.runtime.execute_empty_batches:
             # If the batch is empty and execute_empty_batches is True, we will
