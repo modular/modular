@@ -28,6 +28,7 @@ from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import SupportedEncoding
 from max.pipelines.lib.interfaces.component_model import ComponentModel
+from max.profiler import Tracer
 
 from .model_config import WanConfig
 from .wan_transformer import (
@@ -240,25 +241,28 @@ class BlockLevelModel:
         pre_args = [hidden_states, timestep, encoder_hidden_states]
         if i2v_condition is not None:
             pre_args.append(i2v_condition)
-        pre_out = self.pre.execute(*pre_args)
-        hs, temb, timestep_proj, text_emb = (
-            pre_out[0],
-            pre_out[1],
-            pre_out[2],
-            pre_out[3],
-        )
-        if self.combined_blocks is not None:
-            block_out = self.combined_blocks.execute(
-                hs, text_emb, timestep_proj, rope_cos, rope_sin
+        with Tracer("dit_pre"):
+            pre_out = self.pre.execute(*pre_args)
+            hs, temb, timestep_proj, text_emb = (
+                pre_out[0],
+                pre_out[1],
+                pre_out[2],
+                pre_out[3],
             )
-            hs = block_out[0]
-        else:
-            for block in self.blocks:
-                block_out = block.execute(
+        with Tracer("dit_blocks"):
+            if self.combined_blocks is not None:
+                block_out = self.combined_blocks.execute(
                     hs, text_emb, timestep_proj, rope_cos, rope_sin
                 )
                 hs = block_out[0]
-        post_out = self.post.execute(hs, temb, spatial_shape)
+            else:
+                for block in self.blocks:
+                    block_out = block.execute(
+                        hs, text_emb, timestep_proj, rope_cos, rope_sin
+                    )
+                    hs = block_out[0]
+        with Tracer("dit_post"):
+            post_out = self.post.execute(hs, temb, spatial_shape)
         return post_out[0]
 
 

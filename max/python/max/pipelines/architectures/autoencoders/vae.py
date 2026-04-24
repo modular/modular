@@ -13,6 +13,7 @@
 
 from __future__ import annotations
 
+import os
 from itertools import pairwise
 
 from max.driver import accelerator_api
@@ -31,6 +32,9 @@ WAN_ENCODER_CHUNK_SIZE = 4  # Frames per encoder chunk (matching diffusers)
 
 
 def _use_nvidia_fcrs_conv3d(device: DeviceRef | None) -> bool:
+    # Escape hatch for benchmarking the native Mojo conv path against cuDNN.
+    if os.environ.get("MAX_WAN_VAE_DISABLE_CUDNN", "").lower() in ("1", "true"):
+        return False
     return (
         device is not None and device.is_gpu() and accelerator_api() == "cuda"
     )
@@ -264,10 +268,11 @@ class CausalConv3dCached(Module):
 
 
 class Conv2dPermuted(Module):
-    """2D convolution with NCHW input and FCRS weights (permute=True equivalent).
+    """2D convolution with NCHW input.
 
     Input is permuted from NCHW to NHWC before conv, and back after.
-    Weights stay in FCRS (PyTorch) layout.
+    On NVIDIA GPUs, weights stay in PyTorch FCRS layout to use the cuDNN
+    2D conv dispatch path. Other backends use MAX's native RSCF layout.
     """
 
     def __init__(
@@ -280,6 +285,7 @@ class Conv2dPermuted(Module):
         dtype: DType | None = None,
         device: DeviceRef | None = None,
         has_bias: bool = True,
+        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.in_channels = in_channels
@@ -295,12 +301,15 @@ class Conv2dPermuted(Module):
 
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
-        self.filter = Weight(
-            "weight",
-            dt,
-            [out_channels, in_channels, kernel_size, kernel_size],
-            dev_ref,
+        self._use_nvidia_fcrs = prefer_nvidia_fcrs and _use_nvidia_fcrs_conv3d(
+            dev_ref
         )
+        filter_shape = (
+            [out_channels, in_channels, kernel_size, kernel_size]
+            if self._use_nvidia_fcrs
+            else [kernel_size, kernel_size, in_channels, out_channels]
+        )
+        self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
             self.bias = Weight("bias", dt, [out_channels], dev_ref)
@@ -313,7 +322,11 @@ class Conv2dPermuted(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=FilterLayout.FCRS,
+            filter_layout=(
+                FilterLayout.FCRS
+                if self._use_nvidia_fcrs
+                else FilterLayout.RSCF
+            ),
         )
         # NHWC -> NCHW
         out = ops.permute(out, [0, 3, 1, 2])

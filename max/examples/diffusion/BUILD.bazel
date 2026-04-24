@@ -67,6 +67,21 @@ modular_py_binary(
 )
 
 modular_py_binary(
+    name = "vae_decode_compare",
+    srcs = ["vae_decode_compare.py"],
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("huggingface-hub"),
+        requirement("numpy"),
+    ],
+)
+
+modular_py_binary(
     name = "simple_offline_generation",
     srcs = ["simple_offline_generation.py"],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
