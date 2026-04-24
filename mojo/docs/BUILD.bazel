@@ -55,8 +55,8 @@ genrule(
   mv mojosite/redirects.js mojosite/docs/redirects.js
   rm mojosite/docs/lib.mdx
 
-  # Place build version file at the root of docs/
-  cp $(location :build_version_js) mojosite/docs/build_version.js
+  # Place build version file at the tar root (which install_docs extracts to mojosite/docs/)
+  cp $(location :build_version_js) mojosite/build_version.js
 
   # Generate final output
   cd mojosite
