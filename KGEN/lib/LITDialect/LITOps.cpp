@@ -23,6 +23,7 @@
 #include "Support/MDialect/ParserUtils.h"
 #include "mlir/IR/PatternMatch.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/Support/DebugStringHelper.h"
 
 using namespace M;
 using namespace KGEN;
@@ -1443,10 +1444,10 @@ LogicalResult RefStructGEROp::verify() {
       return emitOpError("invalid origin or address space");
   } else {
     // Index access allows both StructType and ParamType
-    if (!isa<StructType>(elementType) && !isa<KGEN::ParamType>(elementType))
+    if (!isa<StructType, KGEN::ParamType, KGEN::ClosureType>(elementType))
       return emitOpError(
           "index access requires container to be a reference to a struct or "
-          "parametric type");
+          "parametric type or closure type");
   }
 
   return success();
@@ -2462,6 +2463,14 @@ static void printClosureInitOpValue(
 }
 
 LogicalResult LIT::ClosureInitOp::verify() {
+
+  if (getCaptureNames().size() != getCaptureTypes().size()) {
+    return emitOpError("number of capture names doesn't match number of "
+                       "capture types, names: " +
+                       mlir::debugString(getCaptureNames()) +
+                       ", types: " + mlir::debugString(getCaptureTypes()));
+  }
+
   if (getCaptureConventions().size() != getCaptures().size())
     return emitOpError(
         "expected move or copy capture symbols to match number of captures");

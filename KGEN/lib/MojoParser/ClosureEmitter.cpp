@@ -2260,6 +2260,13 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   SmallVector<Attribute> captureInfo;
   SmallVector<Value> captureValues;
   SmallVector<TypedAttr> origins;
+  SmallVector<Attribute> captureTypes;
+  SmallVector<Attribute> captureNames;
+
+  TraitType anyType =
+      shared.lookupBuiltinTraitType("AnyType", nestedFnDecl.getLoc());
+  IREmitter emitter(*nestedFnDecl.getParentDecl(), builder);
+
   TypeConvention requestedConvention = isRegPassable
                                            ? TypeConvention::RegisterPassable
                                            : TypeConvention::MemoryOnly;
@@ -2269,6 +2276,17 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   for (const Capture &capture : captures) {
     Value value = capture.getValue().getMlirValue();
     captureValues.push_back(value);
+
+    SyntheticNode synthNode(nestedFnDecl.getLoc());
+    ValueDest dest(anyType, EC_Type);
+    PValue captureTypeValue =
+        emitter
+            .emitImplicitConversionToType({value.getType(), synthNode}, anyType,
+                                          dest)
+            .getIfPValue();
+    captureTypes.push_back(captureTypeValue.get());
+    captureNames.push_back(StringAttr::get(ctx, capture.getSpelling()));
+
     UnitAttr isMove;
     auto captureConvention = capture.getCaptureConvention();
     switch (captureConvention) {
@@ -2403,9 +2421,11 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
       builder, opLoc, refType, withoutUnified, nestedFn.getFunctionType(),
       ValueRange(captureValues), ArrayAttr::get(ctx, captureInfo),
       nestedFn.getInputParams(), nestedFn.getInlineLevel(), origin,
-      witnessTable);
+      witnessTable, ArrayAttr::get(ctx, captureTypes),
+      ArrayAttr::get(ctx, captureNames));
 
-  // Transfer optional attributes from the nested function to the closure op.
+  // Transfer optional attributes from the nested function to the closure
+  // op.
   if (closureSubprogram)
     closure.setNestedFnScopeAttr(closureSubprogram);
   if (ArrayAttr metadata = nestedFn.getLLVMMetadataArray();

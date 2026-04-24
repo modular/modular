@@ -6,6 +6,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 
+from std.builtin.rebind import downcast
 from std.reflection import (
     struct_field_names,
     struct_field_types,
@@ -46,8 +47,50 @@ def call_do_something[T: CanDoSomething](ref t: T):
     t.do_something()
 
 
+def closure_fields():
+    var a: Int32 = 42
+    var b: Int32 = 27
+
+    def test() unified {var a, var b} -> Int32:
+        return a + b
+
+    # COM: reset `b` value to be 31
+    trait_downcast[TrivialRegisterPassable](
+        __struct_field_ref(1, __struct_field_ref(0, test))
+    ) = rebind[
+        type_of(
+            trait_downcast[TrivialRegisterPassable](
+                __struct_field_ref(1, __struct_field_ref(0, test))
+            )
+        )
+    ](
+        Int32(31)
+    )
+
+    print("closure_fields: ", test())
+
+    # COM: reset `b` value to be 100
+    trait_downcast[TrivialRegisterPassable](
+        __struct_field_ref(1, __struct_field_ref(0, test))
+    ) = rebind[
+        type_of(
+            trait_downcast[TrivialRegisterPassable](
+                __struct_field_ref(1, __struct_field_ref(0, test))
+            )
+        )
+    ](
+        Int32(100)
+    )
+
+    print("closure_fields: ", test())
+
+
 def main():
     var my_struct = WrapperStruct(Overriding(), Overriding2())
     call_do_something(my_struct)
     # CHECK: x: overriding
     # CHECK: y: overriding2
+
+    closure_fields()
+    # CHECK: closure_fields: 58
+    # CHECK: closure_fields: 127

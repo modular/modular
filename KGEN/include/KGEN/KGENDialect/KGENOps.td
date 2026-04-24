@@ -2125,6 +2125,8 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                    ArrayAttr:$moveOrCopyCaptureSymbols,
                    KGEN_ParamDeclArrayAttr:$inputParams,
                    KGEN_InlineLevelAttr:$inlineLevel,
+                   DefaultValuedAttr<ArrayAttr, "{}">:$captureTypes,
+                   DefaultValuedAttr<ArrayAttr, "{}">:$captureNames,
                    OptionalAttr<AnyAttr>:$nestedFnScope,
                    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMMetadataArray,
                    DefaultValuedAttr<ArrayAttr, "{}">:$LLVMArgMetadataArray,
@@ -2145,10 +2147,13 @@ def KGEN_ClosureInitOp : KGENOp<"closure.init", [
                    "ValueRange":$captures,
                    "ArrayAttr":$moveOrCopyCaptureSymbols,
                    "ArrayRef<ParamDeclAttr>":$inputParams,
-                   "InlineLevel":$inlineLevel), [{
+                   "InlineLevel":$inlineLevel,
+                   "ArrayAttr":$captureTypes,
+                   "ArrayAttr":$captureNames), [{
       build($_builder, $_state, result,
             funcTypeGenerator, functionType, captures, moveOrCopyCaptureSymbols,
-            inputParams, inlineLevel, /*nestedFnScope=*/{},
+            inputParams, inlineLevel, captureTypes, captureNames,
+            /*nestedFnScope=*/{},
             /*LLVMMetadataArray=*/nullptr, /*LLVMArgMetadataArray=*/nullptr,
             /*hoistedCaptures=*/::M::KGEN::ParamDeclArrayAttr{});
     }]>
