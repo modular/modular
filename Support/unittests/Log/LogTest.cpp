@@ -191,6 +191,11 @@ TEST_F(LogOutputTest, TimestampMatchesSimpleFormat) {
 
 // ── Primitive Type Formatting ──────────────────────────────────────────────
 
+TEST_F(LogOutputTest, LogsBool) {
+  MLOG("{}", true);
+  EXPECT_NE(capturedOutput().find("true"), std::string::npos);
+}
+
 TEST_F(LogOutputTest, LogsInt) {
   MLOG("{}", 42);
   EXPECT_NE(capturedOutput().find("42"), std::string::npos);
@@ -207,14 +212,53 @@ TEST_F(LogOutputTest, LogsFloat) {
   EXPECT_NE(capturedOutput().find("3.14"), std::string::npos);
 }
 
+TEST_F(LogOutputTest, LogsDouble) {
+  MLOG("{}", 2.718281828);
+  EXPECT_NE(capturedOutput().find("2.718281828"), std::string::npos);
+}
+
+TEST_F(LogOutputTest, LogsUnsignedInt) {
+  MLOG("{}", 42u);
+  EXPECT_NE(capturedOutput().find("42"), std::string::npos);
+}
+
+TEST_F(LogOutputTest, LogsMultipleArgs) {
+  MLOG("{} {} {}", 1, "hello", 3.14f);
+  auto out = capturedOutput();
+  EXPECT_NE(out.find("1"), std::string::npos);
+  EXPECT_NE(out.find("hello"), std::string::npos);
+  EXPECT_NE(out.find("3.14"), std::string::npos);
+}
+
 TEST_F(LogOutputTest, LogsCString) {
-  MLOG("{}", "c-string value");
-  EXPECT_NE(capturedOutput().find("c-string value"), std::string::npos);
+  MLOG("{}", "c-string value, long to avoid small string in LogArg");
+  EXPECT_NE(capturedOutput().find(
+                "c-string value, long to avoid small string in LogArg"),
+            std::string::npos);
 }
 
 TEST_F(LogOutputTest, LogsStdString) {
-  MLOG("{}", std::string("std-string value"));
-  EXPECT_NE(capturedOutput().find("std-string value"), std::string::npos);
+  std::string s("std-string value, longer than LogArg SSO");
+  MLOG("{}", s);
+  EXPECT_NE(capturedOutput().find("std-string value, longer than LogArg SSO"),
+            std::string::npos);
+}
+
+TEST_F(LogOutputTest, LogsStdStringSmall) {
+  std::string s("small");
+  MLOG("{}", s);
+  EXPECT_NE(capturedOutput().find("small"), std::string::npos);
+}
+
+TEST_F(LogOutputTest, LogsStdStringTemporary) {
+  MLOG("{}", std::string("temporary std-string value"));
+  EXPECT_NE(capturedOutput().find("temporary std-string value"),
+            std::string::npos);
+}
+
+TEST_F(LogOutputTest, LogsSmallStringInSso) {
+  MLOG("{}", "small str");
+  EXPECT_NE(capturedOutput().find("small str"), std::string::npos);
 }
 
 TEST_F(LogOutputTest, LogsVoidPointer) {
