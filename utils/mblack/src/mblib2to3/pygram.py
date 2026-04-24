@@ -121,6 +121,7 @@ class _python_symbols(Symbols):
     power: int
     print_stmt: int
     raise_stmt: int
+    raises_type: int
     return_stmt: int
     result_type: int
     shift_expr: int

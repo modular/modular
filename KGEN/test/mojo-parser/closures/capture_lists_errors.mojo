@@ -7,7 +7,7 @@
 # RUN: %parse-mojo-isolated %s -mlir-print-debuginfo | kgen-opt -lower-semantic-cf -check-lifetimes -verify-parameters -verify-diagnostics
 
 
-def takeIt[T: def () unified -> None, //](state: T):
+def takeIt[T: def () -> None, //](state: T):
     state()
 
 struct MoveMe(Movable):
@@ -22,7 +22,7 @@ def use(d:MoveMe):
 
 # CHECK-LABEL:  lit.fn @"toy
 def toy(var byMove: MoveMe): # expected-note {{'byMove' declared here}}
-    def myclosure() unified {var byMove^}:
+    def myclosure() {var byMove^}:
         use(byMove)
 
     use(byMove) # expected-error {{use of uninitialized value 'byMove'}}

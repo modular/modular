@@ -25,5 +25,5 @@ def use(y: Thing):
 # CHECK-LABEL: lit.fn @"capture_implicit_origin
 def capture_implicit_origin(var x: Foo, y: Thing[origin_of(x)]):
     # CHECK: lit.closure.init[#type_value](%y)() capturing -> !kgen.none
-    def capture_it() unified {read y}:
+    def capture_it() {read y}:
         use(y)

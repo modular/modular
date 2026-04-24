@@ -1050,9 +1050,10 @@ TypeCheckedParamList::create(ParsedParamList &parsedParams,
     ASTType type;
     if (arg.typeExpr) {
       type = emitter.emitExprType(arg.typeExpr, /*allowUnbound=*/true);
-
       auto fnType = dyn_cast<FnTypeGeneratorType>(type);
-      if (fnType && fnType.isUnified()) {
+      auto *fnTypeExpr = dyn_cast<FunctionTypeNode>(arg.typeExpr);
+      if (fnType && fnTypeExpr && !fnTypeExpr->isThin &&
+          !fnTypeExpr->effects.isCapturing()) {
         ASTDecl *closureTrait = result.shared.getOrCreateClosureTrait(
             declScope.getLoc(), *declScope.getNearestDeclOfType<FileModuleOp>(),
             fnType);
@@ -1243,11 +1244,9 @@ ParseResult ParsedParamList::parseParametersIfPresent(ParserBase &p,
 // capture_list ::= "{" capture_item ("," capture_item)* [","] "}" | "{}"
 // capture_item ::= capture_convention [identifier^] | identifier | identifier^
 ParseResult ParsedCaptureList::parseCaptureList(ParserBase &p) {
-  if (!p.consumeIf(Token::l_brace)) {
-    p.emitError(p.getToken().getLoc(), "expected '{' to begin capture "
-                                       "list");
-    return failure();
-  }
+  if (!p.consumeIf(Token::l_brace))
+    return success();
+  hasExplicitCaptureList = true;
   auto parseConvention = [&]() -> CaptureConvention {
     if (p.consumeIf(Token::kw_var)) {
       if (p.consumeIf(Token::caret))
@@ -1362,8 +1361,8 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
   auto isEffectKeywordOrWhere = [&](StringRef spelling) {
     return spelling == "raises" || spelling == "capturing" ||
            spelling == "escaping" || spelling == "thin" ||
-           spelling == "unified" || spelling == "register_passable" ||
-           spelling == "abi" || spelling == "where";
+           spelling == "register_passable" || spelling == "abi" ||
+           spelling == "where";
   };
 
   // If the client supports function effects, parse them as well.
@@ -1393,7 +1392,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
       // Otherwise maybe it was misspelled, just eat it.
       p.emitError(loc, "unknown function effect '")
           << spelling
-          << "', expected 'raises', 'capturing', 'abi', 'thin', 'unified', or "
+          << "', expected 'raises', 'capturing', 'thin', or "
              "'register_passable'";
     } else if (spelling == "raises") {
       handleEffect(&FnEffects::isThrows, &FnEffects::setThrows);
@@ -1414,9 +1413,7 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     } else if (spelling == "capturing") {
       handleEffect(&FnEffects::isCapturing, &FnEffects::setCapturing);
     } else if (spelling == "escaping") {
-      p.emitError(loc,
-                  "the 'escaping' function effect is no longer supported; use "
-                  "'unified' closures instead");
+      p.emitError(loc, "the 'escaping' function effect is no longer supported");
       return failure();
     } else if (spelling == "thin") {
       if (kind != ArgListKind::kFnTypeArgList) {
@@ -1427,8 +1424,6 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
                          "the duplicate");
       }
       isThin = true;
-    } else if (spelling == "unified") {
-      handleEffect(&FnEffects::isUnified, &FnEffects::setUnified);
     } else if (spelling == "register_passable") {
       handleEffect(&FnEffects::isRegisterPassable,
                    &FnEffects::setRegisterPassable);
@@ -1472,15 +1467,6 @@ ParseResult ParsedArgumentList::parseArgumentListAndEffects(ParserBase &p,
     }
 
     p.consumeIdentifier();
-  }
-
-  // Temporary error while new closures are hidden behind unified effect.
-  // A following capture list shorthand (`{...}`) also implies unified.
-  if (effects.isRegisterPassable() && !effects.isUnified() &&
-      !(kind == ArgListKind::kArgList && p.getToken().is(Token::l_brace))) {
-    SMLoc loc = p.getToken().getLoc();
-    p.emitError(loc, "'register_passable' functions must be 'unified'");
-    return failure();
   }
 
   return success();

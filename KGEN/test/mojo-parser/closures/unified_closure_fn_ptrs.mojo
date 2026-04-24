@@ -31,7 +31,7 @@ def top_level(x: Int) -> Int:
     return x
 
 
-def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
+def use_closure[Impl: def(x: Int) -> Int](cb: Impl) -> Int:
     return cb(1)
 
 
@@ -54,7 +54,7 @@ def b(x: Int) -> Int:
     return x * x
 
 
-def use_closure[Impl: def(x: Int) unified -> Int](cb: Impl) -> Int:
+def use_closure[Impl: def(x: Int) -> Int](cb: Impl) -> Int:
     return cb(1)
 
 
@@ -75,7 +75,7 @@ def top_level(x: Int) -> Int:
 
 
 # COM: Note the lack of an argument name in the signature.
-def use_closure[Impl: def(Int) unified -> Int](cb: Impl) -> Int:
+def use_closure[Impl: def(Int) -> Int](cb: Impl) -> Int:
     return cb(1)
 
 

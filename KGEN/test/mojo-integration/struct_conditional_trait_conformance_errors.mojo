@@ -95,7 +95,7 @@ struct PrintableWrapper[T: ImplicitlyCopyable](
 
 
 def use_printable_closure[
-    T: Printable & ImplicitlyCopyable, C: def() unified -> T
+    T: Printable & ImplicitlyCopyable, C: def() -> T
 ](impl: C):
     var result = impl()
     result.print_value()
@@ -199,7 +199,7 @@ def main():
     # NonPrintableType is not Printable.
     var captured = NonPrintableType(42)
 
-    def make_wrapper() unified {var} -> PrintableWrapper[NonPrintableType]:
+    def make_wrapper() {var} -> PrintableWrapper[NonPrintableType]:
         return PrintableWrapper(captured)
 
     # CHECK: 'use_printable_closure' parameter 'T' has 'Printable & ImplicitlyCopyable' type, but value has type 'AnyStruct[PrintableWrapper[NonPrintableType]]'

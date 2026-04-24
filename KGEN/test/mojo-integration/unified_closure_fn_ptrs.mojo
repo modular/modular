@@ -12,7 +12,7 @@ def top_level(x: Int) -> Int:
     return x
 
 
-def takeIt[T: def(Int) unified -> Int](cb: T, x: Int):
+def takeIt[T: def(Int) -> Int](cb: T, x: Int):
     print(cb(x))
 
 

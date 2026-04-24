@@ -41,13 +41,13 @@ struct FloatPair(TrivialRegisterPassable):
     var y: Float32
 
 
-def pick_fn(use_add_one: Bool) -> def(FloatPair) abi("C") -> FloatPair:
+def pick_fn(use_add_one: Bool) -> def(FloatPair) thin abi("C") -> FloatPair:
     if use_add_one:
         return external_call[
-            "c_get_add_one", def(FloatPair) abi("C") -> FloatPair
+            "c_get_add_one", def(FloatPair) thin abi("C") -> FloatPair
         ]()
     return external_call[
-        "c_get_add_ten", def(FloatPair) abi("C") -> FloatPair
+        "c_get_add_ten", def(FloatPair) thin abi("C") -> FloatPair
     ]()
 
 
@@ -70,7 +70,7 @@ def test_float_pair_conditional():
 def test_float_pair_direct():
     # Representative of: lib.get_function[def(FloatPair) abi("C") -> FloatPair](...)
     var f = external_call[
-        "c_get_add_one", def(FloatPair) abi("C") -> FloatPair
+        "c_get_add_one", def(FloatPair) thin abi("C") -> FloatPair
     ]()
     var r = f(FloatPair(3.0, 4.0))
     print("test_float_pair_direct -", r.x, r.y)
@@ -95,7 +95,7 @@ struct BigStruct(TrivialRegisterPassable):
 
 def test_big_struct():
     var f = external_call[
-        "c_get_big_struct_add_one", def(BigStruct) abi("C") -> BigStruct
+        "c_get_big_struct_add_one", def(BigStruct) thin abi("C") -> BigStruct
     ]()
     var r = f(BigStruct(1, 2, 3))
     print("test_big_struct -", r.a, r.b, r.c)

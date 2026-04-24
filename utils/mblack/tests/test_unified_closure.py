@@ -16,7 +16,7 @@ CAPTURE_MODES = ["var", "var^", "read", "mut"]
 
 # Type expressions accepted after `raises` in a unified closure. `Foo.Bar`
 # requires a `struct Foo` prelude.
-RAISES_TYPES = ["Error", "(Error)", "Foo.Bar"]
+RAISES_TYPES = ["Error", "(Error)", "Foo.Bar", "EmptyOptionalError[Self.T]"]
 
 
 @pytest.mark.parametrize("mode", CAPTURE_MODES)

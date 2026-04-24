@@ -34,16 +34,15 @@ async_funcdef: ASYNC funcdef
 where_clause: WHERE top_test
 funcdef: ('def' | MLIR_REGION) NAME [metaparams] parameters [named_effect*] [global_effects] [unified_capture] ['->' result_type] (where_clause)* ':' suite
 global_effects: global_effect_keyword*
-global_effect_keyword: 'raises' [typeconvexpr] | 'escaping' | 'capturing'
+global_effect_keyword: 'raises' [raises_type] | 'escaping' | 'capturing'
+# `raises_type` lists allowed shapes after `raises` in global_effects. It
+# must not use the full `typeconvexpr` production: that can begin with `{`
+# and would steal the capture list from `raises {a, b}`. Subscripts use the
+# same `testlist_gexp` as inside `[...]` elsewhere in the grammar.
+raises_type: dotted_name ( '[' testlist_gexp ']' )* | '(' [testlist_gexp] ')'
 unified_capture: UNIFIED [effect_list] [captures] | captures
 effect_list: effect_keyword*
-# `raises_type` restricts the exception type to a dotted name or a
-# parenthesized expression so a following `{...}` always parses as
-# `captures`, not as a `{...}` atom/trailer of a broader type expression.
-# Mojo's compiler currently rejects subscripted types (e.g. `raises Foo[T]`)
-# after `raises`, so the grammar doesn't support them either.
 effect_keyword: named_effect | 'raises' [raises_type]
-raises_type: dotted_name | '(' [testlist_gexp] ')'
 named_effect: NAME ['(' STRING ')']
 captures: '{' [capture_list] '}'
 capture_list: capture_item (',' capture_item)* [',']

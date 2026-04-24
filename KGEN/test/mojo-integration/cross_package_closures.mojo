@@ -11,7 +11,7 @@ from std.sys import argv
 
 
 def aThing(y: Int):
-    def myclosure(x: Int) unified {var} -> Int:
+    def myclosure(x: Int) {var} -> Int:
         return y + x
 
     printIt[type_of(myclosure)](myclosure, y)

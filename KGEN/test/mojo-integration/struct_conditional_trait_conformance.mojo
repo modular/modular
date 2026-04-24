@@ -147,7 +147,7 @@ def test_function_type_conversion():
 #
 #
 # def use_printable_closure[
-#     T: Printable & ImplicitlyCopyable, C: def() unified -> T
+#     T: Printable & ImplicitlyCopyable, C: def() -> T
 # ](impl: C):
 #     var result = impl()
 #     result.print_value()
@@ -156,7 +156,7 @@ def test_function_type_conversion():
 # def test_closure_with_conditional_return():
 #     var captured = SimplePrintable(42)
 #
-#     def make_wrapper() unified {var} -> PrintableWrapper[SimplePrintable]:
+#     def make_wrapper() {var} -> PrintableWrapper[SimplePrintable]:
 #         return PrintableWrapper(captured)
 #
 #     # COM: CHECK: SimplePrintable: 42
@@ -168,7 +168,7 @@ def test_function_type_conversion():
 # def test_nested_conditional_closure():
 #     var val = SimplePrintable(100)
 #
-#     def make_nested() unified {
+#     def make_nested() {
 #         var val
 #     } -> PrintableWrapper[PrintableWrapper[SimplePrintable]]:
 #         return PrintableWrapper(PrintableWrapper(val))

@@ -479,11 +479,10 @@ public:
   ///  struct Impl[T : Closure_Int_yInt_Int](Closure_Int_yInt_Int):
   ///     var impl: T
   /// ... and return the StructDeclOp for "Impl".
-  ASTDecl *getOrCreateUnifiedClosureWrapper(SMLoc loc, FnTypeGeneratorType sig,
-                                            ASTDecl *moduleDecl,
-                                            bool isCopyable,
-                                            TypeConvention typeConvention,
-                                            bool isStateless);
+  ASTDecl *getOrCreateClosureWrapper(SMLoc loc, FnTypeGeneratorType sig,
+                                     ASTDecl *moduleDecl, bool isCopyable,
+                                     TypeConvention typeConvention,
+                                     bool isStateless);
   /// Function used to create a thunk. This API is limited intentionally to
   /// ensure that the creation is transaction. This is important to retain
   /// invariants with packaging.

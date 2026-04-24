@@ -72,7 +72,6 @@ public:
   bool isCapturing() const { return get(Impl::Capturing); }
   bool isCABI() const { return get(Impl::CABI); }
   bool isRefResult() const { return get(Impl::RefResult); }
-  bool isUnified() const { return get(Impl::Unified); }
   bool isRegisterPassable() const { return get(Impl::RegisterPassable); }
 
   FnEffects setThrows(bool throws = true) { return set(Impl::Throws, throws); }
@@ -84,7 +83,6 @@ public:
   FnEffects setRefResult(bool value = true) {
     return set(Impl::RefResult, value);
   }
-  FnEffects setUnified(bool value = true) { return set(Impl::Unified, value); }
   FnEffects setRegisterPassable(bool value = true) {
     return set(Impl::RegisterPassable, value);
   }

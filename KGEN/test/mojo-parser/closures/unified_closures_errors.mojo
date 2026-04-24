@@ -29,7 +29,13 @@ def use(a:Mem):
 
 def foo(a: Mem):
     # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
-    def closure() unified register_passable {var}:
+    def closure() register_passable {var}:
+        use(a)
+
+
+def bar(a: Mem):
+    # expected-error @below {{cannot capture a by copy or move because it is not register passable and your closure is marked as register passable}}
+    def closure() register_passable {var}:
         use(a)
 
 # COM: ambiguous captures
@@ -44,7 +50,7 @@ def aThing() -> Int:
 
 def definesClosure():
     # expected-error @below {{ambiguous captured value: 'aThing'}}
-    def aClosure() unified {var aThing}:
+    def aClosure() {var aThing}:
         pass
 
 
@@ -63,7 +69,7 @@ def takeDevicePassable[T: DevicePassable](impl: T):
 def foo(bar: Bar) raises:
     # COM: This should fail because Bar is not trivial.
 
-    def closure(number: Int) unified register_passable {var bar} -> Int:
+    def closure(number: Int) register_passable {var bar} -> Int:
         return bar.x
 
     # TODO: Rename Wrappers (MOCO-2541)
@@ -79,7 +85,7 @@ def takeTrivialRegisterPassable[T: TrivialRegisterPassable](impl: T):
 
 
 def testNonTrivialClosureNotTrivialRegisterPassable(bar: Bar) raises:
-    def closure() unified register_passable {var bar} -> Int:
+    def closure() register_passable {var bar} -> Int:
         return bar.x
 
     # expected-error-re @below {{'{{.*}}' does not conform to trait 'TrivialRegisterPassable'}}
@@ -92,11 +98,11 @@ def changeIt(mut aString: String):
 
 
 def nestedCaptureAll(mut aString: String) raises:
-    def aFinalThing(x:Int) unified {read}:
+    def aFinalThing(x:Int) {read}:
         # expected-error @below {{invalid call to 'changeIt': value passed to mutable argument 'aString' must be mutable}}
         changeIt(aString)
 
-        def aChildThing(x:Int) unified {var}:
+        def aChildThing(x:Int) {var}:
             changeIt(aString)
 
 
@@ -105,7 +111,7 @@ def topLevel(x: String) -> String:
     return x
 
 # expected-note @+1 {{function declared here}}
-def takesClosure[T: def(Int) unified -> Int](cb: T, x: Int) -> Int:
+def takesClosure[T: def(Int) -> Int](cb: T, x: Int) -> Int:
     return cb(x)
 
 
@@ -131,18 +137,18 @@ struct Dog(Mammal):
         pass
 
 # expected-note @below {{function declared here}}
-def takeClosureMammalParam[W: Mammal, C: def (x: W) unified -> None](impl: C):
+def takeClosureMammalParam[W: Mammal, C: def (x: W) -> None](impl: C):
     pass
 
 
 def traitConstraintMismatch[Q: Animal]():
-    def closure(x: Q) unified {var}:
+    def closure(x: Q) {var}:
         x.speak()
 
     # expected-error @below {{does not conform to trait 'def(x: W) -> None'}}
     takeClosureMammalParam(closure)
 
-    def closureWrongConvention(mut x: Dog) unified {var}:
+    def closureWrongConvention(mut x: Dog) {var}:
         x.speak()
 
     # expected-error @below {{'takeClosureMammalParam' parameter 'C' has 'def(x: W) -> None' type, but value has type 'def(mut x: Dog) -> None'}}
@@ -167,12 +173,12 @@ struct Sphere(Coord):
 
 # expected-note @below {{constraint declared here evaluated to False}}
 # expected-note @below {{function declared here}}
-def takeClosure[T: Coord, C:def() unified -> T](impl: C) -> T:
+def takeClosure[T: Coord, C:def() -> T](impl: C) -> T:
    _ = impl()
 
 
 def makeClosure[B:Int](something: Cartesian):
-   def closureImpl() unified {var} -> Cartesian:
+   def closureImpl() {var} -> Cartesian:
       return something
    # expected-error @below {{invalid call to 'takeClosure': violated constraint}}
    takeClosure[Sphere, type_of(closureImpl)](closureImpl)
@@ -187,7 +193,7 @@ def _print(x: Int):
 
 # expected-note @below {{function declared here}}
 def callee_no_params[
-    func: def() unified -> None,
+    func: def() -> None,
     //,
 ](closure: func):
     closure()
@@ -197,7 +203,7 @@ def incompatible_param_signature() raises:
     var x = 42
 
     @always_inline
-    def my_func[param_only: Int]() unified {read x}:
+    def my_func[param_only: Int]() {read x}:
         _print(x)
 
     # expected-error @below {{does not conform to trait 'def() -> None'}}
@@ -211,7 +217,7 @@ def incompatible_param_signature() raises:
 def multiple_default_capture_conventions(x: Int):
     # expected-error @below {{default capture convention was already specified; remove the duplicate}}
     # expected-note @below {{a capture convention (like 'mut' or 'var') before the capture list sets the default for all captured variables}}
-    def my_closure(y: Int) unified {var, ref} -> Int:
+    def my_closure(y: Int) {var, ref} -> Int:
         return y
 
 # ===----------------------------------------------------------------------=== #
@@ -221,7 +227,7 @@ def multiple_default_capture_conventions(x: Int):
 
 def incompatible_capture_conventions(x: Int):
     # expected-error @below {{'^' requires 'var' convention; write 'var x^' to move a capture}}
-    def my_closure(y: Int) unified {ref x^} -> Int:
+    def my_closure(y: Int) {ref x^} -> Int:
         return y
 
 
@@ -233,7 +239,7 @@ def default_capture_convention_violation():
     var y = 20
     var x = 10
 
-    def my_fn() unified {read, mut y}:
+    def my_fn() {read, mut y}:
         # Assigning to `y` work
         y = 20
         # expected-error @below {{expression must be mutable in assignment}}
@@ -245,5 +251,5 @@ def default_capture_convention_violation():
 
 def capture_RTP(x : Int) :
     # expected-error @below{{register passible value 'x' can not be captured by 'mut'. Do you mean 'read'?}}
-    def my_func() unified {mut x}:
+    def my_func() {mut x}:
         pass

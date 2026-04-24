@@ -2121,7 +2121,7 @@ ASTDecl *SharedState::getOrCreateClosureTrait(SMLoc loc, ASTDecl &moduleDecl,
   return ptr->second;
 }
 
-ASTDecl *SharedState::getOrCreateUnifiedClosureWrapper(
+ASTDecl *SharedState::getOrCreateClosureWrapper(
     SMLoc loc, FnTypeGeneratorType sig, ASTDecl *moduleDecl, bool isCopyable,
     TypeConvention typeConvention, bool isStateless) {
   ASTDecl *traitDecl = getOrCreateClosureTrait(loc, *moduleDecl, sig);

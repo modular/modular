@@ -1397,7 +1397,7 @@ isCapturingByDefault(SharedState &shared, FnOp funcOp, TraitType canonicalTrait,
     return WalkResult::advance();
   });
   // Temporary solution to supporting capturing parametric closures inside
-  // unified closures: propagate capturing effect with unified effect.
+  // nested closures: propagate the capturing effect through the closure type.
   walker.addWalk([&](SymbolRefAttr symbol) {
     auto traitDecl = shared.declResolver->getDeclForTypeSymbolIfExists(symbol);
     if (!traitDecl)
@@ -1461,9 +1461,8 @@ static bool allCopyable(ArrayRef<Capture> captures, SharedState &shared,
   return true;
 }
 
-static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
-                                          ASTDecl &nestedFnDecl,
-                                          SharedState &shared) {
+static MLValue emitClosureInstance(ArrayRef<Capture> captures,
+                                   ASTDecl &nestedFnDecl, SharedState &shared) {
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   SMLoc loc = nestedFnDecl.getLoc();
   Location mlirLoc = shared.translateLocation(loc);
@@ -1517,7 +1516,7 @@ static MLValue emitUnifiedClosureInstance(ArrayRef<Capture> captures,
 /// following:
 ///
 /// def toy(read byCopy:String, prefix:String):
-///   def myclosure(prefix: String) unified {var byCopy} -> String:
+///   def myclosure(prefix: String) {var byCopy} -> String:
 ///      byCopy += "v2" // LINE A
 ///      return prefix
 ///   takeIt(myclosure, prefix)
@@ -1689,31 +1688,34 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
           return callee && callee->spelling == "parameter";
         });
   };
-  if (funcOp->getParentOfType<FnOp>() && !fnSignature.effects.isUnified() &&
-      !fnSignature.effects.isCapturing() && !hasParameterDecorator())
-    fnSignature.effects.setUnified();
-  // TODO: effects parsing must be moved after captures parsing.
-  // A capture list shorthand (`{...}`) implies the unified effect.
-  // Capturing and @parameter closures do not have capture lists.
-  ParsedCaptureList captureSignature;
-  if (fnSignature.effects.isUnified() && p.getToken().is(Token::l_brace)) {
-    if (captureSignature.parseCaptureList(p))
-      return failure();
+  if (hasParameterDecorator())
+    fnSignature.effects.setCapturing();
+  bool isNonlegacyClosure =
+      funcOp->getParentOfType<FnOp>() && !fnSignature.effects.isCapturing();
+
+  // Keep the provisional FnOp signature in sync with early effect decisions so
+  // signature typechecking for nested defs classifies the current function
+  // correctly before the final typed signature is available.
+  {
+    FnTypeGeneratorType provisionalSig = funcOp.getFuncTypeGenerator();
+    funcOp.setFuncTypeGenerator(FnTypeGeneratorType::get(
+        provisionalSig.getInputParamTypes(), provisionalSig.getValues(),
+        provisionalSig.getArgConventions(), fnSignature.effects,
+        provisionalSig.getFnMetadata(), provisionalSig.getMetadata()));
   }
+
+  // TODO: effects parsing must be moved after captures parsing.
+  // Non-legacy nested closures may have an optional `{...}` capture list.
+  ParsedCaptureList captureSignature;
+  if (isNonlegacyClosure && captureSignature.parseCaptureList(p))
+    return failure();
 
   // Emit copies/casts for captures. Otherwise the incorrect lifetime rules will
   // be applied to the values in the closure.
-  if (fnSignature.effects.isUnified()) {
-    if (!funcOp->getParentOfType<FnOp>()) {
-      p.emitError(funcOp.getLoc(),
-                  "unified effect is only applicable on nested functions");
+  if (isNonlegacyClosure) {
+    if (captureSignature.hasExplicitCaptureList &&
+        failed(createCaptureValues(p, sigDecl, captureSignature, decl)))
       return failure();
-    }
-    // Emit explicit capture values.
-    if (failed(createCaptureValues(p, sigDecl, captureSignature, decl)))
-      return failure();
-
-    // Set the default convention.
     if (captureSignature.captureAllByConvention.has_value()) {
       shared.setDefaultCaptureForScope(
           decl, *captureSignature.captureAllByConvention);
@@ -1997,7 +1999,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
   });
 
   // If this is a `@parameter` closure, attach the capture origins.
-  if (signature.isCapturing() && !signature.isUnified()) {
+  if (signature.isCapturing()) {
     SmallVector<Type> captureTypes;
     for (const Capture &cap : captures)
       captureTypes.push_back(cap.getValue().getType());
@@ -2017,9 +2019,9 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     return success();
   }
 
-  if (signature.isUnified()) {
+  if (isNonlegacyClosure) {
     // abi("C") functions must be bare function pointers with no captured
-    // state, even when declared 'unified'.
+    // state, even in closure form.
     if (signature.getFnEffects().isCABI() && !captures.empty())
       return emitError(funcOp.getLoc(),
                        "a abi(\"C\") function cannot capture variables");
@@ -2047,7 +2049,7 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
       }
     }
 
-    MLValue instance = emitUnifiedClosureInstance(captures, decl, shared);
+    MLValue instance = emitClosureInstance(captures, decl, shared);
     if (!instance)
       return failure();
     decl.setIRValue(instance);
@@ -2071,7 +2073,8 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
                      "a abi(\"C\") function cannot capture variables");
 
   return emitError(funcOp.getLoc(),
-                   "capturing nested functions must be declared 'unified'");
+                   "capturing nested functions cannot capture variables; omit "
+                   "'capturing' to form a closure");
 }
 
 LogicalResult DeclResolver::resolveSyntheticBody(FnOp fn, ASTDecl &decl) {

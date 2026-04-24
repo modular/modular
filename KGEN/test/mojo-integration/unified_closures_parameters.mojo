@@ -9,7 +9,7 @@ from std.sys import argv
 
 
 def takeItParams[
-    UU: Trait, T: def[U: Trait](impl: U) unified -> Int, //
+    UU: Trait, T: def[U: Trait](impl: U) -> Int, //
 ](state: T, x: UU):
     var product2 = state.__call__[UU](x)
     print(product2)
@@ -38,7 +38,7 @@ struct Impl2(Trait):
 
 # COM: Ensure parametric closures are supported
 def captureParams[X: Trait, Y: Trait](impl2: X, mut impl3: Y):
-    def hasParams[U: Trait](impl: U) unified {read} -> Int:
+    def hasParams[U: Trait](impl: U) {read} -> Int:
         return impl.get() + impl2.get() + impl3.get()
 
     takeItParams(hasParams, impl2)
@@ -52,13 +52,13 @@ struct Parameter[*, base: ImplicitlyCopyable & Writable](Copyable):
         print(self.impl)
 
 
-def takeIt[f: def() unified -> None](impl: f):
+def takeIt[f: def() -> None](impl: f):
     impl()
 
 
 def captureIt(p: Parameter[...]):
     @no_inline
-    def closure() unified {read p}:
+    def closure() {read p}:
         p.useIt()
 
     takeIt(closure)
@@ -87,14 +87,14 @@ struct Sphere(Coord):
         print("sphere:", self.theta, ",", self.phi)
 
 
-def hasParamVariadic[C: def[*TT: Coord](* args: * TT) unified](impl: C, x: Int):
+def hasParamVariadic[C: def[*TT: Coord](* args: * TT)](impl: C, x: Int):
     var state1 = Sphere(x, x)
     var state2 = Cartesian(x, x)
     impl(state1, state2)
 
 
 def testCapturedParamWithVariadicParamsFromFn(t: Int):
-    def closureImpl[*TT: Coord](*args: *TT) unified {var}:
+    def closureImpl[*TT: Coord](*args: *TT) {var}:
         print(args.__len__())
         comptime for i in range(args.__len__()):
             args[i].prettyPrint()
@@ -118,7 +118,7 @@ def main() raises:
     # CHECK: 22
     captureParams(x, y)
 
-    # COM: Ensure unified closures with variadic type parameters work
+    # COM: Ensure closures with variadic type parameters work
     # CHECK: 2
     # CHECK: sphere: 8 , 8
     # CHECK: Cart: 8 , 8

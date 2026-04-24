@@ -97,7 +97,7 @@ def deprecated_func_for_cast():
     pass
 
 
-def takes_func(f: def() -> None):
+def takes_func(f: def() thin -> None):
     f()
 
 
@@ -113,7 +113,7 @@ struct MethodCastTest:
         pass
 
 
-def takes_method(m: def(MethodCastTest) -> None):
+def takes_method(m: def(MethodCastTest) thin -> None):
     pass
 
 

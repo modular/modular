@@ -541,6 +541,14 @@ def whitespace(
         if t == token.LPAR:
             return NO
 
+    elif p.type == syms.raises_type:
+        # Subscripted exception types: `Error[T]` and `E[a][b]`, not `E [T]`
+        # (unlike `trailer`, a `dotted_name`+`[...]` sequence in `raises_type` is
+        # flat, so the default `return SPACE` would add a spurious space before
+        # each `LSQB`).
+        if t == token.LSQB:
+            return NO
+
     elif p.type in {syms.convention, syms.result_type}:
         # No space between ref and [origin] (e.g., ref[x] not ref [x])
         if t == token.LSQB and prev and prev.type == token.REF:
