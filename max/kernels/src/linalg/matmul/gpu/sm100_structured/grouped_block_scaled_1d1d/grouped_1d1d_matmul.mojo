@@ -37,6 +37,7 @@ from std.sys import size_of
 from std.gpu.host import DeviceContext, Dim, FuncAttribute
 from std.gpu.host.info import B200
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
+from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from layout import Coord, Idx, RuntimeInt, TileTensor, row_major
 from layout.tma_async import create_tensor_tile
 from structured_kernels.tile_types import create_tma_tile
@@ -69,6 +70,7 @@ def grouped_matmul_block_scaled[
     config: BlockScaledMatmulConfig[
         a_type, b_type, c_type, sfa_dtype, sfb_dtype, transpose_b
     ],
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c_device: TileTensor,
     a_device: TileTensor,
@@ -198,6 +200,7 @@ def grouped_matmul_block_scaled[
             Int32(config.cluster_shape[1]),
             Int32(config.cluster_shape[2]),
         ),
+        pdl_level=pdl_level,
     ]
     comptime KernelType = type_of(matmul_kernel)
 
@@ -395,6 +398,7 @@ def grouped_matmul_block_scaled[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(pdl_level),
         )
     else:
         var a_tma_op = create_tma_tile[
@@ -460,4 +464,5 @@ def grouped_matmul_block_scaled[
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                 UInt32(b200_smem)
             ),
+            attributes=pdl_launch_attributes(pdl_level),
         )

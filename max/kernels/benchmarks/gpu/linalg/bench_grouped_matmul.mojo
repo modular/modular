@@ -34,6 +34,7 @@ from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
+from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
@@ -127,6 +128,7 @@ def bench_grouped_matmul[
     mma_bn: Int = 8,
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
+    pdl_level: Int = 0,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -403,6 +405,7 @@ def bench_grouped_matmul[
 
                 else:
                     comptime transpose_b = True
+                    comptime _pdl_level = PDLLevel(pdl_level)
                     grouped_matmul_nvfp4_dispatch[
                         transpose_b=transpose_b,
                         override=override,
@@ -410,6 +413,7 @@ def bench_grouped_matmul[
                         mma_bn=mma_bn,
                         cta_group=cta_group,
                         num_pipeline_stages=num_pipeline_stages,
+                        pdl_level=_pdl_level,
                     ](
                         c_dev,
                         a_dev,
@@ -665,6 +669,7 @@ def create_grouped_matmul_bench[
     mma_bn: Int = 8,
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
+    pdl_level: Int = 0,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -686,6 +691,7 @@ def create_grouped_matmul_bench[
         mma_bn=mma_bn,
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
+        pdl_level=pdl_level,
     ](
         ctx,
         bench,
@@ -735,6 +741,7 @@ def main() raises:
     comptime mma_bn = get_defined_int["mma_bn", 8]()
     comptime cta_group = get_defined_int["cta_group", 1]()
     comptime num_pipeline_stages = get_defined_int["num_pipeline_stages", -1]()
+    comptime pdl_level = get_defined_int["pdl_level", 0]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -753,6 +760,7 @@ def main() raises:
             mma_bn=mma_bn,
             cta_group=cta_group,
             num_pipeline_stages=num_pipeline_stages,
+            pdl_level=pdl_level,
         ](
             ctx,
             b,

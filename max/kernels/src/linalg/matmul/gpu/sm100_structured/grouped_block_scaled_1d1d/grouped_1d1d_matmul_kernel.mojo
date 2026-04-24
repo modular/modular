@@ -57,6 +57,11 @@ from std.gpu.memory import (
     external_memory,
     fence_mbarrier_init,
 )
+from std.gpu.primitives.grid_controls import (
+    PDLLevel,
+    launch_dependent_grids,
+    wait_on_dependent_grids,
+)
 import std.gpu.primitives.warp as warp
 from std.gpu.primitives.cluster import (
     block_rank_in_cluster,
@@ -160,6 +165,8 @@ struct Grouped1D1DMatmulKernel[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
+    # Programmatic dependent launch level.
+    pdl_level: PDLLevel = PDLLevel(),
 ]:
     """Grouped 1D-1D block-scaled matmul kernel.
 
@@ -936,6 +943,17 @@ struct Grouped1D1DMatmulKernel[
         fence_mbarrier_init()
         cluster_sync()
 
+        # SAFE (PDLLevel(1)) tier: block-wide PDL fence fires after all SMEM
+        # / barrier init but before any warp touches GMEM. Orders every
+        # warp's subsequent _compute_iter0_ctx read of a_offsets /
+        # expert_ids / expert_scales, the scheduler's direct reads, and all
+        # TMA loads vs the previous grid. AGGRESSIVE (PDLLevel(2)) skips
+        # this fence and lets the Load warp's split-then-wait handle PDL
+        # ordering, at the cost of letting the scheduler and iter-0 ctx
+        # reads race ahead of the previous grid's writes.
+        comptime if Self.pdl_level == PDLLevel(1):
+            wait_on_dependent_grids()
+
         var mma_op = Self.MmaOp()
 
         # ===== TMA LOAD WARP =====
@@ -958,6 +976,12 @@ struct Grouped1D1DMatmulKernel[
                 )
                 var prefetched_ctx = ctx
                 var has_prefetched_ctx = False
+                # PDL: hide `wait_on_dependent_grids` behind the first tile's
+                # weight loads. Weights are static across grids so their TMAs
+                # can issue before the wait; activations can only issue after.
+                # Flag flips False after the first tile so all later tiles
+                # take the unified path.
+                var pdl_first_tile = True
                 while True:
                     if ctx.expert_id() < 0:
                         break
@@ -967,20 +991,60 @@ struct Grouped1D1DMatmulKernel[
 
                     for k_tile in range(num_k_iters):
                         with producer.acquire_if_needed(next_ready) as tiles:
-                            Self.load_input_tiles(
-                                a_tma_op,
-                                b_tma_op,
-                                sfa_tma_op,
-                                sfb_tma_op,
-                                tiles,
-                                peer_cta_coord,
-                                ctx,
-                                a_scale_offsets,
-                                UInt32(k_tile),
-                                elect_one_cta,
-                                a_multicast_mask,
-                                b_multicast_mask,
-                            )
+                            var did_split = False
+                            comptime if Self.pdl_level == PDLLevel(2):
+                                if pdl_first_tile:
+                                    Self.load_input_tiles(
+                                        a_tma_op,
+                                        b_tma_op,
+                                        sfa_tma_op,
+                                        sfb_tma_op,
+                                        tiles,
+                                        peer_cta_coord,
+                                        ctx,
+                                        a_scale_offsets,
+                                        UInt32(k_tile),
+                                        elect_one_cta,
+                                        a_multicast_mask,
+                                        b_multicast_mask,
+                                        load_weights=True,
+                                        load_activations=False,
+                                    )
+                                    wait_on_dependent_grids()
+                                    Self.load_input_tiles(
+                                        a_tma_op,
+                                        b_tma_op,
+                                        sfa_tma_op,
+                                        sfb_tma_op,
+                                        tiles,
+                                        peer_cta_coord,
+                                        ctx,
+                                        a_scale_offsets,
+                                        UInt32(k_tile),
+                                        elect_one_cta,
+                                        a_multicast_mask,
+                                        b_multicast_mask,
+                                        load_weights=False,
+                                        load_activations=True,
+                                    )
+                                    pdl_first_tile = False
+                                    did_split = True
+
+                            if not did_split:
+                                Self.load_input_tiles(
+                                    a_tma_op,
+                                    b_tma_op,
+                                    sfa_tma_op,
+                                    sfb_tma_op,
+                                    tiles,
+                                    peer_cta_coord,
+                                    ctx,
+                                    a_scale_offsets,
+                                    UInt32(k_tile),
+                                    elect_one_cta,
+                                    a_multicast_mask,
+                                    b_multicast_mask,
+                                )
                         next_ready = True
                         if k_tile + 1 < num_k_iters:
                             next_ready = producer.try_acquire()
@@ -1132,6 +1196,9 @@ struct Grouped1D1DMatmulKernel[
 
                     ctx = Self._consume_sched_ctx(smem, sched_ci, sched_phase)
 
+                comptime if Self.pdl_level > PDLLevel.OFF:
+                    launch_dependent_grids()
+
         # ===== SFB TMA LOAD WARP (MMA_N < 64 only) =====
         # Dedicated warp that loads SFB scale factors from GMEM to SMEM.
         # Dynamically chooses TMA or cp.async based on group_size:
@@ -1139,6 +1206,20 @@ struct Grouped1D1DMatmulKernel[
         #   group_size <  SF_MN_GROUP_SIZE (128): cp.async (exact rows, no waste)
         comptime if Self.MMA_N < 64:
             if Self.WarpRole.is_sfb_tma_load():
+                # PDL: when AB_swapped, SFB covers activation scales so
+                # reads depend on the previous grid's output. The main Load
+                # warp's wait covers A/B/SFA but this warp issues SFB TMAs /
+                # cp.async independently, so it needs its own wait before
+                # touching GMEM. SfbTMEMLoad only reads SMEM and inherits
+                # ordering via sfb_tma_pipeline. Gated on AB_swapped for
+                # robustness: if a future config has MMA_N<64 with
+                # AB_swapped=False, SFB would be weight scales and the
+                # wait would be wasteful.
+                comptime if (
+                    Self.pdl_level == PDLLevel(2) and Self.config.AB_swapped
+                ):
+                    wait_on_dependent_grids()
+
                 var sfb_tma_pipeline = ProducerConsumerPipeline[
                     Self.num_group_pipeline_stages
                 ](smem.sfb_tma_mbars_ptr())
@@ -1708,8 +1789,25 @@ struct Grouped1D1DMatmulKernel[
         elect_one_cta: Bool,
         a_multicast_mask: UInt16,
         b_multicast_mask: UInt16,
+        load_weights: Bool = True,
+        load_activations: Bool = True,
     ):
-        """Load A, B, SFA, SFB tiles using TMA."""
+        """Load A, B, SFA, SFB tiles using TMA.
+
+        When PDL splits loads around `wait_on_dependent_grids`, the weight
+        loads (A + SFA if AB_swapped, B + SFB otherwise) can issue before
+        the wait since weights are static across grids. The activation
+        loads (the other pair) must come after. Set `load_weights=True,
+        load_activations=False` for the pre-wait call, and the inverse
+        for the post-wait call. `expect_bytes` is issued during the
+        weight phase (which covers the first call when both phases
+        happen, or the only call when the split is not used).
+
+        The phase flags are runtime so a single instantiation of this
+        function covers all three use-cases (both, weights-only,
+        activations-only). Branches inside are cheap compared to the
+        TMA ops and the warp-level election that gates them.
+        """
         var peer_rank_n = peer_cta_coord[0]
         var peer_rank_m = peer_cta_coord[1]
         var peer_m_rank = peer_cta_coord[2]
@@ -1751,9 +1849,25 @@ struct Grouped1D1DMatmulKernel[
                 + Int(expert_id) * Self.static_N
             )
 
+        # A-side TMAs (a_tma_op + sfa_tma_op) load weights when AB_swapped,
+        # activations otherwise. B-side (b_tma_op + sfb_tma_op) is the inverse.
+        # AB_swapped is comptime so each side resolves to one of the two
+        # runtime flags with no extra select cost.
+        var load_a_side: Bool
+        var load_b_side: Bool
+        comptime if Self.config.AB_swapped:
+            load_a_side = load_weights
+            load_b_side = load_activations
+        else:
+            load_a_side = load_activations
+            load_b_side = load_weights
+
         if elect_one_sync():
-            if elect_one_cta:
-                tiles.expect_bytes(Self.input_expected_bytes)
+            # expect_bytes is issued once per barrier: tie it to the weight
+            # phase so activation-only calls (post-PDL-wait) don't re-expect.
+            if load_weights:
+                if elect_one_cta:
+                    tiles.expect_bytes(Self.input_expected_bytes)
 
             var barrier = tiles.barrier()
 
@@ -1778,18 +1892,20 @@ struct Grouped1D1DMatmulKernel[
                 var k_coord = Int(iter_idx + j) * Self.BK
 
                 # TileTensor directly to TMA (uses TileTensor overload)
-                a_tma_op.async_multicast_load[Self.cta_group](
-                    a_peer_tt,
-                    barrier[0],
-                    (k_coord, a_gmem_m_coord),
-                    a_multicast_mask,
-                )
-                b_tma_op.async_multicast_load[Self.cta_group](
-                    b_peer_tt,
-                    barrier[0],
-                    (k_coord, b_gmem_n_coord),
-                    b_multicast_mask,
-                )
+                if load_a_side:
+                    a_tma_op.async_multicast_load[Self.cta_group](
+                        a_peer_tt,
+                        barrier[0],
+                        (k_coord, a_gmem_m_coord),
+                        a_multicast_mask,
+                    )
+                if load_b_side:
+                    b_tma_op.async_multicast_load[Self.cta_group](
+                        b_peer_tt,
+                        barrier[0],
+                        (k_coord, b_gmem_n_coord),
+                        b_multicast_mask,
+                    )
 
                 # Scale factor load with offset
                 # TMA 4D now has TileTensor overload - pass tiles directly
@@ -1814,40 +1930,11 @@ struct Grouped1D1DMatmulKernel[
                     work_ctx.m_start(),
                 )
 
-                # Cast SMEM tile pointers to uint16 for TMA (4D uint16 descriptor).
-                var sfa_tt_u16 = TileTensor[
-                    Self.sf_tma_dtype,
-                    type_of(sfa_tt).LayoutType,
-                    MutAnyOrigin,
-                    address_space=AddressSpace.SHARED,
-                ](
-                    rebind[
-                        UnsafePointer[
-                            Scalar[Self.sf_tma_dtype],
-                            MutAnyOrigin,
-                            address_space=AddressSpace.SHARED,
-                        ]
-                    ](sfa_tt.ptr),
-                    sfa_tt.layout,
-                )
-                sfa_tma_op.async_copy_4d[Self.cta_group](
-                    sfa_tt_u16,
-                    barrier[0],
-                    (
-                        0,
-                        Int(
-                            (iter_idx + j) * UInt32(Self.config.num_sf_k_tiles)
-                        ),
-                        sfa_m_coord,
-                        0,
-                    ),
-                )
-
-                # For MMA_N < 64, SFB is loaded by the SfbTMALoad warp.
-                comptime if Self.MMA_N >= 64:
-                    var sfb_tt_u16 = TileTensor[
+                if load_a_side:
+                    # Cast SMEM tile pointers to uint16 for TMA (4D uint16 descriptor).
+                    var sfa_tt_u16 = TileTensor[
                         Self.sf_tma_dtype,
-                        type_of(sfb_tt).LayoutType,
+                        type_of(sfa_tt).LayoutType,
                         MutAnyOrigin,
                         address_space=AddressSpace.SHARED,
                     ](
@@ -1857,11 +1944,11 @@ struct Grouped1D1DMatmulKernel[
                                 MutAnyOrigin,
                                 address_space=AddressSpace.SHARED,
                             ]
-                        ](sfb_tt.ptr),
-                        sfb_tt.layout,
+                        ](sfa_tt.ptr),
+                        sfa_tt.layout,
                     )
-                    sfb_tma_op.async_copy_4d[Self.cta_group](
-                        sfb_tt_u16,
+                    sfa_tma_op.async_copy_4d[Self.cta_group](
+                        sfa_tt_u16,
                         barrier[0],
                         (
                             0,
@@ -1869,10 +1956,42 @@ struct Grouped1D1DMatmulKernel[
                                 (iter_idx + j)
                                 * UInt32(Self.config.num_sf_k_tiles)
                             ),
-                            sfb_n_coord,
+                            sfa_m_coord,
                             0,
                         ),
                     )
+
+                # For MMA_N < 64, SFB is loaded by the SfbTMALoad warp.
+                comptime if Self.MMA_N >= 64:
+                    if load_b_side:
+                        var sfb_tt_u16 = TileTensor[
+                            Self.sf_tma_dtype,
+                            type_of(sfb_tt).LayoutType,
+                            MutAnyOrigin,
+                            address_space=AddressSpace.SHARED,
+                        ](
+                            rebind[
+                                UnsafePointer[
+                                    Scalar[Self.sf_tma_dtype],
+                                    MutAnyOrigin,
+                                    address_space=AddressSpace.SHARED,
+                                ]
+                            ](sfb_tt.ptr),
+                            sfb_tt.layout,
+                        )
+                        sfb_tma_op.async_copy_4d[Self.cta_group](
+                            sfb_tt_u16,
+                            barrier[0],
+                            (
+                                0,
+                                Int(
+                                    (iter_idx + j)
+                                    * UInt32(Self.config.num_sf_k_tiles)
+                                ),
+                                sfb_n_coord,
+                                0,
+                            ),
+                        )
 
     # ========== MMA Operation ==========
 

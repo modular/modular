@@ -46,6 +46,7 @@ from std.collections import Optional
 
 from std.gpu.host import DeviceContext
 from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
+from std.gpu.primitives.grid_controls import PDLLevel
 from std.utils.index import Index
 from layout import TileTensor
 
@@ -82,6 +83,7 @@ def _launch_grouped_block_scaled[
     cta_group: Int,
     num_pipeline_stages: Optional[Int] = None,
     scaling_kind: UMMAKind = UMMAKind.KIND_MXF4NVF4,
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -104,6 +106,7 @@ def _launch_grouped_block_scaled[
         cta_group: CTA group size.
         num_pipeline_stages: Pipeline depth override. None = auto-compute.
         scaling_kind: Block-scaling format (NVFP4, MXFP4, or MXFP8).
+        pdl_level: Programmatic dependent launch level.
     """
     comptime a_type = a.dtype
     comptime b_type = b.dtype
@@ -128,7 +131,9 @@ def _launch_grouped_block_scaled[
         gemm_kind=GEMMKind.GMM,
     )
 
-    grouped_matmul_block_scaled[transpose_b=transpose_b, config=config](
+    grouped_matmul_block_scaled[
+        transpose_b=transpose_b, config=config, pdl_level=pdl_level
+    ](
         c,
         a,
         a_offsets,
@@ -152,6 +157,7 @@ def _dispatch_regime[
     stages_4096_7168: Optional[Int],
     stages_7168_2048: Optional[Int],
     stages_7168_256: Optional[Int],
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -182,6 +188,7 @@ def _dispatch_regime[
         mma_bn,
         cta_group,
         num_pipeline_stages=stages,
+        pdl_level=pdl_level,
     ](
         c,
         a,
@@ -205,6 +212,7 @@ def grouped_matmul_nvfp4_dispatch[
     mma_bn: Int = 8,
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -238,6 +246,7 @@ def grouped_matmul_nvfp4_dispatch[
         cta_group: CTA group size (only used when override=True).
         num_pipeline_stages: Pipeline depth (only used when override=True).
             -1 = auto-compute.
+        pdl_level: Programmatic dependent launch level.
 
     Args:
         c: Output tensor (total_tokens, N).
@@ -264,6 +273,7 @@ def grouped_matmul_nvfp4_dispatch[
             mma_bn,
             cta_group,
             num_pipeline_stages=_stages,
+            pdl_level=pdl_level,
         ](
             c,
             a,
@@ -296,6 +306,7 @@ def grouped_matmul_nvfp4_dispatch[
                     64,
                     2,
                     num_pipeline_stages=6,
+                    pdl_level=pdl_level,
                 ](
                     c,
                     a,
@@ -316,6 +327,7 @@ def grouped_matmul_nvfp4_dispatch[
                     128,
                     2,
                     num_pipeline_stages=6,
+                    pdl_level=pdl_level,
                 ](
                     c,
                     a,
@@ -340,6 +352,7 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_4096_7168=6,
                     stages_7168_2048=4,
                     stages_7168_256=None,
+                    pdl_level=pdl_level,
                 ](
                     c,
                     a,
@@ -363,6 +376,7 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_4096_7168=6,
                     stages_7168_2048=6,
                     stages_7168_256=None,
+                    pdl_level=pdl_level,
                 ](
                     c,
                     a,
@@ -386,6 +400,7 @@ def grouped_matmul_nvfp4_dispatch[
                     stages_4096_7168=7,
                     stages_7168_2048=6,
                     stages_7168_256=6,
+                    pdl_level=pdl_level,
                 ](
                     c,
                     a,
@@ -404,6 +419,7 @@ def grouped_matmul_nvfp4_dispatch[
 def grouped_matmul_block_scaled_sm100_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -426,6 +442,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     Parameters:
         transpose_b: Whether B is transposed (must be True).
         target: Target device (unused, for MOGG interface compatibility).
+        pdl_level: Programmatic dependent launch level.
 
     Args:
         c: Output tensor (total_tokens, N).
@@ -444,7 +461,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
     comptime scaling_kind = _scaling_kind[a.dtype, a_scales.dtype]()
 
     comptime if scaling_kind == UMMAKind.KIND_MXF4NVF4:
-        grouped_matmul_nvfp4_dispatch[transpose_b, target](
+        grouped_matmul_nvfp4_dispatch[transpose_b, target, pdl_level=pdl_level](
             c,
             a,
             b,
@@ -465,6 +482,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
             mma_bn=128,
             cta_group=1,
             scaling_kind=UMMAKind.KIND_MXF4,
+            pdl_level=pdl_level,
         ](
             c,
             a,
@@ -485,6 +503,7 @@ def grouped_matmul_block_scaled_sm100_dispatch[
             mma_bn=128,
             cta_group=1,
             scaling_kind=UMMAKind.KIND_MXF8F6F4,
+            pdl_level=pdl_level,
         ](
             c,
             a,
