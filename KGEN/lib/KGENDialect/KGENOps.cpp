@@ -1590,7 +1590,7 @@ LogicalResult StructGEPOp::verify() {
       if (getContainer().getType() == getType())
         return success();
 
-      if (isa<ParamType>(elementType))
+      if (isa<ParamType>(elementType) || isa<ClosureType>(elementType))
         return success();
 
       return emitOpError("constant index requires pointer to concrete struct "
@@ -1612,11 +1612,13 @@ LogicalResult StructGEPOp::verify() {
 
     // Verify result type matches the element type at the index.
     Type expectedEltType = (*elementTypes)[index];
-    if (getType().getElementType() != expectedEltType)
+    if (getType().getElementType() != expectedEltType &&
+        !isa<ParamType>(getType().getElementType())) {
       return emitOpError("result element type ")
              << getType().getElementType()
              << " does not match struct element type " << expectedEltType
              << " at index " << index;
+    }
   } else {
     // Parametric index: allow both StructType and ParamType for generic
     // contexts.

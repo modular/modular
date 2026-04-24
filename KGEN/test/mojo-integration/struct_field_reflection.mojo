@@ -92,5 +92,5 @@ def main():
     # CHECK: y: overriding2
 
     closure_fields()
-    # CHECK: closure_fields: 58
-    # CHECK: closure_fields: 127
+    # CHECK: closure_fields: 73
+    # CHECK: closure_fields: 142

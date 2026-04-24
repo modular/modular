@@ -886,7 +886,8 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
     // Detection method 2: Container already flattened to a concrete scalar.
     // This catches cases where the struct was flattened before this point.
     bool isFlattenedNonStruct = !isa<KGEN::StructType>(containerElemType) &&
-                                !isa<KGEN::ParamType>(containerElemType);
+                                !isa<KGEN::ParamType>(containerElemType) &&
+                                !isa<KGEN::ClosureType>(containerElemType);
 
     if (isIdentity || isFlattenedNonStruct)
       return adaptor.getContainer();
