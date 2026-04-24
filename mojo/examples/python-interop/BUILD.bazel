@@ -46,6 +46,21 @@ modular_py_binary(
     ],
 )
 
+modular_py_binary(
+    name = "columnar",
+    srcs = ["columnar.py"],
+    data = ["columnar_mojo.mojo"],
+    imports = ["."],
+    target_compatible_with = select({
+        "//:asan": ["@platforms//:incompatible"],
+        "//:ubsan": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "@mojo//:python",
+    ],
+)
+
 modular_run_binary_test(
     name = "hello_test",
     binary = "hello",
@@ -60,4 +75,9 @@ modular_run_binary_test(
     name = "mandelbrot_test",
     binary = "mandelbrot",
     tags = ["gpu"],
+)
+
+modular_run_binary_test(
+    name = "columnar_test",
+    binary = "columnar",
 )
