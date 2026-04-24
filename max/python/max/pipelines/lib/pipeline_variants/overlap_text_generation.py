@@ -1331,6 +1331,17 @@ class OverlapTextGenerationPipeline(
         )
 
     @property
+    def overlap_active(self) -> bool:
+        """Whether CPU/GPU overlap is actually in effect.
+
+        When overlap is active, ``execute()`` defers synchronization of the
+        current batch until the next call, so wall-clock time measured around
+        ``execute()`` reflects the previous batch's execution, not the
+        current one.
+        """
+        return not self._disable_overlap
+
+    @property
     def pipeline_config(self) -> PipelineConfig:
         """Returns the pipeline configuration."""
         return self._pipeline_config
