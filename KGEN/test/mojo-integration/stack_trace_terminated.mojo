@@ -21,7 +21,7 @@ def main():
 # RUN: cat %t.log | FileCheck --check-prefix=O3-FULL %s
 
 # RUN: %mojo-build-no-debug-no-assert %s --debug-level none -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O3-NONE %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -o %t 2>&1
@@ -29,7 +29,7 @@ def main():
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level none -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=1 %t 2> %t.log || true
+# RUN: %t 2> %t.log || true
 # RUN: cat %t.log | FileCheck --check-prefix=O0-NONE %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -sanitize address -o %t 2>&1
@@ -37,7 +37,9 @@ def main():
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-STACK-TRACE-ASAN %s
 
 # RUN: %mojo-build-no-debug-no-assert %s -O0 --debug-level full -sanitize address -o %t 2>&1
-# RUN: MOJO_ENABLE_STACK_TRACE_ON_CRASH=0 %t 2> %t.log || true
+# RUN: rm -rf %t-modular-home && mkdir -p %t-modular-home
+# RUN: printf '[max-debug]\nstack-trace-on-crash = false\n' > %t-modular-home/modular.cfg
+# RUN: env MODULAR_HOME=%t-modular-home %t 2> %t.log || true
 # RUN: cat %t.log
 # RUN: cat %t.log | FileCheck --check-prefix=O0-FULL-NO-STACK-TRACE-ASAN %s
 
