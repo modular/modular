@@ -19,10 +19,16 @@ for the MoE container, with sigmoid routing and e_score_correction_bias.
 
 from __future__ import annotations
 
-from max.dtype import DType
+import re
+
+import numpy as np
 from max.graph.weights import WeightData, Weights
 from max.pipelines.lib import PipelineConfig
 from transformers import AutoConfig
+
+_EXPERT_WEIGHT_RE = re.compile(
+    r"(model\.layers\.\d+\.block_sparse_moe\.experts\.\d+\.w\d+)\.weight$"
+)
 
 # Checkpoint -> MAX weight name mapping.
 #
@@ -81,32 +87,41 @@ def convert_safetensor_state_dict(
     """
     new_state_dict: dict[str, WeightData] = {}
 
-    # Skip MTP (multi-token prediction) layer weights
     num_hidden_layers = huggingface_config.num_hidden_layers
     skip_prefixes = tuple(
         f"model.layers.{i}."
         for i in range(num_hidden_layers, num_hidden_layers + 10)
     )
+    skip_suffixes = (
+        "input_quantizer",
+        "weight_quantizer",
+        "k_bmm_quantizer",
+        "v_bmm_quantizer",
+    )
+
+    # Some NVFP4 experts may be missing an input_scale; default to 1.0.
+    has_any_input_scale = any(k.endswith(".input_scale") for k in state_dict)
+    if has_any_input_scale:
+        for safetensor_name in state_dict:
+            m = _EXPERT_WEIGHT_RE.match(safetensor_name)
+            if m and f"{m.group(1)}.input_scale" not in state_dict:
+                max_name = f"{m.group(1)}.input_scale"
+                for before, after in MINIMAX_M2_SAFETENSOR_MAP.items():
+                    max_name = max_name.replace(before, after)
+                new_state_dict[max_name] = WeightData.from_numpy(
+                    np.array(1.0, dtype=np.float32), max_name
+                )
 
     for safetensor_name, value in state_dict.items():
-        # Skip MTP layers
         if safetensor_name.startswith(skip_prefixes):
+            continue
+        if safetensor_name.endswith(skip_suffixes):
             continue
 
         max_name = safetensor_name
         for before, after in MINIMAX_M2_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
 
-        weight_data = value.data()
-
-        # Cast FP8 scale tensors to float32
-        if (
-            ("weight_scale" in max_name or "input_scale" in max_name)
-            and weight_data.dtype.is_float()
-            and weight_data.dtype != DType.float32
-        ):
-            weight_data = weight_data.astype(DType.float32)
-
-        new_state_dict[max_name] = weight_data
+        new_state_dict[max_name] = value.data()
 
     return new_state_dict
