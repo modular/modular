@@ -20,8 +20,11 @@
 #include <cstdlib>
 #include <memory>
 #include <mutex>
+#include <span>
 
+#include <fmt/args.h>
 #include <fmt/chrono.h>
+#include <fmt/format.h>
 
 namespace M::Log {
 
@@ -93,8 +96,7 @@ static llvm::StringLiteral getLogLevelPrefix(LogLevel level) {
 }
 
 // Returns us in string form with a leading '.' and zero-padded to six digits
-static llvm::SmallString<8> formatMicroseconds(
-    std::chrono::time_point<std::chrono::system_clock> timePoint) {
+static llvm::SmallString<8> formatMicroseconds(LogRecord::Timestamp timePoint) {
   llvm::SmallString<8> result;
   // Only count microseconds by modulo'ing by 1 million
   auto micros = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -109,9 +111,8 @@ static llvm::SmallString<8> formatMicroseconds(
 // Returns a full ISO 8601 UTC timestamp, e.g. "2026-12-25T12:00:00.123456Z".
 // The result is always 20 chars (without microseconds) or 27 chars (with).
 // SmallString<32> is sized to hold either with room to spare.
-static llvm::SmallString<32>
-buildISOFormatString(std::chrono::time_point<std::chrono::system_clock> now,
-                     bool includeMicroseconds) {
+static llvm::SmallString<32> buildISOFormatString(LogRecord::Timestamp now,
+                                                  bool includeMicroseconds) {
   std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(now));
   constexpr size_t nChars = 32;
   llvm::SmallString<nChars> result;
@@ -127,12 +128,11 @@ buildISOFormatString(std::chrono::time_point<std::chrono::system_clock> now,
   return result;
 }
 
-static llvm::SmallString<512> buildJSONLogLine(LogLevel level,
-                                               llvm::StringRef msg) {
+static llvm::SmallString<512>
+buildJSONLogLine(LogLevel level, llvm::StringRef msg, LogRecord::Timestamp ts) {
   // Always use full ISO 8601 with microseconds in JSON mode regardless of
   // the showTimeStamp / useIsoTimestamps / showMicroseconds config flags.
-  auto now = std::chrono::system_clock::now();
-  auto timestamp = buildISOFormatString(now, /*includeMicroseconds=*/true);
+  auto timestamp = buildISOFormatString(ts, /*includeMicroseconds=*/true);
 
   llvm::SmallString<512> jsonLogLine;
   llvm::raw_svector_ostream svOstream(jsonLogLine);
@@ -249,12 +249,14 @@ public:
     }
   }
 
-  void log(LogLevel level, llvm::StringRef msg) {
+  void log(LogRecord record) {
+    auto msg = renderRecord(record);
+    auto level = record.level;
     llvm::SmallString<512> enhancedOrJSONMsg;
     if (formatState.emitJSON)
-      enhancedOrJSONMsg = buildJSONLogLine(level, msg);
+      enhancedOrJSONMsg = buildJSONLogLine(level, msg, record.timestamp);
     else if (formatState.useEnhancedFormat) {
-      auto enhanced = buildLogPrefix(level);
+      auto enhanced = buildLogPrefix(level, record.timestamp);
       enhancedOrJSONMsg = std::move(enhanced);
       enhancedOrJSONMsg += msg;
     } else
@@ -274,18 +276,51 @@ public:
   }
 
 private:
+  static std::string renderRecord(const LogRecord &record) {
+    fmt::dynamic_format_arg_store<fmt::format_context> store;
+    store.reserve(record.argCount, /*new_cap_named=*/0);
+    for (const auto &arg : std::span(record.args.data(), record.argCount)) {
+      switch (arg.tag) {
+      case LogArg::Type::Bool:
+        store.push_back(arg.data.b);
+        break;
+      case LogArg::Type::Int64:
+        store.push_back(arg.data.i64);
+        break;
+      case LogArg::Type::UInt64:
+        store.push_back(arg.data.ui64);
+        break;
+      case LogArg::Type::Fp32:
+        store.push_back(arg.data.fp32);
+        break;
+      case LogArg::Type::Fp64:
+        store.push_back(arg.data.fp64);
+        break;
+      case LogArg::Type::SmallString:
+        store.push_back(fmt::string_view(arg.data.ssoStr.data()));
+        break;
+      case LogArg::Type::String:
+        store.push_back(arg.data.str);
+        break;
+      case LogArg::Type::Pointer:
+        store.push_back(fmt::ptr(arg.data.ptr));
+        break;
+      }
+    }
+    return fmt::vformat(record.fmtString, store);
+  }
+
   // Depends on logger state to access formatting options
-  llvm::SmallString<32> buildTimestampString() {
+  llvm::SmallString<32> buildTimestampString(LogRecord::Timestamp ts) {
     llvm::SmallString<32> result;
     if (!formatState.showTimeStamp)
       return result;
 
-    auto now = std::chrono::system_clock::now();
     if (formatState.useIsoTimestamps)
-      return buildISOFormatString(now, formatState.showMicroseconds);
+      return buildISOFormatString(ts, formatState.showMicroseconds);
 
     // Simple format: 16:21:14
-    std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(now));
+    std::tm utc = fmt::gmtime(std::chrono::system_clock::to_time_t(ts));
     constexpr size_t nChars = 32;
     llvm::SmallString<nChars> time;
     // Pre-size the buffer before format_to_n. Sizing after would call append()
@@ -296,17 +331,18 @@ private:
     time.resize(formatResult.size);
     result += time;
     if (formatState.showMicroseconds)
-      result += formatMicroseconds(now);
+      result += formatMicroseconds(ts);
     return result;
   }
 
-  llvm::SmallString<128> buildLogPrefix(LogLevel level) {
+  llvm::SmallString<128> buildLogPrefix(LogLevel level,
+                                        LogRecord::Timestamp ts) {
     using enum llvm::raw_ostream::Colors;
     llvm::SmallString<128> prefix;
 
     if (formatState.showTimeStamp) {
       prefix += "[";
-      prefix += buildTimestampString();
+      prefix += buildTimestampString(ts);
       prefix += "] ";
     }
 
@@ -335,8 +371,6 @@ Logger &getDefaultLog() {
   return defaultLog;
 }
 
-void logWrite(Logger &log, LogLevel level, llvm::StringRef msg) {
-  log.log(level, msg);
-}
+void logWrite(Logger &log, LogRecord record) { log.log(std::move(record)); }
 
 } // namespace M::Log
