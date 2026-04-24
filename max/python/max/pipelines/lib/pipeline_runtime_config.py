@@ -186,12 +186,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    device_graph_capture: bool = Field(
-        default=False,
+    device_graph_capture: bool | None = Field(
+        default=None,
         description=(
             "Enable device graph capture/replay for graph execution. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-device-graph-capture --force."
+            "If unset, automatically enabled for some selected architectures. "
+            "Set to False (--no-device-graph-capture) to explicitly disable."
         ),
     )
 

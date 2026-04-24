@@ -873,7 +873,7 @@ class PipelineConfig(ConfigFileModel):
             )
             max_batch_size = self.runtime.max_batch_size
             if (
-                not self.runtime.device_graph_capture
+                self.runtime.device_graph_capture is None
                 and arch is not None
                 and arch.name in _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES
                 and max_batch_size is not None
@@ -885,10 +885,13 @@ class PipelineConfig(ConfigFileModel):
                 self.runtime.device_graph_capture = True
                 logger.info(
                     "Automatically enabling device graph capture for %s with max_batch_size=%d. "
-                    "You can manually disable this by setting --no-device-graph-capture --force.",
+                    "You can manually disable this by setting --no-device-graph-capture.",
                     arch.name,
                     max_batch_size,
                 )
+
+        if self.runtime.device_graph_capture is None:
+            self.runtime.device_graph_capture = False
 
         self._validate_and_resolve_device_graph_capture()
 
