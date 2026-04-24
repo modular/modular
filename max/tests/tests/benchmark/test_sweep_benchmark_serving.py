@@ -484,6 +484,61 @@ def test_flush_prefix_cache_other_errors_raise() -> None:
             flush_prefix_cache("modular", "localhost", 8000, dry_run=False)
 
 
+def test_flush_prefix_cache_proxy_wrapped_404_logs_warning_not_raises(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Mammoth proxy wraps engine 404s in 502; treat unanimous 404 children as skip."""
+    from max.benchmark.benchmark_serving import flush_prefix_cache
+
+    proxy_body = {
+        "status": "error",
+        "results": [
+            {
+                "endpoint": "http://10.42.138.154:8000",
+                "name": "engine-0",
+                "statusCode": 404,
+                "success": False,
+                "error": '{"detail":"Not Found"}',
+            }
+        ],
+        "error": "failed to reset prefix cache for one or more endpoints",
+    }
+    mock_response = MagicMock()
+    mock_response.status_code = 502
+    mock_response.content = b"{...}"
+    mock_response.json.return_value = proxy_body
+    mock_response.text = str(proxy_body)
+
+    with patch("requests.post", return_value=mock_response):
+        flush_prefix_cache("vllm-chat", "localhost", 8000, dry_run=False)
+
+    assert any(
+        "skipping cache flush" in record.message for record in caplog.records
+    ), f"Expected warning in logs, got: {[r.message for r in caplog.records]}"
+
+
+def test_flush_prefix_cache_proxy_wrapped_mixed_statuses_raises() -> None:
+    """Proxy 502 with mixed children (not all 404) should still raise."""
+    from max.benchmark.benchmark_serving import flush_prefix_cache
+
+    proxy_body = {
+        "status": "error",
+        "results": [
+            {"statusCode": 404, "success": False},
+            {"statusCode": 500, "success": False},
+        ],
+    }
+    mock_response = MagicMock()
+    mock_response.status_code = 502
+    mock_response.content = b"{...}"
+    mock_response.json.return_value = proxy_body
+    mock_response.text = str(proxy_body)
+
+    with patch("requests.post", return_value=mock_response):
+        with pytest.raises(RuntimeError, match="Failed to flush prefix cache"):
+            flush_prefix_cache("vllm-chat", "localhost", 8000, dry_run=False)
+
+
 # ===========================================================================
 # result_filename plumbing tests
 # ===========================================================================

@@ -2753,6 +2753,28 @@ def flush_prefix_cache(
             " skipping cache flush."
         )
     elif response.status_code != 200:
+        # Mammoth's proxy wraps engine 404s in a 502 with per-endpoint statuses
+        # in the JSON body; treat unanimous 404s the same as a direct 404 above
+        # (e.g. vLLM builds without /reset_prefix_cache exposed).
+        try:
+            body = response.json() if response.content else None
+        except ValueError:
+            body = None
+        results = body.get("results") if isinstance(body, dict) else None
+        if (
+            isinstance(results, list)
+            and results
+            and all(
+                isinstance(r, dict) and r.get("statusCode") == 404
+                for r in results
+            )
+        ):
+            logger.warning(
+                f"Prefix cache reset is not supported at {api_url} "
+                "(proxy reported 404 from all engine endpoints);"
+                " skipping cache flush."
+            )
+            return
         raise RuntimeError(
             f"Failed to flush prefix cache for backend {backend} at {api_url}: "
             f"status={response.status_code} body={response.text}"
