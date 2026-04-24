@@ -24,6 +24,8 @@ from std.bit import count_leading_zeros
 from std.bit.mask import splat
 import std.format._utils as fmt
 from std.os import abort
+from std.collections.string._utf8 import _utf8_first_byte_sequence_length
+from std.memory import bitcast
 
 
 @always_inline
@@ -65,7 +67,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     from std.testing import assert_true
 
     # Create a codepoint from a character
-    var c = Codepoint.ord('A')
+    var c = Codepoint("A")
 
     # Check properties
     assert_true(c.is_ascii())
@@ -97,17 +99,64 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
     scalar values.
     """
 
-    var _scalar_value: UInt32
-    """The Unicode scalar value represented by this type."""
+    var _values: SIMD[DType.uint8, 4]
+    """The UTF-8 sequence represented by this type."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
     @always_inline
-    def __init__(out self, *, unsafe_unchecked_codepoint: UInt32):
-        """Construct a `Codepoint` from a code point value without checking that it
-        falls in the valid range.
+    def __init__(out self, single_char: StringLiteral):
+        """Parse a string literal with a single character at compile time.
+
+        Args:
+            single_char: The string literal with a single character.
+        """
+        comptime char = type_of(single_char)()
+        comptime assert (
+            char.count_codepoints() == 1
+        ), "single character was expected"
+        self._values = {0}
+        comptime for i in range(char.byte_length()):
+            comptime b = char.as_bytes()[i]
+            self._values[i] = b
+
+    @always_inline
+    def __init__(out self, *, unsafe_parse_first: StringSlice):
+        """Unsafely parse the first codepoint in the string assuming it is not
+        empty.
+
+        Args:
+            unsafe_parse_first: The non-empty string.
+        """
+
+        assert (
+            unsafe_parse_first.byte_length() > 0
+        ), "a non-empty string is expected"
+        var ptr = unsafe_parse_first.unsafe_ptr()
+        var b0 = ptr[0]
+        self._values = {b0, 0, 0, 0}
+        if Self.is_ascii(b0):
+            return
+
+        var num_bytes = Self.byte_length(first_utf8_byte=b0)
+        if unsafe_parse_first.byte_length() >= 4:
+            var bool_vec = SIMD[DType.uint8, 4](1, 2, 3, 4).le(UInt8(num_bytes))
+            self._values = ptr.load[4]() & splat[DType.uint8](bool_vec)
+        else:
+            for i in range(1, num_bytes):
+                self._values[i] = ptr[i]
+
+    @always_inline
+    def __init__[
+        optimize_ascii: Bool = True
+    ](out self, *, unsafe_unchecked_codepoint: UInt32):
+        """Construct a `Codepoint` from a code point value without checking that
+        it falls in the valid range.
+
+        Parameters:
+            optimize_ascii: Optimize for languages with mostly ASCII characters.
 
         Safety:
             The provided codepoint value MUST be a valid Unicode scalar value.
@@ -122,7 +171,86 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             unsafe_unchecked_codepoint
         ), "codepoint is not a valid Unicode scalar value"
 
-        self._scalar_value = unsafe_unchecked_codepoint
+        # # Unicode (represented as UInt32 BE) to UTF-8 conversion:
+        # - 1: 00000000 00000000 00000000 0aaaaaaa -> 0aaaaaaa
+        #     - a
+        # - 2: 00000000 00000000 00000aaa aabbbbbb -> 110aaaaa 10bbbbbb
+        #     - (a >> 6)  | 0b11000000, b         | 0b10000000
+        # - 3: 00000000 00000000 aaaabbbb bbcccccc -> 1110aaaa 10bbbbbb 10cccccc
+        #     - (a >> 12) | 0b11100000, (b >> 6)  | 0b10000000, c        | 0b10000000
+        # - 4: 00000000 000aaabb bbbbcccc ccdddddd -> 11110aaa 10bbbbbb 10cccccc
+        # 10dddddd
+        #     - (a >> 18) | 0b11110000, (b >> 12) | 0b10000000, (c >> 6) | 0b10000000,
+        #     d | 0b10000000
+
+        self._values = {0}
+        var num_bytes = UInt8(Self.byte_length(unsafe_unchecked_codepoint))
+
+        comptime if optimize_ascii:
+            if likely(num_bytes == 1):
+                self._values[0] = UInt8(unsafe_unchecked_codepoint)
+                return
+
+            var factor = 6 * (num_bytes - 1)
+            var shift_c = splat[DType.uint8](num_bytes > 2)
+            var shift_d = splat[DType.uint8](num_bytes > 3)
+            var shift_mask = SIMD[DType.uint32, 4](
+                UInt32(factor),
+                UInt32(factor - 6),
+                UInt32(factor - (12 & shift_c)),
+                0,
+            )
+            comptime mask = 0b0111_1111
+            comptime cont_mask = mask >> 1
+            var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
+            var b_type_mask = SIMD[DType.uint32, 4](
+                UInt32(mask >> num_bytes),
+                cont_mask,
+                UInt32(cont_mask & shift_c),
+                UInt32(cont_mask & shift_d),
+            )
+            comptime cont = 0b1000_0000
+            var utf8_markers = SIMD[DType.uint8, 4](
+                num_bytes_marker, cont, cont & shift_c, cont & shift_d
+            )
+            var codepoint_vec = SIMD[DType.uint32, 4](
+                unsafe_unchecked_codepoint
+            )
+            self._values = ((codepoint_vec >> shift_mask) & b_type_mask).cast[
+                DType.uint8
+            ]() | utf8_markers
+        else:
+            var factor = 6 * (num_bytes - 1)
+            var is_ascii = UInt8(num_bytes == 1)
+            var shift_b = splat[DType.uint8](num_bytes > 1)
+            var shift_c = splat[DType.uint8](num_bytes > 2)
+            var shift_d = splat[DType.uint8](num_bytes > 3)
+            var shift_mask = SIMD[DType.uint32, 4](
+                UInt32(factor),
+                UInt32(factor - (6 & shift_b)),
+                UInt32(factor - (12 & shift_c)),
+                0,
+            )
+            comptime mask = 0b0111_1111
+            comptime cont_mask = mask >> 1
+            var offset = num_bytes - is_ascii
+            var num_bytes_marker = UInt8(0xFF) << UInt8(8 - offset)
+            var b_type_mask = SIMD[DType.uint32, 4](
+                UInt32(mask >> offset),
+                UInt32(cont_mask & shift_b),
+                UInt32(cont_mask & shift_c),
+                UInt32(cont_mask & shift_d),
+            )
+            comptime cont = 0b1000_0000
+            var utf8_markers = SIMD[DType.uint8, 4](
+                num_bytes_marker, cont & shift_b, cont & shift_c, cont & shift_d
+            )
+            var codepoint_vec = SIMD[DType.uint32, 4](
+                unsafe_unchecked_codepoint
+            )
+            self._values = ((codepoint_vec >> shift_mask) & b_type_mask).cast[
+                DType.uint8
+            ]() | utf8_markers
 
     @always_inline
     def __init__(out self, codepoint: UInt8):
@@ -134,7 +262,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Args:
             codepoint: The 8-bit codepoint value to convert to a `Codepoint`.
         """
-        self._scalar_value = UInt32(Int(codepoint))
+        self._values = {codepoint, 0, 0, 0}
 
     # ===-------------------------------------------------------------------===#
     # Factory methods
@@ -158,124 +286,25 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         else:
             return None
 
-    @staticmethod
-    def ord(string: StringSlice[mut=False, _]) -> Codepoint:
-        """Returns the `Codepoint` that represents the given single-character
-        string.
-
-        Given a string containing one character, return a `Codepoint`
-        representing the codepoint of that character. For example,
-        `Codepoint.ord("a")` returns the codepoint `97`. This is the inverse of
-        the `chr()` function.
-
-        This function is similar to the `ord()` free function, except that it
-        returns a `Codepoint` instead of an `Int`.
-
-        Args:
-            string: The input string, which must contain only a single character.
-
-        Returns:
-            A `Codepoint` representing the codepoint of the given character.
-        """
-        if string.byte_length() == 0:
-            abort("Codepoint.ord: input string must not be empty")
-
-        # SAFETY:
-        #   This is safe because `StringSlice` is guaranteed to point to valid
-        #   UTF-8, and we verified above that the input is non-empty.
-        var char, num_bytes = Codepoint.unsafe_decode_utf8_codepoint(
-            string.as_bytes()
-        )
-
-        assert (
-            string.byte_length() == num_bytes
-        ), "input string must be one character"
-
-        return char
-
-    # TODO: add optimize_ascii and branchless optimization options like unsafe_write_utf8
-    @staticmethod
-    def unsafe_decode_utf8_codepoint(
-        s: Span[mut=False, UInt8, ...],
-    ) -> Tuple[Codepoint, Int]:
-        """Decodes a single `Codepoint` and number of bytes read from a given
-        UTF-8 string pointer.
-
-        Safety:
-            `_ptr` MUST point to the first byte in a **known-valid** UTF-8
-            character sequence. This function MUST NOT be used on unvalidated
-            input.
-
-        Args:
-            s: Span to UTF-8 encoded data containing at least one valid
-                encoded codepoint.
-
-        Returns:
-            The decoded codepoint `Codepoint`, as well as the number of bytes
-            read.
-
-        """
-        # UTF-8 to Unicode conversion:              (represented as UInt32 BE)
-        # 1: 0aaaaaaa                            -> 00000000 00000000 00000000 0aaaaaaa     a
-        # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
-        # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
-        # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
-        assert len(s) > 0, "input Span must be non-empty"
-
-        var ptr = s.unsafe_ptr()
-        var b1 = ptr[]
-        if (b1 >> 7) == 0:  # This is 1 byte ASCII char
-            return Codepoint(b1), 1
-
-        # NOTE: _utf8_first_byte_sequence_length does the same + an op to check
-        # if it is ascii
-        var num_bytes = count_leading_zeros(~b1)
-        debug_assert(
-            1 < Int(num_bytes) < 5, "invalid UTF-8 byte ", b1, " at index 0"
-        )
-
-        var shift = Int((6 * (num_bytes - 1)))
-        var b1_mask = 0b11111111 >> (num_bytes + 1)
-        var result = Int(b1 & b1_mask) << shift
-        for i in range(1, Int(num_bytes)):
-            ptr += 1
-            # Assert that this is a continuation byte
-            debug_assert(
-                ptr[] >> 6 == 0b00000010,
-                "invalid UTF-8 byte ",
-                ptr[],
-                " at index ",
-                i,
-            )
-            shift -= 6
-            result |= Int(ptr[] & 0b00111111) << shift
-
-        # SAFETY: Safe because the input bytes are required to be valid UTF-8,
-        #   and valid UTF-8 will never decode to an out of bounds codepoint
-        #   using the above algorithm.
-        # FIXME:
-        #   UTF-8 encoding algorithms that do not properly exclude surrogate
-        #   pair code points are actually relatively common (as I understand
-        #   it); the algorithm above does not check for that.
-        var char = Codepoint(unsafe_unchecked_codepoint=UInt32(result))
-        return char, Int(num_bytes)
-
     # ===-------------------------------------------------------------------===#
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
     def __lt__(self, other: Self) -> Bool:
-        """Return True if this character is less than a different codepoint value from
-        `other`.
+        """Return True if this character is less than a different codepoint
+        value from `other`.
 
         Args:
             other: The codepoint value to compare against.
 
         Returns:
-            True if this character's value is less than the other codepoint value;
-            False otherwise.
+            True if this character's value is less than the other codepoint
+            value; False otherwise.
         """
-        return self.to_u32() < other.to_u32()
+        return (
+            UnsafePointer(to=self._values).bitcast[UInt32]()[]
+            < UnsafePointer(to=other._values).bitcast[UInt32]()[]
+        )
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -288,7 +317,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             The numeric value of this scalar value as an integer.
         """
-        return Int(self._scalar_value)
+        return Int(self.to_u32())
 
     def write_to(self, mut w: Some[Writer]):
         """
@@ -297,10 +326,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Args:
             w: The object to write to.
         """
-        var char_len = self.utf8_byte_length()
-        var result = String(unsafe_uninit_length=char_len)
-        _ = self.unsafe_write_utf8(result.unsafe_ptr_mut())
-        w.write_string(result)
+        w.write_string(StringSlice(self))
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -312,11 +338,24 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Args:
             writer: The object to write to.
         """
-        fmt.FormatStruct(writer, "Codepoint").fields(self._scalar_value)
+        fmt.FormatStruct(writer, "Codepoint").fields(self._values)
 
     # ===-------------------------------------------------------------------===#
     # Methods
     # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    @always_inline
+    def is_ascii(value: UInt8) -> Bool:
+        """Returns True if this utf8 byte is an ASCII character.
+
+        Args:
+            value: The value to check.
+
+        Returns:
+            A boolean indicating if this utf8 byte is an ASCII character.
+        """
+        return Bool(~value >> 7)
 
     @always_inline
     def is_ascii(self) -> Bool:
@@ -328,7 +367,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             A boolean indicating if this `Codepoint` is an ASCII character.
         """
-        return self._scalar_value <= 0b0111_1111
+        return Self.is_ascii(self.first_byte())
 
     def is_ascii_digit(self) -> Bool:
         """Determines whether the given character is a digit [0-9].
@@ -336,9 +375,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             True if the character is a digit.
         """
-        comptime ord_0 = UInt32(ord("0"))
-        comptime ord_9 = UInt32(ord("9"))
-        return ord_0 <= self.to_u32() <= ord_9
+        comptime ord_0 = UInt8(ord("0"))
+        comptime ord_9 = UInt8(ord("9"))
+        return ord_0 <= self.first_byte() <= ord_9
 
     def is_ascii_upper(self) -> Bool:
         """Determines whether the given character is an uppercase character.
@@ -349,9 +388,9 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             True if the character is uppercase.
         """
-        comptime ord_a = UInt32(ord("A"))
-        comptime ord_z = UInt32(ord("Z"))
-        return ord_a <= self.to_u32() <= ord_z
+        comptime ord_a = UInt8(ord("A"))
+        comptime ord_z = UInt8(ord("Z"))
+        return ord_a <= self.first_byte() <= ord_z
 
     def is_ascii_lower(self) -> Bool:
         """Determines whether the given character is an lowercase character.
@@ -362,27 +401,24 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             True if the character is lowercase.
         """
-        comptime ord_a = UInt32(ord("a"))
-        comptime ord_z = UInt32(ord("z"))
-        return ord_a <= self.to_u32() <= ord_z
+        comptime ord_a = UInt8(ord("a"))
+        comptime ord_z = UInt8(ord("z"))
+        return ord_a <= self.first_byte() <= ord_z
 
     @staticmethod
     @always_inline
-    def _is_ascii_printable(codepoint: Scalar) -> Bool:
+    def _is_ascii_printable(first_byte: UInt8) -> Bool:
         """Determines whether the given character is a printable character.
 
         Args:
-            codepoint: The codepoint to check.
+            first_byte: The codepoint to check.
 
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        comptime assert (
-            codepoint.dtype.is_integral()
-        ), "only integral codepoints exist"
-        comptime ` ` = type_of(codepoint)(ord(" "))
-        comptime `~` = type_of(codepoint)(ord("~"))
-        return ` ` <= codepoint <= `~`
+        comptime ` ` = UInt8(ord(" "))
+        comptime `~` = UInt8(ord("~"))
+        return ` ` <= first_byte <= `~`
 
     @always_inline
     def is_ascii_printable(self) -> Bool:
@@ -391,7 +427,7 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         Returns:
             True if the character is a printable character, otherwise False.
         """
-        return Self._is_ascii_printable(self.to_u32())
+        return Self._is_ascii_printable(self.first_byte())
 
     @always_inline
     def is_python_space(self) -> Bool:
@@ -411,14 +447,14 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
         from std.testing import assert_true, assert_false
 
         # ASCII space characters
-        assert_true(Codepoint.ord(" ").is_python_space())
-        assert_true(Codepoint.ord("\t").is_python_space())
+        assert_true(Codepoint(" ").is_python_space())
+        assert_true(Codepoint("\t").is_python_space())
 
         # Unicode paragraph separator:
         assert_true(Codepoint.from_u32(0x2029).value().is_python_space())
 
         # Letters are not space characters
-        assert_false(Codepoint.ord("a").is_python_space())
+        assert_false(Codepoint("a").is_python_space())
         ```
         """
 
@@ -478,116 +514,163 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
             or c == `\x1e`
         )
 
-    @always_inline
-    def to_u32(self) -> UInt32:
+    # ===-------------------------------------------------------------------===#
+    # UTF-8 to unicode
+    # ===-------------------------------------------------------------------===#
+    # UTF-8 to Unicode conversion:              (represented as UInt32 BE)
+    # 1: 0aaaaaaa                            -> 00000000 00000000 00000000 0aaaaaaa     a
+    # 2: 110aaaaa 10bbbbbb                   -> 00000000 00000000 00000aaa aabbbbbb     a << 6  | b
+    # 3: 1110aaaa 10bbbbbb 10cccccc          -> 00000000 00000000 aaaabbbb bbcccccc     a << 12 | b << 6  | c
+    # 4: 11110aaa 10bbbbbb 10cccccc 10dddddd -> 00000000 000aaabb bbbbcccc ccdddddd     a << 18 | b << 12 | c << 6 | d
+
+    def to_u32[optimize_ascii: Bool = True](self) -> UInt32:
         """Returns the numeric value of this scalar value as an unsigned 32-bit
-        integer.
-
-        Returns:
-            The numeric value of this scalar value as an unsigned 32-bit
-            integer.
-        """
-        return self._scalar_value
-
-    @always_inline
-    def unsafe_write_utf8[
-        optimize_ascii: Bool = True, branchless: Bool = False
-    ](self, ptr: UnsafePointer[mut=True, Byte, ...]) -> Int:
-        """Shift unicode to utf8 representation.
+        integer (UTF-32).
 
         Parameters:
             optimize_ascii: Optimize for languages with mostly ASCII characters.
-            branchless: Use a branchless algorithm.
-
-        Args:
-            ptr: Pointer value to write the encoded UTF-8 bytes. Must validly
-                point to a sufficient number of bytes (1-4) to hold the encoded
-                data.
 
         Returns:
-            Returns the number of bytes written.
-
-        Safety:
-            `ptr` MUST point to at least `self.utf8_byte_length()` allocated
-            bytes or else an out-of-bounds write will occur, which is undefined
-            behavior.
-
-        ### Unicode (represented as UInt32 BE) to UTF-8 conversion:
-        - 1: 00000000 00000000 00000000 0aaaaaaa -> 0aaaaaaa
-            - a
-        - 2: 00000000 00000000 00000aaa aabbbbbb -> 110aaaaa 10bbbbbb
-            - (a >> 6)  | 0b11000000, b         | 0b10000000
-        - 3: 00000000 00000000 aaaabbbb bbcccccc -> 1110aaaa 10bbbbbb 10cccccc
-            - (a >> 12) | 0b11100000, (b >> 6)  | 0b10000000, c        | 0b10000000
-        - 4: 00000000 000aaabb bbbbcccc ccdddddd -> 11110aaa 10bbbbbb 10cccccc
-        10dddddd
-            - (a >> 18) | 0b11110000, (b >> 12) | 0b10000000, (c >> 6) | 0b10000000,
-            d | 0b10000000
-        .
+            The numeric value of this scalar value as an unsigned 32-bit
+            integer (UTF-32).
         """
-        var c = Int(self)
 
-        var num_bytes = self.utf8_byte_length()
+        # NOTE: in the branchless section, we are assuming
+        # self._values >= self.byte_length() are zero so there is no problem if
+        # we have shifts that occur with 0 values since we are or'ing them at
+        # the end
 
-        comptime if not branchless:
-            var is_ascii: Bool
+        var b0 = self.first_byte()
+        comptime if optimize_ascii:
+            if self.is_ascii():
+                return UInt32(b0)
 
-            comptime if optimize_ascii:
-                is_ascii = likely(num_bytes == 1)
-            else:
-                is_ascii = num_bytes == 1
-
-            comptime cont_mask = 0b11_1111  # 6 set bits
-            comptime cont_marker = 0b1000_0000  # marker for continuation bytes
-
-            if is_ascii:
-                ptr[0] = Byte(c)
-            elif num_bytes == 2:
-                ptr[0] = Byte(
-                    (c >> 6) | 0b1100_0000
-                )  # marker for 2 byte sequence
-                ptr[1] = Byte((c & cont_mask) | cont_marker)
-            elif num_bytes == 3:
-                ptr[0] = Byte(
-                    (c >> 12) | 0b1110_0000
-                )  # marker for 3 byte sequence
-                ptr[1] = Byte(((c >> 6) & cont_mask) | cont_marker)
-                ptr[2] = Byte((c & cont_mask) | cont_marker)
-            else:
-                ptr[0] = Byte(
-                    (c >> 18) | 0b1111_0000
-                )  # marker for 4 byte sequence
-                ptr[1] = Byte(((c >> 12) & cont_mask) | cont_marker)
-                ptr[2] = Byte(((c >> 6) & cont_mask) | cont_marker)
-                ptr[3] = Byte((c & cont_mask) | cont_marker)
+            var num_bytes = count_leading_zeros(~b0)
+            var factor = 6 * (num_bytes - 1)
+            var shift_c = splat[DType.uint8](num_bytes > 2)
+            var shift_mask = SIMD[DType.uint32, 4](
+                UInt32(factor),
+                UInt32(factor - 6),
+                UInt32(factor - (12 & shift_c)),
+                0,
+            )
+            comptime mask = 0b0111_1111
+            var b_type_mask = SIMD[DType.uint8, 4](
+                mask >> num_bytes, mask, mask, mask
+            )
+            return (
+                (self._values & b_type_mask).cast[DType.uint32]() << shift_mask
+            ).reduce_or()
         else:
-            comptime if optimize_ascii:
-                if likely(num_bytes == 1):
-                    ptr[0] = UInt8(c)
-                    return 1
-                var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> UInt8(num_bytes + 1)
-                var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
-                ptr[0] = (UInt8(c >> shift) & mask) | num_bytes_marker
-                for i in range(1, num_bytes):
-                    shift -= 6
-                    ptr[i] = Byte(((c >> shift) & 0b0011_1111) | 0b1000_0000)
-            else:
-                var shift = 6 * (num_bytes - 1)
-                var mask = UInt8(0xFF) >> UInt8(num_bytes + Int(num_bytes > 1))
-                var num_bytes_marker = UInt8(0xFF) << UInt8(8 - num_bytes)
-                ptr[0] = (UInt8(c >> shift) & mask) | (
-                    num_bytes_marker & UInt8(splat(num_bytes != 1))
-                )
-                for i in range(1, num_bytes):
-                    shift -= 6
-                    ptr[i] = Byte(((c >> shift) & 0b0011_1111) | 0b1000_0000)
+            var neg_b0 = ~b0
+            var is_ascii = neg_b0 >> 7
+            var num_bytes = count_leading_zeros(neg_b0) | is_ascii
+            var factor = 6 * (num_bytes - 1)
+            var shift_b = splat[DType.uint8](num_bytes > 1)
+            var shift_c = splat[DType.uint8](num_bytes > 2)
+            var shift_mask = SIMD[DType.uint32, 4](
+                UInt32(factor),
+                UInt32(factor - (6 & shift_b)),
+                UInt32(factor - (12 & shift_c)),
+                0,
+            )
+            comptime mask = 0b0111_1111
+            var b_type_mask = SIMD[DType.uint8, 4](
+                mask >> (num_bytes - is_ascii), mask, mask, mask
+            )
+            return (
+                (self._values & b_type_mask).cast[DType.uint32]() << shift_mask
+            ).reduce_or()
 
-        return num_bytes
+    @staticmethod
+    def unsafe_decode_utf8_codepoint[
+        optimize_ascii: Bool = True
+    ](string: StringSlice[mut=False, _]) -> Tuple[UInt32, Int]:
+        """Returns the numeric value of the first unicode character as an
+        unsigned 32-bit integer (UTF-32).
+
+        Parameters:
+            optimize_ascii: Optimize for languages with mostly ASCII characters.
+
+        Args:
+            string: A string with one or more unicode characters.
+
+        Returns:
+            The numeric value of the first unicode character as an unsigned
+            32-bit integer (UTF-32).
+
+        Notes:
+            Using this function is faster than doing `Codepoint(str).to_u32()`
+            especially if the call-site also requires the byte length.
+        """
+
+        assert string.byte_length() > 0, "input string must not be empty"
+
+        var ptr = string.unsafe_ptr()
+        var b0 = ptr[0]
+        if Self.is_ascii(b0):
+            return UInt32(b0), 1
+
+        # NOTE: _utf8_first_byte_sequence_length does the same + an op to check
+        # if it is ascii
+        var num_bytes = count_leading_zeros(~b0)
+        assert 1 < Int(num_bytes) < 5, String(
+            "invalid UTF-8 byte ", b0, " at index 0"
+        )
+
+        var shift = UInt32((6 * (num_bytes - 1)))
+        var b0_mask = 0b11111111 >> (num_bytes + 1)
+        var result = UInt32(b0 & b0_mask) << shift
+        for i in range(1, Int(num_bytes)):
+            var value = ptr[i]
+            # Assert that this is a continuation byte
+            assert value >> 6 == 0b00000010, String(
+                "invalid UTF-8 byte ", value, " at index ", i
+            )
+            shift -= 6
+            result |= UInt32(value & 0b00111111) << shift
+
+        return result, Int(num_bytes)
+
+    # ===-------------------------------------------------------------------===#
+    # other methods
+    # ===-------------------------------------------------------------------===#
+
+    @staticmethod
+    @always_inline
+    def byte_length(*, first_utf8_byte: UInt8) -> Int:
+        """Returns the number of UTF-8 bytes required to encode this character.
+
+        Args:
+            first_utf8_byte: The sequence's first UTF-8 byte.
+
+        Returns:
+            Byte count of UTF-8 bytes required to encode this character.
+
+        Notes:
+            The returned value is always between 1 and 4 bytes.
+        """
+        return _utf8_first_byte_sequence_length(first_utf8_byte)
 
     @always_inline
-    def utf8_byte_length(self) -> Int:
+    def byte_length(self) -> Int:
         """Returns the number of UTF-8 bytes required to encode this character.
+
+        Returns:
+            Byte count of UTF-8 bytes required to encode this character.
+
+        Notes:
+            The returned value is always between 1 and 4 bytes.
+        """
+        return Self.byte_length(first_utf8_byte=self.first_byte())
+
+    @staticmethod
+    @always_inline
+    def byte_length(codepoint: UInt32) -> Int:
+        """Returns the number of UTF-8 bytes required to encode this character.
+
+        Args:
+            codepoint: The raw UTF-32 codepoint.
 
         Returns:
             Byte count of UTF-8 bytes required to encode this character.
@@ -604,4 +687,14 @@ struct Codepoint(Comparable, ImplicitlyCopyable, Intable, Movable, Writable):
 
         # Count how many of the minimums this codepoint exceeds, which is equal
         # to the number of bytes needed to encode it.
-        return Int(sizes.le(self.to_u32()).cast[DType.uint8]().reduce_add())
+        return Int(sizes.le(codepoint).cast[DType.uint8]().reduce_add())
+
+    @always_inline
+    def first_byte(self) -> UInt8:
+        """Get the first byte for the UTF-8 sequence that this codepoint
+        contains.
+
+        Returns:
+            The codepoint's first byte.
+        """
+        return self._values[0]

@@ -353,6 +353,25 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             length=value.byte_length(),
         )
 
+    @implicit
+    def __init__(out self, ref[Self.origin] value: Codepoint):
+        """Construct a StringSlice from a Codepoint.
+
+        This constructor propagates the mutability of the reference. If you
+        have a mutable reference to a Codepoint, you get a mutable StringSlice.
+        If you have an immutable reference, you get an immutable StringSlice.
+
+        Args:
+            value: The string value.
+        """
+        self._slice = Span[Byte, Self.origin](
+            ptr=UnsafePointer(to=value._values)
+            .bitcast[Byte]()
+            .unsafe_mut_cast[Self.origin.mut]()
+            .unsafe_origin_cast[Self.origin](),
+            length=value.byte_length(),
+        )
+
     # ===------------------------------------------------------------------===#
     # Trait implementations
     # ===------------------------------------------------------------------===#
@@ -1105,9 +1124,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         var s = StringSlice("abc")
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
-        assert_equal(iter.__next__(), Codepoint.ord("b"))
-        assert_equal(iter.__next__(), Codepoint.ord("c"))
+        assert_equal(iter.__next__(), Codepoint("a"))
+        assert_equal(iter.__next__(), Codepoint("b"))
+        assert_equal(iter.__next__(), Codepoint("c"))
         with assert_raises():
             _ = iter.__next__() # raises StopIteration
         ```
@@ -1123,7 +1142,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         assert_equal(s.byte_length(), 3)
 
         var iter = s.codepoints()
-        assert_equal(iter.__next__(), Codepoint.ord("a"))
+        assert_equal(iter.__next__(), Codepoint("a"))
          # U+0301 Combining Acute Accent
         assert_equal(iter.__next__().to_u32(), 0x0301)
         with assert_raises():

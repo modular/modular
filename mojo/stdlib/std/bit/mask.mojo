@@ -58,14 +58,14 @@ def is_negative[dtype: DType, //](value: SIMD[dtype, _]) -> type_of(value):
 
 @always_inline
 def splat[
-    size: SIMDSize, //, dtype: DType
+    dtype: DType, size: SIMDSize = 1
 ](value: SIMD[DType.bool, size]) -> SIMD[dtype, size]:
     """Elementwise splat the boolean value of each element in the SIMD vector
     into all bits of the corresponding element in a new SIMD vector.
 
     Parameters:
-        size: The size of the SIMD vector.
         dtype: The DType of the output.
+        size: The size of the SIMD vector.
 
     Args:
         value: The value to check.
