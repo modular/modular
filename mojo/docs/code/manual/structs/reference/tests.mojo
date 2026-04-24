@@ -10,9 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-
 from std.os import abort
-
 
 comptime Element = String  # Adapt for your type
 comptime ListNode = Node[Element]  # Constructing a LinkedList
@@ -34,7 +32,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
     # returns a pointer to the new `Node`.
     @staticmethod
     def make_node(value: Self.ElementType) -> Self.NodePointer:
-        node_ptr = alloc[Self](1)
+        var node_ptr = alloc[Self](1)
         node_ptr.init_pointee_move(Self(value))
         return node_ptr
 
@@ -70,7 +68,7 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 
     # Releases all successively allocated `Node` pointees. Does not release self.
     def free_chain(self):
-        current = self.next
+        var current = self.next
         while current:
             var current_ptr = current.value()
             next_node = current_ptr[].next
@@ -80,17 +78,18 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 
 
 def main():
-    values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
-    list_head = ListNode.make_node(values[0])
+    var values: List[Element] = ["one", "one", "two", "three", "five", "eight"]
+    var list_head = ListNode.make_node(values[0])
 
-    current = list_head
+    var current = list_head
     for idx in range(1, len(values), 1):
         current[].append(values[idx])
         current = current[].next.value()
 
     ListNode.print_list(list_head)
 
-    # Demonstrates cleanup. In short-lived programs, the OS reclaims memory at exit
+    # Demonstrates cleanup. In short-lived programs, the OS reclaims memory
+    # at exit
     list_head[].free_chain()
     list_head.destroy_pointee()
     list_head.free()
