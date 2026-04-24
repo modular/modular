@@ -12,6 +12,13 @@ install_docs(
     target = ":mojodocs",
 )
 
+install_docs(
+    name = "install-changelog",
+    dest_subdir = "mojosite/changelog",
+    tags = ["manual"],
+    target = ":changelog",
+)
+
 modular_versioned_expand_template(
     name = "build_version_js",
     out = "build_version.js",
@@ -64,6 +71,19 @@ genrule(
   """,
     tags = ["manual"],
     tools = [":post-process-mojodocs"],
+)
+
+genrule(
+    name = "changelog",
+    srcs = [":mojodocs"],
+    outs = ["changelog.tar"],
+    cmd = """
+  mkdir -p changelog_tmp
+  tar -xf $(location :mojodocs) -C changelog_tmp
+  cd changelog_tmp/docs/changelog
+  tar -cf ../../../$@ *
+  """,
+    tags = ["manual"],
 )
 
 pkg_tar(

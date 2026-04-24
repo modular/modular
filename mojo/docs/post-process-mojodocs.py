@@ -17,6 +17,7 @@ import glob
 import os
 import re
 import sys
+from datetime import datetime, timedelta, timezone
 
 
 def _is_heading(line: str, in_code_block: bool) -> re.Match[str] | None:
@@ -95,6 +96,37 @@ def demote_all_headings(file_path) -> None:  # noqa: ANN001
                 file.write(line)
 
 
+def _frontmatter_to_heading(text: str) -> str:
+    """Replace YAML frontmatter with an H1 heading reconstructed from its fields.
+
+    Converts frontmatter like:
+        ---
+        title: Mojo v0.26.2
+        date: 2026-03-19
+        ---
+    into:
+        # v0.26.2 (2026-03-19)
+    """
+    m = re.match(
+        r"^---\s*\n(.*?\n)---\s*\n",
+        text,
+        re.DOTALL,
+    )
+    if not m:
+        return text
+    front = m.group(1)
+    title = ""
+    date = ""
+    for line in front.splitlines():
+        if line.startswith("title:"):
+            title = line.split(":", 1)[1].strip()
+        elif line.startswith("date:"):
+            date = line.split(":", 1)[1].strip()
+    title = re.sub(r"^Mojo\s+", "", title)
+    heading = f"# {title} ({date})\n" if date else f"# {title}\n"
+    return heading + text[m.end() :]
+
+
 def assemble_changelog(base_path: str) -> None:
     """Assemble changelog/index.md from nightly-changelog.md and per-version files."""
     changelog_dir = os.path.join(base_path, "changelog")
@@ -115,18 +147,33 @@ def assemble_changelog(base_path: str) -> None:
         nightly_content = (
             "".join(_remove_empty_headings(nightly_lines)).rstrip() + "\n"
         )
+        # Also write the nightly notes to a separate nightly.md file
+        # Replace the MD heading with frontmatter title and date
+        pst = timezone(timedelta(hours=-8))
+        today_pst = datetime.now(pst).strftime("%Y-%m-%d")
+        nightly_page = re.sub(
+            r"^# .+\n*",
+            f"---\ntitle: Mojo nightly\ndate: {today_pst}\n---\n\n",
+            nightly_content,
+        )
+        with open(os.path.join(changelog_dir, "nightly.md"), "w") as f:
+            f.write(nightly_page)
 
     candidates = [
         os.path.basename(p)
         for p in glob.glob(os.path.join(changelog_dir, "v*.md"))
     ]
+    min_version = (0, 24, 1)
     version_files = []
     for fname in candidates:
-        if _parse_version(fname) is None:
+        ver = _parse_version(fname)
+        if ver is None:
             print(
                 f"WARNING: skipping '{fname}' in changelog/ "
                 f"(filename does not match vX.Y.Z.md pattern)"
             )
+        elif ver < min_version:
+            continue
         else:
             version_files.append(fname)
     version_files.sort(key=lambda f: _parse_version(f) or (), reverse=True)
@@ -137,7 +184,8 @@ def assemble_changelog(base_path: str) -> None:
     assembled += nightly_content
     for vfile in version_files:
         with open(os.path.join(changelog_dir, vfile)) as f:
-            assembled += "\n" + f.read().rstrip() + "\n"
+            content = _frontmatter_to_heading(f.read())
+            assembled += "\n" + content.rstrip() + "\n"
 
     archive_path = os.path.join(changelog_dir, "archive.md")
     if os.path.exists(archive_path):
