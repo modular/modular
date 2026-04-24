@@ -19,7 +19,7 @@ from std.gpu.memory import (
     ReduceOp,
     AddressSpace,
     cp_async_bulk_tensor_global_shared_cta,
-    cp_async_bulk_tensor_reduce,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     fence_proxy_tensormap_generic_sys_acquire,
     fence_proxy_tensormap_generic_sys_release,
@@ -107,17 +107,17 @@ def test_async_bulk_tensor_reduce_asm():
         tma_descriptor: OpaquePointer,
         *coords: Int32,
     ):
-        cp_async_bulk_tensor_reduce[reduction_kind=ReduceOp.ADD](
-            src_mem, tma_descriptor, Index(coords[0], coords[1])
-        )
-        cp_async_bulk_tensor_reduce[
+        cp_async_bulk_tensor_reduce_global_shared_cta[
+            reduction_kind=ReduceOp.ADD
+        ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
+        cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD,
             eviction_policy=CacheEviction.EVICT_FIRST,
         ](src_mem, tma_descriptor, Index(coords[0], coords[1]))
-        cp_async_bulk_tensor_reduce[reduction_kind=ReduceOp.ADD](
-            src_mem, tma_descriptor, Index(coords[0])
-        )
-        cp_async_bulk_tensor_reduce[
+        cp_async_bulk_tensor_reduce_global_shared_cta[
+            reduction_kind=ReduceOp.ADD
+        ](src_mem, tma_descriptor, Index(coords[0]))
+        cp_async_bulk_tensor_reduce_global_shared_cta[
             reduction_kind=ReduceOp.ADD,
             eviction_policy=CacheEviction.EVICT_LAST,
         ](src_mem, tma_descriptor, Index(coords[0]))
