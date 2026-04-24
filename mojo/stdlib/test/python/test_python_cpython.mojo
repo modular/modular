@@ -191,6 +191,22 @@ def _helper_instantiate_derived_class(
     return cpy.PyObject_CallObject(constructor, args)
 
 
+def _test_none_object_api(cpy: CPython) raises:
+    var none = cpy.Py_None()
+    assert_true(none)
+    # `None` is a singleton — fetching it twice yields the same pointer.
+    assert_equal(cpy.Py_None(), none)
+    assert_equal(cpy.PyObject_IsTrue(none), 0)
+
+
+def _test_not_implemented_object_api(cpy: CPython) raises:
+    var ni = cpy.Py_NotImplemented()
+    assert_true(ni)
+    # `NotImplemented` is a singleton — fetching it twice yields the same pointer.
+    assert_equal(cpy.Py_NotImplemented(), ni)
+    assert_true(ni != cpy.Py_None())
+
+
 def _test_integer_object_api(cpy: CPython) raises:
     var n = cpy.PyLong_FromSsize_t(-42)
     assert_true(n)
@@ -450,6 +466,18 @@ def test_with_cpython_type_object_api() raises:
     var python = Python()
     ref cpython = python.cpython()
     _test_type_object_api(cpython)
+
+
+def test_with_cpython_none_object_api() raises:
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_none_object_api(cpython)
+
+
+def test_with_cpython_not_implemented_object_api() raises:
+    var python = Python()
+    ref cpython = python.cpython()
+    _test_not_implemented_object_api(cpython)
 
 
 def test_with_cpython_integer_object_api() raises:
