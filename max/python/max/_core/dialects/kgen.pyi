@@ -2368,6 +2368,8 @@ class ClosureInitOp(max._core.Operation):
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: ParamDeclArrayAttr,
         inline_level: InlineLevelAttr,
+        capture_types: max._core.dialects.builtin.ArrayAttr,
+        capture_names: max._core.dialects.builtin.ArrayAttr,
         nested_fn_scope: max._core.Attribute,
         _llvm_metadata_array: max._core.dialects.builtin.ArrayAttr,
         _llvm_arg_metadata_array: max._core.dialects.builtin.ArrayAttr,
@@ -2385,6 +2387,8 @@ class ClosureInitOp(max._core.Operation):
         move_or_copy_capture_symbols: max._core.dialects.builtin.ArrayAttr,
         input_params: Sequence[ParamDeclAttr],
         inline_level: InlineLevel,
+        capture_types: max._core.dialects.builtin.ArrayAttr,
+        capture_names: max._core.dialects.builtin.ArrayAttr,
     ) -> None: ...
     @property
     def func_type_generator(self) -> FuncTypeGeneratorType: ...
@@ -2416,6 +2420,18 @@ class ClosureInitOp(max._core.Operation):
     def inline_level(self) -> InlineLevel: ...
     @inline_level.setter
     def inline_level(self, arg: InlineLevelAttr, /) -> None: ...
+    @property
+    def capture_types(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @capture_types.setter
+    def capture_types(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
+    @property
+    def capture_names(self) -> max._core.dialects.builtin.ArrayAttr: ...
+    @capture_names.setter
+    def capture_names(
+        self, arg: max._core.dialects.builtin.ArrayAttr, /
+    ) -> None: ...
     @property
     def nested_fn_scope(self) -> max._core.Attribute | None: ...
     @nested_fn_scope.setter
