@@ -49,15 +49,13 @@ reference.
 
 ## Configure debugging options
 
-You can configure debugging options using a few different strategies. When you
-set the same options using multiple strategies, precedence applies from highest
-to lowest:
+You can configure debugging options two ways:
 
-- Using the Python API (highest)
+- Using the Python API
 - Setting the `MODULAR_DEBUG` environment variable
-- Updating the `modular.cfg` file (lowest)
 
-The following sections walk through how to set up debugging at each level.
+If you configure the same debugging option using both strategies, the option
+set with the Python API takes precedence.
 
 :::info
 
@@ -104,7 +102,7 @@ InferenceSession.debug.device_sync_mode = False
 outputs = model.execute(inputs_b)
 
 # Clear every option set through the Python API
-# Values from MODULAR_DEBUG and modular.cfg remain in effect
+# Values from MODULAR_DEBUG remain in effect
 InferenceSession.debug.reset()
 ```
 
@@ -123,20 +121,6 @@ export MODULAR_DEBUG=nan-check,device-sync-mode,source-tracebacks,assert-level=s
 See the [Debugging section](/max/environment-variables#debugging) of the
 environment variables reference for every option you can pass to
 `MODULAR_DEBUG`.
-
-### Update your config file
-
-You can also enable debugging options in a Modular config file.
-
-Place the `modular.cfg` file in your project root or home directory. Then, add
-a `[max-debug]` section to the file. Here's an example configuration:
-
-```text
-[max-debug]
-nan-check = true
-device-sync-mode = true
-op-log-level = trace
-```
 
 ## Next steps
 
