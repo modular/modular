@@ -213,6 +213,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    decode_stall_timeout_s: float | None = Field(
+        default=float(os.environ["MODULAR_DECODE_STALL_TIMEOUT_S"])
+        if "MODULAR_DECODE_STALL_TIMEOUT_S" in os.environ
+        else None,
+        description=(
+            "Seconds of no-batch-activity after which the decode worker exits "
+            "to trigger a pod restart. None (the default) disables the "
+            "watchdog. Set via MODULAR_DECODE_STALL_TIMEOUT_S env var or "
+            "directly in config."
+        ),
+    )
+
     enable_overlap_scheduler: bool = Field(
         default=False,
         description=(

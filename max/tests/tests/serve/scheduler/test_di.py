@@ -1768,3 +1768,98 @@ def test_overlap_spec_decode_cancel_between_defer_and_resolve() -> None:
             )
         except queue.Empty:
             break
+
+
+# ---------------------------------------------------------------------------
+# Stall watchdog tests
+# ---------------------------------------------------------------------------
+
+
+def test_stall_watchdog_fires_when_prefill_stalled() -> None:
+    """When requests are stuck in prefill longer than the timeout,
+    run_iteration raises SystemExit(1) to enable a pod restart."""
+    decode, _, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(target_endpoint=server_addr, prompt_len=100)
+    q.request_queue.put(ctx)
+
+    # Move request into prefill_reqs without running prefill (simulates NIXL stall).
+    decode.reserve_memory_and_send_to_prefill()
+    assert len(decode.prefill_reqs) == 1
+
+    # Backdate last activity to simulate a long stall.
+    decode._last_batch_activity = time.monotonic() - 9999
+    decode.scheduler_config.decode_stall_timeout_s = 1.0
+
+    with pytest.raises(SystemExit) as exc_info:
+        decode.run_iteration()
+    assert exc_info.value.code == 1
+
+
+def test_stall_watchdog_no_fire_within_timeout() -> None:
+    """Watchdog does not fire when the stall duration is below the threshold."""
+    decode, _, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(target_endpoint=server_addr, prompt_len=100)
+    q.request_queue.put(ctx)
+
+    decode.reserve_memory_and_send_to_prefill()
+    assert len(decode.prefill_reqs) == 1
+
+    # Last activity was just now.
+    decode._last_batch_activity = time.monotonic()
+    decode.scheduler_config.decode_stall_timeout_s = 9999.0
+
+    result = decode.run_iteration()
+
+    assert result == SchedulerProgress.NO_PROGRESS
+
+
+def test_stall_watchdog_resets_on_batch_activity() -> None:
+    """_last_batch_activity is updated whenever a non-empty batch is produced."""
+    decode, prefill, server_addr, q = create_di_scheduler()
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+
+    decode.run_iteration()  # sends to prefill
+    prefill.run_iteration()  # executes prefill, sends PrefillResponse
+
+    t_before = time.monotonic()
+    decode.run_iteration()  # receives response, produces decode batch
+
+    assert decode._last_batch_activity >= t_before
+
+
+def test_stall_watchdog_clock_resets_while_idle() -> None:
+    """Clock resets when the queue is empty, so idle warmup time before the
+    first request does not count toward the stall threshold.
+
+    Without this reset, initializing `_last_batch_activity` at scheduler
+    startup causes the watchdog to fire immediately on the first request if
+    startup takes longer than the timeout (e.g. dataset loading before
+    benchmark start)."""
+    decode, _, server_addr, q = create_di_scheduler()
+
+    # Simulate a stale clock from a long idle period (e.g. pre-benchmark warmup).
+    decode._last_batch_activity = time.monotonic() - 9999
+    decode.scheduler_config.decode_stall_timeout_s = 60.0
+
+    # With no pending requests, run_iteration resets the clock.
+    decode.run_iteration()
+
+    # Now submit the first request — stall duration is measured from the reset,
+    # not from scheduler init, so the watchdog must not fire.
+    ctx = create_text_context(target_endpoint=server_addr, prompt_len=100)
+    q.request_queue.put(ctx)
+    decode.reserve_memory_and_send_to_prefill()
+    assert len(decode.prefill_reqs) == 1
+
+    result = decode.run_iteration()
+
+    assert result == SchedulerProgress.NO_PROGRESS
+
+
+def test_stall_watchdog_default_is_disabled() -> None:
+    """The stall timeout defaults to None (disabled) when the env var is unset."""
+    decode, _, _, _ = create_di_scheduler()
+    assert decode.scheduler_config.decode_stall_timeout_s is None
