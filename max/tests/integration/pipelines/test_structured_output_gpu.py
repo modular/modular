@@ -340,7 +340,7 @@ def test_overlap_pipeline_structured_output_gpu(
     """Test overlap pipeline with structured output.
 
     This verifies that the OverlapTextGenerationPipeline correctly handles
-    structured output (guided decoding) with single-step execution, producing
+    structured output (guided decoding), producing
     valid JSON output conforming to the schema.
     """
 
@@ -443,3 +443,165 @@ def test_overlap_pipeline_structured_output_gpu(
     assert "age" in result
     assert isinstance(result["name"], str)
     assert isinstance(result["age"], int)
+
+
+def test_heterogeneous_batch_structured_output_gpu(
+    pipeline_registry: PipelineRegistry,
+) -> None:
+    """Test mixed batch with both structured and non-structured output requests.
+
+    Verifies that when a batch contains both requests with json_schema (structured
+    output) and requests without json_schema (free-form), each request is handled
+    correctly:
+    - Structured output requests produce valid JSON conforming to their schema
+    - Non-structured requests generate unconstrained output (not blocked by bitmask)
+    """
+    revision = hf_repo_lock.revision_for_hf_repo(
+        "HuggingFaceTB/SmolLM2-135M-Instruct"
+    )
+    assert revision is not None
+    pipeline_config = PipelineConfig(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path="HuggingFaceTB/SmolLM2-135M-Instruct",
+                    quantization_encoding="bfloat16",
+                    device_specs=[DeviceSpec.accelerator()],
+                    huggingface_model_revision=revision,
+                    max_length=8192,
+                )
+            }
+        ),
+        sampling=SamplingConfig(enable_structured_output=True),
+        # Use batch_size=2 for heterogeneous batch testing.
+        # Disable overlap scheduler for simpler output handling.
+        runtime=PipelineRuntimeConfig(
+            max_batch_size=2, enable_overlap_scheduler=False, force=True
+        ),
+    )
+
+    tokenizer, pipeline_factory = pipeline_registry.retrieve_factory(
+        pipeline_config
+    )
+    assert isinstance(tokenizer, TextTokenizer)
+
+    # Request 1: Structured output with JSON schema
+    structured_request_id = RequestID("structured_request")
+    structured_request = TextGenerationRequest(
+        model_name=pipeline_config.model.model_path,
+        request_id=structured_request_id,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content="Extract: 'Alice is 30 years old.'",
+            )
+        ],
+        sampling_params=SamplingParams(max_new_tokens=50, top_k=1),
+        response_format=TextGenerationResponseFormat(
+            type="json_schema",
+            json_schema={
+                "title": "Person",
+                "type": "object",
+                "properties": {
+                    "name": {"type": "string"},
+                    "age": {"type": "integer"},
+                },
+                "required": ["name", "age"],
+                "additionalProperties": False,
+                "strict": True,
+            },
+        ),
+    )
+
+    # Request 2: Non-structured output (no json_schema)
+    freeform_request_id = RequestID("freeform_request")
+    freeform_request = TextGenerationRequest(
+        model_name=pipeline_config.model.model_path,
+        request_id=freeform_request_id,
+        messages=[
+            TextGenerationRequestMessage(
+                role="user",
+                content="Say hello in one sentence.",
+            )
+        ],
+        sampling_params=SamplingParams(max_new_tokens=20, top_k=1),
+        # No response_format - this is free-form generation
+    )
+
+    # Create contexts
+    structured_ctx: TextContext = asyncio.run(
+        tokenizer.new_context(structured_request)
+    )
+    freeform_ctx: TextContext = asyncio.run(
+        tokenizer.new_context(freeform_request)
+    )
+
+    # Verify one has json_schema and one doesn't
+    assert structured_ctx.json_schema is not None
+    assert freeform_ctx.json_schema is None
+
+    pipeline = pipeline_factory()
+    assert isinstance(pipeline, TextGenerationPipeline)
+    pipeline = cast(TextGenerationPipeline[TextContext], pipeline)
+    kv_manager = pipeline.kv_manager
+
+    # Claim KV cache for both requests
+    kv_manager.claim(structured_ctx.request_id, replica_idx=0)
+    kv_manager.claim(freeform_ctx.request_id, replica_idx=0)
+
+    structured_tokens: list[int] = []
+    freeform_tokens: list[int] = []
+    max_iterations = 40
+
+    # Run both contexts in the same batch
+    active_contexts = [structured_ctx, freeform_ctx]
+
+    for _ in range(max_iterations):
+        if not active_contexts:
+            break
+
+        # Allocate KV cache for active contexts
+        for ctx in active_contexts:
+            kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
+
+        inputs: TextGenerationInputs[TextContext] = TextGenerationInputs(
+            batches=[active_contexts], num_steps=1
+        )
+        response = pipeline.execute(inputs)
+
+        # Collect tokens and check completion
+        contexts_to_remove = []
+        for ctx in active_contexts:
+            if ctx.request_id in response:
+                resp = response[ctx.request_id]
+                if ctx.request_id == structured_request_id:
+                    structured_tokens.extend(resp.tokens)
+                else:
+                    freeform_tokens.extend(resp.tokens)
+
+                if resp.is_done:
+                    contexts_to_remove.append(ctx)
+
+        # Remove completed contexts from active batch
+        for ctx in contexts_to_remove:
+            active_contexts.remove(ctx)
+
+    # Verify structured output produced valid JSON
+    structured_response = asyncio.run(
+        tokenizer.decode(np.array(structured_tokens), skip_special_tokens=True)
+    )
+    result = json.loads(structured_response)
+    assert "name" in result
+    assert "age" in result
+    assert isinstance(result["name"], str)
+    assert isinstance(result["age"], int)
+
+    # Verify free-form output was generated (not blocked)
+    assert len(freeform_tokens) > 0, "Free-form request should generate tokens"
+    freeform_response = asyncio.run(
+        tokenizer.decode(np.array(freeform_tokens), skip_special_tokens=True)
+    )
+    # Free-form response should contain some text (not empty or just whitespace)
+    assert len(freeform_response.strip()) > 0, (
+        "Free-form request should produce non-empty output"
+    )
