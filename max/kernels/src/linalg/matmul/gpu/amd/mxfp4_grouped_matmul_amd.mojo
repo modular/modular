@@ -34,7 +34,12 @@ from layout.tile_layout import row_major
 
 from std.utils import StaticTuple
 
-from .mxfp4_matmul_amd import MXFP4MatmulAMD
+from .mxfp4_matmul_amd import MXFP4MatmulAMD as _MXFP4MatmulAMD
+
+# TODO: make this dynamic in the future.
+comptime MXFP4MatmulAMD = _MXFP4MatmulAMD[
+    BM=128, BN=128, BK_ELEMS=128, WM=64, WN=64
+]
 
 
 # ===----------------------------------------------------------------------=== #

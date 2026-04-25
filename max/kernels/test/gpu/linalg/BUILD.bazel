@@ -205,6 +205,7 @@ _GPU_MEMORY = {
     "test_matmul.mojo": "3",
     "test_matmul_amd.mojo": "2",
     "test_matmul_dispatching_amd.mojo": "8",
+    "test_mxfp4_matmul_amd.mojo": "2",
     "test_mxfp4_dequant_grouped_matmul_amd.mojo": "2",
     "test_matmul_custom.mojo": "4",
     "test_matmul_sm90_bf16_multicast.mojo": "2",

@@ -39,7 +39,11 @@ from linalg.fp4_quantization import block_scaled_matmul
 from layout import (
     CoordLike,
     Coord,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
     TileTensor,
+    UNKNOWN_VALUE,
     Idx,
     row_major,
 )
@@ -711,6 +715,56 @@ def bench_mxfp4_amd[
     cb_sfa.init_scales_on_device(init_type, ctx)
     cb_sfb.init_scales_on_device(init_type, ctx)
 
+    # 2D scale layouts for hipBLASLt. M is dynamic (UNKNOWN_VALUE),
+    # N and K_SCALES are comptime-known.
+    comptime sfa_layout = Layout.row_major(UNKNOWN_VALUE, K_SCALES)
+    comptime sfb_layout = Layout.row_major(N_VAL, K_SCALES)
+
+    # Run hipBLASLt on the given tensors. Repacks 2D uint8 scales into
+    # 2D LayoutTensors and calls the handle-taking vendor_blas entry.
+    @parameter
+    @always_inline
+    def run_vendor_blas(
+        ctx: DeviceContext,
+        c: TileTensor[mut=True, DType.float32, ...],
+        a: TileTensor[DType.uint8, ...],
+        b: TileTensor[DType.uint8, ...],
+        sfa: TileTensor[DType.float8_e8m0fnu, ...],
+        sfb: TileTensor[DType.float8_e8m0fnu, ...],
+    ) raises:
+        var sfa_lt = LayoutTensor[
+            DType.float8_e8m0fnu, sfa_layout, ImmutAnyOrigin
+        ](
+            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
+                sfa.ptr
+            ),
+            RuntimeLayout[sfa_layout].row_major(
+                IndexList[2](Int(sfa.dim[0]()), Int(sfa.dim[1]()))
+            ),
+        )
+        var sfb_lt = LayoutTensor[
+            DType.float8_e8m0fnu, sfb_layout, ImmutAnyOrigin
+        ](
+            rebind[UnsafePointer[Scalar[DType.float8_e8m0fnu], ImmutAnyOrigin]](
+                sfb.ptr
+            ),
+            RuntimeLayout[sfb_layout].row_major(
+                IndexList[2](Int(sfb.dim[0]()), Int(sfb.dim[1]()))
+            ),
+        )
+        with ctx.push_context() as cur_ctx:
+            vendor_blas.matmul[scales_type=DType.float8_e8m0fnu](
+                cur_ctx,
+                vendor_blas._get_global_handle[DType.uint8](ctx),
+                c,
+                a,
+                b,
+                a_scales=sfa_lt,
+                b_scales=sfb_lt,
+                transpose_b=True,
+                c_row_major=True,
+            )
+
     @parameter
     @always_inline
     def kernel_launch(ctx: DeviceContext, iteration: Int) raises:
@@ -723,7 +777,10 @@ def bench_mxfp4_amd[
         var sfb_tt = TileTensor[mut=False](
             cb_sfb.offset_ptr(iteration), sfb_shape
         )
-        mxfp4_block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
+        comptime if use_vendor_blas:
+            run_vendor_blas(ctx, c_tt, a_tt, b_tt, sfa_tt, sfb_tt)
+        else:
+            mxfp4_block_scaled_matmul_amd(c_tt, a_tt, b_tt, sfa_tt, sfb_tt, ctx)
 
     @parameter
     @always_inline
@@ -753,6 +810,95 @@ def bench_mxfp4_amd[
         b.bench_function[bench_func](BenchId(run_name), [flops])
     else:
         kernel_launch(ctx, 0)
+
+    # Verify: run the FP4 kernel and hipBLASLt on the iter-0 buffers and
+    # compare via _verify_buffers_gpu. Skipped when the benchmark itself
+    # is hipBLASLt (nothing to verify against).
+    comptime if not use_vendor_blas:
+        if verify:
+            var a_tt0 = TileTensor[mut=False](cb_a.offset_ptr(0), a_shape)
+            var b_tt0 = TileTensor[mut=False](cb_b.offset_ptr(0), b_shape)
+            var sfa_tt0 = TileTensor[mut=False](cb_sfa.offset_ptr(0), sfa_shape)
+            var sfb_tt0 = TileTensor[mut=False](cb_sfb.offset_ptr(0), sfb_shape)
+            var c_tt0 = TileTensor[mut=True](cb_c.offset_ptr(0), c_shape)
+
+            # Fresh FP4 kernel run into iter-0 output slot.
+            mxfp4_block_scaled_matmul_amd(
+                c_tt0, a_tt0, b_tt0, sfa_tt0, sfb_tt0, ctx
+            )
+
+            # hipBLASLt reference into a separate buffer.
+            var c_ref_buf = ctx.enqueue_create_buffer[DType.float32](c_size)
+            var c_ref_tt = TileTensor[mut=True](c_ref_buf, c_shape)
+            run_vendor_blas(ctx, c_ref_tt, a_tt0, b_tt0, sfa_tt0, sfb_tt0)
+
+            # GPU-side element-wise comparison: per-block partial reduction.
+            comptime NUM_BLOCKS = 32
+            comptime BLOCK_SIZE = 256
+
+            var rtol = Float32(1.3e-6)
+            var atol = Float32(1e-5)
+            var result_device = ctx.enqueue_create_buffer[DType.float32](
+                NUM_BLOCKS * 5
+            )
+
+            comptime verify_kernel = _verify_buffers_gpu[
+                DType.float32, BLOCK_SIZE
+            ]
+            ctx.enqueue_function_experimental[verify_kernel](
+                c_tt0.ptr,
+                c_ref_tt.ptr,
+                c_size,
+                atol,
+                rtol,
+                result_device,
+                grid_dim=NUM_BLOCKS,
+                block_dim=BLOCK_SIZE,
+            )
+
+            var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+            ctx.enqueue_copy(result_host, result_device)
+            ctx.synchronize()
+
+            var total_abs_diff: Float32 = 0
+            var total_abs_ref: Float32 = 0
+            var worst_violation = Float32.MIN_FINITE
+            var out_nz: Float32 = 0
+            var ref_nz: Float32 = 0
+            for bi in range(NUM_BLOCKS):
+                var base = bi * 5
+                total_abs_diff += result_host[base + 0]
+                total_abs_ref += result_host[base + 1]
+                worst_violation = max(worst_violation, result_host[base + 2])
+                out_nz = max(out_nz, result_host[base + 3])
+                ref_nz = max(ref_nz, result_host[base + 4])
+            result_host.free()
+
+            if init_type != InitializationType.zero:
+                if out_nz == 0:
+                    raise "MXFP4 verify: kernel output is all zeros"
+                if ref_nz == 0:
+                    raise "MXFP4 verify: hipBLASLt reference is all zeros"
+
+            if total_abs_ref > 0:
+                var rel_diff = total_abs_diff / total_abs_ref
+                if rel_diff > 0.001:
+                    raise String(
+                        "MXFP4 verify failed (relative_difference): ",
+                        rel_diff,
+                        " > 0.001",
+                    )
+
+            if worst_violation > 0:
+                raise String(
+                    (
+                        "MXFP4 verify failed (element-wise tolerance):"
+                        " worst violation = "
+                    ),
+                    worst_violation,
+                )
+
+            print("\n=== MXFP4 verify PASSED ===\n")
 
 
 def main() raises:
