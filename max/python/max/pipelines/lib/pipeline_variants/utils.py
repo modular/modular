@@ -19,11 +19,13 @@ import logging
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+import llguidance
 import llguidance.hf
 import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
-from llguidance import LLMatcher
+from llguidance import LLMatcher, LLTokenizer
+from llguidance._tokenizer import TokenizerWrapper
 from max.interfaces import (
     GenerationStatus,
     LogProbabilities,
@@ -32,12 +34,65 @@ from max.interfaces import (
     TextGenerationOutput,
 )
 from max.pipelines.lib.utils import upper_bounded_default
-from transformers import AutoConfig, PreTrainedTokenizerFast
+from transformers import (
+    AutoConfig,
+    PreTrainedTokenizerBase,
+    PreTrainedTokenizerFast,
+)
 
 if TYPE_CHECKING:
     from max.interfaces import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
+
+
+class _TikTokenAdapter:
+    """Adapter to make TikToken-based tokenizers compatible with llguidance.
+
+    llguidance's TokenizerWrapper expects a tokenizer object with specific
+    attributes (eos_token_id, bos_token_id, tokens, special_token_ids) and
+    a callable interface for encoding. This adapter wraps TikToken-based
+    tokenizers (which don't inherit from PreTrainedTokenizerFast) to provide
+    that interface.
+
+    Raises:
+        ValueError: If the tokenizer is not a TikToken-based tokenizer.
+    """
+
+    def __init__(self, tokenizer: PreTrainedTokenizerBase) -> None:
+        if "TikToken" not in type(tokenizer).__name__:
+            raise ValueError(
+                f"Structured output requires PreTrainedTokenizerFast or "
+                f"TikToken-based tokenizers, but got {type(tokenizer).__name__}"
+            )
+
+        self._tokenizer = tokenizer
+        self.eos_token_id = tokenizer.eos_token_id
+        self.bos_token_id = tokenizer.bos_token_id
+        self.special_token_ids = getattr(tokenizer, "all_special_ids", [])
+
+        # Build byte representation for each token (required by TokenizerWrapper)
+        vocab_size = len(tokenizer.get_vocab())
+        self._tokens: list[bytes] = []
+        for i in range(vocab_size):
+            token_str = tokenizer.convert_ids_to_tokens(i)
+            if token_str is None:
+                self._tokens.append(b"")
+            else:
+                self._tokens.append(token_str.encode("utf-8", errors="replace"))
+
+    @property
+    def tokens(self) -> list[bytes]:
+        """Returns byte representation of each token in vocabulary."""
+        return self._tokens
+
+    def __call__(self, text: str | bytes) -> list[int]:
+        """Encode text to token IDs."""
+        if isinstance(text, bytes):
+            text = text.decode("utf-8", errors="replace")
+
+        # TikToken tokenizers use allow_special_tokens (not add_special_tokens)
+        return self._tokenizer.encode(text, allow_special_tokens=True)
 
 
 def calculate_num_steps(
@@ -315,12 +370,21 @@ class StructuredOutputHelper:
             return cls(enabled=False)
 
         assert hasattr(tokenizer, "delegate")
-        hf_tokenizer = tokenizer.delegate
-        assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
-        vocab_size = len(hf_tokenizer)
-        tokenizer_info = llguidance.hf.from_tokenizer(
-            hf_tokenizer, n_vocab=vocab_size
-        )
+        tokenizer_delegate = tokenizer.delegate
+        vocab_size = len(tokenizer_delegate)
+
+        if isinstance(tokenizer_delegate, PreTrainedTokenizerFast):
+            # Fast path for HuggingFace fast tokenizers
+            tokenizer_info = llguidance.hf.from_tokenizer(
+                tokenizer_delegate, n_vocab=vocab_size
+            )
+        else:
+            # Fallback for TikTokenTokenizer, used by KimiK2_5
+            # Use adapter -> TokenizerWrapper -> LLTokenizer chain
+            adapter = _TikTokenAdapter(tokenizer_delegate)
+            wrapper = TokenizerWrapper(adapter)
+            tokenizer_info = LLTokenizer(wrapper, n_vocab=vocab_size)
+
         return cls(
             enabled=True,
             vocab_size=vocab_size,
