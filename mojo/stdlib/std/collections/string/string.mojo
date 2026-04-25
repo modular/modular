@@ -1167,6 +1167,20 @@ struct String(
         """
         return StringSlice(self).graphemes()
 
+    def graphemes_reversed(
+        self,
+    ) -> GraphemeSliceIter[origin_of(self), False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return StringSlice(self).graphemes_reversed()
+
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
 

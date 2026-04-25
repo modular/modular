@@ -1258,6 +1258,37 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return GraphemeSliceIter(self)
 
+    def graphemes_reversed(self) -> GraphemeSliceIter[Self.origin, False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster. Reverse
+        iteration is more expensive per element than forward iteration: the
+        UAX #29 state machine is forward-scanning, so each step backs up
+        to a guaranteed grapheme boundary (typically a line break or the
+        start of the string) and forward-scans from there.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        var s = StringSlice("abc")
+        var result = List[String]()
+        for g in s.graphemes_reversed():
+            result.append(String(g))
+        assert_equal(len(result), 3)
+        assert_equal(result[0], "c")
+        assert_equal(result[1], "b")
+        assert_equal(result[2], "a")
+        ```
+        """
+        return GraphemeSliceIter[Self.origin, False](self)
+
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
 

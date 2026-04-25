@@ -162,6 +162,20 @@ This version is still a work in progress.
   is O(n) in the byte length — prefer `byte=` slicing when you already have
   byte offsets.
 
+- `GraphemeSliceIter` now supports reverse iteration. `next_back()` and
+  `peek_back()` return the last grapheme cluster in the remaining range, and
+  `StringSlice.graphemes_reversed()` / `String.graphemes_reversed()` return a
+  `GraphemeSliceIter` whose `for`-loop iteration walks clusters from end to
+  start. `next()` and `next_back()` can be interleaved on the same iterator.
+  Reverse iteration costs more per cluster than forward iteration because the
+  UAX #29 state machine is inherently forward-scanning: `next_back()` backs
+  up to a guaranteed grapheme boundary (the start of the string or a
+  Control/CR/LF codepoint) and rescans forward. The safe boundary is cached
+  across reverse calls — a forward `next()` invalidates it — so per-call cost
+  is dominated by forward-scan length: small in text containing line breaks
+  or whitespace, growing with the distance back to such a codepoint in long
+  runs without them.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 
