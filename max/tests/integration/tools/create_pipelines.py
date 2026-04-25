@@ -712,11 +712,20 @@ class PixtralPipelineOracle(PipelineOracle):
         return TorchModelAndDataProcessor(model=model, data_processor=processor)
 
 
-class KimiK2_5PipelineOracle(PipelineOracle):
-    """Pipeline oracle for Kimi K2.5 multimodal architectures (vLLM only).
+class _KimiK2_5BaseOracle(PipelineOracle):
+    """Shared scaffolding for Kimi-K2.5-NVFP4 oracle variants.
 
-    Kimi K2.5 is a 1T-parameter MoE model.
+    The Kimi K2.5 MAX pipeline config (8x EP/DP, 4096 ctx, NVFP4, etc.) and
+    the "torch goldens not practical at 1T params" stance are identical
+    across the multimodal upstream checkpoint and any text-only DeepseekV3
+    conversion. Subclasses provide their own ``inputs`` and override the
+    vLLM mm-specific kwargs via ``_vllm_extra_kwargs`` / ``_vllm_mm_data_key``.
     """
+
+    # vLLM defaults match VLLMPipeline's own defaults (no mm passthrough).
+    # The multimodal subclass overrides these.
+    _vllm_extra_kwargs: Mapping[str, Any] = {}
+    _vllm_mm_data_key: str = "image"
 
     def __init__(self, model_path: str) -> None:
         super().__init__()
@@ -726,14 +735,6 @@ class KimiK2_5PipelineOracle(PipelineOracle):
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
         return {"gpu": ["float4_e2m1fnx2"]}
-
-    @property
-    def inputs(self) -> list[MockTextGenerationRequest]:
-        text_only_requests = [
-            MockTextGenerationRequest.text_only(prompt)
-            for prompt in test_data.SHORT_TEXT_PROMPTS
-        ]
-        return test_data.KIMIK2_5_REQUESTS + text_only_requests
 
     def create_max_pipeline(
         self,
@@ -787,12 +788,56 @@ class KimiK2_5PipelineOracle(PipelineOracle):
             trust_remote_code=self.trust_remote_code,
             encoding=encoding,
             tensor_parallel_size=max(1, gpu_count),
-            extra_kwargs={
-                "mm_encoder_tp_mode": "data",
-                "limit_mm_per_prompt": {"vision_chunk": 1},
-            },
-            mm_data_key="vision_chunk",
+            extra_kwargs=dict(self._vllm_extra_kwargs),
+            mm_data_key=self._vllm_mm_data_key,
         )
+
+
+class KimiK2_5PipelineOracle(_KimiK2_5BaseOracle):
+    """Pipeline oracle for Kimi K2.5 multimodal architectures (vLLM only).
+
+    Kimi K2.5 is a 1T-parameter MoE model.
+    """
+
+    _vllm_extra_kwargs = {
+        "mm_encoder_tp_mode": "data",
+        "limit_mm_per_prompt": {"vision_chunk": 1},
+    }
+    _vllm_mm_data_key = "vision_chunk"
+
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        text_only_requests = [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in test_data.SHORT_TEXT_PROMPTS
+        ]
+        return test_data.KIMIK2_5_REQUESTS + text_only_requests
+
+
+class KimiK2_5DeepseekV3PipelineOracle(_KimiK2_5BaseOracle):
+    """Oracle for the text-only DeepseekV3 conversion of Kimi-K2.5-NVFP4.
+
+    The checkpoint is the original ``nvidia/Kimi-K2.5-NVFP4`` weights with the
+    vision stack stripped, MTP layer dropped, and key prefixes rewritten so
+    the file loads via the standard DeepseekV3 pipeline. Underlying tensor
+    bytes are bit-identical to the upstream Kimi NVFP4 checkpoint, so MAX
+    DeepseekV3 logits should match vLLM's at NVFP4 quantization noise levels.
+    """
+
+    # Bump back to the default NUM_STEPS once EP-MoE + full-logits-return
+    # mode no longer trips CUDA_ERROR_ILLEGAL_ADDRESS in
+    # ``max/kernels/src/shmem/ep_comm.mojo``. With ``num_steps=10`` the run
+    # aborts during the second decode step.
+    num_steps = 1
+
+    # TODO(MXSERV-7): replace ``austinpowers`` personal namespace with the
+    # official Modular HF org once the checkpoint is republished.
+    @property
+    def inputs(self) -> list[MockTextGenerationRequest]:
+        return [
+            MockTextGenerationRequest.text_only(prompt)
+            for prompt in test_data.SHORT_TEXT_PROMPTS
+        ]
 
 
 class GenericOracle(PipelineOracle):
@@ -1777,6 +1822,9 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3": KimiK2_5DeepseekV3PipelineOracle(
+        "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
+    ),
     "MiniMaxAI/MiniMax-M2.7": GenericOracle(
         model_path="MiniMaxAI/MiniMax-M2.7",
         config_params={
