@@ -2087,12 +2087,17 @@ def _add_steady_state_result(
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None,
 ) -> None:
     """Detect steady-state window and add its metrics to *result*."""
-    steady = detect_steady_state(outputs)
+    steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
     result["steady_state_detected"] = steady.detected
     result["steady_state_start_index"] = steady.start_index
     result["steady_state_end_index"] = steady.end_index
     result["steady_state_count"] = steady.steady_state_count
     result["steady_state_warning"] = steady.warning
+    # Persist detection mode for downstream consumers; skip it when
+    # detection was skipped (concurrency=1) so the default "full"
+    # isn't mistaken for a real result.
+    if steady.detected or steady.warning is not None:
+        result["steady_state_mode"] = steady.mode
 
     if steady.detected:
         ss_index_set = set(steady.steady_state_indices)
@@ -2135,10 +2140,31 @@ def _add_steady_state_result(
                 result.update(
                     pm.confidence_to_flat_dict(f"steady_state_{name}")
                 )
+        # start_index and end_index are in original dispatch order and
+        # may span requests filtered out by detect_steady_state (failed,
+        # missing TPOT, etc.), particularly in multi-turn runs where
+        # sessions interleave. Call out the valid-count separately so
+        # the gap isn't mistaken for a bug.
+        assert steady.start_index is not None and steady.end_index is not None
+        dispatch_span = steady.end_index - steady.start_index
+        # Only show dispatch_span when it differs from the valid count
+        # (multi-turn interleaving); single-turn matches would be noise.
+        span_note = (
+            f" spans {dispatch_span} positions"
+            if dispatch_span != steady.steady_state_count
+            else ""
+        )
+        mode_note = (
+            " [TTFT-only fallback; TPOT absent across run]"
+            if steady.mode == "ttft_only"
+            else ""
+        )
         logger.info(
-            f"Steady-state detected: requests [{steady.start_index},"
-            f" {steady.end_index}) ({steady.steady_state_count} of"
-            f" {steady.total_requests} requests)"
+            f"Steady-state detected: {steady.steady_state_count} valid"
+            f" requests (dispatch range [{steady.start_index},"
+            f" {steady.end_index}){span_note};"
+            f" {steady.total_requests} total valid in the run)"
+            f"{mode_note}"
         )
     elif steady.warning:
         logger.warning(f"Steady-state detection: {steady.warning}")

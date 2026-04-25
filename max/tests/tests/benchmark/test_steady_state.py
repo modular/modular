@@ -138,6 +138,112 @@ def test_steady_state_with_warmup_and_cooldown() -> None:
     assert result.end_index <= 290
 
 
+def test_steady_state_ttft_only_fallback_for_prefill_only_workload() -> None:
+    """Prefill-only workloads produce ≤1 output token per request so TPOT
+    is always empty. The full filter drops everything, but the TTFT-only
+    fallback should still detect steady state using TTFT alone."""
+    random.seed(7)
+    n = 200
+    outputs: list[RequestFuncOutput] = []
+
+    # Warmup: noisy TTFT.
+    for i in range(40):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=random.uniform(0.1, 1.5),
+                tpot=[],  # Prefill-only: no inter-token latencies.
+                latency=random.uniform(0.1, 1.5),
+            )
+        )
+    # Steady: stable TTFT.
+    for i in range(40, n):
+        outputs.append(
+            _make_output(
+                submit_time=float(i),
+                ttft=0.05 + random.uniform(-0.005, 0.005),
+                tpot=[],
+                latency=0.05,
+            )
+        )
+
+    result = detect_steady_state(outputs, window_size=20, ttft_threshold=0.15)
+
+    assert result.detected is True
+    assert result.mode == "ttft_only"
+    assert result.warning is None
+    assert result.start_index is not None and result.end_index is not None
+    # Ramp-up should fall within the noisy prefix; window extends to end.
+    assert result.start_index >= 20
+    assert result.end_index == n
+
+
+def test_steady_state_ttft_only_fallback_requires_enough_data() -> None:
+    """If even the TTFT-only filter yields too few requests, detection
+    should still return a "too few" warning rather than crashing. In
+    ttft_only mode TPOT wasn't filtered, so the warning should say the
+    run has too few valid requests and name TTFT-only mode (not blame
+    TPOT filtering, which only applies in full mode)."""
+    outputs = [
+        _make_output(submit_time=float(i), ttft=0.05, tpot=[])
+        for i in range(10)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is False
+    assert result.mode == "ttft_only"
+    assert result.warning is not None
+    assert "Too few" in result.warning
+    assert "TTFT-only" in result.warning
+
+
+def test_steady_state_full_mode_preferred_over_fallback() -> None:
+    """With full (TPOT-populated) data, the full-mode path should run and
+    the result should carry mode="full". The fallback is only for the
+    TPOT-empty case."""
+    random.seed(11)
+    n = 200
+    outputs = [
+        _make_output(
+            submit_time=float(i),
+            ttft=0.05 + random.uniform(-0.002, 0.002),
+            tpot=[0.02 + random.uniform(-0.001, 0.001) for _ in range(3)],
+        )
+        for i in range(n)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20)
+
+    assert result.detected is True
+    assert result.mode == "full"
+
+
+def test_steady_state_concurrency_one_short_circuits() -> None:
+    """At max_concurrency=1 there's no queueing to produce a ramp, so
+    detection should skip silently (no warning, no detected window)."""
+    # Provide a plausible stable run that would otherwise detect fine,
+    # to prove the short-circuit is driven by concurrency and not data.
+    n = 200
+    outputs = [
+        _make_output(submit_time=float(i), ttft=0.05, tpot=[0.02, 0.02, 0.02])
+        for i in range(n)
+    ]
+
+    result = detect_steady_state(outputs, window_size=20, max_concurrency=1)
+
+    assert result.detected is False
+    assert result.warning is None
+    assert result.start_index is None
+    assert result.end_index is None
+    assert result.steady_state_count == 0
+    # mode stays at default "full" since no detection ran.
+    assert result.mode == "full"
+    # total_requests should reflect the input size; the filter didn't
+    # run, so 0 would be misleading to downstream telemetry.
+    assert result.total_requests == n
+
+
 def test_steady_state_too_few_requests() -> None:
     """Too few requests should fail with a warning."""
     outputs = [
@@ -150,6 +256,10 @@ def test_steady_state_too_few_requests() -> None:
     assert result.detected is False
     assert result.warning is not None
     assert "Too few" in result.warning
+    # Warning should name the TPOT filter / prefill-only workloads so
+    # users know why detection skipped.
+    assert "TPOT" in result.warning
+    assert "prefill" in result.warning.lower()
 
 
 def test_steady_state_never_stabilizes() -> None:
