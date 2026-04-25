@@ -348,6 +348,7 @@ from tensor.managed_tensor_slice import (
 from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
+from std.memory import memcpy
 from std.time import sleep
 from std.logger import Logger
 
@@ -12456,3 +12457,62 @@ struct Sleep:
             )
         else:
             sleep(duration_sec)
+
+
+# ===-----------------------------------------------------------------------===#
+# In-place memcpy kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.inplace_memcpy")
+struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
+    """Copies the contents of `src` into `dst` in place.
+
+    Semantically equivalent to ``Buffer.inplace_copy_from``, but exposed
+    as a graph op so the copy can be scheduled as part of a compiled MAX
+    graph. Both operands must have the same dtype, rank, and total
+    element count.
+
+    Supports the four direction combinations expressible with a single
+    `DeviceContext`: GPU-to-GPU on the same device, GPU-to-CPU,
+    CPU-to-GPU, and CPU-to-CPU. Cross-GPU memcpy (different GPU ids) is
+    rejected by the Python wrapper at graph build time.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        dst: MutableInputTensor[dtype=dtype, rank=rank, ...],
+        src: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var count = dst.size()
+        comptime if is_gpu[Self.DstDevice]() and is_gpu[Self.SrcDevice]():
+            # Same-GPU async memcpy.
+            ctx[].enqueue_copy[dtype](dst.unsafe_ptr(), src.unsafe_ptr(), count)
+        elif is_gpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
+            # Host-to-device async memcpy. Wrap the GPU dst pointer as a
+            # non-owning `DeviceBuffer` so the typed overload is selected.
+            ctx[].enqueue_copy[dtype](
+                dst.to_device_buffer(ctx[]),
+                src.unsafe_ptr(),
+            )
+        elif is_cpu[Self.DstDevice]() and is_gpu[Self.SrcDevice]():
+            # Device-to-host async memcpy.
+            ctx[].enqueue_copy[dtype](
+                dst.unsafe_ptr(),
+                src.to_device_buffer(ctx[]),
+            )
+        elif is_cpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
+            # Host-to-host. Plain synchronous memcpy.
+            memcpy(
+                dest=dst.unsafe_ptr(),
+                src=src.unsafe_ptr(),
+                count=count,
+            )
+        else:
+            # Cross-device memcpy are unsupported since stream is ambiguous.
+            raise Error("InplaceMemcpy does not support cross-gpu memcpy")
