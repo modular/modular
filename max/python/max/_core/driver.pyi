@@ -21,7 +21,7 @@ Provides low-level access to hardware devices and memory management.
 
 import os
 import types
-from collections.abc import Generator, Mapping, Sequence
+from collections.abc import Callable, Generator, Mapping, Sequence
 from typing import Annotated, Any, overload
 
 import max._core.dtype
@@ -197,6 +197,29 @@ class Device:
 
         Returns:
             bool: True if the device is compatible with MAX, False otherwise.
+        """
+
+    def __unsafe_enqueue_py_host_func(self, fn: Callable) -> None:
+        """
+        Enqueues a Python callable to run on the host after preceding work.
+
+        The callable runs on a driver thread once the device's default
+        stream reaches this point, after all previously enqueued work has
+        completed. It must not call any device APIs (per the
+        ``cuLaunchHostFunc`` contract). Currently only supported on CUDA
+        devices.
+
+        This API is intentionally namespaced with a ``__unsafe_`` prefix
+        to discourage casual use: there is no safety net for callbacks
+        that capture state that outlives the compiled graph, and
+        misuse can deadlock or corrupt memory.
+
+        Args:
+            fn (Callable[[], None]): A zero-argument callable.
+
+        Raises:
+            RuntimeError: If the underlying device does not support host
+                callbacks, or if the driver rejects the enqueue.
         """
 
     def __str__(self) -> str: ...
