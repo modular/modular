@@ -111,9 +111,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": {
         "max_serve_args": "--ep-size 1 --data-parallel-degree 1",
     },
-    "nvidia/Kimi-K2.5-NVFP4__no_vision": {
-        "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
-    },
     "meta-llama/Llama-3.1-8B-Instruct__eagle": {
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
