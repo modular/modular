@@ -117,7 +117,9 @@ def is_optional(type_hint: type | str | Any) -> bool:
 
 
 def is_flag(field_type: Any) -> bool:
-    return field_type is bool
+    if field_type is bool:
+        return True
+    return is_optional(field_type) and get_interior_type(field_type) is bool
 
 
 def validate_field_type(field_type: Any) -> bool:

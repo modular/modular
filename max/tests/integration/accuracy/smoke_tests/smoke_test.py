@@ -82,7 +82,7 @@ EvalSamples = list[dict[str, Any]]
 # fmt: off
 MODEL_ALIASES = CaseInsensitiveDict({
     "google/gemma-4-26B-A4B-it__no_dgc": {
-        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
+        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture",
     },
     "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
         "max_serve_args": "--prefer-module-v3",

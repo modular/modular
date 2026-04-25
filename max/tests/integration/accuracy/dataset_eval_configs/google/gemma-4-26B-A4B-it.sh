@@ -21,5 +21,4 @@ tasks=mathvista,chartqa,docvqa,mmmu
 extra_pipelines_args=(
   --trust-remote-code
   --no-device-graph-capture
-  --force
 )
