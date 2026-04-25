@@ -55,9 +55,16 @@ The allreduce operation follows a per-device execution model:
    - The device context determines which GPU executes each instance.
 
 Limitations:
-- Number of elements must be a multiple of SIMD width.
 - Maximum of 8 GPUs supported.
+- Multimem mode still requires the element count to be a multiple of SIMD width.
 - All input/output buffers must have identical shapes.
+
+Non-multimem 1-stage P2P and naive epilogue accept arbitrary ``N``: when
+``N`` is a multiple of device SIMD width, the 1-stage kernel uses the same
+vectorized ``_load_reduce`` grid loop as before; otherwise it runs that loop on
+the SIMD-aligned prefix and finishes the last ``< simd_width`` elements with a
+grid-strided scalar reduce-store. The naive epilogue kernel uses the same
+SIMD-prefix + scalar-tail pattern for ``accum → out``.
 
 ## Visual Overview
 
@@ -67,12 +74,14 @@ Limitations:
    accumulates, then writes to its result using the epilogue:
 
        GPU r (result_r)
-       src_ptrs[0] ─┐
-       src_ptrs[1] ─┼──► Σ (high-precision accum) ──► output_lambda ──► result_r
+       src_tensors[0] ─┐
+       src_tensors[1] ─┼──► Σ (high-precision accum) ──► output_lambda ──► result_r
        ...         ─┘
 
    Notes:
-   - Vectorized loads from global memory on each GPU.
+   - Non-multimem: SIMD-vector ``_load_reduce`` on the aligned prefix; optional
+     scalar tail when ``N`` is not a multiple of SIMD width. Multimem: unchanged
+     full-vector loads (``N`` must be SIMD-aligned).
    - Good for small/latency-bound tensors.
 
 2) 2-Stage P2P (bandwidth-bound)
@@ -80,7 +89,7 @@ Limitations:
    Stage 1 (reduce-scatter): Each GPU r reduces its assigned partition and writes
    into its own signal payload (the bytes after the Signal header).
 
-       src_ptrs[*]  ──►  reduce(partition r)  ──►  rank_sigs[r].payload  (per-GPU)
+       src_tensors[*]  ──►  reduce(partition r)  ──►  rank_sigs[r].payload  (per-GPU)
 
    Stage 2 (all-gather): Each GPU r gathers all partitions from peers' payloads
    and writes them to its result using the epilogue.
@@ -99,9 +108,9 @@ from layout import Coord, Idx, TileTensor, row_major
 from layout.tile_layout import TensorLayout
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    block_dim_uint as block_dim,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    block_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -117,7 +126,7 @@ from std.collections.optional import Optional
 
 from .reducescatter import (
     ReduceScatterConfig,
-    _reduce_scatter_flat_impl,
+    _reduce_scatter_impl,
     _load_reduce,
     _target_address_space,
 )
@@ -133,7 +142,7 @@ from .device_query import dispatch_max_num_blocks, CommTuningConfig
 from internal_utils import Table
 
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: Int, *, alignment: Int
+    dtype: DType, width: SIMDSize, *, alignment: Int
 ](Coord, SIMD[dtype, size=width]) capturing -> None
 
 # Tuning table to get num_blocks for allreduce.
@@ -212,6 +221,7 @@ comptime allreduce_tuning_table = Table(
 )
 
 
+@__name(t"naive_reduce_{dtype}", mangle=True)
 def _naive_reduce_kernel[
     dtype: DType
 ](
@@ -236,33 +246,51 @@ def _naive_reduce_kernel[
     var stride = grid_dim.x * block_dim.x
 
     # Each thread handles multiple elements with striding
-    for i in range(Int(tid), num_elements, Int(stride)):
+    for i in range(tid, num_elements, stride):
         dst_buf[i] += src_buf[i]
 
 
+@__name(t"naive_reduce_with_lambda_{dtype}", mangle=True)
 def _naive_reduce_kernel_with_lambda[
     dtype: DType,
     out_layout: TensorLayout,
     *,
-    width: Int,
-    alignment: Int,
     output_lambda: elementwise_epilogue_type,
 ](
     dst_buf: TileTensor[dtype, out_layout, MutAnyOrigin],
     src_buf: UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
     num_elements: Int,
 ):
-    """Naive reduction kernel with elementwise lambda support."""
-    var tid = global_idx.x
-    var stride = grid_dim.x * block_dim.x
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    """Apply ``output_lambda`` from ``src_buf`` into ``dst_buf`` (naive epilogue).
 
-    for idx in range(Int(tid), num_elements // simd_width, Int(stride)):
-        var elem_idx = idx * simd_width
-        output_lambda[width=simd_width, alignment=alignment](
-            dst_buf.layout.idx2crd(elem_idx),
-            src_buf.load[width=simd_width, alignment=alignment](elem_idx),
-        )
+    Uses device SIMD width loads on the aligned prefix (same pattern as the
+    pre-ragged vector epilogue), then grid-strided scalar loads for any tail when
+    ``num_elements`` is not a multiple of SIMD width.
+    """
+    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
+    comptime simd_align = align_of[SIMD[dtype, simd_width]]()
+    comptime scalar_align = align_of[SIMD[dtype, 1]]()
+    var global_tid = global_idx.x
+    var total_threads = grid_dim.x * Int(block_dim.x)
+    var num_simd_vectors = num_elements // simd_width
+    var simd_prefix_elems = num_simd_vectors * simd_width
+
+    if num_simd_vectors > 0:
+        for idx in range(global_tid, num_simd_vectors, total_threads):
+            var elem_idx = idx * simd_width
+            output_lambda[width=simd_width, alignment=simd_align](
+                dst_buf.layout.idx2crd(elem_idx),
+                src_buf.load[width=simd_width, alignment=simd_align](elem_idx),
+            )
+
+    if simd_prefix_elems < num_elements:
+        for elem_idx in range(
+            simd_prefix_elems + global_tid, num_elements, total_threads
+        ):
+            output_lambda[width=1, alignment=scalar_align](
+                dst_buf.layout.idx2crd(elem_idx),
+                src_buf.load[width=1, alignment=scalar_align](elem_idx),
+            )
 
 
 @always_inline
@@ -333,7 +361,6 @@ def _allreduce_naive_single[
     - Each op instance only writes to its own temporary buffer and its own
       output buffer (`out_r`).
     """
-    comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime BLOCK_SIZE = 256
     var num_elements = list_of_in_tensors[0].num_elements()
 
@@ -363,6 +390,15 @@ def _allreduce_naive_single[
 
     # Grid configuration for naive kernels.
     var grid_size = min(max_num_blocks, ceildiv(num_elements, BLOCK_SIZE))
+    comptime simd_width_epi = simd_width_of[dtype, target=get_gpu_target()]()
+    var num_simd_vecs_epi = num_elements // simd_width_epi
+    var tail_elems_epi = num_elements - num_simd_vecs_epi * simd_width_epi
+    var grid_simd_epi = ceildiv(num_simd_vecs_epi, BLOCK_SIZE)
+    var grid_tail_epi = ceildiv(tail_elems_epi, BLOCK_SIZE)
+    var grid_epilogue = min(
+        max_num_blocks,
+        max(max(grid_simd_epi, grid_tail_epi), 1),
+    )
 
     # Reduce local buffer first.
     ctx.enqueue_function[
@@ -396,8 +432,6 @@ def _allreduce_naive_single[
     comptime naive_reduce_with_lambda_kernel = _naive_reduce_kernel_with_lambda[
         dtype,
         out_layout,
-        width=simd_width,
-        alignment=align_of[SIMD[dtype, simd_width]](),
         output_lambda=output_lambda,
     ]
     ctx.enqueue_function[
@@ -406,7 +440,7 @@ def _allreduce_naive_single[
         rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
         accum,
         num_elements,
-        grid_dim=grid_size,
+        grid_dim=grid_epilogue,
         block_dim=BLOCK_SIZE,
     )
 
@@ -414,9 +448,11 @@ def _allreduce_naive_single[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allreduce_2stage_{dtype}_{use_multimem}", mangle=True)
 def _allreduce_2stage_kernel[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
     out_layout: TensorLayout,
     *,
     BLOCK_SIZE: Int,
@@ -424,8 +460,8 @@ def _allreduce_2stage_kernel[
     use_multimem: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_tensors: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -440,6 +476,7 @@ def _allreduce_2stage_kernel[
     Parameters:
         dtype: Data dtype of tensor elements.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
         out_layout: Layout of the output TileTensor.
         BLOCK_SIZE: Number of threads per block.
         output_lambda: An elementwise output lambda function.
@@ -447,7 +484,7 @@ def _allreduce_2stage_kernel[
 
     Args:
         result: Output buffer for reduced values.
-        src_ptrs: Input buffers from all GPUs.
+        src_tensors: Input buffers from all GPUs.
         rank_sigs: Signal pointers for synchronization.
             IMPORTANT: the Signal pointers have trailing buffers for
             communication, which must be at least `ngpus * size_of(payload)`.
@@ -458,11 +495,13 @@ def _allreduce_2stage_kernel[
     var my_sig = rank_sigs[my_rank]
 
     # --- Thread Indexing ---
-    var global_tid = Int(global_idx.x)
+    var global_tid = global_idx.x
     # Stride equals total threads in grid dimension for grid-strided loops.
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var stride = grid_dim.x * BLOCK_SIZE
 
     var rs_config = ReduceScatterConfig[dtype, ngpus](num_elements, stride)
+
+    comptime num_tensors = 1 if use_multimem else ngpus
 
     with PDL():
         # --- Define tmp buffers by offsetting for Signal struct ---
@@ -481,18 +520,6 @@ def _allreduce_2stage_kernel[
         # Current rank's output buffer.
         var tmp_out = tmps[0]
 
-        # Round-robin access pattern to balance NVLink traffic across GPUs.
-        comptime num_tensors = 1 if use_multimem else ngpus
-        var ptrs = InlineArray[
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_tensors
-        ](uninitialized=True)
-
-        comptime for i in range(num_tensors):
-            var target = 0 if num_tensors == 1 else circular_add[num_tensors](
-                my_rank, i
-            )
-            ptrs[i] = src_ptrs[target]
-
         # --- Stage 1: Reduce-Scatter Phase ---
         # Uses two-phase synchronization protocol with release-acquire semantics:
         # 1. Initial barrier establishes happens-before relationship.
@@ -510,7 +537,7 @@ def _allreduce_2stage_kernel[
         @__copy_capture(tmp_buff)
         def rs_output_lambda[
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -521,9 +548,27 @@ def _allreduce_2stage_kernel[
                 val.cast[dtype](),
             )
 
-        _reduce_scatter_flat_impl[
+        # Slice input tiles to this rank's partition for reduce-scatter.
+        var elem_start = rs_config.rank_start(my_rank)
+        var n_elements = rs_config.rank_num_elements(my_rank)
+        comptime SlicedTile = TileTensor[dtype, SlicedLayout, ImmutAnyOrigin]
+        comptime SlicedLayout = type_of(row_major(Idx(n_elements)))
+        var sliced_tiles = InlineArray[SlicedTile, num_tensors](
+            uninitialized=True
+        )
+
+        comptime for i in range(num_tensors):
+            # Round-robin access pattern to balance NVLink traffic across GPUs.
+            var target = 0 if num_tensors == 1 else circular_add[num_tensors](
+                my_rank, i
+            )
+            sliced_tiles[i] = SlicedTile(
+                src_tensors[target].ptr + elem_start, row_major(Idx(n_elements))
+            )
+
+        _reduce_scatter_impl[
             ngpus, output_lambda=rs_output_lambda, use_multimem=use_multimem
-        ](ptrs, tmp_buff, my_rank, rs_config)
+        ](sliced_tiles, tmp_buff, n_elements, rs_config.stride)
 
         # Second barrier with memory ordering guarantees.
         _multi_gpu_barrier[ngpus, is_start=False, need_fence=True](
@@ -544,7 +589,7 @@ def _allreduce_2stage_kernel[
 
         # Main loop - only process unragged elements (no bounds check)
         for idx in range(
-            rs_config.thr_local_start(UInt(global_tid)),
+            rs_config.thr_local_start(global_tid),
             rs_config.rank_part(ngpus - 1),
             rs_config.stride,
         ):
@@ -561,7 +606,7 @@ def _allreduce_2stage_kernel[
 
         # Ragged tail - max 1 simd vector per gpu, spread work between threads
         if global_tid < ngpus:
-            var peer_rank = circular_add[ngpus](my_rank, Int(global_tid))
+            var peer_rank = circular_add[ngpus](my_rank, global_tid)
             if peer_rank < rs_config.axis_remainder:
                 var idx = (
                     rs_config.rank_part(0) - simd_width
@@ -575,12 +620,57 @@ def _allreduce_2stage_kernel[
                 )
 
 
+@always_inline
+def _allreduce_1stage_reduce_store_one[
+    dtype: DType,
+    in_layout: TensorLayout,
+    out_layout: TensorLayout,
+    num_tensors: Int,
+    *,
+    accum_type: DType,
+    output_lambda: elementwise_epilogue_type,
+](
+    elem_idx: Int,
+    ptrs: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors
+    ],
+    result: TileTensor[dtype, out_layout, MutAnyOrigin],
+) -> None:
+    """Load one element from every peer, reduce in ``accum_type``, epilogue store.
+    """
+    comptime scalar_align = align_of[SIMD[dtype, 1]]()
+    var accum = (
+        ptrs[0]
+        .address_space_cast[_target_address_space]()
+        .load[width=1, alignment=scalar_align, invariant=True](
+            Coord(Idx(elem_idx))
+        )
+        .cast[accum_type]()
+    )
+    comptime for gpu_idx in range(1, num_tensors):
+        accum += (
+            ptrs[gpu_idx]
+            .address_space_cast[_target_address_space]()
+            .load[width=1, alignment=scalar_align, invariant=True](
+                Coord(Idx(elem_idx))
+            )
+            .cast[accum_type]()
+        )
+    var reduced = accum.cast[dtype]()
+    output_lambda[width=1, alignment=scalar_align](
+        result.layout.idx2crd(elem_idx),
+        reduced,
+    )
+
+
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allreduce_1stage_{dtype}_{use_multimem}", mangle=True)
 def _allreduce_1stage_kernel[
     dtype: DType,
     ngpus: Int,
+    in_layout: TensorLayout,
     out_layout: TensorLayout,
     *,
     BLOCK_SIZE: Int,
@@ -588,8 +678,8 @@ def _allreduce_1stage_kernel[
     use_multimem: Bool = False,
 ](
     result: TileTensor[dtype, out_layout, MutAnyOrigin],
-    src_ptrs: InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin],
+    src_tensors: InlineArray[
+        TileTensor[dtype, in_layout, ImmutAnyOrigin],
         1 if use_multimem else ngpus,
     ],
     rank_sigs: InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS],
@@ -602,35 +692,44 @@ def _allreduce_1stage_kernel[
     Parameters:
         dtype: Data dtype of tensor elements.
         ngpus: Number of GPUs participating.
+        in_layout: Layout of the input TileTensors.
         out_layout: Layout of the output TileTensor.
         BLOCK_SIZE: Number of threads per block.
         output_lambda: An elementwise output lambda function.
         use_multimem: If True, use multi-memory space buffers for input.
 
     Args:
-        result: Output buffer for reduced values
-        src_ptrs: Input buffers from all GPUs
+        result: Output tensor for reduced values
+        src_tensors: Input tensors from all GPUs
         rank_sigs: Signal pointers for synchronization
         num_elements: Number of elements to reduce
         my_rank: Current GPU rank
 
     Uses P2P access to directly read from other GPU buffers and perform reduction.
     Synchronizes using _multi_gpu_barrier before and after reduction.
+
+    **Non-multimem path:** grid-strided loop over full SIMD vectors using
+    ``_load_reduce`` (same as historical 1-stage performance). If
+    ``num_elements`` is not divisible by ``simd_width``, the aligned prefix is
+    still processed as SIMD vectors; the remaining ``< simd_width`` scalars use
+    ``_allreduce_1stage_reduce_store_one``.
+
+    **Multimem path:** unchanged vectorized SIMD loads over full
+    ``simd_width`` vectors (input size must remain SIMD-aligned).
     """
     comptime accum_type = get_accum_type[dtype]()
     comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * UInt(BLOCK_SIZE)
+    var total_threads = grid_dim.x * BLOCK_SIZE
     var my_sig = rank_sigs[my_rank]
-    var num_simd_vectors = num_elements // simd_width
 
     # Route input pointers according to round-robin pattern.
     # For 8 GPUs: Rank 0 accesses 0→1→2→...→7, Rank 1 accesses 1→2→...→7→0, etc.
     comptime num_tensors = 1 if use_multimem else ngpus
     var ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_tensors
+        TileTensor[dtype, in_layout, ImmutAnyOrigin], num_tensors
     ](uninitialized=True)
 
     # It's safe to prefetch the input pointers
@@ -638,26 +737,58 @@ def _allreduce_1stage_kernel[
         var target = 0 if num_tensors == 1 else circular_add[num_tensors](
             my_rank, i
         )
-        ptrs[i] = src_ptrs[target]
+        ptrs[i] = src_tensors[target]
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-        # Vectorized grid-strided loop with SIMD loads.
-        for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
-            var elem_idx = idx * simd_width
-
-            var reduced_result = _load_reduce[
-                ngpus,
-                simd_width=simd_width,
-                alignment=alignment,
-                accum_type=accum_type,
-                use_multimem=use_multimem,
-            ](elem_idx, ptrs)
-
-            output_lambda[width=simd_width, alignment=alignment](
-                result.layout.idx2crd(elem_idx), reduced_result
-            )
+        comptime if use_multimem:
+            var num_simd_chunks = num_elements // simd_width
+            for idx in range(global_tid, num_simd_chunks, total_threads):
+                var elem_idx = idx * simd_width
+                var reduced_result = _load_reduce[
+                    ngpus,
+                    simd_width=simd_width,
+                    alignment=alignment,
+                    accum_type=accum_type,
+                    use_multimem=use_multimem,
+                ](elem_idx, ptrs)
+                output_lambda[width=simd_width, alignment=alignment](
+                    result.layout.idx2crd(elem_idx), reduced_result
+                )
+        else:
+            var ptrs_ngpus = rebind[
+                InlineArray[TileTensor[dtype, in_layout, ImmutAnyOrigin], ngpus]
+            ](ptrs)
+            var num_simd_vectors = num_elements // simd_width
+            var simd_prefix_elems = num_simd_vectors * simd_width
+            if num_simd_vectors > 0:
+                for idx in range(global_tid, num_simd_vectors, total_threads):
+                    var elem_idx = idx * simd_width
+                    var reduced_result = _load_reduce[
+                        ngpus,
+                        simd_width=simd_width,
+                        alignment=alignment,
+                        accum_type=accum_type,
+                        use_multimem=False,
+                    ](elem_idx, ptrs_ngpus)
+                    output_lambda[width=simd_width, alignment=alignment](
+                        result.layout.idx2crd(elem_idx), reduced_result
+                    )
+            if simd_prefix_elems < num_elements:
+                for elem_idx in range(
+                    simd_prefix_elems + global_tid,
+                    num_elements,
+                    total_threads,
+                ):
+                    _allreduce_1stage_reduce_store_one[
+                        dtype,
+                        in_layout,
+                        out_layout,
+                        ngpus,
+                        accum_type=accum_type,
+                        output_lambda=output_lambda,
+                    ](elem_idx, ptrs_ngpus, result)
 
         _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
@@ -712,21 +843,23 @@ def _allreduce_p2p[
     if num_elements == 0:
         return
 
-    if num_elements % simd_width != 0:
+    if use_multimem and num_elements % simd_width != 0:
         raise Error(
-            "non SIMD-width multiple number of elements unsupported by"
-            " allreduce"
+            "multimem allreduce requires the element count to be a multiple of"
+            " SIMD width"
         )
 
-    # Extract raw pointers from TileTensors for the device kernel.
-    var list_of_in_ptrs = InlineArray[
-        UnsafePointer[Scalar[dtype], ImmutAnyOrigin], num_tensors
-    ](uninitialized=True)
-
+    # Flatten inputs to 1D - allreduce does not need dimension info
+    comptime FlatLayout = type_of(row_major(Idx(num_elements)))
+    comptime FlatIn = TileTensor[dtype, FlatLayout, ImmutAnyOrigin]
+    var flat_inputs = InlineArray[FlatIn, num_tensors](uninitialized=True)
     comptime for i in range(num_tensors):
-        list_of_in_ptrs[i] = rebind[
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin]
-        ](list_of_in_tensors[i].ptr)
+        flat_inputs[i] = FlatIn(
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                list_of_in_tensors[i].ptr
+            ),
+            row_major(Idx(num_elements)),
+        )
 
     # TODO(KERN-2632): Incorporate this into dispatch table
     comptime sm_version = ctx.default_device_info.version
@@ -735,20 +868,37 @@ def _allreduce_p2p[
     comptime rank_4_byte_threshold = 512 * 1024
     comptime rank_8_byte_threshold = 256 * 1024
     var payload_bytecount = num_elements * size_of[dtype]()
+    # The 2-stage path partitions by full SIMD vectors only; use 1-stage when a
+    # scalar tail is present (unless multimem, which is rejected above).
+    var latency_bound_small = (
+        ngpus <= 4 and (payload_bytecount < rank_4_byte_threshold)
+    ) or (ngpus <= 8 and (payload_bytecount < rank_8_byte_threshold))
+    var use_1stage = latency_bound_small or (num_elements % simd_width != 0)
 
-    if (ngpus <= 4 and (payload_bytecount < rank_4_byte_threshold)) or (
-        ngpus <= 8 and (payload_bytecount < rank_8_byte_threshold)
-    ):
-        # Define grid size for 1-stage, which processes all elements.
-        var grid_size = min(
-            max_num_blocks,
-            ceildiv(num_elements // simd_width, BLOCK_SIZE),
-        )
+    if use_1stage:
+        var grid_size: Int
+        comptime if use_multimem:
+            var simd_chunks = num_elements // simd_width
+            var tail_elems_mm = num_elements - simd_chunks * simd_width
+            grid_size = min(
+                max_num_blocks,
+                max(
+                    1,
+                    ceildiv(max(simd_chunks, tail_elems_mm), BLOCK_SIZE),
+                ),
+            )
+        else:
+            var num_simd_vecs = num_elements // simd_width
+            var tail_elems = num_elements - num_simd_vecs * simd_width
+            var grid_simd = ceildiv(num_simd_vecs, BLOCK_SIZE)
+            var grid_tail = ceildiv(tail_elems, BLOCK_SIZE)
+            grid_size = min(max_num_blocks, max(max(grid_simd, grid_tail), 1))
 
         # Use the 1-stage allreduce when transfer is latency bound.
         comptime allreduce_1stage_kernel = _allreduce_1stage_kernel[
             dtype,
             ngpus,
+            FlatLayout,
             out_layout,
             BLOCK_SIZE=BLOCK_SIZE,
             output_lambda=output_lambda,
@@ -756,7 +906,7 @@ def _allreduce_p2p[
         ]
         ctx.enqueue_function[allreduce_1stage_kernel, allreduce_1stage_kernel](
             rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
-            list_of_in_ptrs,
+            flat_inputs,
             rank_sigs,
             num_elements,
             Int(ctx.id()),
@@ -776,6 +926,7 @@ def _allreduce_p2p[
         comptime kernel = _allreduce_2stage_kernel[
             dtype,
             ngpus,
+            FlatLayout,
             out_layout,
             BLOCK_SIZE=BLOCK_SIZE,
             output_lambda=output_lambda,
@@ -783,7 +934,7 @@ def _allreduce_p2p[
         ]
         ctx.enqueue_function[kernel, kernel](
             rebind[TileTensor[dtype, out_layout, MutAnyOrigin]](out_tensor),
-            list_of_in_ptrs,
+            flat_inputs,
             rank_sigs,
             num_elements,
             Int(ctx.id()),
@@ -878,7 +1029,7 @@ def allreduce[
     @__copy_capture(output_tensor)
     def default_output_lambda[
         _dtype: DType,
-        _width: Int,
+        _width: SIMDSize,
         *,
         _alignment: Int,
     ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -916,7 +1067,7 @@ def allreduce[
             num_tensors=1 if use_multimem else ngpus,
         ](input_tensors, output_tensor, max_num_blocks, ctx)
 
-    # P2P path: pass TileTensors directly.
+    # P2P path.
     return _allreduce_p2p[
         ngpus=ngpus,
         output_lambda=actual_output_lambda,

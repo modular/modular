@@ -17,7 +17,7 @@ from __future__ import annotations
 import logging
 from abc import ABC, abstractmethod
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from functools import cached_property
 from typing import TYPE_CHECKING, Any, Generic
 
@@ -32,12 +32,10 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Value
 from max.graph.weights import Weights, WeightsAdapter
 from max.interfaces import BaseContextType, LogProbabilities
-from max.kv_cache import PagedKVCacheManager
 from max.nn.kv_cache import (
     KVCacheInputs,
     KVCacheParamInterface,
     PagedCacheValues,
-    unflatten_ragged_attention_inputs,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from transformers import AutoConfig
@@ -122,9 +120,9 @@ class ModelOutputs:
     - ``H``: hidden-state width
     - ``T``: number of returned logit rows (depends on return mode)
 
-    The shape depends on the value of the `ReturnLogits` and `ReturnHiddenStates`
-    enums. Unless we are running with spec decoding, we use `ReturnLogits.LAST_TOKEN`
-    and `ReturnHiddenStates.NONE`.
+    The shape depends on the value of the :class:`ReturnLogits` and :class:`ReturnHiddenStates`
+    enums. Unless we are running with spec decoding, we use ``ReturnLogits.LAST_TOKEN``
+    and ``ReturnHiddenStates.NONE``.
     """
 
     logits: Buffer
@@ -185,14 +183,7 @@ class ModelInputs:
         list(inputs) == [tokens, input_row_offsets]  # Output: True
     """
 
-    kv_cache_inputs: KVCacheInputs | None = None
-
-    extra_kv_cache_inputs: list[KVCacheInputs] = field(default_factory=list)
-    """Extra KV cache inputs beyond the primary (e.g., global attention).
-
-    Models with multiple KV caches populate this so the graph capture
-    runner can patch all caches generically during capture and replay.
-    """
+    kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None
 
     lora_ids: Buffer | None = None
     """Buffer containing the LoRA ids."""
@@ -221,6 +212,22 @@ class ModelInputs:
         raise NotImplementedError(
             f"{type(self).__name__} does not define model ABI buffers."
         )
+
+
+@dataclass(kw_only=True)
+class UnifiedEagleOutputs(ModelOutputs):
+    """Outputs from a unified EAGLE graph execution."""
+
+    num_accepted_draft_tokens: Buffer
+    next_tokens: Buffer
+    next_draft_tokens: Buffer
+
+    # HACK: These are required to inherit from ModelOutputs but are unused
+    # for UnifiedEagleOutputs!
+    logits: Buffer | None = None  # type: ignore[assignment]
+    next_token_logits: None = None
+    logit_offsets: None = None
+    hidden_states: None = None
 
 
 class PipelineModel(ABC, Generic[BaseContextType]):
@@ -434,10 +441,10 @@ class PipelineModel(ABC, Generic[BaseContextType]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[BaseContextType]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
-        """Prepares the initial inputs to be passed to ``.execute()``.
+        """Prepares the initial inputs to be passed to ``execute()``.
 
         The inputs and functionality can vary per model. For example, model
         inputs could include encoded tensors, unique IDs per tensor when using
@@ -453,9 +460,9 @@ class PipelineModel(ABC, Generic[BaseContextType]):
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> ModelInputs:
-        """Prepares the secondary inputs to be passed to `.execute()`.
+        """Prepares the secondary inputs to be passed to ``execute()``.
 
-        While `prepare_initial_token_inputs` is responsible for managing the initial inputs.
+        While ``prepare_initial_token_inputs`` is responsible for managing the initial inputs.
         This function is responsible for updating the inputs, for each step in a multi-step execution pattern.
         """
         ...
@@ -495,7 +502,6 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
     """A pipeline model that supports KV cache."""
 
     kv_params: KVCacheParamInterface
-    extra_kv_managers: list[PagedKVCacheManager]
 
     def __init__(
         self,
@@ -525,13 +531,14 @@ class PipelineModelWithKVCache(PipelineModel[BaseContextType]):
             kv_cache_config=self.kv_cache_config,
             cache_dtype=self.pipeline_config.model.kv_cache.cache_dtype,
         )
-        self.extra_kv_managers = []
 
     def _unflatten_kv_inputs(
         self, kv_inputs_flat: Sequence[Value[Any]]
     ) -> list[PagedCacheValues]:
-        return unflatten_ragged_attention_inputs(
-            kv_inputs_flat, n_devices=self.kv_params.n_devices
+        return list(
+            self.kv_params.get_symbolic_inputs()
+            .unflatten(iter(kv_inputs_flat))
+            .inputs
         )
 
     # TODO(AITLIB-265): Remove this altogether from all PipelineModels.

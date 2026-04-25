@@ -131,9 +131,9 @@ def _topp_minp_sampling[
         # Copy input_logits to sorted_probs
         for i in range(vocab_size):
             var batch_offset = batch_id * vocab_size
-            sorted_probs.ptr[batch_offset + i] = input_logits.ptr[
-                batch_offset + i
-            ]
+            sorted_probs.raw_store(
+                batch_offset + i, input_logits.raw_load(batch_offset + i)
+            )
 
     @parameter
     @__copy_capture(input_logits)
@@ -146,7 +146,7 @@ def _topp_minp_sampling[
     var shape = IndexList[input_logits.rank]()
 
     comptime for i in range(input_logits.rank):
-        shape[i] = input_logits.layout.shape[i]().value()
+        shape[i] = Int(input_logits.layout.shape[i]().value())
 
     softmax[simd_width=1, input_fn=apply_temperature](
         shape,
@@ -159,7 +159,7 @@ def _topp_minp_sampling[
     # Copy sorted probs back to input_logits if testing
     comptime if _test_sort:
         for i in range(batch_size * vocab_size):
-            input_logits.ptr[i] = sorted_probs.ptr[i]
+            input_logits.raw_store(i, sorted_probs.raw_load(i))
 
     # Process each batch
     for batch in range(batch_size):
@@ -261,11 +261,11 @@ def merge[
 
     # Copy data to temporary arrays
     for i in range(left_size):
-        left_keys_ptr[i] = buf_keys.ptr[start + i]
-        left_ids_ptr[i] = buf_ids.ptr[start + i]
+        left_keys_ptr[i] = buf_keys.raw_load(start + i)
+        left_ids_ptr[i] = buf_ids.raw_load(start + i)
     for i in range(right_size):
-        right_keys_ptr[i] = buf_keys.ptr[mid + i]
-        right_ids_ptr[i] = buf_ids.ptr[mid + i]
+        right_keys_ptr[i] = buf_keys.raw_load(mid + i)
+        right_ids_ptr[i] = buf_ids.raw_load(mid + i)
 
     # Merge back into original array
     var i = 0  # Index for left subarray
@@ -274,25 +274,25 @@ def merge[
 
     while i < left_size and j < right_size:
         if left_keys_ptr[i] >= right_keys_ptr[j]:  # Use >= for descending order
-            buf_keys.ptr[k] = left_keys_ptr[i]
-            buf_ids.ptr[k] = left_ids_ptr[i]
+            buf_keys.raw_store(k, left_keys_ptr[i])
+            buf_ids.raw_store(k, left_ids_ptr[i])
             i += 1
         else:
-            buf_keys.ptr[k] = right_keys_ptr[j]
-            buf_ids.ptr[k] = right_ids_ptr[j]
+            buf_keys.raw_store(k, right_keys_ptr[j])
+            buf_ids.raw_store(k, right_ids_ptr[j])
             j += 1
         k += 1
 
     # Copy remaining elements if any
     while i < left_size:
-        buf_keys.ptr[k] = left_keys_ptr[i]
-        buf_ids.ptr[k] = left_ids_ptr[i]
+        buf_keys.raw_store(k, left_keys_ptr[i])
+        buf_ids.raw_store(k, left_ids_ptr[i])
         i += 1
         k += 1
 
     while j < right_size:
-        buf_keys.ptr[k] = right_keys_ptr[j]
-        buf_ids.ptr[k] = right_ids_ptr[j]
+        buf_keys.raw_store(k, right_keys_ptr[j])
+        buf_ids.raw_store(k, right_ids_ptr[j])
         j += 1
         k += 1
 

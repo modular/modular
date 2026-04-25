@@ -53,14 +53,12 @@ def _create_kv_collection_from_host[
     max_full_context_length: Int,
 ) -> PagedKVCacheCollection[
     dtype,
-    KVCacheStaticParams(num_heads=UInt(num_heads), head_size=UInt(head_dim)),
+    KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
     page_size,
 ]:
     return PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
     ](
         kv_block_paged_host,
@@ -320,9 +318,7 @@ def test_kv_cache_2m_iadd_gpu[
 
     var kv_collection_device = PagedKVCacheCollection[
         dtype,
-        KVCacheStaticParams(
-            num_heads=UInt(num_heads), head_size=UInt(head_dim)
-        ),
+        KVCacheStaticParams(num_heads=num_heads, head_size=head_dim),
         page_size,
     ](
         kv_block_paged.device_tensor(),
@@ -349,7 +345,7 @@ def test_kv_cache_2m_iadd_gpu[
         row_major(Idx(2 * total_slice_length), Idx[num_heads * head_dim]()),
     )
     for i in range(a_host.num_elements()):
-        a_host.ptr[i] = Scalar[dtype](i)
+        a_host.raw_store(i, Scalar[dtype](i))
 
     var layer_idx = 1
     kv_cache_2m_iadd_dispatch[target="gpu"](
@@ -532,7 +528,7 @@ def test_kv_cache_2m_iadd_cpu[
         row_major(Idx(2 * total_slice_length), Idx[num_heads * head_dim]()),
     )
     for i in range(a_host.num_elements()):
-        a_host.ptr[i] = Scalar[dtype](i)
+        a_host.raw_store(i, Scalar[dtype](i))
 
     var layer_idx = 1
     kv_cache_2m_iadd_dispatch[target="cpu"](

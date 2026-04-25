@@ -36,10 +36,10 @@ def _reduce_generator_cpu[
     input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: Int, rank: Int](
+    output_0_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_function: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
@@ -111,10 +111,10 @@ def _reduce_along_inner_dimension[
     input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: Int, rank: Int](
+    output_0_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_function: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
@@ -170,7 +170,7 @@ def _reduce_along_inner_dimension[
     @always_inline
     @parameter
     def simd_reduce_helper_fn[
-        in_width: Int,
+        in_width: SIMDSize,
         out_width: Int,
     ](
         in_acc_tup: StaticTuple[SIMD[init_type, in_width], num_reductions]
@@ -201,7 +201,7 @@ def _reduce_along_inner_dimension[
             @always_inline
             @parameter
             def unrolled_reduce_helper_fn[
-                width: Int,
+                width: SIMDSize,
             ](
                 start: Int,
                 finish: Int,
@@ -296,10 +296,10 @@ def _reduce_along_outer_dimension[
     input_0_fn: def[dtype: DType, width: Int, rank: Int](
         IndexList[rank]
     ) capturing[_] -> SIMD[dtype, width],
-    output_0_fn: def[dtype: DType, width: Int, rank: Int](
+    output_0_fn: def[dtype: DType, width: SIMDSize, rank: Int](
         IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
     ) capturing[_] -> None,
-    reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+    reduce_function: def[ty: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[ty, width], SIMD[ty, width]
     ) capturing[_] -> SIMD[ty, width],
     /,
@@ -370,9 +370,7 @@ def _reduce_along_outer_dimension[
         for var slice_idx in range(start_parallel_offset, end_parallel_offset):
 
             @always_inline
-            def reduce_chunk[
-                simd_width: Int
-            ](inner_dim_idx: Int) unified {read}:
+            def reduce_chunk[simd_width: Int](inner_dim_idx: Int) {read}:
                 var acc_simd_tup = StaticTuple[
                     SIMD[init_type, simd_width], num_reductions
                 ]()

@@ -34,6 +34,7 @@ var ptr = alloc[Int](1)
 ptr.init_pointee_copy(100)
 ```
 
+<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-diagram.png#light)
@@ -41,6 +42,7 @@ ptr.init_pointee_copy(100)
 
 <figcaption><b>Figure 1.</b> Pointer and pointee</figcaption>
 </figure>
+<!-- markdownlint-enable MD033 MD045 -->
 
 Accessing the memory—to retrieve or update a value—is called
 *dereferencing* the pointer. You can dereference a pointer by following the
@@ -63,19 +65,15 @@ structures. For details, see
 
 ## Lifecycle of a pointer
 
-At any given time, a pointer can be in one of several states:
+At any given time, a pointer can be in one of several states. An
+`UnsafePointer` is non-nullable. It can be *uninitialized*, *dangling*,
+or point to a memory location:
 
 - Uninitialized. Just like any variable, a variable of type `UnsafePointer` can
   be declared but uninitialized.
 
   ```mojo
   var ptr: UnsafePointer[Int, MutExternalOrigin]
-  ```
-
-- Null. A null pointer has an address of 0, indicating an invalid pointer.
-
-  ```mojo
-  ptr = {}
   ```
 
 - Pointing to allocated, uninitialized memory. The `alloc()` function
@@ -122,6 +120,7 @@ At any given time, a pointer can be in one of several states:
 
 The following diagram shows the lifecycle of an `UnsafePointer`:
 
+<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-lifecycle.png#light)
@@ -129,12 +128,14 @@ The following diagram shows the lifecycle of an `UnsafePointer`:
 
 <figcaption><b>Figure 2.</b> Lifecycle of an <code>UnsafePointer</code></figcaption>
 </figure>
+<!-- markdownlint-enable MD033 MD045 -->
 
 ### Allocating memory
 
 Use the `alloc()` function to allocate memory. This function returns a new
 pointer pointing to the requested memory. You can allocate space for one or
-more values of the pointee's type.
+more values of the pointee's type. Allocation failure traps the program.
+The `alloc()` function always returns a valid, non-null pointer:
 
 ```mojo
 var ptr = alloc[Int](10) # Allocate space for 10 Int values
@@ -293,6 +294,7 @@ Pointers also support subtraction, as well as in-place addition and subtraction:
 ptr += 1
 ```
 
+<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/pointer-offset.png#light)
@@ -300,6 +302,7 @@ ptr += 1
 
 <figcaption><b>Figure 3.</b> Pointer arithmetic</figcaption>
 </figure>
+<!-- markdownlint-enable MD033 MD045 -->
 
 For example, the following example allocates memory to store 6 `Float64`
 values, and initializes them all to zero.
@@ -371,6 +374,37 @@ origin and mutability of the `self` value.
 A method like this is unsafe, but setting the correct origin makes it safer,
 since the compiler knows that the pointer is referring to data owned by the
 list.
+
+## Working with nullability
+
+`UnsafePointer` is a non-nullable type. To model a null pointer, wrap it
+in `Optional`:
+
+```mojo
+  var ptr = Optional[UnsafePointer[Int, MutExternalOrigin]]()
+```
+
+This creates an `Optional` with a value of `None`, which is equivalent
+to a null pointer. `Optional[UnsafePointer]` has the same memory layout
+as a raw pointer, so you can pass it across FFI boundaries as `NULL`.
+
+To check whether an optional pointer is null, use `Optional` methods:
+
+```mojo
+if ptr:
+    # ptr is not None — safe to unwrap
+    var p = ptr.value()
+```
+
+When you need a non-null sentinel for deferred initialization, use
+`unsafe_dangling()` instead:
+
+```mojo
+  var ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+```
+
+For a practical example of optional pointers in a data structure, see
+[Self-referential structs](/mojo/manual/pointers/reference).
 
 ## Working with foreign pointers
 
@@ -463,7 +497,7 @@ external to the mojo program.
 ```mojo
 from std.ffi import external_call
 
-def get_foreign_pointer() raises -> UnsafePointer[Int, MutExternalOrigin]:
+def get_foreign_pointer() -> UnsafePointer[Int, MutExternalOrigin]:
     var ptr = external_call[
         "my_c_function", # external function name
         UnsafePointer[Int, MutExternalOrigin] # return type
@@ -507,7 +541,7 @@ in the chunk.
 ```mojo
 def read_chunks(
   var ptr: UnsafePointer[mut=False, UInt8],
-) raises -> List[List[UInt32]]:
+) -> List[List[UInt32]]:
     chunks = List[List[UInt32]]()
     # A chunk size of 0 indicates the end of the data
     chunk_size = Int(ptr[])
@@ -528,7 +562,7 @@ def read_chunks(
 
 When dealing with data read in from a file or from the network, you may also
 need to deal with byte order. Most systems use little-endian byte order (also
-called least-signficicant byte, or LSB) where the least-significant byte in a
+called least-significant byte, or LSB) where the least-significant byte in a
 multibyte value comes first. For example, the number 1001 can be represented in
 hexadecimal as 0x03E9, where E9 is the least-significant byte. Represented as a
 16-bit little-endian integer, the two bytes are ordered E9 03. As a 32-bit
@@ -561,6 +595,7 @@ values from structured data. For example, consider the data for an RGB image,
 where each pixel is made up of three 8-bit values, for red, green, and blue. If
 you want to access just the red values, you can use a strided load or store.
 
+<!-- markdownlint-disable MD033 MD045 -->
 <figure>
 
 ![](../images/strided-load-storage.png#light)
@@ -568,6 +603,7 @@ you want to access just the red values, you can use a strided load or store.
 
 <figcaption><b>Figure 4.</b> Strided load</figcaption>
 </figure>
+<!-- markdownlint-enable MD033 MD045 -->
 
 The following function uses the
 [`strided_load()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#strided_load)
@@ -578,7 +614,7 @@ that this function only handles images where the number of pixels is evenly
 divisible by eight.)
 
 ```mojo
-def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int) raises:
+def invert_red_channel(ptr: UnsafePointer[mut=True, UInt8], pixel_count: Int):
     # number of values loaded or stored at a time
     comptime simd_width = 8
     # bytes per pixel, which is also the stride size
@@ -593,8 +629,10 @@ The [`gather()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#gather) and
 [`scatter()`](/mojo/std/memory/unsafe_pointer/UnsafePointer#scatter) methods
 let you load or store a set of values that are stored in arbitrary locations.
 You do this by passing in a SIMD vector of *offsets* to the current pointer. For
+<!-- markdownlint-disable MD033 -->
 example, when using `gather()`, the <var>n</var>th value in the vector is loaded
 from (pointer address) + <var>offset[n]</var>.
+<!-- markdownlint-enable MD033 -->
 
 ## Safety
 
@@ -604,9 +642,9 @@ Unsafe pointers are unsafe for several reasons:
   and free memory, and/or be aware of when other APIs are allocating or freeing
   memory for you.
 
-- `UnsafePointer` values are *nullable*—that is, the pointer
-  is not guaranteed to point to anything. And even when a pointer points to
-  allocated memory, that memory may not be *initialized*.
+- `UnsafePointer` values are non-nullable, but they're not guaranteed to
+  point to *initialized* memory. You're responsible for ensuring memory is
+  initialized before you dereference it.
 
 - `UnsafePointer` does have an `origin` parameter so Mojo can track the origin
   of the data it points to, but it also provides unsafe APIs. For example, when

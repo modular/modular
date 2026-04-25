@@ -89,10 +89,11 @@ struct StackTrace(Copyable, Movable, Writable):
     @staticmethod
     @no_inline
     def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
-        """Collect a stack trace if enabled by environment variable.
+        """Collect a stack trace if enabled by configuration.
 
-        This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
-        variable and collects a stack trace only if it is enabled. Returns
+        This method checks the `max-debug.stack-trace-on-error` Config key
+        (settable via the `MODULAR_DEBUG=stack-trace-on-error` environment
+        variable) and collects a stack trace only if it is enabled. Returns
         `None` if stack traces are disabled, on GPU, or if collection fails.
 
         Args:
@@ -111,15 +112,16 @@ struct StackTrace(Copyable, Movable, Writable):
         if depth < 0:
             return None
 
-        var buffer = UnsafePointer[UInt8, MutExternalOrigin]()
-        var num_bytes = external_call["KGEN_CompilerRT_GetStackTrace", Int](
-            UnsafePointer(to=buffer), depth
-        )
+        var buffer = Optional[UnsafePointer[UInt8, MutExternalOrigin]]()
+        var num_bytes = external_call[
+            "KGEN_CompilerRT_GetStackTrace", SIMDSize
+        ](UnsafePointer(to=buffer), depth)
         # When num_bytes is zero, the stack trace was not collected.
         if num_bytes == 0:
             return None
 
-        return StackTrace(unsafe_from_raw_pointer=buffer)
+        # If num_bytes > 0, `buffer` will not be left null.
+        return StackTrace(unsafe_from_raw_pointer=buffer.unsafe_value())
 
     def write_to(self, mut writer: Some[Writer]):
         """Writes the StackTrace to the provided Writer.
@@ -163,7 +165,8 @@ struct Error(
 
     By default, stack trace is collected for errors created from string
     literals. Stack trace collection can be controlled via the
-    `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable.
+    `max-debug.stack-trace-on-error` Config key (settable via the
+    `MODULAR_DEBUG=stack-trace-on-error` environment variable).
     """
 
     # ===-------------------------------------------------------------------===#

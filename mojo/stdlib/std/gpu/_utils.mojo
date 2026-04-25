@@ -37,6 +37,25 @@ def to_llvm_shared_cluster_mem_ptr[
 
 
 @always_inline
+def to_llvm_global_mem_ptr[
+    type: AnyType
+](
+    ptr: UnsafePointer[type, address_space=AddressSpace.GLOBAL, ...]
+) -> __mlir_type.`!llvm.ptr<1>`:
+    """Cast global memory pointer to LLVMPointer Type.
+
+    Args:
+        ptr: Global memory pointer.
+
+    Returns:
+        A pointer of type !llvm.ptr<1>.
+    """
+    return __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=__mlir_type.`!llvm.ptr<1>`
+    ](ptr)
+
+
+@always_inline
 def to_llvm_shared_mem_ptr[
     type: AnyType
 ](
@@ -167,10 +186,10 @@ comptime llvm_struct_splat[
 ] = __mlir_type[
     `!llvm.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
-        repeat._mlir_value,
+        repeat._int_mlir_index(),
         `>`,
     ],
     `)>`,
@@ -181,10 +200,10 @@ comptime kgen_struct_splat[
 ] = __mlir_type[
     `!kgen.struct<(`,
     __mlir_type[
-        `!kgen.variadic_splat<`,
+        `!kgen.param_list_splat<`,
         +field_type,
         `, `,
-        repeat._mlir_value,
+        repeat._int_mlir_index(),
         `>`,
     ],
     `)>`,
@@ -223,7 +242,7 @@ def simd_to_llvm_struct[
         var e = simd[i]
         st = __mlir_op.`kgen.struct.replace`[
             _type=kgen_struct_dtype_splat_type[dtype, n],
-            index=__mlir_attr[i._mlir_value, `:index`],
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](e, st)
 
     return __mlir_op.`builtin.unrealized_conversion_cast`[
@@ -251,7 +270,7 @@ def llvm_struct_to_simd[
     comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
             _type=Scalar[dtype]._mlir_type,
-            index=__mlir_attr[i._mlir_value, `:index`],
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](st)
 
         simd[i] = Scalar[dtype](mlir_value=e)
@@ -284,7 +303,7 @@ def array_to_llvm_struct[
         var e = array[i]
         st = __mlir_op.`kgen.struct.replace`[
             _type=kgen_struct_dtype_splat_type[dtype, n],
-            index=__mlir_attr[i._mlir_value, `:index`],
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](e, st)
 
     return __mlir_op.`builtin.unrealized_conversion_cast`[
@@ -314,7 +333,7 @@ def llvm_struct_to_array[
     comptime for i in range(n):
         var e = __mlir_op.`kgen.struct.extract`[
             _type=Scalar[dtype]._mlir_type,
-            index=__mlir_attr[i._mlir_value, `:index`],
+            index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](st)
 
         array[i] = Scalar[dtype](mlir_value=e)

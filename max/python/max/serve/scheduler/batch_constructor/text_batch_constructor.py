@@ -404,12 +404,10 @@ class TextBatchConstructor:
         kv_cache: PagedKVCacheManager,
         batch_scheduling_strategy: BatchSchedulingStrategy = BatchSchedulingStrategy.PER_REPLICA,
         dp_padder: DPBatchPadder | None = None,
-        extra_kv_caches: list[PagedKVCacheManager] | None = None,
     ) -> None:
         self.scheduler_config = scheduler_config
         self.pipeline = pipeline
         self.kv_cache = kv_cache
-        self.extra_kv_caches: list[PagedKVCacheManager] = extra_kv_caches or []
         self.batch_scheduling_strategy = batch_scheduling_strategy
 
         self._lora_manager: LoRAManager | None = LoRAManager.get_lora_manager(
@@ -565,9 +563,6 @@ class TextBatchConstructor:
             for req_id, replica_idx in self._prev_dp_padding.dummies:
                 if self.kv_cache.contains(req_id, replica_idx=replica_idx):
                     self.kv_cache.release(req_id, replica_idx=replica_idx)
-                for extra_kv_cache in self.extra_kv_caches:
-                    if extra_kv_cache.contains(req_id, replica_idx=replica_idx):
-                        extra_kv_cache.release(req_id, replica_idx=replica_idx)
                 self.pipeline.release(req_id)
         self._prev_dp_padding = self._current_dp_padding
         self._current_dp_padding = None
@@ -630,9 +625,6 @@ class TextBatchConstructor:
             request_id, replica_idx=replica_idx
         ):
             self.kv_cache.release(request_id, replica_idx=replica_idx)
-        for extra_kv_cache in self.extra_kv_caches:
-            if extra_kv_cache.contains(request_id, replica_idx=replica_idx):
-                extra_kv_cache.release(request_id, replica_idx=replica_idx)
 
         # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
@@ -677,9 +669,6 @@ class TextBatchConstructor:
         # Release from paged cache if it was claimed (scheduler manages primary KV cache lifecycle)
         if self.kv_cache.contains(context.request_id, replica_idx):
             self.kv_cache.release(context.request_id, replica_idx)
-        for extra_kv_cache in self.extra_kv_caches:
-            if extra_kv_cache.contains(context.request_id, replica_idx):
-                extra_kv_cache.release(context.request_id, replica_idx)
 
         # Pipeline release handles special cases (spec decoding draft model KV cache)
         # For regular pipelines, release() is a no-op
@@ -785,34 +774,10 @@ class TextBatchConstructor:
                     self._return_to_request_queue(ctx, replica_idx)
                     break
 
-                # Try to allocate kv cache blocks.
-                # All caches use skip_tokens=False so the shared
-                # ctx.tokens state is not mutated mid-allocation.
-                # The primary cache's prefix-cache skip is applied
-                # once after all caches have finished allocating.
                 try:
-                    primary_skip = self.kv_cache.alloc(
-                        ctx,
-                        replica_idx=replica_idx,
-                        num_steps=1,
-                        num_speculative_steps=self.scheduler_config.num_speculative_tokens,
-                        skip_tokens=False,
+                    self.kv_cache.alloc(
+                        ctx, replica_idx=replica_idx, num_steps=1
                     )
-                    for extra_kv_cache in self.extra_kv_caches:
-                        if not extra_kv_cache.contains(
-                            req_id, replica_idx=replica_idx
-                        ):
-                            extra_kv_cache.claim(
-                                req_id, replica_idx=replica_idx
-                            )
-                        extra_kv_cache.alloc(
-                            ctx,
-                            replica_idx=replica_idx,
-                            num_steps=1,
-                            skip_tokens=False,
-                        )
-                    if primary_skip > 0:
-                        ctx.tokens.skip_processing(primary_skip)
                 except InsufficientBlocksError:
                     if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
                         raise
@@ -897,22 +862,11 @@ class TextBatchConstructor:
             # At this point, we can assume that the paged cache is active.
             while True:
                 try:
-                    primary_skip = self.kv_cache.alloc(
+                    self.kv_cache.alloc(
                         candidate_context,
                         replica_idx=replica_idx,
                         num_steps=batch.num_steps,
-                        num_speculative_steps=self.scheduler_config.num_speculative_tokens,
-                        skip_tokens=False,
                     )
-                    for extra_kv_cache in self.extra_kv_caches:
-                        extra_kv_cache.alloc(
-                            candidate_context,
-                            replica_idx=replica_idx,
-                            num_steps=batch.num_steps,
-                            skip_tokens=False,
-                        )
-                    if primary_skip > 0:
-                        candidate_context.tokens.skip_processing(primary_skip)
                     break
                 except InsufficientBlocksError:
                     if len(candidate_ids) == 0:

@@ -34,12 +34,12 @@ def test_runtime_and_compile_time_dim_and_stride[
 ](m: MType, k: KType) raises:
     var shape = Coord(k, m)
     var tt = TileTensor(
-        UnsafePointer[Float32, MutAnyOrigin](), row_major(shape)
+        UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling(), row_major(shape)
     )
     var tensor = tt.to_layout_tensor()
 
-    var K = k.value()
-    var M = m.value()
+    var K = Int(k.value())
+    var M = Int(m.value())
 
     assert_equal(tensor.dim(0), K)
     assert_equal(tensor.dim(1), M)
@@ -59,9 +59,7 @@ def test_nested_layout_shape() raises:
     comptime base_layout = Layout.row_major(32, 32)
     comptime smem_layout = blocked_product(base_layout, tiler_layout)
 
-    var tensor = LayoutTensor[DType.float32, smem_layout, MutAnyOrigin](
-        UnsafePointer[Float32, MutAnyOrigin]()
-    )
+    var tensor = LayoutTensor[DType.float32, smem_layout, MutAnyOrigin](None)
 
     # Shape should be (64, 128) because:
     # - First dimension: 32 * 2 = 64

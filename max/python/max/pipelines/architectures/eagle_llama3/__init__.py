@@ -10,7 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""EAGLE speculative decoding draft model for Llama 3."""
 
 from .arch import eagle_llama_arch
+from .model import EagleLlama3Model
 
-__all__ = ["eagle_llama_arch"]
+__all__ = [
+    "EagleLlama3Model",
+    "eagle_llama_arch",
+]

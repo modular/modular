@@ -10,6 +10,7 @@ modular_py_library(
     ],
     deps = [
         "//max/python/max/config",
+        "//max/python/max/diagnostics",
         "//max/python/max/serve:config",
         requirement("aiohttp"),
         requirement("datasets"),
@@ -18,7 +19,6 @@ modular_py_library(
         requirement("numpy"),
         requirement("pillow"),
         requirement("prometheus-client"),
-        requirement("psutil"),
         requirement("pydantic"),
         requirement("pyyaml"),
         requirement("requests"),

@@ -29,7 +29,7 @@ def get_value_or_panic(maybe: Optional[Int]) raises -> Int:
     panic("value is missing")
 
 
-def main() raises:
+def main():
     # A function that always raises
     try:
         panic("something went wrong")

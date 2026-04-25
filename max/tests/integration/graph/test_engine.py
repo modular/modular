@@ -18,7 +18,6 @@ from dataclasses import dataclass, field
 from math import isclose
 from pathlib import Path
 from typing import Any, cast
-from unittest.mock import patch
 
 import numpy as np
 import pytest
@@ -26,7 +25,6 @@ import torch
 from max.driver import CPU, Accelerator, Buffer, Device, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.engine.api import AssertLevel
 from max.graph import (
     DeviceRef,
     Graph,
@@ -76,22 +74,6 @@ def test_execute_success(
         output[0].to_numpy(),
         np.array([4.0, 2.0, -5.0, 3.0, 6.0], dtype=np.float32),
     )
-
-
-def test_inference_session_reads_mojo_assert_level_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setenv("MOJO_ASSERT_LEVEL", "all")
-
-    with patch.object(
-        InferenceSession,
-        "set_mojo_assert_level",
-        autospec=True,
-    ) as set_mojo_assert_level:
-        _ = InferenceSession(devices=[CPU()])
-
-    assert set_mojo_assert_level.call_count == 1
-    assert set_mojo_assert_level.call_args.args[1] == AssertLevel.ALL
 
 
 def test_devicetensor_wrong_num_inputs(

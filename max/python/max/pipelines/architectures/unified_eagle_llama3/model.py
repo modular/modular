@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, replace
 
 import numpy as np
-from max.driver import Buffer, Device
+from max.driver import Buffer, Device, DevicePinnedBuffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
@@ -32,13 +32,11 @@ from max.pipelines.lib import (
     KVCacheConfig,
     ModelInputs,
     PipelineConfig,
-)
-from max.pipelines.lib.interfaces import PipelineModelWithKVCache
-from max.pipelines.lib.pipeline_variants.utils import get_weight_paths
-from max.pipelines.lib.registry import AutoConfig
-from max.pipelines.lib.speculative_decoding.unified_eagle import (
+    PipelineRuntimeConfig,
     UnifiedEagleOutputs,
 )
+from max.pipelines.lib.interfaces import PipelineModelWithKVCache
+from max.pipelines.lib.registry import AutoConfig
 from max.pipelines.lib.utils import parse_state_dict_from_weights
 
 from ..llama3.model_config import Llama3Config
@@ -56,20 +54,70 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
 
     tokens: Buffer
     input_row_offsets: Buffer
-    draft_tokens: Buffer
     return_n_logits: Buffer
-    draft_kv_cache_buffers: list[Buffer] = field(default_factory=list)
+
+    draft_tokens: Buffer | None = None
+    draft_kv_blocks: list[Buffer] | None = None
+    seed: Buffer | None = None
+    """Per-execute int64 scalar seed consumed by the stochastic acceptance
+    sampler (and, when enabled, the synthetic benchmarking sampler)."""
+
+    temperature: Buffer | None = None
+    top_k: Buffer | None = None
+    max_k: Buffer | None = None
+    top_p: Buffer | None = None
+    min_top_p: Buffer | None = None
+    """Per-batch sampling parameters consumed by the stochastic acceptance
+    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
+    ``[batch_size]`` tensors on the primary device."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        return (
+        buffers = (
             self.tokens,
             self.input_row_offsets,
-            self.draft_tokens,
             self.return_n_logits,
-            *(self.kv_cache_inputs or ()),
-            *self.draft_kv_cache_buffers,
+            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
         )
+        if self.draft_tokens is not None:
+            buffers += (self.draft_tokens,)
+        if self.draft_kv_blocks is not None:
+            buffers += tuple(self.draft_kv_blocks)
+        assert self.seed is not None
+        buffers += (self.seed,)
+        if self.draft_tokens is not None:
+            assert self.temperature is not None
+            assert self.top_k is not None
+            assert self.max_k is not None
+            assert self.top_p is not None
+            assert self.min_top_p is not None
+            buffers += (
+                self.temperature,
+                self.top_k,
+                self.max_k,
+                self.top_p,
+                self.min_top_p,
+            )
+        return buffers
+
+
+@dataclass
+class PersistentInputBuffers:
+    tokens: Buffer
+    input_row_offsets: Buffer
+
+    @classmethod
+    def alloc(
+        cls, max_batch_size: int, max_batch_input_tokens: int, device: Device
+    ) -> PersistentInputBuffers:
+        max_batch_input_tokens = max(max_batch_input_tokens, max_batch_size)
+        tokens = Buffer(
+            shape=(max_batch_input_tokens,), dtype=DType.int64, device=device
+        )
+        input_row_offsets = Buffer(
+            shape=(max_batch_size + 1,), dtype=DType.uint32, device=device
+        )
+        return cls(tokens, input_row_offsets)
 
 
 class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
@@ -100,6 +148,20 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         )
         self.model = self.load_model(session)
 
+        assert isinstance(pipeline_config.runtime, PipelineRuntimeConfig)
+        assert pipeline_config.runtime.max_batch_size is not None
+        self._persistent_input_buffers = PersistentInputBuffers.alloc(
+            max_batch_size=pipeline_config.runtime.max_batch_size,
+            max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+            device=devices[0],
+        )
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        """Monotonically advancing int64 scalar seed, fresh per execute."""
+        self._seed_counter += 1
+        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
+
     @classmethod
     def get_kv_params(
         cls,
@@ -125,7 +187,7 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
 
             assert self.pipeline_config.draft_model is not None
             draft_model_config = self.pipeline_config.draft_model
-            draft_weight_paths = get_weight_paths(draft_model_config)
+            draft_weight_paths = draft_model_config.resolved_weight_paths()
             draft_weights = load_weights(draft_weight_paths)
             draft_hf_config = draft_model_config.huggingface_config
             assert draft_hf_config is not None
@@ -150,6 +212,13 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             draft_config = Llama3Config.initialize_from_config(
                 self.pipeline_config, draft_hf_config, draft_model_config
             )
+            # The draft model config may default to gpu:0. Override its
+            # devices to match the target so weights land on the correct GPU
+            # (e.g. when pipeline_role=prefill_only assigns a non-zero GPU).
+            draft_config.devices = target_config.devices
+            draft_config.kv_params = replace(
+                draft_config.kv_params, devices=target_config.devices
+            )
             draft_config.finalize(
                 huggingface_config=draft_hf_config,
                 state_dict=draft_state_dict,
@@ -158,14 +227,11 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
             )
 
             assert self.pipeline_config.speculative is not None
-            num_draft_steps = (
-                self.pipeline_config.speculative.num_speculative_tokens
-            )
 
             unified_config = UnifiedEagleLlama3Config(
                 target=target_config,
                 draft=draft_config,
-                num_draft_steps=num_draft_steps,
+                speculative_config=self.pipeline_config.speculative,
             )
 
             nn_model = UnifiedEagleLlama3Module(unified_config)
@@ -217,7 +283,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedEagleLlama3Inputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
 
         return UnifiedEagleOutputs(
@@ -229,43 +294,58 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
-        draft_kv_cache_buffers: list[Buffer] | None = None,
-        draft_tokens: Buffer | None = None,
-        **kwargs,
     ) -> UnifiedEagleLlama3Inputs:
-        if draft_kv_cache_buffers is None:
-            raise ValueError("draft_kv_cache_buffers is required")
-        if draft_tokens is None:
-            raise ValueError("draft_tokens is required")
         context_batch = [ctx for batch in replica_batches for ctx in batch]
         device0 = self.devices[0]
+        buffer_type = Buffer if device0.is_host else DevicePinnedBuffer
 
-        # Build tokens from active window (all unprocessed tokens).
-        # During prefill: full prompt. During decode: includes tokens
-        # not yet marked as processed, which get reprocessed to keep
-        # the KV cache consistent.
-        tokens_np = np.concatenate([ctx.tokens.active for ctx in context_batch])
-        tokens_buf = Buffer.from_numpy(tokens_np).to(device0)
+        total_seq_len = sum(ctx.tokens.active_length for ctx in context_batch)
+        batch_size = len(context_batch)
 
-        offsets_np = np.cumsum(
+        persistent_tokens = self._persistent_input_buffers.tokens
+        persistent_tokens = persistent_tokens[:total_seq_len]
+        persistent_input_row_offsets = (
+            self._persistent_input_buffers.input_row_offsets
+        )
+        persistent_input_row_offsets = persistent_input_row_offsets[
+            : batch_size + 1
+        ]
+
+        tokens_host = buffer_type(
+            dtype=DType.int64,
+            shape=(total_seq_len,),
+            device=device0,
+        )
+        offsets_host = buffer_type(
+            dtype=DType.uint32,
+            shape=(batch_size + 1,),
+            device=device0,
+        )
+
+        np.concatenate(
+            [ctx.tokens.active for ctx in context_batch],
+            out=tokens_host.to_numpy(),
+        )
+        persistent_tokens.inplace_copy_from(tokens_host)
+        np.cumsum(
             [0] + [ctx.tokens.active_length for ctx in context_batch],
             dtype=np.uint32,
+            out=offsets_host.to_numpy(),
         )
-        offsets_buf = Buffer.from_numpy(offsets_np).to(device0)
+        persistent_input_row_offsets.inplace_copy_from(offsets_host)
 
         return_n_logits_buf = Buffer.from_numpy(
             np.array([return_n_logits], dtype=np.int64)
         )
 
         return UnifiedEagleLlama3Inputs(
-            tokens=tokens_buf,
-            input_row_offsets=offsets_buf,
-            draft_tokens=draft_tokens,
+            tokens=persistent_tokens,
+            input_row_offsets=persistent_input_row_offsets,
             return_n_logits=return_n_logits_buf,
             kv_cache_inputs=kv_cache_inputs,
-            draft_kv_cache_buffers=draft_kv_cache_buffers,
+            seed=self._next_seed(),
         )
 
     def prepare_next_token_inputs(
@@ -273,7 +353,6 @@ class UnifiedEagleLlama3Model(PipelineModelWithKVCache[TextContext]):
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
     ) -> UnifiedEagleLlama3Inputs:
-        assert isinstance(prev_model_inputs, UnifiedEagleLlama3Inputs)
         raise NotImplementedError(
             "Multistep execution is not supported for UnifiedEagleLlama3Model. "
             "The unified pipeline handles iteration internally."

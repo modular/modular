@@ -12,18 +12,14 @@
 # ===----------------------------------------------------------------------=== #
 from std.collections import Optional
 from std.math import ceildiv, gcd
+from std.math.uutils import umod, ufloordiv
 from std.sys import align_of, size_of
 
 from std.gpu import WARP_SIZE, barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import (
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-)
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import block_idx, lane_id, thread_idx, warp_id as get_warp_id
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
 from std.gpu.compute.arch.tcgen05 import *
@@ -66,6 +62,10 @@ comptime _3D_layout[layout: Layout, rank: Int] = Layout.row_major(
 )
 
 
+@__name(
+    t"matmul_sm100_blockwise_scaled_fp8_1d2d_{a_type}_{b_type}_{c_type}",
+    mangle=True,
+)
 def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     a_type: DType,
     b_type: DType,
@@ -91,7 +91,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -104,7 +104,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         a_scales_desc_shape,
     ],
     b_scales: LayoutTensor[mut=False, b_scales_type, b_scales_layout, ...],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime assert transpose_b, "Only support transposed B"
     comptime assert num_threads == 128
@@ -260,7 +260,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
     ]()
 
     # final results accumulator regs for C
-    comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
+    comptime c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag = InlineArray[Scalar[accum_type], c_frag_size](
         fill=Scalar[accum_type](0)
     )
@@ -283,9 +283,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 a_smem_tile,
                 tma_mbar[0],
                 (
-                    Int(k_iter) * BK,
-                    Int(block_idx.y) * BM,
-                    Int(block_idx.z),
+                    k_iter * BK,
+                    block_idx.y * BM,
+                    block_idx.z,
                 ),
             )
 
@@ -293,9 +293,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 a_scales_smem_tile_3D_view,
                 tma_mbar[0],
                 (
-                    Int(block_idx.y) * BM,
-                    Int(k_iter),
-                    Int(block_idx.z),
+                    block_idx.y * BM,
+                    k_iter,
+                    block_idx.z,
                 ),
             )
 
@@ -303,18 +303,27 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                 b_smem_tile,
                 tma_mbar[0],
                 (
-                    Int(k_iter) * BK,
-                    Int(block_idx.x) * BN,
-                    Int(block_idx.z),
+                    k_iter * BK,
+                    block_idx.x * BN,
+                    block_idx.z,
                 ) if transpose_b else (
-                    Int(block_idx.x) * BN,
-                    Int(k_iter) * BK,
-                    Int(block_idx.z),
+                    block_idx.x * BN,
+                    k_iter * BK,
+                    block_idx.z,
                 ),
             )
 
         tma_mbar[0].wait(tma_phase)
         tma_phase ^= 1  # flips between 0 and 1 representing the pipeline stage
+
+        # Preload a_scales from SMEM into registers while all threads
+        # are synchronized (right after tma_mbar.wait). This eliminates
+        # the SMEM read in the scaling loop below, preventing a race
+        # where the next iteration's TMA loads could overwrite a_scales
+        # in SMEM while slower warps are still reading it.
+        var m_offset = warp_id * 16 + ufloordiv(lane_id(), 4)
+        var a_scale_0 = a_scales_smem_tile_2D_view[0, m_offset]
+        var a_scale_1 = a_scales_smem_tile_2D_view[0, m_offset + 8]
 
         if elect_one_thread:
             mma_op.mma(
@@ -328,6 +337,13 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
         mma_mbar[0].wait(mma_phase)
         mma_phase ^= 1
+
+        # Ensure all warps have finished reading a_scales from SMEM
+        # (preloaded above) before the scaling loop, where warp divergence
+        # could let the fastest warp loop back and start new TMA loads
+        # that overwrite a_scales_smem. This barrier is effectively free
+        # because all warps just converged at mma_mbar.wait().
+        barrier()
 
         comptime for ld_iter in range(total_repeat // repeat):
             c_frag_temp = tcgen05_ld[
@@ -343,12 +359,12 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             var b_scale: Scalar[b_scales_type]
 
             comptime if BN != BK:
-                var global_n = block_idx.x * UInt(BN)
+                var global_n = block_idx.x * BN
 
-                var begin_n = min(BN, BK - Int(global_n % UInt(BK)))
+                var begin_n = min(BN, BK - umod(global_n, BK))
                 comptime end_n = BN  # if N % BN !=0 then it should be  min(BN, N - block_idx.x * BN)
 
-                var idx0 = global_n // UInt(BK)
+                var idx0 = ufloordiv(global_n, BK)
                 var next_n = begin_n if begin_n < end_n else BN
 
                 if ld_iter < (next_n // 8):
@@ -365,12 +381,9 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
                     b_scales[block_idx.x, k_iter]
                 )
 
-            var m_offset = (warp_id * 16) + (lane_id() // 4)
-
-            # TODO: this is an ugly way to calculate the m offset, need to rethink how we can make this more efficient
+            # Use preloaded a_scales from registers (not SMEM)
             comptime for j in range(temp_cfrags_size // 2):
-                var local_m = m_offset + UInt((j % 2) * 8)
-                var a_scale = a_scales_smem_tile_2D_view[0, local_m]
+                var a_scale = a_scale_0 if j % 2 == 0 else a_scale_1
 
                 var scale = rebind[Scalar[accum_type]](a_scale) * rebind[
                     Scalar[accum_type]
@@ -390,11 +403,11 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    comptime num_warps = num_threads // UInt(WARP_SIZE)
+    comptime num_warps = num_threads // WARP_SIZE
     warp_id = get_warp_id()
 
     ctile, ctile_coords, _ = c.tile_with_offset[BM, BN](
-        Int(block_idx.y), Int(block_idx.x)
+        block_idx.y, block_idx.x
     )
     comptime c_coord_type = type_of(ctile_coords)
 
@@ -403,8 +416,8 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
             c_gmem_warp_tile, _c_gmem_warp_tile_coords, _ = (
-                ctile.tile_with_offset[MMA_M // Int(num_warps), MMA_N](
-                    4 * m_mma + Int(warp_id), n_mma
+                ctile.tile_with_offset[MMA_M // num_warps, MMA_N](
+                    4 * m_mma + warp_id, n_mma
                 )
             )
             c_gmem_warp_tile_coords = ctile_coords + rebind[c_coord_type](
@@ -413,7 +426,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 
             c_gmem_frag, _c_gmem_frag_coords, _ = c_gmem_warp_tile.vectorize[
                 1, 2
-            ]().distribute_with_offset[Layout.row_major(8, 4)](Int(lane_id()))
+            ]().distribute_with_offset[Layout.row_major(8, 4)](lane_id())
             new_c_gmem_frag_coords = rebind[c_coord_type](_c_gmem_frag_coords)
             new_c_gmem_frag_coords[1] *= 2
             c_gmem_frag_coords = (
@@ -461,6 +474,10 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_kernel[
 @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
 @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+@__name(
+    t"matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper_{a_type}_{b_type}_{c_type}",
+    mangle=True,
+)
 def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     a_type: DType,
     b_type: DType,
@@ -486,7 +503,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
@@ -499,7 +516,7 @@ def matmul_sm100_blockwise_scaled_fp8_1d2d_wrapper[
         a_scales_desc_shape,
     ],
     b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     # NOTE: This wrapper is necessary because batched blockwise scaling has a wrapper kernel
     # for allocating matrices across the z index that kernel calls the function
@@ -769,7 +786,7 @@ def matmul_sm100_blockwise_scaled_fp8[
         c_kernel,
         a_scales_tma_op,
         b_scales_kernel,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,

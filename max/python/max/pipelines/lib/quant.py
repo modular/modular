@@ -332,10 +332,10 @@ def _parse_tensorwise_fp8_config(
     state_dict: Mapping[str, WeightData],
     dtype: DType,
 ) -> QuantConfig:
-    """Parses a QuantConfig for AutoFP8 tensorwise (per-tensor) FP8 models.
+    """Parses a QuantConfig for tensorwise (per-tensor) FP8 models.
 
-    These models have quant_method="fp8", activation_scheme="dynamic", and
-    per-tensor weight scales (no weight_block_size).
+    These models have quant_method="fp8" and per-tensor weight scales. Supports both static and dynamic activation
+    schemes.
     """
     if dtype != DType.float8_e4m3fn:
         raise TypeError(
@@ -345,9 +345,15 @@ def _parse_tensorwise_fp8_config(
     hf_quant_config = getattr(huggingface_config, "quantization_config", None)
     assert hf_quant_config and hf_quant_config.get("quant_method") == "fp8"
 
-    if hf_quant_config.get("activation_scheme") != "dynamic":
+    activation_scheme = hf_quant_config.get("activation_scheme")
+    if activation_scheme == "dynamic":
+        input_origin = ScaleOrigin.DYNAMIC
+    elif activation_scheme == "static":
+        input_origin = ScaleOrigin.STATIC
+    else:
         raise ValueError(
-            "tensorwise FP8 only supports dynamic activation_scheme"
+            f"Unsupported activation_scheme for tensorwise FP8: "
+            f"'{activation_scheme}'. Expected 'dynamic' or 'static'."
         )
 
     # Determine weight scale dtype from checkpoint tensors.
@@ -365,7 +371,7 @@ def _parse_tensorwise_fp8_config(
 
     input_spec = InputScaleSpec(
         granularity=ScaleGranularity.TENSOR,
-        origin=ScaleOrigin.DYNAMIC,
+        origin=input_origin,
         dtype=weight_scale_dtype,
     )
     weight_spec = WeightScaleSpec(
@@ -504,6 +510,8 @@ def _parse_fp8_config(
                 huggingface_config, state_dict, dtype
             )
         else:
+            # Tensorwise scaling is the fallback.
+            # Blockwise and rowwise (fbgemm_fp8) both ruled out above.
             return _parse_tensorwise_fp8_config(
                 huggingface_config, state_dict, dtype
             )
@@ -511,7 +519,7 @@ def _parse_fp8_config(
     raise ValueError(
         "FP8 dtype specified, but an unsupported or incompatible 'quantization_config' "
         f"was found. Quant method: '{quant_method}'. "
-        "Supported methods are 'compressed-tensors' and 'fbgemm_fp8'."
+        "Supported methods are 'compressed-tensors', 'fbgemm_fp8', and 'fp8'."
     )
 
 
@@ -631,7 +639,7 @@ def _parse_modelopt_float4_config(
     weight_spec = WeightScaleSpec(
         granularity=ScaleGranularity.BLOCK,
         dtype=DType.float8_e4m3fn,
-        block_size=(1, 16 // 2),
+        block_size=(1, 16),
     )
 
     bias_dtype = _bias_dtype(state_dict)
@@ -812,7 +820,14 @@ def parse_quant_config(
         config = None
 
     if config is not None:
-        config.can_use_fused_mlp = can_use_fused_mlp(state_dict)
+        config.can_use_fused_mlp = can_use_fused_mlp(
+            state_dict,
+            tensor_wise=(
+                config.weight_scale.is_tensor
+                and config.input_scale.is_tensor
+                and not config.is_static
+            ),
+        )
         if not config.can_use_fused_mlp:
             logger.warning(
                 "Fused MLP is not supported for this model. "

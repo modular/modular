@@ -278,12 +278,13 @@ def cli_serve(
         # Log Pipeline Related Info
         pipeline_config.log_pipeline_info()
 
-        # Log Default Sampling Configuration
-        sampling_params = SamplingParams.from_input_and_generation_config(
-            SamplingParamsInput(),
-            sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
-        )
-        sampling_params.log_sampling_info()
+        # Log Default Sampling Configuration (only for single-model pipelines)
+        if "main" in pipeline_config.models:
+            sampling_params = SamplingParams.from_input_and_generation_config(
+                SamplingParamsInput(),
+                sampling_params_defaults=pipeline_config.model.sampling_params_defaults,
+            )
+            sampling_params.log_sampling_info()
 
         # Log API Server Related Info
         settings.log_server_info()
@@ -474,10 +475,8 @@ def cli_list(json: bool) -> None:
         list_pipelines_to_console()
 
 
-# Because we already have an argparser for benchmark_serving.py, we shouldn't have
-# to maintain a whole list of benchmark_serving CLI arg options here. This makes
-# it harder to keep them in sync and is error prone. We unroll all the args
-# instead and let BenchmarkCommand (which wraps benchmark_serving.py) handle them.
+# Argument parsing is handled by benchmark_serving.parse_args.
+# All CLI args are forwarded as-is so the two entry points stay in sync.
 @main.command(
     name="benchmark",
     context_settings={
@@ -499,22 +498,16 @@ def cli_benchmark(args: Sequence[str]) -> None:
     # and bypass Click's argument processing
     # args = ctx.params.get("args", [])
 
-    # Import lazily to avoid importing benchmark modules at module load time
-    from max.benchmark.benchmark_serving import main_with_parsed_args
-    from max.benchmark.benchmark_serving import (
-        parse_args as benchmark_parse_args,
-    )
+    # Import lazily to avoid importing benchmark modules at module load time.
+    from max.benchmark.sweep_benchmark_serving import main as sweep_main
 
     logger.debug("Running benchmark subcommand with args: %s", args)
     try:
-        parsed_args = benchmark_parse_args(args=args)
-
-        # Run the benchmark
         click.echo("Starting benchmark...")
-        main_with_parsed_args(parsed_args)
+        sweep_main(args, app_name="max-benchmark")
         click.echo("Benchmark completed successfully!")
     except SystemExit as e:
-        # argparse calls sys.exit() for help and errors, we need to handle this
+        # cyclopts calls sys.exit() for help and errors, we need to handle this
         if e.code == 0:
             # Help was requested and printed, just return
             return

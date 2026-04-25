@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements the string strategy for generating random `String` values in property tests."""
 
 from std.testing.prop.random import Rng
 
@@ -175,7 +176,7 @@ struct _CodepointStrategy:
         else:
             # ascii printable characters
             var start: UInt32 = UInt32(32) if self.only_printable else UInt32(0)
-            var end: UInt32 = 126 + UInt32(not self.only_printable)
+            var end: UInt32 = UInt32(126) + UInt32(not self.only_printable)
             return Codepoint(
                 unsafe_unchecked_codepoint=rng.rand_scalar[DType.uint32](
                     min=start, max=end

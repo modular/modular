@@ -1,4 +1,7 @@
-This directory contains code examples for the intermediate steps of the
+# Code examples and tests for get started with GPU programming
+
+This directory contains Code examples and tests for the intermediate steps of
+the
 [Get started with GPU programming](../../../../../docs/manual/gpu/intro-tutorial.mdx)
 section of the Mojo Manual. The fully completed reference solution is maintained
 in [examples/mojo/gpu-intro](../../../../../examples/gpu-intro) and published to
@@ -12,20 +15,12 @@ Contents:
     extension).
   - A `modular_run_binary_test` target for each binary (with a `_test` suffix).
 
-**Note:** These examples require a [supported
-GPU](https://docs.modular.com/mojo/requirements/#gpu-compatibility) to compile
-and run the kernels. If your system doesn't have a supported GPU, you can
+**Note:** These examples require a [compatible
+GPU](https://docs.modular.com/mojo/requirements#gpu-compatibility) to compile
+and run the kernels. If your system doesn't have a compatible GPU, you can
 compile the programs but the only output you'll see when you run them is the
 message:
 
 ```output
 No compatible GPU found
-```
-
-Additionally, printing from a kernel is not currently supported for Apple
-silicon GPUs. If you compile and run `print_threads.mojo` on an Apple system,
-you'll see this message:
-
-```output
-Printing from a kernel is not currently supported on Apple silicon GPUs
 ```

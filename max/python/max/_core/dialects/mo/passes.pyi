@@ -275,8 +275,9 @@ def NanCheckPass(kernel_library_paths: Sequence[str] = []) -> max._core.Pass:
     in the graph and lowers them to MOGG kernels in-place. Each nan_check
     returns a pass-through copy of its input tensor; downstream uses are
     rewired to the nan_check output to prevent DCE.
-    For debugging only — activated via MODULAR_MAX_NAN_CHECK=1 env var or
-    --nan-check compiler flag.
+    For debugging only — activated via the `max-debug.nan-check` config
+    key (for example, `InferenceSession.debug.nan_check = True` or
+    `MODULAR_DEBUG=nan-check`) or the `--nan-check` compiler flag.
     """
 
 def PropagateShapes() -> max._core.Pass:

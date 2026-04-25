@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides test utility types and functions for the Mojo standard library tests."""
 
 from .compare_helpers import compare
 from .hash import assert_dif_hashes, assert_fill_factor, dif_bits

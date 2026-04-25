@@ -19,7 +19,7 @@ from std.sys.info import CompilationTarget
 from std.sys.intrinsics import PrefetchOptions
 
 from std.algorithm.functional import tile
-from buffer.buffer import (
+from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
@@ -107,7 +107,7 @@ struct _Accumulator[
 
     @always_inline
     def _partial_set[
-        partial_width: Int
+        partial_width: SIMDSize
     ](mut self, offset: Int, value: SIMD[Self.dtype, partial_width]):
         self._storage.store[width=partial_width](offset, value)
 
@@ -972,7 +972,7 @@ def _simd_load_maybe_partial[
 
 @always_inline
 def _simd_store_maybe_partial[
-    dt: DType, //, simd_width: Int, partial_store: Bool
+    dt: DType, //, simd_width: SIMDSize, partial_store: Bool
 ](
     ptr: UnsafePointer[mut=True, Scalar[dt], ...],
     offset: Int,

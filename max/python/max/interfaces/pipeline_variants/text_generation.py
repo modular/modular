@@ -318,6 +318,14 @@ class TextGenerationRequest:
     If not specified, the request will be routed to the default endpoint.
     """
 
+    dkv_cache_hint: dict[str, Any] | None = None
+    """Cache hint from the Orchestrator for distributed KV cache.
+
+    When present, the serving layer converts this into
+    ``TextContext.external_block_metadata`` so the DKVConnector can
+    fetch cached blocks before the forward pass.
+    """
+
     def __str__(self) -> str:
         return str(self.request_id)
 
@@ -575,18 +583,60 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def advance_token_buffer(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+        mark_previous_as_processed: bool = True,
+    ) -> None:
+        """Advance the token buffer without touching FSM state.
+
+        This method handles token buffer mutations including log probability
+        storage, token buffer advancement, and EOS/max-length status updates.
+        It does NOT advance the FSM matcher.
+
+        Use ``advance_fsm()`` separately if FSM advancement is needed, or use
+        ``update()`` for the common case of advancing both together.
+
+        Args:
+            new_token: The token to append to the buffer.
+            log_probabilities: Optional log probabilities for this token.
+            mark_previous_as_processed: If True, mark previous tokens as
+                processed. If False, keep them unprocessed so they're
+                returned to the user (used for jump-ahead tokens).
+        """
+        ...
+
+    def advance_fsm(self, token: int) -> bool:
+        """Advance the FSM matcher state by one token.
+
+        This method advances only the FSM state for constrained decoding.
+        It does NOT modify the token buffer. Use ``advance_token_buffer()``
+        separately if token buffer advancement is needed, or use ``update()``
+        for the common case of advancing both together.
+
+        Args:
+            token: The token to consume in the FSM.
+
+        Returns:
+            True if the token was accepted by the matcher, False if no
+            matcher is present.
+        """
+        ...
+
     def update(
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
-        """Updates the context with a newly generated token, and updates status.
+        """Advance both token buffer and FSM state.
 
-        This method adds a generated token to the context, updating the token
-        array, associated metadata, and log probabilities (if provided).
-        It is also responsible for updating the context's generation status and
-        determining if the generation sequence is complete, either due to reaching
-        an end-of-sequence condition or meeting stopping criteria.
+        This is the standard single-step update that most callers should use.
+        It combines ``advance_token_buffer()`` and ``advance_fsm()`` for the
+        common case where both need to be advanced together.
+
+        For multi-step execution where FSM is advanced separately (e.g., to
+        compute bitmasks between steps), use the individual methods directly.
 
         Args:
             new_token: The token ID to add to the generation sequence.
@@ -713,12 +763,17 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    saved_draft_tokens: list[int] = field(default_factory=list)
+    draft_tokens_to_verify: list[int] = field(default_factory=list)
+    """The draft tokens to verify in the next batch"""
 
-    @property
-    def num_draft_tokens(self) -> int:
-        """Returns the number of speculative tokens."""
-        return len(self.saved_draft_tokens)
+    maybe_accepted_draft_tokens: list[int] = field(default_factory=list)
+    """The draft tokens that are being verified in the current batch
+
+    We are unsure whether these tokens will be accepted or not. However, to ensure
+    that we allocate enough KV, we conservatively assume that they will all be
+    accepted.
+
+    This should only be present when running with overlap scheduler."""
 
 
 TextGenerationContextType = TypeVar(

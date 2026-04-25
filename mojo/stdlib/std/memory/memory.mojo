@@ -20,8 +20,8 @@ from std.memory import memcmp
 """
 
 
-from std.collections.string.string_slice import _get_kgen_string
 from std.math import iota
+from std.memory.unsafe_pointer import unsafe_cast
 from std.sys import _libc as libc
 from std.ffi import external_call
 from std.sys import (
@@ -173,7 +173,7 @@ def _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    def copy[width: Int](offset: Int) unified {mut}:
+    def copy[width: Int](offset: Int) {read}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
     comptime if is_gpu():
@@ -237,8 +237,8 @@ def memcpy[
     T: AnyType
 ](
     *,
-    dest: UnsafePointer[mut=True, T, _],
-    src: UnsafePointer[mut=False, T, _],
+    dest: OptionalUnsafePointer[mut=True, T, _],
+    src: OptionalUnsafePointer[T, _],
     count: Int,
 ):
     """Copy `count * size_of[T]()` bytes from src to dest.
@@ -253,17 +253,27 @@ def memcpy[
         dest: The destination pointer.
         src: The source pointer.
         count: The number of elements to copy.
+
+    Safety:
+        `dest` and `src` must be valid for at least `count * size_of[T]()`
+        bytes. `dest` or `src` can only be `None` when `count == 0`.
     """
-    var n = count * size_of[dest.type]()
+    if count == 0:
+        return
+
+    var n = count * size_of[dest.T.type]()
+
+    var dest_bytes = dest.unsafe_value().bitcast[Byte]()
+    var src_bytes = src.unsafe_value().bitcast[Byte]()
 
     if __is_run_in_comptime_interpreter:
         # A fast version for the interpreter to evaluate
         # this function during compile time.
         llvm_intrinsic["llvm.memcpy", NoneType](
-            dest.bitcast[Byte](), src.bitcast[Byte](), n
+            dest_bytes, src_bytes, n._int_mlir_index()
         )
     else:
-        _memcpy_impl(dest.bitcast[Byte](), src.bitcast[Byte](), n)
+        _memcpy_impl(dest_bytes, src_bytes, n)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -315,7 +325,7 @@ def memmove[
 def _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
-    def fill[width: Int](offset: Int) unified {mut}:
+    def fill[width: Int](offset: Int) {read}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
@@ -367,123 +377,10 @@ def memset_zero[
     comptime if count > 128:
         return memset_zero(ptr, count)
 
-    def fill[width: Int](offset: Int) unified {mut}:
+    def fill[width: Int](offset: Int) {read}:
         ptr.store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
-
-
-# ===-----------------------------------------------------------------------===#
-# stack_allocation
-# ===-----------------------------------------------------------------------===#
-
-
-# TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
-@always_inline
-def stack_allocation[
-    count: Int,
-    dtype: DType,
-    /,
-    alignment: Int = align_of[dtype](),
-    address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[
-    Scalar[dtype],
-    MutExternalOrigin,
-    address_space=address_space,
-]:
-    """Allocates data buffer space on the stack given a data type and number of
-    elements.
-
-    Parameters:
-        count: Number of elements to allocate memory for.
-        dtype: The data type of each element.
-        alignment: Address alignment of the allocated data.
-        address_space: The address space of the pointer.
-
-    Returns:
-        A data pointer of the given type pointing to the allocated space.
-    """
-
-    return stack_allocation[
-        count, Scalar[dtype], alignment=alignment, address_space=address_space
-    ]()
-
-
-# TODO(MSTDL-2015): ASAN error when updating to use `UnsafePointer`.
-@always_inline
-def stack_allocation[
-    count: Int,
-    type: AnyType,
-    /,
-    name: Optional[StaticString] = None,
-    alignment: Int = align_of[type](),
-    address_space: AddressSpace = AddressSpace.GENERIC,
-]() -> UnsafePointer[type, MutExternalOrigin, address_space=address_space]:
-    """Allocates data buffer space on the stack given a data type and number of
-    elements.
-
-    Parameters:
-        count: Number of elements to allocate memory for.
-        type: The data type of each element.
-        name: The name of the global variable (only honored in certain cases).
-        alignment: Address alignment of the allocated data.
-        address_space: The address space of the pointer.
-
-    Returns:
-        A data pointer of the given type pointing to the allocated space.
-    """
-
-    comptime if is_gpu():
-        # On NVGPU, SHARED and CONSTANT address spaces lower to global memory.
-
-        comptime global_name = name.value() if name else "_global_alloc"
-
-        comptime if address_space == AddressSpace.SHARED:
-            return __mlir_op.`pop.global_alloc`[
-                name=_get_kgen_string[global_name](),
-                count=count._mlir_value,
-                memoryType=__mlir_attr.`#pop<global_alloc_addr_space gpu_shared>`,
-                _type=UnsafePointer[
-                    type, MutExternalOrigin, address_space=address_space
-                ]._mlir_type,
-                alignment=alignment._mlir_value,
-            ]()
-        elif address_space == AddressSpace.CONSTANT:
-            # No need to annotation this global_alloc because constants in
-            # GPU shared memory won't prevent llvm module splitting to
-            # happen since they are immutables.
-            return __mlir_op.`pop.global_alloc`[
-                name=_get_kgen_string[global_name](),
-                count=count._mlir_value,
-                _type=UnsafePointer[
-                    type, MutExternalOrigin, address_space=address_space
-                ]._mlir_type,
-                alignment=alignment._mlir_value,
-            ]()
-
-        # MSTDL-797: The NVPTX backend requires that `alloca` instructions may
-        # only have generic address spaces. When allocating LOCAL memory,
-        # addrspacecast the resulting pointer.
-        elif address_space == AddressSpace.LOCAL:
-            var generic_ptr = __mlir_op.`pop.stack_allocation`[
-                count=count._mlir_value,
-                _type=UnsafePointer[type, MutExternalOrigin]._mlir_type,
-                alignment=alignment._mlir_value,
-            ]()
-            return __mlir_op.`pop.pointer.bitcast`[
-                _type=UnsafePointer[
-                    type, MutExternalOrigin, address_space=address_space
-                ]._mlir_type
-            ](generic_ptr)
-
-    # Perform a stack allocation of the requested size, alignment, and type.
-    return __mlir_op.`pop.stack_allocation`[
-        count=count._mlir_value,
-        _type=UnsafePointer[
-            type, MutExternalOrigin, address_space=address_space
-        ]._mlir_type,
-        alignment=alignment._mlir_value,
-    ]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -500,12 +397,17 @@ def _malloc[
     /,
     *,
     alignment: Int = align_of[type](),
-    out res: UnsafePointer[
-        type,
-        MutExternalOrigin,
-        address_space=AddressSpace.GENERIC,
+    out result: Optional[
+        UnsafePointer[
+            type,
+            MutExternalOrigin,
+            address_space=AddressSpace.GENERIC,
+        ]
     ],
 ):
+    comptime MlirPointerType = type_of(result).T._mlir_type
+    var mlir_pointer: MlirPointerType
+
     comptime if is_gpu():
         comptime enable_gpu_malloc = get_defined_string[
             "ENABLE_GPU_MALLOC", "true"
@@ -516,17 +418,15 @@ def _malloc[
             "runtime allocation on GPU not allowed",
         ]()
 
-        comptime U = UnsafePointer[
-            NoneType,
-            MutExternalOrigin,
-            address_space=AddressSpace.GENERIC,
-        ]
-        var ptr = external_call["malloc", U](size)
-        return ptr.bitcast[type]()
+        mlir_pointer = external_call["malloc", MlirPointerType](size)
     else:
-        return __mlir_op.`pop.aligned_alloc`[_type=type_of(res)._mlir_type](
-            alignment._mlir_value, size._mlir_value
+        mlir_pointer = __mlir_op.`pop.aligned_alloc`[_type=MlirPointerType](
+            alignment._int_mlir_index(), size._int_mlir_index()
         )
+
+    # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+    # represented exactly as the `MlirPointerType` so we can do a bit-cast.
+    result = UnsafePointer(to=mlir_pointer).bitcast[type_of(result)]()[]
 
 
 # ===-----------------------------------------------------------------------===#
@@ -540,6 +440,18 @@ def _free(ptr: UnsafePointer[mut=True, ...]):
         libc.free(ptr.bitcast[NoneType]())
     else:
         __mlir_op.`pop.aligned_free`(ptr.address)
+
+
+@always_inline
+def _free(ptr: OptionalUnsafePointer[mut=True, ...]):
+    comptime if is_gpu():
+        libc.free(unsafe_cast[Type=NoneType, origin=MutExternalOrigin](ptr))
+    else:
+        comptime KgenPointerType = type_of(ptr).T._mlir_type
+        # SAFETY: Due to the niche optimization, `Optional[UnsafePointer]` is
+        # represented exactly as the `KgenPointerType` so we can do a bit-cast.
+        var kgen_pointer = UnsafePointer(to=ptr).bitcast[KgenPointerType]()[]
+        __mlir_op.`pop.aligned_free`(kgen_pointer)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -705,3 +617,70 @@ def destroy_n[
     else:
         for i in range(count):
             (pointer + i).destroy_pointee()
+
+
+# ===-----------------------------------------------------------------------===#
+# Ownership Ops
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def forget_deinit[T: AnyType](var value: T):
+    """Takes ownership and skips running `__del__` deinitializers.
+
+    This is a low-level operation, and should not be used unless necessary.
+    Consider if refactoring to avoid needing this function would be more
+    appropriate.
+
+    This operation is not considered unsafe, as Mojo can not guarantee in
+    general that destructors will eventually be run.
+
+    Note: Take care to use `^` to transfer when passing `ImplicitlyCopyable`
+    values to `forget_deinit()`, to avoid forgetting a copy instead of the
+    original value.
+
+    Parameters:
+        T: The type of the value to discard without running a deinitializer.
+
+    Args:
+        value: The value to discard without running a deinitializer.
+
+    Example:
+
+    ```mojo
+    @fieldwise_init
+    struct Noisy:
+        def __del__(deinit self):
+            print("@ Noisy.__del__: Noisy is being deleted!")
+
+    def main():
+        var noisy = Noisy()
+
+        # No deletion message is printed
+        forget_deinit(noisy^)
+    ```
+
+    This will skip the destructor for the "root" `value` object and all of
+    it's fields, recursively. Example:
+
+    ```mojo
+    @fieldwise_init
+    struct Parent:
+        var child: Child
+
+        def __del__(deinit self):
+            print("@ Parent.__del__")
+
+    @fieldwise_init
+    struct Child(Movable):
+        def __del__(deinit self):
+            print("@ Child.__del__")
+
+    def main():
+        var parent = Parent(Child())
+
+        # Neither Parent.__del__ nor Child.__del__ is called.
+        forget_deinit(parent^)
+    ```
+    """
+    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(value))

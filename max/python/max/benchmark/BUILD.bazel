@@ -22,33 +22,16 @@ modular_py_library(
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/diagnostics",
+        requirement("cyclopts"),
         requirement("jinja2"),
         requirement("numpy"),
         requirement("pyyaml"),
         requirement("tqdm"),
         requirement("tiktoken"),
         requirement("transformers"),
-    ],
-)
-
-modular_py_binary(
-    name = "benchmark_serving",
-    srcs = ["benchmark_serving.py"],
-    # Transformers secretly depends on jinja2
-    ignore_extra_deps = [
-        requirement("jinja2"),
-        requirement("tiktoken"),
-    ],
-    imports = ["../.."],
-    deps = [
-        "//max/python/max/benchmark/benchmark_shared",
-        "//max/python/max/diagnostics",
-        requirement("jinja2"),
-        requirement("numpy"),
-        requirement("tqdm"),
-        requirement("tiktoken"),
-        requirement("transformers"),
-        requirement("pyyaml"),
+        requirement("taskgroup"),
+        requirement("requests"),
+        requirement("typing-extensions"),
     ],
 )
 

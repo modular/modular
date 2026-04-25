@@ -34,7 +34,7 @@ struct MyPet(Copyable):
         self.age = take.age
 
 
-def main() raises:
+def main():
     pet = MyPet("Fido", 3)
     pet2 = pet.copy()
     print(pet2.name)

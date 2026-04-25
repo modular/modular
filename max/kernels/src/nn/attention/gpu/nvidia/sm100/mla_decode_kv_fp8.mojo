@@ -16,9 +16,9 @@ from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    thread_idx_int as thread_idx,
-    block_idx_int as block_idx,
-    warp_id_uint as warp_id,
+    thread_idx,
+    block_idx,
+    warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import launch_dependent_grids
@@ -40,6 +40,7 @@ from layout.tma_async import (
 from std.memory import bitcast
 from layout import (
     ComptimeInt,
+    CoordLike,
     RowMajorLayout,
     TileTensor,
     row_major,
@@ -237,7 +238,11 @@ struct MLA_SM100_Decode_KV_FP8[
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__name(
+        t"sm100_mla_decode_kv_fp8_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         q_tma: QOTMATile[
             dtype=Self.q_type,
@@ -266,7 +271,9 @@ struct MLA_SM100_Decode_KV_FP8[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
         ],
     ):
         # Softmax now includes the epilogue, so it needs more registers
@@ -275,9 +282,9 @@ struct MLA_SM100_Decode_KV_FP8[
         comptime num_reg_correction = 72
         comptime num_reg_keep_mma_load_store = 72
         comptime num_reg_keep_fp8tofp16 = 184
-        var batch_size = Int(scalar_args.ptr[0])
-        var q_max_seq_len = Int(scalar_args.ptr[1])
-        var num_partitions = Int(scalar_args.ptr[2])
+        var batch_size = Int(scalar_args.raw_load(0))
+        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var num_partitions = Int(scalar_args.raw_load(2))
         mask = mla_decode_pack.mask
         valid_length = mla_decode_pack.valid_length
         var lse_accum_split_ptr = mla_decode_pack.lse_accum_split_ptr
@@ -643,7 +650,7 @@ struct MLA_SM100_Decode_KV_FP8[
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         # Start KV from kv_start_row for split-K support
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         # Clamp kv_row to prevent OOB lookup_table access on the last tile.
@@ -661,7 +668,7 @@ struct MLA_SM100_Decode_KV_FP8[
                     * size_of[Self.q_type]()
                 )
             )
-            Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, UInt(0), row)
+            Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, 0, row)
 
         var k0_bar: MBarType = kv_load_prod.producer_mbar[qk_stage=0]()
 
@@ -675,7 +682,7 @@ struct MLA_SM100_Decode_KV_FP8[
             )
             var stage_ptr = kv_load_prod.stage_base_ptr[qk_stage=0]()
             Self.Common_MLA_Op.load_kv(
-                k_tma_fp8, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row)
+                k_tma_fp8, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
             )
 
         # Load blockwise scales for tile 0 (all warp 8 threads load scales
@@ -725,7 +732,7 @@ struct MLA_SM100_Decode_KV_FP8[
                     )
                 )
                 Self.Common_MLA_Op.load_kv(
-                    k_tma_fp8, stage_ptr, k_mbar, UInt(0), UInt(kv_gmem_row)
+                    k_tma_fp8, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
                 )
 
             # Load blockwise scales for this tile (all warp 8 threads).
@@ -935,10 +942,10 @@ struct MLA_SM100_Decode_KV_FP8[
                     p1a = hmul2_bf16x8_by_scalar[Self.q_type](p1a, scale_bf16)
                     p1b = hmul2_bf16x8_by_scalar[Self.q_type](p1b, scale_bf16)
 
-                p0a_all.ptr.store(b * 4, p0a)
-                p0b_all.ptr.store(b * 4, p0b)
-                p1a_all.ptr.store(b * 4, p1a)
-                p1b_all.ptr.store(b * 4, p1b)
+                p0a_all.raw_store(b * 4, p0a)
+                p0b_all.raw_store(b * 4, p0b)
+                p1a_all.raw_store(b * 4, p1a)
+                p1b_all.raw_store(b * 4, p1b)
 
             # Single barrier. All 128 threads finish ALL reads before ANY writes
             named_barrier[Int32(WARPGROUP_SIZE)](3)
@@ -950,22 +957,22 @@ struct MLA_SM100_Decode_KV_FP8[
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0a,
-                    p0a_all.ptr.load[width=4](b * 4),
+                    p0a_all.raw_load[width=4](b * 4),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_0b,
-                    p0b_all.ptr.load[width=4](b * 4),
+                    p0b_all.raw_load[width=4](b * 4),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1a,
-                    p1a_all.ptr.load[width=4](b * 4),
+                    p1a_all.raw_load[width=4](b * 4),
                 )
                 st_shared_v4_b32_at_bf16_elem_off[out_dtype=Self.q_type](
                     dst_block,
                     phys_bf16_1b,
-                    p1b_all.ptr.load[width=4](b * 4),
+                    p1b_all.raw_load[width=4](b * 4),
                 )
 
             fence_async_view_proxy()

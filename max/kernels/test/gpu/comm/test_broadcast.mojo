@@ -100,27 +100,23 @@ def broadcast_test[
     var out_dev_list = List[DeviceBuffer[dtype]](capacity=ngpus)
 
     # Create TileTensor types for input and output
-    var in_tile = TileTensor(
-        input_dev.unsafe_ptr(), row_major(Idx(length))
-    ).as_immut()
-    comptime OutputTileType = type_of(
-        TileTensor(input_dev.unsafe_ptr(), row_major(Idx(length)))
-    )
+    var in_tile = TileTensor(input_dev, row_major(Idx(length))).as_immut()
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
     for i in range(ngpus):
         # Create this rank's output buffer
         if root_self_copy and i == root:
             # Special case: root does an in-place copy
             out_dev_list.append(input_dev)
-            out_tiles[i] = OutputTileType(
-                input_dev.unsafe_ptr(), row_major(Idx(length))
-            )
+            out_tiles[i] = OutputTileType(input_dev, row_major(Idx(length)))
             continue
 
         var ctx = list_of_ctxs[i]
@@ -196,7 +192,7 @@ def run_broadcast_sweep[]() raises:
         range(len(test_gpu_counts)),
         range(len(test_dtypes)),
         range(len(test_lengths)),
-        List(True, False, __list_literal__=()),
+        [True, False],
     ):
         comptime num_gpus = test_gpu_counts[gpu_idx]
         if DeviceContext.number_of_devices() < num_gpus:

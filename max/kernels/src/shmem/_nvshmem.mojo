@@ -179,7 +179,7 @@ struct NVSHMEMXInitArgs:
 
 struct NVSHMEMXUniqueIDArgs:
     var version: c_int
-    var id: UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]
+    var id: Optional[UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]]
     var myrank: c_int
     var nranks: c_int
 
@@ -188,7 +188,7 @@ struct NVSHMEMXUniqueIDArgs:
             size_of[Self]() == 24
         ), "NVSHMEMXUniqueIDArgs must be 24 bytes"
         self.version = c_int((1 << 16) + size_of[NVSHMEMXUniqueIDArgs]())
-        self.id = UnsafePointer[NVSHMEMXUniqueID, MutAnyOrigin]()
+        self.id = None
         self.myrank = 0
         self.nranks = 0
 
@@ -354,35 +354,37 @@ def nvshmemx_hostlib_init_attr(
 ) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_hostlib_init_attr",
-        def(UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]) -> c_int,
+        def(
+            UInt32, UnsafePointer[NVSHMEMXInitAttr, MutAnyOrigin]
+        ) thin -> c_int,
     ]()(flags, attr)
 
 
 def nvshmemx_hostlib_finalize():
     _get_nvshmem_function[
         "nvshmemx_hostlib_finalize",
-        def() -> NoneType,
+        def() thin -> NoneType,
     ]()()
 
 
 def nvshmemx_cumodule_init(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_init",
-        def(CUmodule) -> c_int,
+        def(CUmodule) thin -> c_int,
     ]()(module)
 
 
 def nvshmemx_cumodule_finalize(module: CUmodule) -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_cumodule_finalize",
-        def(CUmodule) -> c_int,
+        def(CUmodule) thin -> c_int,
     ]()(module)
 
 
 def nvshmemx_init_status() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_init_status",
-        def() -> c_int,
+        def() thin -> c_int,
     ]()()
 
 
@@ -392,7 +394,7 @@ def nvshmem_my_pe() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_my_pe",
-            def() -> c_int,
+            def() thin -> c_int,
         ]()()
 
 
@@ -402,7 +404,7 @@ def nvshmem_n_pes() -> c_int:
     else:
         return _get_nvshmem_function[
             "nvshmem_n_pes",
-            def() -> c_int,
+            def() thin -> c_int,
         ]()()
 
 
@@ -417,7 +419,7 @@ def nvshmem_malloc[
 ](size: c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin]:
     return _get_nvshmem_function[
         "nvshmem_malloc",
-        def(c_size_t) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        def(c_size_t) thin -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(size)
 
 
@@ -430,7 +432,7 @@ def nvshmem_calloc[
         "nvshmem_calloc",
         def(
             c_size_t, c_size_t
-        ) -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
+        ) thin -> UnsafePointer[Scalar[dtype], MutExternalOrigin],
     ]()(count, size)
 
 
@@ -439,7 +441,7 @@ def nvshmem_free[
 ](ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin]):
     _get_nvshmem_function[
         "nvshmem_free",
-        def(type_of(ptr)) -> NoneType,
+        def(type_of(ptr)) thin -> NoneType,
     ]()(ptr)
 
 
@@ -452,14 +454,14 @@ def nvshmem_free[
 def nvshmem_team_my_pe(team: c_int) -> c_int:
     return _get_nvshmem_function[
         "nvshmem_team_my_pe",
-        def(c_int) -> c_int,
+        def(c_int) thin -> c_int,
     ]()(team)
 
 
 def nvshmemx_team_init() -> c_int:
     return _get_nvshmem_function[
         "nvshmemx_team_init",
-        def() -> c_int,
+        def() thin -> c_int,
     ]()()
 
 
@@ -559,7 +561,7 @@ def nvshmemx_signal_op(
     signal: UInt64,
     sig_op: c_int,
     pe: c_int,
-):
+) abi("C"):
     ...
 
 
@@ -591,7 +593,7 @@ def nvshmem_put_signal_nbi[
 def nvshmem_sync_all():
     _get_nvshmem_function[
         "nvshmem_sync_all",
-        def() -> NoneType,
+        def() thin -> NoneType,
     ]()()
 
 
@@ -601,14 +603,14 @@ def nvshmem_barrier_all():
     else:
         _get_nvshmem_function[
             "nvshmem_barrier_all",
-            def() -> NoneType,
+            def() thin -> NoneType,
         ]()()
 
 
 def nvshmemx_barrier_all_on_stream(stream: CUstream):
     _get_nvshmem_function[
         "nvshmemx_barrier_all_on_stream",
-        def(CUstream) -> NoneType,
+        def(CUstream) thin -> NoneType,
     ]()(stream)
 
 
@@ -621,7 +623,7 @@ def nvshmemx_barrier_all_on_stream(stream: CUstream):
 @extern("nvshmem_signal_wait_until")
 def nvshmem_signal_wait_until(
     sig_addr: UnsafePointer[UInt64, MutAnyOrigin], cmp: c_int, cmp_value: UInt64
-):
+) abi("C"):
     ...
 
 
@@ -632,5 +634,5 @@ def nvshmem_signal_wait_until(
 
 
 @extern("nvshmem_fence")
-def nvshmem_fence():
+def nvshmem_fence() abi("C"):
     ...

@@ -70,10 +70,12 @@ def index_tensor_shape[
     var indices_shape = IndexList[combined_indices_rank]()
 
     comptime for i in range(batch_dims):
-        indices_shape[i] = input_buf.layout.shape[i]().value()
+        indices_shape[i] = Int(input_buf.layout.shape[i]().value())
 
     comptime for i in range(indices_buf.rank):
-        indices_shape[batch_dims + i] = indices_buf.layout.shape[i]().value()
+        indices_shape[batch_dims + i] = Int(
+            indices_buf.layout.shape[i]().value()
+        )
 
     var index_size = indices_shape[combined_indices_rank - 1]
     # TODO: Revisit when we generalize (see above TODO).
@@ -177,7 +179,7 @@ def index_tensor[
             batch_dims,
             target=target,
             single_thread_blocking_override=single_thread_blocking_override,
-        ](data, indices, output)
+        ](data, indices, output, ctx.get_optional_device_context())
     else:
         return _index_tensor_impl[
             batch_dims,
@@ -238,7 +240,7 @@ def _index_tensor_1d[
     # TODO: Find a heuristic to replace the magic number
     #       to also take into account the data size per line.
     comptime MIN_LINES = 32
-    var num_threads = parallelism_level()
+    var num_threads = parallelism_level(ctx)
     var num_tasks = min(
         ceildiv(
             batch_volume,
@@ -265,11 +267,12 @@ def _index_tensor_1d[
                     )
 
                 var rd_coord = Coord(data_coord)
-                output.ptr[i * Int(indices.dim(0)) + j] = reshaped_data.load[
-                    width=1
-                ](rd_coord)
+                output.raw_store(
+                    i * Int(indices.dim(0)) + j,
+                    reshaped_data.load[width=1](rd_coord),
+                )
 
-    sync_parallelize[calc_batch_dim](num_tasks)
+    sync_parallelize[calc_batch_dim](num_tasks, ctx)
 
 
 def _index_tensor_impl[
@@ -710,11 +713,13 @@ def advanced_indexing_setitem_inplace[
     # Find the common iteration space
     comptime for i in range(iteration_rank):
         comptime if i < start_axis:
-            iteration_shape[i] = input_tensor.layout.shape[i]().value()
+            iteration_shape[i] = Int(input_tensor.layout.shape[i]().value())
         elif i >= start_axis + index_rank:
-            iteration_shape[i] = input_tensor.layout.shape[
-                i - index_rank + num_index_tensors
-            ]().value()
+            iteration_shape[i] = Int(
+                input_tensor.layout.shape[
+                    i - index_rank + num_index_tensors
+                ]().value()
+            )
         else:
             iteration_shape[i] = index_tensor_shape[i - start_axis]
 

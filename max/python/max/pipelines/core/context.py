@@ -93,6 +93,13 @@ class TextContext:
 
     target_endpoint: str | None = field(default=None)
 
+    external_block_metadata: Any = field(default=None)
+    """Block metadata from the Orchestrator for distributed KV cache (dKV).
+
+    When set, the DKVConnector reads this during lookup() to determine
+    which blocks are available in the external BlockStore system.
+    """
+
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
 
@@ -132,11 +139,6 @@ class TextContext:
         if self._spec_decoding_state is None:
             self._spec_decoding_state = SpecDecodingState()
         return self._spec_decoding_state
-
-    @property
-    def num_draft_tokens(self) -> int:
-        """Returns the total sequence length including speculative tokens."""
-        return len(self.spec_decoding_state.saved_draft_tokens)
 
     def apply_processing_offset(self, offset: int) -> None:
         """Applies a processing offset to the token buffer."""
@@ -237,18 +239,35 @@ class TextContext:
             final_status=self.status,
         )
 
-    def update(
+    def advance_token_buffer(
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
+        mark_previous_as_processed: bool = True,
     ) -> None:
-        """Updates the next_tokens and extends existing tokens to include all generated tokens."""
-        # Update the token buffer
+        """Advance the token buffer without touching FSM state.
+
+        This method handles token buffer mutations including:
+        - Chunked prefill advancement
+        - Log probability storage
+        - Token buffer advancement
+        - EOS/max-length status updates
+
+        It does NOT advance the FSM matcher. Use ``advance_fsm()`` separately
+        if FSM advancement is needed, or use ``update()`` for the common case
+        of advancing both together.
+
+        Args:
+            new_token: The token to append to the buffer.
+            log_probabilities: Optional log probabilities for this token.
+            mark_previous_as_processed: If True, mark previous tokens as
+                processed (standard behavior). If False, keep them unprocessed
+                so they're returned to the user (used for jump-ahead tokens).
+        """
         if self.tokens.actively_chunked:
             self.tokens.advance_chunk()
             return
 
-        # Update the log probabilities data
         if log_probabilities:
             self._log_probabilities_data[self.tokens.current_position] = (
                 log_probabilities
@@ -257,33 +276,80 @@ class TextContext:
         if self.tokens.all[-1] == FUTURE_TOKEN:
             raise ValueError("Cannot append a token after a future token.")
 
-        self.tokens.advance_with_token(new_token)
+        self.tokens.advance_with_token(
+            new_token, mark_previous_as_processed=mark_previous_as_processed
+        )
 
         if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
         elif self.tokens.current_position >= self.max_length:
             self.status = GenerationStatus.MAXIMUM_LENGTH
 
-        # Accept the token, and move the FSM for constrained decoding forward.
-        if self.matcher:
-            assert self.matcher.consume_token(new_token)
-
         self._is_initial_prompt = False
+
+    def advance_fsm(self, token: int) -> bool:
+        """Advance the FSM matcher state by one token.
+
+        This method advances only the FSM state for constrained decoding.
+        It does NOT modify the token buffer. Use ``advance_token_buffer()``
+        separately if token buffer advancement is needed, or use ``update()``
+        for the common case of advancing both together.
+
+        Args:
+            token: The token to consume in the FSM.
+
+        Returns:
+            True if the token was accepted by the matcher, False if no
+            matcher is present.
+
+        Raises:
+            AssertionError: If the matcher rejects the token, indicating
+                a mismatch between the bitmask and FSM state.
+        """
+        if self.matcher:
+            assert self.matcher.consume_token(token)
+            return True
+        return False
+
+    def update(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+    ) -> None:
+        """Advance both token buffer and FSM state.
+
+        This is the standard single-step update that most callers should use.
+        It combines ``advance_token_buffer()`` and ``advance_fsm()`` for the
+        common case where both need to be advanced together.
+
+        For multi-step execution where FSM is advanced separately (e.g., to
+        compute bitmasks between steps), use the individual methods directly.
+
+        Args:
+            new_token: The token to append and consume.
+            log_probabilities: Optional log probabilities for this token.
+        """
+        self.advance_token_buffer(new_token, log_probabilities)
+        self.advance_fsm(new_token)
 
     def update_with_future_token(self) -> None:
         """Append a placeholder future token to the generated tokens.
 
-        This is primarily used for overlap scheduling.
+        This is primarily used for overlap scheduling. For structured output
+        contexts (those with a matcher), only the token buffer is advanced.
+        The FSM will be advanced later when the future token is realized
+        with the actual generated token.
         """
-        if self.matcher:
-            raise ValueError(
-                "Cannot use future tokens when a matcher is present."
-            )
-
         if self.tokens.all[-1] == FUTURE_TOKEN:
             raise ValueError("Cannot have multiple future tokens.")
 
-        self.update(new_token=FUTURE_TOKEN)
+        if self.matcher is not None:
+            # For structured output, only advance the token buffer.
+            # The FSM cannot accept placeholder tokens and will be
+            # advanced with the real token in sync_and_process_outputs().
+            self.advance_token_buffer(FUTURE_TOKEN)
+        else:
+            self.update(new_token=FUTURE_TOKEN)
 
     def realize_future_token(
         self, new_token: int, log_probabilities: LogProbabilities | None = None
@@ -315,26 +381,22 @@ class TextContext:
             self.status = GenerationStatus.END_OF_SEQUENCE
 
     def jump_ahead(self, new_token: int) -> None:
-        """Updates the token array, while ensuring the new token is returned to the user."""
-        # Update the token buffer
-        if self.tokens.actively_chunked:
-            self.tokens.advance_chunk()
-            return
+        """Advance both token buffer and FSM, keeping token visible to user.
 
-        self.tokens.advance_with_token(
-            new_token, mark_previous_as_processed=False
+        Unlike ``update()``, this method does not mark previous tokens as
+        processed, so the new token will be included in the output returned
+        to the user. This is used for grammar-forced tokens that the model
+        didn't generate but need to be part of the response.
+
+        Args:
+            new_token: The forced token to append and consume.
+        """
+        self.advance_token_buffer(
+            new_token,
+            log_probabilities=None,
+            mark_previous_as_processed=False,
         )
-
-        if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
-            self.status = GenerationStatus.END_OF_SEQUENCE
-        elif self.tokens.current_position >= self.max_length:
-            self.status = GenerationStatus.MAXIMUM_LENGTH
-
-        # Accept the token, and move the FSM for constrained decoding forward.
-        if self.matcher:
-            assert self.matcher.consume_token(new_token)
-
-        self._is_initial_prompt = False
+        self.advance_fsm(new_token)
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""
@@ -670,6 +732,7 @@ class PixelContext:
         guidance_scale: Guidance scale for classifier-free guidance.
         num_images_per_prompt: Number of images/videos to generate per prompt.
         input_image: Optional HWC uint8 numpy array for image-to-image generation.
+        input_images: Optional list of input images for image-to-image generation.
         model_name: Name of the model being used.
     """
 
@@ -721,6 +784,16 @@ class PixelContext:
     )
     """Precomputed latent image IDs for generation."""
 
+    text_ids: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    """Precomputed text position IDs, shape ``(B, seq_len, 4)`` int64."""
+
+    negative_text_ids: npt.NDArray[np.int64] = field(
+        default_factory=lambda: np.array([], dtype=np.int64)
+    )
+    """Precomputed text position IDs for the negative prompt."""
+
     height: int = field(default=1024)
     width: int = field(default=1024)
     num_inference_steps: int = field(default=50)
@@ -733,8 +806,19 @@ class PixelContext:
     num_images_per_prompt: int = field(default=1)
     input_image: npt.NDArray[np.uint8] | None = field(default=None)
     """Input image as numpy array (H, W, C) in uint8 format for image-to-image generation."""
-    image: npt.NDArray[np.uint8] | None = field(default=None)
-    """Decoded output image (H, W, C) uint8 [0, 255]. Set after generation completes."""
+    input_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Input images as list of numpy arrays (H, W, C) in uint8 format for image-to-image generation."""
+    prompt_images: list[npt.NDArray[np.uint8]] | None = field(default=None)
+    """Optional prompt-conditioning images prepared by the tokenizer."""
+    vae_condition_images: list[npt.NDArray[np.uint8]] | None = field(
+        default=None
+    )
+    """Optional VAE-conditioning images prepared by the tokenizer.
+
+    Qwen image edit keeps prompt-conditioning images and VAE-conditioning
+    images separate because the multimodal prompt encoder and the VAE latent
+    conditioning path use different resize targets.
+    """
     output_format: str = field(default="jpeg")
     """Image encoding format for the output (e.g., 'jpeg', 'png', 'webp')."""
     residual_threshold: float | None = field(default=None)
@@ -757,22 +841,18 @@ class PixelContext:
         """Resets the context's state."""
         self.status = GenerationStatus.ACTIVE
 
-    def update(self, image: npt.NDArray[np.uint8]) -> None:
-        """Update the context with the decoded uint8 image output."""
-        self.image = image
+    def update(self, latents: npt.NDArray[Any]) -> None:
+        """Update the context with newly generated latents/image data."""
+        self.latents = latents
 
     def to_generation_output(self) -> GenerationOutput:
         """Convert this context to a GenerationOutput object."""
-        if self.image is None:
-            raise ValueError(
-                "No decoded image available; generation may not have completed."
-            )
         return GenerationOutput(
             request_id=self.request_id,
             final_status=self.status,
             output=[
                 OutputImageContent.from_numpy(
-                    self.image, format=self.output_format
+                    self.latents.astype(np.uint8), format="png"
                 )
             ],
         )

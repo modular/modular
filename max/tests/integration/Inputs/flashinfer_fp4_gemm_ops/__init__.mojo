@@ -62,7 +62,9 @@ struct Module:
         result = TVMFFIAny(0)
 
         errno = safe_call(
-            UnsafePointer[NoneType, MutAnyOrigin](),  # null unused module
+            Optional[
+                UnsafePointer[NoneType, MutAnyOrigin]
+            ](),  # null unused module
             Pointer[TVMFFIAny, MutAnyOrigin](to=args[0]),
             8,  # num_args
             Pointer[TVMFFIAny, MutAnyOrigin](to=result),

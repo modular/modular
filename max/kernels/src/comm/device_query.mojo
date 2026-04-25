@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides device query utilities for communication primitives. """
+"""Provides device query utilities for communication primitives."""
 
 from std.sys.info import _accelerator_arch
 from internal_utils import TuningConfig, Table

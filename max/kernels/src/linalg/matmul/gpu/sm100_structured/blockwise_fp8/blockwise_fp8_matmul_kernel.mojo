@@ -660,6 +660,7 @@ struct BlackwellBlockwiseFP8MatmulKernel[
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(a_scales_tma_op, `nvvm.grid_constant`)
+    @__name(StaticString(Self.config.get_kernal_name()), mangle=True)
     def run(
         # TMA descriptors -- types derived from loader's legacy layout computation
         a_tma_op: Self.ATmaOp,
@@ -724,11 +725,11 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             cluster_dim, clc_response_arr, clc_full, clc_empty, clc_throttle
         )
 
-        var work_iter = scheduler.work_iterator()
-
         # ===== TMA LOAD WARP (Linear-style API) =====
         # Flat code structure with explicit acquire/release.
         if WarpRole.is_main_load():
+            var load_iter = scheduler.work_iterator()
+
             # Construct loaders with new Layout types.
             # tma_origin inferred from Pointer, rebind inside __init__.
             var a_loader = TileLoader[
@@ -753,24 +754,23 @@ struct BlackwellBlockwiseFP8MatmulKernel[
             ](Pointer(to=a_scales_tma_op))
 
             var producer = input_pipeline.producer()
-            while work_iter.has_work():
-                with work_iter.next() as current:
-                    work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
+            for current in load_iter:
+                scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                    for i in range(num_iters):
-                        # Acquire tiles (waits for consumer to free slot)
-                        var tiles = producer.acquire_stage()
-                        Self.load_input_tiles(
-                            a_loader,
-                            b_loader,
-                            a_scales_loader,
-                            tiles,
-                            ctx.peer_cta_coord,
-                            current.coord(),
-                            i,
-                            ctx.elect_one_cta,
-                        )
-                        tiles^.release()  # Advance producer stage
+                for i in range(num_iters):
+                    # Acquire tiles (waits for consumer to free slot)
+                    var tiles = producer.acquire_stage()
+                    Self.load_input_tiles(
+                        a_loader,
+                        b_loader,
+                        a_scales_loader,
+                        tiles,
+                        ctx.peer_cta_coord,
+                        current.coord(),
+                        i,
+                        ctx.elect_one_cta,
+                    )
+                    tiles^.release()  # Advance producer stage
 
             producer.drain()  # Wait for consumer before CTA exits
 
@@ -781,9 +781,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
 
             var sched_iter = scheduler.scheduler_iterator()
 
-            while sched_iter.has_work():
-                with sched_iter.next():
-                    sched_iter.signal_and_advance()
+            for _ in sched_iter:
+                sched_iter.signal_and_advance()
 
             sched_iter.drain()
 
@@ -791,6 +790,8 @@ struct BlackwellBlockwiseFP8MatmulKernel[
         # Flat code structure with compiler-enforced cleanup.
         # Compare to context manager version in the docstring.
         if WarpRole.is_mma():
+            var mma_iter = scheduler.work_iterator()
+
             # Create linear handle - allocates TMEM, signals sync barrier
             var mma_handle = Self.MmaHandle.create(
                 smem.pipelines.tmem_addr(),
@@ -799,23 +800,20 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 UInt16(ctx.mma_complete_mask),
             )
 
-            while work_iter.has_work():
-                with work_iter.wait_and_advance():  # blocks on CLC
-                    if ctx.elect_one_cta:
-                        for _ in range(num_iters):
-                            # Acquire MMA stage (waits for epilogue)
-                            var mma_stage = mma_handle.acquire_k_stage_linear()
-                            var accum = Self.AccumTensor(
-                                mma_stage.tmem_offset()
-                            )
+            for _ in mma_iter:
+                if ctx.elect_one_cta:
+                    for _ in range(num_iters):
+                        # Acquire MMA stage (waits for epilogue)
+                        var mma_stage = mma_handle.acquire_k_stage_linear()
+                        var accum = Self.AccumTensor(mma_stage.tmem_offset())
 
-                            # Acquire input tiles (waits for TMA)
-                            var input_tiles = input_pipeline.acquire_consumer()
-                            Self.mma(input_tiles, mma_op, accum)
+                        # Acquire input tiles (waits for TMA)
+                        var input_tiles = input_pipeline.acquire_consumer()
+                        Self.mma(input_tiles, mma_op, accum)
 
-                            # Release resources (compiler enforces these calls)
-                            input_tiles^.release()
-                            mma_stage^.release()
+                        # Release resources (compiler enforces these calls)
+                        input_tiles^.release()
+                        mma_stage^.release()
 
             # Wait for epilogue and deallocate TMEM
             mma_handle^.release()
@@ -833,33 +831,32 @@ struct BlackwellBlockwiseFP8MatmulKernel[
                 UInt16(ctx.mma_complete_mask),
             )
 
-            while work_iter.has_work():
-                with work_iter.next() as current:
-                    var accum = Self.Accumulator()
+            var epi_iter = scheduler.work_iterator()
 
-                    # Per-K stages still use context manager for bundled sync
-                    # (combines MMA→Epilogue and A-scales pipelines)
-                    for k_iter in range(num_iters):
-                        with epi_handle.per_k_stage(
-                            input_pipeline
-                        ) as epi_stage:
-                            accum.promote(
-                                b_scales,
-                                a_scales_tiles,
-                                epi_stage,
-                                work_tile_coord=current.coord(),
-                                k_iter=k_iter,
-                                problem_shape=problem_shape,
-                            )
+            for current in epi_iter:
+                var accum = Self.Accumulator()
 
-                    named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()
+                # Per-K stages still use context manager for bundled sync
+                # (combines MMA→Epilogue and A-scales pipelines)
+                for k_iter in range(num_iters):
+                    with epi_handle.per_k_stage(input_pipeline) as epi_stage:
+                        accum.promote(
+                            b_scales,
+                            a_scales_tiles,
+                            epi_stage,
+                            work_tile_coord=current.coord(),
+                            k_iter=k_iter,
+                            problem_shape=problem_shape,
+                        )
 
-                    Self.TileWriterType.write(
-                        accum,
-                        c_tiles,
-                        c_tma_op,
-                        c_coord=current.coord(),
-                    )
+                named_barrier[Int32(Self.num_output_warps * WARP_SIZE)]()
+
+                Self.TileWriterType.write(
+                    accum,
+                    c_tiles,
+                    c_tma_op,
+                    c_coord=current.coord(),
+                )
 
             # Signal epilogue completion
             epi_handle^.release()

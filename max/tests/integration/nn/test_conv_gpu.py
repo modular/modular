@@ -15,6 +15,7 @@ from shared_conv_impl import (
     conv1d_impl,
     conv1d_tuple_padding_impl,
     conv1d_tuple_padding_nonfcrs_impl,
+    conv2d_1x1_impl,
     conv2d_impl,
     conv2d_tuple_padding_impl,
     conv3d_impl,
@@ -31,6 +32,11 @@ def test_conv3d_gpu(gpu_session: InferenceSession) -> None:
 @pytorch_disable_tf32_dtype
 def test_conv1d_gpu(gpu_session: InferenceSession) -> None:
     conv1d_impl(gpu_session)
+
+
+@pytorch_disable_tf32_dtype
+def test_conv2d_1x1_gpu(gpu_session: InferenceSession) -> None:
+    conv2d_1x1_impl(gpu_session)
 
 
 @pytorch_disable_tf32_dtype

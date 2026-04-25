@@ -31,6 +31,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
@@ -157,7 +158,9 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             def _encode_fn(
                 prompt: str,
             ) -> npt.NDArray[np.integer[Any]]:
-                return self.delegate.encode(prompt, allow_special_tokens=True)
+                return np.array(
+                    self.delegate.encode(prompt, allow_special_tokens=True)
+                )
 
             encoded_prompt = await run_with_default_executor(_encode_fn, prompt)
 
@@ -173,12 +176,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         return encoded_prompt
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Applies the tokenizer's chat template to messages."""
         templated = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated, str)
@@ -325,6 +331,7 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,
             position_ids=position_ids,
             image_token_indices=image_token_indices,

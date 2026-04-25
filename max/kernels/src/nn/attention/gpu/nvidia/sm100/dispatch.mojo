@@ -13,7 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from nn.attention.gpu.nvidia.sm90.attention import ImmutTileTensor1D
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
@@ -36,7 +36,6 @@ from nn.attention.mha_utils import (
 )
 from .kernel import SM100MHA2Q
 
-
 comptime logger = Logger()
 
 
@@ -54,6 +53,7 @@ def mha_sm100_dispatch[
     ragged: Bool,
     sink: Bool,
     _is_cache_length_accurate: Bool,
+    pair_cta: Bool,
 ](
     output: DeviceBuffer[output_type],
     q_arg: UnsafePointer[Scalar[q_type], _],
@@ -79,16 +79,19 @@ def mha_sm100_dispatch[
         not decoding
     ), "this implementation does not support decoding"
     comptime fa4_config = FA4Config[KVType.dtype](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
-        qk_depth=Int(config.depth),
-        ov_depth=Int(config.depth),
+        qk_depth=config.depth,
+        ov_depth=config.depth,
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
         is_mla=False,
+        pair_cta=pair_cta,
     )
+    comptime assert fa4_config.supported(), fa4_config.description()
     comptime swizzle_mode = fa4_config.swizzle_mode
     comptime BM = fa4_config.BM
+    comptime fuse_gqa = fa4_config.fuse_gqa
     comptime num_threads = fa4_config.num_threads
     var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
 
@@ -100,13 +103,14 @@ def mha_sm100_dispatch[
         swizzle_mode,
         BM=BM // 2,
         BN=fa4_config.ov_depth,
+        group=fa4_config.group if fuse_gqa else 1,
     ]
 
     var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
         rows=num_rows_q,
-        middle_dim=fa4_config.num_q_heads,
+        middle_dim=fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads,
     )
 
     q_tma_op = q_tma[
@@ -116,11 +120,12 @@ def mha_sm100_dispatch[
         q_num_heads=fa4_config.num_q_heads,
         group=fa4_config.group,
         decoding=False,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=fa4_config.num_qk_stages,
     ](ctx, q, num_rows_q)
     k_tma_op = k.create_tma_tile[
         fa4_config.swizzle_mode,
-        BN=fa4_config.BN,
+        BN=fa4_config.k_rows_per_cta(),
         depth=fa4_config.qk_depth,
         BK=fa4_config.BK0,
     ](ctx)
@@ -128,13 +133,15 @@ def mha_sm100_dispatch[
         fa4_config.swizzle_mode,
         BN=fa4_config.BN,
         depth=fa4_config.ov_depth,
-        BK=fa4_config.padded_ov_depth,
+        BK=fa4_config.v_cols_per_cta(),
     ](ctx)
     comptime assert BM == 256
+    comptime PairBM_eff = fa4_config.PairBM_eff()
     comptime SchedulerType = TransientScheduler[
-        UInt32(BM),
-        UInt32(fa4_config.num_q_heads),
+        UInt32(PairBM_eff),
+        UInt32(fa4_config.num_kv_heads if fuse_gqa else fa4_config.num_q_heads),
         flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
+        pair_cta=pair_cta,
     ]
     var scheduler: SchedulerType = SchedulerType()
 
@@ -172,7 +179,7 @@ def mha_sm100_dispatch[
                 }
 
                 var max_num_prompt_tiles: UInt32 = ceildiv(
-                    max_prompt_len_arg.as_uint32(), UInt32(BM)
+                    max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
                 )
                 var block_x: UInt32 = (
                     max_num_prompt_tiles * partition.num_partitions()
@@ -209,6 +216,9 @@ def mha_sm100_dispatch[
                     PartitionType,
                 ].kernel
 
+                var cluster_dim: OptionalReg[Dim] = None
+                comptime if pair_cta:
+                    cluster_dim = Dim(2, 1, 1)
                 ctx.enqueue_function[kernel, kernel](
                     q_tma_op,
                     k_tma_op,
@@ -221,6 +231,7 @@ def mha_sm100_dispatch[
                     pack,
                     grid_dim=SchedulerType.grid_dim(batch_size, block_x),
                     block_dim=(num_threads, 1, 1),
+                    cluster_dim=cluster_dim,
                     shared_mem_bytes=smem_use,
                     func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                         UInt32(smem_use)

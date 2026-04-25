@@ -158,7 +158,6 @@ modular_py_binary(
     srcs = ["download_models_for_testing.py"],
     imports = ["."],
     main = "download_models_for_testing.py",
-    tags = ["no-pydeps"],
     deps = [
         "//max/tests/integration:hf_repo_lock",
         requirement("click"),
@@ -228,6 +227,11 @@ modular_py_binary(
             requirement("tokenicer"),  # Required by gptqmodel
         ],
         "//conditions:default": [],
+    }) + select({
+        "//:use_sglang_setting": [
+            requirement("sglang"),  # Required for compressed-tensors quantization models
+        ],
+        "//conditions:default": [],
     }),
 )
 
@@ -249,12 +253,12 @@ modular_py_binary(
     },
     imports = ["."],
     main = "debug_model.py",
-    tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
         ":debugging_utils",
         ":hf_config_overrides",
         ":run_models",
         "//max/python/max/entrypoints",
+        "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",
         requirement("click"),
         requirement("torch"),
@@ -265,9 +269,12 @@ modular_py_binary(
     name = "precompile_all_pipelines",
     testonly = True,
     srcs = ["precompile_all_pipelines.py"],
+    ignore_extra_deps = [
+        # Unsure if this is actually needed, but likely
+        requirement("gguf"),
+    ],
     imports = ["."],
     main = "precompile_all_pipelines.py",
-    tags = ["no-pydeps"],
     deps = [
         ":create_pipelines",
         ":tag_filters",
@@ -459,15 +466,13 @@ modular_py_test(
     size = "small",
     srcs = ["test_hf_config_overrides.py"],
     imports = ["."],
-    tags = [
-        "no-pydeps",  # TODO: Fix pydeps import mapping for tools.hf_config_overrides
-    ],
     # TODO(MODELS-994): Investigate and enable on macOS
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [
+        "//max/python/max/experimental/nn",
         "//max/python/max/nn",
         "//max/python/max/pipelines/lib",
         "//max/tests/integration/tools:hf_config_overrides",

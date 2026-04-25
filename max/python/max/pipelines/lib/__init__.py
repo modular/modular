@@ -61,6 +61,7 @@ from .interfaces import (
     ModelOutputs,
     PipelineModel,
     PipelineModelWithKVCache,
+    UnifiedEagleOutputs,
 )
 from .lora import LoRAManager
 from .lora_request_processor import LoRARequestProcessor
@@ -73,7 +74,11 @@ from .pipeline_variants.overlap_text_generation import (
 )
 from .pixel_tokenizer import PixelGenerationTokenizer
 from .quant import parse_quant_config
-from .registry import PIPELINE_REGISTRY, SupportedArchitecture
+from .registry import (
+    PIPELINE_REGISTRY,
+    PipelineModelType,
+    SupportedArchitecture,
+)
 from .sampling import (
     SamplingConfig,
     rejection_sampler,
@@ -87,7 +92,6 @@ from .speculative_decoding import (
 from .speech_token_pipeline import SpeechTokenGenerationPipeline
 from .tokenizer import (
     IdentityPipelineTokenizer,
-    PreTrainedPipelineTokenizer,
     TextAndVisionTokenizer,
     TextTokenizer,
     build_eos_tracker_for_request,
@@ -121,12 +125,12 @@ __all__ = [
     "OverlapTextGenerationPipeline",
     "PipelineConfig",
     "PipelineModel",
+    "PipelineModelType",
     "PipelineModelWithKVCache",
     "PipelineRole",
     "PipelineRuntimeConfig",
     "PixelGenerationPipeline",
     "PixelGenerationTokenizer",
-    "PreTrainedPipelineTokenizer",
     "ProfilingConfig",
     "RepoType",
     "RopeType",
@@ -140,6 +144,7 @@ __all__ = [
     "TextAndVisionTokenizer",
     "TextGenerationPipeline",
     "TextTokenizer",
+    "UnifiedEagleOutputs",
     "WeightPathParser",
     "build_eos_tracker_for_request",
     "convert_max_config_value",

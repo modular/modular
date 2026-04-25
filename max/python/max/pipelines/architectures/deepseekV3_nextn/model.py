@@ -24,7 +24,7 @@ import numpy as np
 from max.driver import Buffer, Device, DLPackArray
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
@@ -410,7 +410,9 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 next(graph_inputs_iter).buffer for _ in range(num_devices)
             ]
 
-            fetch_types = self.kv_params.get_symbolic_inputs()[0]
+            fetch_types = (
+                self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+            )
             len_of_kv_inputs = len(list(fetch_types)) * num_devices
             kv_caches_per_dev = self._unflatten_kv_inputs(
                 [next(graph_inputs_iter) for _ in range(len_of_kv_inputs)]
@@ -422,13 +424,21 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
 
             ep_model_inputs = list(graph_inputs_iter)
 
+            hidden_states_per_dev = list(
+                ops.distributed_broadcast(hidden_states.tensor, signal_buffers)
+            )
+            input_row_offsets_per_dev = list(
+                ops.distributed_broadcast(
+                    device_input_row_offsets.tensor, signal_buffers
+                )
+            )
             outputs = nn_model(
                 tokens.tensor,
-                hidden_states.tensor,
+                hidden_states_per_dev,
                 signal_buffers,
                 kv_caches_per_dev,
                 return_n_logits.tensor,
-                device_input_row_offsets.tensor,
+                input_row_offsets_per_dev,
                 host_input_row_offsets.tensor,
                 data_parallel_splits.tensor,
                 batch_context_lengths,
@@ -468,7 +478,8 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 "EAGLE pipeline should set this field after calling prepare_initial_token_inputs()."
             )
 
-        curr_kv_cache_inputs = model_inputs.kv_cache_inputs or ()
+        curr_kv_cache_inputs = model_inputs.kv_cache_inputs
+        assert curr_kv_cache_inputs is not None
         ep_inputs = (
             ()
             if self.ep_comm_initializer is None
@@ -483,7 +494,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
             model_inputs.return_n_logits,
             model_inputs.data_parallel_splits,
             *model_inputs.signal_buffers,
-            *curr_kv_cache_inputs,
+            *curr_kv_cache_inputs.flatten(),
             *model_inputs.batch_context_lengths,
             *ep_inputs,
         )
@@ -505,7 +516,7 @@ class DeepseekV3NextNModel(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         hidden_states: Buffer | None = None,
     ) -> DeepseekV3NextNInputs:

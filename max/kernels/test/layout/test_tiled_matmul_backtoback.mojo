@@ -112,15 +112,15 @@ def matmul_ukern[
     # This is a trick to repeatedly re-touch A's memory in the microkernel,
     # so that A can stay in the L1-cache, while we stream B through it.
 
-    var Ao: UnsafePointer[Scalar[elt]] = A
-    var Bo: UnsafePointer[Scalar[elt]] = B
+    var Ao = A
+    var Bo = B
     # TODO: static assert that kf%Astride == 0
     for _ in range(Astride):
         # Aecause we repeatedly call `matmul_ukern` with the same
         # slice of `A`, but different slice of `B`, we wish for `A`
         # to remain in the l1 cache, but freely evict `B`.
         # Repeatedly re-touching the cachelines of `A` helps us achieve this.
-        var Atmp: UnsafePointer[Scalar[elt]] = Ao
+        var Atmp = Ao
         Ao = Ao + 1
         for _ in range(kf):
             comptime for _ in range(kr):
@@ -261,22 +261,21 @@ def matmul[
     comptime assert size(layoutB.stride[1].tuple()[1]) == WNr * Kc
     comptime assert size(layoutB.stride[1].tuple()[2]) == Nc * K
 
-    comptime Ptr = UnsafePointer[Scalar[elt], MutAnyOrigin]
-    var pc: UnsafePointer[Scalar[elt]] = C.ptr
-    var pa: UnsafePointer[Scalar[elt]] = A.ptr
+    var pc = C.ptr
+    var pa = A.ptr
     # TODO: nontemporal prefetches on the microkernel slices of `B`
     #       as the slice does not get reused at the L2 or L3 level.
     # TODO: prefetches on `A`, to hide latency, as we stream it through
     #       the L1, suffering L2->register latency for each load.
     # NOTE: Read comments within the loop from the inside out.
     for _ in range(M // Mc):
-        var pb: UnsafePointer[Scalar[elt]] = B.ptr
-        var pak: type_of(pb) = pa
+        var pb = B.ptr
+        var pak = pa
         for _ in range(N // Nc):
-            var pck: UnsafePointer[Scalar[elt]] = pc
+            var pck = pc
             pak = pa
             for kc in range(K // Kc):
-                var pbk: UnsafePointer[Scalar[elt]] = pb
+                var pbk = pb
                 pck = pc
                 for _ in range(Mc // Mr):  # mr
                     pbk = pb
@@ -295,8 +294,9 @@ def matmul[
 def alloc_tensor[
     elt: DType, layout: Layout
 ]() -> LayoutTensor[elt, layout, MutAnyOrigin]:
+    comptime size: Int = layout.size()
     return LayoutTensor[elt, layout, MutAnyOrigin](
-        alloc[Scalar[elt]](layout.size(), alignment=64)
+        alloc[Scalar[elt]](size, alignment=64)
     )
 
 
@@ -333,7 +333,7 @@ def delete_idx(arg: List[Int], idx: Int) -> List[Int]:
     for i in range(len(arg)):
         if i != idx:
             res.append(arg[i])
-    return res
+    return res^
 
 
 @always_inline
@@ -362,14 +362,19 @@ def vectorize_flat[
     elt_b: DType,
     //,
     f: def[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[Scalar[elt_a], _], UnsafePointer[Scalar[elt_b], _], Int
+        UnsafePointer[mut=True, Scalar[elt_a], _],
+        UnsafePointer[Scalar[elt_b], _],
+        Int,
     ) capturing -> None,
     simd_width: Int,
     unroll_factor: Int,
     shape: List[Int],
     stride_a: List[Int],
     stride_b: List[Int],
-](a: UnsafePointer[Scalar[elt_a], _], b: UnsafePointer[Scalar[elt_b], _]):
+](
+    a: UnsafePointer[mut=True, Scalar[elt_a], _],
+    b: UnsafePointer[Scalar[elt_b], _],
+):
     comptime assert len(shape) == len(stride_a)
     comptime assert len(shape) == len(stride_b)
 
@@ -380,22 +385,23 @@ def vectorize_flat[
         comptime size = shape[0]
 
         @always_inline
-        @parameter
-        def vf[width: Int](i: Int):
+        def vf[width: Int](i: Int) {var a, var b}:
             f[width, int_stride_a, int_stride_b](a, b, i)
 
         vectorize[
-            vf,
             simd_width,
             unroll_factor=min(size // simd_width, unroll_factor),
-        ](size)
+        ](size, vf)
     else:
         # we find the maximum min stride, subset, and loop over it.
         comptime max_idx = max_min_idx_positive(stride_b, stride_a)
         comptime subset_shape = delete_idx(shape, max_idx)
         comptime subset_stride_b = delete_idx(stride_b, max_idx)
         comptime subset_stride_a = delete_idx(stride_a, max_idx)
-        for i in range(shape[max_idx]):
+        comptime loop_size: Int = shape[max_idx]
+        comptime a_stride: Int = stride_a[max_idx]
+        comptime b_stride: Int = stride_b[max_idx]
+        for i in range(loop_size):
             vectorize_flat[
                 f,
                 simd_width,
@@ -403,7 +409,7 @@ def vectorize_flat[
                 subset_shape,
                 subset_stride_a,
                 subset_stride_b,
-            ](a + i * stride_a[max_idx], b + i * stride_b[max_idx])
+            ](a + i * a_stride, b + i * b_stride)
 
 
 def tolist(x: IntTuple) -> List[Int]:
@@ -411,7 +417,7 @@ def tolist(x: IntTuple) -> List[Int]:
     var flat = flatten(x)
     for y in flat:
         list.append(y.value())
-    return list
+    return list^
 
 
 def vectorize_layout_tensor[
@@ -421,7 +427,9 @@ def vectorize_layout_tensor[
     layout_b: Layout,
     //,
     f: def[width: Int, stride_a: Int, stride_b: Int](
-        UnsafePointer[Scalar[elt_a], _], UnsafePointer[Scalar[elt_b], _], Int
+        UnsafePointer[mut=True, Scalar[elt_a], _],
+        UnsafePointer[Scalar[elt_b], _],
+        Int,
     ) capturing -> None,
     simd_width: Int = max(simd_width_of[elt_a](), simd_width_of[elt_b]()),
     unroll_factor: Int = 4,
@@ -457,7 +465,7 @@ def copy_to[
     def copy[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        dstp: UnsafePointer[Scalar[elt_dst], _],
+        dstp: UnsafePointer[mut=True, Scalar[elt_dst], _],
         srcp: UnsafePointer[Scalar[elt_src], _],
         i: Int,
     ):
@@ -491,7 +499,7 @@ def check_approx_equal[
     def check[
         width: Int, stride_a: Int, stride_b: Int
     ](
-        pa: UnsafePointer[Scalar[elt_dst], _],
+        pa: UnsafePointer[mut=True, Scalar[elt_dst], _],
         pb: UnsafePointer[Scalar[elt_src], _],
         i: Int,
     ):
@@ -617,21 +625,19 @@ def matmulb2b[
     comptime assert size(layoutC.stride[1].tuple()[1]) == WNr * Kc
     comptime assert size(layoutC.stride[1].tuple()[2]) == Nc * Kc
 
-    var pa: UnsafePointer[Scalar[elt]] = A.ptr
-    var pd: UnsafePointer[Scalar[elt]] = D.ptr
+    var pa = A.ptr
+    var pd = D.ptr
     # Should we support heap-allocating and passing it in?
-    var AB: UnsafePointer[Scalar[elt]] = stack_allocation[
-        Mc * Nc, elt, alignment=64
-    ]()
+    var AB = stack_allocation[Mc * Nc, elt, alignment=64]()
     # TODO: prefetches, as described in nest
     # NOTE: Read comments within the loop from the inside out.
     #       I.e., read following a post-order depth first traversal of the
     #       loop tree.
     for _ in range(M // Mc):  # mc
-        var pb: UnsafePointer[Scalar[elt]] = B.ptr
-        var pc: UnsafePointer[Scalar[elt]] = C.ptr
-        var pak: UnsafePointer[Scalar[elt]] = pa
-        var pdk: UnsafePointer[Scalar[elt]] = pd
+        var pb = B.ptr
+        var pc = C.ptr
+        var pak = pa
+        var pdk = pd
         for lc in range(L // Nc):  # lc, reduction for (AB)*C
             pak = pa
             for kc in range(
@@ -651,8 +657,8 @@ def matmulb2b[
                 # for `prefetchnta`, to load slices to the L1 where they may be
                 # held and reused, without polluting any of the other caches, where
                 # the memory is not reused.
-                var pabk: UnsafePointer[Scalar[elt]] = AB
-                var pbk: UnsafePointer[Scalar[elt]] = pb
+                var pabk = AB
+                var pbk = pb
                 for _ in range(Mc // Mr):  # mr               - hold in l2 cache
                     # Comment #1
                     # Size of slices accessed per iteration:
@@ -730,8 +736,8 @@ def matmulb2b[
                 # We might be able to load `D` with `prefetchnta` when updating it,
                 # and using a streaming store to write? Although, this would
                 # necessitate fences.
-                var pabk: UnsafePointer[Scalar[elt]] = AB
-                var pck: UnsafePointer[Scalar[elt]] = pc
+                var pabk = AB
+                var pck = pc
                 for _ in range(
                     Mc // Mr
                 ):  # mr                - hold in l2 cache
@@ -872,9 +878,12 @@ def bench_b2b[
     var Brm64 = alloc_tensor[DType.float64, Layout.row_major(K, L)]()
     var Crm64 = alloc_tensor[DType.float64, Layout.row_major(L, N)]()
     var ABrm64 = alloc_tensor[DType.float64, Layout.row_major(M, L)]()
-    rand(Atile.ptr, Atile.layout.size())
-    rand(Btile.ptr, Btile.layout.size())
-    rand(Ctile.ptr, Ctile.layout.size())
+    comptime layout_A_size: Int = layout_A.size()
+    comptime layout_B_size: Int = layout_B.size()
+    comptime layout_C_size: Int = layout_C.size()
+    rand(Atile.ptr, layout_A_size)
+    rand(Btile.ptr, layout_B_size)
+    rand(Ctile.ptr, layout_C_size)
     copy_to(Ctileb2b, Ctile)
     copy_to(Arm64, Atile)
     copy_to(Brm64, Btile)
@@ -888,7 +897,7 @@ def bench_b2b[
         matmul[elt, M, L, K, W, Mc, Nc, Kc, Mr, Nr, Kr](ABtile, Atile, Btile)
         matmul[elt, M, N, L, W, Mc, Nc, Kc, Mr, Nr, Kr](Dtile, ABtile, Ctile)
 
-    var flops = 2e-9 * (M * K * L + M * L * N)
+    var flops = 2e-9 * Float64(M * K * L + M * L * N)
     if do_benchmark:
         var secs_tile = std.benchmark.run[func3=test_tile_fn](
             max_runtime_secs=1.0

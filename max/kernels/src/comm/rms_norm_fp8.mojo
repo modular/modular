@@ -21,11 +21,7 @@ introducing a comm → nn → comm circular dependency.
 from std.math import rsqrt
 from std.sys import align_of, simd_width_of
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
-from std.gpu import (
-    WARP_SIZE,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import WARP_SIZE, block_idx, thread_idx
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.primitives import block
@@ -58,7 +54,7 @@ def block_reduce_sum_and_max[
     @always_inline
     @parameter
     def _reduce_fn[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         comptime if reduction_idx == 0:
             return warp.sum(v)
@@ -274,6 +270,7 @@ def _rms_norm_fused_fp8_gpu[
         launch[1, False]()
 
 
+@__name(t"rms_norm_fused_fp8_warp_tiling_{in_dtype}_{out_dtype}", mangle=True)
 def _rms_norm_fused_fp8_kernel_warp_tiling[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -313,8 +310,8 @@ def _rms_norm_fused_fp8_kernel_warp_tiling[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var row = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row = block_idx.x
+    var tid = thread_idx.x
     var idx = tid * simd_width
 
     # Helper: Load gamma and apply to value (shared between both kernel variants)
@@ -482,6 +479,7 @@ def _rms_norm_fused_fp8_gpu_launch[
             )
 
 
+@__name(t"rms_norm_fused_fp8_block_{in_dtype}_{out_dtype}", mangle=True)
 def _rms_norm_fused_fp8_kernel_block[
     mut: Bool,
     origin: Origin[mut=mut],
@@ -521,8 +519,8 @@ def _rms_norm_fused_fp8_kernel_block[
     comptime accum_type = get_accum_type[in_dtype]()
     comptime align = align_of[SIMD[in_dtype, simd_width]]()
 
-    var row = Int(block_idx.x)
-    var tid = Int(thread_idx.x)
+    var row = block_idx.x
+    var tid = thread_idx.x
 
     # Helper: Load gamma and apply to value (same as warp-tiling variant)
     @always_inline

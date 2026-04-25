@@ -11,22 +11,103 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.math import align_down, align_up, ceildiv
+from std.math import align_down, align_up, ceildiv, iota
 from std.sys import align_of
 from std.sys._build import is_debug_build
 from std.sys.info import CompilationTarget, simd_width_of, size_of
+from std.sys.intrinsics import masked_load, masked_store
 from std.utils.index import Index, IndexList
 from std.algorithm import vectorize
-from buffer.buffer import partial_simd_load, partial_simd_store
 from layout.layout import *
 from layout import LayoutTensor, TileTensor
 
+
+@always_inline
+def partial_simd_load[
+    dtype: DType, //, width: Int
+](
+    storage: UnsafePointer[mut=False, Scalar[dtype], ...],
+    lbound: Int,
+    rbound: Int,
+    pad_value: Scalar[dtype],
+) -> SIMD[dtype, width]:
+    """Loads a vector with dynamic bound.
+
+    Out of bound data will be filled with pad value. Data is valid if
+    lbound <= idx < rbound for idx from 0 to (simd_width-1). For example:
+
+        addr 0  1  2  3
+        data x 42 43  x
+
+        partial_simd_load[4](addr0, 1, 3) #gives [0 42 43 0]
+
+    Parameters:
+        dtype: The DType of storage.
+        width: The system simd vector size.
+
+    Args:
+        storage: Pointer to the address to perform load.
+        lbound: Lower bound of valid index within simd (inclusive).
+        rbound: Upper bound of valid index within simd (non-inclusive).
+        pad_value: Value to fill for out of bound indices.
+
+    Returns:
+        The SIMD vector loaded and zero-filled.
+    """
+    # Create a mask based on input bounds.
+    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
+    var incr = iota[DType.int32, width]()
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
+
+    return masked_load[width](storage, mask, pad_value)
+
+
+@always_inline
+def partial_simd_store[
+    dtype: DType, //, width: Int
+](
+    storage: UnsafePointer[mut=True, Scalar[dtype], ...],
+    lbound: Int,
+    rbound: Int,
+    data: SIMD[dtype, width],
+):
+    """Stores a vector with dynamic bound.
+
+    Out of bound data will ignored. Data is valid if lbound <= idx < rbound for
+    idx from 0 to (simd_width-1).
+
+    e.g.
+        addr 0 1 2  3
+        data 0 0 0  0
+
+        partial_simd_load[4](addr0, 1, 3, [-1, 42, 43, -1]) #gives [0 42 43 0]
+
+    Parameters:
+        dtype: The DType of storage.
+        width: The system simd vector size.
+
+    Args:
+        storage: Pointer to the address to perform load.
+        lbound: Lower bound of valid index within simd (inclusive).
+        rbound: Upper bound of valid index within simd (non-inclusive).
+        data: The vector value to store.
+    """
+    # Create a mask based on input bounds.
+    var effective_lbound = SIMD[DType.int32, width](max(lbound, 0))
+    var effective_rbound = SIMD[DType.int32, width](min(width, rbound))
+    var incr = iota[DType.int32, width]()
+    var mask = incr.ge(effective_lbound) & incr.lt(effective_rbound)
+
+    return masked_store(data, storage, mask)
+
+
 comptime elementwise_epilogue_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> None
 
 comptime elementwise_compute_lambda_type = def[
-    dtype: DType, width: Int, *, alignment: Int = 1
+    dtype: DType, width: SIMDSize, *, alignment: Int = 1
 ](IndexList[2], SIMD[dtype, width]) capturing -> SIMD[dtype, width]
 
 
@@ -227,30 +308,6 @@ def calculate_tile_n_k[
     return calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
         global_tile_shape.N, global_tile_shape.K
     )
-
-
-@always_inline
-def _get_tile_n_k[
-    a_type: DType,
-    b_type: DType,
-    c_type: DType,
-    kernel_cols: Int,
-    transpose_b: Bool,
-    layout: Layout,
-](b: LayoutTensor[b_type, layout, ...]) -> IndexList[2]:
-    comptime assert b.rank == 2
-    var tile_n_k: IndexList[2]
-
-    comptime if not transpose_b:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(1), b.dim(0)
-        )
-    else:
-        tile_n_k = calculate_tile_n_k[a_type, b_type, c_type, kernel_cols](
-            b.dim(0), b.dim(1)
-        )
-
-    return tile_n_k
 
 
 @always_inline
@@ -660,7 +717,7 @@ def packA_i8mm[
     @always_inline
     def packA_helper[
         nrow: Int
-    ](offset: Int) unified {var k, var t0, read a_ptr, read a_packed_ptr}:
+    ](offset: Int) {var k, var t0, read a_ptr, read a_packed_ptr}:
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset

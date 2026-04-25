@@ -129,12 +129,15 @@ def my_sort[
     values: SIMD[dtype, width],
     /,
     # positional-or-keyword parameter
-    compare: fn(Scalar[dtype], Scalar[dtype]) raises -> Int,
+    compare: def(Scalar[dtype], Scalar[dtype]) thin -> Int,
     *,
     # keyword-only parameter
     reverse: Bool = False,
 ]() -> SIMD[dtype, width]:
 ```
+
+Here, `compare` is a function-typed parameter. Because the comparator is a
+noncapturing function value, the function type explicitly uses `thin`.
 
 Here's a quick overview of the special characters in the parameter list:
 
@@ -173,7 +176,7 @@ def repeat[
     comptime for _ in range(count):
         print(msg)
 
-def main() raises:
+def main():
     repeat[2](42)  # prints 42 on two lines
 ```
 
@@ -490,7 +493,7 @@ specifies the data type and `size` specifies the length of the SIMD vector
 (which must be a power of 2):
 
 ```mojo
-def main() raises:
+def main():
     # Make a vector of 4 floats.
     var small_vec = SIMD[DType.float32, 4](1.0, 2.0, 3.0, 4.0)
 
@@ -536,7 +539,7 @@ from std.math import sqrt
 def rsqrt[dt: DType](x: Scalar[dt]) -> Scalar[dt]:
     return 1 / sqrt(x)
 
-def main() raises:
+def main():
     var v = Scalar[DType.float16](42)
     print(rsqrt(v))
 ```
@@ -596,7 +599,7 @@ struct One[Type: Writable & Copyable]:
         self.value = value.copy()
 
 
-def use_one() raises:
+def use_one():
     s1 = One(123)  # equivalent to One[Int](123)
     s2 = One("Hello")  # equivalent to One[String]("Hello")
 ```
@@ -621,7 +624,7 @@ struct Two[Type: Writable & Copyable]:
     def fire(thing1: One[Self.Type], thing2: One[Self.Type]):
         print("🔥", String(thing1.value), String(thing2.value))
 
-def use_two() raises:
+def use_two():
     s3 = Two(One("infer"), One("me"))
     Two.fire(One(1), One(2))
     # Two.fire(One("mixed"), One(0)) # Error: parameter inferred to two
@@ -751,18 +754,6 @@ don't have:
 
 - The parameter type must be register-passable.
 
-- The parameter values aren't automatically projected into a list, so you
-  need to construct the list (in this case, a `VariadicParamList`) explicitly:
-
-  ```mojo
-  def sum_params[*values: Int]() -> Int:
-      comptime list = VariadicParamList[*values]()
-      var sum = 0
-      for v in list:
-          sum += v
-      return sum
-  ```
-
 Variadic keyword parameters (for example, `**kwparams`) are
 not supported yet.
 
@@ -836,7 +827,7 @@ create an instance of `Span`. Binding the `mut` parameter by keyword lets you
 define a `Span` that requires a mutable origin.
 
 ```mojo
-def mutate_span(span: Span[mut=True, Byte, ...]) raises:
+def mutate_span(span: Span[mut=True, Byte, ...]):
     for i in range(0, len(span), 2):
         if i + 1 < len(span):
             span.swap_elements(i, i + 1)
@@ -908,7 +899,7 @@ def reduce_add(x: SIMD) -> Int:
     return reduce_add(lhs + rhs)
 
 
-def main() raises:
+def main():
     var x = SIMD[DType.int, 4](1, 2, 3, 4)
     print(x)
     print("Elements sum:", reduce_add(x))
@@ -1038,21 +1029,21 @@ It can appear in code in the following forms:
 - *Fully bound*, with all of its parameters specified:
 
   ```mojo
-  def my_fn1(m1: MyType["Hello", 3, 4, True]) raises:
+  def my_fn1(m1: MyType["Hello", 3, 4, True]):
       pass
   ```
 
 - *Partially bound*, with *some but not all* of its parameters specified:
 
   ```mojo
-  def my_fn2(m2: MyType["Hola", _, _, True]) raises:
+  def my_fn2(m2: MyType["Hola", _, _, True]):
       pass
   ```
 
 - *Unbound*, with no parameters specified:
 
   ```mojo
-  def my_fn3(m3: MyType[_, _, _, _]) raises:
+  def my_fn3(m3: MyType[_, _, _, _]):
       pass
   ```
 

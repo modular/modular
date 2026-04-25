@@ -89,7 +89,7 @@ comptime AnyOpaquePointer = OpaquePointer[AnyOrigin[mut=True]]
 # `type` doesn't do anything here, it's just for descriptive purposes, allowing
 # the ability to pass the descriptive pointer names below
 comptime DoubleNestedPointer[type: AnyType] = UnsafePointer[
-    UnsafePointer[AnyOpaquePointer, AnyOrigin[mut=True]], _
+    Optional[UnsafePointer[AnyOpaquePointer, AnyOrigin[mut=True]]], _
 ]
 
 comptime cudnnContext = AnyOpaquePointer
@@ -148,7 +148,9 @@ def cudnnDestroyAlgorithmPerformance(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAlgorithmPerformance",
-        def(type_of(algo_perf), type_of(number_to_destroy)) -> cudnnStatus_t,
+        def(
+            type_of(algo_perf), type_of(number_to_destroy)
+        ) thin -> cudnnStatus_t,
     ]()(algo_perf, number_to_destroy)
 
 
@@ -157,7 +159,7 @@ def cudnnCreate(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreate",
-        def(type_of(handle)) -> cudnnStatus_t,
+        def(type_of(handle)) thin -> cudnnStatus_t,
     ]()(handle)
 
 
@@ -223,7 +225,7 @@ def cudnnReduceTensor(
             type_of(beta),
             type_of(c_desc),
             type_of(_c),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         reduce_tensor_desc,
@@ -246,7 +248,9 @@ def cudnnGetActivationDescriptorSwishBeta(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetActivationDescriptorSwishBeta",
-        def(type_of(activation_desc), type_of(swish_beta)) -> cudnnStatus_t,
+        def(
+            type_of(activation_desc), type_of(swish_beta)
+        ) thin -> cudnnStatus_t,
     ]()(activation_desc, swish_beta)
 
 
@@ -255,7 +259,7 @@ def cudnnDestroyAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAlgorithmDescriptor",
-        def(type_of(algo_desc)) -> cudnnStatus_t,
+        def(type_of(algo_desc)) thin -> cudnnStatus_t,
     ]()(algo_desc)
 
 
@@ -272,7 +276,7 @@ def cudnnDropoutGetReserveSpaceSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutGetReserveSpaceSize",
-        def(type_of(xdesc), type_of(size_in_bytes)) -> cudnnStatus_t,
+        def(type_of(xdesc), type_of(size_in_bytes)) thin -> cudnnStatus_t,
     ]()(xdesc, size_in_bytes)
 
 
@@ -293,7 +297,7 @@ def cudnnGetReduceTensorDescriptor(
             type_of(reduce_tensor_nan_opt),
             type_of(reduce_tensor_indices),
             type_of(reduce_tensor_indices_type),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         reduce_tensor_desc,
         reduce_tensor_op,
@@ -323,7 +327,7 @@ def cudnnSetPoolingNdDescriptor(
             type_of(window_dim_a),
             type_of(padding_a),
             type_of(stride_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         pooling_desc,
         mode,
@@ -406,7 +410,7 @@ def cudnnSetTensor4dDescriptor(
             type_of(c),
             type_of(h),
             type_of(w),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(tensor_desc, format, data_type, n, c, h, w)
 
 
@@ -433,7 +437,7 @@ def cudnnLRNCrossChannelForward(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, norm_desc, lrn_mode, alpha, x_desc, x, beta, y_desc, y)
 
 
@@ -477,7 +481,7 @@ comptime cudnnActivationDescriptor_t = UnsafePointer[cudnnActivationStruct, _]
 
 @fieldwise_init
 struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
-    var _value: Int8
+    var _value: Int32
     comptime CUDNN_STATUS_SUCCESS = Self(0)
     comptime CUDNN_STATUS_NOT_INITIALIZED = Self(1)
     comptime CUDNN_STATUS_ALLOC_FAILED = Self(2)
@@ -494,8 +498,50 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
     comptime CUDNN_STATUS_RUNTIME_FP_OVERFLOW = Self(13)
     comptime CUDNN_STATUS_VERSION_MISMATCH = Self(14)
 
+    # cuDNN 9 renumbered the status enum and added several new entries.
+    comptime CUDNN_STATUS_NOT_INITIALIZED_V9 = Self(1001)
+    comptime CUDNN_STATUS_LEARNING_RATE_NOT_INITIALIZED = Self(1002)
+    comptime CUDNN_STATUS_ALLOC_FAILED_V9 = Self(2000)
+    comptime CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY = Self(2001)
+    comptime CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY = Self(2002)
+    comptime CUDNN_STATUS_BAD_PARAM_V9 = Self(3000)
+    comptime CUDNN_STATUS_BAD_PARAM_NULL_POINTER = Self(3001)
+    comptime CUDNN_STATUS_BAD_PARAM_MISALIGNED_POINTER = Self(3002)
+    comptime CUDNN_STATUS_BAD_PARAM_NOT_FINALIZED = Self(3003)
+    comptime CUDNN_STATUS_BAD_PARAM_OUT_OF_BOUND = Self(3004)
+    comptime CUDNN_STATUS_BAD_PARAM_SIZE_INSUFFICIENT = Self(3005)
+    comptime CUDNN_STATUS_BAD_PARAM_STREAM_MISMATCH = Self(3006)
+    comptime CUDNN_STATUS_BAD_PARAM_SHAPE_MISMATCH = Self(3007)
+    comptime CUDNN_STATUS_BAD_PARAM_DUPLICATED_ENTRIES = Self(3008)
+    comptime CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE = Self(3009)
+    comptime CUDNN_STATUS_ARCH_MISMATCH_V9 = Self(6000)
+    comptime CUDNN_STATUS_MAPPING_ERROR_V9 = Self(7000)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_V9 = Self(4000)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED = Self(4001)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE = Self(4002)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED = Self(4003)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED = Self(4004)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM = Self(4005)
+    comptime CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED = Self(4006)
+    comptime CUDNN_STATUS_EXECUTION_FAILED_V9 = Self(8000)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_V9 = Self(9000)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_GRAPH_PATTERN = Self(9001)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_SHAPE = Self(9002)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_DATA_TYPE = Self(9003)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_LAYOUT = Self(9004)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART = Self(9005)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH = Self(9006)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_RUNTIME_PREREQUISITE_MISSING = Self(
+        9007
+    )
+    comptime CUDNN_STATUS_NOT_SUPPORTED_SUBLIBRARY_UNAVAILABLE = Self(9008)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_SHARED_MEMORY_INSUFFICIENT = Self(9009)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_PADDING = Self(9010)
+    comptime CUDNN_STATUS_NOT_SUPPORTED_BAD_LAUNCH_PARAM = Self(9011)
+    comptime CUDNN_STATUS_VERSION_MISMATCH_V9 = Self(14000)
+
     def __init__(out self, value: Int):
-        self._value = Int8(value)
+        self._value = Int32(value)
 
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
@@ -537,7 +583,119 @@ struct cudnnStatus_t(Equatable, TrivialRegisterPassable, Writable):
             return writer.write_string("CUDNN_STATUS_RUNTIME_FP_OVERFLOW")
         if self is Self.CUDNN_STATUS_VERSION_MISMATCH:
             return writer.write_string("CUDNN_STATUS_VERSION_MISMATCH")
-        abort("invalid cudnnStatus_t entry")
+        if self is Self.CUDNN_STATUS_NOT_INITIALIZED_V9:
+            return writer.write_string("CUDNN_STATUS_NOT_INITIALIZED")
+        if self is Self.CUDNN_STATUS_LEARNING_RATE_NOT_INITIALIZED:
+            return writer.write_string(
+                "CUDNN_STATUS_LEARNING_RATE_NOT_INITIALIZED"
+            )
+        if self is Self.CUDNN_STATUS_ALLOC_FAILED_V9:
+            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED")
+        if self is Self.CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY:
+            return writer.write_string(
+                "CUDNN_STATUS_ALLOC_FAILED_DEVICE_MEMORY"
+            )
+        if self is Self.CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY:
+            return writer.write_string("CUDNN_STATUS_ALLOC_FAILED_HOST_MEMORY")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_V9:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_NULL_POINTER:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_NULL_POINTER")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_MISALIGNED_POINTER:
+            return writer.write_string(
+                "CUDNN_STATUS_BAD_PARAM_MISALIGNED_POINTER"
+            )
+        if self is Self.CUDNN_STATUS_BAD_PARAM_NOT_FINALIZED:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_NOT_FINALIZED")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_OUT_OF_BOUND:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_OUT_OF_BOUND")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_SIZE_INSUFFICIENT:
+            return writer.write_string(
+                "CUDNN_STATUS_BAD_PARAM_SIZE_INSUFFICIENT"
+            )
+        if self is Self.CUDNN_STATUS_BAD_PARAM_STREAM_MISMATCH:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_STREAM_MISMATCH")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_SHAPE_MISMATCH:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_SHAPE_MISMATCH")
+        if self is Self.CUDNN_STATUS_BAD_PARAM_DUPLICATED_ENTRIES:
+            return writer.write_string(
+                "CUDNN_STATUS_BAD_PARAM_DUPLICATED_ENTRIES"
+            )
+        if self is Self.CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE:
+            return writer.write_string("CUDNN_STATUS_BAD_PARAM_ATTRIBUTE_TYPE")
+        if self is Self.CUDNN_STATUS_ARCH_MISMATCH_V9:
+            return writer.write_string("CUDNN_STATUS_ARCH_MISMATCH")
+        if self is Self.CUDNN_STATUS_MAPPING_ERROR_V9:
+            return writer.write_string("CUDNN_STATUS_MAPPING_ERROR")
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_V9:
+            return writer.write_string("CUDNN_STATUS_INTERNAL_ERROR")
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_COMPILATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_UNEXPECTED_VALUE"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_HOST_ALLOCATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_DEVICE_ALLOCATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_BAD_LAUNCH_PARAM"
+            )
+        if self is Self.CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED:
+            return writer.write_string(
+                "CUDNN_STATUS_INTERNAL_ERROR_TEXTURE_CREATION_FAILED"
+            )
+        if self is Self.CUDNN_STATUS_EXECUTION_FAILED_V9:
+            return writer.write_string("CUDNN_STATUS_EXECUTION_FAILED")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_V9:
+            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_GRAPH_PATTERN:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_GRAPH_PATTERN"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_SHAPE:
+            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED_SHAPE")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_DATA_TYPE:
+            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED_DATA_TYPE")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_LAYOUT:
+            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED_LAYOUT")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_INCOMPATIBLE_CUDART"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_ARCH_MISMATCH"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_RUNTIME_PREREQUISITE_MISSING:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_RUNTIME_PREREQUISITE_MISSING"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_SUBLIBRARY_UNAVAILABLE:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_SUBLIBRARY_UNAVAILABLE"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_SHARED_MEMORY_INSUFFICIENT:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_SHARED_MEMORY_INSUFFICIENT"
+            )
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_PADDING:
+            return writer.write_string("CUDNN_STATUS_NOT_SUPPORTED_PADDING")
+        if self is Self.CUDNN_STATUS_NOT_SUPPORTED_BAD_LAUNCH_PARAM:
+            return writer.write_string(
+                "CUDNN_STATUS_NOT_SUPPORTED_BAD_LAUNCH_PARAM"
+            )
+        if self is Self.CUDNN_STATUS_VERSION_MISMATCH_V9:
+            return writer.write_string("CUDNN_STATUS_VERSION_MISMATCH")
+        t"cudnnStatus_t(unknown={self._value})".write_to(writer)
 
     @no_inline
     def write_repr_to(self, mut writer: Some[Writer]):
@@ -599,7 +757,7 @@ def cudnnGetFilter4dDescriptor(
             type_of(c),
             type_of(h),
             type_of(w),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(filter_desc, data_type, format, k, c, h, w)
 
 
@@ -658,7 +816,7 @@ def cudnnAddTensor(
             type_of(beta),
             type_of(c_desc),
             type_of(_c),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, alpha, a_desc, _a, beta, c_desc, _c)
 
 
@@ -667,7 +825,7 @@ def cudnnDestroyFilterDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyFilterDescriptor",
-        def(type_of(filter_desc)) -> cudnnStatus_t,
+        def(type_of(filter_desc)) thin -> cudnnStatus_t,
     ]()(filter_desc)
 
 
@@ -690,7 +848,7 @@ def cudnnGetTensorTransformDescriptor(
             type_of(pad_after_a),
             type_of(fold_a),
             type_of(direction),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         transform_desc,
         nb_dims_requested,
@@ -703,11 +861,11 @@ def cudnnGetTensorTransformDescriptor(
 
 
 def cudnnGetVersion() raises -> Int:
-    return _get_dylib_function["cudnnGetVersion", def() -> Int]()()
+    return _get_dylib_function["cudnnGetVersion", def() thin -> Int]()()
 
 
 def cudnnGetCudartVersion() raises -> Int:
-    return _get_dylib_function["cudnnGetCudartVersion", def() -> Int]()()
+    return _get_dylib_function["cudnnGetCudartVersion", def() thin -> Int]()()
 
 
 def cudnnGetCallback(
@@ -721,7 +879,7 @@ def cudnnGetCallback(
             type_of(mask),
             type_of(udata),
             type_of(fptr),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(mask, udata, fptr)
 
 
@@ -730,7 +888,7 @@ def cudnnCreateTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateTensorTransformDescriptor",
-        def(type_of(transform_desc),) -> cudnnStatus_t,
+        def(type_of(transform_desc),) thin -> cudnnStatus_t,
     ]()(transform_desc)
 
 
@@ -739,7 +897,7 @@ def cudnnCreateLRNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateLRNDescriptor",
-        def(type_of(norm_desc)) -> cudnnStatus_t,
+        def(type_of(norm_desc)) thin -> cudnnStatus_t,
     ]()(norm_desc)
 
 
@@ -756,7 +914,7 @@ def cudnnSetActivationDescriptor(
             type_of(mode),
             type_of(relu_nan_opt),
             type_of(coef),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(activation_desc, mode, relu_nan_opt, coef)
 
 
@@ -843,7 +1001,7 @@ def cudnnCreateReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateReduceTensorDescriptor",
-        def(type_of(reduce_tensor_desc),) -> cudnnStatus_t,
+        def(type_of(reduce_tensor_desc),) thin -> cudnnStatus_t,
     ]()(reduce_tensor_desc)
 
 
@@ -860,7 +1018,7 @@ def cudnnGetPoolingNdForwardOutputDim(
             type_of(input_tensor_desc),
             type_of(nb_dims),
             type_of(output_tensor_dim_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(pooling_desc, input_tensor_desc, nb_dims, output_tensor_dim_a)
 
 
@@ -869,7 +1027,7 @@ def cudnnDestroySpatialTransformerDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroySpatialTransformerDescriptor",
-        def(type_of(st_desc)) -> cudnnStatus_t,
+        def(type_of(st_desc)) thin -> cudnnStatus_t,
     ]()(st_desc)
 
 
@@ -883,7 +1041,7 @@ def cudnnCreateTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateTensorDescriptor",
-        def(type_of(tensor_desc)) -> cudnnStatus_t,
+        def(type_of(tensor_desc)) thin -> cudnnStatus_t,
     ]()(tensor_desc)
 
 
@@ -900,7 +1058,7 @@ def cudnnSetOpTensorDescriptor(
             type_of(op_tensor_op),
             type_of(op_tensor_comp_type),
             type_of(op_tensor_nan_opt),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(op_tensor_desc, op_tensor_op, op_tensor_comp_type, op_tensor_nan_opt)
 
 
@@ -937,7 +1095,7 @@ def cudnnBatchNormalizationForwardInference(
             type_of(estimated_mean),
             type_of(estimated_variance),
             type_of(epsilon),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         mode,
@@ -962,7 +1120,9 @@ def cudnnCreateAlgorithmPerformance(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateAlgorithmPerformance",
-        def(type_of(algo_perf), type_of(number_to_create)) -> cudnnStatus_t,
+        def(
+            type_of(algo_perf), type_of(number_to_create)
+        ) thin -> cudnnStatus_t,
     ]()(algo_perf, number_to_create)
 
 
@@ -987,7 +1147,7 @@ def cudnnDropoutForward(
             type_of(y),
             type_of(reserve_space),
             type_of(reserve_space_size_in_bytes),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         dropout_desc,
@@ -1004,7 +1164,7 @@ def cudnnDestroy(
     handle: UnsafePointer[cudnnContext, _]
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnDestroy", def(type_of(handle)) -> cudnnStatus_t
+        "cudnnDestroy", def(type_of(handle)) thin -> cudnnStatus_t
     ]()(handle)
 
 
@@ -1021,7 +1181,7 @@ def cudnnGetActivationDescriptor(
             type_of(mode),
             type_of(relu_nan_opt),
             type_of(coef),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(activation_desc, mode, relu_nan_opt, coef)
 
 
@@ -1052,7 +1212,7 @@ def cudnnOpTensor(
             type_of(beta),
             type_of(c_desc),
             type_of(_c),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         op_tensor_desc,
@@ -1079,7 +1239,7 @@ def cudnnDeriveBNTensorDescriptor(
             type_of(derived_bn_desc),
             type_of(x_desc),
             type_of(mode),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(derived_bn_desc, x_desc, mode)
 
 
@@ -1144,7 +1304,7 @@ def cudnnSpatialTfGridGeneratorForward(
             type_of(st_desc),
             type_of(theta),
             type_of(grid),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, st_desc, theta, grid)
 
 
@@ -1154,7 +1314,7 @@ def cudnnGetTensorSizeInBytes(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetTensorSizeInBytes",
-        def(type_of(tensor_desc), type_of(size)) -> cudnnStatus_t,
+        def(type_of(tensor_desc), type_of(size)) thin -> cudnnStatus_t,
     ]()(tensor_desc, size)
 
 
@@ -1229,7 +1389,7 @@ def cudnnGetFilterNdDescriptor(
             type_of(format),
             type_of(nb_dims),
             type_of(filter_dim_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         filter_desc, nb_dims_requested, data_type, format, nb_dims, filter_dim_a
     )
@@ -1252,7 +1412,7 @@ def cudnnGetPooling2dForwardOutputDim(
             type_of(c),
             type_of(h),
             type_of(w),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(pooling_desc, input_tensor_desc, n, c, h, w)
 
 
@@ -1312,7 +1472,7 @@ def cudnnSpatialTfSamplerForward(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, st_desc, alpha, x_desc, x, grid, beta, y_desc, y)
 
 
@@ -1372,7 +1532,7 @@ def cudnnSetPooling2dDescriptor(
             type_of(horizontal_padding),
             type_of(vertical_stride),
             type_of(horizontal_stride),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         pooling_desc,
         mode,
@@ -1409,7 +1569,7 @@ def cudnnGetPooling2dDescriptor(
             type_of(horizontal_padding),
             type_of(vertical_stride),
             type_of(horizontal_stride),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         pooling_desc,
         mode,
@@ -1482,7 +1642,7 @@ def cudnnSoftmaxForward(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, algo, mode, alpha, x_desc, x, beta, y_desc, y)
 
 
@@ -1532,7 +1692,9 @@ def cudnnGetErrorString(
 ) raises -> UnsafePointer[Int8, ExternalOrigin[mut=False]]:
     return _get_dylib_function[
         "cudnnGetErrorString",
-        def(type_of(status)) -> UnsafePointer[Int8, ExternalOrigin[mut=False]],
+        def(
+            type_of(status),
+        ) thin -> UnsafePointer[Int8, ExternalOrigin[mut=False]],
     ]()(status)
 
 
@@ -1557,7 +1719,7 @@ def cudnnPoolingForward(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, pooling_desc, alpha, x_desc, x, beta, y_desc, y)
 
 
@@ -1570,7 +1732,7 @@ def cudnnGetStream(
         def(
             type_of(handle),
             type_of(stream_id),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, stream_id)
 
 
@@ -1681,7 +1843,7 @@ def cudnnSaveAlgorithm(
             type_of(algo_desc),
             type_of(algo_space),
             type_of(algo_space_size_in_bytes),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, algo_desc, algo_space, algo_space_size_in_bytes)
 
 
@@ -1694,7 +1856,7 @@ def cudnnCopyAlgorithmDescriptor(
         def(
             type_of(src),
             type_of(dest),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(src, dest)
 
 
@@ -1713,7 +1875,7 @@ def cudnnDeriveNormTensorDescriptor(
             type_of(x_desc),
             type_of(mode),
             type_of(group_cnt),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         derived_norm_scale_bias_desc,
         derived_norm_mean_var_desc,
@@ -1744,7 +1906,7 @@ def cudnnTransformFilter(
             type_of(beta),
             type_of(dest_desc),
             type_of(dest_data),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         trans_desc,
@@ -1759,7 +1921,7 @@ def cudnnTransformFilter(
 
 def cudnnOpsInferVersionCheck() raises -> cudnnStatus_t:
     return _get_dylib_function[
-        "cudnnOpsInferVersionCheck", def() -> cudnnStatus_t
+        "cudnnOpsInferVersionCheck", def() thin -> cudnnStatus_t
     ]()()
 
 
@@ -1784,7 +1946,7 @@ def cudnnActivationForward(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, activation_desc, alpha, x_desc, x, beta, y_desc, y)
 
 
@@ -1803,7 +1965,7 @@ def cudnnSetAlgorithmPerformance(
             type_of(status),
             type_of(time),
             type_of(memory),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(algo_perf, algo_desc, status, time, memory)
 
 
@@ -1812,7 +1974,7 @@ def cudnnCreateActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateActivationDescriptor",
-        def(type_of(activation_desc),) -> cudnnStatus_t,
+        def(type_of(activation_desc),) thin -> cudnnStatus_t,
     ]()(activation_desc)
 
 
@@ -1829,7 +1991,7 @@ def cudnnGetProperty(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetProperty",
-        def(type_of(type), type_of(value)) -> cudnnStatus_t,
+        def(type_of(type), type_of(value)) thin -> cudnnStatus_t,
     ]()(type, value)
 
 
@@ -1838,7 +2000,7 @@ def cudnnDestroyPoolingDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyPoolingDescriptor",
-        def(type_of(pooling_desc)) -> cudnnStatus_t,
+        def(type_of(pooling_desc)) thin -> cudnnStatus_t,
     ]()(pooling_desc)
 
 
@@ -1848,7 +2010,7 @@ def cudnnGetFilterSizeInBytes(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetFilterSizeInBytes",
-        def(type_of(filter_desc), type_of(size)) -> cudnnStatus_t,
+        def(type_of(filter_desc), type_of(size)) thin -> cudnnStatus_t,
     ]()(filter_desc, size)
 
 
@@ -1897,7 +2059,7 @@ def cudnnSetTensorNdDescriptorEx(
             type_of(data_type),
             type_of(nb_dims),
             type_of(dim_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(tensor_desc, format, data_type, nb_dims, dim_a)
 
 
@@ -1916,7 +2078,7 @@ def cudnnSetTensorNdDescriptor(
             type_of(nb_dims),
             type_of(dim_a),
             type_of(stride_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(tensor_desc, data_type, nb_dims, dim_a, stride_a)
 
 
@@ -1941,7 +2103,7 @@ def cudnnTransformTensorEx(
             type_of(beta),
             type_of(dest_desc),
             type_of(dest_data),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         trans_desc,
@@ -1963,7 +2125,7 @@ def cudnnGetAlgorithmDescriptor(
         def(
             type_of(algo_desc),
             type_of(algorithm),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(algo_desc, algorithm)
 
 
@@ -2017,7 +2179,7 @@ def cudnnGetTensorNdDescriptor(
             type_of(nb_dims),
             type_of(dim_a),
             type_of(stride_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(tensor_desc, nb_dims_requested, data_type, nb_dims, dim_a, stride_a)
 
 
@@ -2070,7 +2232,7 @@ def cudnnGetOpTensorDescriptor(
             type_of(op_tensor_op),
             type_of(op_tensor_comp_type),
             type_of(op_tensor_nan_opt),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(op_tensor_desc, op_tensor_op, op_tensor_comp_type, op_tensor_nan_opt)
 
 
@@ -2089,7 +2251,7 @@ def cudnnGetReductionIndicesSize(
             type_of(a_desc),
             type_of(c_desc),
             type_of(size_in_bytes),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, reduce_tensor_desc, a_desc, c_desc, size_in_bytes)
 
 
@@ -2112,7 +2274,7 @@ def cudnnTransformTensor(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, alpha, x_desc, x, beta, y_desc, y)
 
 
@@ -2121,7 +2283,7 @@ comptime cudnnCallback_t = def(
     OpaquePointer,
     UnsafePointer[cudnnDebugStruct, _],
     UnsafePointer[Int8, _],
-) -> NoneType
+) thin -> NoneType
 
 
 struct cudnnAlgorithmUnionStruct(TrivialRegisterPassable):
@@ -2156,7 +2318,7 @@ def cudnnSetTensor4dDescriptorEx(
             type_of(c_stride),
             type_of(h_stride),
             type_of(w_stride),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         tensor_desc,
         data_type,
@@ -2225,7 +2387,7 @@ def cudnnGetLRNDescriptor(
             type_of(lrn_alpha),
             type_of(lrn_beta),
             type_of(lrn_k),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(norm_desc, lrn_n, lrn_alpha, lrn_beta, lrn_k)
 
 
@@ -2247,7 +2409,7 @@ def cudnnScaleTensor(
             type_of(y_desc),
             type_of(y),
             type_of(alpha),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, y_desc, y, alpha)
 
 
@@ -2436,7 +2598,7 @@ def cudnnGetReductionWorkspaceSize(
             type_of(a_desc),
             type_of(c_desc),
             type_of(size_in_bytes),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, reduce_tensor_desc, a_desc, c_desc, size_in_bytes)
 
 
@@ -2459,7 +2621,7 @@ def cudnnSetFilter4dDescriptor(
             type_of(c),
             type_of(h),
             type_of(w),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(filter_desc, data_type, format, k, c, h, w)
 
 
@@ -2468,7 +2630,7 @@ def cudnnDestroyActivationDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyActivationDescriptor",
-        def(type_of(activation_desc)) -> cudnnStatus_t,
+        def(type_of(activation_desc)) thin -> cudnnStatus_t,
     ]()(activation_desc)
 
 
@@ -2483,7 +2645,7 @@ def cudnnGetAlgorithmSpaceSize(
             type_of(handle),
             type_of(algo_desc),
             type_of(algo_space_size_in_bytes),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, algo_desc, algo_space_size_in_bytes)
 
 
@@ -2572,7 +2734,7 @@ def cudnnSetLRNDescriptor(
             type_of(lrn_alpha),
             type_of(lrn_beta),
             type_of(lrn_k),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(norm_desc, lrn_n, lrn_alpha, lrn_beta, lrn_k)
 
 
@@ -2581,7 +2743,7 @@ def cudnnDestroyDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyDropoutDescriptor",
-        def(type_of(dropout_desc)) -> cudnnStatus_t,
+        def(type_of(dropout_desc)) thin -> cudnnStatus_t,
     ]()(dropout_desc)
 
 
@@ -2610,7 +2772,7 @@ def cudnnGetTensor4dDescriptor(
             type_of(c_stride),
             type_of(h_stride),
             type_of(w_stride),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         tensor_desc,
         data_type,
@@ -2640,11 +2802,11 @@ def cudnnGetAlgorithmPerformance(
             type_of(status),
             type_of(time),
             type_of(memory),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(algo_perf, algo_desc, status, time, memory)
 
 
-struct cudnnDebugStruct(TrivialRegisterPassable):
+struct cudnnDebugStruct(ImplicitlyCopyable, RegisterPassable):
     var cudnn_version: Int16
     var cudnnStatus: cudnnStatus_t
     var time_sec: Int16
@@ -2673,7 +2835,7 @@ def cudnnSetSpatialTransformerNdDescriptor(
             type_of(data_type),
             type_of(nb_dims),
             type_of(dim_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(st_desc, sampler_type, data_type, nb_dims, dim_a)
 
 
@@ -2738,7 +2900,7 @@ def cudnnSetTensorTransformDescriptor(
             type_of(pad_after_a),
             type_of(fold_a),
             type_of(direction),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         transform_desc,
         nb_dims,
@@ -2755,7 +2917,7 @@ def cudnnSetStream(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetStream",
-        def(type_of(handle), type_of(stream_id)) -> cudnnStatus_t,
+        def(type_of(handle), type_of(stream_id)) thin -> cudnnStatus_t,
     ]()(handle, stream_id)
 
 
@@ -2764,7 +2926,7 @@ def cudnnDestroyReduceTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyReduceTensorDescriptor",
-        def(type_of(reduce_tensor_desc)) -> cudnnStatus_t,
+        def(type_of(reduce_tensor_desc)) thin -> cudnnStatus_t,
     ]()(reduce_tensor_desc)
 
 
@@ -2781,7 +2943,7 @@ def cudnnSetTensor(
             type_of(y_desc),
             type_of(y),
             type_of(value_ptr),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, y_desc, y, value_ptr)
 
 
@@ -2814,7 +2976,7 @@ def cudnnDivisiveNormalizationForward(
             type_of(beta),
             type_of(y_desc),
             type_of(y),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         norm_desc,
@@ -2837,7 +2999,9 @@ def cudnnSetActivationDescriptorSwishBeta(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetActivationDescriptorSwishBeta",
-        def(type_of(activation_desc), type_of(swish_beta)) -> cudnnStatus_t,
+        def(
+            type_of(activation_desc), type_of(swish_beta)
+        ) thin -> cudnnStatus_t,
     ]()(activation_desc, swish_beta)
 
 
@@ -2849,7 +3013,7 @@ def cudnnSetCallback(
         OpaquePointer[ExternalOrigin[mut=True]],
         UnsafePointer[cudnnDebugStruct, ExternalOrigin[mut=True]],
         UnsafePointer[Int8, AnyOrigin[mut=True]],
-    ) -> NoneType,
+    ) thin -> NoneType,
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetCallback",
@@ -2857,7 +3021,7 @@ def cudnnSetCallback(
             type_of(mask),
             type_of(udata),
             type_of(fptr),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(mask, udata, fptr)
 
 
@@ -2866,7 +3030,7 @@ def cudnnDropoutGetStatesSize(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDropoutGetStatesSize",
-        def(type_of(handle), type_of(size_in_bytes)) -> cudnnStatus_t,
+        def(type_of(handle), type_of(size_in_bytes)) thin -> cudnnStatus_t,
     ]()(handle, size_in_bytes)
 
 
@@ -2875,7 +3039,7 @@ def cudnnCreateDropoutDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateDropoutDescriptor",
-        def(type_of(dropout_desc)) -> cudnnStatus_t,
+        def(type_of(dropout_desc)) thin -> cudnnStatus_t,
     ]()(dropout_desc)
 
 
@@ -2926,7 +3090,7 @@ def cudnnNormalizationForwardInference(
             type_of(y),
             type_of(epsilon),
             type_of(group_cnt),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         mode,
@@ -3024,7 +3188,7 @@ def cudnnQueryRuntimeError(
             type_of(rstatus),
             type_of(mode),
             type_of(tag),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, rstatus, mode, tag)
 
 
@@ -3033,7 +3197,7 @@ def cudnnDestroyLRNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyLRNDescriptor",
-        def(type_of(lrn_desc)) -> cudnnStatus_t,
+        def(type_of(lrn_desc)) thin -> cudnnStatus_t,
     ]()(lrn_desc)
 
 
@@ -3042,7 +3206,7 @@ def cudnnDestroyTensorTransformDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyTensorTransformDescriptor",
-        def(type_of(transform_desc)) -> cudnnStatus_t,
+        def(type_of(transform_desc)) thin -> cudnnStatus_t,
     ]()(transform_desc)
 
 
@@ -3063,7 +3227,7 @@ def cudnnSetReduceTensorDescriptor(
             type_of(reduce_tensor_nan_opt),
             type_of(reduce_tensor_indices),
             type_of(reduce_tensor_indices_type),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         reduce_tensor_desc,
         reduce_tensor_op,
@@ -3080,7 +3244,7 @@ def cudnnSetAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetAlgorithmDescriptor",
-        def(type_of(algo_desc), type_of(algorithm)) -> cudnnStatus_t,
+        def(type_of(algo_desc), type_of(algorithm)) thin -> cudnnStatus_t,
     ]()(algo_desc, algorithm)
 
 
@@ -3089,7 +3253,7 @@ def cudnnCreateFilterDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateFilterDescriptor",
-        def(type_of(filter_desc)) -> cudnnStatus_t,
+        def(type_of(filter_desc)) thin -> cudnnStatus_t,
     ]()(filter_desc)
 
 
@@ -3103,7 +3267,7 @@ def cudnnDestroyOpTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyOpTensorDescriptor",
-        def(type_of(op_tensor_desc)) -> cudnnStatus_t,
+        def(type_of(op_tensor_desc)) thin -> cudnnStatus_t,
     ]()(op_tensor_desc)
 
 
@@ -3151,7 +3315,9 @@ struct cudnnPoolingMode_t(
 
 
 def cudnnGetMaxDeviceVersion() raises -> Int:
-    return _get_dylib_function["cudnnGetMaxDeviceVersion", def() -> Int]()()
+    return _get_dylib_function[
+        "cudnnGetMaxDeviceVersion", def() thin -> Int
+    ]()()
 
 
 def cudnnCreatePoolingDescriptor(
@@ -3159,7 +3325,7 @@ def cudnnCreatePoolingDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreatePoolingDescriptor",
-        def(type_of(pooling_desc)) -> cudnnStatus_t,
+        def(type_of(pooling_desc)) thin -> cudnnStatus_t,
     ]()(pooling_desc)
 
 
@@ -3180,7 +3346,7 @@ def cudnnRestoreDropoutDescriptor(
             type_of(states),
             type_of(state_size_in_bytes),
             type_of(seed),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(dropout_desc, handle, dropout, states, state_size_in_bytes, seed)
 
 
@@ -3199,7 +3365,7 @@ def cudnnGetDropoutDescriptor(
             type_of(dropout),
             type_of(states),
             type_of(seed),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(dropout_desc, handle, dropout, states, seed)
 
 
@@ -3238,7 +3404,7 @@ def cudnnCreateOpTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateOpTensorDescriptor",
-        def(type_of(op_tensor_desc)) -> cudnnStatus_t,
+        def(type_of(op_tensor_desc)) thin -> cudnnStatus_t,
     ]()(op_tensor_desc)
 
 
@@ -3257,7 +3423,7 @@ def cudnnSetFilterNdDescriptor(
             type_of(format),
             type_of(nb_dims),
             type_of(filter_dim_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(filter_desc, data_type, format, nb_dims, filter_dim_a)
 
 
@@ -3274,7 +3440,7 @@ def cudnnRestoreAlgorithm(
             type_of(algo_space),
             type_of(algo_space_size_in_bytes),
             type_of(algo_desc),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, algo_space, algo_space_size_in_bytes, algo_desc)
 
 
@@ -3299,7 +3465,7 @@ def cudnnGetPoolingNdDescriptor(
             type_of(window_dim_a),
             type_of(padding_a),
             type_of(stride_a),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         pooling_desc,
         nb_dims_requested,
@@ -3329,7 +3495,7 @@ def cudnnSetDropoutDescriptor(
             type_of(states),
             type_of(state_size_in_bytes),
             type_of(seed),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(dropout_desc, handle, dropout, states, state_size_in_bytes, seed)
 
 
@@ -3338,7 +3504,7 @@ def cudnnCreateSpatialTransformerDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateSpatialTransformerDescriptor",
-        def(type_of(st_desc),) -> cudnnStatus_t,
+        def(type_of(st_desc),) thin -> cudnnStatus_t,
     ]()(st_desc)
 
 
@@ -3355,7 +3521,7 @@ def cudnnInitTransformDest(
             type_of(src_desc),
             type_of(dest_desc),
             type_of(dest_size_in_bytes),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(transform_desc, src_desc, dest_desc, dest_size_in_bytes)
 
 
@@ -3364,7 +3530,7 @@ def cudnnCreateAlgorithmDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateAlgorithmDescriptor",
-        def(type_of(algo_desc),) -> cudnnStatus_t,
+        def(type_of(algo_desc),) thin -> cudnnStatus_t,
     ]()(algo_desc)
 
 
@@ -3373,5 +3539,5 @@ def cudnnDestroyTensorDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyTensorDescriptor",
-        def(type_of(tensor_desc)) -> cudnnStatus_t,
+        def(type_of(tensor_desc)) thin -> cudnnStatus_t,
     ]()(tensor_desc)

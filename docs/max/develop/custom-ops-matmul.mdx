@@ -10,35 +10,30 @@ is_tutorial: true
 import Requirements from '@site/src/components/Requirements';
 import { requirementsWithGPU } from '../../requirements';
 
-Building high-performance AI workloads for GPUs can be a daunting task, but
-Modular simplifies the experience with our custom op API that allows you to
-build graph operators for both GPUs and CPUs. In this tutorial, we'll teach you
-some strategies you can use to improve the performance of your GPU custom ops
-written in Mojo.
+A GPU kernel that produces correct output and one that runs fast are different
+problems. Memory access patterns, thread occupancy, and warp utilization
+determine where time actually goes — none of that is visible from the output.
 
-For demonstration purposes, we'll show you how to incrementally improve the
-performance of a custom matrix multiplication (matmul) op. We're not teaching
-you how to build a matmul op, because MAX already contains leading-edge
-implementations of matmul that you can use with the
-[MAX graph API](/max/api/python/generated/max.graph.Graph). Rather, we're using
-a basic matmul operation (AKA "GPU kernel") to teach you GPU programming
-strategies that might help with your other GPU code written in Mojo.
+This tutorial uses a matrix multiplication kernel as the teaching vehicle. You
+won't end up with a production matmul — MAX already contains leading-edge
+implementations you can use with the
+[`max.graph`](/max/api/python/generated/max.graph.Graph) API — but you'll work
+through optimization strategies that apply to any GPU custom op you write in
+Mojo.
 
 :::note
 
-This page also isn't meant to teach you Mojo. For that, see the
-[Mojo get started tutorial](/mojo/manual/get-started).
+This page doesn't cover Mojo syntax. For that, see the [Mojo get started
+tutorial](/mojo/manual/get-started).
 
 :::
 
-As you progress through this tutorial, you'll learn the following:
+By the end of this tutorial, you'll be able to:
 
-- How to define a custom matrix multiplication operation for a MAX graph.
-- How to use of Mojo high-performance GPU programming abstractions to
-  progressively optimize a matrix multiplication.
-- How to access GPU hardware features, like Tensor Cores, from MAX.
-
-Let's get started.
+- Identify the bottleneck in a naive GPU kernel using benchmark output
+- Apply memory coalescing and vectorized loads to reduce global memory traffic
+- Use shared memory tiling to improve data reuse across threads
+- Access GPU hardware features like Tensor Cores from a Mojo custom op
 
 ## Requirements
 
@@ -105,10 +100,10 @@ download the code and run the benchmark script:
 
 ## Introduction
 
-AI models in [MAX](/max/intro) are built as computational graphs using the [MAX
-graph API](/max/develop/get-started-with-max-graph-in-python). MAX contains
-within it a powerful graph compiler that can take these graphs and optimize them
-for best performance on a wide range of hardware.
+MAX models are built as computational graphs using the
+[`Graph`](/max/api/python/generated/max.graph.Graph) API. MAX contains within
+it a powerful graph compiler that can take these graphs and optimize them for
+best performance on a wide range of hardware.
 
 Each node in a MAX graph is defined by an operation that performs a calculation
 on zero or more inputs and produces one or more outputs. These inputs and
@@ -356,7 +351,7 @@ def naive_matrix_multiplication[
 
     var dst_reg: c.element_type = 0
 
-    if row < UInt(M) and col < UInt(N):
+    if row < M and col < N:
         for k_index in range(K):
             dst_reg = dst_reg + a[row, k_index] * b[k_index, col]
 
@@ -368,7 +363,7 @@ see that the naive matrix multiplication is roughly only 2.7% as fast as sixth
 algorithm on our list. There's clearly a lot of upside if this core algorithm
 can be improved.
 
-## Kernel 2: Applying memory coalescing
+## Kernel 2: Apply memory coalescing
 
 As one quick optimization that has an outsized impact, global memory accesses
 can be coalesced by swapping the thread indices for columns and rows:
@@ -383,7 +378,7 @@ matrices, which are contiguous in memory.
 
 This leads to an almost tenfold jump in benchmarks on A100.
 
-## Kernel 3: Reworking to use shared memory tiling
+## Kernel 3: Rework to use shared memory tiling
 
 Shared memory on the GPU is far faster to access than global memory, so a next
 step is to rework the matrix multiplication to tile the computation and load
@@ -418,9 +413,9 @@ without copying any data. It serves multiple purposes here. First, for the
 destination tile:
 
 ```mojo
-var col = divmod(thread_idx.x, UInt(BN))
+var col = divmod(thread_idx.x, BN)
 
-var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+var dst = c.tile[BM, BN](block_idx.y, block_idx.x)
 ```
 
 The `dst` value is the tile of the output tensor that the current
@@ -473,8 +468,8 @@ for block in range(b.dim[0]() // BK):
     comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
     comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
-    var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-    var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+    var a_tile = a.tile[BM, BK](block_idx.y, block)
+    var b_tile = b.tile[BK, BN](block, block_idx.x)
 
     copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
     copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
@@ -512,7 +507,7 @@ all GPUs.
 
 :::
 
-## Kernel 4: Using shared memory tiling and register tiling
+## Kernel 4: Use shared memory tiling and register tiling
 
 Expanding upon the advantages of using shared memory tiling, the partial results
 can be accumulated in tiled registers and then the final results transferred
@@ -538,11 +533,11 @@ from B for all of the calculations for a single register tile.
 Here's the interesting part of this kernel:
 
 ```mojo
-var col = thread_idx.x % UInt(BN)
-var row = thread_idx.x // UInt(BN)
+var col = thread_idx.x % BN
+var row = thread_idx.x // BN
 
-var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, 1](
-    Int(row), Int(col)
+var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, 1](
+    row, col
 )
 
 var a_smem = tb[dtype]().row_major[BM, BK]().shared().alloc()
@@ -555,8 +550,8 @@ for block in range(b.dim[0]() // BK):
     comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
     comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
 
-    var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-    var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+    var a_tile = a.tile[BM, BK](block_idx.y, block)
+    var b_tile = b.tile[BK, BN](block, block_idx.x)
 
     copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
     copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
@@ -565,7 +560,7 @@ for block in range(b.dim[0]() // BK):
     barrier()
 
     comptime for k in range(BK):
-        var a_tile = a_smem.tile[TM, 1](Int(row), k)
+        var a_tile = a_smem.tile[TM, 1](row, k)
         var b_tile = b_smem.tile[1, BN](k, 0)
         var b_val = b_tile[0, col]
 
@@ -579,7 +574,7 @@ dst.copy_from(dst_reg)
 
 This gives a nearly 80% improvement over the previous tiling implementation.
 
-## Kernel 5: Introducing block tiling
+## Kernel 5: Introduce block tiling
 
 We can further increase the arithmetic intensity of the calculation using a 2-D
 block tiling strategy. In this kernel, each thread is responsible for
@@ -593,10 +588,10 @@ further reduce memory access latency. Then it uses the
 calculate and accumulate the outer products of the two vectors.
 
 ```mojo
-var partition_col = Int(thread_idx.x % UInt(BN // TN))
-var partition_row = Int(thread_idx.x // UInt(BN // TN))
+var partition_col = thread_idx.x % (BN // TN)
+var partition_row = thread_idx.x // (BN // TN)
 
-var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, TN](
+var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
     partition_row, partition_col
 )
 
@@ -613,8 +608,8 @@ var ntiles = b.dim[0]() // BK
 for block in range(ntiles):
     comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
     comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-    var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-    var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+    var a_tile = a.tile[BM, BK](block_idx.y, block)
+    var b_tile = b.tile[BK, BN](block, block_idx.x)
     copy_dram_to_sram_async[thread_layout=load_a_layout](a_smem, a_tile)
     copy_dram_to_sram_async[thread_layout=load_b_layout](b_smem, b_tile)
 
@@ -648,10 +643,10 @@ be copied as a single SIMD vector.
 from std.sys.info import simd_width_of
 
 comptime simd_width = simd_width_of[dtype]()
-var partition_col = Int(thread_idx.x % UInt(BN // TN))
-var partition_row = Int(thread_idx.x // UInt(BN // TN))
+var partition_col = thread_idx.x % (BN // TN)
+var partition_row = thread_idx.x // (BN // TN)
 
-var dst = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[TM, TN](
+var dst = c.tile[BM, BN](block_idx.y, block_idx.x).tile[TM, TN](
     partition_row, partition_col
 )
 var dst_vec = dst.vectorize[1, simd_width]()
@@ -671,8 +666,8 @@ var ntiles = b.dim[0]() // BK
 for block in range(ntiles):
     comptime load_a_layout = Layout.row_major(NUM_THREADS // BK, BK)
     comptime load_b_layout = Layout.row_major(BK, NUM_THREADS // BK)
-    var a_tile = a.tile[BM, BK](Int(block_idx.y), block)
-    var b_tile = b.tile[BK, BN](block, Int(block_idx.x))
+    var a_tile = a.tile[BM, BK](block_idx.y, block)
+    var b_tile = b.tile[BK, BN](block, block_idx.x)
 
     copy_dram_to_sram_async[thread_layout=load_a_layout](
         a_smem.vectorize[simd_width, 1](), a_tile.vectorize[simd_width, 1]()
@@ -700,7 +695,7 @@ dst_vec.copy_from(dst_reg_vec)
 From beginning to end, we've realized more than a 36X improvement in matrix
 multiplication speed within our MAX custom operation!
 
-## Kernel 7: Using Tensor Cores for matrix multiplication
+## Kernel 7: Use Tensor Cores for matrix multiplication
 
 Modern GPUs have dedicated hardware units for performing accelerated matrix
 multiplication called Tensor Cores. These Tensor Cores can perform matrix
@@ -734,11 +729,11 @@ def tensor_core_matrix_multiplication[
     comptime N = C.shape[1]()
     comptime K = A.shape[1]()
 
-    warp_y = warp_id() // UInt(BN // WN)
-    warp_x = warp_id() % UInt(BN // WN)
+    warp_y = warp_id() // (BN // WN)
+    warp_x = warp_id() % (BN // WN)
 
-    C_warp_tile = C.tile[BM, BN](Int(block_idx.y), Int(block_idx.x)).tile[WM, WN](
-        Int(warp_y), Int(warp_x)
+    C_warp_tile = C.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_y, warp_x
     )
 
     mma_op = TensorCore[A.dtype, C.dtype, Index(MMA_M, MMA_N, MMA_K)]()
@@ -757,8 +752,8 @@ def tensor_core_matrix_multiplication[
     for k_i in range(K // BK):
         barrier()
 
-        A_dram_tile = A.tile[BM, BK](Int(block_idx.y), k_i)
-        B_dram_tile = B.tile[BK, BN](k_i, Int(block_idx.x))
+        A_dram_tile = A.tile[BM, BK](block_idx.y, k_i)
+        B_dram_tile = B.tile[BK, BN](k_i, block_idx.x)
 
         copy_dram_to_sram_async[thread_layout=Layout.row_major(4, 8)](
             A_sram_tile.vectorize[1, 4](), A_dram_tile.vectorize[1, 4]()
@@ -770,8 +765,8 @@ def tensor_core_matrix_multiplication[
         async_copy_wait_all()
         barrier()
 
-        A_warp_tile = A_sram_tile.tile[WM, BK](Int(warp_y), 0)
-        B_warp_tile = B_sram_tile.tile[BK, WN](0, Int(warp_x))
+        A_warp_tile = A_sram_tile.tile[WM, BK](warp_y, 0)
+        B_warp_tile = B_sram_tile.tile[BK, WN](0, warp_x)
 
         comptime for mma_k in range(BK // MMA_K):
 
@@ -810,7 +805,7 @@ GPU. We ran benchmarks of each algorithm, showing the performance benefits of
 various algorithmic improvements. Each improvement was described in detail,
 showing pathways to get the most speed out of modern GPUs using MAX and Mojo.
 
-## Next Steps
+## Next steps
 
 - Follow [our tutorial for building a custom operation from
 scratch](/max/develop/build-custom-ops).

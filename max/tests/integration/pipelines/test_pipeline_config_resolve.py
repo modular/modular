@@ -33,6 +33,7 @@ from max.driver import DeviceSpec
 from max.graph import DeviceRef
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig
 from max.pipelines.lib import MAXModelConfig, MemoryEstimator
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from test_common.pipeline_model_dummy import (
@@ -246,12 +247,16 @@ def _make_pipeline_config(
     if device_specs is None:
         device_specs = [GPU_DEVICE_SPEC]
     return PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_path,
-            device_specs=device_specs,
-            weight_path=weight_path or [],
-            max_length=max_length,
-            **model_kwargs,
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=model_path,
+                    device_specs=device_specs,
+                    weight_path=weight_path or [],
+                    max_length=max_length,
+                    **model_kwargs,
+                )
+            }
         ),
         runtime=PipelineRuntimeConfig(
             max_batch_size=max_batch_size,

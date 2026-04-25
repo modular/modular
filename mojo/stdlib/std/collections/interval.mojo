@@ -52,7 +52,6 @@ query interval data, particularly for finding overlaps.
 from std.builtin.string_literal import StaticString
 
 import std.format._utils as fmt
-from std.memory._nonnull import NonNullUnsafePointer
 
 from .deque import Deque
 
@@ -298,7 +297,7 @@ struct _IntervalNode[
     """
 
     comptime _OpaquePointer = Optional[
-        NonNullUnsafePointer[NoneType, MutExternalOrigin]
+        UnsafePointer[NoneType, MutExternalOrigin]
     ]
 
     var interval: Interval[Self.T]
@@ -324,32 +323,26 @@ struct _IntervalNode[
 
     def left(
         ref self,
-    ) -> ref[self._left] Optional[
-        NonNullUnsafePointer[Self, MutExternalOrigin]
-    ]:
+    ) -> ref[self._left] Optional[UnsafePointer[Self, MutExternalOrigin]]:
         """Returns a reference to the left child pointer."""
-        return NonNullUnsafePointer(to=self._left).bitcast[
-            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+        return UnsafePointer(to=self._left).bitcast[
+            Optional[UnsafePointer[Self, MutExternalOrigin]]
         ]()[]
 
     def right(
         ref self,
-    ) -> ref[self._right] Optional[
-        NonNullUnsafePointer[Self, MutExternalOrigin]
-    ]:
+    ) -> ref[self._right] Optional[UnsafePointer[Self, MutExternalOrigin]]:
         """Returns a reference to the right child pointer."""
-        return NonNullUnsafePointer(to=self._right).bitcast[
-            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+        return UnsafePointer(to=self._right).bitcast[
+            Optional[UnsafePointer[Self, MutExternalOrigin]]
         ]()[]
 
     def parent(
         ref self,
-    ) -> ref[self._parent] Optional[
-        NonNullUnsafePointer[Self, MutExternalOrigin]
-    ]:
+    ) -> ref[self._parent] Optional[UnsafePointer[Self, MutExternalOrigin]]:
         """Returns a reference to the parent pointer."""
-        return NonNullUnsafePointer(to=self._parent).bitcast[
-            Optional[NonNullUnsafePointer[Self, MutExternalOrigin]]
+        return UnsafePointer(to=self._parent).bitcast[
+            Optional[UnsafePointer[Self, MutExternalOrigin]]
         ]()[]
 
     def __init__(
@@ -471,7 +464,7 @@ struct IntervalTree[
     """
 
     comptime _IntervalNodePointer = Optional[
-        NonNullUnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin]
+        UnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin]
     ]
 
     var _root: Self._IntervalNodePointer
@@ -492,9 +485,7 @@ struct IntervalTree[
 
     @staticmethod
     def _del_helper(
-        node: NonNullUnsafePointer[
-            _IntervalNode[Self.T, Self.U], MutExternalOrigin
-        ],
+        node: UnsafePointer[_IntervalNode[Self.T, Self.U], MutExternalOrigin],
     ):
         if node[].left():
             Self._del_helper(node[].left().value())
@@ -658,8 +649,7 @@ struct IntervalTree[
         """
         # Allocate memory for a new node and initialize it with the interval
         # and data
-        var raw = alloc[_IntervalNode[Self.T, Self.U]](1)
-        var new_node = NonNullUnsafePointer(unsafe_from_nullable=raw)
+        var new_node = alloc[_IntervalNode[Self.T, Self.U]](1)
         new_node.init_pointee_move(_IntervalNode(interval, data))
         self._len += 1
 
@@ -927,7 +917,7 @@ struct IntervalTree[
             # Draw the current node's value
             var node_str = String(node.value()[])
             var start_pos = max(
-                0, pos_x - len(node_str) // 2
+                0, pos_x - node_str.byte_length() // 2
             )  # Center the node text
             var i = 0
             for char in node_str.codepoints():

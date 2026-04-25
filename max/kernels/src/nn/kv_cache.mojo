@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import unswitch
+from std.math.uutils import udivmod
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.info import is_cpu, is_gpu
 from std.collections import OptionalReg
@@ -316,11 +317,11 @@ def _fused_qkv_matmul_kv_cache_impl[
     comptime N = Int(weight.layout.shape[0])
     comptime K = Int(weight.layout.shape[1])
 
-    var SEQ_LEN = UInt(hidden_state.dim[1]())
+    var SEQ_LEN: Int = hidden_state.dim[1]()
 
     var q_dim = output.dim[2]()
     var k_dim = kv_params.head_size * kv_params.num_heads
-    var qk_offset = q_dim + Int(k_dim)
+    var qk_offset = q_dim + k_dim
 
     var k_cache = kv_collection.get_key_cache(Int(layer_idx))
     var v_cache = kv_collection.get_value_cache(Int(layer_idx))
@@ -329,46 +330,42 @@ def _fused_qkv_matmul_kv_cache_impl[
     @__copy_capture(q_dim, qk_offset, SEQ_LEN, k_cache, v_cache, valid_lengths)
     @always_inline
     def write_to_cache[
-        dtype_: DType, width: Int, *, alignment: Int = 1
+        dtype_: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype_, width]):
-        var b_idx, t_idx = divmod(UInt(idx[0]), SEQ_LEN)
+        var b_idx, t_idx = udivmod(idx[0], SEQ_LEN)
         if idx[1] < q_dim:
             output.store[width=width](
-                Index(Int(b_idx), Int(t_idx), idx[1]),
+                Index(b_idx, t_idx, idx[1]),
                 rebind[SIMD[dtype, width]](val),
             )
             return
 
         # Skip writing to cache for padded positions
-        var valid_len_for_batch_vec = valid_lengths[Int(b_idx)]
+        var valid_len_for_batch_vec = valid_lengths[b_idx]
         comptime assert valid_len_for_batch_vec.size == 1
-        var valid_len_for_batch = UInt(valid_len_for_batch_vec[0])
-        if t_idx >= valid_len_for_batch:
+        var valid_len_for_batch: UInt32 = valid_len_for_batch_vec[0]
+        if t_idx >= Int(valid_len_for_batch):
             return
 
-        var h_idx: UInt
-        var hd_idx: UInt
+        var h_idx: Int
+        var hd_idx: Int
         var cache: cache_t
         var output_val = val
         if idx[1] < qk_offset:
             cache = k_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(q_dim), kv_params.head_size
-            )
+            h_idx, hd_idx = udivmod(idx[1] - q_dim, kv_params.head_size)
 
         else:
             cache = v_cache
-            h_idx, hd_idx = divmod(
-                UInt(idx[1]) - UInt(qk_offset), kv_params.head_size
-            )
+            h_idx, hd_idx = udivmod(idx[1] - qk_offset, kv_params.head_size)
 
-        var cache_len = cache.cache_length(Int(b_idx))
-        var cache_t_idx = t_idx + UInt(cache_len)
+        var cache_len = cache.cache_length(b_idx)
+        var cache_t_idx = t_idx + cache_len
         cache.store(
-            Int(b_idx),
-            Int(h_idx),
-            Int(cache_t_idx),
-            Int(hd_idx),
+            b_idx,
+            h_idx,
+            cache_t_idx,
+            hd_idx,
             rebind[SIMD[cache_dtype, width]](output_val),
         )
 
@@ -409,29 +406,38 @@ def _matmul_common[
     )
 
     comptime c_layout = Layout.row_major(UNKNOWN_VALUE, N)
-    var c_nd: LayoutTensor[dtype, c_layout, MutAnyOrigin]
 
     comptime if is_cpu[target]():
         var c_ptr = alloc[Scalar[dtype]](BS * SEQ_LEN * N)
-
-        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
             c_ptr,
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
+
+        matmul[
+            transpose_b=True,
+            target=target,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
+
+        c_nd.ptr.free()
     else:
-        c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
-            UnsafePointer[Scalar[dtype], MutExternalOrigin](),
+        # Allocate a device-local scratch for the matmul accumulator; the
+        # epilogue lambda reads from it and scatters Q/K/V to the real
+        # output and KV cache.
+        var c_device_buffer = context.value().enqueue_create_buffer[dtype](
+            BS * SEQ_LEN * N
+        )
+        var c_nd = LayoutTensor[dtype, c_layout, MutAnyOrigin](
+            c_device_buffer.unsafe_ptr(),
             RuntimeLayout[c_layout].row_major(IndexList[2](BS * SEQ_LEN, N)),
         )
 
-    matmul[
-        transpose_b=True,
-        target=target,
-        elementwise_lambda_fn=elementwise_lambda_fn,
-    ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
-
-    comptime if is_cpu[target]():
-        c_nd.ptr.free()
+        matmul[
+            transpose_b=True,
+            target=target,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](lt_to_tt(c_nd), lt_to_tt(hidden_state_2d), lt_to_tt(weight), context)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -960,15 +966,14 @@ def rms_norm_kv_cache_ragged_paged[
 
     comptime assert rms_norm_cols != -1, "Need static shape for gamma"
     comptime assert (
-        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
-        or not per_head_norm
+        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
 
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
 
     comptime if per_head_norm:
-        shape[1] = Int(kv_params.num_heads)
+        shape[1] = kv_params.num_heads
         shape[2] = rms_norm_cols
     else:
         shape[1] = rms_norm_cols
@@ -1003,8 +1008,8 @@ def rms_norm_kv_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
 
         return k_cache.load[width=width](
             bs=batch_idx,
@@ -1017,7 +1022,7 @@ def rms_norm_kv_cache_ragged_paged[
     @parameter
     @__copy_capture(k_cache)
     def key_cache_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -1037,8 +1042,8 @@ def rms_norm_kv_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
         k_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
@@ -1110,15 +1115,14 @@ def rms_norm_value_cache_ragged_paged[
 
     comptime assert rms_norm_cols != -1, "Need static shape for gamma"
     comptime assert (
-        rms_norm_cols <= Int(kv_collection.kv_params.head_size)
-        or not per_head_norm
+        rms_norm_cols <= kv_collection.kv_params.head_size or not per_head_norm
     ), "Length of gamma must be smaller or equal to head size"
 
     var shape = IndexList[rank]()
     shape[0] = Int(total_seq_len)
 
     comptime if per_head_norm:
-        shape[1] = Int(kv_params.num_heads)
+        shape[1] = kv_params.num_heads
         shape[2] = rms_norm_cols
     else:
         shape[1] = rms_norm_cols
@@ -1152,8 +1156,8 @@ def rms_norm_value_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
 
         return v_cache.load[width=width](
             bs=batch_idx,
@@ -1166,7 +1170,7 @@ def rms_norm_value_cache_ragged_paged[
     @parameter
     @__copy_capture(v_cache)
     def value_cache_output_fn[
-        width: Int, alignment: Int
+        width: SIMDSize, alignment: Int
     ](idx: IndexList[rank], val: SIMD[dtype, width]) -> None:
         var global_token_idx = idx[0]
         var batch_idx = get_batch_from_row_offsets(
@@ -1186,8 +1190,8 @@ def rms_norm_value_cache_ragged_paged[
             head_idx = idx[1]
             head_dim_idx = idx[2]
         else:
-            head_idx = idx[1] // Int(params.head_size)
-            head_dim_idx = idx[1] % Int(params.head_size)
+            head_idx = idx[1] // params.head_size
+            head_dim_idx = idx[1] % params.head_size
         v_cache.store(
             bs=batch_idx,
             tok_idx=cache_token_idx,
@@ -1247,19 +1251,19 @@ def _print_cache[
                 for hd in range(
                     min(
                         num_to_print,
-                        Int(kv_params.head_size),
+                        kv_params.head_size,
                     )
                 ):
                     print(
                         cache.load[width=1](
                             b_idx,
-                            Int(h),
+                            h,
                             t_idx,
                             hd,
                         ),
                         end=", ",
                     )
-                if kv_params.head_size > UInt(num_to_print):
+                if kv_params.head_size > num_to_print:
                     print("...", end=", ")
             if total_cache_length > num_to_print:
                 print("\n...", end=",")
@@ -1558,8 +1562,8 @@ def generic_get_paged_cache[
     out result: PagedKVCacheCollection[
         dtype,
         KVCacheStaticParams(
-            UInt(Int(blocks.static_spec.shape_tuple[4])),
-            UInt(Int(blocks.static_spec.shape_tuple[5])),
+            Int(blocks.static_spec.shape_tuple[4]),
+            Int(blocks.static_spec.shape_tuple[5]),
             Int(blocks.static_spec.shape_tuple[1]) == 1,
         ),
         Int(blocks.static_spec.shape_tuple[3]),
@@ -1571,7 +1575,7 @@ def generic_get_paged_cache[
     comptime is_mla = Int(blocks.static_spec.shape_tuple[1]) == 1
     return generic_get_paged_cache[
         dtype,
-        KVCacheStaticParams(UInt(num_heads), UInt(head_dim), is_mla),
+        KVCacheStaticParams(num_heads, head_dim, is_mla),
         page_size,
     ](
         LayoutTensor[blocks.dtype, Layout.row_major[6](), MutAnyOrigin](

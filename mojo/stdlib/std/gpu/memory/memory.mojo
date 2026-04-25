@@ -61,6 +61,8 @@ from std.utils.numerics import get_accum_type
 from .._utils import (
     to_i16,
     to_i32,
+    to_i64,
+    to_llvm_global_mem_ptr,
     to_llvm_ptr,
     to_llvm_shared_mem_ptr,
     to_llvm_shared_cluster_mem_ptr,
@@ -687,6 +689,7 @@ def async_copy[
         ), "Non zero filling is supported only for 16B access."
 
         # Pack filling values into 4B registers.
+        @parameter
         @always_inline
         def _i32_repr[fill: Scalar[dtype]]() -> Int32:
             comptime if size_of[dtype]() == 1:
@@ -880,7 +883,7 @@ def external_memory[
                 address_space=address_space,
             ]._mlir_type,
             name=_get_kgen_string[name](),
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
         ]()
     )
     return extern_ptr_symbol.bitcast[dtype]()
@@ -972,6 +975,289 @@ def fence_mbarrier_init():
     synchronization semantics.
     """
     __mlir_op.`nvvm.fence.mbarrier.init`[_type=None]()
+
+
+# ===-----------------------------------------------------------------------===#
+# cp.async.bulk (1D, non-tensor)
+# ===-----------------------------------------------------------------------===#
+
+
+@always_inline("nodebug")
+def cp_async_bulk_shared_cluster_global[
+    dst_type: AnyType,
+    src_type: AnyType,
+    mbr_type: AnyType,
+    /,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[
+        mut=True, dst_type, _, address_space=AddressSpace.SHARED
+    ],
+    src_mem: UnsafePointer[src_type, ...],
+    size: Int32,
+    mem_bar: UnsafePointer[
+        mut=True, mbr_type, _, address_space=AddressSpace.SHARED
+    ],
+):
+    """Initiates an asynchronous bulk copy from global memory to shared CTA
+    memory.
+
+    Performs a non-blocking copy of `size` bytes from global memory to shared
+    memory using the `cp.async.bulk` PTX instruction. Completion is signaled
+    via the mbarrier specified by `mem_bar`.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_100 or higher.
+
+    Parameters:
+        dst_type: The element type of the destination shared memory.
+        src_type: The element type of the source global memory.
+        mbr_type: The element type of the mbarrier object in shared memory.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in shared CTA memory (16-byte aligned).
+        src_mem: Source pointer in global or generic memory (16-byte aligned).
+        size: Number of bytes to copy (must be a multiple of 16).
+        mem_bar: Pointer to the mbarrier object in shared memory used to
+            signal completion.
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert src_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "src_mem must be in GLOBAL or GENERIC address space"
+
+    var src_global = src_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime if cache_hint:
+        __mlir_op.`nvvm.cp.async.bulk.shared.cluster.global`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,1>}`,
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_global_mem_ptr(src_global),
+            to_llvm_shared_mem_ptr(mem_bar),
+            to_i32(size),
+            to_i64(Int64(Int(_mark_eviction[eviction_policy]()))),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.shared.cluster.global`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0,0>}`,
+        ](
+            to_llvm_shared_mem_ptr(dst_mem),
+            to_llvm_global_mem_ptr(src_global),
+            to_llvm_shared_mem_ptr(mem_bar),
+            to_i32(size),
+        )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_global_shared_cta[
+    dst_type: AnyType,
+    src_type: AnyType,
+    /,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[mut=True, dst_type, ...],
+    src_mem: UnsafePointer[src_type, _, address_space=AddressSpace.SHARED],
+    size: Int32,
+):
+    """Initiates an asynchronous bulk copy from shared CTA memory to global
+    memory.
+
+    Performs a non-blocking copy of `size` bytes from shared memory to global
+    memory using the `cp.async.bulk` PTX instruction with the `.bulk_group`
+    completion mechanism. Use `cp_async_bulk_commit_group` and
+    `cp_async_bulk_wait_group` from `std.gpu.sync` to synchronize.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_100 or higher.
+
+    Parameters:
+        dst_type: The element type of the destination global memory.
+        src_type: The element type of the source shared memory.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in global or generic memory (16-byte
+            aligned).
+        src_mem: Source pointer in shared CTA memory (16-byte aligned).
+        size: Number of bytes to copy (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert dst_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "dst_mem must be in GLOBAL or GENERIC address space"
+
+    var dst_global = dst_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime if cache_hint:
+        __mlir_op.`nvvm.cp.async.bulk.global.shared.cta`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,1,0>}`,
+        ](
+            to_llvm_global_mem_ptr(dst_global),
+            to_llvm_shared_mem_ptr(src_mem),
+            to_i32(size),
+            to_i64(Int64(Int(_mark_eviction[eviction_policy]()))),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.global.shared.cta`[
+            _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,1,0,0>}`,
+        ](
+            to_llvm_global_mem_ptr(dst_global),
+            to_llvm_shared_mem_ptr(src_mem),
+            to_i32(size),
+        )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_prefetch[
+    src_type: AnyType,
+    /,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](src_mem: UnsafePointer[src_type, ...], size: Int32):
+    """Initiates an asynchronous prefetch from global memory to L2 cache.
+
+    Performs a non-blocking prefetch of `size` bytes from global memory into
+    the L2 cache. This is a hint to the memory subsystem and does not
+    guarantee the data will be in cache when accessed.
+
+    `src_mem` must be 16-byte aligned and `size` must be a multiple of 16.
+    Requires sm_100 or higher.
+
+    Parameters:
+        src_type: The element type of the source global memory.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        src_mem: Source pointer in global or generic memory (16-byte aligned).
+        size: Number of bytes to prefetch (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert src_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "src_mem must be in GLOBAL or GENERIC address space"
+
+    var src_global = src_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime if cache_hint:
+        __mlir_op.`nvvm.cp.async.bulk.prefetch`(
+            to_llvm_global_mem_ptr(src_global),
+            to_i32(size),
+            to_i64(Int64(Int(_mark_eviction[eviction_policy]()))),
+        )
+    else:
+        __mlir_op.`nvvm.cp.async.bulk.prefetch`(
+            to_llvm_global_mem_ptr(src_global),
+            to_i32(size),
+        )
+
+
+@always_inline("nodebug")
+def cp_async_bulk_reduce_global_shared_cta[
+    dtype: DType,
+    /,
+    *,
+    reduction_kind: ReduceOp,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[mut=True, Scalar[dtype], ...],
+    src_mem: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.SHARED],
+    size: Int32,
+):
+    """Initiates an asynchronous bulk reduction from shared CTA memory into
+    global memory.
+
+    Performs a non-blocking element-wise reduction of `size` bytes of shared
+    memory into the matching locations in global memory, using the PTX
+    `cp.reduce.async.bulk` instruction with the `.bulk_group` completion
+    mechanism. Use `cp_async_bulk_commit_group` and `cp_async_bulk_wait_group`
+    from `std.gpu.sync` to synchronize.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_100 or higher.
+
+    Parameters:
+        dtype: Element data type of the reduction. Supported floating-point
+            types are `float16`, `bfloat16`, `float32`, and `float64`.
+        reduction_kind: The reduction operation to apply. Curently only `ADD` is supported.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in global or generic memory (16-byte
+            aligned).
+        src_mem: Source pointer in shared CTA memory (16-byte aligned).
+        size: Number of bytes to reduce (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert dst_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "dst_mem must be in GLOBAL or GENERIC address space"
+    comptime assert dtype in (
+        DType.float16,
+        DType.bfloat16,
+        DType.float32,
+        DType.float64,
+    ), (
+        "cp_async_bulk_reduce_global_shared_cta currently supports float16,"
+        " bfloat16, float32, and float64"
+    )
+    comptime assert (
+        reduction_kind == ReduceOp.ADD
+    ), "cp_async_bulk_reduce_global_shared_cta currently supports ADD only"
+
+    var dst_global = dst_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime cache_hint_mnemonic = ".L2::cache_hint" if cache_hint else ""
+    comptime asm_body = (
+        "cp.reduce.async.bulk.global.shared::cta.bulk_group"
+        + cache_hint_mnemonic
+        + "."
+        + reduction_kind.mnemonic()
+        + "."
+        + _get_type_mnemonic[dtype]()
+    )
+
+    comptime if cache_hint:
+        var cache_policy = _mark_eviction[eviction_policy]()
+        inlined_assembly[
+            asm_body + " [$0], [$1], $2, $3;",
+            NoneType,
+            constraints="l,r,r,l",
+        ](
+            Int64(Int(dst_global)),
+            Int32(Int(src_mem)),
+            size,
+            cache_policy,
+        )
+    else:
+        inlined_assembly[
+            asm_body + " [$0], [$1], $2;",
+            NoneType,
+            constraints="l,r,r",
+        ](Int64(Int(dst_global)), Int32(Int(src_mem)), size)
 
 
 @always_inline("nodebug")
@@ -1714,7 +2000,8 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
         1,
         2,
         3,
-    ), "Expecting rank-1, rank-2, or rank-3 tensors"
+        4,
+    ), "Expecting rank-1, rank-2, rank-3, or rank-4 tensors"
 
     comptime assert cta_group in (1, 2), "cta_group must be 1 or 2"
     comptime tma_asm = String(
@@ -1726,7 +2013,40 @@ def cp_async_bulk_tensor_shared_cluster_global_multicast[
         ".shared::cluster.global.mbarrier::complete_tx::bytes.multicast::cluster",
     )
 
-    comptime if rank == 3:
+    comptime if rank == 4:
+        comptime if cta_group == 1:
+            var dst_mem_cluster = dst_mem.address_space_cast[
+                AddressSpace.SHARED_CLUSTER
+            ]()
+            __mlir_op.`nvvm.cp.async.bulk.tensor.shared.cluster.global`[
+                _properties=__mlir_attr.`{operandSegmentSizes = array<i32: 1,1,4,1,0,1,0,0>}`
+            ](
+                to_llvm_shared_cluster_mem_ptr(dst_mem_cluster),
+                to_llvm_ptr(tma_descriptor),
+                to_i32(Int32(coords[0])),
+                to_i32(Int32(coords[1])),
+                to_i32(Int32(coords[2])),
+                to_i32(Int32(coords[3])),
+                to_llvm_shared_mem_ptr(mem_bar),
+                to_i16(multicast_mask),
+            )
+        else:
+            inlined_assembly[
+                tma_asm + " [$0], [$1, {$4, $5, $6, $7}], [$2], $3;",
+                NoneType,
+                constraints="r,l,r,h,r,r,r,r",
+            ](
+                Int32(Int(dst_mem)),
+                tma_descriptor,
+                Int32(Int(mem_bar)) & 0xFEFFFFFF,
+                multicast_mask,
+                Int32(coords[0]),
+                Int32(coords[1]),
+                Int32(coords[2]),
+                Int32(coords[3]),
+            )
+
+    elif rank == 3:
         comptime if cta_group == 1:
             var dst_mem_cluster = dst_mem.address_space_cast[
                 AddressSpace.SHARED_CLUSTER
@@ -1918,7 +2238,7 @@ def cp_async_bulk_tensor_global_shared_cta[
 
 
 @always_inline
-def cp_async_bulk_tensor_reduce[
+def cp_async_bulk_tensor_reduce_global_shared_cta[
     src_type: AnyType,
     rank: Int,
     /,
@@ -2628,11 +2948,11 @@ def multimem_st[
 
     Example:
 
-    ```mojo
+    ```text
     from std.gpu.memory.memory import *
 
     # Store 2 float32 values to multimem address.
-    multimem_st[DType.float32, count=2, scope=Scope.CTA, consistency=Consistency.RELAXED](
+    multimem_st[DType.float32, count=2, scope=Scope.BLOCK, consistency=Consistency.RELAXED](
         addr, StaticTuple[DType.float32, 2](val1, val2)
     )
 

@@ -20,12 +20,7 @@ SF_VECTOR_SIZE (32) consecutive elements.
 """
 
 from std.math import ceildiv
-from std.gpu import (
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
-)
+from std.gpu import block_idx, thread_idx, grid_dim, block_dim
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import GPUInfo
 from std.sys.info import _accelerator_arch
@@ -47,6 +42,9 @@ from std.sys.info import simd_width_of
 
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(512))
+)
+@__name(
+    t"dequant_mxfp4_to_fp8_{out_dtype}_{scales_dtype}_{in_dtype}", mangle=True
 )
 def _dequant_mxfp4_to_fp8_kernel[
     out_dtype: DType,
@@ -76,13 +74,11 @@ def _dequant_mxfp4_to_fp8_kernel[
     comptime BYTES_PER_THREAD = ELEMENTS_PER_THREAD // 2
 
     with PDL():
-        for global_row_idx in range(
-            Int(block_idx.x), num_rows, Int(grid_dim.x)
-        ):
+        for global_row_idx in range(block_idx.x, num_rows, grid_dim.x):
             for col_thread_idx in range(
-                Int(thread_idx.x),
+                thread_idx.x,
                 ceildiv(num_cols, ELEMENTS_PER_THREAD),
-                Int(block_dim.x),
+                block_dim.x,
             ):
                 var global_col_idx = col_thread_idx * ELEMENTS_PER_THREAD
 
@@ -257,6 +253,9 @@ def _cast_bf16_to_fp8(
             in_tt.load[width=width](coord).cast[out_tt.dtype](),
         )
 
-    elementwise[cast_fn, simd_width_of[input.dtype](), target="gpu"](
-        Index(num_rows, num_cols), ctx
-    )
+    elementwise[
+        cast_fn,
+        simd_width_of[input.dtype](),
+        target="gpu",
+        _trace_description="mxfp4_dequant_cast",
+    ](Index(num_rows, num_cols), ctx)

@@ -10,7 +10,6 @@ mojo_library(
     deps = [
         "//max:internal_utils",
         "//max:layout",
-        "//max:register",
         "@mojo//:std",
     ],
 )

@@ -44,7 +44,7 @@ from std.gpu.memory import fence_async_view_proxy
 from std.collections import OptionalReg
 from ....structuring import SMemTile, RegTile
 from layout.swizzle import Swizzle
-from std.gpu import lane_id_int as lane_id
+from std.gpu import lane_id
 from std.gpu.globals import WARP_SIZE, WARPGROUP_SIZE
 
 from std.gpu.compute.mma import st_matrix
@@ -790,11 +790,9 @@ struct RegisterToGMemWriter[
     ):
         """Vectorized write with epilogue or compute_lambda transformation."""
         # Get warp tile and coordinates
-        var warp_tile, warp_tile_coords, warp_tile_offset = (
-            self.dst.tile_with_offset[
-                Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
-            ](m_mma * 4 + self.thread_info.warp_id, n_mma)
-        )
+        var warp_tile, warp_tile_coords, _ = self.dst.tile_with_offset[
+            Self.wgmma_shape[0] // 4, Self.wgmma_shape[1]
+        ](m_mma * 4 + self.thread_info.warp_id, n_mma)
 
         # Calculate global coordinates
         var warp_coords_base = IndexList[2](
@@ -804,10 +802,10 @@ struct RegisterToGMemWriter[
 
         # Distribute fragments across threads
         var c_reg_frag = c_reg_tile.vectorize[1, 2]()
-        var gmem_frag, gmem_offset_coords_raw, gmem_offset = (
-            warp_tile.vectorize[1, 2]().distribute_with_offset[
-                Layout.row_major(8, 4)
-            ](self.thread_info.lane_id)
+        var gmem_frag, gmem_offset_coords_raw, _ = warp_tile.vectorize[
+            1, 2
+        ]().distribute_with_offset[Layout.row_major(8, 4)](
+            self.thread_info.lane_id
         )
 
         var gmem_offset_coords = IndexList[2](

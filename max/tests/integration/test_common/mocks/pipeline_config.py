@@ -27,6 +27,7 @@ from max.pipelines.lib import (
     PipelineRuntimeConfig,
     SupportedEncoding,
 )
+from max.pipelines.lib.model_manifest import ModelManifest
 from transformers import AutoConfig
 from typing_extensions import ParamSpec
 
@@ -81,21 +82,6 @@ class DummyPipelineConfig(PipelineConfig):
         # Seed `self` with a real (but unvalidated) PipelineConfig instance, so
         # we keep pydantic-internal state consistent while still avoiding full
         # validation / resolution.
-        runtime = PipelineRuntimeConfig.model_construct(
-            max_batch_size=max_batch_size,
-        )
-        base = PipelineConfig.model_construct(
-            runtime=runtime,
-        )
-        self.__dict__.update(base.__dict__)
-        for attr in (
-            "__pydantic_fields_set__",
-            "__pydantic_extra__",
-            "__pydantic_private__",
-        ):
-            if hasattr(base, attr):
-                object.__setattr__(self, attr, getattr(base, attr))
-
         model_config = DummyMAXModelConfig.model_construct(
             model_path=model_path,
             device_specs=device_specs,
@@ -110,8 +96,23 @@ class DummyPipelineConfig(PipelineConfig):
         # TODO: Consider accepting huggingface_config as an optional parameter
         # to allow tests to provide model-specific spec'd mocks.
         model_config._huggingface_config = MagicMock()
-        # Populate the model field so callers see the configured model.
-        object.__setattr__(self, "model", model_config)
+
+        manifest = ModelManifest({"main": model_config})
+        runtime = PipelineRuntimeConfig.model_construct(
+            max_batch_size=max_batch_size,
+        )
+        base = PipelineConfig.model_construct(
+            runtime=runtime,
+            models=manifest,
+        )
+        self.__dict__.update(base.__dict__)
+        for attr in (
+            "__pydantic_fields_set__",
+            "__pydantic_extra__",
+            "__pydantic_private__",
+        ):
+            if hasattr(base, attr):
+                object.__setattr__(self, attr, getattr(base, attr))
 
         # These values don't belong in PipelineConfig, but are used by
         # MockPipelineModel in pipeline_model.py.
@@ -307,8 +308,15 @@ def mock_pipeline_config_hf_dependencies(
 def mock_pipeline_config_resolve(func: Callable[_P, _R]) -> Callable[_P, _R]:
     @wraps(func)
     def wrapper(*args: _P.args, **kwargs: _P.kwargs) -> _R:
-        with patch(
-            "max.pipelines.lib.config.PipelineConfig.resolve", return_value=None
+        with (
+            patch(
+                "max.pipelines.lib.config.PipelineConfig.resolve",
+                return_value=None,
+            ),
+            patch(
+                "max.pipelines.lib.hf_utils.validate_hf_repo_access",
+                return_value=None,
+            ),
         ):
             return func(*args, **kwargs)
 

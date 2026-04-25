@@ -1,5 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "install_docs", "modular_py_binary", "modular_versioned_expand_template", "pkg_filegroup", "pkg_files", "strip_prefix")
 
 # gazelle:default_visibility //oss/modular/docs:__subpackages__
 
@@ -12,9 +12,27 @@ install_docs(
     target = ":mojodocs",
 )
 
+install_docs(
+    name = "install-changelog",
+    dest_subdir = "mojosite/changelog",
+    tags = ["manual"],
+    target = ":changelog",
+)
+
+modular_versioned_expand_template(
+    name = "build_version_js",
+    out = "build_version.js",
+    substitutions = {},
+    tags = ["manual"],
+    template = "build_version.js.tmpl",
+)
+
 genrule(
     name = "mojodocs",
-    srcs = [":mojosite"],
+    srcs = [
+        ":mojosite",
+        ":build_version_js",
+    ],
     outs = ["mojodocs.tar"],
     cmd = """
   # Unpack inputs for processing
@@ -25,10 +43,14 @@ genrule(
   mv mojosite/mojo/* mojosite/
   rm -rf mojosite/mojo
 
+  # Place build version file early so post-process can read it
+  cp $(location :build_version_js) mojosite/build_version.js
+
   # Post-process before restructuring (script expects original paths)
   chmod -R +w mojosite
   $(location :post-process-mojodocs) mojosite
 
+  # TODO: Refactor all this after new site launch
   # Restructure for new site layout:
   #   internal/ content → root (stripping internal/ prefix)
   #   everything else   → docs/
@@ -38,8 +60,14 @@ genrule(
   mkdir -p mojosite/docs
   mv docs_tmp/* mojosite/docs/
   rm -rf docs_tmp
+  rm -f mojosite/docs/redirects.js
   cp -r internal_tmp/* mojosite/
   rm -rf internal_tmp
+  mv mojosite/redirects.js mojosite/docs/redirects.js
+  rm mojosite/docs/lib.mdx
+  rm -f mojosite/docs/nightly-changelog.md
+  rm -f mojosite/docs/sidebars.js
+  mv mojosite/docs/build_version.js mojosite/build_version.js
 
   # Generate final output
   cd mojosite
@@ -49,10 +77,25 @@ genrule(
     tools = [":post-process-mojodocs"],
 )
 
+genrule(
+    name = "changelog",
+    srcs = [":mojodocs"],
+    outs = ["changelog.tar"],
+    cmd = """
+  mkdir -p changelog_tmp
+  tar -xf $(location :mojodocs) -C changelog_tmp
+  cd changelog_tmp/docs/changelog
+  tar -cf ../../../$@ *
+  """,
+    tags = ["manual"],
+)
+
 pkg_tar(
     name = "mojosite",
     srcs = [
+        ":internal-docs",
         ":mojo",
+        ":mojo-layout-public-docs",
         ":mojo-std-public-docs",
     ],
     allow_duplicates_with_different_content = False,
@@ -69,11 +112,24 @@ pkg_files(
             "README.md",
             "BUILD.bazel",
             "code/**",
+            "internal/**",
             "post-process-mojodocs.py",
+            "build_version.js.tmpl",
         ],
     ),
     prefix = "mojo",
     strip_prefix = strip_prefix.from_pkg(""),
+)
+
+pkg_files(
+    name = "internal-docs",
+    srcs = glob(
+        ["internal/**"],
+        allow_empty = True,
+    ),
+    prefix = "mojo",
+    strip_prefix = strip_prefix.from_pkg(""),
+    tags = ["manual"],
 )
 
 mojo_commands = [
@@ -109,6 +165,22 @@ pkg_filegroup(
     srcs = [
         "//oss/modular/mojo/stdlib/std:docs",
     ],
+    prefix = "mojo",
+    tags = ["manual"],
+)
+
+pkg_files(
+    name = "layout-docs-files",
+    srcs = ["//max/kernels/src/layout:layout.docs"],
+    renames = {
+        "//max/kernels/src/layout:layout.docs": "layout",
+    },
+    tags = ["manual"],
+)
+
+pkg_filegroup(
+    name = "mojo-layout-public-docs",
+    srcs = [":layout-docs-files"],
     prefix = "mojo",
     tags = ["manual"],
 )

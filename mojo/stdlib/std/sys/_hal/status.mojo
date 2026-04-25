@@ -16,15 +16,23 @@ from std.ffi import CStringSlice
 
 
 comptime STATUS_SUCCESS: Int64 = 0
-comptime STATUS_UNKNOWN_ERROR: Int64 = -1
-comptime STATUS_ARGUMENT_OUT_OF_RANGE: Int64 = -2
-comptime STATUS_UNKNOWN_PROPERTY_NAME: Int64 = -3
-comptime STATUS_NO_DEVICES: Int64 = -4
-comptime STATUS_BAD_DEVICE: Int64 = -5
-comptime STATUS_BAD_CONTEXT: Int64 = -6
-comptime STATUS_BAD_MEMORY: Int64 = -7
-comptime STATUS_OUT_OF_MEMORY: Int64 = -8
-comptime STATUS_INVALID_ARG: Int64 = -9
+comptime STATUS_INCOMPATIBLE_VERSION: Int64 = -1
+comptime STATUS_UNKNOWN_ERROR: Int64 = -2
+comptime STATUS_ARGUMENT_OUT_OF_RANGE: Int64 = -3
+comptime STATUS_UNKNOWN_PROPERTY_NAME: Int64 = -4
+comptime STATUS_NO_DEVICES: Int64 = -5
+comptime STATUS_BAD_DRIVER: Int64 = -6
+comptime STATUS_BAD_DEVICE: Int64 = -7
+comptime STATUS_BAD_CONTEXT: Int64 = -8
+comptime STATUS_BAD_MEMORY: Int64 = -9
+comptime STATUS_BAD_QUEUE: Int64 = -10
+comptime STATUS_BAD_EVENT: Int64 = -11
+comptime STATUS_BAD_FUNCTION: Int64 = -12
+comptime STATUS_OUT_OF_MEMORY: Int64 = -13
+comptime STATUS_INVALID_ARG: Int64 = -14
+comptime STATUS_INCOMPATIBLE: Int64 = -15
+comptime STATUS_BAD_BUNDLE: Int64 = -16
+comptime STATUS_EXECUTE_MODE_NOT_SUPPORTED: Int64 = -17
 
 comptime STATUS_UNINIT: Int64 = Int64.MAX_FINITE
 

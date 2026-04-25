@@ -19,6 +19,7 @@ and MXFP8 on SM100.
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import _is_sm10x_gpu
+from std.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
@@ -29,6 +30,7 @@ from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
 def grouped_matmul_block_scaled_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -52,7 +54,9 @@ def grouped_matmul_block_scaled_dispatch[
         ctx.default_device_info
     ), "Only support SM100 for grouped block-scaled matmul"
 
-    grouped_matmul_block_scaled_sm100_dispatch[transpose_b, target](
+    grouped_matmul_block_scaled_sm100_dispatch[
+        transpose_b, target, pdl_level=pdl_level
+    ](
         c,
         a,
         b,

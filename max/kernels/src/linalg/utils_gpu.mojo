@@ -13,6 +13,7 @@
 
 from std.hashlib.hasher import Hasher
 from std.math import ceildiv
+from std.math.uutils import uceildiv
 from std.sys import (
     get_defined_int,
     get_defined_bool,
@@ -44,7 +45,7 @@ def block_swizzle(
 
 @always_inline
 def _block_swizzle_by_scale[
-    scale0: UInt
+    scale0: Int
 ](block_idx: IndexList[2, ...], grid_dim: type_of(block_idx)) -> type_of(
     block_idx
 ):
@@ -109,17 +110,17 @@ struct MatmulConfig[
 
     var mma_shape: IndexList[3]
 
-    var num_pipeline_stages: UInt
+    var num_pipeline_stages: Int
 
-    var num_k_partitions: UInt
+    var num_k_partitions: Int
 
-    var k_group_size: UInt
+    var k_group_size: Int
 
-    var num_warp_k_partitions: UInt
+    var num_warp_k_partitions: Int
 
     var cluster_shape: IndexList[3]
 
-    var num_consumer: UInt
+    var num_consumer: Int
 
     var partitioned_multicast: Bool
 
@@ -151,11 +152,11 @@ struct MatmulConfig[
         warp_tile_shape: IndexList[3] = Index(64, 64, 32),
         mma_shape: IndexList[3] = get_mma_shape[Self.a_type, Self.accum_type](),
         cluster_shape: IndexList[3] = Index(1, 1, 1),
-        num_pipeline_stages: UInt = 4,
-        num_k_partitions: UInt = 1,
-        k_group_size: UInt = 1,
-        num_warp_k_partitions: UInt = 1,
-        num_consumer: UInt = 1,
+        num_pipeline_stages: Int = 4,
+        num_k_partitions: Int = 1,
+        k_group_size: Int = 1,
+        num_warp_k_partitions: Int = 1,
+        num_consumer: Int = 1,
         partitioned_multicast: Bool = False,
         pdl_level: PDLLevel = PDLLevel(),
     ):
@@ -193,40 +194,38 @@ struct MatmulConfig[
         new_config.copy_field(self)
         return new_config
 
-    def num_warps_m(self) -> UInt:
-        return UInt(self.block_tile_shape[0] // self.warp_tile_shape[0])
+    def num_warps_m(self) -> Int:
+        return self.block_tile_shape[0] // self.warp_tile_shape[0]
 
-    def num_warps_n(self) -> UInt:
-        return UInt(self.block_tile_shape[1] // self.warp_tile_shape[1])
+    def num_warps_n(self) -> Int:
+        return self.block_tile_shape[1] // self.warp_tile_shape[1]
 
-    def num_threads(self) -> UInt:
+    def num_threads(self) -> Int:
         return (
             self.num_warps_m()
             * self.num_warps_n()
             * self.num_warp_k_partitions
-            * UInt(WARP_SIZE)
+            * WARP_SIZE
         )
 
     def shared_mem_usage(self) -> Int:
-        return Int(
-            _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
-                self.block_tile_shape,
-                Int(self.num_pipeline_stages),
-                Int(self.num_warp_k_partitions),
-            )
+        return _shared_memory_usage[Self.a_type, Self.b_type, Self.c_type](
+            self.block_tile_shape,
+            self.num_pipeline_stages,
+            self.num_warp_k_partitions,
         )
 
-    def grid_dim(self, m: UInt, n: UInt) -> IndexList[3]:
+    def grid_dim(self, m: Int, n: Int) -> IndexList[3]:
         return Index(
-            Int(ceildiv(n, UInt(self.block_tile_shape[1]))),
-            Int(ceildiv(m, UInt(self.block_tile_shape[0]))),
-            Int(self.num_k_partitions),
+            uceildiv(n, self.block_tile_shape[1]),
+            uceildiv(m, self.block_tile_shape[0]),
+            self.num_k_partitions,
         )
 
     def block_dim(self) -> IndexList[3]:
-        return Index(Int(self.num_threads()), 1, 1)
+        return Index(self.num_threads(), 1, 1)
 
-    def work_space_size(self, M: UInt, N: UInt) -> UInt:
+    def work_space_size(self, M: Int, N: Int) -> Int:
         return M * N * (self.num_k_partitions - 1)
 
     def pdl_level(self) -> PDLLevel:
@@ -309,7 +308,7 @@ def _bk_base[type: DType, amd_kernel: Bool = False]() -> Int:
 @always_inline
 def _shared_memory_usage[
     a_type: DType, b_type: DType, c_type: DType
-](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> UInt:
+](block_mnk: IndexList[3], num_pipeline_stages: Int, slice_k: Int = 1) -> Int:
     # fmt: off
     var a_usage = slice_k * block_mnk[0] * block_mnk[2] * num_pipeline_stages * size_of[a_type]()
     var b_usage = slice_k * block_mnk[1] * block_mnk[2] * num_pipeline_stages * size_of[b_type]()
@@ -318,7 +317,7 @@ def _shared_memory_usage[
     var c_usage = block_mnk[0] * block_mnk[1] * \
                   size_of[c_type]() if c_type.is_half_float() else 0
     # fmt: on
-    return UInt(max(max(a_usage + b_usage, c_usage), slice_k_reduction))
+    return max(max(a_usage + b_usage, c_usage), slice_k_reduction)
 
 
 @fieldwise_init
@@ -376,11 +375,11 @@ struct MatmulKernels[
             get_defined_int["TUNE_WN", 64](),
             get_defined_int["TUNE_BK", 32](),
         ),
-        num_pipeline_stages=UInt(get_defined_int["TUNE_NUM_STAGES", 4]()),
-        num_k_partitions=UInt(get_defined_int["TUNE_NUM_K_PARTITIONS", 1]()),
-        num_warp_k_partitions=UInt(
-            get_defined_int["TUNE_NUM_WARP_K_PARTITIONS", 1]()
-        ),
+        num_pipeline_stages=get_defined_int["TUNE_NUM_STAGES", 4](),
+        num_k_partitions=get_defined_int["TUNE_NUM_K_PARTITIONS", 1](),
+        num_warp_k_partitions=get_defined_int[
+            "TUNE_NUM_WARP_K_PARTITIONS", 1
+        ](),
     )
 
 
@@ -436,9 +435,12 @@ def select_config[
         var num_waves_base = ceildiv(num_blocks, A100.sm_count)
 
         # Skip if it requires more shared memory than the GPU supports.
-        if _shared_memory_usage[a_type, b_type, c_type](
-            Index(bm, bn, bk), num_stages
-        ) > UInt(gpu_info.shared_memory_per_multiprocessor):
+        if (
+            _shared_memory_usage[a_type, b_type, c_type](
+                Index(bm, bn, bk), num_stages
+            )
+            > gpu_info.shared_memory_per_multiprocessor
+        ):
             continue
 
         var allowed_num_k_partitions = (
@@ -486,8 +488,8 @@ def select_config[
     return MatmulConfig[a_type, b_type, c_type, transpose_b](
         block_tile_shape=best_bmnk,
         warp_tile_shape=Index(64, 64, best_bmnk[2]),
-        num_pipeline_stages=UInt(best_num_stages),
-        num_k_partitions=UInt(best_num_k_partitions),
+        num_pipeline_stages=best_num_stages,
+        num_k_partitions=best_num_k_partitions,
     )
 
 

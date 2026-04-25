@@ -31,16 +31,16 @@ def test_span_list_int() raises:
     assert_equal(s2[1], l[3])
     assert_equal(s2[2], l[4])
     assert_equal(s2[3], l[5])
-    assert_equal(s[-1], l[-1])
+    assert_equal(s[len(s) - 1], l[len(l) - 1])
 
     # Test mutation
     s[0] = 9
     assert_equal(s[0], 9)
     assert_equal(l[0], 9)
 
-    s[-1] = 0
-    assert_equal(s[-1], 0)
-    assert_equal(l[-1], 0)
+    s[len(s) - 1] = 0
+    assert_equal(s[len(s) - 1], 0)
+    assert_equal(l[len(l) - 1], 0)
 
 
 def test_span_list_str() raises:
@@ -61,9 +61,9 @@ def test_span_list_str() raises:
     assert_equal(s[0], "h")
     assert_equal(l[0], "h")
 
-    s[-1] = "i"
-    assert_equal(s[-1], "i")
-    assert_equal(l[-1], "i")
+    s[len(s) - 1] = "i"
+    assert_equal(s[len(s) - 1], "i")
+    assert_equal(l[len(l) - 1], "i")
 
 
 def test_span_array_int() raises:
@@ -84,9 +84,9 @@ def test_span_array_int() raises:
     assert_equal(s[0], 9)
     assert_equal(l[0], 9)
 
-    s[-1] = 0
-    assert_equal(s[-1], 0)
-    assert_equal(l[-1], 0)
+    s[len(s) - 1] = 0
+    assert_equal(s[len(s) - 1], 0)
+    assert_equal(l[len(l) - 1], 0)
 
 
 def test_span_array_str() raises:
@@ -107,9 +107,9 @@ def test_span_array_str() raises:
     assert_equal(s[0], "h")
     assert_equal(l[0], "h")
 
-    s[-1] = "i"
-    assert_equal(s[-1], "i")
-    assert_equal(l[-1], "i")
+    s[len(s) - 1] = "i"
+    assert_equal(s[len(s) - 1], "i")
+    assert_equal(l[len(l) - 1], "i")
 
 
 def test_indexing() raises:
@@ -254,7 +254,7 @@ def test_merge() raises:
     def inner(cond: Bool, mut a: List[Int], mut b: List[Int]):
         var either = Span(a) if cond else Span(b)
         either[0] = 0
-        either[-1] = 10
+        either[len(either) - 1] = 10
 
     inner(True, a, b)
     inner(False, a, b)
@@ -313,11 +313,11 @@ def test_reverse() raises:
 
 def test_apply() raises:
     @parameter
-    def _twice[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[D, w]:
+    def _twice[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[D, w]:
         return x * 2
 
     @parameter
-    def _where[D: DType, w: Int](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
+    def _where[D: DType, w: SIMDSize](x: SIMD[D, w]) -> SIMD[DType.bool, w]:
         return (x % 2).eq(0)
 
     def _test[D: DType]() raises:
@@ -372,7 +372,7 @@ def test_apply() raises:
 
 
 def test_count_func() raises:
-    def is_2[w: Int](v: SIMD[DType.uint8, w]) unified {} -> SIMD[DType.bool, w]:
+    def is_2[w: SIMDSize](v: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
         return v.eq(2)
 
     var data = Span[Byte]([Byte(0), 1, 2, 1, 2, 1, 2])
@@ -460,7 +460,7 @@ def test_binary_search_by_unified() raises:
 
     var seven = 7
 
-    def cmp_7(x: Int) unified {var} -> Int:
+    def cmp_7(x: Int) {var} -> Int:
         return x - seven
 
     var result = span.binary_search_by(cmp_7)
@@ -468,7 +468,7 @@ def test_binary_search_by_unified() raises:
 
     var six = 6
 
-    def cmp_6(x: Int) unified {var six} -> Int:
+    def cmp_6(x: Int) {var six} -> Int:
         return x - six
 
     var result2 = span.binary_search_by(cmp_6)
@@ -476,7 +476,7 @@ def test_binary_search_by_unified() raises:
 
     var one = 1
 
-    def cmp_1(x: Int) unified {var one} -> Int:
+    def cmp_1(x: Int) {var one} -> Int:
         return x - one
 
     var result3 = span.binary_search_by(cmp_1)
@@ -484,7 +484,7 @@ def test_binary_search_by_unified() raises:
 
     var thirteen = 13
 
-    def cmp_13(x: Int) unified {var thirteen} -> Int:
+    def cmp_13(x: Int) {var thirteen} -> Int:
         return x - thirteen
 
     var result4 = span.binary_search_by(cmp_13)
@@ -614,6 +614,20 @@ def test_span_with_non_movable_type() raises:
     var ptr = alloc[NonMovable](1)
     var _span = Span(ptr=ptr, length=0)
     ptr.free()
+
+
+def test_span_iter_owned() raises:
+    var list = [10, 20, 30]
+    var result = List[Int]()
+    for elem in Span(list):
+        result.append(elem)
+
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 10)
+    assert_equal(result[1], 20)
+    assert_equal(result[2], 30)
+    # Original list is still intact (Span doesn't own data).
+    assert_equal(len(list), 3)
 
 
 def main() raises:

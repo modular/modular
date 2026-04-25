@@ -159,22 +159,22 @@ trait ImplicitlyCopyable(Copyable, ImplicitlyDestructible):
     with all types that are copyable, regardless of whether they opt-in to
     implicit copying.
 
-    ### Examples
+    **Examples:**
 
     A type can opt-in to implicit copying by conforming to `ImplicitlyCopyable`
     (in the example below, the compiler also synthesizes a default field-wise
     copy constructor, as the user didn't provide a definition):
 
-    ```
+    ```mojo
     @fieldwise_init
-    struct Point(ImplicitlyCopyable)
+    struct Point(ImplicitlyCopyable):
         var x: Int
         var y: Int
 
     def main():
         var p = Point(5, 10)
 
-        # Perform an implicit copy of `p
+        # Perform an implicit copy of `p`.
         var p2 = p
     ```
     """

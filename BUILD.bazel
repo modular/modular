@@ -1,4 +1,4 @@
-load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag", "string_flag")
 load("@mojo//:mojo.bzl", "ALL_MOJOPKGS")
 load("@mojo_gpu_toolchains//:gpus.bzl", "SUPPORTED_GPUS")
 load("//bazel:api.bzl", "mojo_binary", "requirement")
@@ -95,7 +95,7 @@ string_flag(
 
 string_flag(
     name = "mojo_base_version",
-    build_setting_default = "0.26.3.0",
+    build_setting_default = "1.0.0",
     make_variable = "MOJO_BASE_VERSION",
 )
 
@@ -335,8 +335,50 @@ config_setting(
     tags = [ALLOW_UNUSED_TAG],
 )
 
+# Should only be read from the host config
+string_flag(
+    name = "host_modular_config",
+    build_setting_default = "default",
+    scope = "universal",
+    values = [
+        "default",
+        "ci_build",
+    ],
+)
+
+config_setting(
+    name = "host_modular_config_ci_build",
+    flag_values = {"//:host_modular_config": "ci_build"},
+)
+
+config_setting(
+    name = "host_modular_config_default",
+    flag_values = {"//:host_modular_config": "default"},
+    tags = [ALLOW_UNUSED_TAG],
+)
+
 filegroup(
     name = "clang_tidy_config",
     srcs = [".clang-tidy"],
     tags = [TOP_LEVEL_TAG],
+)
+
+bool_flag(
+    name = "use_sglang",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_sglang_setting",
+    flag_values = {"//:use_sglang": "true"},
+)
+
+bool_flag(
+    name = "use_vllm",
+    build_setting_default = False,
+)
+
+config_setting(
+    name = "use_vllm_setting",
+    flag_values = {"//:use_vllm": "true"},
 )

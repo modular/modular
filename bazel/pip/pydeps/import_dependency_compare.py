@@ -27,6 +27,8 @@ from typing_extensions import override
 # Ideally these can be determined from bazel, but some of them cannot be, specifically
 # ones that share a top-level namespace, like the google and otel ones.
 _THIRD_PARTY_IMPORTS = {
+    "apache_tvm_ffi": ["tvm_ffi"],
+    "flashinfer_python": ["flashinfer"],
     "google_auth": ["google.auth"],
     "google_cloud_bigquery": ["google.cloud.bigquery"],
     "grpcio": ["grpc"],
@@ -162,6 +164,7 @@ def _is_third_party_import(
 def check_dependencies_against_imports(
     working_dir: Path,
     sources: set[Path],
+    absolute_srcs: set[Path],
     third_party_deps: set[str],
     ignore_extra_deps: set[str],
     ignore_unresolved_imports: set[str],
@@ -174,6 +177,7 @@ def check_dependencies_against_imports(
     Args:
         working_dir: Absolute path to the root of the source files.
         sources: Sources of the current target, relative to working_dir.
+        absolute_srcs: Sources of the current target, relative to the workspace root.
         third_party_deps: Set of third party dependency labels.
         ignore_extra_deps: Set of dependency labels to ignore if unused.
         ignore_unresolved_imports: Set of import paths to ignore if unresolved.
@@ -199,6 +203,7 @@ def check_dependencies_against_imports(
     # all source files in the provided set are considered local
     # and we turn the files into a set of modules
     local = {PythonModule.from_path(src) for src in sources}
+    local_absolute = {PythonModule.from_path(src) for src in absolute_srcs}
 
     for source in sources:
         # Skip parsing in these cases, we can only parse Python files
@@ -252,32 +257,39 @@ def check_dependencies_against_imports(
             if absolute_import in local:
                 continue
 
-            # 3: Direct match as a dependency
+            # 3. Direct import from sources (from workspace root)
+            if absolute_import in local_absolute:
+                continue
+
+            # 4: Direct match as a dependency
             if label := deps_info.get(absolute_import):
                 used_deps.add(label)
                 continue
 
             if absolute_import.has_parent():
-                # 4. Import something from within a local module
+                # 5. Import something from within a local module
                 if absolute_import.parent() in local:
                     continue
 
-                # 5. Import something from a dependency module
+                # 6. Import something from within a local module (from workspace root)
+                if absolute_import.parent() in local_absolute:
+                    continue
+
+                # 7. Import something from a dependency module
                 if label := deps_info.get(absolute_import.parent()):
                     used_deps.add(label)
                     continue
 
-            # 6. Third party dep
+            # 8. Third party dep
             if label := _is_third_party_import(processed_third_party_deps, mod):
                 used_deps.add(label)
                 continue
 
-            # 7. Manual ignore
+            # 9. Manual ignore
             if (
                 mod._module in ignore_unresolved_imports
                 or mod.root() in ignore_unresolved_imports
             ):
-                # Resolved as a manual ignore
                 continue
 
             # If none of the above, unresolved

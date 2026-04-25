@@ -40,7 +40,6 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     ImplicitlyCopyable,
     IntableRaising,
     PathLike,
-    Sized,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -67,7 +66,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
     # Operator dunders
     # ===-------------------------------------------------------------------===#
 
-    @always_inline("nodebug")
+    @always_inline("builtin")
     def __add__(
         self, rhs: StringLiteral
     ) -> StringLiteral[
@@ -188,25 +187,13 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         return PythonObject(self)
 
     @always_inline("nodebug")
-    def __len__(self) -> Int:
-        """Get the string length.
-
-        Returns:
-            The length of this value.
-        """
-        # TODO(MSTDL-160):
-        #   Properly count Unicode codepoints instead of returning this length
-        #   in bytes.
-        return self.byte_length()
-
-    @always_inline("nodebug")
     def __bool__(self) -> Bool:
         """Convert the string to a bool value.
 
         Returns:
             True if the string is not empty.
         """
-        return len(self) != 0
+        return self.byte_length() != 0
 
     @always_inline
     def __int__(self) raises -> Int:
@@ -596,11 +583,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Args:
             prefix: The prefix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         return StringSlice(self).startswith(prefix, start, end)
 
@@ -612,11 +599,11 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
 
         Args:
             suffix: The suffix to check.
-            start: The start offset from which to check.
-            end: The end offset from which to check.
+            start: The start byte offset from which to check.
+            end: The end byte offset from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
         return StringSlice(self).endswith(suffix, start, end)
 

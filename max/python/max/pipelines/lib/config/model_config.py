@@ -32,6 +32,7 @@ from max.nn.kv_cache.cache_params import KVConnectorType
 from max.pipelines.lib.device_specs import coerce_device_specs_input
 from max.pipelines.lib.hf_utils import (
     HuggingFaceRepo,
+    download_weight_files,
     try_to_load_from_cache,
     validate_hf_repo_access,
 )
@@ -45,7 +46,7 @@ from pydantic import (
     computed_field,
     field_validator,
 )
-from transformers import AutoConfig
+from transformers import PretrainedConfig
 from transformers.generation import GenerationConfig
 
 from .config_enums import (
@@ -269,11 +270,8 @@ class MAXModelConfig(MAXModelConfigBase):
     _applied_dtype_cast_to: SupportedEncoding | None = PrivateAttr(default=None)
     """Property to track the dtype that safetensor weights were casted to. None means no casting was applied. This should only be set by internal code."""
 
-    _huggingface_config: AutoConfig | None = PrivateAttr(default=None)
+    _huggingface_config: PretrainedConfig | None = PrivateAttr(default=None)
     """Hugging Face config. This should only be set by internal code."""
-
-    _diffusers_config: dict[str, Any] | None = PrivateAttr(default=None)
-    """Diffusers config for diffusion pipelines. This should only be set by internal code."""
 
     _weights_repo_id: str | None = PrivateAttr(default=None)
     """Hugging Face repo id to load weights from only. This should only be set by internal code."""
@@ -282,6 +280,14 @@ class MAXModelConfig(MAXModelConfigBase):
     # also autopopulates default values.
     _quant: QuantizationConfig | None = PrivateAttr(default=None)
     """Optional config for specifying quantization parameters. This should only be set by internal code."""
+
+    _cached_weight_repo: HuggingFaceRepo | None = PrivateAttr(default=None)
+    """Cached HuggingFaceRepo for weight files. Avoids recreating instances
+    (and redundant HF API calls) on every property access."""
+
+    _cached_model_repo: HuggingFaceRepo | None = PrivateAttr(default=None)
+    """Cached HuggingFaceRepo for the model. Avoids recreating instances
+    (and redundant HF API calls) on every property access."""
 
     _config_file_section_name: str = PrivateAttr(default="model_config")
     """The section name to use when loading this config from a MAXConfig file.
@@ -297,49 +303,49 @@ class MAXModelConfig(MAXModelConfigBase):
     if not TYPE_CHECKING:
 
         def __init__(self, **data: Any) -> None:
-            """Initialize config, allowing tests/internal callers to seed PrivateAttrs.
+            """Initialize config, allowing tests/internal callers to seed private attributes.
 
-            Pydantic PrivateAttrs are not regular model fields, so they are not
-            accepted as constructor kwargs by default. Some tests (and debugging
-            utilities) intentionally seed `_huggingface_config` to avoid network
+            Pydantic private attributes (``PrivateAttr``) are not regular model fields,
+            so they are not accepted as constructor kwargs by default. Some tests (and debugging
+            utilities) intentionally seed ``_huggingface_config`` to avoid network
             access and to validate config override plumbing. Hence, we need to
-            explicitly define this __init__ method to seed the PrivateAttr(s).
+            explicitly define this ``__init__`` method to seed the private attributes.
             """
             seeded_huggingface_config = data.pop("_huggingface_config", None)
-            seeded_diffusers_config = data.pop("_diffusers_config", None)
             super().__init__(**data)
             if seeded_huggingface_config is not None:
                 self._huggingface_config = seeded_huggingface_config
-            if seeded_diffusers_config is not None:
-                self._diffusers_config = seeded_diffusers_config
 
     # TODO(SERVSYS-1085): Figure out a better way to avoid having to roll our
     # own custom __getstate__/__setstate__ methods.
     def __getstate__(self) -> dict[str, Any]:
         """Customize pickling to avoid serializing non-picklable HF config.
 
-        Drops `_huggingface_config` and `_diffusers_config` from the serialized state to ensure
-        the object remains pickleable across processes; they will be
-        lazily re-initialized on access via their respective properties.
+        Drops ``_huggingface_config`` from the serialized state to ensure
+        the object remains pickleable across processes; it will be
+        lazily re-initialized on access via its property.
         """
         # NOTE: In pydantic v2, PrivateAttr values live in `__pydantic_private__`,
         # not necessarily in `__dict__`. Preserve private state across processes,
-        # but explicitly drop `_huggingface_config` and `_diffusers_config` to avoid serializing possibly
+        # but explicitly drop `_huggingface_config` to avoid serializing possibly
         # non-picklable / remote-code-derived transformer objects.
         state = self.__dict__.copy()
         private = getattr(self, "__pydantic_private__", None)
         if private is not None:
             private_state = dict(private)
             private_state["_huggingface_config"] = None
-            private_state["_diffusers_config"] = None
+            # HuggingFaceRepo instances carry cached HF API responses
+            # (weight_files, info, etc.) that may not be picklable.
+            private_state["_cached_weight_repo"] = None
+            private_state["_cached_model_repo"] = None
             state["__pydantic_private__"] = private_state
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        """Restore state while ensuring `_huggingface_config` and `_diffusers_config` are reset.
+        """Restore state while ensuring ``_huggingface_config`` is reset.
 
-        `_huggingface_config` and `_diffusers_config` are restored as None to preserve the lazy
-        loading behavior defined in their respective properties.
+        ``_huggingface_config`` is restored as ``None`` to preserve the lazy
+        loading behavior defined in its property.
         """
         private_state = dict(state.pop("__pydantic_private__", None) or {})
 
@@ -347,11 +353,12 @@ class MAXModelConfig(MAXModelConfigBase):
 
         # Restore pydantic private attrs (and fill any missing defaults).
         private_state.setdefault("_huggingface_config", None)
-        private_state.setdefault("_diffusers_config", None)
         private_state.setdefault("_weights_repo_id", None)
         private_state.setdefault("_applied_dtype_cast_from", None)
         private_state.setdefault("_applied_dtype_cast_to", None)
         private_state.setdefault("_quant", None)
+        private_state.setdefault("_cached_weight_repo", None)
+        private_state.setdefault("_cached_model_repo", None)
         private_state.setdefault("_config_file_section_name", "model_config")
         object.__setattr__(self, "__pydantic_private__", private_state)
 
@@ -474,7 +481,18 @@ class MAXModelConfig(MAXModelConfigBase):
         # the subfolder.  Prepend the subfolder so that all downstream code
         # (encoding detection, validation, downloading) sees repo-relative
         # paths that include the subfolder prefix.
-        if self.subfolder and self.weight_path:
+        #
+        # Skip this when weights come from a different repo (parsed_repo_id
+        # differs from model_path) — cross-repo weight paths are relative to
+        # that external repo's root, not the base model's subfolder.
+        weights_from_external_repo = (
+            parsed_repo_id is not None and parsed_repo_id != self.model_path
+        )
+        if (
+            self.subfolder
+            and self.weight_path
+            and not weights_from_external_repo
+        ):
             prefix = self.subfolder + "/"
             adjusted: list[Path] = []
             for p in self.weight_path:
@@ -672,9 +690,9 @@ class MAXModelConfig(MAXModelConfigBase):
         Attempts to find the weights locally first to avoid network
         calls, checking in the following order:
 
-        1. If `repo_type` is ``"local"``, it checks if the path
-           in `weight_path` exists directly as a local file path.
-        2. Otherwise, if `repo_type` is ``"online"``, it first checks the local
+        1. If ``repo_type`` is ``"local"``, it checks if the path
+           in ``weight_path`` exists directly as a local file path.
+        2. Otherwise, if ``repo_type`` is ``"online"``, it first checks the local
            Hugging Face cache using :obj:`huggingface_hub.try_to_load_from_cache()`.
            If not found in the cache, it falls back to querying the Hugging Face
            Hub API via :obj:`HuggingFaceRepo.size_of()`.
@@ -739,200 +757,106 @@ class MAXModelConfig(MAXModelConfigBase):
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_weight_repo(self) -> HuggingFaceRepo:
-        """Returns the Hugging Face repo handle for weight files."""
-        return HuggingFaceRepo(
-            repo_id=self.huggingface_weight_repo_id,
+        """Returns the Hugging Face repo handle for weight files.
+
+        The result is cached in a PrivateAttr to avoid recreating
+        ``HuggingFaceRepo`` instances (and triggering redundant HF API
+        calls for file listing, encoding detection, etc.) on every
+        access.  The cache is invalidated when the underlying config
+        fields change (e.g. after ``model_copy()``).
+        """
+        weights_repo_id = self.huggingface_weight_repo_id
+        # When weights come from an external repo, don't apply the
+        # component subfolder — the external repo has its own layout.
+        weights_from_external_repo = (
+            self._weights_repo_id is not None
+            and self._weights_repo_id != self.model_path
+        )
+        subfolder = None if weights_from_external_repo else self.subfolder
+
+        cached = self._cached_weight_repo
+        if (
+            cached is not None
+            and cached.repo_id == weights_repo_id
+            and cached.revision == self.huggingface_weight_revision
+            and cached.subfolder == subfolder
+        ):
+            return cached
+
+        repo = HuggingFaceRepo(
+            repo_id=weights_repo_id,
             revision=self.huggingface_weight_revision,
             trust_remote_code=self.trust_remote_code,
-            subfolder=self.subfolder,
+            subfolder=subfolder,
         )
+        self._cached_weight_repo = repo
+        return repo
 
     @computed_field  # type: ignore[prop-decorator]
     @property
     def huggingface_model_repo(self) -> HuggingFaceRepo:
-        """Returns the Hugging Face repo handle for the model."""
-        return HuggingFaceRepo(
+        """Returns the Hugging Face repo handle for the model.
+
+        The result is cached in a PrivateAttr to avoid recreating
+        ``HuggingFaceRepo`` instances on every access.  The cache is
+        invalidated when the underlying config fields change.
+        """
+        cached = self._cached_model_repo
+        if (
+            cached is not None
+            and cached.repo_id == self.model_path
+            and cached.revision == self.huggingface_model_revision
+            and cached.subfolder == self.subfolder
+        ):
+            return cached
+
+        repo = HuggingFaceRepo(
             repo_id=self.model_path,
             revision=self.huggingface_model_revision,
             trust_remote_code=self.trust_remote_code,
             subfolder=self.subfolder,
         )
+        self._cached_model_repo = repo
+        return repo
 
     @property
     def architecture_name(self) -> str | None:
         """Returns the architecture class name from the HuggingFace config.
 
         For transformers models, returns ``architectures[0]`` from the
-        HuggingFace config.  For diffusers repos (which lack an
-        ``architectures`` field), falls back to ``_class_name`` from
-        the diffusers ``model_index.json``.
+        HuggingFace config.
         """
         hf_config = self.huggingface_config
         if hf_config is not None:
             architectures = getattr(hf_config, "architectures", None)
             if architectures:
                 return architectures[0]
-        # Diffusers repos use _class_name instead of architectures.
-        diffusers_cfg = self.diffusers_config
-        if diffusers_cfg is not None:
-            class_name = diffusers_cfg.get("_class_name")
-            if class_name:
-                return class_name
         return None
 
     @computed_field  # type: ignore[prop-decorator]
     @property
-    def huggingface_config(self) -> AutoConfig | None:
-        """Returns the Hugging Face model config (loaded on first access)."""
+    def huggingface_config(self) -> PretrainedConfig:
+        """Returns the Hugging Face model config (loaded on first access).
+
+        For transformers models, returns the ``AutoConfig`` subclass.  For
+        non-transformers models (e.g. diffusers components), falls back to
+        loading the raw ``config.json`` and wrapping it in a
+        ``PretrainedConfig``.
+
+        Raises:
+            FileNotFoundError: If no ``config.json`` can be found for the
+                model repo/subfolder.
+        """
         # Note: For multiprocessing, __getstate__ clears _huggingface_config
         # before pickling. Each worker process will reload the config fresh,
         # which properly handles trust_remote_code dynamic class loading.
         if self._huggingface_config is None:
-            try:
-                self._huggingface_config = (
-                    PIPELINE_REGISTRY.get_active_huggingface_config(
-                        huggingface_repo=self.huggingface_model_repo,
-                    )
+            self._huggingface_config = (
+                PIPELINE_REGISTRY.get_active_huggingface_config(
+                    huggingface_repo=self.huggingface_model_repo,
                 )
-            except Exception as e:
-                # Not a transformers-style model (e.g., diffusers model)
-                logger.debug(
-                    f"Could not load HuggingFace config for "
-                    f"{self.model_path}: {e}"
-                )
-                return None
+            )
         return self._huggingface_config
-
-    @computed_field  # type: ignore[prop-decorator]
-    @property
-    def diffusers_config(self) -> dict[str, Any] | None:
-        """Retrieve the diffusers config for diffusion pipelines.
-
-        .. note::
-
-           For multiprocessing, ``__getstate__`` clears ``_diffusers_config``
-           before pickling. Each worker process reloads the config fresh.
-
-        Returns:
-            The diffusers config dict if this is a diffusion pipeline, ``None``
-            otherwise. The dict has a ``"_class_name"`` key and a
-            ``"components"`` key, where each component includes
-            ``"class_name"`` and ``"config_dict"`` fields.
-        """
-        if self._diffusers_config is None:
-            model_index = PIPELINE_REGISTRY.get_active_diffusers_config(
-                huggingface_repo=self.huggingface_model_repo
-            )
-            if model_index is not None:
-                # Enhance the model_index with component configs
-                self._diffusers_config = self._load_diffusers_components(
-                    model_index
-                )
-            else:
-                self._diffusers_config = None
-        return self._diffusers_config
-
-    def _load_diffusers_components(
-        self, model_index: dict[str, Any]
-    ) -> dict[str, Any]:
-        """Load component configs for a diffusers pipeline.
-
-        Args:
-            model_index: The raw model_index.json dict from HuggingFace.
-
-        Returns:
-            Enhanced config dict with "components" key containing loaded configs.
-        """
-        import json
-
-        from huggingface_hub import hf_hub_download, list_repo_files
-
-        # Extract class name and version
-        class_name = model_index.get("_class_name")
-        diffusers_version = model_index.get("_diffusers_version")
-
-        # Build components dict with loaded configs
-        components = {}
-        repo = self.huggingface_model_repo
-        repo_root: Path | None = None
-        if repo.repo_type == "local":
-            repo_root = Path(repo.repo_id)
-            assert repo_root.exists(), (
-                "Local Hugging Face repository path does not exist: "
-                f"{repo_root}"
-            )
-            repo_files = [
-                path.relative_to(repo_root).as_posix()
-                for path in repo_root.rglob("*")
-                if path.is_file()
-            ]
-        else:
-            repo_files = list_repo_files(
-                repo_id=repo.repo_id,
-                revision=repo.revision,
-            )
-
-        component_configs = {}
-        for file_name in repo_files:
-            if "/" in file_name:
-                component_name, target = file_name.split("/")
-                if "_" in component_name:
-                    key = component_name.split("_")[0]
-                else:
-                    key = component_name
-                if target in ["config.json", f"{key}_config.json"]:
-                    try:
-                        if repo.repo_type == "local":
-                            assert repo_root is not None, (
-                                "repo_root must be set for local repo types."
-                            )
-                            cfg_path = repo_root / file_name
-                        else:
-                            cfg_path = Path(
-                                hf_hub_download(
-                                    repo_id=repo.repo_id,
-                                    filename=file_name,
-                                    revision=repo.revision,
-                                )
-                            )
-                        with open(cfg_path) as f:
-                            component_configs[component_name] = json.load(f)
-                    except Exception as e:
-                        logger.debug(
-                            f"Could not load config for {file_name}: {e}"
-                        )
-
-        for component_name, component_info in model_index.items():
-            if component_name.startswith("_"):
-                continue
-
-            if not isinstance(component_info, list) or len(component_info) != 2:
-                continue
-
-            library, class_type = component_info
-
-            components[component_name] = {
-                "library": library,
-                "class_name": class_type,
-                "config_dict": component_configs.get(component_name, {}),
-            }
-
-        # Collect top-level metadata (non-private, non-component keys).
-        metadata: dict[str, Any] = {}
-        for key, value in model_index.items():
-            if key.startswith("_"):
-                continue
-            if isinstance(value, list) and len(value) == 2:
-                continue
-            metadata[key] = value
-
-        # Build the final config structure
-        return {
-            "_class_name": class_name,
-            "_diffusers_version": diffusers_version,
-            "components": components,
-            **metadata,
-        }
 
     @computed_field  # type: ignore[prop-decorator]
     @cached_property
@@ -1343,12 +1267,6 @@ class MAXModelConfig(MAXModelConfigBase):
         assert self.quantization_encoding, "quantization_encoding must be set."
 
         if self.quantization_encoding == "gptq":
-            if self.huggingface_config is None:
-                raise ValueError(
-                    f"GPTQ quantization requires a HuggingFace config for '{self.model_path}', "
-                    "but config could not be loaded. "
-                    "Please ensure the model repository contains a valid config.json with quantization_config."
-                )
             hf_quant_config = self.huggingface_config.quantization_config
 
             # This is a bit hacky, but seems like we need it for now.
@@ -1425,6 +1343,30 @@ class MAXModelConfig(MAXModelConfigBase):
             )
             return None
 
+    def resolved_weight_paths(self) -> list[Path]:
+        """Resolve weight paths to absolute local paths, downloading if needed.
+
+        For online repos, downloads weight files from HuggingFace Hub.
+        For local repos, constructs absolute paths from the repo root.
+
+        Returns:
+            Absolute paths to weight files on disk.
+        """
+        if not self.weight_path:
+            return []
+
+        weight_repo = self.huggingface_weight_repo
+        if weight_repo.repo_type == "online":
+            return download_weight_files(
+                huggingface_model_id=weight_repo.repo_id,
+                filenames=[str(x) for x in self.weight_path],
+                revision=self.huggingface_weight_revision,
+                force_download=self.force_download,
+            )
+        else:
+            local_path = Path(weight_repo.repo_id)
+            return [local_path / x for x in self.weight_path]
+
     @property
     def default_device_spec(self) -> DeviceSpec:
         """Returns the default device spec for the model.
@@ -1438,7 +1380,7 @@ class MAXModelConfig(MAXModelConfigBase):
         return self.device_specs[0]
 
     def create_kv_cache_config(self, **kv_cache_kwargs) -> None:
-        """Create and set the KV cache configuration with the given parameters.
+        """Creates and sets the KV cache configuration with the given parameters.
 
         Creates a new :class:`~max.pipelines.lib.config.KVCacheConfig` from the provided keyword arguments
         and automatically sets the cache_dtype based on the model's quantization
@@ -1537,7 +1479,8 @@ class MAXModelConfig(MAXModelConfigBase):
         """
         logger.info("")
         logger.info("  Model: %s", role)
-        logger.info("  " + "-" * 40)
+        separator = "\u2550" * 40  # ═
+        logger.info("  %s", separator)
 
         devices_str = ", ".join(
             f"{d.device_type}[{d.id}]" for d in self.device_specs
@@ -1567,30 +1510,7 @@ class MAXModelConfig(MAXModelConfigBase):
             [
                 ("huggingface_revision", self.huggingface_model_revision),
                 ("quantization_encoding", quantization_encoding_str),
-            ]
-        )
-
-        # Format weight_path depending on the number of paths.
-        weight_paths = self.weight_path
-        if len(weight_paths) == 0:
-            entries.append(("weight_path", "(none)"))
-        elif len(weight_paths) == 1:
-            entries.append(("weight_path", weight_paths[0]))
-        elif len(weight_paths) > 1:
-            display_paths = (
-                weight_paths[:3] + ["..."] + [weight_paths[-1]]
-                if len(weight_paths) > 5
-                else list(weight_paths)
-            )
-            formatted = (
-                "[\n"
-                + "\n".join(f"            {p}" for p in display_paths)
-                + "\n        ]"
-            )
-            entries.append(("weight_path", formatted))
-
-        entries.extend(
-            [
+                ("weight_path", _format_weight_path_summary(self.weight_path)),
                 ("devices", devices_str),
                 ("max_seq_len", self.max_length),
             ]
@@ -1605,6 +1525,9 @@ class MAXModelConfig(MAXModelConfigBase):
     def _log_kvcache_info(self) -> None:
         """Logs KV cache configuration details for this model config."""
         kv_config = self.kv_cache
+        sub_separator = "\u2500" * 2  # ──
+        logger.info("  %s KV Cache %s", sub_separator, sub_separator)
+
         entries: list[tuple[str, Any]] = [
             ("page_size", f"{kv_config.kv_cache_page_size} tokens"),
             ("prefix_caching", kv_config.enable_prefix_caching),
@@ -1636,6 +1559,37 @@ class MAXModelConfig(MAXModelConfigBase):
 
         for line in _format_config_entries(entries, indent="    "):
             logger.info(line)
+
+
+def _format_weight_path_summary(weight_paths: list[Path]) -> str:
+    """Format weight paths as a compact single-line summary.
+
+    Args:
+        weight_paths: List of weight file paths.
+
+    Returns:
+        A human-readable summary string, e.g.
+        ``"model-*.safetensors (10 files)"``.
+    """
+    if len(weight_paths) == 0:
+        return "(none)"
+    if len(weight_paths) == 1:
+        return str(weight_paths[0])
+
+    # Find common prefix and extension to build a glob-like summary.
+    from os.path import commonprefix
+
+    str_paths = [str(p) for p in weight_paths]
+    prefix = commonprefix(str_paths)
+    extensions = {p.rsplit(".", 1)[-1] for p in str_paths if "." in p}
+    ext = f".{extensions.pop()}" if len(extensions) == 1 else ""
+    # Trim prefix to last separator for a cleaner glob.
+    for sep in ("/", "-", "_"):
+        idx = prefix.rfind(sep)
+        if idx != -1:
+            prefix = prefix[: idx + 1]
+            break
+    return f"{prefix}*{ext} ({len(weight_paths)} files)"
 
 
 def _format_config_entries(

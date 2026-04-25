@@ -45,6 +45,20 @@ from .request import RequestID
 from .scheduler import SchedulerResult
 
 
+class InputModality(str, Enum):
+    """Enum representing the types of input a model architecture accepts.
+
+    Used by :class:`~max.pipelines.lib.registry.SupportedArchitecture` to
+    explicitly declare what each architecture can consume.  Currently this
+    is informational only -- it drives the generated models table in the
+    docs and has no effect on architecture behavior at runtime.
+    """
+
+    TEXT = "text"
+    IMAGE = "image"
+    VIDEO = "video"
+
+
 class PipelineTask(str, Enum):
     """Enum representing the types of pipeline tasks supported."""
 
@@ -68,7 +82,7 @@ class PipelineTask(str, Enum):
         """Get the output type for the pipeline task.
 
         Returns:
-            type: The output type for the pipeline task.
+            The output type for the pipeline task.
         """
         from .generation import GenerationOutput
         from .pipeline_variants import (

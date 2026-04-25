@@ -166,6 +166,29 @@ def test_optional_conditional_conformances() raises:
     assert_false(conforms_to(Optional[MoveOnly[Int]], Hashable))
 
 
+struct _NonTrivial(Copyable):
+    def __init__(out self, *, copy: Self):
+        pass
+
+    def __init__(out self, *, deinit take: Self):
+        pass
+
+    def __del__(deinit self):
+        pass
+
+
+def test_optional_triviality() raises:
+    comptime trivial = Optional[Int]
+    assert_true(trivial.__copy_ctor_is_trivial)
+    assert_true(trivial.__move_ctor_is_trivial)
+    assert_true(trivial.__del__is_trivial)
+
+    comptime not_trivial = Optional[_NonTrivial]
+    assert_false(not_trivial.__copy_ctor_is_trivial)
+    assert_false(not_trivial.__move_ctor_is_trivial)
+    assert_false(not_trivial.__del__is_trivial)
+
+
 def test_optional_write_to() raises:
     check_write_to(Optional[Int](None), expected="None", is_repr=False)
     check_write_to(Optional[Int](42), expected="42", is_repr=False)
@@ -293,6 +316,19 @@ def test_nicheable_size() raises:
     assert_true(size_of[Optional[Int]]() > size_of[Int]())
 
 
+def test_optional_reg_nicheable_size() raises:
+    comptime PointerType = Pointer[Int, AnyOrigin[mut=True]]
+
+    assert_equal(size_of[OptionalReg[PointerType]](), size_of[PointerType]())
+    assert_true(size_of[OptionalReg[Int]]() > size_of[Int]())
+
+
+def test_optional_to_optional_reg_implicit_conversion() raises:
+    var optional = Optional[Int](42)
+    var optional_reg: OptionalReg[Int] = optional
+    assert_equal(optional_reg.value(), 42)
+
+
 struct NotEquatable(Movable):
     pass
 
@@ -315,6 +351,85 @@ def test_optional_conditional_device_passable() raises:
     assert_false(conforms_to(Optional[Bool], DevicePassable))
     assert_false(conforms_to(Optional[String], DevicePassable))
     assert_false(conforms_to(Optional[MoveOnly[Int]], DevicePassable))
+
+
+def test_optional_iter_owned() raises:
+    var count = 0
+    var opt = Optional(42)
+    for elem in opt^:
+        assert_equal(elem, 42)
+        count += 1
+    assert_equal(count, 1)
+
+
+def test_optional_iter_owned_none() raises:
+    var count = 0
+    var opt = Optional[Int](None)
+    for elem in opt^:
+        count += 1
+        _ = elem
+    assert_equal(count, 0)
+
+
+def test_optional_iter_owned_bounds() raises:
+    var opt = Optional(42)
+    var it = opt^.__iter__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
+def double(var x: Int) -> Float64:
+    return Float64(x) * 2.0
+
+
+def test_map_with_value() raises:
+    var opt = Optional(21)
+    var result = opt^.map[To=Float64](double)
+    assert_true(result)
+    assert_equal(result.value(), 42.0)
+
+
+def test_map_with_none() raises:
+    var opt = Optional[Int](None)
+    var result = opt^.map[To=Float64](double)
+    assert_false(result)
+
+
+def test_map_with_closure_that_takes_by_read() raises:
+    var opt = Optional[String]("hello")
+
+    def closure_by_read(s: String) -> String:
+        return s + "42"
+
+    var result1 = opt.map[To=String](closure_by_read)
+    assert_equal(result1[], "hello42")
+
+
+def try_parse_int(var s: String) -> Optional[Int]:
+    try:
+        return Int(s)
+    except:
+        return None
+
+
+def test_and_then_with_value() raises:
+    var opt = Optional("42")
+    var result = opt^.and_then[To=Int](try_parse_int)
+    assert_true(result)
+    assert_equal(result.value(), 42)
+
+
+def test_and_then_with_value_returns_none() raises:
+    var opt = Optional("not_a_number")
+    var result = opt^.and_then[To=Int](try_parse_int)
+    assert_false(result)
+
+
+def test_and_then_with_none() raises:
+    var opt = Optional[String](None)
+    var result = opt^.and_then[To=Int](try_parse_int)
+    assert_false(result)
 
 
 def main() raises:

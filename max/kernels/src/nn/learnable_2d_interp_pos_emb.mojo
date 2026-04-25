@@ -32,11 +32,7 @@ Tensor layout (all row-major):
 
 from std.math import clamp, floor
 
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import TensorLayout, TileTensor
 
@@ -66,6 +62,7 @@ def _cubic_weight(x: Float32) -> Float32:
 # ---------------------------------------------------------------------------
 
 
+@__name(t"learnable_2d_interp_pos_emb_{dtype}", mangle=True)
 def _gpu_kernel[
     dtype: DType,
     OutputLayoutType: TensorLayout,
@@ -152,7 +149,7 @@ def _gpu_kernel[
         dx = in_w - Float32(iw_floor)
 
     # Threads stride over dim channels.
-    for d in range(thread_idx.x, dim, Int(block_dim.x)):
+    for d in range(thread_idx.x, dim, block_dim.x):
         var pos_val: Float32
         if no_interp:
             pos_val = Float32(weight[hh, ww, d])

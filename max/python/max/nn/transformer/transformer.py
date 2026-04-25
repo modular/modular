@@ -18,7 +18,7 @@ from enum import Enum
 from typing import TypeVar
 
 from max.dtype import DType
-from max.graph import BufferValue, DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -54,65 +54,51 @@ def extract_hs(
     last_token_hs_distributed: Sequence[TensorValue],
     all_hs_distributed: Sequence[TensorValue],
     normalizer: Sequence[Callable[[TensorValue], TensorValue]],
-    signal_buffers: Sequence[BufferValue] | None = None,
-    duplicated_hs: bool = True,
     eagle3_captured_hs: list[list[TensorValue]] | None = None,
 ) -> tuple[TensorValue, ...]:
     """Extract hidden states from the model.
 
     Args:
         return_hidden_states: Which hidden states to return.
-        last_token_hs_distributed: Hidden states from the last token.
-        all_hs_distributed: Hidden states from all tokens.
-        normalizer: Normalization function.
-        signal_buffers: Signal buffers for allgather.
-        duplicated_hs: Whether the ``all_hs_distributed`` are duplicated across
-            devices. If False, we will all-gather them and return the result
-            only on device 0.
+        last_token_hs_distributed: Hidden states from the last token
+            (identical across devices; the first entry is returned).
+        all_hs_distributed: Per-device hidden states from all tokens — one
+            entry per device (distinct batch shards in DP, identical
+            replicas in TP/single-device).
+        normalizer: Per-device normalization functions.
         eagle3_captured_hs: For ``EAGLE3`` mode, a list of captured hidden
             states at specific layer indices.  Each entry is a per-device list
             of tensors. The entries are concatenated along the feature dimension
-            to produce a single fused hidden-state tensor.
+            to produce a single fused hidden-state tensor per device.
 
     Returns:
-        Either an empty tuple or a tuple containing a single hs on gpu0.
+        Empty tuple for ``NONE``; ``(TensorValue,)`` for ``LAST``; for
+        ``ALL`` / ``ALL_NORMALIZED`` / ``EAGLE3`` the per-device tensors are
+        returned as positional tuple elements (``N`` entries, one per
+        device).
     """
     if return_hidden_states == ReturnHiddenStates.LAST:
         # Each entry in last_token_hs_distributed is identical.
         # Just return the first one.
         return (last_token_hs_distributed[0],)
+    elif return_hidden_states == ReturnHiddenStates.LAST_PER_DEVICE:
+        return tuple(last_token_hs_distributed)
     elif return_hidden_states == ReturnHiddenStates.ALL:
-        # Each entry in all_hs_distributed will contain different hs when we
-        # use data parallelism. As such, we need to allgather the hs.
-        if not duplicated_hs:
-            assert signal_buffers is not None
-            all_hs_distributed = ops.allgather(
-                all_hs_distributed, signal_buffers
-            )
-        hs = all_hs_distributed[0]
-        return (hs,)
+        return tuple(all_hs_distributed)
     elif return_hidden_states == ReturnHiddenStates.ALL_NORMALIZED:
         norm_hs = forward_sharded_layers(normalizer, all_hs_distributed)
-        # Each entry in all_hs_distributed will contain different hs when we
-        # use data parallelism. As such, we need to allgather the hs.
-        if not duplicated_hs:
-            assert signal_buffers is not None
-            norm_hs = ops.allgather(norm_hs, signal_buffers)
-        norm_h = norm_hs[0]
-        return (norm_h,)
+        return tuple(norm_hs)
     elif return_hidden_states == ReturnHiddenStates.EAGLE3:
         assert eagle3_captured_hs is not None and len(eagle3_captured_hs) > 0
-        # TODO: return per-device tensors directly to avoid the redundant
-        # allgather + broadcast round-trip in the draft model.
-        if not duplicated_hs:
-            assert signal_buffers is not None
-            eagle3_captured_hs = [
-                ops.allgather(layer_hs, signal_buffers)
-                for layer_hs in eagle3_captured_hs
-            ]
-        per_layer_dev0 = [layer_hs[0] for layer_hs in eagle3_captured_hs]
-        fused = ops.concat(per_layer_dev0, axis=-1)
-        return (fused,)
+        num_devices = len(eagle3_captured_hs[0])
+        fused_per_dev = [
+            ops.concat(
+                [layer_hs[i] for layer_hs in eagle3_captured_hs],
+                axis=-1,
+            )
+            for i in range(num_devices)
+        ]
+        return tuple(fused_per_dev)
     else:
         return tuple()
 
@@ -174,6 +160,11 @@ class ReturnLogits(str, Enum):
 class ReturnHiddenStates(str, Enum):
     NONE = "none"
     LAST = "last"
+    # Like LAST but returns the post-allgather per-device tensors rather
+    # than collapsing to a single copy. Lets callers consume the data that
+    # was already placed on every device by the allgather, avoiding a
+    # redundant broadcast.
+    LAST_PER_DEVICE = "last_per_device"
     ALL_NORMALIZED = "all_normalized"
     ALL = "all"
     EAGLE3 = "eagle3"
@@ -210,7 +201,10 @@ def logits_postprocess(
     Returns:
         A tuple of ``(last_logits,)``, optionally extended with
         ``(logits, offsets)`` when returning multiple logits, and further
-        extended with hidden states when requested.
+        extended with hidden states when requested. Hidden-state entries
+        for ``ALL`` / ``ALL_NORMALIZED`` / ``EAGLE3`` modes are returned as
+        a ``list[TensorValue]`` (one entry per device); other entries are
+        single ``TensorValue``.
     """
     last_h = ops.gather(h, input_row_offsets[1:] - 1, axis=0)
     last_logits = ops.cast(lm_head(norm(last_h)), DType.float32)

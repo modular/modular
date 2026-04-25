@@ -73,10 +73,4 @@ from .defines import (
     get_defined_string,
     is_defined,
 )
-from .param_env import (
-    env_get_bool,
-    env_get_dtype,
-    env_get_int,
-    env_get_string,
-)
 from .terminate import exit

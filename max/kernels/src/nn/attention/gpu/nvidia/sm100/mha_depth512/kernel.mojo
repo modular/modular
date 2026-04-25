@@ -10,11 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Kernel entry point for depth=512 pair-CTA SM100 (Blackwell) MHA prefill.
+"""Kernel entry point for depth=256/512 pair-CTA SM100 (Blackwell) MHA prefill.
 
 Two neighboring SMs cooperate via pair-CTA MMA (cta_group=2,
-cluster_shape=(2,1,1)). Each CTA processes BM=64 Q rows; the pair-CTA
-MMA instruction operates on MMA_M=128 combined rows.
+cluster_shape=(2,1,1)).
+
+Depth-dependent geometry:
+  depth=512: MMA_M=128, BM=64,  BN=256. O split into O_lo/O_hi.
+  depth=256: MMA_M=256, BM=128, BN=128. Single O accumulator.
 
 Warp assignment (384 threads = 12 warps, 3 warp groups of 128):
     Warps 0-3:   Softmax (warp group 0)
@@ -28,7 +31,7 @@ from std.math import align_up, ceildiv, min
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    thread_idx_uint as thread_idx,
+    thread_idx,
     warp_id,
 )
 from std.gpu.globals import WARPGROUP_SIZE, WARP_SIZE
@@ -36,8 +39,10 @@ from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import AddressSpace, external_memory, fence_mbarrier_init
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
-from linalg.matmul.gpu.sm100_structured.structured_kernels.tmem import (
-    TmemAllocation,
+from std.gpu.compute.arch.tcgen05 import (
+    tcgen05_alloc,
+    tcgen05_dealloc,
+    tcgen05_release_allocation_lock,
 )
 from layout.tma_async import (
     SharedMemBarrier,
@@ -96,15 +101,17 @@ struct SM100MHADepth512[
     comptime accum_type = DType.float32
 
     comptime cta_group = 2
-    comptime BM = Self.config.BM  # 64 per CTA
-    comptime PairBM = Self.BM * 2  # 128 across pair
+    comptime BM = Self.config.BM  # 64 (d512) or 128 (d256) per CTA
+    comptime PairBM = Self.BM * 2  # 128 (d512) or 256 (d256) across pair
     comptime BN = Self.config.BN
     comptime num_q_heads = Self.config.num_q_heads
     comptime group = Self.config.group
+    comptime fuse_gqa = Self.config.fuse_gqa
+    comptime BM_eff: Int = Self.config.BM_eff()
+    comptime PairBM_mask: Int = Self.BM_eff * 2
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
 
-    comptime TmemAllocType = TmemAllocation[Self.cta_group]
     comptime SmemType = Depth512AttentionSMem[Self.config]
 
     comptime PositionType = MHAPosition[
@@ -129,6 +136,10 @@ struct SM100MHADepth512[
     )
     @__llvm_metadata(`nvvm.cluster_dim`=StaticTuple[Int32, 3](2, 1, 1))
     @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__name(
+        t"sm100_mha_depth{Self.config.qk_depth}_{Self.qkv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         q_tma_op: QTMATile[
             Self.KVLUTType.dtype,
@@ -137,6 +148,7 @@ struct SM100MHADepth512[
             depth=Self.config.qk_depth,
             group=Self.config.group,
             decoding=False,
+            fuse_gqa=Self.fuse_gqa,
             num_qk_stages=Self.config.num_qk_stages,
         ],
         k_tma_op: KVTMATile[
@@ -149,13 +161,14 @@ struct SM100MHADepth512[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
             BN=Self.config.BK1,
-            BK=Self.config.ov_depth // 4,
+            BK=Self.config.v_cols_per_cta,
         ],
         ragged_tma_store: RaggedTMA3DTile[
             Self.output_type,
             Self.config.swizzle_mode,
             BM=Self.config.BM,
             BN=Self.config.ov_depth,
+            group=Self.config.group if Self.fuse_gqa else 1,
         ],
         kv_lut: Self.KVLUTType,
         scale: Float32,
@@ -194,13 +207,13 @@ struct SM100MHADepth512[
         var warp_idx = UInt32(warp_id[broadcast=True]())
         if warp_idx == 0:
             # Initialize all barriers.
-            Depth512MBars[Self.config.num_kv_stages](smem.mbar_base()).init(
-                lane_idx=Int32(thread_idx.x)
-            )
+            Depth512MBars[Self.config.num_kv_stages, Self.config.split_o](
+                smem.mbar_base()
+            ).init(lane_idx=Int32(thread_idx.x))
         elif warp_idx == 1:
             # TMEM allocation (pair-CTA cooperative).
-            _ = Self.TmemAllocType.allocate(
-                Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
+            tcgen05_alloc[Int32(Self.cta_group)](
+                smem.tmem_addr_ptr(), UInt32(512)
             )
         elif warp_idx == 2:
             e = elect()
@@ -222,8 +235,9 @@ struct SM100MHADepth512[
             # Softmax warp group (warps 0-3, 128 threads).
             warpgroup_reg_alloc[num_reg_softmax]()
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -246,13 +260,13 @@ struct SM100MHADepth512[
             gmem_row = Self.PositionType.get_q_gmem_row[ragged=Self.ragged](
                 seq_info, max_seq_len.as_uint32()
             )
-            var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM)
+            var out_row_idx = gmem_row + cta_rank * UInt32(Self.BM_eff)
             var out_head_idx = seq_info.head_idx
             var num_output_rows = min(
                 Int32(seq_info.seq_len)
                 - Int32(seq_info.prompt_offset)
-                - Int32(cta_rank) * Int32(Self.BM),
-                Int32(Self.BM),
+                - Int32(cta_rank) * Int32(Self.BM_eff),
+                Int32(Self.BM_eff),
             )
 
             depth512_softmax[
@@ -278,8 +292,9 @@ struct SM100MHADepth512[
             warpgroup_reg_alloc[num_reg_correction]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -313,18 +328,17 @@ struct SM100MHADepth512[
             warpgroup_reg_dealloc[num_reg_other]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
 
             if not seq_info.is_valid():
-                var tmem = Self.TmemAllocType.from_shared(
-                    Self.TmemAllocType.SmemAddrStorage(smem.tmem_addr_ptr())
-                )
-                tmem.release_lock()
-                tmem.deallocate()
+                var tmem_addr = smem.tmem_addr_ptr()[]
+                tcgen05_release_allocation_lock[Int32(Self.cta_group)]()
+                tcgen05_dealloc[Int32(Self.cta_group)](tmem_addr, UInt32(512))
                 return
             var pos: PositionSummary = PositionSummary.create[
                 ragged=Self.ragged,
@@ -353,8 +367,9 @@ struct SM100MHADepth512[
             warpgroup_reg_dealloc[num_reg_other]()
 
             var seq_info: SeqInfo = get_seq_info[
-                Self.PairBM,
-                Self.num_q_heads,
+                Self.PairBM_mask,
+                Self.num_q_heads
+                // Self.group if Self.fuse_gqa else Self.num_q_heads,
                 Self.MaskType.get_type_name() == "CausalMask",
                 pair_cta=True,
             ](batch_size, max_seq_len, valid_length, partition)
@@ -406,5 +421,5 @@ struct SM100MHADepth512[
                 Int(score_row),
                 Int(kv_row),
             ),
-            Index[dtype=DType.int32](Self.PairBM, Self.BN),
+            Index[dtype=DType.int32](Self.PairBM_mask, Self.BN),
         )

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -24,25 +23,14 @@ from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
-from max.kv_cache import PagedKVCacheManager
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.kv_cache import (
-    KVCacheInputs,
-    KVCacheParamInterface,
-    MultiKVCacheParams,
-)
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    CompilationTimer,
-    KVCacheConfig,
-    ModelInputs,
-    PipelineConfig,
-)
+from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
+from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
 from max.pipelines.lib.quant import parse_quant_config
 from transformers import AutoConfig
 from typing_extensions import override
 
-from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
+from ..deepseekV3.model import DeepseekV3Model
 from .deepseekV3_2 import DeepseekV3_2
 from .model_config import DeepseekV3_2Config
 
@@ -51,19 +39,6 @@ logger = logging.getLogger("max.pipelines")
 
 class DeepseekV3_2Model(DeepseekV3Model):
     """A DeepseekV3.2 model."""
-
-    # Set by pipeline for extra KV cache managers
-    extra_kv_managers: list[PagedKVCacheManager]
-    # Stored for step() call in execute()
-    _current_batches: Sequence[Sequence[TextContext]]
-
-    @property
-    def indexer_kv_manager(self) -> PagedKVCacheManager:
-        """Returns the indexer KV cache manager (the single extra manager)."""
-        assert len(self.extra_kv_managers) == 1, (
-            "Expected exactly one extra KV manager (indexer cache)"
-        )
-        return self.extra_kv_managers[0]
 
     @classmethod
     def get_kv_params(
@@ -269,7 +244,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 # Unmarshal the KV cache arguments.
                 assert isinstance(self.kv_params, MultiKVCacheParams)
                 len_of_mla_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs()[0].flatten()
+                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
                 )
                 mla_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [
@@ -280,7 +255,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
 
                 len_of_indexer_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs()[1].flatten()
+                    self.kv_params.get_symbolic_inputs().inputs[-1].flatten()
                 )
                 indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [
@@ -318,56 +293,3 @@ class DeepseekV3_2Model(DeepseekV3Model):
             model = session.load(graph, weights_registry=nn_model.state_dict())
 
         return model
-
-    @override
-    def prepare_initial_token_inputs(
-        self,
-        replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
-        return_n_logits: int = 1,
-    ) -> DeepseekV3Inputs:
-        # Store batches for step() call in execute()
-        self._current_batches = replica_batches
-
-        # Get base inputs from parent (contains MLA KV cache inputs)
-        model_inputs = super().prepare_initial_token_inputs(
-            replica_batches, kv_cache_inputs, return_n_logits
-        )
-
-        # Combine primary (MLA) and indexer KV cache inputs
-        indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
-            replica_batches
-        )
-        kv_cache_inputs = model_inputs.kv_cache_inputs
-        assert kv_cache_inputs is not None
-        combined_inputs = list(kv_cache_inputs.inputs) + list(
-            indexer_kv_inputs.inputs
-        )
-        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
-
-        return model_inputs
-
-    @override
-    def prepare_next_token_inputs(
-        self,
-        next_tokens: Buffer,
-        prev_model_inputs: ModelInputs,
-    ) -> DeepseekV3Inputs:
-        model_inputs = super().prepare_next_token_inputs(
-            next_tokens, prev_model_inputs
-        )
-        # Get updated indexer KV inputs
-        indexer_kv_inputs = self.indexer_kv_manager.runtime_inputs(
-            self._current_batches
-        )
-
-        # Extract MLA inputs from previous inputs and combine with new indexer inputs
-        assert isinstance(prev_model_inputs.kv_cache_inputs, KVCacheInputs)
-        prev_kv_inputs = prev_model_inputs.kv_cache_inputs.inputs
-        # MLA inputs are at the beginning, indexer inputs are at the end
-        num_indexer_inputs = len(indexer_kv_inputs.inputs)
-        mla_kv_inputs = prev_kv_inputs[:-num_indexer_inputs]
-        combined_inputs = list(mla_kv_inputs) + list(indexer_kv_inputs.inputs)
-        model_inputs.kv_cache_inputs = KVCacheInputs(inputs=combined_inputs)
-
-        return model_inputs

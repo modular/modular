@@ -15,13 +15,14 @@ name: bench_prefill_subgraph
 file: $BUILD_WORKSPACE_DIRECTORY/max/kernels/benchmarks/misc/comparison/bench_blackwell_prefill.py
 
 deepseek-v2-commons: &deepseek-v2-commons
-  $num_heads: 32
+  $num_q_heads: 32
+  $num_kv_heads: 4
   $head_dim: 128
   $causal: [True]
   # $causal: [True, False]
   # $dtype: [bfloat16]
-  $engine: ["tridao", "modular_max"]
-  # $engine: ["flashinfer", "tridao", "modular_max"]
+  # $engine: ["tridao", "modular_max"]
+  $engine: ["flashinfer", "tridao", "modular_max"]
   model: "deepseek-v2"
 
 params:

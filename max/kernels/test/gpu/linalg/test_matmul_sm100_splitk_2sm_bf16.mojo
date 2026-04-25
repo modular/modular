@@ -65,9 +65,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     benchmark: Bool = False,
     swapAB: Bool = False,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     if not benchmark:
         print(
@@ -85,9 +85,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = Int(n.value()) * Int(k.value())
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var b_host_ptr = alloc[Scalar[b_type]](b_size)
@@ -104,10 +104,10 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Initialize matmul operands
     if simple_init():

@@ -21,20 +21,12 @@ import queue
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import AsyncGenerator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from json.decoder import JSONDecodeError
 from pathlib import Path
 from random import randint
-from typing import (
-    Any,
-    Generic,
-    Literal,
-    TypeGuard,
-    TypeVar,
-    cast,
-    overload,
-)
+from typing import Any, Generic, Literal, TypeGuard, TypeVar, cast, overload
 from urllib.parse import unquote, urlparse
 
 import aiofiles
@@ -49,6 +41,7 @@ from max.interfaces import (
     LoRARequest,
     LoRAStatus,
     MessageContent,
+    ParsedToolResponse,
     PipelineTokenizer,
     RequestID,
     SamplingParams,
@@ -62,10 +55,10 @@ from max.interfaces import (
     VideoContentPart,
 )
 from max.pipelines.core.exceptions import InputError
-from max.pipelines.lib import PipelineConfig
+from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.profiler import traced
 from max.serve.config import Settings
-from max.serve.parser import LlamaToolParser, parse_json_from_text
+from max.serve.parser import LlamaToolParser, ToolParser, parse_json_from_text
 from max.serve.pipelines.llm import (
     AudioGeneratorPipeline,
     TokenGeneratorOutput,
@@ -73,6 +66,7 @@ from max.serve.pipelines.llm import (
 )
 from max.serve.schemas.openai import (
     ChatCompletionMessageToolCall,
+    ChatCompletionMessageToolCalls,
     ChatCompletionResponseMessage,
     ChatCompletionStreamOptions,
     ChatCompletionStreamResponseDelta,
@@ -234,11 +228,13 @@ class OpenAIChatResponseGenerator(
         self,
         pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptions | None = None,
-        parser: LlamaToolParser = field(default_factory=LlamaToolParser),
+        parser: ToolParser | None = None,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
-        self.parser = parser
+        self.parser: ToolParser = (
+            parser if parser is not None else LlamaToolParser()
+        )
 
     async def stream(
         self, request: TextGenerationRequest
@@ -461,7 +457,19 @@ class OpenAIChatResponseGenerator(
             response_choices: list[Choice1] = []
             if tool_use and request.response_format is None:
                 try:
-                    response_choices = self.parser(response_message)
+                    parsed = self.parser.parse_complete(response_message)
+                    if parsed.tool_calls:
+                        response_choices = self._tool_response_to_choices(
+                            parsed, logprobs=logprobs
+                        )
+                    else:
+                        # No tool calls found, handle as text
+                        self._handle_text_response(
+                            response_message,
+                            response_choices,
+                            finish_reason=finish_reason,
+                            logprobs=logprobs,
+                        )
                 except Exception as e:
                     # If parser fails, handle as traditional text
                     logging.warning(
@@ -570,6 +578,40 @@ class OpenAIChatResponseGenerator(
                 ),
             )
             tool_calls.append(tool_call)
+
+    def _tool_response_to_choices(
+        self,
+        parsed: ParsedToolResponse,
+        logprobs: Logprobs2 | None = None,
+    ) -> list[Choice1]:
+        """Translates a ParsedToolResponse to OpenAI Choice1 list."""
+        tool_calls_list = [
+            ChatCompletionMessageToolCall(
+                id=tc.id,
+                type="function",
+                function=Function1(name=tc.name, arguments=tc.arguments),
+            )
+            for tc in parsed.tool_calls
+        ]
+        tool_calls = (
+            ChatCompletionMessageToolCalls(root=tool_calls_list)
+            if tool_calls_list
+            else None
+        )
+        return [
+            Choice1(
+                index=0,
+                message=ChatCompletionResponseMessage(
+                    content=parsed.content or "",
+                    role="assistant",
+                    tool_calls=tool_calls,
+                    function_call=None,
+                    refusal="",
+                ),
+                finish_reason="tool_calls",
+                logprobs=logprobs or Logprobs2(content=[], refusal=[]),
+            )
+        ]
 
 
 class OpenAIEmbeddingsResponseGenerator:
@@ -869,8 +911,9 @@ async def openai_create_chat_completion(
         if completion_request.stream:
             stream_options = completion_request.stream_options
 
+        parser = get_tool_parser(request.app)
         response_generator = OpenAIChatResponseGenerator(
-            pipeline, stream_options=stream_options
+            pipeline, stream_options=stream_options, parser=parser
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
@@ -915,6 +958,8 @@ async def openai_create_chat_completion(
             target_endpoint=_get_target_endpoint(
                 request, completion_request.target_endpoint
             ),
+            dkv_cache_hint=completion_request.dkv_cache_hint,
+            chat_template_options=completion_request.chat_template_kwargs,
         )
 
         if completion_request.stream:
@@ -1185,6 +1230,37 @@ def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
     pipeline_config = app.state.pipeline_config
     assert isinstance(pipeline_config, PipelineConfig)
     return pipeline_config
+
+
+def get_tool_parser(app: FastAPI) -> ToolParser | None:
+    """Gets the appropriate tool parser for the current model architecture.
+
+    Returns the architecture-specific tool parser if one is registered,
+    otherwise None.
+    """
+
+    pipeline_config = get_app_pipeline_config(app)
+
+    # Get architecture name from HuggingFace config
+    try:
+        hf_config = pipeline_config.model.huggingface_config
+    except ValueError:
+        # Model doesn't have a valid HuggingFace config (e.g., mock models, local models)
+        return None
+
+    if not hf_config.architectures:
+        return None
+
+    arch_name = hf_config.architectures[0]
+    arch = PIPELINE_REGISTRY.retrieve_architecture(
+        architecture_name=arch_name,
+        prefer_module_v3=pipeline_config.runtime.prefer_module_v3,
+    )
+
+    if arch is not None and arch.tool_parser is not None:
+        return arch.tool_parser()
+
+    return None
 
 
 class OpenAICompletionResponseGenerator(
@@ -1470,6 +1546,7 @@ async def openai_create_completion(
                 target_endpoint=_get_target_endpoint(
                     request, completion_request.target_endpoint
                 ),
+                dkv_cache_hint=completion_request.dkv_cache_hint,
             )
             token_requests.append(tgr)
 

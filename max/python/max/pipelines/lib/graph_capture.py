@@ -15,15 +15,18 @@
 Flow:
 - Model worker creates the runner and executes pre-ready warmup.
 - Warmup captures hot decode buckets, largest-first.
-- Serving path replays by (batch_token_count, num_partitions, q_max_seq_len)
-  key. Only ``q_max_seq_len=1`` graphs are captured; a ``RuntimeError`` is
-  raised for any other value.
+- Serving path replays by
+  ``(batch_token_count, num_partitions, q_max_seq_len, draft_num_partitions)``
+  key (``draft_num_partitions`` is 0 without speculative decoding). Only
+  ``q_max_seq_len=1 + num_speculative_tokens`` graphs are captured;
+  a ``RuntimeError`` is raised for any other value.
 """
 
 from __future__ import annotations
 
 import copy
 import logging
+import sys
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Sequence
 from contextlib import AbstractContextManager
@@ -33,22 +36,22 @@ import numpy as np
 from max._core.driver import _release_buffers_to_borrowed
 from max.driver import Buffer
 from max.engine import InferenceSession, Model
-from max.nn.kv_cache import (
-    AttentionDispatchResolver,
-    KVCacheInputs,
-    KVCacheInputsPerDevice,
-    KVCacheParams,
-)
+from max.nn.kv_cache import AttentionDispatchResolver, KVCacheParams
+from max.nn.kv_cache import KVCacheInputs as _KVCacheInputs
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.profiler import traced
+from tqdm import tqdm
 
-from .interfaces import ModelInputs, ModelOutputs
+from .interfaces import ModelInputs, ModelOutputs, UnifiedEagleOutputs
 
+KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
+KVCacheInputs = _KVCacheInputs[Buffer, Buffer]
 logger = logging.getLogger("max.pipelines")
 
 
-GraphKey = tuple[int, int, int]
+GraphKey = tuple[int, int, int, int]
 GraphEntry = tuple[tuple[Buffer, ...], ModelOutputs]
-WarmupModelInputs = Callable[[int, int], AbstractContextManager[ModelInputs]]
+WarmupModelInputs = Callable[[int], AbstractContextManager[ModelInputs]]
 
 
 def _release_graph_capture_outputs_to_borrowed(
@@ -66,8 +69,11 @@ def _release_graph_capture_outputs_to_borrowed(
         "next_token_logits",
         "logit_offsets",
         "hidden_states",
+        "num_accepted_draft_tokens",
+        "next_tokens",
+        "next_draft_tokens",
     ):
-        value = getattr(outputs, field_name)
+        value = getattr(outputs, field_name, None)
         if isinstance(value, Buffer):
             buffer_field_names.append(field_name)
             buffers.append(value)
@@ -86,7 +92,9 @@ class AttentionMetadataProbeStrategy(ABC):
     """Determines which num_partitions values to capture during warmup."""
 
     @abstractmethod
-    def probe_lengths(self, max_cache_length: int) -> list[int]:
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
         """Returns cache lengths to probe for distinct num_partitions."""
         ...
 
@@ -104,8 +112,11 @@ class MHAProbeStrategy(AttentionMetadataProbeStrategy):
 
     granularity = 256
 
-    def probe_lengths(self, max_cache_length: int) -> list[int]:
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
         """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
+        del q_max_seq_len  # unused
         return (
             [1]
             + list(range(self.granularity, max_cache_length, self.granularity))
@@ -118,13 +129,27 @@ class MLAProbeStrategy(AttentionMetadataProbeStrategy):
 
     granularity = 64
 
-    def probe_lengths(self, max_cache_length: int) -> list[int]:
+    def probe_lengths(
+        self, max_cache_length: int, q_max_seq_len: int = 1
+    ) -> list[int]:
         """Probes at ``granularity`` intervals from 1 to ``max_cache_length``."""
-        return (
+        probe_lengths = (
             [1]
             + list(range(self.granularity, max_cache_length, self.granularity))
             + [max_cache_length]
         )
+        if q_max_seq_len > 1:
+            # With spec decoding, we need to probe a few more entries to hit all
+            # viable (num_partition, draft_num_partition) pairs. This was determined
+            # experimentally and is highly fragile. The alternative is to brute
+            # force capture all 11 x 11 = 121 pairs but that would increase graph
+            # capture time significantly. In practice, I only noticed that we used
+            # ~20 of the 121 combos for Kimi.
+            additional_probes = list(
+                range(self.granularity - 1, max_cache_length, self.granularity)
+            )
+            probe_lengths.extend(additional_probes)
+        return probe_lengths
 
     def bucket_num_partitions(
         self,
@@ -156,19 +181,27 @@ def _pack_model_graph_key(key: GraphKey) -> int:
     return hash(key) & 0xFFFFFFFFFFFFFFFF
 
 
-def _unpack_dispatch_metadata(metadata: Buffer) -> tuple[int, int]:
+def _unpack_dispatch_metadata(metadata: Buffer | None) -> tuple[int, int]:
     """Returns ``(num_partitions, q_max_seq_len)`` from packed metadata."""
+    if metadata is None:
+        return 0, 0
     metadata_np = metadata.to_numpy()
     return int(metadata_np[2]), int(metadata_np[1])
 
 
 def _unpack_replay_metadata(
     kv: KVCacheInputsPerDevice,
+    is_draft: bool = False,
 ) -> tuple[int, int]:
     """Returns ``(num_partitions, q_max_seq_len)`` from replay metadata."""
-    metadata = kv.attention_dispatch_metadata
-    if metadata is None:
-        raise ValueError("Expected attention_dispatch_metadata in KV inputs.")
+    if not is_draft:
+        metadata = kv.attention_dispatch_metadata
+        if metadata is None:
+            raise ValueError(
+                "Expected attention_dispatch_metadata in KV inputs."
+            )
+    else:
+        metadata = kv.draft_attention_dispatch_metadata
     return _unpack_dispatch_metadata(metadata)
 
 
@@ -176,6 +209,7 @@ def _create_model_inputs_with_dispatch_metadata(
     model_inputs: ModelInputs,
     source_ragged: Sequence[KVCacheInputsPerDevice],
     dispatch_metadata: Buffer,
+    draft_dispatch_metadata: Buffer | None,
     max_cache_valid_length: int,
     is_mla: bool = False,
 ) -> ModelInputs:
@@ -186,15 +220,23 @@ def _create_model_inputs_with_dispatch_metadata(
         ml = kv.max_lengths.to_numpy().copy()
         ml[:, 1] = max_cache_u32
         metadata = (
-            dispatch_metadata.to(kv.blocks.device)
+            dispatch_metadata.to(kv.kv_blocks.device)
             if is_mla
             else dispatch_metadata
         )
+        if draft_dispatch_metadata is not None:
+            if is_mla:
+                draft_metadata = draft_dispatch_metadata.to(kv.kv_blocks.device)
+            else:
+                draft_metadata = draft_dispatch_metadata
+        else:
+            draft_metadata = None
         capture_ragged.append(
             replace(
                 kv,
                 max_lengths=Buffer.from_numpy(ml),
                 attention_dispatch_metadata=metadata,
+                draft_attention_dispatch_metadata=draft_metadata,
             )
         )
     result = copy.copy(model_inputs)
@@ -236,15 +278,15 @@ class ServeGraphCaptureRunner:
         warmup_model_inputs: WarmupModelInputs,
         max_cache_length_upper_bound: int,
         max_batch_size: int,
-        # TODO(b-rod): Replace single extra_dispatch_resolver with a
-        # list[AttentionDispatchResolver] to support N extra KV caches
-        # generically, instead of assuming at most one extra cache.
-        extra_dispatch_resolver: AttentionDispatchResolver | None = None,
+        num_speculative_tokens: int = 0,
+        num_kv_caches: int = 1,
     ) -> None:
         self._model = model
         self._execute_model = execute_model
         self._warmup_model_inputs = warmup_model_inputs
-        self._extra_dispatch_resolver = extra_dispatch_resolver
+        self._num_speculative_tokens = num_speculative_tokens
+        self._num_kv_caches = num_kv_caches
+        self._n_devices = len(kv_params.devices)
         if max_cache_length_upper_bound < 1:
             raise ValueError(
                 "Decode graph capture requires a positive decode "
@@ -276,22 +318,39 @@ class ServeGraphCaptureRunner:
 
     def dispatch_metadata(
         self, batch_size: int, q_max_seq_len: int
-    ) -> list[tuple[int, Buffer]]:
+    ) -> list[tuple[int, Buffer, Buffer | None]]:
         """Returns capture metadata selected by the probe strategy.
 
         Probes at regular cache-length intervals to discover distinct
-        num_partitions modes, then delegates to the strategy to select
+        ``(num_partitions, draft_num_partitions)`` modes (without speculative
+        decode, ``draft_num_partitions`` is ``0`` and draft buffers are not
+        captured), then delegates to the strategy to select
         which modes to actually capture.
         """
         probe_lengths = self._probe_strategy.probe_lengths(
-            self._max_cache_length_upper_bound
+            self._max_cache_length_upper_bound,
+            q_max_seq_len,
         )
-        metadata_by_num_partitions = {}
+        metadata_by_dispatch_key: dict[
+            tuple[int, int], tuple[int, Buffer, Buffer | None]
+        ] = {}
         for length in probe_lengths:
             metadata = self._resolver(batch_size, q_max_seq_len, length)
+            if q_max_seq_len > 1:
+                # draft speculation steps 1-N will use q_max_seq_len = 1
+                metadata_draft = self._resolver(batch_size, 1, length)
+                draft_np, _ = _unpack_dispatch_metadata(metadata_draft)
+            else:
+                metadata_draft = None
+                draft_np = 0
             num_partitions, _ = _unpack_dispatch_metadata(metadata)
-            metadata_by_num_partitions[num_partitions] = (length, metadata)
-        return list(metadata_by_num_partitions.values())
+            dispatch_key = (num_partitions, draft_np)
+            metadata_by_dispatch_key[dispatch_key] = (
+                length,
+                metadata,
+                metadata_draft,
+            )
+        return list(metadata_by_dispatch_key.values())
 
     @traced
     def warmup_pre_ready(self) -> None:
@@ -303,14 +362,24 @@ class ServeGraphCaptureRunner:
         )
         # Conservative/defensive warmup: capture largest-first so peak
         # allocations happen up front and oversized configs fail fast.
-        # TODO: Support q_max_seq_len > 1. We currently OOM.
-        for batch_size in range(self._max_batch_size, 0, -1):
+        q_max_seq_len = self._num_speculative_tokens + 1
+        batch_sizes = range(self._max_batch_size, 0, -1)
+        # Disable progress bar in non-interactive environments (CI) where
+        # carriage return doesn't work and each update prints a new line.
+        for batch_size in tqdm(
+            batch_sizes,
+            desc="Capturing device graph shapes",
+            disable=not sys.stderr.isatty(),
+        ):
             dispatch_entries = sorted(
-                self.dispatch_metadata(batch_size, 1),
-                key=lambda entry: _unpack_dispatch_metadata(entry[1])[0],
+                self.dispatch_metadata(batch_size, q_max_seq_len),
+                key=lambda entry: (
+                    _unpack_dispatch_metadata(entry[1])[0],
+                    _unpack_dispatch_metadata(entry[2])[0],
+                ),
                 reverse=True,
             )
-            with self._warmup_model_inputs(batch_size, 1) as model_inputs:
+            with self._warmup_model_inputs(batch_size) as model_inputs:
                 batch_token_count = int(model_inputs.buffers[0].shape[0])
                 source_ragged = _ragged_kv_inputs_from_model_inputs(
                     model_inputs
@@ -318,14 +387,19 @@ class ServeGraphCaptureRunner:
                 for (
                     max_cache_valid_length,
                     dispatch_metadata,
+                    draft_dispatch_metadata,
                 ) in dispatch_entries:
                     num_partitions, _ = _unpack_dispatch_metadata(
                         dispatch_metadata
                     )
+                    draft_num_partitions = _unpack_dispatch_metadata(
+                        draft_dispatch_metadata
+                    )[0]
                     key = (
                         batch_token_count,
                         num_partitions,
-                        1,
+                        self._num_speculative_tokens + 1,
+                        draft_num_partitions,
                     )
                     assert key not in self.graph_entries, (
                         "unexpected duplicate key"
@@ -336,37 +410,51 @@ class ServeGraphCaptureRunner:
                             model_inputs,
                             source_ragged,
                             dispatch_metadata,
+                            draft_dispatch_metadata,
                             max_cache_valid_length,
                             is_mla=self._is_mla,
                         )
                     )
 
-                    # Patch extra KV caches with the same
-                    # max_cache_valid_length so kernel specialization
-                    # is consistent with replay.
+                    # Patch dispatch metadata for extra caches.
+                    # Combined layout: [cache0_dev0..devN, cache1_dev0..devN, ...]
                     if (
-                        self._extra_dispatch_resolver is not None
-                        and capture_inputs.extra_kv_cache_inputs
+                        self._num_kv_caches > 1
+                        and capture_inputs.kv_cache_inputs is not None
                     ):
-                        extra_dispatch = self._extra_dispatch_resolver(
-                            batch_size, 1, max_cache_valid_length
+                        all_inputs = list(capture_inputs.kv_cache_inputs.inputs)
+                        extra_dispatch = self._resolver(
+                            batch_size,
+                            self._num_speculative_tokens + 1,
+                            max_cache_valid_length,
                         )
-                        patched_extras: list[KVCacheInputs] = []
-                        for extra_kv in capture_inputs.extra_kv_cache_inputs:
-                            patched_extras.append(
-                                _patch_kv_cache_for_capture(
-                                    extra_kv,
-                                    extra_dispatch,
-                                    max_cache_valid_length,
-                                )
+                        for cache_idx in range(1, self._num_kv_caches):
+                            start = cache_idx * self._n_devices
+                            end = start + self._n_devices
+                            patched = _patch_kv_cache_for_capture(
+                                KVCacheInputs(inputs=all_inputs[start:end]),
+                                extra_dispatch,
+                                max_cache_valid_length,
                             )
-                        capture_inputs.extra_kv_cache_inputs = patched_extras
+                            all_inputs[start:end] = list(patched.inputs)
+                        capture_inputs.kv_cache_inputs = KVCacheInputs(
+                            inputs=all_inputs
+                        )
 
                     input_buffers = capture_inputs.buffers
                     packed_key = _pack_model_graph_key(key)
-                    outputs = ModelOutputs(
-                        *self._model.capture(packed_key, *input_buffers)
+                    output_buffers = self._model.capture(
+                        packed_key, *input_buffers
                     )
+                    if not self._num_speculative_tokens:
+                        outputs = ModelOutputs(*output_buffers)
+                    else:
+                        assert len(output_buffers) == 3, "Expected 3 outputs"
+                        outputs = UnifiedEagleOutputs(
+                            num_accepted_draft_tokens=output_buffers[0],
+                            next_tokens=output_buffers[1],
+                            next_draft_tokens=output_buffers[2],
+                        )
                     # Graph-capture warmup keeps many output handles alive.
                     # Drop Python-side ownership so later captures can reuse
                     # the same memory-manager-backed storage.
@@ -385,11 +473,16 @@ class ServeGraphCaptureRunner:
         self,
         ragged_inputs: Sequence[KVCacheInputsPerDevice],
         num_partitions: int,
+        is_draft: bool = False,
     ) -> None:
         """Overwrites num_partitions in every shard's packed metadata buffer."""
         cpu_buf: Buffer | None = None
         for kv in ragged_inputs:
-            metadata = kv.attention_dispatch_metadata
+            metadata = (
+                kv.attention_dispatch_metadata
+                if not is_draft
+                else kv.draft_attention_dispatch_metadata
+            )
             assert metadata is not None
             if cpu_buf is None:
                 metadata_np = metadata.to_numpy().copy()
@@ -402,39 +495,60 @@ class ServeGraphCaptureRunner:
         ragged_inputs: Sequence[KVCacheInputsPerDevice],
         batch_token_count: int,
     ) -> GraphKey:
-        """Resolves graph key for DP by syncing num_partitions across replicas.
+        """Resolves graph key for DP by syncing dispatch metadata across replicas.
 
-        Takes the max num_partitions/q_max_seq_len across all shards,
-        buckets if MLA, then broadcasts the final value to all shards once.
+        Takes the max ``num_partitions`` / ``q_max_seq_len`` (and draft
+        ``num_partitions`` when speculative) across all shards, buckets main
+        ``num_partitions`` if MLA, then broadcasts the final values to all
+        shards once.
         """
         all_metadata = [_unpack_replay_metadata(kv) for kv in ragged_inputs]
         synced_np = max(num_partitions for num_partitions, _ in all_metadata)
         q_max_seq_len = max(q_max_seq_len for _, q_max_seq_len in all_metadata)
 
-        if q_max_seq_len != 1:
+        if q_max_seq_len != 1 + self._num_speculative_tokens:
             raise RuntimeError(
-                f"q_max_seq_len={q_max_seq_len} != 1; only q_max_seq_len=1 "
-                "graphs are captured."
+                f"q_max_seq_len={q_max_seq_len} != 1 + {self._num_speculative_tokens}; "
+                f"only q_max_seq_len=1 + {self._num_speculative_tokens} graphs are captured."
             )
 
+        synced_draft_np = max(
+            _unpack_dispatch_metadata(kv.draft_attention_dispatch_metadata)[0]
+            for kv in ragged_inputs
+        )
         final_np = self._bucket_num_partitions(
-            batch_token_count, synced_np, q_max_seq_len
+            batch_token_count, synced_np, q_max_seq_len, synced_draft_np
         )
         if any(np != final_np for np, _ in all_metadata):
             self._broadcast_num_partitions(ragged_inputs, final_np)
-        return (batch_token_count, final_np, q_max_seq_len)
+        if any(
+            _unpack_dispatch_metadata(kv.draft_attention_dispatch_metadata)[0]
+            != synced_draft_np
+            for kv in ragged_inputs
+        ):
+            self._broadcast_num_partitions(
+                ragged_inputs, synced_draft_np, is_draft=True
+            )
+        return (batch_token_count, final_np, q_max_seq_len, synced_draft_np)
 
     def _bucket_num_partitions(
         self,
         batch_token_count: int,
         num_partitions: int,
         q_max_seq_len: int,
+        draft_num_partitions: int,
     ) -> int:
         """Buckets num_partitions to nearest captured value for MLA.
 
-        For MHA, requires an exact match and raises on miss.
+        For MHA, requires an exact match and raises on miss. MLA bucketing
+        considers only captures that share the same ``draft_num_partitions``.
         """
-        key = (batch_token_count, num_partitions, q_max_seq_len)
+        key = (
+            batch_token_count,
+            num_partitions,
+            q_max_seq_len,
+            draft_num_partitions,
+        )
         if key in self.graph_entries:
             return num_partitions
 
@@ -448,7 +562,9 @@ class ServeGraphCaptureRunner:
             {
                 k[1]
                 for k in self.graph_entries
-                if k[0] == batch_token_count and k[2] == q_max_seq_len
+                if k[0] == batch_token_count
+                and k[2] == q_max_seq_len
+                and k[3] == draft_num_partitions
             }
         )
         bucketed_np = self._probe_strategy.bucket_num_partitions(
@@ -481,18 +597,21 @@ class ServeGraphCaptureRunner:
                 "Expected positive decode kernel mode (num_partitions), got "
                 f"{num_partitions}."
             )
-        if q_max_seq_len != 1:
+
+        if q_max_seq_len != 1 + self._num_speculative_tokens:
             raise RuntimeError(
-                f"q_max_seq_len={q_max_seq_len} != 1; only "
-                "q_max_seq_len=1 graphs are captured."
+                f"q_max_seq_len={q_max_seq_len} != 1 + {self._num_speculative_tokens}; "
+                f"only q_max_seq_len=1 + {self._num_speculative_tokens} graphs are captured."
             )
 
+        draft_np, _ = _unpack_replay_metadata(ragged_inputs[0], is_draft=True)
+
         final_np = self._bucket_num_partitions(
-            batch_token_count, num_partitions, q_max_seq_len
+            batch_token_count, num_partitions, q_max_seq_len, draft_np
         )
         if final_np != num_partitions:
             self._broadcast_num_partitions(ragged_inputs, final_np)
-        return (batch_token_count, final_np, q_max_seq_len)
+        return (batch_token_count, final_np, q_max_seq_len, draft_np)
 
     @traced
     def replay(

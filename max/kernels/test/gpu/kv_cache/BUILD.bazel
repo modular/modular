@@ -21,6 +21,8 @@ _EXTRA_CONSTRAINTS = {
     "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_store_ragged.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
     "test_kv_cache_2m_iadd.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-3187
+    "test_mha_gemma4_sink_repro.mojo": ["//:amd_gpu"],  # gfx950 AGPR-Copy-MFMA regression check
+    "test_mha_gemma4_shapes.mojo": ["//:amd_gpu"],  # gfx950 gemma4 prefill/decode regression check
 }
 
 [
@@ -42,6 +44,8 @@ _EXTRA_CONSTRAINTS = {
                 "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
                 "test_batch_kv_cache_flash_attention_causal_mask.mojo",  # KERN-2339: bounds check reveals flash attention kernel bug
+                "test_mha_gemma4_sink_repro.mojo",  # gfx950: ASSERT=all inflates VGPR pressure enough to re-trip the AGPR-Copy-MFMA pass that this test reproduces (commit 0da7baf2baf already chunks the K reg tile down to BK)
+                "test_mha_gemma4_shapes.mojo",  # gfx950: ASSERT=all inflates VGPR pressure enough to cause register spills that mask the prefill/decode regression this test checks for (commit 0da7baf2baf already chunks the K reg tile down to BK)
             ],
         }),
         exec_properties = {
@@ -63,6 +67,34 @@ _EXTRA_CONSTRAINTS = {
         ["**/*.mojo"],
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
+            "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test
         ],
     )
 ]
+
+# TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.
+mojo_test(
+    name = "test_mha_inflight_batching_gemma3_hang.mojo.test",
+    size = "large",
+    srcs = [
+        "test_mha_inflight_batching_gemma3_hang.mojo",
+    ],
+    enable_assertions = True,
+    exec_properties = {
+        "test.resources:gpu-memory": "8",
+    },
+    main = "test_mha_inflight_batching_gemma3_hang.mojo",
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"] + _APPLE_GPU_INCOMPATIBLE,
+    deps = [
+        "//max:internal_utils",
+        "//max:kv_cache",
+        "//max:linalg",
+        "//max:nn",
+        "//max:quantization",
+        "@mojo//:std",
+    ],
+)

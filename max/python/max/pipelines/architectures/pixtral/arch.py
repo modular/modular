@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.core.context_validators import (
     validate_requires_vision_context,
@@ -29,7 +29,8 @@ from .model_config import PixtralConfig
 pixtral_arch = SupportedArchitecture(
     name="LlavaForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["mistral-community/pixtral-12b"],
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
+    example_repo_ids=["mistral-experimental/pixtral-12b"],
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",

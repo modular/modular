@@ -40,14 +40,13 @@ from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
 from max.nn.embedding import VocabParallelEmbedding
 from max.nn.kv_cache import (
-    AttentionDispatchMetadata,
     KVCacheParamInterface,
     MultiKVCacheParams,
     PagedCacheValues,
 )
 from max.nn.layer import LayerList, Module
 from max.nn.linear import ColumnParallelLinear
-from max.nn.no_opaque_kernels import PagedKVCacheTensorsNoOpaque
+from max.nn.moe.expert_parallel import forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
@@ -315,9 +314,7 @@ class DeepseekV3_2DecoderLayer(Module):
                 mla_kv_lookup_table[i],
                 mla_kv_max_lengths[i],
                 mla_kv_cache_scales[i] if mla_kv_cache_scales else None,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    mla_decode_scalar_args[i]
-                )
+                attention_dispatch_metadata=mla_decode_scalar_args[i]
                 if mla_decode_scalar_args is not None
                 else None,
             )
@@ -325,12 +322,14 @@ class DeepseekV3_2DecoderLayer(Module):
         ]
 
         indexer_kv_collections = [
-            PagedKVCacheTensorsNoOpaque(
-                indexer_kv_blocks[i],
-                indexer_kv_cache_lengths[i],
-                indexer_kv_lookup_table[i],
-                indexer_kv_max_lengths[i],
-                indexer_kv_cache_scales[i] if indexer_kv_cache_scales else None,
+            PagedCacheValues(
+                kv_blocks=indexer_kv_blocks[i],
+                cache_lengths=indexer_kv_cache_lengths[i],
+                lookup_table=indexer_kv_lookup_table[i],
+                max_lengths=indexer_kv_max_lengths[i],
+                kv_scales=indexer_kv_cache_scales[i]
+                if indexer_kv_cache_scales
+                else None,
             )
             for i in range(len(indexer_kv_blocks))
         ]
@@ -373,11 +372,7 @@ class DeepseekV3_2DecoderLayer(Module):
             if self.ep_manager is not None:
                 self.ep_manager.fetch_buffers(ep_inputs)
 
-            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
-
-        else:
-            # Single-GPU non-EP path
-            mlp_outs = forward_sharded_layers(self.mlp_shards, norm_outs)
+        mlp_outs = forward_moe_sharded_layers(self.mlp_shards, norm_outs)
 
         hs = [h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)]
 
@@ -585,11 +580,11 @@ class DeepseekV3_2(Module):
 
         # Extract dispatch metadata from MLA KV collections.
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if mla_kv_collections[0].dispatch_metadata is not None:
+        if mla_kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in mla_kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
@@ -781,8 +776,6 @@ class DeepseekV3_2(Module):
             last_token_hs_distributed=last_token_distributed,
             all_hs_distributed=h,
             normalizer=self.norm_shards,
-            signal_buffers=signal_buffers,
-            duplicated_hs=self.config.data_parallel_degree == 1,
         )
 
         return ret_val

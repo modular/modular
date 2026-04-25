@@ -230,9 +230,10 @@ def test_most_common() raises:
     var most_common = c.most_common(2)
     assert_equal(len(most_common), 2)
     assert_equal(most_common[0][0][String], "c")
-    assert_equal(most_common[0][1][Int], 3)
+    # TODO: these asserts crash the compiler due to MOCO-3763
+    # assert_equal(most_common[0][1][Int], 3)
     assert_equal(most_common[1][0][String], "b")
-    assert_equal(most_common[1][1][Int], 2)
+    # assert_equal(most_common[1][1][Int], 2)
 
 
 def test_eq_and_ne() raises:
@@ -519,6 +520,30 @@ def test_write_repr_to() raises:
     check_write_to(
         single, expected="Counter[String]({'x': Int(1)})", is_repr=True
     )
+
+
+def test_counter_iter_owned() raises:
+    var c = Counter[String]("a", "a", "b", "c")
+    var keys = List[String]()
+    for key in c^:
+        keys.append(key)
+
+    assert_equal(len(keys), 3)
+    assert_true(String("a") in keys)
+    assert_true(String("b") in keys)
+    assert_true(String("c") in keys)
+
+
+def test_counter_iter_owned_bounds() raises:
+    var c = Counter[String]("a", "b", "c")
+    var it = c^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
 
 
 def main() raises:

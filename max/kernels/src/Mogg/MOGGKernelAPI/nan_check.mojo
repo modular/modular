@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""NaN/Inf detection kernels for the MODULAR_MAX_NAN_CHECK feature.
+"""NaN/Inf detection kernels for the max-debug.nan-check feature.
 
 These kernels are registered as custom ops in MOGGKernelAPI and inserted
 by the NanCheckPass compiler pass. The architecture is:
@@ -25,15 +25,10 @@ by the NanCheckPass compiler pass. The architecture is:
 """
 
 from std.algorithm import elementwise
-from std.gpu import (
-    barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import barrier, block_dim, block_idx, thread_idx
 from std.gpu.host.info import is_cpu
 from std.memory import alloc, stack_allocation
-from std.os import Atomic
+from std.atomic import Atomic
 from std.sys import simd_width_of
 from std.utils.numerics import isinf, isnan
 
@@ -43,6 +38,7 @@ from std.utils.index import IndexList
 from tensor import InputTensor, OutputTensor
 
 
+@__name(t"nan_check_gpu_{dtype}", mangle=True)
 def _nan_check_gpu_kernel[
     dtype: DType,
 ](
@@ -63,7 +59,7 @@ def _nan_check_gpu_kernel[
         inf_local[0] = Int32(0)
     barrier()
 
-    var tid = Int(block_idx.x) * Int(block_dim.x) + Int(thread_idx.x)
+    var tid = block_idx.x * block_dim.x + thread_idx.x
     var my_nan = Int32(0)
     var my_inf = Int32(0)
     if tid < total_elements:
@@ -127,7 +123,9 @@ def nan_check_count[
             if infs > 0:
                 _ = Atomic.fetch_add(inf_acc, infs)
 
-        elementwise[scan, simd_width_of[dtype]()](total)
+        elementwise[scan, simd_width_of[dtype]()](
+            total, ctx.get_optional_device_context()
+        )
 
         nan_count_out.unsafe_ptr()[] = nan_acc[]
         inf_count_out.unsafe_ptr()[] = inf_acc[]
@@ -146,6 +144,7 @@ def nan_check_count[
         ](inf_count_out.unsafe_ptr())
 
         @parameter
+        @__name(t"nan_check_zero_counts", mangle=True)
         def zero_counts(
             nan_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],
             inf_ptr: UnsafePointer[Scalar[DType.int32], MutAnyOrigin],

@@ -18,6 +18,7 @@ from std.sys import (
     bit_width_of,
     has_nvidia_gpu_accelerator,
     simd_width_of,
+    size_of,
 )
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -145,11 +146,11 @@ def test[
     var c_device_ref_buffer = ctx.enqueue_create_buffer[dtype](c_size)
 
     var a_device = TileTensor(
-        a_device_buffer.unsafe_ptr(),
+        a_device_buffer,
         row_major(Coord(Idx(m), Idx[K.value()]())),
     )
     var b_device = TileTensor(
-        b_device_buffer.unsafe_ptr(),
+        b_device_buffer,
         row_major(
             Coord(
                 Idx[N.value() if transpose_b else K.value()](),
@@ -158,11 +159,11 @@ def test[
         ),
     )
     var c_device = TileTensor(
-        c_device_buffer.unsafe_ptr(),
+        c_device_buffer,
         row_major(Coord(Idx(m), Idx[N.value()]())),
     )
     var c_device_ref = TileTensor(
-        c_device_ref_buffer.unsafe_ptr(),
+        c_device_ref_buffer,
         row_major(Coord(Idx(m), Idx[N.value()]())),
     )
 
@@ -200,7 +201,7 @@ def test[
         comptime if lambda_fn:
             comptime func = lambda_fn.value()
             update_val = func(idx, (m, n), update_val)
-        c_device.store_linear[alignment=alignment](
+        c_device.store_linear[alignment=alignment * size_of[dtype]()](
             idx, rebind[SIMD[dtype, width]](update_val)
         )
 
@@ -278,7 +279,7 @@ def test[
             comptime element_lambda = lambda_fn.value()
             update_val = element_lambda(idx, (m, n), val)
 
-        c_device_ref.store_linear(
+        c_device_ref.store_linear[alignment=alignment * size_of[dtype]()](
             idx,
             update_val,
         )

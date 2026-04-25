@@ -20,6 +20,7 @@ MISTRAL_SAFETENSOR_MAP = {
     "vision_tower.": "vision_encoder.",
     "vision_encoder.ln_pre.": "vision_encoder.layer_norm.",
     "language_model.model.": "language_model.",
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
 }
 
 

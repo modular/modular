@@ -74,10 +74,10 @@ def outer_product_acc(
 @always_inline
 def _reduce[
     axis: Int,
-    init_func: def[dtype: DType, width: Int]() -> SIMD[dtype, width],
-    func: def[dtype: DType, width: Int](
+    init_func: def[dtype: DType, width: Int]() thin -> SIMD[dtype, width],
+    func: def[dtype: DType, width: SIMDSize](
         SIMD[dtype, width], SIMD[dtype, width]
-    ) -> (SIMD[dtype, width]),
+    ) thin -> (SIMD[dtype, width]),
 ](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
     comptime assert (
         inp.layout.known_shape() and outp.layout.known_shape()
@@ -176,7 +176,7 @@ def sum[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return 0
 
     def sum_func[
-        dtype: DType, width: Int
+        dtype: DType, width: SIMDSize
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return a + b
 
@@ -208,7 +208,7 @@ def max[axis: Int](inp: LayoutTensor, outp: LayoutTensor[mut=True, ...]):
         return SIMD[dtype, width].MIN
 
     def max_func[
-        dtype: DType, width: Int
+        dtype: DType, width: SIMDSize
     ](a: SIMD[dtype, width], b: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return b_max(a, b)
 
@@ -407,9 +407,7 @@ def mean[
     comptime if dst.dtype.is_integral():
 
         @always_inline
-        def normalize_integral[
-            simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n}:
+        def normalize_integral[simd_width: Int](idx: Int) {var dst_1d, var n}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -424,7 +422,7 @@ def mean[
         @always_inline
         def normalize_floating[
             simd_width: Int
-        ](idx: Int) unified {var dst_1d, var n, var n_recip}:
+        ](idx: Int) {var dst_1d, var n, var n_recip}:
             var idx_1d = dst_1d.runtime_layout(
                 RuntimeTuple[IntTuple(UNKNOWN_VALUE)](idx)
             )
@@ -492,7 +490,7 @@ def variance(src: TileTensor, correction: Int = 1) raises -> Scalar[src.dtype]:
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.layout(Idx(idx))
-        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+        return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.variance[src.dtype, input_fn_1d](
         src.num_elements(), correction
@@ -521,6 +519,6 @@ def mean(src: TileTensor) raises -> Scalar[src.dtype]:
         dtype_: DType, width: Int
     ](idx: Int) capturing -> SIMD[dtype_, width]:
         var src_idx = src.layout(Idx(idx))
-        return rebind[SIMD[dtype_, width]](src.ptr.load[width=width](src_idx))
+        return rebind[SIMD[dtype_, width]](src.raw_load[width=width](src_idx))
 
     return reduction.mean[src.dtype, input_fn_1d](src.num_elements())

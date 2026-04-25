@@ -104,6 +104,54 @@ def test_owned_dlhandle_global_symbols() raises:
         print("Warning: Could not load global symbols")
 
 
+def test_owned_dlhandle_get_symbol_missing() raises:
+    """Test that get_symbol returns None for a nonexistent symbol."""
+
+    def _test_with_lib(lib: OwnedDLHandle) raises:
+        var result = lib.get_symbol[NoneType](
+            "this_symbol_does_not_exist_xyz_42"
+        )
+        assert_true(not result, "Missing symbol should return None")
+
+    try:
+        _test_with_lib(OwnedDLHandle("libc.so.6"))
+    except:
+        try:
+            _test_with_lib(OwnedDLHandle("libc.so"))
+        except:
+            try:
+                _test_with_lib(
+                    OwnedDLHandle("/usr/lib/system/libsystem_c.dylib")
+                )
+            except:
+                print(
+                    "Warning: Could not load a standard C library to test with"
+                )
+
+
+def test_owned_dlhandle_get_symbol_found() raises:
+    """Test that get_symbol returns a value for an existing symbol."""
+
+    def _test_with_lib(lib: OwnedDLHandle) raises:
+        var result = lib.get_symbol[NoneType]("printf")
+        assert_true(Bool(result), "Existing symbol should return a value")
+
+    try:
+        _test_with_lib(OwnedDLHandle("libc.so.6"))
+    except:
+        try:
+            _test_with_lib(OwnedDLHandle("libc.so"))
+        except:
+            try:
+                _test_with_lib(
+                    OwnedDLHandle("/usr/lib/system/libsystem_c.dylib")
+                )
+            except:
+                print(
+                    "Warning: Could not load a standard C library to test with"
+                )
+
+
 def test_owned_dlhandle_automatic_cleanup() raises:
     """Test that OwnedDLHandle automatically closes on destruction."""
     # This test primarily verifies that the code compiles and runs

@@ -28,10 +28,7 @@ from max.graph import (
     ops,
 )
 from max.nn.data_parallelism import split_batch
-from max.nn.kv_cache import (
-    KVCacheParamInterface,
-    unflatten_ragged_attention_inputs,
-)
+from max.nn.kv_cache import KVCacheParamInterface
 from max.nn.layer import Module
 from max.pipelines.lib.lora import LoRAManager
 
@@ -130,7 +127,9 @@ class DataParallelLlama(Module):
         ]
         return tuple(inputs)
 
-    def _call_flat(self, *args: Value[Any]) -> tuple[TensorValue, ...]:
+    def _call_flat(
+        self, kv_params: KVCacheParamInterface, *args: Value[Any]
+    ) -> tuple[TensorValue, ...]:
         (
             tokens,
             input_row_offsets,
@@ -148,8 +147,10 @@ class DataParallelLlama(Module):
 
         all_model_args = []
 
-        kv_collections = unflatten_ragged_attention_inputs(
-            all_kv_cache_inputs, n_devices=len(self.config.devices)
+        kv_collections = (
+            kv_params.get_symbolic_inputs()
+            .unflatten(iter(all_kv_cache_inputs))
+            .inputs
         )
 
         for i in range(len(self.config.devices)):
@@ -171,8 +172,58 @@ def _assign_weight(module: Module, key: str, value: Any) -> None:
         if attr.isnumeric():
             module = module[int(attr)]  # type: ignore
         else:
-            module = getattr(module, attr)
-    setattr(module, path[-1], value)
+            module = _resolve_attr(module, attr)
+    # The leaf segment is set on whichever container actually owns it,
+    # which may be a (possibly nested) name-omitting descendant of
+    # ``module``.
+    leaf = path[-1]
+    setattr(_owner_of(module, leaf), leaf, value)
+
+
+def _resolve_attr(module: Module, attr: str) -> Module:
+    """Resolve ``attr`` on ``module``, descending through name-omitting children.
+
+    State-dict FQNs flatten across modules with
+    ``_omit_module_attr_name`` (notably :class:`~max.nn.StackedLinear` in
+    unfused mode), so a key segment may live one or more levels deeper
+    than the attribute hierarchy suggests. Direct ``getattr`` is tried
+    first; on miss we recurse into each name-omitting child until one
+    exposes ``attr``.
+    """
+    if hasattr(module, attr):
+        return getattr(module, attr)
+    for child in module.sublayers.values():
+        if not child._omit_module_attr_name:
+            continue
+        try:
+            return _resolve_attr(child, attr)
+        except AttributeError:
+            continue
+    raise AttributeError(
+        f"{type(module).__name__!s} has no attribute {attr!r} (also "
+        "checked name-omitting descendants)."
+    )
+
+
+def _owner_of(module: Module, attr: str) -> Module:
+    """Return the (possibly nested name-omitting) submodule that owns ``attr``.
+
+    Mirrors :func:`_resolve_attr` but returns the *owning module* rather
+    than the resolved attribute itself. Used to set a flattened leaf
+    weight on the actual child whose namespace was elided. If no
+    descendant already owns ``attr``, falls back to ``module`` so the
+    caller's ``setattr`` preserves the original (attribute-creating)
+    behavior for new weights.
+    """
+    if hasattr(module, attr):
+        return module
+    for child in module.sublayers.values():
+        if not child._omit_module_attr_name:
+            continue
+        owner = _owner_of(child, attr)
+        if hasattr(owner, attr):
+            return owner
+    return module
 
 
 def create_graph(
@@ -195,6 +246,6 @@ def create_graph(
     )
     inputs = model.input_types(kv_params, None)
     with Graph("llama3", input_types=inputs) as graph:
-        outputs = model._call_flat(*graph.inputs)
+        outputs = model._call_flat(kv_params, *graph.inputs)
         graph.output(*outputs)
         return graph, model.state_dict()

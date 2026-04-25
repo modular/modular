@@ -65,7 +65,7 @@ def run_layer_norm_block[
     @parameter
     def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
-        return data_buf.ptr.load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
@@ -74,7 +74,7 @@ def run_layer_norm_block[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
-        return gamma.ptr.load[width=width](idx)
+        return gamma.raw_load[width=width](idx)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -83,7 +83,7 @@ def run_layer_norm_block[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
-        data_buf.ptr.store[width=width, alignment=alignment](
+        data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
@@ -98,7 +98,7 @@ def run_layer_norm_block[
         comptime kernel = layer_norm_gpu_block[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
-            UInt(simd_width),
+            simd_width,
             input_fn,
             gamma_fn,
             output_fn,
@@ -187,7 +187,7 @@ def run_layer_norm_gpu[
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
 
-        return data_buf.ptr.load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
@@ -196,7 +196,7 @@ def run_layer_norm_gpu[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
-        return gamma.ptr.load[width=width](idx[0])
+        return gamma.raw_load[width=width](idx[0])
 
     @__copy_capture(data_buf)
     @always_inline
@@ -205,7 +205,7 @@ def run_layer_norm_gpu[
         width: Int, rank_: Int, alignment: Int
     ](coords: IndexList[rank_], val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(coords))
-        data_buf.ptr.store[width=width, alignment=alignment](
+        data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
@@ -280,7 +280,7 @@ def run_layer_norm_warp_tiling[
     def input_fn[width: Int](row: Int, col: Int) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
 
-        return data_buf.ptr.load[width=width](idx)
+        return data_buf.raw_load[width=width](idx)
 
     @__copy_capture(gamma)
     @always_inline
@@ -289,7 +289,7 @@ def run_layer_norm_warp_tiling[
         width: Int, rank: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
-        return gamma.ptr.load[width=width](idx)
+        return gamma.raw_load[width=width](idx)
 
     @__copy_capture(data_buf)
     @always_inline
@@ -298,7 +298,7 @@ def run_layer_norm_warp_tiling[
         width: Int, alignment: Int
     ](row: Int, col: Int, val: SIMD[dtype, width]):
         var idx = data_buf.layout(Coord(Idx(row), Idx(col)))
-        data_buf.ptr.store[width=width, alignment=alignment](
+        data_buf.raw_store[width=width, alignment=alignment](
             idx, rebind[SIMD[dtype, width]](val)
         )
 
@@ -311,7 +311,7 @@ def run_layer_norm_warp_tiling[
         comptime kernel = layer_norm_gpu_warp_tiling[
             LayoutType=beta.LayoutType,
             origin=beta.origin,
-            UInt(simd_width),
+            simd_width,
             max_warps_per_block,
             input_fn,
             gamma_fn,

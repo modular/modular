@@ -139,8 +139,8 @@ def pool[
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
@@ -247,8 +247,8 @@ def pool_ceil_test[
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
@@ -361,8 +361,8 @@ def test_avg_pool_2d_with_padding_gpu[
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
@@ -450,8 +450,8 @@ def test_max_pool_pad_dilation_2d_gpu(ctx: DeviceContext) raises:
     var d_output_buffer = ctx.enqueue_create_buffer[DType.float32](out_size)
 
     # Create device TileTensors
-    var d_input = TileTensor(d_input_buffer.unsafe_ptr(), in_layout)
-    var d_output = TileTensor(d_output_buffer.unsafe_ptr(), out_layout)
+    var d_input = TileTensor(d_input_buffer, in_layout)
+    var d_output = TileTensor(d_output_buffer, out_layout)
 
     # Copy data to device
     ctx.enqueue_copy(d_input_buffer, in_host_buffer)
@@ -491,7 +491,9 @@ def assert_allclose[
 ) raises:
     try:
         for i in range(h_output_ref.layout.product()):
-            assert_almost_equal(h_output_ref.ptr[i], h_output_gpu.ptr[i])
+            assert_almost_equal(
+                h_output_ref.raw_load(i), h_output_gpu.raw_load(i)
+            )
     except e:
         print(e)
         print("left: ", h_output_ref)

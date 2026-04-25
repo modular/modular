@@ -78,5 +78,16 @@ def test_peekable_bounds() raises:
     assert_equal(upper.value(), 2)
 
 
+def test_peekable_owned() raises:
+    var l: List[Int] = [1, 2, 3]
+    var iter = peekable(l^)
+    assert_equal(iter.peek()[][], 1)
+    assert_equal(next(iter), 1)
+    assert_equal(next(iter), 2)
+    assert_equal(next(iter), 3)
+    with assert_raises():
+        _ = next(iter)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

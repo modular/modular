@@ -10,8 +10,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Qwen3-VL vision-language architecture for multimodal text generation."""
 
 from .arch import qwen3vl_arch, qwen3vl_moe_arch
-from .model_config import Qwen3VLConfig
+from .model import Qwen3VLInputs, Qwen3VLModel
+from .model_config import Qwen3VLConfig, VisionConfig
 
-__all__ = ["Qwen3VLConfig", "qwen3vl_arch", "qwen3vl_moe_arch"]
+__all__ = [
+    "Qwen3VLConfig",
+    "Qwen3VLInputs",
+    "Qwen3VLModel",
+    "VisionConfig",
+    "qwen3vl_arch",
+    "qwen3vl_moe_arch",
+]

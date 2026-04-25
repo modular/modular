@@ -48,22 +48,27 @@ struct _CoroutineContext(TrivialRegisterPassable):
     and contain the resume function and a payload pointer."""
 
     # Passed the coroutine being completed and its context's payload.
-    comptime _resume_fn_type = def(AnyCoroutine) -> None
+    comptime _resume_fn_type = def(AnyCoroutine) thin -> None
 
     var _resume_fn: Self._resume_fn_type
     var _parent_hdl: AnyCoroutine
 
 
 @always_inline
-def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) -> None:
+def _coro_get_resume_fn(handle: AnyCoroutine) -> def(AnyCoroutine) thin -> None:
     """This function is a generic coroutine resume function."""
-    return __mlir_op.`co.resume`[_type=def(AnyCoroutine) -> None](handle)
+    return __mlir_op.`co.resume`[_type=def(AnyCoroutine) thin -> None](handle)
 
 
 @always_inline
 def _coro_resume_fn(handle: AnyCoroutine):
     """This function is a generic coroutine resume function."""
     _coro_get_resume_fn(handle)(handle)
+
+
+@always_inline
+def _coro_destroy_fn(handle: AnyCoroutine):
+    __mlir_op.`co.destroy`(handle)
 
 
 def _coro_resume_noop_callback(null: AnyCoroutine):
@@ -116,6 +121,17 @@ struct Coroutine[type: ImplicitlyDestructible, origins: OriginSet](
     @always_inline
     def _set_result_slot(self, slot: UnsafePointer[mut=True, Self.type, ...]):
         __mlir_op.`co.set_byref_error_result`(self._handle, slot.address)
+
+    @always_inline
+    def _set_noop_callback(self):
+        """Set the resume function of the coroutine context to a no-op so it
+        doesn't try to resume anything else after executing. This makes
+        coroutines suitable for executing from external code (e.g. AsyncRT)
+        using _coro_resume_fn.
+        """
+        self._get_ctx[
+            _CoroutineContext
+        ]()[]._resume_fn = _coro_resume_noop_callback
 
     @always_inline
     @implicit

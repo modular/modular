@@ -60,16 +60,13 @@ class BaseAutoencoderModel(ComponentModel):
         self.encoder_model: Callable[[Tensor], Tensor] | None = None
         self.load_model()
 
-    def load_model(self) -> Callable[..., Any]:
+    def load_model(self) -> None:
         """Load and compile decoder and encoder from full model weights.
 
         Splits weights by prefix (decoder/post_quant_conv vs encoder/quant_conv)
         and compiles each subgraph. quant_conv is included in the encoder when
         config.use_quant_conv is True. Encoder is compiled only when the model
         has an encoder and encoder weights are present.
-
-        Returns:
-            Compiled decoder model callable.
         """
         decoder_state_dict = {}
         encoder_state_dict = {}
@@ -119,8 +116,6 @@ class BaseAutoencoderModel(ComponentModel):
                     *autoencoder.encoder.input_types(),
                     weights=encoder_state_dict,
                 )
-
-        return self.model
 
     def encode(
         self, sample: Tensor, return_dict: bool = True

@@ -10,8 +10,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""DeepseekV3 NextN (Next-N token prediction) architecture."""
+"""DeepSeek-V3 NextN multi-token prediction draft model for speculative decoding."""
 
 from .arch import deepseekV3_nextn_arch
+from .model import DeepseekV3NextNInputs, DeepseekV3NextNModel
+from .model_config import DeepseekV3NextNConfig
 
-__all__ = ["deepseekV3_nextn_arch"]
+__all__ = [
+    "DeepseekV3NextNConfig",
+    "DeepseekV3NextNInputs",
+    "DeepseekV3NextNModel",
+    "deepseekV3_nextn_arch",
+]

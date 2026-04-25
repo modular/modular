@@ -12,10 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
-def print_nicely(**kwargs: Int) raises:
+def print_nicely(**kwargs: Int):
     for item in kwargs.items():
         print(item.key, "=", item.value)
 
 
-def main() raises:
+def main():
     print_nicely(a=7, y=8)

@@ -36,22 +36,22 @@ def test_construction() raises:
 
     var l2 = LinkedList[Int](1, 2, 3)
     assert_equal(len(l2), 3)
-    assert_equal(l2[0], 1)
-    assert_equal(l2[1], 2)
-    assert_equal(l2[2], 3)
+    assert_equal(l2.get_nth(0), 1)
+    assert_equal(l2.get_nth(1), 2)
+    assert_equal(l2.get_nth(2), 3)
 
 
 def test_linkedlist_literal() raises:
     var l: LinkedList[Int] = [1, 2, 3]
     assert_equal(3, len(l))
-    assert_equal(1, l[0])
-    assert_equal(2, l[1])
-    assert_equal(3, l[2])
+    assert_equal(1, l.get_nth(0))
+    assert_equal(2, l.get_nth(1))
+    assert_equal(3, l.get_nth(2))
 
     var l2: LinkedList[Float64] = [1, 2.5]
     assert_equal(2, len(l2))
-    assert_equal(1.0, l2[0])
-    assert_equal(2.5, l2[1])
+    assert_equal(1.0, l2.get_nth(0))
+    assert_equal(2.5, l2.get_nth(1))
 
     var l3: LinkedList[Int] = []
     assert_equal(0, len(l3))
@@ -63,9 +63,9 @@ def test_append() raises:
     l1.append(2)
     l1.append(3)
     assert_equal(len(l1), 3)
-    assert_equal(l1[0], 1)
-    assert_equal(l1[1], 2)
-    assert_equal(l1[2], 3)
+    assert_equal(l1.get_nth(0), 1)
+    assert_equal(l1.get_nth(1), 2)
+    assert_equal(l1.get_nth(2), 3)
 
 
 def test_prepend() raises:
@@ -74,27 +74,27 @@ def test_prepend() raises:
     l1.prepend(2)
     l1.prepend(3)
     assert_equal(len(l1), 3)
-    assert_equal(l1[0], 3)
-    assert_equal(l1[1], 2)
-    assert_equal(l1[2], 1)
+    assert_equal(l1.get_nth(0), 3)
+    assert_equal(l1.get_nth(1), 2)
+    assert_equal(l1.get_nth(2), 1)
 
 
 def test_copy() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     var l2 = l1.copy()
     assert_equal(len(l2), 3)
-    assert_equal(l2[0], 1)
-    assert_equal(l2[1], 2)
-    assert_equal(l2[2], 3)
+    assert_equal(l2.get_nth(0), 1)
+    assert_equal(l2.get_nth(1), 2)
+    assert_equal(l2.get_nth(2), 3)
 
 
 def test_reverse() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     l1.reverse()
     assert_equal(len(l1), 3)
-    assert_equal(l1[0], 3)
-    assert_equal(l1[1], 2)
-    assert_equal(l1[2], 1)
+    assert_equal(l1.get_nth(0), 3)
+    assert_equal(l1.get_nth(1), 2)
+    assert_equal(l1.get_nth(2), 1)
 
 
 def test_reverse_prev_pointers() raises:
@@ -113,8 +113,8 @@ def test_pop() raises:
     var l1 = LinkedList[Int](1, 2, 3)
     assert_equal(l1.pop(), 3)
     assert_equal(len(l1), 2)
-    assert_equal(l1[0], 1)
-    assert_equal(l1[1], 2)
+    assert_equal(l1.get_nth(0), 1)
+    assert_equal(l1.get_nth(1), 2)
 
 
 def test_pop_copies() raises:
@@ -139,26 +139,26 @@ def test_pop_copies() raises:
 
 def test_getitem() raises:
     var l1 = LinkedList[Int](1, 2, 3)
-    assert_equal(l1[0], 1)
-    assert_equal(l1[1], 2)
-    assert_equal(l1[2], 3)
+    assert_equal(l1.get_nth(0), 1)
+    assert_equal(l1.get_nth(1), 2)
+    assert_equal(l1.get_nth(2), 3)
 
-    assert_equal(l1[-1], 3)
-    assert_equal(l1[-2], 2)
-    assert_equal(l1[-3], 1)
+    assert_equal(l1.get_nth(len(l1) - 1), 3)
+    assert_equal(l1.get_nth(len(l1) - 2), 2)
+    assert_equal(l1.get_nth(len(l1) - 3), 1)
 
 
 def test_setitem() raises:
     var l1 = LinkedList[Int](1, 2, 3)
-    l1[0] = 4
-    assert_equal(l1[0], 4)
-    assert_equal(l1[1], 2)
-    assert_equal(l1[2], 3)
+    l1.get_nth(0) = 4
+    assert_equal(l1.get_nth(0), 4)
+    assert_equal(l1.get_nth(1), 2)
+    assert_equal(l1.get_nth(2), 3)
 
-    l1[-1] = 5
-    assert_equal(l1[0], 4)
-    assert_equal(l1[1], 2)
-    assert_equal(l1[2], 5)
+    l1.get_nth(len(l1) - 1) = 5
+    assert_equal(l1.get_nth(0), 4)
+    assert_equal(l1.get_nth(1), 2)
+    assert_equal(l1.get_nth(2), 5)
 
 
 def test_pop_on_empty_list() raises:
@@ -180,25 +180,25 @@ def test_list() raises:
         list.append(i)
 
     assert_equal(5, len(list))
-    assert_equal(0, list[0])
-    assert_equal(1, list[1])
-    assert_equal(2, list[2])
-    assert_equal(3, list[3])
-    assert_equal(4, list[4])
+    assert_equal(0, list.get_nth(0))
+    assert_equal(1, list.get_nth(1))
+    assert_equal(2, list.get_nth(2))
+    assert_equal(3, list.get_nth(3))
+    assert_equal(4, list.get_nth(4))
 
-    assert_equal(0, list[-5])
-    assert_equal(3, list[-2])
-    assert_equal(4, list[-1])
+    assert_equal(0, list.get_nth(len(list) - 5))
+    assert_equal(3, list.get_nth(len(list) - 2))
+    assert_equal(4, list.get_nth(len(list) - 1))
 
-    list[2] = -2
-    assert_equal(-2, list[2])
+    list.get_nth(2) = -2
+    assert_equal(-2, list.get_nth(2))
 
-    list[-5] = 5
-    assert_equal(5, list[-5])
-    list[-2] = 3
-    assert_equal(3, list[-2])
-    list[-1] = 7
-    assert_equal(7, list[-1])
+    list.get_nth(len(list) - 5) = 5
+    assert_equal(5, list.get_nth(len(list) - 5))
+    list.get_nth(len(list) - 2) = 3
+    assert_equal(3, list.get_nth(len(list) - 2))
+    list.get_nth(len(list) - 1) = 7
+    assert_equal(7, list.get_nth(len(list) - 1))
 
 
 def test_list_clear() raises:
@@ -230,13 +230,13 @@ def test_list_pop() raises:
 
     # list should have 3 elements now
     assert_equal(3, len(list))
-    assert_equal(0, list[0])
-    assert_equal(1, list[1])
-    assert_equal(2, list[2])
+    assert_equal(0, list.get_nth(0))
+    assert_equal(1, list.get_nth(1))
+    assert_equal(2, list.get_nth(2))
 
-    # Test pop with negative index
+    # Test pop with index 0 (first element)
     for i in range(0, 2):
-        var popped: Int = list.pop(-len(list))
+        var popped: Int = list.pop(0)
         assert_equal(i, popped)
 
     # test default index as well
@@ -251,13 +251,13 @@ def test_list_pop() raises:
 def test_list_variadic_constructor() raises:
     var l = LinkedList[Int](2, 4, 6)
     assert_equal(3, len(l))
-    assert_equal(2, l[0])
-    assert_equal(4, l[1])
-    assert_equal(6, l[2])
+    assert_equal(2, l.get_nth(0))
+    assert_equal(4, l.get_nth(1))
+    assert_equal(6, l.get_nth(2))
 
     l.append(8)
     assert_equal(4, len(l))
-    assert_equal(8, l[3])
+    assert_equal(8, l.get_nth(3))
 
     #
     # Test variadic construct copying behavior
@@ -268,9 +268,9 @@ def test_list_variadic_constructor() raises:
     )
 
     assert_equal(len(l2), 3)
-    assert_equal(l2[0].copy_count, 0)
-    assert_equal(l2[1].copy_count, 0)
-    assert_equal(l2[2].copy_count, 0)
+    assert_equal(l2.get_nth(0).copy_count, 0)
+    assert_equal(l2.get_nth(1).copy_count, 0)
+    assert_equal(l2.get_nth(2).copy_count, 0)
 
 
 def test_list_reverse() raises:
@@ -295,12 +295,12 @@ def test_list_reverse() raises:
     vec.append(123)
 
     assert_equal(len(vec), 1)
-    assert_equal(vec[0], 123)
+    assert_equal(vec.get_nth(0), 123)
 
     vec.reverse()
 
     assert_equal(len(vec), 1)
-    assert_equal(vec[0], 123)
+    assert_equal(vec.get_nth(0), 123)
 
     #
     # Test reversing the list ["one", "two", "three"]
@@ -309,16 +309,16 @@ def test_list_reverse() raises:
     var vec2 = LinkedList[String]("one", "two", "three")
 
     assert_equal(len(vec2), 3)
-    assert_equal(vec2[0], "one")
-    assert_equal(vec2[1], "two")
-    assert_equal(vec2[2], "three")
+    assert_equal(vec2.get_nth(0), "one")
+    assert_equal(vec2.get_nth(1), "two")
+    assert_equal(vec2.get_nth(2), "three")
 
     vec2.reverse()
 
     assert_equal(len(vec2), 3)
-    assert_equal(vec2[0], "three")
-    assert_equal(vec2[1], "two")
-    assert_equal(vec2[2], "one")
+    assert_equal(vec2.get_nth(0), "three")
+    assert_equal(vec2.get_nth(1), "two")
+    assert_equal(vec2.get_nth(2), "one")
 
     #
     # Test reversing the list [5, 10]
@@ -329,14 +329,14 @@ def test_list_reverse() raises:
     vec.append(10)
 
     assert_equal(len(vec), 2)
-    assert_equal(vec[0], 5)
-    assert_equal(vec[1], 10)
+    assert_equal(vec.get_nth(0), 5)
+    assert_equal(vec.get_nth(1), 10)
 
     vec.reverse()
 
     assert_equal(len(vec), 2)
-    assert_equal(vec[0], 10)
-    assert_equal(vec[1], 5)
+    assert_equal(vec.get_nth(0), 10)
+    assert_equal(vec.get_nth(1), 5)
 
 
 def test_list_insert() raises:
@@ -350,9 +350,9 @@ def test_list_insert() raises:
     v1.insert(1, 2)
 
     assert_equal(len(v1), 3)
-    assert_equal(v1[0], 1)
-    assert_equal(v1[1], 2)
-    assert_equal(v1[2], 3)
+    assert_equal(v1.get_nth(0), 1)
+    assert_equal(v1.get_nth(1), 2)
+    assert_equal(v1.get_nth(2), 3)
 
     #
     # Test the list [1, 2, 3, 4, 5] created with negative and positive index
@@ -366,11 +366,11 @@ def test_list_insert() raises:
     v2.insert(-len(v2), 1)
 
     assert_equal(len(v2), 5)
-    assert_equal(v2[0], 1)
-    assert_equal(v2[1], 2)
-    assert_equal(v2[2], 3)
-    assert_equal(v2[3], 4)
-    assert_equal(v2[4], 5)
+    assert_equal(v2.get_nth(0), 1)
+    assert_equal(v2.get_nth(1), 2)
+    assert_equal(v2.get_nth(2), 3)
+    assert_equal(v2.get_nth(3), 4)
+    assert_equal(v2.get_nth(4), 5)
 
     #
     # Test the list [1, 2, 3, 4] created with negative index
@@ -383,10 +383,10 @@ def test_list_insert() raises:
     v3.insert(-19, 1)
 
     assert_equal(len(v3), 4)
-    assert_equal(v3[0], 1)
-    assert_equal(v3[1], 2)
-    assert_equal(v3[2], 3)
-    assert_equal(v3[3], 4)
+    assert_equal(v3.get_nth(0), 1)
+    assert_equal(v3.get_nth(1), 2)
+    assert_equal(v3.get_nth(2), 3)
+    assert_equal(v3.get_nth(3), 4)
 
     #
     # Test the list [1, 2, 3, 4, 5, 6, 7, 8] created with insert
@@ -418,17 +418,17 @@ def test_list_extend_non_trivial() raises:
     v1.extend(v2^)
 
     assert_equal(len(v1), 5)
-    assert_equal(v1[0].value, "Hello")
-    assert_equal(v1[1].value, "World")
-    assert_equal(v1[2].value, "Foo")
-    assert_equal(v1[3].value, "Bar")
-    assert_equal(v1[4].value, "Baz")
+    assert_equal(v1.get_nth(0).value, "Hello")
+    assert_equal(v1.get_nth(1).value, "World")
+    assert_equal(v1.get_nth(2).value, "Foo")
+    assert_equal(v1.get_nth(3).value, "Bar")
+    assert_equal(v1.get_nth(4).value, "Baz")
 
-    assert_equal(v1[0].move_count, 1)
-    assert_equal(v1[1].move_count, 1)
-    assert_equal(v1[2].move_count, 1)
-    assert_equal(v1[3].move_count, 1)
-    assert_equal(v1[4].move_count, 1)
+    assert_equal(v1.get_nth(0).move_count, 1)
+    assert_equal(v1.get_nth(1).move_count, 1)
+    assert_equal(v1.get_nth(2).move_count, 1)
+    assert_equal(v1.get_nth(3).move_count, 1)
+    assert_equal(v1.get_nth(4).move_count, 1)
 
 
 def test_2d_dynamic_list() raises:
@@ -440,20 +440,20 @@ def test_2d_dynamic_list() raises:
             v.append(i + j)
         list.append(v^)
 
-    assert_equal(0, list[0][0])
-    assert_equal(1, list[0][1])
-    assert_equal(2, list[0][2])
-    assert_equal(1, list[1][0])
-    assert_equal(2, list[1][1])
-    assert_equal(3, list[1][2])
+    assert_equal(0, list.get_nth(0).get_nth(0))
+    assert_equal(1, list.get_nth(0).get_nth(1))
+    assert_equal(2, list.get_nth(0).get_nth(2))
+    assert_equal(1, list.get_nth(1).get_nth(0))
+    assert_equal(2, list.get_nth(1).get_nth(1))
+    assert_equal(3, list.get_nth(1).get_nth(2))
 
     assert_equal(2, len(list))
 
-    assert_equal(3, len(list[0]))
+    assert_equal(3, len(list.get_nth(0)))
 
-    list[0].clear()
+    list.get_nth(0).clear()
 
-    assert_equal(0, len(list[0]))
+    assert_equal(0, len(list.get_nth(0)))
 
     list.clear()
     assert_equal(0, len(list))
@@ -463,8 +463,8 @@ def test_list_explicit_copy() raises:
     var list = LinkedList[CopyCounter[]]()
     list.append(CopyCounter())
     var list_copy = list.copy()
-    assert_equal(0, list[0].copy_count)
-    assert_equal(1, list_copy[0].copy_count)
+    assert_equal(0, list.get_nth(0).copy_count)
+    assert_equal(1, list_copy.get_nth(0).copy_count)
 
     var l2 = LinkedList[Int]()
     for i in range(10):
@@ -473,7 +473,7 @@ def test_list_explicit_copy() raises:
     var l2_copy = l2.copy()
     assert_equal(len(l2), len(l2_copy))
     for i, value in enumerate(l2):
-        assert_equal(value, l2_copy[i])
+        assert_equal(value, l2_copy.get_nth(i))
 
 
 def test_no_extra_copies_with_sugared_set_by_field() raises:
@@ -483,24 +483,23 @@ def test_no_extra_copies_with_sugared_set_by_field() raises:
     child_list.append(CopyCountedStruct("World"))
 
     # No copies here.  Constructing with LinkedList[CopyCountedStruct](CopyCountedStruct("Hello")) is a copy.
-    assert_equal(0, child_list[0].counter.copy_count)
-    assert_equal(0, child_list[1].counter.copy_count)
+    assert_equal(0, child_list.get_nth(0).counter.copy_count)
+    assert_equal(0, child_list.get_nth(1).counter.copy_count)
 
     list.append(child_list^)
 
-    assert_equal(0, list[0][0].counter.copy_count)
-    assert_equal(0, list[0][1].counter.copy_count)
+    assert_equal(0, list.get_nth(0).get_nth(0).counter.copy_count)
+    assert_equal(0, list.get_nth(0).get_nth(1).counter.copy_count)
 
-    # list[0][1] makes a copy for reasons I cannot determine
-    list.__getitem__(0).__getitem__(1).value = "Mojo"
+    list.get_nth(0).get_nth(1).value = "Mojo"
 
-    assert_equal(0, list[0][0].counter.copy_count)
-    assert_equal(0, list[0][1].counter.copy_count)
+    assert_equal(0, list.get_nth(0).get_nth(0).counter.copy_count)
+    assert_equal(0, list.get_nth(0).get_nth(1).counter.copy_count)
 
-    assert_equal("Mojo", list[0][1].value)
+    assert_equal("Mojo", list.get_nth(0).get_nth(1).value)
 
-    assert_equal(0, list[0][0].counter.copy_count)
-    assert_equal(0, list[0][1].counter.copy_count)
+    assert_equal(0, list.get_nth(0).get_nth(0).counter.copy_count)
+    assert_equal(0, list.get_nth(0).get_nth(1).counter.copy_count)
 
 
 def test_list_boolable() raises:
@@ -556,8 +555,8 @@ def test_list_eq_ne() raises:
 
 def test_indexing() raises:
     var l = LinkedList[Int](1, 2, 3)
-    assert_equal(l[Int(1)], 2)
-    assert_equal(l[2], 3)
+    assert_equal(l.get_nth(Int(1)), 2)
+    assert_equal(l.get_nth(2), 3)
 
 
 # ===-------------------------------------------------------------------===#
@@ -597,12 +596,12 @@ def test_iter() raises:
 
     var i = 0
     for el in l:
-        assert_equal(el, l[i])
+        assert_equal(el, l.get_nth(i))
         i += 1
 
     i = 2
     for el in l.__reversed__():
-        assert_equal(el, l[i])
+        assert_equal(el, l.get_nth(i))
         i -= 1
 
     var ll = LinkedList[Int]()
@@ -662,6 +661,64 @@ def test_linked_list_conditional_conformances() raises:
 
     assert_true(conforms_to(LinkedList[Int], Copyable))
     assert_true(conforms_to(LinkedList[Int], Hashable))
+
+
+def test_linked_list_iter_owned() raises:
+    var ll = LinkedList[Int](1, 2, 3, 4, 5)
+    var result = List[Int]()
+    for elem in ll^:
+        result.append(elem)
+
+    assert_equal(len(result), 5)
+    assert_equal(result[0], 1)
+    assert_equal(result[1], 2)
+    assert_equal(result[2], 3)
+    assert_equal(result[3], 4)
+    assert_equal(result[4], 5)
+
+
+def test_linked_list_iter_owned_destroys_elements_if_not_consumed() raises:
+    var dtor_count = 0
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ll = LinkedList[DelCounter[ptr.origin]]()
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    assert_equal(dtor_count, 0)
+
+    # Create the owned iterator but never consume it; all elements should
+    # still be destroyed when the iterator is dropped.
+    var _ = ll^.__iter__()
+    assert_equal(dtor_count, 3)
+
+
+def test_linked_list_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var dtor_count = 0
+    var ptr = UnsafePointer(to=dtor_count).as_immutable().as_any_origin()
+    var ll = LinkedList[DelCounter[ptr.origin]]()
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    ll.append(DelCounter(ptr))
+    assert_equal(dtor_count, 0)
+
+    var it = ll^.__iter__()
+    # Consume one element; it should be destroyed when dropped.
+    var _ = it.__next__()
+    assert_equal(dtor_count, 1)
+
+    # Drop the iterator with two unconsumed elements remaining.
+    _ = it^
+    assert_equal(dtor_count, 3)
+
+
+def test_linked_list_iter_owned_bounds() raises:
+    var ll = LinkedList[Int](1, 2, 3)
+    var it = ll^.__iter__()
+    for i in range(3, 0, -1):
+        assert_equal((i, Optional(i)), it.bounds())
+        _ = it.__next__()
+
+    assert_equal((0, Optional(0)), it.bounds())
 
 
 def main() raises:

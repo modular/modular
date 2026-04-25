@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements algorithm backend utilities including tiling and unswitching."""
 
 from .tile import (
     BinaryTile1DTileUnitFunc,

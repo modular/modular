@@ -3494,6 +3494,10 @@ class CreateCompletionRequest(BaseModel):
         None,
         description="Optional target endpoint identifier for routing the request to a specific service or model instance. This should be used in disaggregate serving scenarios, when you want to dynamically route to a specific instance. This can be used for load balancing, A/B testing, or directing requests to specialized model variants. If not specified, the request will be routed to the default endpoint.",
     )
+    dkv_cache_hint: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Cache hint injected by the Orchestrator for distributed KV cache. Contains block locations and NIXL agent metadata for fetching cached KV data from dKV.",
+    )
 
 
 class CreateCompletionResponse(BaseModel):
@@ -4952,10 +4956,18 @@ class CreateChatCompletionRequest(BaseModel):
         min_length=1,
     )
     # Extra args
+    chat_template_kwargs: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Additional keyword arguments to pass to the chat template (e.g., {'enable_thinking': True} for reasoning models).",
+    )
     ignore_eos: bool = Field(default=False, description="Whether to ignore the EOS token and continue generating tokens after the EOS token is generated.")
     target_endpoint: Optional[str] = Field(
         None,
         description="Optional target endpoint identifier for routing the request to a specific service or model instance. This should be used in disaggregate serving scenarios, when you want to dynamically route to a specific instance. This can be used for load balancing, A/B testing, or directing requests to specialized model variants. If not specified, the request will be routed to the default endpoint.",
+    )
+    dkv_cache_hint: Optional[Dict[str, Any]] = Field(
+        None,
+        description="Cache hint injected by the Orchestrator for distributed KV cache. Contains block locations and NIXL agent metadata for fetching cached KV data from dKV.",
     )
 
 

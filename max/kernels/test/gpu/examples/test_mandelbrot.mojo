@@ -69,7 +69,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     comptime scale_y = (max_y - min_y) / height
 
     @always_inline
-    def compute_vector[simd_width: Int](col: Int) unified {mut}:
+    def compute_vector[simd_width: Int](col: Int) {mut}:
         """Each time we operate on a `simd_width` vector of pixels."""
         if col >= width:
             return

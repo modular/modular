@@ -51,6 +51,16 @@ def PyInit_gather_scatter_ops() -> PythonObject:
         b.def_function[scatter_add_dispatcher](
             "ScatterAdd", docstring="Scatter-add (accumulate) along axis"
         )
+        b.def_function[scatter_max_dispatcher](
+            "ScatterMax", docstring="Scatter-max (keep maximum) along axis"
+        )
+        b.def_function[scatter_min_dispatcher](
+            "ScatterMin", docstring="Scatter-min (keep minimum) along axis"
+        )
+        b.def_function[scatter_mul_dispatcher](
+            "ScatterMul",
+            docstring="Scatter-mul (multiply) along axis",
+        )
         b.def_function[scatter_nd_dispatcher](
             "ScatterNd",
             docstring="Scatter with N-dimensional indices (overwrite)",
@@ -58,6 +68,18 @@ def PyInit_gather_scatter_ops() -> PythonObject:
         b.def_function[scatter_nd_add_dispatcher](
             "ScatterNdAdd",
             docstring="Scatter-add (accumulate) with N-dimensional indices",
+        )
+        b.def_function[scatter_nd_max_dispatcher](
+            "ScatterNdMax",
+            docstring="Scatter-max (keep maximum) with N-dimensional indices",
+        )
+        b.def_function[scatter_nd_min_dispatcher](
+            "ScatterNdMin",
+            docstring="Scatter-min (keep minimum) with N-dimensional indices",
+        )
+        b.def_function[scatter_nd_mul_dispatcher](
+            "ScatterNdMul",
+            docstring="Scatter-mul (multiply) with N-dimensional indices",
         )
         return b.finalize()
     except e:
@@ -84,7 +106,7 @@ def gather_op[
     axis_size: Int,
     inner_size: Int,
     num_indices: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     var total = outer_size * num_indices * inner_size
     var in_axis_stride = axis_size * inner_size
@@ -114,7 +136,7 @@ def gather_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -188,7 +210,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
     var axis_size: Int
     var inner_size: Int
     var num_indices: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def __init__(
         out self,
@@ -199,7 +221,7 @@ struct _GatherBody[idx_dtype: DType](Dispatchable):
         axis_size: Int,
         inner_size: Int,
         num_indices: Int,
-        ctx: OpaquePointer[MutExternalOrigin],
+        ctx: Optional[OpaquePointer[MutExternalOrigin]],
     ):
         self.out_addr = out_addr
         self.in_addr = in_addr
@@ -234,7 +256,7 @@ def _gather_dispatch_integer[
     axis_size: Int,
     inner_size: Int,
     num_indices: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     dispatch_dtype(
         _GatherBody[d](
@@ -276,7 +298,7 @@ def gather_nd_op[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     var total = batch_size * indices_outer_size * suffix_size
     var out_batch_stride = indices_outer_size * suffix_size
@@ -336,7 +358,7 @@ def gather_nd_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -427,7 +449,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: InlineArray[Int, MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def __init__(
         out self,
@@ -440,7 +462,7 @@ struct _GatherNdBody[idx_dtype: DType](Dispatchable):
         suffix_size: Int,
         input_data_stride: Int,
         indexed_strides: InlineArray[Int, MAX_RANK],
-        ctx: OpaquePointer[MutExternalOrigin],
+        ctx: Optional[OpaquePointer[MutExternalOrigin]],
     ):
         self.out_addr = out_addr
         self.in_addr = in_addr
@@ -481,7 +503,7 @@ def _gather_nd_dispatch_integer[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     dispatch_dtype(
         _GatherNdBody[d](
@@ -856,6 +878,540 @@ def _scatter_add_dispatch_integer[
 
 
 # ===----------------------------------------------------------------------=== #
+# Scatter-max operation
+# ===----------------------------------------------------------------------=== #
+#
+# Identical layout to scatter_op, but keeps the maximum at each position:
+# output[o, indices[o, u, k], k] = max(output[...], updates[o, u, k])
+
+
+@always_inline
+def scatter_max_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    """Scatter-max updates into the output buffer along the axis.
+
+    The output must already contain a copy of the input tensor.
+    Duplicate indices keep the maximum value.
+    CPU-only (mo.scatter.max is MO_HostOnly).
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to compare, flat length outer*num_updates_axis*inner.
+        indices_ptr: Axis indices, same shape as updates.
+        outer_size: Product of dims before the scatter axis.
+        axis_size: Size of the scatter axis in the output.
+        inner_size: Product of dims after the scatter axis.
+        num_updates_axis: Size of the scatter axis in updates/indices.
+    """
+    var total = outer_size * num_updates_axis * inner_size
+    var out_axis_stride = axis_size * inner_size
+    var upd_axis_stride = num_updates_axis * inner_size
+
+    for i in range(total):
+        var outer_idx, rem = divmod(i, upd_axis_stride)
+        var _, inner_idx = divmod(rem, inner_size)
+        var scatter_idx = Int(indices_ptr[i])
+        var out_flat = (
+            outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
+        )
+        out_ptr[out_flat] = max(out_ptr[out_flat], updates_ptr[i])
+
+
+def scatter_max_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Scatter-max dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Updates data buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (outer_size, axis_size, inner_size,
+            num_updates_axis).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var outer_size = Int(py=params[0])
+    var axis_size = Int(py=params[1])
+    var inner_size = Int(py=params[2])
+    var num_updates_axis = Int(py=params[3])
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    if idx_dtype == DType.int32:
+        _scatter_max_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_max_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_max: " + String(idx_dtype)
+        )
+
+
+struct _ScatterMaxBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterMax operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var outer_size: Int
+    var axis_size: Int
+    var inner_size: Int
+    var num_updates_axis: Int
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        outer_size: Int,
+        axis_size: Int,
+        inner_size: Int,
+        num_updates_axis: Int,
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.outer_size = outer_size
+        self.axis_size = axis_size
+        self.inner_size = inner_size
+        self.num_updates_axis = num_updates_axis
+
+    def call[t: DType](self) raises -> None:
+        comptime if t.is_numeric():
+            scatter_max_op(
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.upd_addr),
+                self.idx_ptr,
+                self.outer_size,
+                self.axis_size,
+                self.inner_size,
+                self.num_updates_axis,
+            )
+        else:
+            raise Error("scatter_max: dtype must be numeric, got " + String(t))
+
+
+def _scatter_max_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    dispatch_dtype(
+        _ScatterMaxBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Scatter-min operation
+# ===----------------------------------------------------------------------=== #
+#
+# Identical layout to scatter_op, but keeps the minimum at each position:
+# output[o, indices[o, u, k], k] = min(output[...], updates[o, u, k])
+
+
+@always_inline
+def scatter_min_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    """Scatter-min updates into the output buffer along the axis.
+
+    The output must already contain a copy of the input tensor.
+    Duplicate indices keep the minimum value.
+    CPU-only (mo.scatter.min is MO_HostOnly).
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to compare, flat length outer*num_updates_axis*inner.
+        indices_ptr: Axis indices, same shape as updates.
+        outer_size: Product of dims before the scatter axis.
+        axis_size: Size of the scatter axis in the output.
+        inner_size: Product of dims after the scatter axis.
+        num_updates_axis: Size of the scatter axis in updates/indices.
+    """
+    var total = outer_size * num_updates_axis * inner_size
+    var out_axis_stride = axis_size * inner_size
+    var upd_axis_stride = num_updates_axis * inner_size
+
+    for i in range(total):
+        var outer_idx, rem = divmod(i, upd_axis_stride)
+        var _, inner_idx = divmod(rem, inner_size)
+        var scatter_idx = Int(indices_ptr[i])
+        var out_flat = (
+            outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
+        )
+        out_ptr[out_flat] = min(out_ptr[out_flat], updates_ptr[i])
+
+
+def scatter_min_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Scatter-min dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Updates data buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (outer_size, axis_size, inner_size,
+            num_updates_axis).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var outer_size = Int(py=params[0])
+    var axis_size = Int(py=params[1])
+    var inner_size = Int(py=params[2])
+    var num_updates_axis = Int(py=params[3])
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    if idx_dtype == DType.int32:
+        _scatter_min_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_min_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_min: " + String(idx_dtype)
+        )
+
+
+struct _ScatterMinBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterMin operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var outer_size: Int
+    var axis_size: Int
+    var inner_size: Int
+    var num_updates_axis: Int
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        outer_size: Int,
+        axis_size: Int,
+        inner_size: Int,
+        num_updates_axis: Int,
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.outer_size = outer_size
+        self.axis_size = axis_size
+        self.inner_size = inner_size
+        self.num_updates_axis = num_updates_axis
+
+    def call[t: DType](self) raises -> None:
+        comptime if t.is_numeric():
+            scatter_min_op(
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.upd_addr),
+                self.idx_ptr,
+                self.outer_size,
+                self.axis_size,
+                self.inner_size,
+                self.num_updates_axis,
+            )
+        else:
+            raise Error("scatter_min: dtype must be numeric, got " + String(t))
+
+
+def _scatter_min_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    dispatch_dtype(
+        _ScatterMinBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# Scatter-mul operation
+# ===----------------------------------------------------------------------=== #
+#
+# Identical layout to scatter_op, but multiplies into the output:
+# output[o, indices[o, u, k], k] *= updates[o, u, k]
+
+
+@always_inline
+def scatter_mul_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    """Scatter-mul updates into the output buffer along the axis.
+
+    The output must already contain a copy of the input tensor.
+    Duplicate indices are multiplied: ``output[...][idx] *= update``.
+    CPU-only (mo.scatter.mul is MO_HostOnly).
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to multiply, flat length outer*num_updates_axis*inner.
+        indices_ptr: Axis indices, same shape as updates.
+        outer_size: Product of dims before the scatter axis.
+        axis_size: Size of the scatter axis in the output.
+        inner_size: Product of dims after the scatter axis.
+        num_updates_axis: Size of the scatter axis in updates/indices.
+    """
+    var total = outer_size * num_updates_axis * inner_size
+    var out_axis_stride = axis_size * inner_size
+    var upd_axis_stride = num_updates_axis * inner_size
+
+    for i in range(total):
+        var outer_idx, rem = divmod(i, upd_axis_stride)
+        var _, inner_idx = divmod(rem, inner_size)
+        var scatter_idx = Int(indices_ptr[i])
+        var out_flat = (
+            outer_idx * out_axis_stride + scatter_idx * inner_size + inner_idx
+        )
+        out_ptr[out_flat] *= updates_ptr[i]
+
+
+def scatter_mul_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """Scatter-mul dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Updates data buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (outer_size, axis_size, inner_size,
+            num_updates_axis).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var outer_size = Int(py=params[0])
+    var axis_size = Int(py=params[1])
+    var inner_size = Int(py=params[2])
+    var num_updates_axis = Int(py=params[3])
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    if idx_dtype == DType.int32:
+        _scatter_mul_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_mul_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_mul: " + String(idx_dtype)
+        )
+
+
+struct _ScatterMulBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterMul operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var outer_size: Int
+    var axis_size: Int
+    var inner_size: Int
+    var num_updates_axis: Int
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        outer_size: Int,
+        axis_size: Int,
+        inner_size: Int,
+        num_updates_axis: Int,
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.outer_size = outer_size
+        self.axis_size = axis_size
+        self.inner_size = inner_size
+        self.num_updates_axis = num_updates_axis
+
+    def call[t: DType](self) raises -> None:
+        comptime if t.is_numeric():
+            scatter_mul_op(
+                _make_ptr[t](self.out_addr),
+                _make_ptr[t](self.upd_addr),
+                self.idx_ptr,
+                self.outer_size,
+                self.axis_size,
+                self.inner_size,
+                self.num_updates_axis,
+            )
+        else:
+            raise Error("scatter_mul: dtype must be numeric, got " + String(t))
+
+
+def _scatter_mul_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    outer_size: Int,
+    axis_size: Int,
+    inner_size: Int,
+    num_updates_axis: Int,
+) raises:
+    dispatch_dtype(
+        _ScatterMulBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            outer_size,
+            axis_size,
+            inner_size,
+            num_updates_axis,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
 # ScatterNd operation (overwrite)
 # ===----------------------------------------------------------------------=== #
 #
@@ -887,7 +1443,7 @@ def scatter_nd_op[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Scatter updates into output at N-dimensional index positions (overwrite).
 
@@ -964,7 +1520,7 @@ def scatter_nd_op[
         elementwise[func, simd_width=1](IndexList[1](total))
     else:
         comptime if has_accelerator():
-            var device_ctx = DeviceContextPtr(ctx)
+            var device_ctx = DeviceContextPtr(ctx.unsafe_value())
             elementwise[func, simd_width=1, target="gpu"](
                 IndexList[1](total), device_ctx
             )
@@ -1056,7 +1612,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
     var suffix_size: Int
     var input_data_stride: Int
     var indexed_strides: InlineArray[Int, MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def __init__(
         out self,
@@ -1069,7 +1625,7 @@ struct _ScatterNdBody[idx_dtype: DType](Dispatchable):
         suffix_size: Int,
         input_data_stride: Int,
         indexed_strides: InlineArray[Int, MAX_RANK],
-        ctx: OpaquePointer[MutExternalOrigin],
+        ctx: Optional[OpaquePointer[MutExternalOrigin]],
     ):
         self.out_addr = out_addr
         self.upd_addr = upd_addr
@@ -1110,7 +1666,7 @@ def _scatter_nd_dispatch_integer[
     suffix_size: Int,
     input_data_stride: Int,
     indexed_strides: InlineArray[Int, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     dispatch_dtype(
         _ScatterNdBody[d](
@@ -1344,6 +1900,687 @@ def _scatter_nd_add_dispatch_integer[
 ) raises:
     dispatch_dtype(
         _ScatterNdAddBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            batch_size,
+            indices_outer_size,
+            index_depth,
+            suffix_size,
+            input_data_stride,
+            indexed_strides,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# ScatterNdMax operation (keep maximum)
+# ===----------------------------------------------------------------------=== #
+#
+# Identical to scatter_nd_add but keeps the maximum instead of summing.
+# CPU-only.
+
+
+@always_inline
+def scatter_nd_max_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    batch_size: Int,
+    indices_outer_size: Int,
+    index_depth: Int,
+    suffix_size: Int,
+    input_data_stride: Int,
+    indexed_strides: InlineArray[Int, MAX_RANK],
+) raises:
+    """Scatter-max updates into output at N-dimensional index positions.
+
+    Mirrors ``scatter_nd_op`` but keeps the maximum at each position.
+    CPU-only.
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to compare.
+        indices_ptr: N-dimensional index vectors (int32 or int64).
+        batch_size: Number of batch elements.
+        indices_outer_size: Product of non-batch, non-depth index dims.
+        index_depth: Last dim of indices.
+        suffix_size: Product of ``input.shape[index_depth:]``.
+        input_data_stride: Total elements per batch element in input.
+        indexed_strides: Row-major strides for the indexed prefix of input.
+    """
+    var total = batch_size * indices_outer_size * suffix_size
+    var in_batch_stride = indices_outer_size * suffix_size
+    var idx_batch_stride = indices_outer_size * index_depth
+
+    var s0 = indexed_strides[0]
+    var s1 = indexed_strides[1]
+    var s2 = indexed_strides[2]
+    var s3 = indexed_strides[3]
+    var s4 = indexed_strides[4]
+
+    for i in range(total):
+        var batch_idx, rem = divmod(i, in_batch_stride)
+        var outer_idx, suffix_idx = divmod(rem, suffix_size)
+
+        var out_offset = batch_idx * input_data_stride
+        var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
+
+        if index_depth >= 1:
+            out_offset += Int(indices_ptr[idx_base]) * s0
+        if index_depth >= 2:
+            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+        if index_depth >= 3:
+            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+        if index_depth >= 4:
+            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+        if index_depth >= 5:
+            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+
+        out_offset += suffix_idx
+
+        comptime if dtype.is_numeric():
+            out_ptr[out_offset] = max(out_ptr[out_offset], updates_ptr[i])
+        else:
+            raise Error(
+                "scatter_nd_max: dtype must be numeric, got " + String(dtype)
+            )
+
+
+def scatter_nd_max_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """ScatterNdMax dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Update values buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (batch_size, indices_outer_size, index_depth,
+            suffix_size, input_data_stride, input_inner_shape).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var b_size = Int(py=params[0])
+    var io_size = Int(py=params[1])
+    var i_depth = Int(py=params[2])
+    var s_size = Int(py=params[3])
+    var id_stride = Int(py=params[4])
+    var input_inner_shape = params[5]
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    var inner_rank = Int(py=len(input_inner_shape))
+    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var stride = 1
+    for j in range(inner_rank - 1, -1, -1):
+        indexed_strides[j] = stride
+        stride *= Int(py=input_inner_shape[j])
+
+    if idx_dtype == DType.int32:
+        _scatter_nd_max_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            b_size,
+            io_size,
+            i_depth,
+            s_size,
+            id_stride,
+            indexed_strides,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_nd_max_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            b_size,
+            io_size,
+            i_depth,
+            s_size,
+            id_stride,
+            indexed_strides,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_nd_max: " + String(idx_dtype)
+        )
+
+
+struct _ScatterNdMaxBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterNdMax operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var batch_size: Int
+    var indices_outer_size: Int
+    var index_depth: Int
+    var suffix_size: Int
+    var input_data_stride: Int
+    var indexed_strides: InlineArray[Int, MAX_RANK]
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        batch_size: Int,
+        indices_outer_size: Int,
+        index_depth: Int,
+        suffix_size: Int,
+        input_data_stride: Int,
+        indexed_strides: InlineArray[Int, MAX_RANK],
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.batch_size = batch_size
+        self.indices_outer_size = indices_outer_size
+        self.index_depth = index_depth
+        self.suffix_size = suffix_size
+        self.input_data_stride = input_data_stride
+        self.indexed_strides = indexed_strides
+
+    def call[t: DType](self) raises -> None:
+        scatter_nd_max_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.upd_addr),
+            self.idx_ptr,
+            self.batch_size,
+            self.indices_outer_size,
+            self.index_depth,
+            self.suffix_size,
+            self.input_data_stride,
+            self.indexed_strides,
+        )
+
+
+def _scatter_nd_max_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    batch_size: Int,
+    indices_outer_size: Int,
+    index_depth: Int,
+    suffix_size: Int,
+    input_data_stride: Int,
+    indexed_strides: InlineArray[Int, MAX_RANK],
+) raises:
+    dispatch_dtype(
+        _ScatterNdMaxBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            batch_size,
+            indices_outer_size,
+            index_depth,
+            suffix_size,
+            input_data_stride,
+            indexed_strides,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# ScatterNdMin operation (keep minimum)
+# ===----------------------------------------------------------------------=== #
+#
+# Identical to scatter_nd_add but keeps the minimum instead of summing.
+# CPU-only.
+
+
+@always_inline
+def scatter_nd_min_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    batch_size: Int,
+    indices_outer_size: Int,
+    index_depth: Int,
+    suffix_size: Int,
+    input_data_stride: Int,
+    indexed_strides: InlineArray[Int, MAX_RANK],
+) raises:
+    """Scatter-min updates into output at N-dimensional index positions.
+
+    Mirrors ``scatter_nd_op`` but keeps the minimum at each position.
+    CPU-only.
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to compare.
+        indices_ptr: N-dimensional index vectors (int32 or int64).
+        batch_size: Number of batch elements.
+        indices_outer_size: Product of non-batch, non-depth index dims.
+        index_depth: Last dim of indices.
+        suffix_size: Product of ``input.shape[index_depth:]``.
+        input_data_stride: Total elements per batch element in input.
+        indexed_strides: Row-major strides for the indexed prefix of input.
+    """
+    var total = batch_size * indices_outer_size * suffix_size
+    var in_batch_stride = indices_outer_size * suffix_size
+    var idx_batch_stride = indices_outer_size * index_depth
+
+    var s0 = indexed_strides[0]
+    var s1 = indexed_strides[1]
+    var s2 = indexed_strides[2]
+    var s3 = indexed_strides[3]
+    var s4 = indexed_strides[4]
+
+    for i in range(total):
+        var batch_idx, rem = divmod(i, in_batch_stride)
+        var outer_idx, suffix_idx = divmod(rem, suffix_size)
+
+        var out_offset = batch_idx * input_data_stride
+        var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
+
+        if index_depth >= 1:
+            out_offset += Int(indices_ptr[idx_base]) * s0
+        if index_depth >= 2:
+            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+        if index_depth >= 3:
+            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+        if index_depth >= 4:
+            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+        if index_depth >= 5:
+            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+
+        out_offset += suffix_idx
+
+        comptime if dtype.is_numeric():
+            out_ptr[out_offset] = min(out_ptr[out_offset], updates_ptr[i])
+        else:
+            raise Error(
+                "scatter_nd_min: dtype must be numeric, got " + String(dtype)
+            )
+
+
+def scatter_nd_min_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """ScatterNdMin dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Update values buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (batch_size, indices_outer_size, index_depth,
+            suffix_size, input_data_stride, input_inner_shape).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var b_size = Int(py=params[0])
+    var io_size = Int(py=params[1])
+    var i_depth = Int(py=params[2])
+    var s_size = Int(py=params[3])
+    var id_stride = Int(py=params[4])
+    var input_inner_shape = params[5]
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    var inner_rank = Int(py=len(input_inner_shape))
+    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var stride = 1
+    for j in range(inner_rank - 1, -1, -1):
+        indexed_strides[j] = stride
+        stride *= Int(py=input_inner_shape[j])
+
+    if idx_dtype == DType.int32:
+        _scatter_nd_min_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            b_size,
+            io_size,
+            i_depth,
+            s_size,
+            id_stride,
+            indexed_strides,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_nd_min_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            b_size,
+            io_size,
+            i_depth,
+            s_size,
+            id_stride,
+            indexed_strides,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_nd_min: " + String(idx_dtype)
+        )
+
+
+struct _ScatterNdMinBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterNdMin operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var batch_size: Int
+    var indices_outer_size: Int
+    var index_depth: Int
+    var suffix_size: Int
+    var input_data_stride: Int
+    var indexed_strides: InlineArray[Int, MAX_RANK]
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        batch_size: Int,
+        indices_outer_size: Int,
+        index_depth: Int,
+        suffix_size: Int,
+        input_data_stride: Int,
+        indexed_strides: InlineArray[Int, MAX_RANK],
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.batch_size = batch_size
+        self.indices_outer_size = indices_outer_size
+        self.index_depth = index_depth
+        self.suffix_size = suffix_size
+        self.input_data_stride = input_data_stride
+        self.indexed_strides = indexed_strides
+
+    def call[t: DType](self) raises -> None:
+        scatter_nd_min_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.upd_addr),
+            self.idx_ptr,
+            self.batch_size,
+            self.indices_outer_size,
+            self.index_depth,
+            self.suffix_size,
+            self.input_data_stride,
+            self.indexed_strides,
+        )
+
+
+def _scatter_nd_min_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    batch_size: Int,
+    indices_outer_size: Int,
+    index_depth: Int,
+    suffix_size: Int,
+    input_data_stride: Int,
+    indexed_strides: InlineArray[Int, MAX_RANK],
+) raises:
+    dispatch_dtype(
+        _ScatterNdMinBody[d](
+            out_addr,
+            upd_addr,
+            _make_ptr[d](idx_addr),
+            batch_size,
+            indices_outer_size,
+            index_depth,
+            suffix_size,
+            input_data_stride,
+            indexed_strides,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# ScatterNdMul operation (multiply)
+# ===----------------------------------------------------------------------=== #
+#
+# Identical to scatter_nd_add but multiplies instead of summing.
+# CPU-only.
+
+
+@always_inline
+def scatter_nd_mul_op[
+    dtype: DType, idx_dtype: DType, //
+](
+    out_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    updates_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    indices_ptr: UnsafePointer[Scalar[idx_dtype], MutExternalOrigin],
+    batch_size: Int,
+    indices_outer_size: Int,
+    index_depth: Int,
+    suffix_size: Int,
+    input_data_stride: Int,
+    indexed_strides: InlineArray[Int, MAX_RANK],
+) raises:
+    """Scatter-mul updates into output at N-dimensional index positions.
+
+    Mirrors ``scatter_nd_op`` but multiplies at each position.
+    CPU-only.
+
+    Parameters:
+        dtype: Data type of the data tensors (inferred from pointers).
+        idx_dtype: Data type of the index tensor (inferred from pointer).
+
+    Args:
+        out_ptr: Output buffer (pre-filled with input copy).
+        updates_ptr: Values to multiply.
+        indices_ptr: N-dimensional index vectors (int32 or int64).
+        batch_size: Number of batch elements.
+        indices_outer_size: Product of non-batch, non-depth index dims.
+        index_depth: Last dim of indices.
+        suffix_size: Product of ``input.shape[index_depth:]``.
+        input_data_stride: Total elements per batch element in input.
+        indexed_strides: Row-major strides for the indexed prefix of input.
+    """
+    var total = batch_size * indices_outer_size * suffix_size
+    var in_batch_stride = indices_outer_size * suffix_size
+    var idx_batch_stride = indices_outer_size * index_depth
+
+    var s0 = indexed_strides[0]
+    var s1 = indexed_strides[1]
+    var s2 = indexed_strides[2]
+    var s3 = indexed_strides[3]
+    var s4 = indexed_strides[4]
+
+    for i in range(total):
+        var batch_idx, rem = divmod(i, in_batch_stride)
+        var outer_idx, suffix_idx = divmod(rem, suffix_size)
+
+        var out_offset = batch_idx * input_data_stride
+        var idx_base = batch_idx * idx_batch_stride + outer_idx * index_depth
+
+        if index_depth >= 1:
+            out_offset += Int(indices_ptr[idx_base]) * s0
+        if index_depth >= 2:
+            out_offset += Int(indices_ptr[idx_base + 1]) * s1
+        if index_depth >= 3:
+            out_offset += Int(indices_ptr[idx_base + 2]) * s2
+        if index_depth >= 4:
+            out_offset += Int(indices_ptr[idx_base + 3]) * s3
+        if index_depth >= 5:
+            out_offset += Int(indices_ptr[idx_base + 4]) * s4
+
+        out_offset += suffix_idx
+
+        comptime if dtype.is_numeric():
+            out_ptr[out_offset] *= updates_ptr[i]
+        else:
+            raise Error(
+                "scatter_nd_mul: dtype must be numeric, got " + String(dtype)
+            )
+
+
+def scatter_nd_mul_dispatcher(
+    out_buffer: PythonObject,
+    updates_buffer: PythonObject,
+    indices_buffer: PythonObject,
+    params: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """ScatterNdMul dispatcher: unwraps PythonObjects and dispatches by dtype.
+
+    Args:
+        out_buffer: Output buffer (pre-filled with input copy).
+        updates_buffer: Update values buffer.
+        indices_buffer: Indices buffer (int32 or int64).
+        params: Python tuple (batch_size, indices_outer_size, index_depth,
+            suffix_size, input_data_stride, input_inner_shape).
+        device_context_ptr: Device context pointer (unused, CPU-only).
+    """
+    var dtype = _get_dtype(updates_buffer)
+    var idx_dtype = _get_dtype(indices_buffer)
+    var b_size = Int(py=params[0])
+    var io_size = Int(py=params[1])
+    var i_depth = Int(py=params[2])
+    var s_size = Int(py=params[3])
+    var id_stride = Int(py=params[4])
+    var input_inner_shape = params[5]
+    var out_addr = Int(py=out_buffer._data_ptr())
+    var upd_addr = Int(py=updates_buffer._data_ptr())
+    var idx_addr = Int(py=indices_buffer._data_ptr())
+
+    var inner_rank = Int(py=len(input_inner_shape))
+    var indexed_strides = InlineArray[Int, MAX_RANK](fill=0)
+    var stride = 1
+    for j in range(inner_rank - 1, -1, -1):
+        indexed_strides[j] = stride
+        stride *= Int(py=input_inner_shape[j])
+
+    if idx_dtype == DType.int32:
+        _scatter_nd_mul_dispatch_integer[DType.int32](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            b_size,
+            io_size,
+            i_depth,
+            s_size,
+            id_stride,
+            indexed_strides,
+        )
+    elif idx_dtype == DType.int64:
+        _scatter_nd_mul_dispatch_integer[DType.int64](
+            dtype,
+            out_addr,
+            upd_addr,
+            idx_addr,
+            b_size,
+            io_size,
+            i_depth,
+            s_size,
+            id_stride,
+            indexed_strides,
+        )
+    else:
+        raise Error(
+            "Unsupported index dtype for scatter_nd_mul: " + String(idx_dtype)
+        )
+
+
+struct _ScatterNdMulBody[idx_dtype: DType](Dispatchable):
+    """Dispatch body for the ScatterNdMul operation over data dtypes."""
+
+    var out_addr: Int
+    var upd_addr: Int
+    var idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin]
+    var batch_size: Int
+    var indices_outer_size: Int
+    var index_depth: Int
+    var suffix_size: Int
+    var input_data_stride: Int
+    var indexed_strides: InlineArray[Int, MAX_RANK]
+
+    def __init__(
+        out self,
+        out_addr: Int,
+        upd_addr: Int,
+        idx_ptr: UnsafePointer[Scalar[Self.idx_dtype], MutExternalOrigin],
+        batch_size: Int,
+        indices_outer_size: Int,
+        index_depth: Int,
+        suffix_size: Int,
+        input_data_stride: Int,
+        indexed_strides: InlineArray[Int, MAX_RANK],
+    ):
+        self.out_addr = out_addr
+        self.upd_addr = upd_addr
+        self.idx_ptr = idx_ptr
+        self.batch_size = batch_size
+        self.indices_outer_size = indices_outer_size
+        self.index_depth = index_depth
+        self.suffix_size = suffix_size
+        self.input_data_stride = input_data_stride
+        self.indexed_strides = indexed_strides
+
+    def call[t: DType](self) raises -> None:
+        scatter_nd_mul_op(
+            _make_ptr[t](self.out_addr),
+            _make_ptr[t](self.upd_addr),
+            self.idx_ptr,
+            self.batch_size,
+            self.indices_outer_size,
+            self.index_depth,
+            self.suffix_size,
+            self.input_data_stride,
+            self.indexed_strides,
+        )
+
+
+def _scatter_nd_mul_dispatch_integer[
+    d: DType
+](
+    dtype: DType,
+    out_addr: Int,
+    upd_addr: Int,
+    idx_addr: Int,
+    batch_size: Int,
+    indices_outer_size: Int,
+    index_depth: Int,
+    suffix_size: Int,
+    input_data_stride: Int,
+    indexed_strides: InlineArray[Int, MAX_RANK],
+) raises:
+    dispatch_dtype(
+        _ScatterNdMulBody[d](
             out_addr,
             upd_addr,
             _make_ptr[d](idx_addr),

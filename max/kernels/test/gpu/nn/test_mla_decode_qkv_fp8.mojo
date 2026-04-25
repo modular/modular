@@ -27,7 +27,11 @@ The test:
 """
 
 from std.random import randn
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import (
+    argv,
+    has_amd_gpu_accelerator,
+    has_nvidia_gpu_accelerator,
+)
 
 from std.gpu import *
 from std.gpu.host import DeviceContext
@@ -42,11 +46,11 @@ from layout import (
     row_major,
 )
 from nn.attention.gpu.mha import mha_gpu_naive
+from nn.attention.gpu.mla import flare_mla_decoding
 from nn.attention.mha_mask import CausalMask, NullMask
 from nn.attention.mha_operand import LayoutTensorMHAOperand
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
-    mla_decode_sm100_dispatch,
 )
 from nn.attention.mha_utils import MHAConfig
 from std.testing import assert_almost_equal
@@ -208,31 +212,32 @@ def test[
 
     # ---- Construct TileTensors for kernel inputs ----
     var q_fp8_tt = TileTensor(
-        q_fp8_device_ptr.unsafe_ptr(),
+        q_fp8_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var k_fp8_tt = TileTensor(
+        k_fp8_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
+        ),
+    )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
-    )
-    var null_valid_length_tt = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](),
-        row_major(Idx(0)),
     )
 
     # LayoutTensors for FP8 K (needed by LayoutTensorMHAOperand)
     comptime k_layout = Layout.row_major(
         Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-    var k_fp8_device = LayoutTensor[kv_type, k_layout](
-        k_fp8_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
     )
 
     # BF16 K reference device tensor (for mha_gpu_naive)
@@ -267,20 +272,12 @@ def test[
 
     # Valid length (empty -- not using ragged) for mha_gpu_naive
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32,
+        Layout.row_major(UNKNOWN_VALUE),
+        MutAnyOrigin,
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
-    )
-
-    # Create the KV operand (LayoutTensorMHAOperand)
-    var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[kv_type, k_layout, MutAnyOrigin](
-            k_fp8_device.ptr,
-            RuntimeLayout[k_layout].row_major(
-                k_fp8_device.runtime_layout.shape.value.canonicalize()
-            ),
-        )
     )
 
     # ---- Launch the native FP8 kernel via mla_decode_sm100_dispatch ----
@@ -302,62 +299,31 @@ def test[
     @always_inline
     @__copy_capture(
         q_fp8_tt,
-        k_operand,
+        k_fp8_tt,
         out_tt,
-        null_valid_length_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
+        comptime config = MHAConfig[q_type](num_heads, depth)
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
-            mla_decode_sm100_dispatch[
-                q_type,
-                type_of(k_operand),
-                output_type,
-                CausalMask,
-                config,
-                depth,
-                num_heads,
-                group,
-                _is_cache_length_accurate=True,
-                decoding_warp_split_k=False,
-            ](
+            flare_mla_decoding[config=config](
+                out_tt.as_any_origin(),
                 q_fp8_tt,
-                k_operand,
-                out_tt,
-                scale,
-                null_valid_length_tt,
+                k_fp8_tt,
                 CausalMask(),
-                lt_to_tt(scalar_args_buf_lt),
-                batch_size,
-                seq_len,
-                num_keys,
+                scale,
                 ctx,
+                lt_to_tt(scalar_args_buf_lt),
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
-            mla_decode_sm100_dispatch[
-                q_type,
-                type_of(k_operand),
-                output_type,
-                NullMask,
-                config,
-                depth,
-                num_heads,
-                group,
-                _is_cache_length_accurate=True,
-                decoding_warp_split_k=False,
-            ](
+            flare_mla_decoding[config=config](
+                out_tt.as_any_origin(),
                 q_fp8_tt,
-                k_operand,
-                out_tt,
-                scale,
-                null_valid_length_tt,
+                k_fp8_tt,
                 NullMask(),
-                lt_to_tt(scalar_args_buf_lt),
-                batch_size,
-                seq_len,
-                num_keys,
+                scale,
                 ctx,
+                lt_to_tt(scalar_args_buf_lt),
             )
 
     kernel_launch(ctx)
@@ -543,40 +509,27 @@ def bench[
 
     # TileTensors for kernel inputs
     var q_fp8_tt = TileTensor(
-        q_fp8_device_ptr.unsafe_ptr(),
+        q_fp8_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
+    var k_fp8_tt = TileTensor(
+        k_fp8_device_ptr,
+        row_major(
+            (
+                Idx(batch_size),
+                Idx(num_keys),
+                Idx[kv_num_heads](),
+                Idx[depth](),
+            )
+        ),
+    )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[v_depth]())
         ),
-    )
-    var null_valid_length_tt = TileTensor(
-        UnsafePointer[UInt32, MutAnyOrigin](),
-        row_major(Idx(0)),
-    )
-
-    # LayoutTensor for FP8 K (needed by LayoutTensorMHAOperand)
-    comptime k_layout = Layout.row_major(
-        Index(UNKNOWN_VALUE, UNKNOWN_VALUE, kv_num_heads, depth)
-    )
-    var k_fp8_device = LayoutTensor[kv_type, k_layout](
-        k_fp8_device_ptr.unsafe_ptr(),
-        RuntimeLayout[k_layout].row_major(
-            Index(batch_size, num_keys, kv_num_heads, depth)
-        ),
-    )
-
-    var k_operand = LayoutTensorMHAOperand(
-        LayoutTensor[kv_type, k_layout, MutAnyOrigin](
-            k_fp8_device.ptr,
-            RuntimeLayout[k_layout].row_major(
-                k_fp8_device.runtime_layout.shape.value.canonicalize()
-            ),
-        )
     )
 
     var mla_args = MLADispatchScalarArgs[
@@ -595,36 +548,20 @@ def bench[
     @always_inline
     @__copy_capture(
         q_fp8_tt,
-        k_operand,
+        k_fp8_tt,
         out_tt,
-        null_valid_length_tt,
         scalar_args_buf_lt,
     )
     def kernel_launch(ctx: DeviceContext) raises:
-        comptime config = MHAConfig[q_type](UInt(num_heads), UInt(depth))
-        mla_decode_sm100_dispatch[
-            q_type,
-            type_of(k_operand),
-            output_type,
-            NullMask,
-            config=config,
-            depth=depth,
-            num_heads=num_heads,
-            group=group,
-            _is_cache_length_accurate=True,
-            decoding_warp_split_k=False,
-        ](
+        comptime config = MHAConfig[q_type](num_heads, depth)
+        flare_mla_decoding[config=config](
+            out_tt.as_any_origin(),
             q_fp8_tt,
-            k_operand,
-            out_tt,
-            scale,
-            null_valid_length_tt,
+            k_fp8_tt,
             NullMask(),
-            lt_to_tt(scalar_args_buf_lt),
-            batch_size,
-            seq_len,
-            num_keys,
+            scale,
             ctx,
+            lt_to_tt(scalar_args_buf_lt),
         )
 
     comptime nrun = 200
@@ -703,8 +640,9 @@ def test_decoding[
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
-        comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
-            ctx.default_device_info
+        comptime if has_amd_gpu_accelerator() or (
+            has_nvidia_gpu_accelerator()
+            and _is_sm10x_gpu(ctx.default_device_info)
         ):
             # Basic functionality tests
             print("=== Basic tests ===")
@@ -817,4 +755,4 @@ def main() raises:
                 print("BENCHMARK COMPLETE")
                 print("=" * 72)
         else:
-            print("Skipping: requires B200 GPU")
+            print("Skipping: requires B200 or AMD GPU")

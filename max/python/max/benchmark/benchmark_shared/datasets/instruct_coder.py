@@ -21,7 +21,9 @@ from collections.abc import Sequence
 from huggingface_hub import hf_hub_download
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
+from .distribution import DistributionParameter
 from .huggingface import HuggingFaceBenchmarkDataset
+from .multiturn_distribution_fit import build_chat_samples_from_user_text_pool
 from .types import (
     ChatMessage,
     ChatSamples,
@@ -51,6 +53,13 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
     (``gen_multiturn_sessions``) benchmarking modes are supported.
     In multi-turn mode, consecutive code-editing tasks are grouped into
     chat sessions that simulate an iterative coding assistant conversation.
+
+    With ``fit_length_distributions=True`` (CLI: ``--fit-distributions`` with
+    ``--num-chat-sessions``), turns per session, per-turn input and output token
+    targets, and inter-turn delays follow the same distribution parameters as the
+    synthetic ``random`` multiturn workload. Prompts are expanded or truncated by
+    repeating token sequences derived from each InstructCoder example (and
+    optional synthetic system prefixes).
     """
 
     def fetch(self) -> None:
@@ -153,21 +162,46 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
         turns_per_session: int = 5,
         delay_between_chat_turns: float | None = None,
         shuffle: bool = True,
+        *,
+        fit_length_distributions: bool = False,
+        num_turns: DistributionParameter | None = None,
+        input_len: DistributionParameter | None = None,
+        output_len: DistributionParameter | None = None,
+        delay_between_turns_dist: DistributionParameter | None = None,
+        sys_prompt_ratio: float = 0.0,
+        max_num_unique_sys_prompt: int = 1,
+        min_input_len: int = 4,
+        min_output_len: int = 1,
     ) -> ChatSamples:
         """Generate multi-turn chat sessions from InstructCoder entries.
 
         Consecutive code-editing tasks are grouped into chat sessions.
         Each turn sends the instruction (+input) as the user message and
-        uses the reference output length for the expected assistant reply.
+        uses the reference output length for the expected assistant reply,
+        unless ``fit_length_distributions`` is enabled (then lengths and delays
+        are sampled from distributions).
 
         Args:
             num_sessions: Number of chat sessions to produce.
             tokenizer: Tokenizer for computing token lengths.
-            turns_per_session: Number of user/assistant round-trips per
-                session.
-            delay_between_chat_turns: Optional delay (ms) inserted after
-                each assistant message.
+            turns_per_session: User/assistant round-trips per session when
+                ``fit_length_distributions`` is False.
+            delay_between_chat_turns: Delay in ms after each assistant message
+                when ``fit_length_distributions`` is False (constant per turn).
             shuffle: Whether to shuffle entries before grouping.
+            fit_length_distributions: If True, use ``num_turns``, ``input_len``,
+                ``output_len``, and ``delay_between_turns_dist`` like the random
+                multiturn dataset (including ``';'``-separated first vs remaining
+                turn specs).
+            num_turns: Distribution for turns per session when fitting.
+            input_len: Distribution for user-side token targets per turn.
+            output_len: Distribution for assistant ``max_tokens`` per turn.
+            delay_between_turns_dist: Optional per-turn delay distribution (ms).
+            sys_prompt_ratio: When fitting, fraction of each user message's
+                token budget used for a synthetic system prefix.
+            max_num_unique_sys_prompt: Number of system-prefix variants to cycle.
+            min_input_len: Floor for sampled input lengths.
+            min_output_len: Floor for sampled output lengths.
 
         Returns:
             ChatSamples containing the generated sessions.
@@ -176,6 +210,24 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
 
         if shuffle:
             random.shuffle(pairs)
+
+        if fit_length_distributions:
+            assert num_turns is not None, "num_turns is required when fitting"
+            assert input_len is not None, "input_len is required when fitting"
+            assert output_len is not None, "output_len is required when fitting"
+            return self._gen_multiturn_sessions_from_distributions(
+                num_sessions=num_sessions,
+                tokenizer=tokenizer,
+                pairs=pairs,
+                num_turns=num_turns,
+                input_len=input_len,
+                output_len=output_len,
+                delay_between_turns_dist=delay_between_turns_dist,
+                sys_prompt_ratio=sys_prompt_ratio,
+                max_num_unique_sys_prompt=max_num_unique_sys_prompt,
+                min_input_len=min_input_len,
+                min_output_len=min_output_len,
+            )
 
         # Pre-tokenize to get lengths and filter unusable entries.
         tokenized: list[tuple[str, int, int]] = []
@@ -228,3 +280,41 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
             )
 
         return ChatSamples(chat_sessions=sessions)
+
+    def _gen_multiturn_sessions_from_distributions(
+        self,
+        num_sessions: int,
+        tokenizer: PreTrainedTokenizerBase,
+        pairs: list[tuple[str, str]],
+        num_turns: DistributionParameter,
+        input_len: DistributionParameter,
+        output_len: DistributionParameter,
+        delay_between_turns_dist: DistributionParameter | None,
+        sys_prompt_ratio: float,
+        max_num_unique_sys_prompt: int,
+        min_input_len: int,
+        min_output_len: int,
+    ) -> ChatSamples:
+        """Build multiturn sessions with sampled lengths (see ``gen_multiturn_sessions``)."""
+        user_texts: list[str] = []
+        for prompt, completion in pairs:
+            p_len = estimate_num_tokens(tokenizer, prompt)
+            o_len = estimate_num_tokens(tokenizer, completion)
+            if p_len < 4 or o_len < 4:
+                continue
+            user_texts.append(prompt)
+        return build_chat_samples_from_user_text_pool(
+            tokenizer=tokenizer,
+            user_text_pool=user_texts,
+            num_sessions=num_sessions,
+            num_turns=num_turns,
+            input_len=input_len,
+            output_len=output_len,
+            delay_between_turns_dist=delay_between_turns_dist,
+            sys_prompt_ratio=sys_prompt_ratio,
+            max_num_unique_sys_prompt=max_num_unique_sys_prompt,
+            min_input_len=min_input_len,
+            min_output_len=min_output_len,
+            shuffle_pool=False,
+            log_prefix="instruct-coder",
+        )

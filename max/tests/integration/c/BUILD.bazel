@@ -142,6 +142,7 @@ modular_cc_test(
     tags = ["manual"],
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -183,7 +184,12 @@ modular_cc_test(
     env = {
         "TEST_MEF_PATH": "$(rootpath :vector_add_gpu.mef)",
     },
-    gpu_constraints = ["//:has_gpu"],
+    # TODO(GEX-3548): ExecuteModelWithGPUTensors produces zeros instead of the
+    # expected vector-add result on Apple GPU (Metal) workers.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tags = ["gpu"],
     deps = [
         ":Utils",

@@ -29,9 +29,8 @@ from std.gpu.globals import WARP_SIZE
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.intrinsics import (
+    ds_read_tr8_b64,
     ds_read_tr16_b64,
-    load_acquire,
-    store_release,
     permlane_shuffle,
     permlane_swap,
 )
@@ -102,20 +101,8 @@ def kernel_cast[
     y[0] = x[0].cast[target]()
 
 
-def kernel_atomic[
-    dtype: DType, memory: Bool = True
-](
-    output: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
-    val: Scalar[dtype],
-):
-    output[] = ptr[]
-    store_release[memory=memory](ptr, val)
-    output[] = load_acquire[memory=memory](ptr)
-
-
 def parametric[
-    f: def(UnsafePointer[Int, MutAnyOrigin]) -> None
+    f: def(UnsafePointer[Int, MutAnyOrigin]) thin -> None
 ](ptr: UnsafePointer[Int, MutAnyOrigin]):
     f(ptr)
 
@@ -134,8 +121,8 @@ def load_store(
 def test_shuffle_compile() raises:
     print("== test_shuffle_compile")
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = add i32 %5, %3
     # CHECK: %7 = icmp ult i32 %6, 64
     # CHECK: %8 = select i1 %7, i32 %3, i32 0
@@ -149,8 +136,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = sub i32 %5, %3
     # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = icmp slt i32 %6, %7
@@ -164,8 +151,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = xor i32 %5, %3
     # CHECK: %7 = and i32 %5, 64
     # CHECK: %8 = add nuw nsw i32 %7, 64
@@ -180,8 +167,8 @@ def test_shuffle_compile() raises:
     )
 
     # CHECK: %3 = load i32, ptr addrspace(1) %2, align 4, !amdgpu.noclobber !2
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %5 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
+    # CHECK: %4 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %5 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %4)
     # CHECK: %6 = and i32 %5, 64
     # CHECK: %7 = or i32 %6, %3
     # CHECK: %8 = shl i32 %7, 2
@@ -242,8 +229,8 @@ def test_exp_f16_compile() raises:
 def test_laneid_compile() raises:
     print("== test_laneid_compile")
 
-    # CHECK: %3 = tail call i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
-    # CHECK: %4 = tail call i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
+    # CHECK: %3 = tail call range(i32 0, 33) i32 @llvm.amdgcn.mbcnt.lo(i32 -1, i32 0)
+    # CHECK: %4 = tail call range(i32 0, 65) i32 @llvm.amdgcn.mbcnt.hi(i32 -1, i32 %3)
     print(
         _compile_code[
             kernel_laneid, target=MI300X_TARGET, emission_kind="llvm-opt"
@@ -354,34 +341,6 @@ def test_schedule_group_barrier_compile() raises:
     )
 
 
-def test_atomic_compile() raises:
-    print("== test_atomic_compile")
-
-    # Memory model reference: https://llvm.org/docs/AMDGPUUsage.html#memory-model-gfx942.
-
-    # store atomic release system
-    # CHECK: buffer_wbl2 sc0 sc1
-    # CHECK: s_waitcnt vmcnt(0)
-    # CHECK: global_store_dword {{.*}} sc0 sc1
-
-    # load atomic acquire system
-    # CHECK: global_load_dword {{.*}} sc0 sc1
-    # CHECK: s_waitcnt vmcnt(0)
-    # CHECK: buffer_inv sc0 sc1
-
-    print(_compile_code[kernel_atomic[DType.int32], target=MI300X_TARGET]())
-
-    # CHECK: store atomic {{.*}} release
-    # CHECK: load atomic {{.*}} acquire
-    print(
-        _compile_code[
-            kernel_atomic[DType.int32],
-            target=MI300X_TARGET,
-            emission_kind="llvm-opt",
-        ]()
-    )
-
-
 # CHECK-LABEL: test_ds_read_tr16_b64_compile
 def test_ds_read_tr16_b64_compile() raises:
     print("== test_ds_read_tr16_b64_compile")
@@ -389,7 +348,7 @@ def test_ds_read_tr16_b64_compile() raises:
     def test_kernel[dtype: DType]():
         var x = UnsafePointer[
             Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
-        ]()
+        ].unsafe_dangling()
         var y = ds_read_tr16_b64(x)
         y[0] = y[0] + 1
         x[0] = y[0]
@@ -419,6 +378,34 @@ def test_ds_read_tr16_b64_compile() raises:
     print(
         _compile_code[
             test_kernel[DType.uint16],
+            target=MI355X_TARGET,
+        ]()
+    )
+
+
+# CHECK-LABEL: test_ds_read_tr8_b64_compile
+def test_ds_read_tr8_b64_compile() raises:
+    print("== test_ds_read_tr8_b64_compile")
+
+    def test_kernel[dtype: DType]():
+        var x = UnsafePointer[
+            Scalar[dtype], MutAnyOrigin, address_space=AddressSpace.SHARED
+        ].unsafe_dangling()
+        var y = ds_read_tr8_b64(x)
+        y[0] = y[0] + 1
+        x[0] = y[0]
+
+    # CHECK: ds_read_b64_tr_b8 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.uint8],
+            target=MI355X_TARGET,
+        ]()
+    )
+    # CHECK: ds_read_b64_tr_b8 v[0:1], v2
+    print(
+        _compile_code[
+            test_kernel[DType.int8],
             target=MI355X_TARGET,
         ]()
     )
@@ -549,8 +536,8 @@ def main() raises:
     test_threadid_compile()
     test_schedule_barrier_compile()
     test_schedule_group_barrier_compile()
-    test_atomic_compile()
     test_ds_read_tr16_b64_compile()
+    test_ds_read_tr8_b64_compile()
     test_permlane_compile()
     test_waitcnt_compile()
     test_nt_load_compile()

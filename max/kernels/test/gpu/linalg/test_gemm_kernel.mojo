@@ -237,7 +237,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

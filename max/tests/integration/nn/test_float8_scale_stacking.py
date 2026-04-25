@@ -220,7 +220,8 @@ class TestCanUseFusedMLP:
         assert can_use_fused_mlp(state_dict) is True
 
     def test_scalar_scales_different_values_prevents_fusion(self) -> None:
-        """Tests that scalar scales with different values prevent fusion."""
+        """Tests that scalar scales with different values prevent fusion
+        when no quant config (or non-tensor-wise config) is provided."""
         state_dict = {
             "mlp.gate_proj.weight_scale": _create_weight_data(
                 "mlp.gate_proj.weight_scale", (), value=0.5
@@ -246,7 +247,8 @@ class TestCanUseFusedMLP:
     def test_single_element_tensor_different_values_prevents_fusion(
         self,
     ) -> None:
-        """Tests that single-element tensor scales with different values prevent fusion."""
+        """Tests that single-element tensor scales with different values prevent
+        fusion when no quant config (or non-tensor-wise config) is provided."""
         state_dict = {
             "mlp.gate_proj.weight_scale": _create_weight_data(
                 "mlp.gate_proj.weight_scale", (1,), value=0.5
@@ -336,3 +338,29 @@ class TestCanUseFusedMLP:
             "lm_head.weight": _create_weight_data("lm_head.weight", (512, 1)),
         }
         assert can_use_fused_mlp(state_dict) is True
+
+    def test_tensor_wise_allows_different_scalar_scales(self) -> None:
+        """Tests that tensor_wise=True allows fusion even when gate and up
+        scalar scales differ."""
+        state_dict = {
+            "mlp.gate_proj.weight_scale": _create_weight_data(
+                "mlp.gate_proj.weight_scale", (), value=0.5
+            ),
+            "mlp.up_proj.weight_scale": _create_weight_data(
+                "mlp.up_proj.weight_scale", (), value=0.7
+            ),
+        }
+        assert can_use_fused_mlp(state_dict, tensor_wise=True) is True
+
+    def test_non_tensor_wise_blocks_different_scalar_scales(self) -> None:
+        """Tests that tensor_wise=False blocks fusion when gate and up
+        scalar scales differ."""
+        state_dict = {
+            "mlp.gate_proj.weight_scale": _create_weight_data(
+                "mlp.gate_proj.weight_scale", (), value=0.5
+            ),
+            "mlp.up_proj.weight_scale": _create_weight_data(
+                "mlp.up_proj.weight_scale", (), value=0.7
+            ),
+        }
+        assert can_use_fused_mlp(state_dict, tensor_wise=False) is False

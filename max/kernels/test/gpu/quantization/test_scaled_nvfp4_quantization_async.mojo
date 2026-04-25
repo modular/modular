@@ -47,9 +47,9 @@ def test_nvfp4_quantization[
 ) raises:
     comptime out_dtype = DType.uint8
 
-    var B = batch.value()
-    var M = m.value()
-    var N = n.value()
+    var _B = Int(batch.value())
+    var M = Int(m.value())
+    var N = Int(n.value())
 
     var input_shape = Coord(m, n)
     comptime output_n = ceildiv(NType.static_value, 2)
@@ -99,20 +99,16 @@ def test_nvfp4_quantization[
         scales_total
     )
 
-    var input_tensor = TileTensor(
-        device_buffer.unsafe_ptr(), row_major(input_shape)
-    )
+    var input_tensor = TileTensor(device_buffer, row_major(input_shape))
     var output_tensor = TileTensor(
-        device_buffer_output.unsafe_ptr(), row_major(output_shape)
+        device_buffer_output, row_major(output_shape)
     )
-    var scales_tensor = TileTensor(
-        scales_device.unsafe_ptr(), row_major(scales_shape)
-    )
+    var scales_tensor = TileTensor(scales_device, row_major(scales_shape))
     var output_tensor_ref = TileTensor(
-        device_buffer_output_ref.unsafe_ptr(), row_major(output_shape)
+        device_buffer_output_ref, row_major(output_shape)
     )
     var scales_tensor_ref = TileTensor(
-        scales_device_ref.unsafe_ptr(), row_major(scales_shape)
+        scales_device_ref, row_major(scales_shape)
     )
 
     quantize_dynamic_scaled_fp4_async[SF_VECTOR_SIZE=SF_VECTOR_SIZE,](

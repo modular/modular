@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 from urllib.parse import urlparse
@@ -146,6 +147,9 @@ def get_metrics_url(backend: Backend, base_url: str) -> str:
     """
     parsed_url = urlparse(base_url)
     host = parsed_url.hostname or "localhost"
+    # Re-bracket IPv6 addresses stripped by urlparse().hostname (RFC 3986).
+    if ":" in host:
+        host = f"[{host}]"
 
     # For MAX backends, use dedicated metrics port from SDK config
     # For other backends, use the same port as the base URL
@@ -400,6 +404,42 @@ def collect_server_metrics(
     if baseline is not None:
         return compute_metrics_delta(baseline=baseline, final=final)
     return final
+
+
+def collect_benchmark_metrics(
+    urls: Mapping[str, str],
+    backend: Backend,
+    base_url: str,
+    baseline: Mapping[str, ParsedMetrics] | None = None,
+) -> dict[str, ParsedMetrics]:
+    """Scrape Prometheus metrics from the given endpoints.
+
+    When *urls* is empty, a single endpoint is synthesised from *backend* and
+    *base_url* via :func:`get_metrics_url` and stored under the ``"server"``
+    label — preserving the auto-derive behaviour that existed before explicit
+    URLs were supported.
+
+    When *baseline* is provided and contains a matching label, the returned
+    metrics for that label are the delta from baseline.
+    """
+    if not urls:
+        urls = {"server": get_metrics_url(backend, base_url)}
+
+    results: dict[str, ParsedMetrics] = {}
+    for label, url in urls.items():
+        try:
+            raw_text = fetch_metrics(url)
+            final = parse_metrics(raw_text)
+            if baseline and label in baseline:
+                final = compute_metrics_delta(
+                    baseline=baseline[label], final=final
+                )
+            results[label] = final
+        except Exception as exc:
+            logger.warning(
+                "Failed to collect metrics from %s (%s): %s", label, url, exc
+            )
+    return results
 
 
 def fetch_spec_decode_metrics(

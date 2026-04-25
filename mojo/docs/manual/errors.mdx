@@ -247,9 +247,9 @@ to its signature:
 
 ```mojo
 def validate_username(username: String) raises ValidationError -> String:
-    if len(username) == 0:
+    if username.byte_length() == 0:
         raise ValidationError(field="username", reason="cannot be empty")
-    if len(username) < 3:
+    if username.count_codepoints() < 3:
         raise ValidationError(
             field="username", reason="must be at least 3 characters"
         )
@@ -542,9 +542,12 @@ compile-time parameter for the error type:
 ```mojo
 def run_action[
     ErrorType: AnyType
-](action: fn() raises ErrorType -> Int) raises ErrorType -> Int:
+](action: def() thin raises ErrorType -> Int) raises ErrorType -> Int:
     return action()
 ```
+
+The function type uses `thin` because `action` is a noncapturing function
+value.
 
 The `ErrorType` parameter is inferred from the function you pass in. If the
 function raises `NetworkError`, then `run_action` raises `NetworkError`. If the
@@ -655,7 +658,7 @@ bare `raises` function. If you catch the typed error locally, you still get full
 field access:
 
 ```mojo
-def error_caller() raises:
+def error_caller():
     try:
         _ = validate_typed(-5)
     except e:
@@ -733,14 +736,14 @@ examples in this section all use `Error` intentionally.
 :::
 
 By default, Mojo generates a stack trace when your program hits a segmentation
-fault. You can disable this by setting the
-`MOJO_ENABLE_STACK_TRACE_ON_CRASH` environment variable to `0` or `false`
-(case-insensitive).
+fault. You can disable this by adding `stack-trace-on-crash = false` under the
+`[max-debug]` section of your `modular.cfg`.
 
 However, Mojo *doesn't* generate a stack trace when your program raises an
 error—this avoids the additional runtime overhead. To enable stack traces for
-raised errors, set the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable
-to any value other than `0` or `false` (case-insensitive).
+raised errors, set the `MODULAR_DEBUG` environment variable to
+`stack-trace-on-error`, or configure the `max-debug.stack-trace-on-error`
+Config key directly.
 
 Keep in mind that when you compile your program with
 [`mojo build`](/mojo/cli/build/), the compiler optimizes and strips symbols by
@@ -769,7 +772,7 @@ mojo build stacktrace_error.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
+MODULAR_DEBUG=stack-trace-on-error ./stacktrace_error
 ```
 
 ```output
@@ -788,7 +791,7 @@ mojo build --debug-level full stacktrace_error.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error
+MODULAR_DEBUG=stack-trace-on-error ./stacktrace_error
 ```
 
 ```output
@@ -853,7 +856,7 @@ mojo build --debug-level full stacktrace_error_capture.mojo
 ```
 
 ```sh
-MOJO_ENABLE_STACK_TRACE_ON_ERROR=1 ./stacktrace_error_capture
+MODULAR_DEBUG=stack-trace-on-error ./stacktrace_error_capture
 ```
 
 ```output
@@ -1097,7 +1100,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-    def __exit__(mut self, e: Error) raises -> Bool:
+    def __exit__(mut self, e: Error) -> Bool:
         if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()

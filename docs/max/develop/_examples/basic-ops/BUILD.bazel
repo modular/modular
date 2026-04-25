@@ -7,7 +7,6 @@ modular_py_binary(
     name = "arithmetic",
     srcs = ["arithmetic.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -17,6 +16,11 @@ modular_run_binary_test(
     name = "arithmetic_test",
     size = "large",
     binary = "arithmetic",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_math_ops.py
@@ -24,7 +28,6 @@ modular_py_binary(
     name = "tensor_math_ops",
     srcs = ["tensor_math_ops.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -46,7 +49,6 @@ modular_py_binary(
     name = "tensor_reshape",
     srcs = ["tensor_reshape.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -56,6 +58,11 @@ modular_run_binary_test(
     name = "tensor_reshape_test",
     size = "large",
     binary = "tensor_reshape",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_transpose.py
@@ -63,7 +70,6 @@ modular_py_binary(
     name = "tensor_transpose",
     srcs = ["tensor_transpose.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -73,6 +79,11 @@ modular_run_binary_test(
     name = "tensor_transpose_test",
     size = "large",
     binary = "tensor_transpose",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_transpose_t.py
@@ -80,7 +91,6 @@ modular_py_binary(
     name = "tensor_transpose_t",
     srcs = ["tensor_transpose_t.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -90,6 +100,11 @@ modular_run_binary_test(
     name = "tensor_transpose_t_test",
     size = "large",
     binary = "tensor_transpose_t",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_permute.py
@@ -97,7 +112,6 @@ modular_py_binary(
     name = "tensor_permute",
     srcs = ["tensor_permute.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -107,6 +121,11 @@ modular_run_binary_test(
     name = "tensor_permute_test",
     size = "large",
     binary = "tensor_permute",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # concat.py
@@ -114,7 +133,6 @@ modular_py_binary(
     name = "concat",
     srcs = ["concat.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -124,6 +142,11 @@ modular_run_binary_test(
     name = "concat_test",
     size = "large",
     binary = "concat",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # tensor_reductions.py
@@ -131,7 +154,6 @@ modular_py_binary(
     name = "tensor_reductions",
     srcs = ["tensor_reductions.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -153,7 +175,6 @@ modular_py_binary(
     name = "tensor_matmul",
     srcs = ["tensor_matmul.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -163,6 +184,11 @@ modular_run_binary_test(
     name = "tensor_matmul_test",
     size = "large",
     binary = "tensor_matmul",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # functional_activations.py
@@ -170,7 +196,6 @@ modular_py_binary(
     name = "functional_activations",
     srcs = ["functional_activations.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -192,7 +217,6 @@ modular_py_binary(
     name = "random_basic",
     srcs = ["random_basic.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],
@@ -202,6 +226,11 @@ modular_run_binary_test(
     name = "random_basic_test",
     size = "large",
     binary = "random_basic",
+    # FIXME: MOCO-3663 — doc example tests consistently timeout on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 # compose_linear_layer.py
@@ -209,7 +238,6 @@ modular_py_binary(
     name = "compose_linear_layer",
     srcs = ["compose_linear_layer.py"],
     imports = ["."],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max:tensor",
     ],

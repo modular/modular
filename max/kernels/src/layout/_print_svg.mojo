@@ -41,7 +41,7 @@ def print_svg[
             masked=masked,
         ]
     ],
-    color_map: Optional[def(Int, Int) -> String] = None,
+    color_map: Optional[def(Int, Int) thin -> String] = None,
     file_path: Optional[Path] = None,
 ) raises:
     var s = String()
@@ -78,7 +78,7 @@ def _print_svg_impl[
         ]
     ],
     mut writer: W,
-    color_map: Optional[def(Int, Int) -> String] = None,
+    color_map: Optional[def(Int, Int) thin -> String] = None,
 ) raises:
     # Given a base layout tensor and a sub tensor print the layouts
     # Verify rank constraint
@@ -222,7 +222,7 @@ def _print_svg_impl[
         t: Int,
         element_idx: Int,
         mut writer: W,
-    ):
+    ) {mut cell_size}:
         writer.write(
             '<rect x="',
             x,

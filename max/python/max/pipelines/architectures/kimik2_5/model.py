@@ -31,7 +31,7 @@ from max.driver import (
 )
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import BufferType, DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, Module, TensorType
 from max.graph.buffer_utils import cast_tensor_to
 from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces.request import RequestID
@@ -129,7 +129,11 @@ class KimiK2_5ModelInputs(DeepseekV3Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
+            *(
+                self.kv_cache_inputs.flatten()
+                if self.kv_cache_inputs is not None
+                else ()
+            ),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
@@ -140,6 +144,8 @@ class KimiK2_5Model(
     PipelineModelWithKVCache[KimiK2_5TextAndVisionContext],
 ):
     """A Kimi-K2.5 pipeline model for multimodal text generation."""
+
+    _GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE = 8 * 1024**3
 
     vision_model: Model
     """The compiled vision model for processing images."""
@@ -260,10 +266,7 @@ class KimiK2_5Model(
             graph_mode = "auto"
 
         dtype = self.dtype
-        if dtype in (DType.float8_e4m3fn, DType.uint8, DType.float4_e2m1fn):
-            quant_config = parse_quant_config(config, state_dict, dtype)
-        else:
-            quant_config = None
+        quant_config = parse_quant_config(config, state_dict, dtype)
 
         # Check if EP should be configured
         ep_size = self.pipeline_config.runtime.ep_size
@@ -286,8 +289,11 @@ class KimiK2_5Model(
                 // attn_tp_size
             )
 
+            is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
+            ep_dispatch_dtype = DType.uint8 if is_mxfp4 else dtype
+
             ep_kwargs: dict[str, Any] = dict(
-                dispatch_dtype=dtype,
+                dispatch_dtype=ep_dispatch_dtype,
                 combine_dtype=DType.bfloat16,
                 hidden_size=config.hidden_size,
                 top_k=config.num_experts_per_tok,
@@ -298,9 +304,9 @@ class KimiK2_5Model(
                 dispatch_quant_config=None,
             )
 
-            if config.n_shared_experts == 1:
+            if config.n_shared_experts == 1 and not is_mxfp4:
                 # Only enable shared expert fusion if the shared expert is of
-                # the same shape as routed experts.
+                # the same shape and dtype as routed experts.
                 ep_kwargs["fused_shared_expert"] = True
 
             if quant_config is not None:
@@ -338,12 +344,18 @@ class KimiK2_5Model(
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 
-        if ep_size > 1:
-            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+        num_devices = len(self.devices)
+        if num_devices > 1:
+            if ep_size > 1:
+                attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+                moe_strategy = "EP"
+            else:
+                attn_strategy = "TP"
+                moe_strategy = "TP"
             logger.info(
                 f"KimiK2_5: data_parallel_degree={data_parallel_degree},"
-                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
-                f" strategy."
+                f" ep_size={ep_size}. Use {attn_strategy}-attention +"
+                f" {moe_strategy}-MoE strategy."
             )
 
         return model_config
@@ -551,6 +563,17 @@ class KimiK2_5Model(
         activation_memory = max(mla_activation_memory, moe_activation_memory)
         activation_memory += ep_buffer_memory
 
+        if pipeline_config.runtime.device_graph_capture:
+            graph_capture_headroom = (
+                cls._GRAPH_CAPTURE_HEADROOM_BYTES_PER_DEVICE
+                * len(pipeline_config.model.device_specs)
+            )
+            activation_memory += graph_capture_headroom
+            logger.info(
+                "Added graph capture headroom to activation memory: %s",
+                to_human_readable_bytes(graph_capture_headroom),
+            )
+
         if activation_memory != 0:
             logger.info(
                 f"Estimated activation memory: {to_human_readable_bytes(activation_memory)}"
@@ -593,27 +616,8 @@ class KimiK2_5Model(
                 key: value.data() for key, value in self.weights.items()
             }
 
-        # Split state dict into vision and language model components.
-        # After weight adaptation, vision tower and patch merger weights
-        # are both under the ``vision_encoder.`` prefix.
-        vision_state_dict: dict[str, WeightData] = {}
-        llm_state_dict: dict[str, WeightData] = {}
-        for key, value in state_dict.items():
-            if key.startswith("vision_encoder."):
-                vision_state_dict[key] = value
-            elif key.startswith("language_"):
-                llm_state_dict[key] = value
-            else:
-                raise ValueError(
-                    f"Key: {key} is not part of the vision or language model"
-                )
-
         # Create the LM model first
         config = self._create_model_config(state_dict)
-
-        n_devices = len(self.devices)
-        if n_devices > 1 and self.pipeline_config.runtime.ep_size != n_devices:
-            raise ValueError("Only the EP strategy is supported.")
 
         self.ep_comm_initializer: EPCommInitializer | None = None
         # Skip EP initialization in virtual device mode (compilation-only)
@@ -641,28 +645,28 @@ class KimiK2_5Model(
         self.state_dict = self.nn_model.state_dict()
         logger.info("Loaded Weights")
 
-        # Load the vision model.
-        with CompilationTimer("vision model") as timer:
-            vision_graph = self._build_vision_graph(
-                kimik2_5_config, vision_state_dict
-            )
-            timer.mark_build_complete()
-            vision_model = session.load(
-                vision_graph, weights_registry=self.state_dict
-            )
+        # Load the vision + language model.
+        with CompilationTimer("vision + language model") as timer:
+            # Create a new module to hold both models
+            module = Graph.empty_module()
 
-        # Load the language model.
-        with CompilationTimer("language model") as timer:
-            language_graph = self._build_language_graph(config)
+            # Build the vision graph in the module
+            self._build_vision_graph(kimik2_5_config, state_dict, module=module)
+
+            # Build the language graph in the module
+            language_graph = self._build_language_graph(config, module=module)
             timer.mark_build_complete()
-            language_model = session.load(
+            vision_model, language_model = session.load_all(
                 language_graph, weights_registry=self.state_dict
             )
 
         return vision_model, language_model
 
     def _build_vision_graph(
-        self, config: KimiK2_5Config, state_dict: dict[str, WeightData]
+        self,
+        config: KimiK2_5Config,
+        state_dict: dict[str, WeightData],
+        module: Module | None = None,
     ) -> Graph:
         """Build the vision model graph for processing images."""
         assert isinstance(self.nn_model, KimiK2_5)
@@ -739,6 +743,7 @@ class KimiK2_5Model(
                     *signal_buffer_types,
                 ]
             ),
+            module=module,
         ) as graph:
             # Extract inputs
             all_inputs = graph.inputs
@@ -783,7 +788,11 @@ class KimiK2_5Model(
 
             return graph
 
-    def _build_language_graph(self, config: KimiK2_5TextConfig) -> Graph:
+    def _build_language_graph(
+        self,
+        config: KimiK2_5TextConfig,
+        module: Module | None = None,
+    ) -> Graph:
         """Build the language model graph for text generation with image embeddings."""
         assert isinstance(self.nn_model, KimiK2_5)
         language_model = self.nn_model.language_model
@@ -793,6 +802,7 @@ class KimiK2_5Model(
         with Graph(
             "kimik2_5_language_graph",
             input_types=language_model.input_types(self.kv_params),
+            module=module,
         ) as graph:
             n = len(self.devices)
             tokens, all_inputs = graph.inputs[0], graph.inputs[1:]
@@ -814,7 +824,9 @@ class KimiK2_5Model(
             ]
 
             # Unmarshal the KV cache arguments.
-            fetch_types = self.kv_params.get_symbolic_inputs()[0]
+            fetch_types = (
+                self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+            )
             len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
             kv_caches_per_dev = self._unflatten_kv_inputs(
                 [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
@@ -1058,7 +1070,7 @@ class KimiK2_5Model(
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[KimiK2_5TextAndVisionContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> KimiK2_5ModelInputs:
         dp = self.pipeline_config.model.data_parallel_degree

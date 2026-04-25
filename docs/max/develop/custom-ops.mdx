@@ -6,7 +6,7 @@ description: Extend MAX Graph with custom Mojo kernels for optimized performance
 ---
 
 Custom operations (custom ops) extend [MAX
-graphs](/max/develop/get-started-with-max-graph-in-python/) with custom
+graphs](/max/api/python/generated/max.graph.Graph) with custom
 [Mojo](/mojo/manual) kernels. Whether you need to optimize performance of
 functions, implement custom algorithms, or create hardware-specific versions of
 existing operators, custom ops provide the flexibility you need.
@@ -58,6 +58,8 @@ custom operations are registered using the
 class in the [`max.torch`](/max/api/python/experimental.torch) package.
 
 ### How it works
+
+The integration process has three steps:
 
 1. Write your kernel implementation in Mojo.
 2. Register your custom operation using `CustomOpLibrary` from `max.torch`.

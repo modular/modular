@@ -38,7 +38,13 @@ from __future__ import annotations
 
 # Import types for type annotations
 from ..value import TensorValue, TensorValueLike
-from . import allreduce, bundled_allreduce, random, reducescatter
+from . import (
+    allreduce,
+    bundled_allreduce,
+    distributed_ep,
+    random,
+    reducescatter,
+)
 from .allgather import allgather
 from .argsort import argsort
 from .band_part import band_part
@@ -65,16 +71,18 @@ from .elementwise import min as _elementwise_min
 from .flatten import flatten
 from .fold import fold
 from .gather import gather, gather_nd
+from .group_norm import group_norm
 from .hann_window import hann_window
 from .irfft import irfft
 from .layer_norm import layer_norm
 from .matmul import matmul
+from .nms import non_maximum_suppression
 from .nonzero import nonzero
 from .outer import outer
 from .pad import pad
 from .parallel import parallel
 from .permute import permute
-from .pooling import avg_pool2d, max_pool2d
+from .pooling import avg_pool2d, max_pool2d, roi_align
 from .quantized import dequantize, qmatmul
 from .range import range
 from .rebind import rebind
@@ -83,13 +91,26 @@ from .reduction import max as _reduce_max
 from .reduction import min as _reduce_min
 from .repeat_interleave import repeat_interleave
 from .reshape import reshape
-from .resize import InterpolationMode, resize, resize_linear
+from .resize import (
+    InterpolationMode,
+    resize,
+    resize_bicubic,
+    resize_linear,
+    resize_nearest,
+)
+from .rms_norm import rms_norm
 from .scatter import (
     masked_scatter,
     scatter,
     scatter_add,
+    scatter_max,
+    scatter_min,
+    scatter_mul,
     scatter_nd,
     scatter_nd_add,
+    scatter_nd_max,
+    scatter_nd_min,
+    scatter_nd_mul,
 )
 from .shape_to_tensor import shape_to_tensor
 from .shard_and_stack import shard_and_stack

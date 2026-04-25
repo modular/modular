@@ -63,15 +63,11 @@ SMEM Layout:
   barriers:       (6N+11) fixed + output barriers
 """
 
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.constants import log2e
 from std.sys import size_of
-from std.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
-    block_idx_uint as block_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, block_idx, warp_id
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.primitives.grid_controls import launch_dependent_grids
@@ -86,7 +82,14 @@ from std.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor, row_major
+from layout import (
+    ComptimeInt,
+    CoordLike,
+    Layout,
+    RowMajorLayout,
+    TileTensor,
+    row_major,
+)
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm90.attention import (
     OptionalPointer,
@@ -257,6 +260,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             Int32(Self.config.num_threads)
         )
     )
+    @__name(
+        t"sm100_mla_decode_qkv_fp8_per_token_scale_rope_aware_{Self.fp8_type}_{Self.bf16_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         # Q_nope TMA: FP8, 64×512, SWIZZLE_64B
         q_nope_tma: QOTMATile[
@@ -304,15 +311,19 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         # Per-token Q scale pointer: float32 array with one scale per Q token.
         # sigma_Q[q_token_idx] is folded into scale_log2e inside Softmax.
         # Null pointer means no Q scale (sigma_Q = 1.0).
-        q_scale_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
+        q_scale_ptr: OptionalReg[
+            UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+        ],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
         ],
     ):
         # Extract scalar launch args from the stable device buffer.
-        var batch_size = Int(scalar_args.ptr[0])
-        var q_max_seq_len = Int(scalar_args.ptr[1])
-        var num_partitions = Int(scalar_args.ptr[2])
+        var batch_size = Int(scalar_args.raw_load(0))
+        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var num_partitions = Int(scalar_args.raw_load(2))
 
         # Register allocation for 3 WGs (Softmax, Correction, MMA+Load+Store).
         #
@@ -372,7 +383,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
 
         # Early exit for ragged: skip blocks beyond actual sequence length
         comptime if Self.ragged:
-            if Int(block_idx.y) >= offset_position.seq_len:
+            if block_idx.y >= offset_position.seq_len:
                 comptime if Self.config.decoding_warp_split_k:
                     Self.Common_MLA_Op.pdl_early_exit(
                         offset_position.split_idx,
@@ -696,7 +707,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         ](kv_pipeline, kv_content_smem)
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
@@ -745,16 +756,12 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var q_nope_tensor = _smem_tt[Self.fp8_type, q_nope_elems](
                 q_nope_smem, tt_row_major[q_nope_elems]()
             )
-            q_nope_tma.async_copy(
-                q_nope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
-            )
+            q_nope_tma.async_copy(q_nope_tensor, mbar_q[], (0, row))
             # Q_rope TMA: load BF16 rope Q into q_rope_smem
             var q_rope_tensor = _smem_tt[Self.bf16_type, q_rope_elems](
                 q_rope_smem, tt_row_major[q_rope_elems]()
             )
-            q_rope_tma.async_copy(
-                q_rope_tensor, mbar_q[], (Int(UInt(0)), Int(row))
-            )
+            q_rope_tma.async_copy(q_rope_tensor, mbar_q[], (0, row))
 
         # Load first KV tile: content + rope + scales on the same barrier.
         # All three TMA copies share one expect_bytes call, so the mbar
@@ -779,7 +786,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             k_content_tma.async_copy_3d(
                 content_tensor,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                (0, 0, Int(kv_gmem_row)),
             )
             # K_rope TMA: load BF16 rope into kv_rope_smem
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
@@ -791,7 +798,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             k_rope_tma.async_copy_3d(
                 rope_tensor,
                 k0_bar[],
-                (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                (0, 0, Int(kv_gmem_row)),
             )
             # Scale TMA: load BN float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
@@ -807,7 +814,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 scale_tma.async_copy(
                     scale_tensor,
                     k0_bar[],
-                    (Int(UInt(kv_gmem_row)), Int(0)),
+                    (Int(kv_gmem_row), 0),
                 )
 
         kv_prod.commit_step()
@@ -843,7 +850,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k_content_tma.async_copy_3d(
                     content_tensor,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    (0, 0, Int(kv_gmem_row)),
                 )
                 # K_rope TMA
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
@@ -855,7 +862,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 k_rope_tma.async_copy_3d(
                     rope_tensor,
                     k_mbar[],
-                    (Int(UInt(0)), Int(0), Int(UInt(kv_gmem_row))),
+                    (0, 0, Int(kv_gmem_row)),
                 )
                 # Scale TMA
                 comptime if Self.has_per_token_scales:
@@ -868,7 +875,7 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                     scale_tma.async_copy(
                         scale_tensor,
                         k_mbar[],
-                        (Int(UInt(kv_gmem_row)), Int(0)),
+                        (Int(kv_gmem_row), 0),
                     )
 
             kv_row += UInt32(Self.config.BN)

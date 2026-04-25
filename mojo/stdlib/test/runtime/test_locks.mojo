@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.os import Atomic
+from std.atomic import Atomic
 from std.time import time_function
 
 from std.runtime.asyncrt import TaskGroup
@@ -27,8 +27,7 @@ def test_basic_lock() raises:
     comptime maxI = 100
     comptime maxJ = 100
 
-    @parameter
-    async def inc():
+    async def inc() {mut}:
         with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
@@ -41,15 +40,14 @@ def test_basic_lock() raises:
         rawCounter,
     )
 
-    @parameter
-    def test_atomic() -> None:
+    def test_atomic() {mut} -> None:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):
                 tg.create_task(inc())
         tg.wait[origin_of(lock)._mlir_origin]()
 
-    _ = time_function[test_atomic]()
+    _ = time_function(test_atomic)
     _ = lock^
     # print("Total time taken ", time_ns / (1_000_000_000), " s")
 

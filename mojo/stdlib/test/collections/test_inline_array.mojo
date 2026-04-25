@@ -53,12 +53,12 @@ def test_array_int() raises:
     assert_equal(arr[1], 2)
     assert_equal(arr[2], 3)
 
-    # test negative indexing
-    assert_equal(arr[-1], 3)
-    assert_equal(arr[-2], 2)
+    # test indexing from end
+    assert_equal(arr[len(arr) - 1], 3)
+    assert_equal(arr[len(arr) - 2], 2)
 
-    # test negative indexing with dynamic index
-    var i = -1
+    # test indexing from end with dynamic index
+    var i = len(arr) - 1
     assert_equal(arr[i], 3)
     i -= 1
     assert_equal(arr[i], 2)
@@ -82,6 +82,7 @@ def test_array_int() raises:
     var arr3: InlineArray[Int, 1] = [5]
     assert_equal(arr3[0], 5)
 
+    @parameter
     def test_init_fill[
         size: Int, batch_size: Int, dt: DType
     ](arg: Scalar[dt]) raises:
@@ -91,12 +92,13 @@ def test_array_int() raises:
         for i in range(size):
             assert_equal(arr[i], arg)
 
+    @parameter
     def test_init_fill_scalars[
         *dts: DType, sizes: List[Int], batch_sizes: List[Int]
     ]() raises:
         comptime for current_batch_size in range(len(batch_sizes)):
             comptime for current_size in range(len(sizes)):
-                comptime for current_type in range(Variadic.size(dts)):
+                comptime for current_type in range(dts.size):
                     test_init_fill[
                         sizes[current_size], batch_sizes[current_batch_size]
                     ](Scalar[dts[current_type]].MAX)
@@ -128,9 +130,9 @@ def test_array_String() raises:
     assert_equal(arr[1], "morning")
     assert_equal(arr[2], "wazzup")
 
-    # test negative indexing
-    assert_equal(arr[-1], "wazzup")
-    assert_equal(arr[-2], "morning")
+    # test indexing from end
+    assert_equal(arr[len(arr) - 1], "wazzup")
+    assert_equal(arr[len(arr) - 2], "morning")
 
     var copy = arr.copy()
     assert_equal(arr[0], copy[0])
@@ -514,5 +516,46 @@ def test_inline_array_iter_bounds() raises:
     _test_inline_array_iter_bounds(reversed(arr), len(arr))
 
 
+def test_inline_array_iter_owned() raises:
+    var arr: InlineArray[Int, 3] = [10, 20, 30]
+    var result = List[Int]()
+    for elem in arr^:
+        result.append(elem)
+
+    assert_equal(len(result), 3)
+    assert_equal(result[0], 10)
+    assert_equal(result[1], 20)
+    assert_equal(result[2], 30)
+
+
+def test_inline_array_iter_owned_destroys_elements_if_not_consumed() raises:
+    # Verify that creating and immediately dropping the iterator doesn't crash.
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var _ = arr^.__iter__()
+
+
+def test_inline_array_iter_owned_destroys_elements_if_partially_consumed() raises:
+    # Verify partial consumption followed by dropping doesn't crash.
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var it = arr^.__iter__()
+    _ = it.__next__()  # consume one element
+    _ = it^  # drop iterator with remaining elements
+
+
+def test_inline_array_iter_owned_bounds() raises:
+    var arr: InlineArray[Int, 3] = [1, 2, 3]
+    var it = arr^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
+
+
 def main() raises:
-    TestSuite.discover_tests[__functions_in_module()]().run()
+    var suite = TestSuite.discover_tests[__functions_in_module()]()
+    # TODO: skipped to work around MOCO-3749
+    suite.skip[test_inline_array_copy_and_move_llvm_ir]()
+    suite^.run()

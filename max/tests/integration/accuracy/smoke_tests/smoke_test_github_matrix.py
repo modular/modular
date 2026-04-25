@@ -25,16 +25,20 @@ RUNNERS = {
     "B200": "modrunner-b200",
     "MI355": "modrunner-mi355",
     "2xH100": "modrunner-h100-2x",
+    "2xMI355": "modrunner-mi355-2x",
     "8xB200": "modrunner-b200-8x",
     "8xMI355": "modrunner-mi355-8x",
 }
 
 # Framework → GPUs that framework cannot run on.
-HW_EX = {"vllm": {"MI355", "8xMI355"}, "sglang": {"MI355", "8xMI355"}}
+HW_EX = {
+    "vllm": {"MI355", "2xMI355", "8xMI355"},
+    "sglang": {"MI355", "2xMI355", "8xMI355"},
+}
 
 # Tags: skip model on multi-GPU runners.
 XL = {"8xB200", "8xMI355"}
-MULTI = {"2xH100"} | XL
+MULTI = {"2xH100", "2xMI355"} | XL
 NON_XL = set(RUNNERS) - XL
 DISABLE = set(RUNNERS)
 
@@ -56,58 +60,67 @@ DISABLE = set(RUNNERS)
 #    3b) For reasoning models, add it to the is_reasoning_model check in smoke_test.py
 # fmt: off
 HF_MODELS: dict[str, set[str]] = {
-    "allenai/olmo-3-7b-instruct": MULTI | {"max"},
-    "allenai/olmocr-2-7b-1025-fp8": MULTI | {"sglang"},
-    "bytedance-seed/academic-ds-9b": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
-    "deepseek-ai/deepseek-r1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
-    "deepseek-ai/deepseek-v2-lite-chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
-    "deepseek-ai/deepseek-v3.1-terminus": NON_XL | {"8xMI355"},
+    "allenai/Olmo-3-7B-Instruct": MULTI | {"max"},
+    "allenai/olmOCR-2-7B-1025-FP8": MULTI | {"sglang"},
+    "ByteDance-Seed/academic-ds-9B": MULTI | {"max", "max-ci", "sglang@B200", "vllm@B200"},  # SERVOPT-1120
+    "deepseek-ai/DeepSeek-R1-0528": NON_XL | {"max", "sglang", "8xMI355"},  # 8xMI355: needs nvshmem
+    "deepseek-ai/DeepSeek-V2-Lite-Chat": MULTI | {"max", "max-ci", "vllm@B200"},  # SERVOPT-1120
+    "deepseek-ai/DeepSeek-V3.1-Terminus": NON_XL | {"8xMI355"},
     "google/gemma-3-1b-it": MULTI | {"vllm@B200"},
     "google/gemma-3-12b-it": MULTI,
     "google/gemma-3-27b-it": MULTI | {"max-ci@H100"},  # TODO(MODELS-1021) and GEX-3248
-    "meta-llama/llama-3.1-8b-instruct": MULTI,
-    "meta-llama/llama-3.2-1b-instruct": MULTI,
-    "microsoft/phi-3.5-mini-instruct": MULTI,
+    "google/gemma-4-26B-A4B-it": MULTI | {"max", "max-ci"},  # TODO(SERVOPT-1292)
+    "google/gemma-4-31B-it": MULTI | {"max-ci@H100"},
+    "meta-llama/Llama-3.1-8B-Instruct": MULTI,
+    "meta-llama/Llama-3.2-1B-Instruct": MULTI,
+    "microsoft/Phi-3.5-mini-instruct": MULTI,
     "microsoft/phi-4": MULTI,
-    "mistralai/mistral-nemo-instruct-2407": MULTI | {"vllm"},
-    "mistralai/mistral-small-3.1-24b-instruct-2503": MULTI | {"vllm"},
-    "nvidia/deepseek-v3.1-nvfp4": NON_XL | {"8xMI355"},
-    "nvidia/kimi-k2.5-nvfp4": NON_XL | {"8xMI355"},
-    "opengvlab/internvl3-8b-instruct": MULTI | {"sglang"},
-    "opengvlab/internvl3_5-8b-instruct": MULTI | {"max", "sglang"},
-    "qwen/qwen2.5-7b-instruct": MULTI,
-    "qwen/qwen2.5-vl-3b-instruct": MULTI,
-    "qwen/qwen2.5-vl-7b-instruct": MULTI,
-    "qwen/qwen3-30b-a3b-instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
-    "qwen/qwen3-8b": MULTI,
-    "qwen/qwen3-vl-4b-instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
-    "qwen/qwen3-vl-4b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@H100"},  # max: 26.2, MI355: no FP8
-    "qwen/qwen3-vl-30b-a3b-instruct": XL | {"max-ci@2xH100", "max-ci@H100", "max@2xH100", "max@H100"},
-    "qwen/qwen3-vl-30b-a3b-instruct-fp8": XL | {"max", "MI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # max: 26.2, MI355: no FP8, B200: MODELS-1020
-    "qwen/qwen3-vl-30b-a3b-thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
-    "redhatai/gemma-3-27b-it-fp8-dynamic": MULTI,  # TODO(MODELS-1021)
-    "nvidia/llama-3.1-405b-instruct-nvfp4": NON_XL | {"max", "8xMI355"},
-    "redhatai/meta-llama-3.1-405b-instruct-fp8-dynamic": NON_XL,
-    "openai/gpt-oss-20b": XL | {"max@H100"},
-    "unsloth/gpt-oss-20b-bf16": XL | {"max@H100"},
+    "MiniMaxAI/MiniMax-M2.7": NON_XL | {"8xMI355", "sglang"},
+    "mistralai/Mistral-Nemo-Instruct-2407": MULTI | {"vllm"},
+    "mistralai/Mistral-Small-3.1-24B-Instruct-2503": MULTI | {"vllm"},
+    "modularai/Llama-3.1-405B-Instruct-autofp8": NON_XL | {"max"},
+    "nvidia/DeepSeek-V3.1-NVFP4": NON_XL | {"8xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4": NON_XL | {"8xMI355"},
+    "OpenGVLab/InternVL3-8B-Instruct": MULTI | {"sglang"},
+    "OpenGVLab/InternVL3_5-8B-Instruct": MULTI | {"max", "sglang"},
+    "Qwen/Qwen2.5-7B-Instruct": MULTI,
+    "Qwen/Qwen2.5-VL-3B-Instruct": MULTI,
+    "Qwen/Qwen2.5-VL-7B-Instruct": MULTI,
+    "Qwen/Qwen3-235B-A22B-Instruct-2507": NON_XL | {"max", "8xMI355"},
+    "Qwen/Qwen3-30B-A3B-Instruct-2507": MULTI | {"max-ci@H100"},  # MODELS-1020
+    "Qwen/Qwen3-8B": MULTI,
+    "Qwen/Qwen3-VL-4B-Instruct": XL | {"max-ci@H100", "vllm@B200"},  # MODELS-1020
+    "Qwen/Qwen3-VL-4B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@2xH100", "max-ci@H100"},  # MI355: no FP8
+    "Qwen/Qwen3-VL-30B-A3B-Instruct": XL | {"max-ci@2xH100", "max-ci@H100", "max@2xH100", "max@H100"},
+    "Qwen/Qwen3-VL-30B-A3B-Instruct-FP8": XL | {"MI355", "2xMI355", "max-ci@2xH100", "max-ci@B200", "max-ci@H100", "sglang@B200"},  # MI355: no FP8, B200: MODELS-1020
+    "Qwen/Qwen3-VL-30B-A3B-Thinking": XL | {"max", "max-ci@2xH100", "max-ci@H100"},
+    "RedHatAI/gemma-3-27b-it-FP8-dynamic": MULTI,  # TODO(MODELS-1021)
+    "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | {"max", "8xMI355"},
+    "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
+    "openai/gpt-oss-20b": XL | {"max@H100", "2xMI355"},
+    "unsloth/gpt-oss-20b-BF16": XL | {"max@H100", "2xMI355"},
 }
 
 # Models tested with custom MAX serve flags. MODEL_ALIASES in
 # smoke_test.py maps each alias back to the real HuggingFace model
 # path and injects the appropriate serve args.
 CUSTOM_MODELS: dict[str, set[str]] = {
-    "meta-llama/llama-3.1-8b-instruct__modulev3": MULTI,
-    "meta-llama/llama-3.2-1b-instruct__modulev3": MULTI,
-    "unsloth/gpt-oss-20b-bf16__modulev3": DISABLE,  # TODO(MXF-121)
-    "microsoft/phi-3.5-mini-instruct__modulev3": MULTI,
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": MULTI,
+    "meta-llama/Llama-3.2-1B-Instruct__modulev3": MULTI,
+    "google/gemma-3-4b-it__modulev3": MULTI,
+    "unsloth/gpt-oss-20b-BF16__modulev3": DISABLE,  # TODO(MXF-121)
+    "microsoft/Phi-3.5-mini-instruct__modulev3": MULTI,
     "microsoft/phi-4__modulev3": MULTI,
-    "nvidia/deepseek-v3.1-nvfp4__fp8kv": NON_XL | {"8xMI355"},
-    "nvidia/deepseek-v3.1-nvfp4__tpep": NON_XL | {"8xMI355"},
-    "nvidia/kimi-k2.5-nvfp4__no_vision": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": NON_XL | {"8xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__no_vision": NON_XL | {"8xMI355"},
     # TODO(SERVOPT-1168): Support multi-GPU eagle llama
-    "meta-llama/llama-3.1-8b-instruct__eagle": MULTI | {"vllm", "sglang"},
-    "nvidia/deepseek-v3.1-nvfp4__mtp": NON_XL | {"8xMI355"},
-    "nvidia/kimi-k2.5-nvfp4__eagle": NON_XL | {"8xMI355"},
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": MULTI | {"vllm", "sglang"},
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": NON_XL | {"8xMI355"},
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": NON_XL | {"8xMI355"},
+    "nvidia/Kimi-K2.5-NVFP4__eagle": NON_XL | {"8xMI355"},
+    "google/gemma-4-26B-A4B-it__no_dgc": MULTI,
 }
 
 MODELS = {**HF_MODELS, **CUSTOM_MODELS}
@@ -127,7 +140,7 @@ def parse_override(raw: str | None) -> list[str]:
     if not raw:
         return []
     parts = re.split(r"[, \n\r]+", raw)
-    return [p.strip().lower() for p in parts if p.strip()]
+    return [p.strip() for p in parts if p.strip()]
 
 
 @click.command()
@@ -145,6 +158,7 @@ def parse_override(raw: str | None) -> list[str]:
 @click.option("--run-on-b200", is_flag=True)
 @click.option("--run-on-mi355", is_flag=True)
 @click.option("--run-on-2xh100", is_flag=True)
+@click.option("--run-on-2xmi355", is_flag=True)
 @click.option("--run-on-8xb200", is_flag=True)
 @click.option("--run-on-8xmi355", is_flag=True)
 def main(
@@ -154,6 +168,7 @@ def main(
     run_on_b200: bool,
     run_on_mi355: bool,
     run_on_2xh100: bool,
+    run_on_2xmi355: bool,
     run_on_8xb200: bool,
     run_on_8xmi355: bool,
 ) -> None:
@@ -162,6 +177,7 @@ def main(
         "B200": run_on_b200,
         "MI355": run_on_mi355,
         "2xH100": run_on_2xh100,
+        "2xMI355": run_on_2xmi355,
         "8xB200": run_on_8xb200,
         "8xMI355": run_on_8xmi355,
     }
@@ -175,7 +191,7 @@ def main(
             if ignore_exclusions or not excluded(framework, gpu, model):
                 job.append(
                     {
-                        "model": model.lower(),
+                        "model": model,
                         "runs_on": RUNNERS[gpu],
                         "display_name": f"{gpu} - {model}",
                     }

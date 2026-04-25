@@ -32,6 +32,8 @@ src = ["something-that-doesnt-exist"] # Stop ruff from assuming any root directo
 extend-exclude = [
   "**/lit.cfg.py", # Globals that aren't imported
   "*.ipynb",
+  "*_pb2.py", # Generated protobuf stubs
+  "*_pb2.pyi", # Generated protobuf stubs
   "*max/serve/schemas/openai.py", # Generated file
   "third-party",
   "bazel/internal/llvm-lit/lit.common.cfg.py", # Globals that aren't imported
@@ -56,7 +58,6 @@ ignore = [
   "F403", # glob imports
   "F405", # TODO: glob imports undefined
   "F821", # TODO: Undefined names, means script is invalid
-  "F841", # TODO: unused variables
   "FURB122", # Questionable readability improvement
   "RUF005", # Consider iterable unpacking instead of concatenation
   "RUF010", # Use explicit conversion flag
@@ -115,6 +116,9 @@ convention = "google"
 "*.pyi" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "D200", "D212", "D418"]
 # Ignore type annotations for the llm-book tutorial files
 "oss/llm-book/**/*.py" = ["ANN001", "ANN201", "ANN202"]
+# Ignore type annotations, intentional math unicode (×), and common tutorial code patterns
+# in mojo-gpu-puzzles (external code with its own linting standards)
+"oss/mojo-gpu-puzzles/**/*.py" = ["ANN001", "ANN201", "ANN202", "ANN205", "ANN206", "RUF001"]
 # Disable lints which complain about weird unicode characters in files that include
 # a large number of LLM test prompts.
 "max/tests/integration/test_common/test_data.py" = ["RUF001", "RUF003"]
@@ -145,6 +149,10 @@ follow_imports = "skip"
 [[tool.mypy.overrides]]
 module = "absl.*"
 follow_imports = "skip"
+
+[[tool.mypy.overrides]]
+module = "cyclopts.*"
+ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = "lmcache.*"

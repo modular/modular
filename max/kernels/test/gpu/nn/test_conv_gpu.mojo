@@ -14,9 +14,24 @@
 from std.math import ceildiv
 from std.random import rand
 
-from layout import Layout, LayoutTensor
+from layout import (
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    TileTensor,
+    lt_to_tt,
+    row_major,
+)
 from std.gpu.host import DeviceContext
-from nn.conv.conv import Naive2dConvolution, conv3d_gpu_naive_ndhwc_qrscf
+from nn.conv.conv import (
+    Naive2dConvolution,
+    conv3d_gpu_naive_ndhwc_qrscf,
+    conv_gpu,
+)
+from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
+from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from std.testing import assert_almost_equal
 
 from std.utils.index import Index, IndexList
@@ -29,6 +44,8 @@ def test_conv3d_gpu[
     stride: IndexList[3],
     dilation: IndexList[3],
     pad: IndexList[3],
+    rtol: Float64 = 1e-4,
+    atol: Float64 = 1e-4,
 ](ctx: DeviceContext) raises:
     print("test_conv3d: Testing 3D Convolution")
     comptime N = Int(input_layout.shape[0])
@@ -74,9 +91,14 @@ def test_conv3d_gpu[
     rand[dtype](input_host, input_size)
     rand[dtype](filter_host, filter_size)
 
-    # run reference implementation
-    Naive2dConvolution[dtype, dtype, dtype].run(
-        output_ref_host,
+    # Run the CPU reference at the same precision the GPU kernel uses for
+    # its accumulator (fp32 for bf16 inputs), then narrow back to `dtype`.
+    # Without this, a bf16 reference reduction drifts far outside any
+    # reasonable tolerance for non-trivial channel counts.
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    Naive2dConvolution[accum_dtype, dtype, dtype].run(
+        output_ref_accum_host,
         input_host,
         filter_host,
         Index(N, D_out, H_out, W_out, F),  # output shape
@@ -89,6 +111,9 @@ def test_conv3d_gpu[
         IndexList[3](dilation[0], dilation[1], dilation[2]),
         1,  # num_groups
     )
+    for i in range(output_size):
+        output_ref_host[i] = output_ref_accum_host[i].cast[dtype]()
+    output_ref_accum_host.free()
     # allocate device memory
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -143,7 +168,7 @@ def test_conv3d_gpu[
     try:
         for i in range(output_size):
             assert_almost_equal(
-                output_ref_host[i], output_gpu_host[i], rtol=1e-4, atol=1e-4
+                output_ref_host[i], output_gpu_host[i], rtol=rtol, atol=atol
             )
         print("RESULT: PASS - All elements match within tolerance")
     except:
@@ -153,6 +178,522 @@ def test_conv3d_gpu[
         filter_host.free()
         output_gpu_host.free()
         output_ref_host.free()
+
+
+def test_conv3d_gpu_dispatch[
+    input_layout: Layout,
+    filter_layout: Layout,
+    dtype: DType,
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    pad: IndexList[3],
+    rtol: Float64 = 1e-2,
+    atol: Float64 = 1e-2,
+](ctx: DeviceContext) raises:
+    """Exercise the full `conv_gpu` dispatch (QRSCF path) with a
+    scale-by-2 epilogue, mirroring the production MOGG wiring where an
+    output_fn is always supplied. Compares the epilogue path against a
+    CPU reference to catch regressions in the `dispatch_im2col_matmul_conv3d`
+    path that the naive-only tests miss.
+    """
+    print("test_conv3d_gpu_dispatch: Testing conv_gpu with epilogue")
+    comptime N = Int(input_layout.shape[0])
+    comptime D = Int(input_layout.shape[1])
+    comptime H = Int(input_layout.shape[2])
+    comptime W = Int(input_layout.shape[3])
+    comptime C = Int(input_layout.shape[4])
+
+    comptime Q = Int(filter_layout.shape[0])
+    comptime R = Int(filter_layout.shape[1])
+    comptime S = Int(filter_layout.shape[2])
+    comptime F = Int(filter_layout.shape[4])
+
+    comptime pad_d = IndexList[2](pad[0], pad[0])
+    comptime pad_h = IndexList[2](pad[1], pad[1])
+    comptime pad_w = IndexList[2](pad[2], pad[2])
+
+    comptime D_out = (
+        D + pad_d[0] + pad_d[1] - dilation[0] * (Q - 1) - 1
+    ) // stride[0] + 1
+    comptime H_out = (
+        H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1
+    ) // stride[1] + 1
+    comptime W_out = (
+        W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1
+    ) // stride[2] + 1
+
+    comptime output_layout = Layout.row_major(N, D_out, H_out, W_out, F)
+
+    var input_size = comptime (input_layout.size())
+    var filter_size = comptime (filter_layout.size())
+    var output_size = comptime (output_layout.size())
+
+    var input_host = alloc[Scalar[dtype]](input_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var output_gpu_host = alloc[Scalar[dtype]](output_size)
+    var output_ref_host = alloc[Scalar[dtype]](output_size)
+
+    rand[dtype](input_host, input_size)
+    rand[dtype](filter_host, filter_size)
+
+    # CPU reference at fp32 accumulator then narrow back (matches GPU).
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    Naive2dConvolution[accum_dtype, dtype, dtype].run(
+        output_ref_accum_host,
+        input_host,
+        filter_host,
+        Index(N, D_out, H_out, W_out, F),
+        Index(N, D, H, W, C),
+        Index(Q, R, S, C, F),
+        pad_d,
+        pad_h,
+        pad_w,
+        IndexList[3](stride[0], stride[1], stride[2]),
+        IndexList[3](dilation[0], dilation[1], dilation[2]),
+        1,
+    )
+    for i in range(output_size):
+        # Scale by 2 to match the epilogue the GPU path applies.
+        output_ref_host[i] = (
+            output_ref_accum_host[i] * Scalar[accum_dtype](2.0)
+        ).cast[dtype]()
+    output_ref_accum_host.free()
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+
+    comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
+    var input_tt = lt_to_tt(input_lt)
+    var filter_tt = lt_to_tt(filter_lt)
+    var output_tt = lt_to_tt(output_lt)
+
+    @parameter
+    @always_inline
+    @__copy_capture(output_lt)
+    def scale_epilogue[
+        _dtype: DType, _rank: Int, _width: Int
+    ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+        var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+        output_lt.store[width=_width](
+            rebind[IndexList[5]](coords),
+            rebind[SIMD[dtype, _width]](scaled),
+        )
+
+    conv_gpu[
+        dtype,
+        dtype,
+        dtype,
+        Optional[elementwise_simd_epilogue_type](scale_epilogue),
+    ](
+        input_tt,
+        filter_tt,
+        output_tt,
+        stride,
+        dilation,
+        IndexList[6](pad[0], pad[0], pad[1], pad[1], pad[2], pad[2]),
+        1,
+        ctx,
+    )
+
+    ctx.synchronize()
+    ctx.enqueue_copy(output_gpu_host, output_dev)
+    ctx.synchronize()
+
+    try:
+        for i in range(output_size):
+            assert_almost_equal(
+                output_ref_host[i], output_gpu_host[i], rtol=rtol, atol=atol
+            )
+        print("RESULT: PASS - All elements match within tolerance")
+    except e:
+        print("RESULT: FAIL - ", String(e))
+        raise e^
+    finally:
+        input_host.free()
+        filter_host.free()
+        output_gpu_host.free()
+        output_ref_host.free()
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_dev^
+
+
+def test_conv3d_im2col_multi_tile[
+    input_layout: Layout,
+    filter_layout: Layout,
+    dtype: DType,
+    stride: IndexList[3],
+    dilation: IndexList[3],
+    pad: IndexList[3],
+    m_tile_byte_budget: Int,
+    with_epilogue: Bool,
+    rtol: Float64 = 1e-2,
+    atol: Float64 = 1e-2,
+](ctx: DeviceContext) raises:
+    """Directly drive `dispatch_im2col_matmul_conv3d` with a tiny M-tile
+    byte budget to force multi-tile execution on modest shapes. Validates
+    both the no-epilogue and epilogue branches, since the latter captures
+    `m_offset` across iterations and is not exercised by the single-tile
+    WAN benchmark shapes.
+    """
+    print(
+        "test_conv3d_im2col_multi_tile: budget=",
+        m_tile_byte_budget,
+        " with_epilogue=",
+        with_epilogue,
+    )
+    comptime N = Int(input_layout.shape[0])
+    comptime D = Int(input_layout.shape[1])
+    comptime H = Int(input_layout.shape[2])
+    comptime W = Int(input_layout.shape[3])
+    comptime C = Int(input_layout.shape[4])
+
+    comptime Q = Int(filter_layout.shape[0])
+    comptime R = Int(filter_layout.shape[1])
+    comptime S = Int(filter_layout.shape[2])
+    comptime F = Int(filter_layout.shape[4])
+
+    comptime pad_d = IndexList[2](pad[0], pad[0])
+    comptime pad_h = IndexList[2](pad[1], pad[1])
+    comptime pad_w = IndexList[2](pad[2], pad[2])
+
+    comptime D_out = (
+        D + pad_d[0] + pad_d[1] - dilation[0] * (Q - 1) - 1
+    ) // stride[0] + 1
+    comptime H_out = (
+        H + pad_h[0] + pad_h[1] - dilation[1] * (R - 1) - 1
+    ) // stride[1] + 1
+    comptime W_out = (
+        W + pad_w[0] + pad_w[1] - dilation[2] * (S - 1) - 1
+    ) // stride[2] + 1
+
+    var input_size = comptime (input_layout.size())
+    var filter_size = comptime (filter_layout.size())
+    var output_size = comptime (
+        Layout.row_major(N, D_out, H_out, W_out, F).size()
+    )
+
+    var input_host = alloc[Scalar[dtype]](input_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var output_gpu_host = alloc[Scalar[dtype]](output_size)
+    var output_ref_host = alloc[Scalar[dtype]](output_size)
+
+    rand[dtype](input_host, input_size)
+    rand[dtype](filter_host, filter_size)
+
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    Naive2dConvolution[accum_dtype, dtype, dtype].run(
+        output_ref_accum_host,
+        input_host,
+        filter_host,
+        Index(N, D_out, H_out, W_out, F),
+        Index(N, D, H, W, C),
+        Index(Q, R, S, C, F),
+        pad_d,
+        pad_h,
+        pad_w,
+        IndexList[3](stride[0], stride[1], stride[2]),
+        IndexList[3](dilation[0], dilation[1], dilation[2]),
+        1,
+    )
+    var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
+        accum_dtype
+    ](1.0)
+    for i in range(output_size):
+        output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
+    output_ref_accum_host.free()
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+
+    comptime output_layout_ = Layout.row_major(N, D_out, H_out, W_out, F)
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
+    var input_tt = lt_to_tt(input_lt)
+    var filter_tt = lt_to_tt(filter_lt)
+    var output_tt = lt_to_tt(output_lt)
+
+    comptime if with_epilogue:
+
+        @parameter
+        @always_inline
+        @__copy_capture(output_lt)
+        def scale_epilogue[
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            output_lt.store[width=_width](
+                rebind[IndexList[5]](coords),
+                rebind[SIMD[dtype, _width]](scaled),
+            )
+
+        var handled = dispatch_im2col_matmul_conv3d[
+            dtype,
+            dtype,
+            dtype,
+            filter_is_fcrs=False,
+            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
+                scale_epilogue
+            ),
+            m_tile_byte_budget=m_tile_byte_budget,
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride,
+            dilation,
+            pad,
+            1,
+            ctx,
+        )
+        if not handled:
+            print("SKIP: dispatcher declined this shape (likely 1x1x1 or K<16)")
+            input_host.free()
+            filter_host.free()
+            output_gpu_host.free()
+            output_ref_host.free()
+            _ = input_dev^
+            _ = filter_dev^
+            _ = output_dev^
+            return
+    else:
+        var handled = dispatch_im2col_matmul_conv3d[
+            dtype,
+            dtype,
+            dtype,
+            filter_is_fcrs=False,
+            m_tile_byte_budget=m_tile_byte_budget,
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride,
+            dilation,
+            pad,
+            1,
+            ctx,
+        )
+        if not handled:
+            print("SKIP: dispatcher declined this shape (likely 1x1x1 or K<16)")
+            input_host.free()
+            filter_host.free()
+            output_gpu_host.free()
+            output_ref_host.free()
+            _ = input_dev^
+            _ = filter_dev^
+            _ = output_dev^
+            return
+
+    ctx.synchronize()
+    ctx.enqueue_copy(output_gpu_host, output_dev)
+    ctx.synchronize()
+
+    try:
+        for i in range(output_size):
+            assert_almost_equal(
+                output_ref_host[i], output_gpu_host[i], rtol=rtol, atol=atol
+            )
+        print("RESULT: PASS - All elements match within tolerance")
+    except e:
+        print("RESULT: FAIL - ", String(e))
+        raise e^
+    finally:
+        input_host.free()
+        filter_host.free()
+        output_gpu_host.free()
+        output_ref_host.free()
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_dev^
+
+
+def test_conv3d_1x1x1_matmul_direct[
+    input_layout: Layout,
+    filter_layout: Layout,
+    dtype: DType,
+    with_epilogue: Bool,
+    rtol: Float64 = 1e-2,
+    atol: Float64 = 1e-2,
+](ctx: DeviceContext) raises:
+    """Drive `dispatch_1x1x1_matmul_conv3d` directly on a 1x1x1 shape.
+
+    Validates the reshape-as-matmul fast path, the 2D->5D coord-unpack
+    epilogue, and the no-scratch pathway. Compared against a CPU
+    fp32-accumulator reference narrowed back to `dtype`.
+    """
+    print("test_conv3d_1x1x1_matmul_direct: with_epilogue=", with_epilogue)
+    comptime N = Int(input_layout.shape[0])
+    comptime D = Int(input_layout.shape[1])
+    comptime H = Int(input_layout.shape[2])
+    comptime W = Int(input_layout.shape[3])
+    comptime C = Int(input_layout.shape[4])
+
+    comptime Q = Int(filter_layout.shape[0])
+    comptime R = Int(filter_layout.shape[1])
+    comptime S = Int(filter_layout.shape[2])
+    comptime F = Int(filter_layout.shape[4])
+    comptime assert (
+        Q == 1 and R == 1 and S == 1
+    ), "test_conv3d_1x1x1_matmul_direct requires a 1x1x1 filter"
+
+    comptime stride = IndexList[3](1, 1, 1)
+    comptime dilation = IndexList[3](1, 1, 1)
+    comptime pad = IndexList[3](0, 0, 0)
+
+    comptime input_size = input_layout.size()
+    comptime filter_size = filter_layout.size()
+    comptime output_layout_ = Layout.row_major(N, D, H, W, F)
+    comptime output_size = output_layout_.size()
+
+    var input_host = alloc[Scalar[dtype]](input_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var output_gpu_host = alloc[Scalar[dtype]](output_size)
+    var output_ref_host = alloc[Scalar[dtype]](output_size)
+
+    rand[dtype](input_host, input_size)
+    rand[dtype](filter_host, filter_size)
+
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    Naive2dConvolution[accum_dtype, dtype, dtype].run(
+        output_ref_accum_host,
+        input_host,
+        filter_host,
+        Index(N, D, H, W, F),
+        Index(N, D, H, W, C),
+        Index(Q, R, S, C, F),
+        IndexList[2](0, 0),
+        IndexList[2](0, 0),
+        IndexList[2](0, 0),
+        stride,
+        dilation,
+        1,
+    )
+    var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
+        accum_dtype
+    ](1.0)
+    for i in range(output_size):
+        output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
+    output_ref_accum_host.free()
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
+    var input_tt = lt_to_tt(input_lt)
+    var filter_tt = lt_to_tt(filter_lt)
+    var output_tt = lt_to_tt(output_lt)
+
+    comptime if with_epilogue:
+
+        @parameter
+        @always_inline
+        @__copy_capture(output_lt)
+        def scale_epilogue[
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            output_lt.store[width=_width](
+                rebind[IndexList[5]](coords),
+                rebind[SIMD[dtype, _width]](scaled),
+            )
+
+        var handled = dispatch_1x1x1_matmul_conv3d[
+            dtype,
+            dtype,
+            dtype,
+            filter_is_fcrs=False,
+            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
+                scale_epilogue
+            ),
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride,
+            dilation,
+            pad,
+            1,
+            ctx,
+        )
+        if not handled:
+            print("SKIP: 1x1x1 dispatcher declined this shape")
+            input_host.free()
+            filter_host.free()
+            output_gpu_host.free()
+            output_ref_host.free()
+            _ = input_dev^
+            _ = filter_dev^
+            _ = output_dev^
+            return
+    else:
+        var handled = dispatch_1x1x1_matmul_conv3d[
+            dtype,
+            dtype,
+            dtype,
+            filter_is_fcrs=False,
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride,
+            dilation,
+            pad,
+            1,
+            ctx,
+        )
+        if not handled:
+            print("SKIP: 1x1x1 dispatcher declined this shape")
+            input_host.free()
+            filter_host.free()
+            output_gpu_host.free()
+            output_ref_host.free()
+            _ = input_dev^
+            _ = filter_dev^
+            _ = output_dev^
+            return
+
+    ctx.synchronize()
+    ctx.enqueue_copy(output_gpu_host, output_dev)
+    ctx.synchronize()
+
+    try:
+        for i in range(output_size):
+            assert_almost_equal(
+                output_ref_host[i], output_gpu_host[i], rtol=rtol, atol=atol
+            )
+        print("RESULT: PASS - All elements match within tolerance")
+    except e:
+        print("RESULT: FAIL - ", String(e))
+        raise e^
+    finally:
+        input_host.free()
+        filter_host.free()
+        output_gpu_host.free()
+        output_ref_host.free()
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_dev^
 
 
 def main() raises:
@@ -225,4 +766,314 @@ def main() raises:
             IndexList[3](2, 2, 2),  # stride - downsampling
             IndexList[3](1, 1, 1),  # dilation
             IndexList[3](1, 1, 1),  # padding
+        ](ctx)
+
+        # --- bfloat16 coverage ---
+        # WAN VAE post_quant_conv: 1x1x1, C_in=16, F=16.
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(1, 1, 1, 16, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # WAN VAE conv_in: 3x3x3, C_in=16, F=96 (early-level Residual).
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(3, 3, 3, 16, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # WAN VAE mid Residual: 3x3x3, C_in=96, F=96. Exercises main vec loop.
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 8, 8, 96),
+            Layout.row_major(3, 3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # WAN VAE time_conv temporal: 3x1x1, C_in=192, F=384.
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 0, 0),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # Tail-only C_in case (C_in < vec_w=8 for bf16).
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 6, 6, 3),
+            Layout.row_major(3, 3, 3, 3, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # Main + tail C_in case (C_in = vec_w + remainder).
+        test_conv3d_gpu[
+            Layout.row_major(1, 4, 6, 6, 10),
+            Layout.row_major(3, 3, 3, 10, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=1e-2,
+            atol=1e-2,
+        ](ctx)
+
+        # ---------------------------------------------------------------
+        # conv_gpu dispatch path with epilogue (matches production MOGG).
+        # These hit `dispatch_im2col_matmul_conv3d` for 3x3x3 / 3x1x1 on
+        # B200 with bf16 and a fused scale-by-2 elementwise lambda.
+        # ---------------------------------------------------------------
+
+        # WAN VAE conv_in through dispatch + epilogue.
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(3, 3, 3, 16, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # WAN VAE mid residual through dispatch + epilogue.
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(1, 4, 8, 8, 96),
+            Layout.row_major(3, 3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # WAN VAE time_conv 3x1x1 through dispatch + epilogue.
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(1, 4, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 0, 0),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # ---------------------------------------------------------------
+        # Multi-tile coverage: force the M-tile loop to iterate multiple
+        # times by shrinking the byte budget, so the per-iteration
+        # `m_offset` capture and output-offset math are both exercised.
+        # The production VAE uses the default 256 MiB budget and single-
+        # tile benchmark shapes, so this is a gap the WAN bench doesn't
+        # cover.
+        # ---------------------------------------------------------------
+        # No-epilogue multi-tile: shape M=1*4*8*8=256, K=3*3*3*16=432,
+        # bytes/row=864. Budget=64 KiB -> ~75 rows/tile -> ~4 tiles.
+        test_conv3d_im2col_multi_tile[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(3, 3, 3, 16, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            m_tile_byte_budget=64 * 1024,
+            with_epilogue=False,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Epilogue multi-tile: same shape, with scale-by-2 epilogue.
+        # This is the combination that is NEVER hit by the existing
+        # benchmark (bench uses no epilogue) or the existing tests
+        # (tests use the naive kernel directly). If `m_offset` capture
+        # across iterations is broken, this is what catches it.
+        test_conv3d_im2col_multi_tile[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(3, 3, 3, 16, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            m_tile_byte_budget=64 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Larger multi-tile epilogue case: batch=2 to exercise the
+        # batch-decomposition in the epilogue's coord-unpack math.
+        test_conv3d_im2col_multi_tile[
+            Layout.row_major(2, 4, 8, 8, 96),
+            Layout.row_major(3, 3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            m_tile_byte_budget=256 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # 3x1x1 multi-tile epilogue case: the time_conv filter shape.
+        # Different K (non-3x3x3) to exercise the K-unpack math.
+        test_conv3d_im2col_multi_tile[
+            Layout.row_major(1, 4, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 0, 0),
+            m_tile_byte_budget=128 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # ---------------------------------------------------------------
+        # Stride > 1 coverage: the encoder's `downsample3d.time_conv`
+        # uses stride=(2,1,1) with a 3x1x1 filter and is pinned to the
+        # Mojo native path (prefer_nvidia_fcrs=False), so it hits
+        # `dispatch_im2col_matmul_conv3d` even without the env var. The
+        # WAN bench and decoder-only tests only use stride=(1,1,1), so
+        # stride > 1 would not be caught by existing coverage.
+        # ---------------------------------------------------------------
+        # Stride (2,1,1) via conv_gpu dispatch + epilogue.
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(1, 8, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](2, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Stride (2,1,1) via direct dispatch, forced multi-tile, no epilogue.
+        test_conv3d_im2col_multi_tile[
+            Layout.row_major(1, 8, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](2, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            m_tile_byte_budget=64 * 1024,
+            with_epilogue=False,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Stride (2,1,1) via direct dispatch, forced multi-tile, with
+        # epilogue. This is the combination closest to what the encoder
+        # runs in production on the temporal downsample.
+        test_conv3d_im2col_multi_tile[
+            Layout.row_major(1, 8, 6, 6, 192),
+            Layout.row_major(3, 1, 1, 192, 384),
+            DType.bfloat16,
+            IndexList[3](2, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            m_tile_byte_budget=64 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # ---------------------------------------------------------------
+        # Phase A (1x1x1 matmul fast path). `dispatch_1x1x1_matmul_conv3d`
+        # reshapes the NDHWC input to [M, C_in], the 1x1x1 filter to
+        # [F, C] / [C, F], and fires a single _matmul_gpu call. These
+        # cover the VAE `post_quant_conv` and `conv_shortcut` shapes.
+        # ---------------------------------------------------------------
+        # post_quant_conv shape through conv_gpu dispatch (exercises
+        # Phase A since our wiring puts it before im2col+matmul).
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(1, 1, 1, 16, 16),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Larger 1x1x1 at conv_shortcut scale (192 -> 96).
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(1, 4, 8, 8, 192),
+            Layout.row_major(1, 1, 1, 192, 96),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 0, 0),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Direct dispatch of the 1x1x1 matmul path with + without
+        # epilogue, over the post_quant_conv shape. Validates the
+        # 2D->5D coord-unpack closure and confirms no-scratch allocation.
+        test_conv3d_1x1x1_matmul_direct[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(1, 1, 1, 16, 16),
+            DType.bfloat16,
+            with_epilogue=False,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+        test_conv3d_1x1x1_matmul_direct[
+            Layout.row_major(1, 4, 8, 8, 16),
+            Layout.row_major(1, 1, 1, 16, 16),
+            DType.bfloat16,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Direct dispatch at larger conv_shortcut-style shape (384 -> 192)
+        # with epilogue. Exercises the coord-unpack math at non-square
+        # batch=2.
+        test_conv3d_1x1x1_matmul_direct[
+            Layout.row_major(2, 4, 8, 8, 384),
+            Layout.row_major(1, 1, 1, 384, 192),
+            DType.bfloat16,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Direct dispatch at realistic latent resolution (matches VAE
+        # post_quant_conv's actual shape: 1x16x21x30x52 -> ... x16).
+        test_conv3d_1x1x1_matmul_direct[
+            Layout.row_major(1, 21, 30, 52, 16),
+            Layout.row_major(1, 1, 1, 16, 16),
+            DType.bfloat16,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
         ](ctx)

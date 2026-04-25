@@ -125,16 +125,16 @@ def run_test_paged_variable[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -157,10 +157,10 @@ def run_test_paged_variable[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -300,17 +300,17 @@ def run_test_paged_variable[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -332,7 +332,7 @@ def run_test_paged_variable[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -390,11 +390,9 @@ def run_test_paged_variable[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -422,11 +420,11 @@ def run_test_paged_variable[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -437,7 +435,7 @@ def run_test_paged_variable[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
 
@@ -586,16 +584,16 @@ def run_test_paged_variable_multiq[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -610,10 +608,10 @@ def run_test_paged_variable_multiq[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -751,17 +749,17 @@ def run_test_paged_variable_multiq[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -783,7 +781,7 @@ def run_test_paged_variable_multiq[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -835,11 +833,9 @@ def run_test_paged_variable_multiq[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -868,13 +864,13 @@ def run_test_paged_variable_multiq[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major(
                 (Idx(1), Idx(q_max_seq_len), Idx[num_heads](), Idx[DEPTH]())
             ),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -885,7 +881,7 @@ def run_test_paged_variable_multiq[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major(
                 (Idx(1), Idx(q_max_seq_len), Idx[num_heads](), Idx[DEPTH]())
             ),
@@ -1070,16 +1066,16 @@ def run_test_paged_variable_ragged_q[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -1094,10 +1090,10 @@ def run_test_paged_variable_ragged_q[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -1242,17 +1238,17 @@ def run_test_paged_variable_ragged_q[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -1274,7 +1270,7 @@ def run_test_paged_variable_ragged_q[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -1331,11 +1327,9 @@ def run_test_paged_variable_ragged_q[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -1364,11 +1358,11 @@ def run_test_paged_variable_ragged_q[
 
         # Build 4D TileTensors for mha_gpu_naive reference
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(b_seq_len), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -1379,7 +1373,7 @@ def run_test_paged_variable_ragged_q[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(b_seq_len), Idx[num_heads](), Idx[DEPTH]())),
         )
 
@@ -1525,16 +1519,16 @@ def run_bench_paged_variable[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -1548,10 +1542,10 @@ def run_bench_paged_variable[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -1676,17 +1670,17 @@ def run_bench_paged_variable[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -1714,7 +1708,7 @@ def run_bench_paged_variable[
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+            config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
         ](
             out_tt,
@@ -1826,16 +1820,16 @@ def run_test_paged_variable_native_fp8[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -1852,10 +1846,10 @@ def run_test_paged_variable_native_fp8[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -2000,17 +1994,17 @@ def run_test_paged_variable_native_fp8[
 
     # Q is FP8, output is BF16
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -2031,7 +2025,7 @@ def run_test_paged_variable_native_fp8[
 
     flare_mla_decoding[
         rank=3,
-        config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+        config=MHAConfig[q_type](num_heads, DEPTH),
         ragged=True,
     ](
         out_tt,
@@ -2085,11 +2079,9 @@ def run_test_paged_variable_native_fp8[
                 * kv_dim2
                 * NUM_LAYERS
                 * PAGE_SIZE
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
-                + tok_in_page
-                * Int(kv_params.num_heads)
-                * Int(kv_params.head_size)
+                * kv_params.num_heads
+                * kv_params.head_size
+                + tok_in_page * kv_params.num_heads * kv_params.head_size
             )
             var dst_offset = tok * KV_NUM_HEADS * DEPTH
             for d in range(KV_NUM_HEADS * DEPTH):
@@ -2118,11 +2110,11 @@ def run_test_paged_variable_native_fp8[
 
         # Build 4D TileTensors (all BF16 for reference)
         var q_b_tt = TileTensor(
-            q_b_device.unsafe_ptr(),
+            q_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
         var k_b_tt = TileTensor(
-            k_b_device.unsafe_ptr(),
+            k_b_device,
             row_major(
                 (
                     Idx(1),
@@ -2133,7 +2125,7 @@ def run_test_paged_variable_native_fp8[
             ),
         )
         var ref_b_tt = TileTensor(
-            ref_b_device.unsafe_ptr(),
+            ref_b_device,
             row_major((Idx(1), Idx(1), Idx[num_heads](), Idx[DEPTH]())),
         )
 
@@ -2266,16 +2258,16 @@ def run_bench_paged_variable_native_fp8[
         kv_dim2,
         NUM_LAYERS,
         PAGE_SIZE,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var block_elems = (
         total_pages
         * kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
 
     var blocks_host = alloc[Scalar[kv_type]](block_elems)
@@ -2289,10 +2281,10 @@ def run_bench_paged_variable_native_fp8[
         kv_dim2
         * NUM_LAYERS
         * PAGE_SIZE
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
-    var _tok_stride = Int(kv_params.num_heads) * Int(kv_params.head_size)
+    var _tok_stride = kv_params.num_heads * kv_params.head_size
 
     var cache_lengths_host = alloc[UInt32](batch_size)
     for i in range(batch_size):
@@ -2419,17 +2411,17 @@ def run_bench_paged_variable_native_fp8[
     var kv_cache = kv_collection.get_key_cache(0)
 
     var q_tt = TileTensor(
-        q_device.unsafe_ptr(),
+        q_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[DEPTH]())),
     )
 
     var out_tt = TileTensor(
-        out_device.unsafe_ptr(),
+        out_device,
         row_major((Idx(total_q_tokens), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
     var row_offsets_tt = TileTensor(
-        row_offsets_device.unsafe_ptr(),
+        row_offsets_device,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -2451,7 +2443,7 @@ def run_bench_paged_variable_native_fp8[
     def kernel_launch(ctx: DeviceContext) raises:
         flare_mla_decoding[
             rank=3,
-            config=MHAConfig[q_type](UInt(num_heads), UInt(DEPTH)),
+            config=MHAConfig[q_type](num_heads, DEPTH),
             ragged=True,
         ](
             out_tt,

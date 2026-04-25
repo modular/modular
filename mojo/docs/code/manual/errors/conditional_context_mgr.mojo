@@ -31,7 +31,7 @@ struct ConditionalTimer(ImplicitlyCopyable):
         )
         print("Elapsed time:", elapsed_time_ms, "milliseconds")
 
-    def __exit__(mut self, e: Error) raises -> Bool:
+    def __exit__(mut self, e: Error) -> Bool:
         if String(e) == "just a warning":
             print("Suppressing error:", e)
             self.__exit__()

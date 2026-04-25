@@ -18,6 +18,8 @@ _FILECHECK_TESTS = [
         ],
         deps = [
             "//max:internal_utils",
+            "//max:linalg",
+            "//max:tensor",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
@@ -35,13 +37,14 @@ _FILECHECK_TESTS = [
         ],
         deps = [
             "//max:internal_utils",
+            "//max:linalg",
+            "//max:tensor",
             "@mojo//:std",
             "@mojo//:test_utils",
         ],
     )
     for src in glob(
         ["*.mojo"],
-        allow_empty = True,  # No non-FileCheck tests yet
         exclude = _FILECHECK_TESTS,
     )
 ]

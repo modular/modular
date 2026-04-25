@@ -16,6 +16,7 @@ from std.math import ceildiv
 from std.sys import argv, size_of
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
+    GEMMKind,
 )
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -69,7 +70,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
     comptime BLOCK_SCALE_K = 128
 
-    if m.value() * size_of[DType.float32]() % 16 != 0:
+    if Int(m.value()) * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
 
     print(
@@ -81,11 +82,11 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         c_type,
         ") ",
         " problem shape=(",
-        m.value(),
+        Int(m.value()),
         ", ",
-        n.value(),
+        Int(n.value()),
         ", ",
-        k.value(),
+        Int(k.value()),
         ") ",
         "mma_shape=",
         mma_shape,
@@ -113,21 +114,25 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
     var a_scales_shape = row_major(
-        Coord(Idx(ceildiv(k.value(), BLOCK_SCALE_K)), m)
+        Coord(Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)), m)
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), BLOCK_SCALE_K)),
-            Idx(ceildiv(k.value(), BLOCK_SCALE_K)),
+            Idx(ceildiv(Int(n.value()), BLOCK_SCALE_K)),
+            Idx(ceildiv(Int(k.value()), BLOCK_SCALE_K)),
         )
     )
 
-    var a_size = m.value() * k.value()
-    var b_size = n.value() * k.value() if transpose_b else k.value() * n.value()
-    var c_size = m.value() * n.value()
-    var a_scales_size = ceildiv(k.value(), BLOCK_SCALE_K) * m.value()
-    var b_scales_size = ceildiv(n.value(), BLOCK_SCALE_K) * ceildiv(
-        k.value(), BLOCK_SCALE_K
+    var a_size = Int(m.value()) * Int(k.value())
+    var b_size = (
+        Int(n.value())
+        * Int(k.value()) if transpose_b else Int(k.value())
+        * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
+    var a_scales_size = ceildiv(Int(k.value()), BLOCK_SCALE_K) * Int(m.value())
+    var b_scales_size = ceildiv(Int(n.value()), BLOCK_SCALE_K) * ceildiv(
+        Int(k.value()), BLOCK_SCALE_K
     )
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
@@ -140,13 +145,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
@@ -154,35 +159,31 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     memset_zero(c_host_ptr, c_size)
     memset_zero(c_host_ref_ptr, c_size)
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(m.value()):
-            for k in range(k.value()):
+        for m in range(Int(m.value())):
+            for k in range(Int(k.value())):
                 comptime assert a_host.flat_rank >= 2
                 a_host[(Idx(m), Idx(k))] = Scalar[a_type](1.0)
-        for n in range(n.value()):
-            for k in range(k.value()):
+        for n in range(Int(n.value())):
+            for k in range(Int(k.value())):
                 b_host[(Idx(n), Idx(k))] = Scalar[b_type](1.0)
 
-        for m in range(m.value()):
-            for k in range(k.value()):
+        for m in range(Int(m.value())):
+            for k in range(Int(k.value())):
                 comptime assert a_scales_host.flat_rank >= 2
                 a_scales_host[(Idx(k // BLOCK_SCALE_K), Idx(m))] = Scalar[
                     scales_type
                 ](0.5)
-        for n in range(n.value()):
-            for k in range(k.value()):
+        for n in range(Int(n.value())):
+            for k in range(Int(k.value())):
                 comptime assert b_scales_host.flat_rank >= 2
                 b_scales_host[
                     (Idx(n // BLOCK_SCALE_K), Idx(k // BLOCK_SCALE_K))
@@ -215,6 +216,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     blockwise_fp8_matmul[

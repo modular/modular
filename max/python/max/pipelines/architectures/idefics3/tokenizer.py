@@ -28,6 +28,7 @@ from max.interfaces import (
     TextContentPart,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.core import TextAndVisionContext
@@ -103,7 +104,9 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
         )
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Apply the chat template to the messages.
 
@@ -147,7 +150,10 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             text_messages.append(text_message)
 
         return self.processor.apply_chat_template(
-            text_messages, tokenize=False, add_generation_prompt=True
+            text_messages,
+            tokenize=False,
+            tools=tools,
+            add_generation_prompt=True,
         )
 
     async def new_context(
@@ -277,6 +283,7 @@ class Idefics3Tokenizer(TextAndVisionTokenizer):
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             images=[
                 ImageMetadata(
                     start_idx=start_idx,

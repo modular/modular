@@ -53,7 +53,6 @@ from std.algorithm import min as reduce_min
 from std.algorithm import elementwise, product, sum
 from std.algorithm.reduction import _reduce_generator
 from std.builtin.simd import _pow
-from std.builtin.variadics import _ReduceVariadicAndIdxToVariadic
 from comm.allgather import allgather
 from comm.allreduce import allreduce
 
@@ -99,7 +98,14 @@ from linalg.fp8_quantization import (
 from linalg.fp4_quantization import (
     block_scaled_matmul,
     quantize_dynamic_block_scaled,
+    grouped_quantize_dynamic_scaled_fp4_async,
     block_scales_interleave,
+    quantize_mxfp4_amd,
+    quantize_dynamic_block_scaled_mxfp4,
+)
+from linalg.matmul.gpu.amd import (
+    mxfp4_block_scaled_matmul_amd,
+    mxfp4_grouped_matmul_amd,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -136,6 +142,7 @@ from nn.bicubic import resize_bicubic
 from nn.concat import concat, fused_concat
 from nn.conv.conv import ConvInfoStatic, conv_gpu, conv_nhwc_direct, conv_shape
 from nn.conv.conv import pack_filter as _pack_conv_filter
+from nn.conv.conv import pack_filter_from_fcrs as _pack_conv_filter_from_fcrs
 from nn.conv.conv import pack_filter_shape as pack_filter_shape_conv
 from nn.conv.conv_transpose import (
     conv_transpose_shape,
@@ -188,7 +195,10 @@ from nn.kv_cache import (
     rms_norm_kv_cache_ragged_paged,
     rms_norm_value_cache_ragged_paged,
 )
-from nn.rope_split_store import rope_split_store_paged_ragged
+from nn.rope_split_store import (
+    rope_split_store_paged_ragged,
+    rope_split_store_paged_ragged_with_position_ids,
+)
 from nn.kv_cache_ragged import (
     generic_cross_attention_kv_cache,
     generic_flare_mla_decode_kv_cache_ragged,
@@ -233,7 +243,7 @@ from nn.attention.gpu.mla_index_fp8 import mla_indexer_ragged_float8_paged
 from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     compute_mla_dispatch_scalars,
 )
-from nn.moe import moe_create_indices, router_group_limited
+from nn.moe import moe_create_indices, router_group_limited, single_group_router
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
 from nn.normalization import (
     group_norm,
@@ -241,6 +251,7 @@ from nn.normalization import (
     rms_norm,
     rms_norm_fused_fp8,
     rms_norm_fused_residual_add,
+    rms_norm_rope_gpu,
 )
 from nn.pad import pad_constant, pad_reflect, pad_repeat, pad_shape
 from nn.pad_gpu import pad_constant as pad_constant_gpu
@@ -293,11 +304,11 @@ from quantization.qmatmul_k import (
     matmul_Q6_K,
     matmul_Q6_K_pack_b,
 )
+from std.ffi import external_call
 from std.runtime.asyncrt import (
     DeviceContextPtr,
     DeviceContextPtrList,
     TaskGroup,
-    parallelism_level,
 )
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from tensor import (
@@ -494,6 +505,32 @@ struct Copy:
         foreach[func](output, ctx)
 
 
+# TODO(GEX-3544): Remove once the FLUX.2 VAE encoder compiler-fusion
+# NaN bug is fixed. Identity copy with non-fused InputTensor and
+# non-fused OutputTensor so the compiler cannot fuse through the op's
+# boundary. Used as a fusion barrier in ResnetBlock2D.forward.
+@compiler.register("fusion_barrier")
+struct FusionBarrier:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        @parameter
+        @always_inline
+        def func[
+            width: Int, element_alignment: Int
+        ](idx: IndexList[rank]) -> SIMD[dtype, width]:
+            return input.load[width](idx)
+
+        foreach[func, target=target](output, ctx)
+
+
 @compiler.register("nan_check_count")
 struct NanCheckCountOp:
     """Counts NaN/Inf values in a floating-point tensor.
@@ -548,7 +585,7 @@ struct Add(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs + rhs
 
@@ -558,7 +595,7 @@ struct Sub(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs - rhs
 
@@ -568,7 +605,7 @@ struct Mul(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs * rhs
 
@@ -578,7 +615,7 @@ struct Div(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs / rhs
 
@@ -588,7 +625,7 @@ struct Mod(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return lhs % rhs
 
@@ -598,7 +635,7 @@ struct Equal(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -610,7 +647,7 @@ struct Greater(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -622,7 +659,7 @@ struct GreaterEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -634,7 +671,7 @@ struct NotEqual(ElementwiseBinaryComparisonOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
         DType.bool, width
     ]:
@@ -646,7 +683,7 @@ struct And(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.and"
         return lhs & rhs
@@ -657,7 +694,7 @@ struct Or(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.oor"
         return lhs | rhs
@@ -668,7 +705,7 @@ struct Xor(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.xor"
         return lhs ^ rhs
@@ -680,7 +717,7 @@ struct Pow:
     def elementwise[
         dtype: DType,
         pow_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[pow_dtype, width]) -> SIMD[
         dtype, width
     ]:
@@ -692,7 +729,7 @@ struct Max(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return max(lhs, rhs)
 
@@ -702,7 +739,7 @@ struct Min(ElementwiseBinaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return min(lhs, rhs)
 
@@ -718,7 +755,7 @@ struct Cast(ElementwiseUnaryMixedOp):
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         return x.cast[out_dtype]()
 
@@ -728,7 +765,7 @@ struct Negative(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return -x
 
@@ -738,7 +775,7 @@ struct ReLU(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return relu(x)
 
@@ -748,7 +785,7 @@ struct Ceil(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return ceil(x)
 
@@ -758,7 +795,7 @@ struct Floor(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return floor(x)
 
@@ -768,7 +805,7 @@ struct Tanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -781,7 +818,7 @@ struct ACos(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -794,7 +831,7 @@ struct ATanh(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -807,7 +844,7 @@ struct Cos(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -820,7 +857,7 @@ struct Sin(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -833,7 +870,7 @@ struct Erf(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -846,7 +883,7 @@ struct Exp(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -859,7 +896,7 @@ struct Round(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return round(x)
 
@@ -869,7 +906,7 @@ struct Sqrt(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return sqrt(x)
 
@@ -879,7 +916,7 @@ struct Rsqrt(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return rsqrt(x)
 
@@ -890,7 +927,7 @@ struct Select:
     def elementwise[
         cond_dtype: DType,
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](
         cond: SIMD[cond_dtype, width],
         tc: SIMD[dtype, width],
@@ -904,7 +941,7 @@ struct Trunc(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return llvm_intrinsic["llvm.trunc", type_of(x), has_side_effect=False](
             x
@@ -916,7 +953,7 @@ struct Log(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -929,7 +966,7 @@ struct Log1p(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert (
             dtype.is_floating_point()
@@ -943,7 +980,7 @@ struct IsNan(ElementwiseUnaryMixedOp):
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
             out_dtype == DType.bool
@@ -957,7 +994,7 @@ struct IsInf(ElementwiseUnaryMixedOp):
     def elementwise[
         dtype: DType,
         out_dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[out_dtype, width]:
         comptime assert (
             out_dtype == DType.bool
@@ -970,7 +1007,7 @@ struct Not(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         comptime assert dtype == DType.bool, "expected bool operands for mo.not"
         return ~x
@@ -981,7 +1018,7 @@ struct Abs(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](x: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return abs(x)
 
@@ -1227,7 +1264,7 @@ struct ScatterNDAdd:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1275,7 +1312,7 @@ struct ScatterNDMul:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1323,7 +1360,7 @@ struct ScatterNDMin:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1371,7 +1408,7 @@ struct ScatterNDMax:
         @always_inline
         @parameter
         def reduce_fn[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1447,7 +1484,7 @@ struct Scatter:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1494,7 +1531,7 @@ struct ScatterAdd:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1541,7 +1578,7 @@ struct ScatterMax:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1588,7 +1625,7 @@ struct ScatterMin:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1635,7 +1672,7 @@ struct ScatterMul:
         @always_inline
         @parameter
         def reduce_func[
-            dtype: DType, width: Int
+            dtype: DType, width: SIMDSize
         ](lhs: SIMD[dtype, width], rhs: SIMD[dtype, width]) -> SIMD[
             dtype, width
         ]:
@@ -1971,36 +2008,27 @@ struct Reshape:
         )
 
 
-# Type-level transpose stride computation.  Uses _ReduceVariadicAndIdxToVariadic
-# (MLIR attribute evaluation) to permute input stride CoordLike types according
-# to a permutation IntTuple.  This avoids the interpreter heap limit that
-# prevents direct IntTuple element access in comptime-for loops.
-comptime _TransposeStrideMapper[
+# Type-level transpose stride computation.  Permute input stride CoordLike types
+# according to a permutation IntTuple.  This avoids the interpreter heap limit
+# that prevents direct IntTuple element access in comptime-for loops.
+comptime _TransposeStrideTypesTabulator[
     permutations: IntTuple,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+    input_stride_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[T=CoordLike, RuntimeInt[]] if Int(permutations[idx])
-    == UNKNOWN_VALUE else Variadic.types[
-        T=CoordLike, input_stride_types[Int(permutations[idx])]
-    ],
+]: CoordLike = RuntimeInt[] if Int(
+    permutations[idx]
+) == UNKNOWN_VALUE else input_stride_types[
+    Int(permutations[idx])
 ]
+
 
 comptime _TransposeStrideTypes[
     permutations: IntTuple,
     rank: Int,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
-    ],
-    Reducer=_TransposeStrideMapper[permutations, input_stride_types, ...],
-]
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _TransposeStrideTypesTabulator[permutations, input_stride_types, _]
+]()
 
 
 @compiler.register("mo.transpose")
@@ -2109,39 +2137,26 @@ struct Transpose:
 
 
 # Type-level slice stride computation: multiplies input stride types by step
-# types element-wise.  Uses _ReduceVariadicAndIdxToVariadic (MLIR attribute
-# evaluation) to avoid the interpreter heap limit.
-comptime _SliceStrideMapper[
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    step_types: Variadic.TypesOfTrait[CoordLike],
-    Prev: Variadic.TypesOfTrait[CoordLike],
-    From: Variadic.TypesOfTrait[CoordLike],
+# types element-wise.
+comptime _SliceStrideTypesTabulator[
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
     idx: Int,
-] = Variadic.concat_types[
-    Prev,
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[
-            input_stride_types[idx].static_value * step_types[idx].static_value
-        ],
-    ] if input_stride_types[idx].is_static_value
-    and step_types[idx].is_static_value else Variadic.types[
-        T=CoordLike, RuntimeInt[]
-    ],
-]
+]: CoordLike = ComptimeInt[
+    input_stride_types[idx].static_value * step_types[idx].static_value
+] if input_stride_types[
+    idx
+].is_static_value and step_types[
+    idx
+].is_static_value else RuntimeInt[]
 
 comptime _SliceStrideTypes[
     rank: Int,
-    input_stride_types: Variadic.TypesOfTrait[CoordLike],
-    step_types: Variadic.TypesOfTrait[CoordLike],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[CoordLike],
-    VariadicType=Variadic.types[
-        T=CoordLike,
-        *Variadic.splat_type[Trait=CoordLike, rank, RuntimeInt[]],
-    ],
-    Reducer=_SliceStrideMapper[input_stride_types, step_types, ...],
-]
+    input_stride_types: TypeList[Trait=CoordLike, ...],
+    step_types: TypeList[Trait=CoordLike, ...],
+] = TypeList.tabulate[
+    rank, _SliceStrideTypesTabulator[input_stride_types, step_types, _]
+]()
 
 
 @compiler.register("mo.slice")
@@ -2168,24 +2183,19 @@ struct Slice:
                 i
             ].static_value < 0:
                 return 1
-            comptime if i == rank - 1:
-                # Slicing the innermost dimension: need the exact offset.
-                comptime if not start_types[i].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    start_types[i].static_value
-                    * step_types[i].static_value
-                    * align_of[dtype](),
-                )
-            else:
-                # Non-innermost: alignment is bounded by the innermost stride.
-                comptime if not stride_types[rank - 1].is_static_value:
-                    return 1
-                alignment = gcd(
-                    alignment,
-                    stride_types[rank - 1].static_value * align_of[dtype](),
-                )
+
+            # The offset for dimension `i` is `start[i] * strides[i]`
+            comptime if not start_types[i].is_static_value or not stride_types[
+                i
+            ].is_static_value:
+                return 1
+            alignment = gcd(
+                alignment,
+                start_types[i].static_value
+                * stride_types[i].static_value
+                * align_of[dtype](),
+            )
+
         return alignment
 
     @staticmethod
@@ -2291,7 +2301,7 @@ struct MutableStore(ElementwiseUnaryOp):
     @staticmethod
     def elementwise[
         dtype: DType,
-        width: Int,
+        width: SIMDSize,
     ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
         return val
 
@@ -2341,7 +2351,7 @@ struct MutableStoreSlice:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.arg_max")
+@compiler.register("mo.reduce.arg_max")
 struct ArgMax:
     @staticmethod
     def execute[
@@ -2361,6 +2371,7 @@ struct ArgMax:
                 input.to_tile_tensor[DType.int64](),
                 axis_val,
                 output.to_tile_tensor[DType.int64](),
+                ctx.get_optional_device_context(),
             )
         else:
             if axis_val != rank - 1:
@@ -2377,7 +2388,7 @@ struct ArgMax:
             )
 
 
-@compiler.register("mo.arg_min")
+@compiler.register("mo.reduce.arg_min")
 struct ArgMin:
     @staticmethod
     def execute[
@@ -2397,6 +2408,7 @@ struct ArgMin:
                 input.to_tile_tensor[DType.int64](),
                 axis_val,
                 output.to_tile_tensor[DType.int64](),
+                ctx.get_optional_device_context(),
             )
         else:
             if axis_val != rank - 1:
@@ -2430,7 +2442,7 @@ struct ArgNonZero:
         )
 
 
-@compiler.register("mo.mean")
+@compiler.register("mo.reduce.mean")
 struct Mean:
     @staticmethod
     def execute[
@@ -2453,7 +2465,7 @@ struct Mean:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2503,7 +2515,7 @@ struct ReduceAdd:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2554,7 +2566,7 @@ struct ReduceMul:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2605,7 +2617,7 @@ struct ReduceMax:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2656,7 +2668,7 @@ struct ReduceMin:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, rank: Int
+            width: SIMDSize, rank: Int
         ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -2681,121 +2693,6 @@ struct ReduceMin:
         axis: Scalar,
     ) raises -> IndexList[input_rank]:
         return reduce_shape(input, Int(axis))
-
-
-@compiler.register("reduce_min_and_max")
-struct ReduceMinMax:
-    @staticmethod
-    def execute[
-        target: StaticString,
-        _trace_name: StaticString,
-        dtype: DType,
-        rank: Int,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        axis0: Scalar,
-        ctx: DeviceContextPtr,
-    ) raises:
-        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
-        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
-        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
-        """
-
-        comptime num_reductions = 2
-        var axis = normalize_neg_index(Int(axis0), rank)
-
-        @parameter
-        @always_inline
-        def input_0_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
-            return input._fused_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def output_0_fn[
-            width: Int, rank: Int
-        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
-            output._fused_store[width=width](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        @always_inline
-        @parameter
-        def input_0_fn_wrapper[
-            _type: DType, width: Int, rank: Int
-        ](idx: IndexList[rank]) -> SIMD[_type, width]:
-            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
-
-        @always_inline
-        @parameter
-        def output_0_fn_wrapper[
-            _type: DType,
-            width: Int,
-            rank: Int,
-        ](
-            indices: IndexList[rank],
-            val: StaticTuple[SIMD[_type, width], num_reductions],
-        ):
-            # TODO: once we support multiple outputs, change this to route to
-            # TODO: multiple output tensors.
-            var indices_min = indices
-            indices_min[axis] = 0
-            output_0_fn[width, rank](
-                indices_min, rebind[SIMD[dtype, width]](val[0])
-            )
-
-            var indices_max = indices
-            indices_max[axis] = 1
-            output_0_fn[width, rank](
-                indices_max, rebind[SIMD[dtype, width]](val[1])
-            )
-
-        @always_inline
-        @parameter
-        def reduce_fn[
-            ty: DType,
-            width: Int,
-            reduction_idx: Int,
-        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
-            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
-
-            comptime if reduction_idx == 0:
-                return min(left, right)
-            else:
-                return max(left, right)
-
-        var init_min = Scalar[dtype].MAX
-        var init_max = Scalar[dtype].MIN
-        var init = StaticTuple[Scalar[dtype], num_reductions](
-            init_min, init_max
-        )
-
-        _reduce_generator[
-            num_reductions,
-            dtype,
-            input_0_fn_wrapper,
-            output_0_fn_wrapper,
-            reduce_fn,
-            target=target,
-        ](
-            input.shape(),
-            init=init,
-            reduce_dim=axis,
-            context=ctx,
-        )
-        _ = axis
-
-    @staticmethod
-    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
-        var new_shape = input.shape()
-        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
-
-        return new_shape
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3204,7 +3101,7 @@ struct Gather:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, _rank: Int
+            width: SIMDSize, _rank: Int
         ](coords: IndexList[_rank], val: SIMD[output.dtype, width]):
             output._lambda_store[width=width](
                 rebind[IndexList[output.rank]](coords),
@@ -3244,13 +3141,18 @@ struct Gather:
 @compiler.register("mo.gather_sum")
 struct GatherSum:
     @staticmethod
-    def execute(
+    def execute[
+        target: StaticString,
+    ](
         output: OutputTensor[...],
         input: InputTensor[dtype=output.dtype, ...],
         indices: InputTensor[dtype=DType.int32, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         def add[
-            dtype: DType, simd_width: Int
+            dtype: DType, simd_width: SIMDSize
         ](x: SIMD[dtype, simd_width], y: SIMD[dtype, simd_width]) -> SIMD[
             dtype, simd_width
         ]:
@@ -3261,6 +3163,7 @@ struct GatherSum:
             input.to_tile_tensor[DType.int64](),
             indices.to_tile_tensor[DType.int64](),
             0,
+            ctx.get_optional_device_context(),
         )
 
 
@@ -3269,7 +3172,7 @@ struct GatherSum:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.layer_norm")
+@compiler.register("mo.reduce.layer_norm")
 struct LayerNorm:
     @staticmethod
     def execute[
@@ -3306,7 +3209,7 @@ struct LayerNorm:
         @parameter
         @always_inline
         def output_fn[
-            width: Int, _rank: Int, alignment: Int
+            width: SIMDSize, _rank: Int, alignment: Int
         ](coords: IndexList[_rank], val: SIMD[dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](coords),
@@ -3330,174 +3233,6 @@ struct LayerNorm:
         gamma: InputTensor[dtype=dtype, rank=1, ...],
         beta: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
-
-
-@compiler.register("rms_norm_fused_residual_add")
-struct RMSNormFusedResidualAdd:
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        multiply_before_cast: Bool = True,
-    ](
-        output: OutputTensor[dtype=dtype, rank=rank, ...],
-        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma1: InputTensor[dtype=dtype, rank=1, ...],
-        gamma2: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon1: Scalar[dtype=dtype],
-        epsilon2: Scalar[dtype=dtype],
-        weight_offset1: Scalar[dtype=dtype],
-        weight_offset2: Scalar[dtype=dtype],
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        if output.shape() != input.shape():
-            raise Error("Input and output buffers are not same shape")
-
-        if input.shape() != residual_input.shape():
-            raise Error("Input and residual input buffers are not same shape")
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def residual_input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return residual_input._lambda_load[width=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def output_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-            output._fused_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        @parameter
-        @always_inline
-        def residual_output_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-            residual_output._fused_store[
-                width=width, element_alignment=alignment
-            ](
-                rebind[IndexList[residual_output.rank]](coords),
-                rebind[SIMD[residual_output.dtype, width]](val),
-            )
-
-        rms_norm_fused_residual_add[
-            input_fn,
-            residual_input_fn,
-            output_fn,
-            residual_output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            input.shape(),
-            gamma1.to_tile_tensor[DType.int64](),
-            epsilon1,
-            weight_offset1,
-            gamma2.to_tile_tensor[DType.int64](),
-            epsilon2,
-            weight_offset2,
-            ctx,
-        )
-
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma1: InputTensor[dtype=dtype, rank=1, ...],
-        gamma2: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon1: Scalar[dtype=dtype],
-        epsilon2: Scalar[dtype=dtype],
-        weight_offset1: Scalar[dtype=dtype],
-        weight_offset2: Scalar[dtype=dtype],
-    ) -> IndexList[rank]:
-        return input.shape()
-
-
-@compiler.register("rms_norm")
-struct RMSNorm:
-    @staticmethod
-    def execute[
-        dtype: DType,
-        rank: Int,
-        target: StaticString,
-        multiply_before_cast: Bool = True,
-    ](
-        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
-        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
-        ctx: DeviceContextPtr,
-    ) capturing raises:
-        if output.shape() != input.shape():
-            raise Error("Input and output buffers are not same shape")
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, _rank: Int
-        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
-                rebind[IndexList[input.rank]](coords)
-            )
-
-        @parameter
-        @always_inline
-        def output_fn[
-            width: Int, _rank: Int, alignment: Int
-        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
-            output._lambda_store[width=width, element_alignment=alignment](
-                rebind[IndexList[output.rank]](coords),
-                rebind[SIMD[output.dtype, width]](val),
-            )
-
-        rms_norm[
-            dtype,
-            rank,
-            input_fn,
-            output_fn,
-            target=target,
-            multiply_before_cast=multiply_before_cast,
-        ](
-            input.shape(),
-            gamma.to_tile_tensor[DType.int64](),
-            epsilon,
-            weight_offset,
-            ctx,
-        )
-
-    @staticmethod
-    def shape[
-        dtype: DType,
-        rank: Int,
-    ](
-        input: InputTensor[dtype=dtype, rank=rank, ...],
-        gamma: InputTensor[dtype=dtype, rank=1, ...],
-        epsilon: Scalar[dtype=dtype],
-        weight_offset: Scalar[dtype=dtype],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -3565,8 +3300,172 @@ struct RMSNormFusedQuantizeDynamicScaledFP8:
         return input.shape()
 
 
-@compiler.register("group_norm")
-struct GroupNorm:
+@compiler.register("mo.reduce.rms_norm")
+struct ReduceRMSNorm:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm[
+            dtype,
+            rank,
+            input_fn,
+            output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.rms_norm.RoPE")
+struct ReduceRMSNormRoPE:
+    """Fuses RMS normalization and Rotary Position Embedding (RoPE) into one operation.
+
+    Computes per-row RMS normalization scaled by `weight`, then applies RoPE to
+    the normalized values using the provided cosine and sine tables.  The last
+    dimension of the input must be an even number.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: FusedInputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def cos_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return cos_vals._fused_load[width=width](
+                rebind[IndexList[cos_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def sin_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
+            return sin_vals._fused_load[width=width](
+                rebind[IndexList[sin_vals.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: Int, alignment: Int
+        ](coords: IndexList[rank], val: SIMD[dtype, width]):
+            output._lambda_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        rms_norm_rope_gpu[
+            input_fn,
+            cos_fn,
+            sin_fn,
+            output_fn,
+            multiply_before_cast,
+        ](
+            input.shape(),
+            weight.to_tile_tensor[DType.int64](),
+            epsilon,
+            weight_offset,
+            cos_vals.to_tile_tensor[DType.int64](),
+            sin_vals.to_tile_tensor[DType.int64](),
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        cos_sin_dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+        sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.group_norm")
+struct ReduceGroupNorm:
     @staticmethod
     def execute[
         dtype: DType,
@@ -3618,6 +3517,223 @@ struct GroupNorm:
         beta: InputTensor[dtype=dtype, rank=1, ...],
         epsilon: Scalar[dtype=dtype],
         num_groups: Int32,
+    ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.reduce.reduce_min_and_max")
+struct ReduceMinAndMax:
+    @staticmethod
+    def execute[
+        target: StaticString,
+        _trace_name: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        axis0: Scalar,
+        ctx: DeviceContextPtr,
+    ) raises:
+        """Given a tensor of shape [A, B, C, D] and reducing along dimension 'C'
+        writes to a tensor of shape [A, B, 2, D] where [:, :, 0, :] contains
+        the minimum reduction and [:, :, 1, :] contains the maximum reduction.
+        """
+
+        comptime num_reductions = 2
+        var axis = normalize_neg_index(Int(axis0), rank)
+
+        @parameter
+        @always_inline
+        def input_0_fn[
+            width: Int, rank: Int
+        ](coords: IndexList[rank]) -> SIMD[input.dtype, width]:
+            return input._fused_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_0_fn[
+            width: SIMDSize, rank: Int
+        ](coords: IndexList[rank], val: SIMD[output.dtype, width]):
+            output._fused_store[width=width](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @always_inline
+        @parameter
+        def input_0_fn_wrapper[
+            _type: DType, width: Int, rank: Int
+        ](idx: IndexList[rank]) -> SIMD[_type, width]:
+            return rebind[SIMD[_type, width]](input_0_fn[width, rank](idx))
+
+        @always_inline
+        @parameter
+        def output_0_fn_wrapper[
+            _type: DType,
+            width: SIMDSize,
+            rank: Int,
+        ](
+            indices: IndexList[rank],
+            val: StaticTuple[SIMD[_type, width], num_reductions],
+        ):
+            # TODO: once we support multiple outputs, change this to route to
+            # TODO: multiple output tensors.
+            var indices_min = indices
+            indices_min[axis] = 0
+            output_0_fn[width, rank](
+                indices_min, rebind[SIMD[dtype, width]](val[0])
+            )
+
+            var indices_max = indices
+            indices_max[axis] = 1
+            output_0_fn[width, rank](
+                indices_max, rebind[SIMD[dtype, width]](val[1])
+            )
+
+        @always_inline
+        @parameter
+        def reduce_fn[
+            ty: DType,
+            width: SIMDSize,
+            reduction_idx: Int,
+        ](left: SIMD[ty, width], right: SIMD[ty, width]) -> SIMD[ty, width]:
+            comptime assert reduction_idx < num_reductions, "reduction_idx OOB"
+
+            comptime if reduction_idx == 0:
+                return min(left, right)
+            else:
+                return max(left, right)
+
+        var init_min = Scalar[dtype].MAX
+        var init_max = Scalar[dtype].MIN
+        var init = StaticTuple[Scalar[dtype], num_reductions](
+            init_min, init_max
+        )
+
+        _reduce_generator[
+            num_reductions,
+            dtype,
+            input_0_fn_wrapper,
+            output_0_fn_wrapper,
+            reduce_fn,
+            target=target,
+        ](
+            input.shape(),
+            init=init,
+            reduce_dim=axis,
+            context=ctx,
+        )
+        _ = axis
+
+    @staticmethod
+    def shape(input: InputTensor[...], axis: Scalar) -> IndexList[input.rank]:
+        var new_shape = input.shape()
+        new_shape[_unsafe_normalize_neg_index(Int(axis), input.rank)] = 2
+
+        return new_shape
+
+
+@compiler.register("mo.reduce.rms_norm_fused_residual_add")
+struct ReduceRMSNormFusedResidualAdd:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        multiply_before_cast: Bool = True,
+    ](
+        output: OutputTensor[dtype=dtype, rank=rank, ...],
+        residual_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: FusedInputTensor[dtype=dtype, rank=rank, ...],
+        gamma1: InputTensor[dtype=dtype, rank=1, ...],
+        gamma2: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        if output.shape() != input.shape():
+            raise Error("Input and output buffers are not same shape")
+
+        if input.shape() != residual_input.shape():
+            raise Error("Input and residual input buffers are not same shape")
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return input._lambda_load[width=width, element_alignment=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def residual_input_fn[
+            width: Int, _rank: Int
+        ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
+            return residual_input._lambda_load[width=width](
+                rebind[IndexList[input.rank]](coords)
+            )
+
+        @parameter
+        @always_inline
+        def output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            output._fused_store[width=width, element_alignment=alignment](
+                rebind[IndexList[output.rank]](coords),
+                rebind[SIMD[output.dtype, width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def residual_output_fn[
+            width: SIMDSize, _rank: Int, alignment: Int
+        ](coords: IndexList[_rank], val: SIMD[dtype, width]):
+            residual_output._fused_store[
+                width=width, element_alignment=alignment
+            ](
+                rebind[IndexList[residual_output.rank]](coords),
+                rebind[SIMD[residual_output.dtype, width]](val),
+            )
+
+        rms_norm_fused_residual_add[
+            input_fn,
+            residual_input_fn,
+            output_fn,
+            residual_output_fn,
+            target=target,
+            multiply_before_cast=multiply_before_cast,
+        ](
+            input.shape(),
+            gamma1.to_tile_tensor[DType.int64](),
+            epsilon1,
+            weight_offset1,
+            gamma2.to_tile_tensor[DType.int64](),
+            epsilon2,
+            weight_offset2,
+            ctx,
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        residual_input: InputTensor[dtype=dtype, rank=rank, ...],
+        gamma1: InputTensor[dtype=dtype, rank=1, ...],
+        gamma2: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon1: Scalar[dtype=dtype],
+        epsilon2: Scalar[dtype=dtype],
+        weight_offset1: Scalar[dtype=dtype],
+        weight_offset2: Scalar[dtype=dtype],
     ) -> IndexList[rank]:
         return input.shape()
 
@@ -3795,8 +3911,8 @@ struct Matmul:
 
         @parameter
         @always_inline
-        def epilgue_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
+        def epilogue_fn[
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]):
             c._lambda_store[width=_width, element_alignment=alignment](
                 coords,
@@ -3806,12 +3922,12 @@ struct Matmul:
         @parameter
         @always_inline
         def output_compute_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
+            _dtype: DType, _width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
             _dtype, _width
         ]:
             return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda(
+                c._fused_compute_output_lambda[element_alignment=alignment](
                     coords, rebind[SIMD[c.dtype, _width]](val)
                 )
             )
@@ -3821,7 +3937,7 @@ struct Matmul:
         comptime elementwise_lambda = Optional[
             matmul_elementwise_epilogue_type
         ](
-            epilgue_fn
+            epilogue_fn
         ) if lambdas_have_fusion and not has_compute_lambda else None
 
         comptime compute_lambda = Optional[
@@ -3869,12 +3985,14 @@ struct BatchMatmul:
         @parameter
         @always_inline
         def output_fn[
-            _type: DType, _width: Int, _rank: Int, *, alignment: Int = 1
+            _type: DType, _width: SIMDSize, _rank: Int, *, alignment: Int = 1
         ](coords: IndexList[_rank], val: SIMD[_type, _width]):
             comptime has_compute_lambda = type_of(c)._has_compute_fusion
 
             comptime if has_compute_lambda:
-                var output = c._fused_compute_output_lambda(
+                var output = c._fused_compute_output_lambda[
+                    element_alignment=alignment
+                ](
                     rebind[IndexList[c.rank]](coords),
                     rebind[SIMD[c.dtype, _width]](val),
                 )
@@ -4210,7 +4328,7 @@ struct RandomNormal:
         @parameter
         @always_inline
         def output_fn[
-            _width: Int,
+            _width: SIMDSize,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
             output._lambda_store[width=_width](
@@ -4255,7 +4373,7 @@ struct RandomUniform:
         @parameter
         @always_inline
         def output_fn[
-            _width: Int,
+            _width: SIMDSize,
             _rank: Int,
         ](coords: IndexList[_rank], val: SIMD[dtype, _width]):
             output._lambda_store[width=_width](
@@ -4290,7 +4408,7 @@ struct RandomUniform:
 # ===-----------------------------------------------------------------------===#
 
 
-@compiler.register("mo.softmax")
+@compiler.register("mo.reduce.softmax")
 struct Softmax:
     @staticmethod
     def execute[
@@ -4325,7 +4443,7 @@ struct Softmax:
         )
 
 
-@compiler.register("mo.logsoftmax")
+@compiler.register("mo.reduce.logsoftmax")
 struct LogSoftmax:
     @staticmethod
     def execute[
@@ -4465,21 +4583,19 @@ struct Concat:
         @always_inline
         @parameter
         def inputs_lambda[
-            input_index: Int,
-            width: Int,
-            _rank: Int,
+            input_index: Int, width: Int, _rank: Int, alignment: Int = 1
         ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
             comptime assert (
                 input_index < inputs.size
             ), "tensor index out of bounds"
-            return inputs[input_index]._lambda_load[width=width](
-                rebind[IndexList[rank]](indices)
-            )
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
 
         @always_inline
         @parameter
         def epilogue_wrapper[
-            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+            _dtype: DType, _rank: Int, width: SIMDSize, *, alignment: Int = 1
         ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
             output._lambda_store[width=width, element_alignment=alignment](
                 rebind[IndexList[output.rank]](indices),
@@ -4508,6 +4624,112 @@ struct Concat:
         axis: Scalar, inputs: InputVariadicTensors[dtype=dtype, rank=rank, ...]
     ) raises -> IndexList[rank]:
         return concat_shape_impl(Int(axis), inputs)
+
+
+@compiler.register("mo.fused_concat_slice")
+struct FusedConcatSlice:
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        static_starts: IntTuple,
+        static_steps: IntTuple,
+    ](
+        concat_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        slice_output: FusedOutputTensor[dtype=dtype, rank=rank, ...],
+        axis: Scalar,
+        inputs: FusedInputVariadicTensors[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        var input_shapes = StaticTuple[IndexList[rank], inputs.size]()
+
+        comptime for i in range(inputs.size):
+            input_shapes[i] = inputs[i].shape()
+
+        @always_inline
+        @parameter
+        def inputs_lambda[
+            input_index: Int,
+            width: Int,
+            _rank: Int,
+            alignment: Int = 1,
+        ](indices: IndexList[_rank]) -> SIMD[dtype, width]:
+            comptime assert (
+                input_index < inputs.size
+            ), "tensor index out of bounds"
+            return inputs[input_index]._lambda_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[rank]](indices))
+
+        @always_inline
+        @parameter
+        def epilogue_wrapper[
+            _dtype: DType, _rank: Int, width: Int, *, alignment: Int = 1
+        ](indices: IndexList[_rank], value: SIMD[_dtype, width]):
+            var concat_indices = rebind[IndexList[rank]](indices)
+
+            # Write to the full concat output.
+            concat_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                concat_indices,
+                rebind[SIMD[concat_output.dtype, width]](value),
+            )
+
+            # Check if the current position falls within the slice range.
+            # The inner dimension is guaranteed not to be sliced by the pattern,
+            # so we only check the outer rank-1 dimensions.
+            var slice_indices = IndexList[rank]()
+
+            comptime slice_in_shape = concat_output._static_shape_tuple
+            comptime slice_out_shape = slice_output._static_shape_tuple
+
+            comptime for i in range(rank):
+                comptime start = Int(static_starts[i])
+                comptime step = Int(static_steps[i])
+
+                comptime dim_not_sliced = i == rank - 1 or (
+                    start == 0
+                    and step == 1
+                    and Int(slice_in_shape[i]) != UNKNOWN_VALUE
+                    and Int(slice_in_shape[i]) == Int(slice_out_shape[i])
+                )
+
+                comptime if dim_not_sliced:
+                    slice_indices[i] = concat_indices[i]
+                else:
+                    var start_norm = (
+                        start if start
+                        >= 0 else start + concat_output.dim_size[i]()
+                    )
+                    if (indices[i] - start_norm) % step != 0:
+                        return
+                    var slice_idx = (indices[i] - start_norm) // step
+                    if slice_idx < 0 or slice_idx >= slice_output.dim_size[i]():
+                        return
+                    slice_indices[i] = slice_idx
+
+            slice_output._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                slice_indices,
+                rebind[SIMD[slice_output.dtype, width]](value),
+            )
+
+        fused_concat[
+            dtype,
+            rank,
+            False,
+            inputs_lambda,
+            epilogue_wrapper,
+            target=target,
+        ](
+            normalize_neg_index(Int(axis), rank),
+            input_shapes,
+            concat_output.to_tile_tensor[DType.int64](),
+            ctx,
+        )
 
 
 # NOTE: there are a lot of similarities between this and the shape func
@@ -4687,7 +4909,7 @@ struct Conv:
         @always_inline
         @__copy_capture(output)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
@@ -4787,6 +5009,7 @@ struct Conv:
                 pad_h_tuple,
                 pad_w_tuple,
                 Int(num_groups),
+                ctx.get_optional_device_context(),
             )
         else:
             comptime assert (input.rank == 4 and filter.rank == 4) or (
@@ -4875,7 +5098,7 @@ struct Conv2dResidualAdd:
         @always_inline
         @__copy_capture(output, bias)
         def output_fn[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             var result = val
 
@@ -5006,7 +5229,7 @@ struct ConvTranspose:
         @parameter
         @always_inline
         def output_fn[
-            _dtype: DType, _rank: Int, _width: Int
+            _dtype: DType, _rank: Int, _width: SIMDSize
         ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
             output._lambda_store[width=_width](
                 rebind[IndexList[output.rank]](coords),
@@ -5031,6 +5254,7 @@ struct ConvTranspose:
                 pad_d,
                 pad_h,
                 pad_w,
+                ctx.get_optional_device_context(),
             )
         else:
             comptime assert (
@@ -5251,9 +5475,7 @@ struct MLAIndexerRaggedFloat8Paged:
         comptime head_dim = Int(k_blocks.static_spec.shape_tuple[5])
         comptime k_num_heads = Int(k_blocks.static_spec.shape_tuple[4])
         comptime is_mla = Int(k_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(
-            UInt(k_num_heads), UInt(head_dim), is_mla
-        )
+        comptime kv_params = KVCacheStaticParams(k_num_heads, head_dim, is_mla)
         comptime assert quantization_granularity >= depth, (
             "quantization_granularity must be >= depth for MLA (one scale per"
             " token per head)"
@@ -5599,13 +5821,17 @@ struct NoMaskFlashAttentionCPU:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         q: InputTensor[dtype=dtype, rank=rank, ...],
         k: FusedInputTensor[dtype=dtype, rank=rank, ...],
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
     ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         @parameter
         @always_inline
         def k_input_fn[
@@ -5638,6 +5864,7 @@ struct NoMaskFlashAttentionCPU:
             IndexList[0](),
             output.to_layout_tensor(),
             scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
         )
 
 
@@ -5647,6 +5874,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         q: InputTensor[dtype=dtype, rank=rank, ...],
@@ -5656,7 +5884,10 @@ struct WithMaskFlashAttentionSplitKVCPU:
         v_cache: FusedInputTensor[dtype=dtype, rank=rank + 1, ...],
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
     ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         @parameter
         @always_inline
         def k_input_fn[
@@ -5717,6 +5948,7 @@ struct WithMaskFlashAttentionSplitKVCPU:
             mask.shape(),
             output.to_layout_tensor(),
             scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -5741,6 +5973,7 @@ struct WithMaskFlashAttentionCPU:
     def execute[
         dtype: DType,
         rank: Int,
+        target: StaticString,
     ](
         output: OutputTensor[dtype=dtype, rank=rank, ...],
         q: InputTensor[dtype=dtype, rank=rank, ...],
@@ -5748,7 +5981,10 @@ struct WithMaskFlashAttentionCPU:
         v: FusedInputTensor[dtype=dtype, rank=rank, ...],
         mask: FusedInputTensor[dtype=dtype, ...],
         scale: Scalar[dtype=DType.float32],
+        ctx: DeviceContextPtr,
     ) capturing raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
+
         @parameter
         @always_inline
         def k_input_fn[
@@ -5783,6 +6019,7 @@ struct WithMaskFlashAttentionCPU:
             mask.shape(),
             output.to_layout_tensor(),
             scale.cast[DType.float32](),
+            ctx=ctx.get_optional_device_context(),
         )
 
 
@@ -5832,15 +6069,19 @@ struct VroomQ40Matmul:
     @always_inline
     def execute[
         _trace_name: StaticString,
+        target: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_qint4[32](
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -5917,15 +6158,19 @@ struct VroomQ4KMatmul:
     @always_inline
     def execute[
         _trace_name: StaticString,
+        target: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_Q4_K(
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -6007,15 +6252,19 @@ struct VroomQ6KMatmul:
     @always_inline
     def execute[
         _trace_name: StaticString,
+        target: StaticString,
     ](
         c: OutputTensor[dtype=DType.float32, rank=2, ...],
         a: InputTensor[dtype=DType.float32, rank=2, ...],
         b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        ctx: DeviceContextPtr,
     ) raises:
+        comptime assert is_cpu[target](), "only valid on CPUs"
         matmul_Q6_K(
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
             c.to_tile_tensor[DType.int64](),
+            ctx.get_optional_device_context(),
         )
 
     @staticmethod
@@ -6435,6 +6684,69 @@ struct Struct_rope_split_store_ragged_paged[interleaved: Bool]:
         )
 
 
+@compiler.register("mo.rope_split_store.ragged.paged.with_position_id")
+struct Struct_rope_split_store_ragged_paged_with_position_id[interleaved: Bool]:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        //,
+        mrope_section: StaticString,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=dtype, rank=2, ...],
+        qkv: InputTensor[dtype=dtype, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        position_ids: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        ctx: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime if mrope_section == "":
+            return rope_split_store_paged_ragged_with_position_ids[
+                target=target,
+                interleaved=Self.interleaved,
+            ](
+                qkv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_collection,
+                position_ids.to_tile_tensor[DType.int64](),
+                layer_idx,
+                output.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+        else:
+            comptime mrope = _unsafe_str_to_coord[mrope_section]()
+            return rope_split_store_paged_ragged_with_position_ids[
+                target=target,
+                interleaved=Self.interleaved,
+                mrope_types=mrope.element_types,
+                mrope_section=mrope,
+            ](
+                qkv.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_collection,
+                position_ids.to_tile_tensor[DType.int64](),
+                layer_idx,
+                output.to_tile_tensor[DType.int64](),
+                ctx,
+            )
+
+
 @compiler.register("mo.fused_qkv_matmul.ragged.paged.quantized")
 struct Struct_fused_qkv_matmul_padded_ragged_quantized:
     @always_inline
@@ -6763,9 +7075,9 @@ def generic_fused_qk_rope_bshd_paged_ragged_kernel_api[
     interleaved: Bool,
     has_position_ids: Bool,
     target: StaticString,
-    mrope_types: Variadic.TypesOfTrait[CoordLike] = Variadic.empty_of_trait[
-        CoordLike
-    ],
+    mrope_types: TypeList[Trait=CoordLike, ...] = TypeList.of[
+        Trait=CoordLike
+    ](),
     mrope_section: Optional[Coord[*mrope_types]] = None,
 ](
     q_proj: ManagedTensorSlice[dtype=dtype, rank=3, ...],
@@ -6868,7 +7180,8 @@ struct Struct_fused_qk_rope_ragged_paged[interleaved: Bool]:
     ) raises:
         # Dummy position_ids - won't be used since has_position_ids=False
         var dummy_position_ids = DynamicTensor[dtype=DType.uint32, rank=2, ...](
-            {}, IndexList[2](0)
+            UnsafePointer[UInt32, MutAnyOrigin].unsafe_dangling(),
+            IndexList[2](0),
         )
         var kv_collection = generic_get_paged_cache(
             kv_blocks,
@@ -6979,7 +7292,7 @@ struct Struct_rope_ragged_paged[interleaved: Bool]:
         @always_inline
         @parameter
         def output_fn[
-            width: Int, alignment: Int
+            width: SIMDSize, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
@@ -7053,7 +7366,7 @@ struct Struct_rope_ragged_paged_with_position_id[interleaved: Bool]:
         @always_inline
         @parameter
         def output_fn[
-            width: Int, alignment: Int
+            width: SIMDSize, alignment: Int
         ](idx: IndexList[3], val: SIMD[dtype, width]) capturing -> None:
             output._lambda_store[width=width, element_alignment=alignment](
                 idx,
@@ -7463,9 +7776,7 @@ struct Struct_mla_decode_ragged_paged_scaled:
         comptime page_size = Int(kv_blocks.static_spec.shape_tuple[3])
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime kv_num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
-        comptime kv_params = KVCacheStaticParams(
-            UInt(kv_num_heads), UInt(head_dim), True
-        )
+        comptime kv_params = KVCacheStaticParams(kv_num_heads, head_dim, True)
 
         var kv_collection = generic_get_paged_cache_with_scales[
             kv_dtype,
@@ -7661,33 +7972,6 @@ struct Struct_mla_decompress_k_cache_ragged_paged:
         )
 
 
-@compiler.register("mo.kv_cache.get_max_seq_len.paged")
-struct Struct_kv_cache_get_max_seq_len_paged:
-    @always_inline
-    @staticmethod
-    def execute[
-        dtype: DType,
-        //,
-        target: StaticString,
-    ](
-        max_seq_len: OutputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_blocks: MutableInputTensor[dtype=dtype, rank=6, ...],
-        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
-        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
-        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
-        context: DeviceContextPtr,
-    ) raises:
-        var kv_collection = generic_get_paged_cache(
-            kv_blocks,
-            cache_lengths,
-            kv_lookup_table,
-            max_lengths,
-        )
-        # TODO: use max_lengths[0, 0] in the graphcause a CUDA_INVALID_MEMORY_ACCESS error,
-        # as the graph compiler assumes it is a GPU tensor, and inserts a DtoH copy.
-        max_seq_len[0] = kv_collection.max_seq_length
-
-
 @compiler.register("mo.mla.graph.prefill.paged.fp8")
 struct Struct_mla_prefill_graph_paged:
     @always_inline
@@ -7801,6 +8085,14 @@ struct Struct_mla_compute_dispatch_args_scalar:
             max_cache_valid_length_tensor.unsafe_ptr()[0]
         )
         var q_max_seq_len = Int(q_max_seq_len_tensor.unsafe_ptr()[0])
+
+        if batch_size < 0:
+            raise Error("batch_size must be non-negative.")
+        if batch_size == 0:
+            output[0] = Int64(0)
+            output[1] = Int64(q_max_seq_len)
+            output[2] = Int64(1)
+            return
 
         comptime sm_count = ctx.default_device_info.sm_count
         comptime _half_sms = sm_count // 2
@@ -8407,6 +8699,34 @@ struct Struct_moe_create_indices:
         )
 
 
+@compiler.register("mo.moe.create.indices.with.scales.offset")
+struct Struct_moe_create_indices_with_scales_offset:
+    @always_inline
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        token_expert_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_start_indices: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        restore_token_order: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputTensor[dtype=DType.int32, rank=1, ...],
+        expert_usage_stats: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offset: OutputTensor[dtype=DType.uint32, rank=1, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        moe_create_indices[target=target](
+            token_expert_order.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            restore_token_order.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            expert_usage_stats.to_tile_tensor[DType.int64](),
+            topk_ids.to_tile_tensor[DType.int64](),
+            context,
+            scales_offset_p=scales_offset._ptr,
+        )
+
+
 @compiler.register("mo.moe.router.group.limited")
 struct Struct_moe_router_group_limited:
     @always_inline
@@ -8443,6 +8763,54 @@ struct Struct_moe_router_group_limited:
             n_groups,
             topk_group,
             norm_weights,
+            target=target,
+            scores_input_fn=OptionalReg[
+                def[
+                    width: Int
+                ](IndexList[2]) capturing -> SIMD[scores_type, width]
+            ](scores_input_fn),
+        ](
+            expert_indices.to_tile_tensor[DType.int64](),
+            expert_weights.to_tile_tensor[DType.int64](),
+            expert_scores.to_tile_tensor[DType.int64]().as_immut(),
+            expert_bias.to_tile_tensor[DType.int64]().as_immut(),
+            routed_scaling_factor,
+            context,
+        )
+
+
+@compiler.register("mo.moe.single.group.router")
+struct Struct_moe_single_group_router:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        scores_type: DType,
+        bias_type: DType,
+        //,
+        n_routed_experts: Int,
+        n_experts_per_tok: Int,
+        norm_weights: Bool,
+        target: StaticString,
+    ](
+        expert_indices: OutputTensor[dtype=DType.int32, rank=2, ...],
+        expert_weights: OutputTensor[dtype=scores_type, rank=2, ...],
+        expert_scores: FusedInputTensor[dtype=scores_type, rank=2, ...],
+        expert_bias: InputTensor[dtype=bias_type, rank=1, ...],
+        routed_scaling_factor: Float32,
+        context: DeviceContextPtr,
+    ) raises:
+        @parameter
+        @always_inline
+        def scores_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[scores_type, width]:
+            return expert_scores._lambda_load[width=width](coords)
+
+        single_group_router[
+            n_routed_experts,
+            n_experts_per_tok,
+            norm_weights=norm_weights,
             target=target,
             scores_input_fn=OptionalReg[
                 def[
@@ -8631,6 +8999,69 @@ struct Struct_grouped_matmul_dynamic_scaled_fp8:
         )
 
 
+@compiler.register("mo.grouped.matmul.block.scaled.mxfp4")
+struct Struct_grouped_matmul_block_scaled_mxfp4:
+    """MOGG wrapper for grouped block-scaled matrix multiplication.
+
+    Provides graph compiler integration for block-scaled grouped matmul
+    operations used in Mixture of Experts (MoE) layers on AMD GPUs.
+    """
+
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=3, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=3, ...],
+        expert_start_indices: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        num_active_experts: UInt32,
+        context: DeviceContextPtr,
+    ) raises:
+        """Executes grouped block-scaled matrix multiplication.
+
+        Computes C = A @ B^T for multiple expert groups where A and B are
+        block-scaled (e.g. MXFP4: 4-bit floating point packed as uint8).
+
+        Parameters:
+            c_type: The output tensor data type.
+            target: The target GPU device.
+
+        Args:
+            c: The output tensor of shape (total_tokens, N).
+            a: The input tensor of shape (total_tokens, K // 2).
+            b: The weight tensor of shape (num_experts, N, K // 2).
+            a_scales: The A scale factors in 2D layout.
+            b_scales: The B scale factors in 3D layout.
+            expert_start_indices: The starting token index for each expert.
+            expert_ids: The expert ID for each group.
+            num_active_experts: The number of active experts.
+            context: The device context pointer.
+        """
+        comptime assert is_gpu[
+            target
+        ](), "grouped block-scaled matmul only supports GPUs"
+        if num_active_experts == 0:
+            return
+        mxfp4_grouped_matmul_amd(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            expert_start_indices.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            Int(num_active_experts),
+            context.get_device_context(),
+        )
+
+
 @compiler.register("mo.batched.matmul.dynamic.scaled.fp8")
 struct Struct_batched_matmul_dynamic_scaled_fp8:
     @always_inline
@@ -8692,10 +9123,11 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
+        lambdas_have_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: OutputTensor[dtype=c_type, rank=2, ...],
+        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -8708,10 +9140,49 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
+        @parameter
+        @always_inline
+        def epilogue_fn[
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
+            c._lambda_store[width=_width, element_alignment=alignment](
+                coords,
+                rebind[SIMD[c.dtype, _width]](val),
+            )
+
+        @parameter
+        @always_inline
+        def output_compute_fn[
+            _dtype: DType, _width: Int, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
+            _dtype, _width
+        ]:
+            return rebind[SIMD[_dtype, _width]](
+                c._fused_compute_output_lambda[element_alignment=alignment](
+                    coords, rebind[SIMD[c.dtype, _width]](val)
+                )
+            )
+
+        comptime has_compute_lambda = type_of(c)._has_compute_fusion
+
+        comptime elementwise_lambda = Optional[
+            matmul_elementwise_epilogue_type
+        ](
+            epilogue_fn
+        ) if lambdas_have_fusion and not has_compute_lambda else None
+
+        comptime compute_lambda = Optional[
+            matmul_elementwise_compute_lambda_type
+        ](
+            output_compute_fn
+        ) if lambdas_have_fusion and has_compute_lambda else None
+
         cuda_ctx = context.get_device_context()
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
+            elementwise_lambda_fn=elementwise_lambda,
+            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),
@@ -8724,6 +9195,37 @@ struct Struct_matmul_dynamic_block_scaled:
         )
 
 
+@compiler.register("mo.matmul.dynamic.block.scaled.mxfp4")
+struct Struct_matmul_dynamic_block_scaled_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        c_type: DType,
+        //,
+        target: StaticString,
+    ](
+        c: OutputTensor[dtype=c_type, rank=2, ...],
+        a: InputTensor[dtype=DType.uint8, rank=2, ...],
+        b: InputTensor[dtype=DType.uint8, rank=2, ...],
+        a_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        b_scales: InputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "dynamic block scaled matmul only support GPUs with native"
+            " block scaled support"
+        )
+
+        mxfp4_block_scaled_matmul_amd(
+            c.to_tile_tensor[DType.int64](),
+            a.to_tile_tensor[DType.int64](),
+            b.to_tile_tensor[DType.int64](),
+            a_scales.to_tile_tensor[DType.int64](),
+            b_scales.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
+        )
+
+
 @compiler.register("mo.quantize.dynamic.block.scaled")
 struct Struct_quantize_dynamic_block_scaled:
     @always_inline
@@ -8733,11 +9235,12 @@ struct Struct_quantize_dynamic_block_scaled:
         scales_type: DType,
         in_dtype: DType,
         //,
+        scales_rank: Int,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=out_dtype, rank=2, ...],
-        scales: OutputTensor[dtype=scales_type, rank=5, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
         input: InputTensor[dtype=in_dtype, rank=2, ...],
         tensor_sf: Float32,
         context: DeviceContextPtr,
@@ -8757,6 +9260,71 @@ struct Struct_quantize_dynamic_block_scaled:
             input.to_tile_tensor[DType.int64](),
             tensor_sf,
             cuda_ctx,
+        )
+
+
+@compiler.register("mo.grouped.quantize.dynamic.block.scaled")
+struct Struct_grouped_quantize_dynamic_block_scaled:
+    @always_inline
+    @staticmethod
+    def execute[
+        out_dtype: DType,
+        scales_type: DType,
+        in_dtype: DType,
+        //,
+        scales_rank: Int,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=out_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=scales_rank, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        expert_ids: InputTensor[dtype=DType.int32, rank=1, ...],
+        sf_tensor: InputTensor[dtype=DType.float32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[
+            target
+        ](), "grouped quantize dynamic block scaled only supports GPUs"
+
+        cuda_ctx = context.get_device_context()
+        grouped_quantize_dynamic_scaled_fp4_async(
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            row_offsets.to_tile_tensor[DType.int64](),
+            scales_offsets.to_tile_tensor[DType.int64](),
+            expert_ids.to_tile_tensor[DType.int64](),
+            sf_tensor.to_tile_tensor[DType.int64](),
+            cuda_ctx,
+        )
+
+
+@compiler.register("mo.quantize.dynamic.block.scaled.mxfp4")
+struct Struct_quantize_dynamic_block_scaled_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        in_dtype: DType,
+        //,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=DType.uint8, rank=2, ...],
+        scales: OutputTensor[dtype=DType.float8_e8m0fnu, rank=2, ...],
+        input: InputTensor[dtype=in_dtype, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        comptime assert is_gpu[target](), (
+            "quantize dynamic block scaled only support GPUs with native"
+            " block scaled support"
+        )
+
+        quantize_dynamic_block_scaled_mxfp4(
+            output.to_tile_tensor[DType.int64](),
+            scales.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            context.get_device_context(),
         )
 
 
@@ -8969,9 +9537,7 @@ struct Struct_kv_cache_store_k_scales_paged:
         comptime head_dim = Int(kv_blocks.static_spec.shape_tuple[5])
         comptime num_heads = Int(kv_blocks.static_spec.shape_tuple[4])
         comptime is_mla = Int(kv_blocks.static_spec.shape_tuple[1]) == 1
-        comptime kv_params = KVCacheStaticParams(
-            UInt(num_heads), UInt(head_dim), is_mla
-        )
+        comptime kv_params = KVCacheStaticParams(num_heads, head_dim, is_mla)
 
         var k_collection = generic_get_paged_cache_with_scales[
             cache_dtype,
@@ -9282,6 +9848,24 @@ def layout_transform_conv_filter_common[
     )
 
 
+def _layout_transform_conv_filter_from_fcrs[
+    dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+](
+    packed_filter: ManagedTensorSlice[dtype=dtype, rank=packed_rank, ...],
+    filter: ManagedTensorSlice[dtype=dtype, rank=filter_rank, ...],
+):
+    comptime assert packed_rank == filter_rank + 1
+
+    # With the compiler-level FCRS→RSCF transpose in PatternFusion,
+    # this kernel should no longer be called. But keep it as a fallback
+    # using int64 convention (same as the RSCF path).
+    _pack_conv_filter_from_fcrs(
+        filter.to_tile_tensor[DType.int64](),
+        packed_filter.to_tile_tensor[DType.int64](),
+        num_groups,
+    )
+
+
 @compiler.register("layout_transform_QRSCF_to_FQRSCf")
 struct LayoutTransformQRSCF2FQRSCf:
     @always_inline
@@ -9308,6 +9892,39 @@ struct LayoutTransformRSCF2FRSCf:
         filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
     ):
         layout_transform_conv_filter_common[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+# Note: These FCRS/FCQRS kernels are currently unused — the compiler
+# transposes FCRS to RSCF in PatternFusion before packing, so only the
+# RSCF kernels above are invoked. Kept as fallback; can be removed in cleanup.
+@compiler.register("layout_transform_FCRS_to_FRSCf")
+struct LayoutTransformFCRS2FRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
+            packed_filter, filter
+        )
+
+
+@compiler.register("layout_transform_FCQRS_to_FQRSCf")
+struct LayoutTransformFCQRS2FQRSCf:
+    @always_inline
+    @staticmethod
+    def execute[
+        dtype: DType, filter_rank: Int, packed_rank: Int, num_groups: Int
+    ](
+        packed_filter: OutputTensor[dtype=dtype, rank=packed_rank, ...],
+        filter: InputTensor[dtype=dtype, rank=filter_rank, ...],
+    ):
+        _layout_transform_conv_filter_from_fcrs[num_groups=num_groups](
             packed_filter, filter
         )
 
@@ -9776,6 +10393,7 @@ struct Struct_fused_token_sampling:
         temperature: InputTensor[dtype=DType.float32, rank=1, ...],
         top_p: InputTensor[dtype=DType.float32, rank=1, ...],
         min_top_p: Float32,
+        min_p: InputTensor[dtype=DType.float32, rank=1, ...],
         seed: InputTensor[dtype=DType.uint64, rank=1, ...],
         input: InputTensor[dtype=dtype, rank=rank, ...],
         ctx: DeviceContextPtr,
@@ -9791,6 +10409,7 @@ struct Struct_fused_token_sampling:
                     input.to_tile_tensor[DType.int64](),
                     rank - 1,
                     out_idxs.to_tile_tensor[DType.int64](),
+                    ctx.get_optional_device_context(),
                 )
                 return
             _fused_token_sampling_cpu(
@@ -9821,6 +10440,9 @@ struct Struct_fused_token_sampling:
                 .as_any_origin()
                 .as_immut(),
                 top_p=top_p.to_tile_tensor[DType.int64]()
+                .as_any_origin()
+                .as_immut(),
+                min_p=min_p.to_tile_tensor[DType.int64]()
                 .as_any_origin()
                 .as_immut(),
                 seed=seed.to_tile_tensor[DType.int64]()
@@ -9952,18 +10574,24 @@ def _check_signal_buffer_size(
 
 
 @always_inline("nodebug")
-def task_id_for_device(device_id: Int, num_workers: Int) -> Int:
-    # Map from device ID to task ID for CPU affinity.
-    # Note: Keep in sync with taskIdForDevice() in MGPPrimitives.cpp
-    if num_workers <= 1:
-        return -1
-    return 1 + (device_id % (num_workers - 1))
+def task_id_for_device(device_id: Int) -> Int:
+    """Map from device ID to task ID for CPU affinity.
+
+    Delegates to the shared C++ implementation in DeviceAffinity.cpp which
+    handles explicit MODULAR_RUNTIME_DEVICE_TASK_CPU_IDS config,
+    NUMA-inferred GPU-to-CPU core mapping, and round-robin fallback.
+    """
+    return Int(
+        external_call["KGEN_CompilerRT_TaskIdForDevice", Int32](
+            Int32(device_id),
+        )
+    )
 
 
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
-    F: def[Int]() raises unified -> None,
+    F: def[Int]() raises -> None,
 ](func: F, dev_ctxs: DeviceContextPtrList) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 
@@ -9988,10 +10616,9 @@ def _launch_device_collective[
 
     # Set up a task group to launch the tasks in parallel.
     var tg = TaskGroup()
-    var num_workers = parallelism_level()
     comptime for i in range(num_devices):
         # Dispatch to the worker thread that has affinity for this device.
-        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()), num_workers)
+        var worker_id = task_id_for_device(Int(dev_ctxs[i].id()))
         tg._create_task(wrapper[i](), desired_worker_id=worker_id)
 
     # Wait for all tasks to complete.
@@ -10052,7 +10679,7 @@ struct DistributedAllReduceSum:
         def output_lambda[
             output_index: Int,
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -10066,7 +10693,7 @@ struct DistributedAllReduceSum:
         # Marshal signal buffers into the expected format.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
         comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
@@ -10086,7 +10713,7 @@ struct DistributedAllReduceSum:
             @always_inline
             def launch_vendor_allreduce[
                 index: Int
-            ]() raises unified {
+            ]() raises {
                 read in_tensors,
                 read rank_sigs,
                 read dev_ctxs_input,
@@ -10131,7 +10758,7 @@ struct DistributedAllReduceSum:
         @always_inline
         def launch_allreduce[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -10198,7 +10825,7 @@ struct BundledAllReduceSum:
         var out_buf = output.to_tile_tensor[DType.int64]()
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = rebind[InputTensorType](
@@ -10210,7 +10837,7 @@ struct BundledAllReduceSum:
         @parameter
         def output_lambda[
             _dtype: DType,
-            _width: Int,
+            _width: SIMDSize,
             *,
             _alignment: Int,
         ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -10285,7 +10912,7 @@ struct DistributedReduceScatterSum:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
@@ -10293,7 +10920,7 @@ struct DistributedReduceScatterSum:
         @always_inline
         def launch_reducescatter[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -10304,7 +10931,7 @@ struct DistributedReduceScatterSum:
             def output_lambda[
                 output_index: Int,
                 _dtype: DType,
-                _width: Int,
+                _width: SIMDSize,
                 *,
                 _alignment: Int,
             ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
@@ -10399,7 +11026,7 @@ struct DistributedAllGather:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
 
         comptime for i in range(num_devices):
             in_tensors[i] = TileTensor(
@@ -10421,7 +11048,7 @@ struct DistributedAllGather:
         @always_inline
         def launch_allgather[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read out_tensors,
             read rank_sigs,
@@ -10510,7 +11137,7 @@ struct DistributedBroadcast:
 
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
 
         comptime for i in range(signal_buffers.size):
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
@@ -10518,7 +11145,7 @@ struct DistributedBroadcast:
         @always_inline
         def launch_broadcast[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_buf,
             read rank_sigs,
             read dev_ctxs_input,
@@ -10594,7 +11221,7 @@ struct DistributedScatter:
         var in_tensors = InlineArray[InputTensorType, ngpus](uninitialized=True)
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
 
         comptime for i in range(ngpus):
             in_tensors[i] = rebind[InputTensorType](
@@ -10606,10 +11233,9 @@ struct DistributedScatter:
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        @parameter
         def launch_scatter[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -10685,7 +11311,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         # Marshal signal buffers.
         var rank_sigs = InlineArray[
             UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS
-        ](fill={})
+        ](uninitialized=True)
 
         comptime for i in range(inputs.size):
             in_tensors[i] = rebind[InputTensorType](
@@ -10696,7 +11322,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         @always_inline
         def launch_fused_allreduce[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs,
@@ -11055,28 +11681,42 @@ struct QuantizeTensorDynamicScaledFloat8:
     @staticmethod
     def execute[
         input_type: DType,
+        scales_type: DType,
         output_type: DType,
+        //,
+        group_size_or_per_token: Int,
         target: StaticString,
     ](
         output: OutputTensor[dtype=output_type, rank=2, ...],
-        scale: OutputTensor[dtype=DType.float32, rank=1, ...],
-        input: InputTensor[dtype=input_type, rank=2, ...],
+        scales: OutputTensor[dtype=scales_type, rank=2, ...],
+        input: FusedInputTensor[dtype=input_type, rank=2, ...],
+        scale_ub: Float32,
         ctx: DeviceContextPtr,
     ) raises:
         comptime assert is_gpu[target](), "only valid on GPUs"
-        comptime assert output_type in (
-            DType.float8_e4m3fn,
-            DType.float8_e4m3fnuz,
-        ), "output dtype should be float8_e4m3fn or float8_e4m3fnuz"
-        var cuda_ctx = ctx.get_device_context()
+
+        @parameter
+        @always_inline
+        def input_fn[
+            width: Int, alignment: Int
+        ](row: Int, col: Int) capturing -> SIMD[input_type, width]:
+            return input._lambda_load[width=width, element_alignment=alignment](
+                Index(row, col)
+            )
+
         quantize_tensor_dynamic_scaled_fp8[
-            output_type,
-            input_type,
+            out_dtype=output_type,
+            in_dtype=input_type,
+            scales_dtype=scales_type,
+            input_fn,
+            group_size_or_per_token,
+            num_cols=Int(input.static_spec.shape_tuple[1]),
         ](
             output.to_tile_tensor[DType.int64](),
-            input.to_tile_tensor[DType.int64](),
-            scale.to_tile_tensor[DType.int64](),
-            cuda_ctx,
+            scales.to_tile_tensor[DType.int64](),
+            scale_ub,
+            ctx.get_device_context(),
+            num_rows=input.dim_size(0),
         )
 
 
@@ -11123,49 +11763,6 @@ struct QuantizeDynamicScaledFloat8:
             scale_ub,
             ctx.get_device_context(),
             num_rows=input.dim_size(0),
-        )
-
-
-@compiler.register("mo.batched.quantize.dynamic.scaled.fp8")
-struct BatchedQuantizeDynamicScaledFloat8:
-    @always_inline
-    @staticmethod
-    def execute[
-        input_type: DType,
-        scales_type: DType,
-        output_type: DType,
-        //,
-        group_size_or_per_token: Int,
-        target: StaticString,
-    ](
-        output: OutputTensor[dtype=output_type, rank=3, ...],
-        scales: OutputTensor[dtype=scales_type, rank=3, ...],
-        input: FusedInputTensor[dtype=input_type, rank=3, ...],
-        scale_ub: Float32,
-        ctx: DeviceContextPtr,
-    ) raises:
-        comptime assert is_gpu[target](), "only valid on GPUs"
-
-        @parameter
-        @always_inline
-        def input_fn[
-            width: Int, alignment: Int
-        ](batch: Int, row: Int, col: Int) capturing -> SIMD[input_type, width]:
-            return input._lambda_load[width=width, element_alignment=alignment](
-                Index(batch, row, col)
-            )
-
-        batched_quantize_dynamic_scaled_fp8[
-            input_fn=input_fn,
-            group_size_or_per_token=group_size_or_per_token,
-            num_cols=Int(input.static_spec.shape_tuple[2]),
-        ](
-            output.to_tile_tensor[DType.int64](),
-            scales.to_tile_tensor[DType.int64](),
-            scale_ub,
-            ctx.get_device_context(),
-            num_rows=input.dim_size(1),
-            batch_size=input.dim_size(0),
         )
 
 
@@ -11239,7 +11836,7 @@ struct MatmulStaticScaledFloat8:
         @__copy_capture(output_tt, input_scale, weight_scale)
         @always_inline
         def scaled_output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](idx: IndexList[2], val: SIMD[dtype, width]):
             var scale = input_scale.cast[dtype]() * weight_scale.cast[dtype]()
             var scaled_val = val * scale
@@ -11248,13 +11845,17 @@ struct MatmulStaticScaledFloat8:
                 idx, scaled_val.cast[output_type]()
             )
 
-        # Create a dummy buffer to instruct the matmul kernel to accumulate
-        # in float32. The null pointer tells vendor matmul to allocate a
-        # temp buffer; the epilogue lambda writes to the real output.
+        # Allocate an fp32 scratch buffer for the matmul accumulator;
+        # the epilogue lambda reads from it, applies scaling, and writes
+        # the quantized result into the real output.
         comptime N = type_of(weight_tt).static_shape[0]
         var M = Int(input_tt.dim[0]())
-        var output_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.float32], MutAnyOrigin](),
+        var device_ctx = ctx.get_device_context()
+        var scratch_buffer = device_ctx.enqueue_create_buffer[DType.float32](
+            M * N
+        )
+        var output_scratch = TileTensor(
+            scratch_buffer.unsafe_ptr(),
             row_major(Coord(RuntimeInt[DType.int64](Int64(M)), Idx[N]())),
         )
 
@@ -11263,10 +11864,10 @@ struct MatmulStaticScaledFloat8:
             transpose_b=True,
             elementwise_lambda_fn=scaled_output_fn,
         ](
-            output_dummy,
+            output_scratch,
             input_tt,
             weight_tt,
-            Optional(ctx.get_device_context()),
+            Optional(device_ctx),
         )
 
 
@@ -11885,11 +12486,12 @@ struct Sleep:
 
         if is_gpu[target]():
 
+            @__name("sleep")
             def sleep_kernel(duration_sec: Float64):
                 sleep(duration_sec)
 
             var device_ctx = ctx.get_device_context()
-            device_ctx.enqueue_function_experimental[sleep_kernel](
+            device_ctx.enqueue_function[sleep_kernel, sleep_kernel](
                 duration_sec, grid_dim=(1,), block_dim=(1,)
             )
         else:

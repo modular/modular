@@ -20,7 +20,9 @@ Documents known limitations:
 from layout import TileTensor, row_major
 from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
-from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
+from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
+    structured_ping_pong_matmul as ping_pong_matmul,
+)
 from std.testing import assert_true
 from std.random import random_float64
 
@@ -51,9 +53,9 @@ def test_shape[
 
     # Run kernel
     ping_pong_matmul[enable_swizzle=enable_swizzle](
-        a_tt.to_layout_tensor(),
-        b_tt.to_layout_tensor(),
-        c_tt.to_layout_tensor(),
+        a_tt,
+        b_tt,
+        c_tt,
         ctx,
     )
 

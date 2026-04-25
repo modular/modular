@@ -367,7 +367,7 @@ class TestRuntimeFallback:
             call_log.append("interpreter_called")
             raise RuntimeError("simulated unsupported dtype")
 
-        MOInterpreter.execute = _failing_execute  # type: ignore[method-assign]
+        MOInterpreter.execute = _failing_execute  # type: ignore[assignment]
         try:
             max_ops = rc._interpreter_max_ops()
             use_interpreter = True
@@ -403,6 +403,82 @@ class TestRuntimeFallback:
         assert ctx_explicit_off._auto_interpreter is False
 
 
+class TestDebugPrintOps:
+    """Tests for DebugPrintOp and DebugTensorPrintOp interpreter handlers."""
+
+    def test_can_execute_with_debug_print(self) -> None:
+        """Test can_execute returns True for a graph using ops.print (string)."""
+        with Graph("debug_print", input_types=[]) as graph:
+            ops.print("hello world", label="test")
+            c = ops.constant([1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is True
+
+    def test_can_execute_with_debug_tensor_print(self) -> None:
+        """Test can_execute returns True for a graph using ops.print on a tensor."""
+        with Graph("debug_tensor", input_types=[]) as graph:
+            t = ops.constant([1.0, 2.0, 3.0], dtype=DType.float32, device=CPU())
+            ops.print(t, label="my_tensor")
+            graph.output(t)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph) is True
+
+    def test_debug_print_executes(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test that DebugPrintOp handler prints the string to stdout."""
+        with Graph("print_exec", input_types=[]) as graph:
+            ops.print("hello from graph", label="dbg")
+            c = ops.constant([1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(graph, [])
+        assert len(outputs) == 1
+
+        captured = capsys.readouterr()
+        assert "[dbg] hello from graph" in captured.out
+
+    def test_debug_tensor_print_executes(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test that DebugTensorPrintOp handler prints tensor data to stdout."""
+        with Graph("tensor_print_exec", input_types=[]) as graph:
+            t = ops.constant(
+                [10.0, 20.0, 30.0], dtype=DType.float32, device=CPU()
+            )
+            ops.print(t, label="vec")
+            graph.output(t)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(graph, [])
+        assert len(outputs) == 1
+
+        captured = capsys.readouterr()
+        assert "[vec]" in captured.out
+        assert "10." in captured.out
+        assert "20." in captured.out
+        assert "30." in captured.out
+
+    def test_debug_print_no_label(
+        self, capsys: pytest.CaptureFixture[str]
+    ) -> None:
+        """Test DebugPrintOp with empty label prints just the value."""
+        with Graph("print_no_label", input_types=[]) as graph:
+            ops.print("bare message", label="")
+            c = ops.constant([1.0], dtype=DType.float32, device=CPU())
+            graph.output(c)
+
+        interp = MOInterpreter()
+        interp.execute(graph, [])
+
+        captured = capsys.readouterr()
+        assert "bare message" in captured.out
+
+
 class TestInterpreterMaxOps:
     """Tests for the MAX_INTERPRETER_MAX_OPS threshold."""
 
@@ -433,3 +509,181 @@ class TestInterpreterMaxOps:
         from max.experimental.realization_context import _interpreter_max_ops
 
         assert _interpreter_max_ops() == 30
+
+
+class TestConstantScalarOp:
+    """Tests for ConstantScalarOp interpreter handler.
+
+    Uses mock ops to directly invoke _handle_constant_scalar because there
+    is no public graph API that emits mo.constant.scalar -- it is an
+    internal MO dialect op.
+    """
+
+    def test_integer_scalar(self) -> None:
+        """ConstantScalarOp with an integer value produces a rank-0 buffer."""
+        from unittest.mock import MagicMock
+
+        from max._core.dialects import builtin, mo
+        from max._interpreter_ops.handlers import _handle_constant_scalar
+
+        mock_op = MagicMock(spec=mo.ConstantScalarOp)
+
+        mock_result = MagicMock()
+        mock_scalar_type = MagicMock(spec=mo.ScalarType)
+        mock_scalar_type.dtype = DType.int64
+        mock_result.type = mock_scalar_type
+        mock_op.results = [mock_result]
+
+        mock_op.value = builtin.IntegerAttr(
+            builtin.IntegerType(64, builtin.SignednessSemantics.signed), 42
+        )
+
+        outputs = _handle_constant_scalar(mock_op, [])
+        assert len(outputs) == 1
+        buf = outputs[0]
+        assert isinstance(buf, Buffer)
+        assert buf.to_numpy().item() == 42
+
+    def test_float_scalar(self) -> None:
+        """ConstantScalarOp with a float value."""
+        from unittest.mock import MagicMock
+
+        from max._core.dialects import builtin, mo
+        from max._interpreter_ops.handlers import _handle_constant_scalar
+
+        mock_op = MagicMock(spec=mo.ConstantScalarOp)
+
+        mock_result = MagicMock()
+        mock_scalar_type = MagicMock(spec=mo.ScalarType)
+        mock_scalar_type.dtype = DType.float32
+        mock_result.type = mock_scalar_type
+        mock_op.results = [mock_result]
+
+        mock_op.value = MagicMock(spec=builtin.FloatAttr)
+        mock_op.value.value = 3.14
+
+        outputs = _handle_constant_scalar(mock_op, [])
+        assert len(outputs) == 1
+        result = outputs[0]
+        assert isinstance(result, Buffer)
+        np.testing.assert_allclose(result.to_numpy().item(), 3.14)
+
+    def test_bool_scalar(self) -> None:
+        """ConstantScalarOp with a boolean value."""
+        from unittest.mock import MagicMock
+
+        from max._core.dialects import builtin, mo
+        from max._interpreter_ops.handlers import _handle_constant_scalar
+
+        mock_op = MagicMock(spec=mo.ConstantScalarOp)
+
+        mock_result = MagicMock()
+        mock_scalar_type = MagicMock(spec=mo.ScalarType)
+        mock_scalar_type.dtype = DType.bool
+        mock_result.type = mock_scalar_type
+        mock_op.results = [mock_result]
+
+        mock_op.value = builtin.BoolAttr(True)
+
+        outputs = _handle_constant_scalar(mock_op, [])
+        assert len(outputs) == 1
+        result = outputs[0]
+        assert isinstance(result, Buffer)
+        assert result.to_numpy().item() != 0
+
+
+class TestConstantExternalOp:
+    """Tests for ConstantExternalOp interpreter handler.
+
+    Builds a graph with ops.constant_external, passes a weights registry
+    to MOInterpreter.execute(), and verifies the weight is resolved.
+    """
+
+    def test_basic_weight_lookup(self) -> None:
+        """External constant is resolved from weights registry."""
+        weight_np = np.array([[1.0, 2.0], [3.0, 4.0]], dtype=np.float32)
+        weight_buf = Buffer.from_numpy(weight_np)
+
+        with Graph("external_const_graph", input_types=[]) as graph:
+            w = ops.constant_external(
+                "my_weight",
+                TensorType(DType.float32, [2, 2], CPU()),
+            )
+            graph.output(w)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(graph, [], weights={"my_weight": weight_buf})
+
+        assert len(outputs) == 1
+        result = outputs[0]
+        assert isinstance(result, Buffer)
+        np.testing.assert_array_equal(result.to_numpy(), weight_np)
+
+    def test_multiple_weights(self) -> None:
+        """Multiple external constants resolved from registry."""
+        w1_np = np.array([1.0, 2.0, 3.0], dtype=np.float32)
+        w2_np = np.array([4.0, 5.0], dtype=np.float32)
+        w1_buf = Buffer.from_numpy(w1_np)
+        w2_buf = Buffer.from_numpy(w2_np)
+
+        with Graph("multi_weight_graph", input_types=[]) as graph:
+            a = ops.constant_external(
+                "weight_a",
+                TensorType(DType.float32, [3], CPU()),
+            )
+            b = ops.constant_external(
+                "weight_b",
+                TensorType(DType.float32, [2], CPU()),
+            )
+            graph.output(a, b)
+
+        interp = MOInterpreter()
+        outputs = interp.execute(
+            graph,
+            [],
+            weights={"weight_a": w1_buf, "weight_b": w2_buf},
+        )
+
+        assert len(outputs) == 2
+        assert isinstance(outputs[0], Buffer)
+        assert isinstance(outputs[1], Buffer)
+        np.testing.assert_array_equal(outputs[0].to_numpy(), w1_np)
+        np.testing.assert_array_equal(outputs[1].to_numpy(), w2_np)
+
+    def test_missing_weight_raises(self) -> None:
+        """RuntimeError when a weight name is not in the registry."""
+        with Graph("missing_weight_graph", input_types=[]) as graph:
+            w = ops.constant_external(
+                "nonexistent",
+                TensorType(DType.float32, [2], CPU()),
+            )
+            graph.output(w)
+
+        interp = MOInterpreter()
+        with pytest.raises(RuntimeError, match="nonexistent"):
+            interp.execute(graph, [], weights={})
+
+    def test_no_registry_raises(self) -> None:
+        """RuntimeError when no weights registry is provided."""
+        with Graph("no_registry_graph", input_types=[]) as graph:
+            w = ops.constant_external(
+                "some_weight",
+                TensorType(DType.float32, [2], CPU()),
+            )
+            graph.output(w)
+
+        interp = MOInterpreter()
+        with pytest.raises(RuntimeError, match="No weights registry"):
+            interp.execute(graph, [])
+
+    def test_can_execute_with_constant_external(self) -> None:
+        """can_execute returns True for graphs with constant_external."""
+        with Graph("can_exec_graph", input_types=[]) as graph:
+            w = ops.constant_external(
+                "w",
+                TensorType(DType.float32, [4], CPU()),
+            )
+            graph.output(w)
+
+        interp = MOInterpreter()
+        assert interp.can_execute(graph)

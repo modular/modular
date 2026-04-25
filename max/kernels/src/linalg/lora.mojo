@@ -93,11 +93,11 @@ def shrink_qkv_permute_3mn_sm100(
     var M = Int(c_lora.dim(1))
     var c_tensor_lora = c_lora.to_layout_tensor()
     comptime N_Total = B * N
-    # Create a null-backed TileTensor for C. This ensures GroupGEMM does NOT
+    # Create a dangling TileTensor for C. This ensures GroupGEMM does NOT
     # write into C directly; any changes to the final C output must happen
     # exclusively via the epilogue function.
-    var c = TileTensor[c_type](
-        UnsafePointer[Scalar[c_type], MutExternalOrigin](),
+    var c = TileTensor(
+        UnsafePointer[Scalar[c_type], MutExternalOrigin].unsafe_dangling(),
         row_major(Coord(Idx(M), Idx(N_Total))),
     )
 
@@ -105,7 +105,7 @@ def shrink_qkv_permute_3mn_sm100(
     @__copy_capture(c_tensor_lora, M)
     @parameter
     def permute_dim_lora_bmn[
-        dtype: DType, width: Int, *, alignment: Int = 1
+        dtype: DType, width: SIMDSize, *, alignment: Int = 1
     ](idx: IndexList[2], val: SIMD[dtype, width]) -> None:
         """Epilogue: permute flat (M, 3N) columns to planar (3, M, N) tiles.
         Maps a flat column index `j` into `(head, n)` via `divmod(j, N)` and

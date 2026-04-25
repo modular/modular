@@ -64,9 +64,9 @@ def test_rmsnorm_then_matmul[
     pdl_level: PDLLevel = PDLLevel(),
     prefetch_tiles_n: Int = 0,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     print(
         t"rmsnorm->matmul: dtype={a_type} shape=({M}, {N}, {K})"
@@ -104,32 +104,28 @@ def test_rmsnorm_then_matmul[
 
     # --- Device allocations ---
     var a_raw_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_raw_tensor = TileTensor(a_raw_device.unsafe_ptr(), ak_shape)
+    var a_raw_tensor = TileTensor(a_raw_device, ak_shape)
 
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
 
     var gamma_device = ctx.enqueue_create_buffer[a_type](K)
     var gamma_tensor = TileTensor(
-        gamma_device.unsafe_ptr(), row_major(Idx[KType.static_value]())
+        gamma_device, row_major(Idx[KType.static_value]())
     )
 
     # Separate normalized-A buffers — one per launch, intentionally independent
     var a_normed_vendor_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_normed_vendor_tensor = TileTensor(
-        a_normed_vendor_device.unsafe_ptr(), ak_shape
-    )
+    var a_normed_vendor_tensor = TileTensor(a_normed_vendor_device, ak_shape)
 
     var a_normed_ours_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_normed_ours_tensor = TileTensor(
-        a_normed_ours_device.unsafe_ptr(), ak_shape
-    )
+    var a_normed_ours_tensor = TileTensor(a_normed_ours_device, ak_shape)
 
     var c_vendor_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_vendor_tensor = TileTensor(c_vendor_device.unsafe_ptr(), c_shape)
+    var c_vendor_tensor = TileTensor(c_vendor_device, c_shape)
 
     var c_ours_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ours_tensor = TileTensor(c_ours_device.unsafe_ptr(), c_shape)
+    var c_ours_tensor = TileTensor(c_ours_device, c_shape)
 
     # H→D copies
     ctx.enqueue_copy(a_raw_device, a_raw_host_ptr)
@@ -147,7 +143,7 @@ def test_rmsnorm_then_matmul[
     def input_fn[
         width: Int, _rank: Int
     ](coords: IndexList[_rank]) -> SIMD[a_type, width]:
-        return a_raw_tensor.ptr.load[width=width](
+        return a_raw_tensor.raw_load[width=width](
             a_raw_tensor.layout(Coord(coords))
         )
 
@@ -160,7 +156,7 @@ def test_rmsnorm_then_matmul[
     def output_fn_vendor[
         width: Int, alignment: Int
     ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
-        a_normed_vendor_tensor.ptr.store[width=width, alignment=alignment](
+        a_normed_vendor_tensor.raw_store[width=width, alignment=alignment](
             a_normed_vendor_tensor.layout(Coord(coords)), val
         )
 
@@ -186,7 +182,7 @@ def test_rmsnorm_then_matmul[
     def output_fn_ours[
         width: Int, alignment: Int
     ](coords: IndexList[2], val: SIMD[a_type, width]) -> None:
-        a_normed_ours_tensor.ptr.store[width=width, alignment=alignment](
+        a_normed_ours_tensor.raw_store[width=width, alignment=alignment](
             a_normed_ours_tensor.layout(Coord(coords)), val
         )
 
@@ -215,7 +211,7 @@ def test_rmsnorm_then_matmul[
         *,
         alignment: Int = 1,
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
-        c_ours_tensor.ptr.store[
+        c_ours_tensor.raw_store[
             width=width, alignment=alignment * size_of[c_type]()
         ](c_ours_tensor.layout(Coord(idx)), rebind[SIMD[c_type, width]](val))
 

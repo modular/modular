@@ -28,7 +28,9 @@ supporting negative counts.
 from std.collections.dict import (
     Dict,
     _DictEntryIter,
+    _DictEntryIterOwned,
     _DictKeyIter,
+    _DictKeyIterOwned,
     _DictValueIter,
 )
 import std.format._utils as fmt
@@ -44,6 +46,7 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
     Defaultable,
     Equatable,
     Iterable,
+    IterableOwned,
     Sized,
     Writable where conforms_to(V, Writable),
 ):
@@ -85,6 +88,11 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         iterable_mut: Whether the iterable is mutable.
         iterable_origin: The origin of the iterable.
     """
+
+    comptime IteratorOwnedType: Iterator = _DictKeyIterOwned[
+        Self.V, Int, Self.H
+    ]
+    """The owned iterator type for this counter."""
 
     # Fields
     var _data: Dict[Self.V, Int, Self.H]
@@ -192,6 +200,14 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         """
         self._data[value.copy()] = count
 
+    def __iter__(deinit self) -> Self.IteratorOwnedType:
+        """Consume the counter and iterate over its keys.
+
+        Returns:
+            An iterator that owns the counter's keys.
+        """
+        return {_DictEntryIterOwned(self._data^, 0)}
+
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         """Iterate over the `Counter`'s keys as immutable references.
 
@@ -232,8 +248,8 @@ struct Counter[V: KeyElement, H: Hasher = default_hasher](
         return Bool(len(self))
 
     def _write_counter_body[
-        f_key: def(Self.V, mut Some[Writer]),
-        f_val: def(Int, mut Some[Writer]),
+        f_key: def(Self.V, mut Some[Writer]) thin,
+        f_val: def(Int, mut Some[Writer]) thin,
     ](self, mut writer: Some[Writer]) where conforms_to(Self.V, Writable):
         """Write the counter's key-value pairs to a writer.
 

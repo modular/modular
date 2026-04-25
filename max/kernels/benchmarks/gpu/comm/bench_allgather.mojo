@@ -140,7 +140,7 @@ def bench_allgather[
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     for gpu_idx in range(ngpus):
@@ -196,23 +196,21 @@ def bench_allgather[
         )
 
     # Build TileTensor arrays for allgather.
-    comptime InTileType = type_of(
-        TileTensor(
-            cb_inputs[0].unsafe_ptr(), row_major(Idx(lengths[0]))
-        ).as_immut()
-    )
+    comptime InTileType = TileTensor[
+        dtype, type_of(row_major(Idx(lengths[0]))), ImmutAnyOrigin
+    ]
     var tt_in = InlineArray[InTileType, ngpus](uninitialized=True)
 
-    comptime OutTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(lengths[0])))
-    )
+    comptime OutTileType = TileTensor[
+        dtype, type_of(row_major(Idx(lengths[0]))), MutAnyOrigin
+    ]
     var tt_out = InlineArray[OutTileType, ngpus * ngpus](uninitialized=True)
 
     for gpu_idx in range(ngpus):
         comptime for src_idx in range(ngpus):
             var flat_idx = gpu_idx * ngpus + src_idx
             tt_out[flat_idx] = TileTensor(
-                out_bufs_list[flat_idx].unsafe_ptr(),
+                out_bufs_list[flat_idx],
                 row_major(Idx(lengths[src_idx])),
             )
         list_of_ctx[gpu_idx].synchronize()

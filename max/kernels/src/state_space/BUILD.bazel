@@ -12,10 +12,7 @@ mojo_library(
     deps = [
         "//max:compiler_internal",
         "//max:layout",
-        "//max:linalg",
         "//max:nn",
-        "//max:register",
-        "//max:structured_kernels",
         "//max:tensor",
         "@mojo//:std",
     ],

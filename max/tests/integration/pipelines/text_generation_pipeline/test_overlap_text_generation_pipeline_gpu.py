@@ -15,6 +15,7 @@ import math
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -148,6 +149,9 @@ class FakeModelConfig(ConfigFileModel):
     enable_echo: bool = False
     data_parallel_degree: int = 1
 
+    def resolved_weight_paths(self) -> list[Path]:
+        return []
+
 
 class FakeRuntimeConfig(ConfigFileModel):
     execute_empty_batches: bool = False
@@ -157,12 +161,17 @@ class FakeRuntimeConfig(ConfigFileModel):
     pipeline_role: str = "prefill_and_decode"
 
 
+class FakeSpeculativeConfig(ConfigFileModel):
+    num_speculative_tokens: int = 0
+
+
 class FakePipelineConfig(ConfigFileModel):
     model: FakeModelConfig
     sampling: FakeSamplingConfig
     runtime: FakeRuntimeConfig = FakeRuntimeConfig()
     enable_echo: bool = False
     debug_verify_replay: bool = False
+    speculative: FakeSpeculativeConfig | None = None
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:
         pass
@@ -204,7 +213,7 @@ def build_graph(device_ref: DeviceRef) -> Model:
             ),
             # input row offsets
             TensorType(
-                DType.int64,
+                DType.uint32,
                 [SymbolicDim("input_row_offsets_len")],
                 device=device_ref,
             ),
@@ -268,7 +277,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         del kv_cache_inputs, return_n_logits  # Unused args
@@ -292,7 +301,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         input_row_offsets = DevicePinnedBuffer(
             shape=[len(batch) + 1],
-            dtype=DType.int64,
+            dtype=DType.uint32,
             device=self.device,
         )
         np.cumsum(
@@ -353,7 +362,6 @@ def monkeypatch_weight_and_kvcache_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for func in [
-        "get_weight_paths",
         "load_weights",
         "weights_format",
         "load_kv_manager",

@@ -21,7 +21,7 @@ Target: < 1 minute compile + run for debugging purposes.
 
 from std.math import ceildiv
 from std.sys import size_of
-from linalg.matmul.gpu.sm100.config import MatmulConfig
+from linalg.matmul.gpu.sm100.config import MatmulConfig, GEMMKind
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.memory import alloc
@@ -69,9 +69,9 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     comptime BLOCK_SCALE_K = 128
     comptime accum_type = get_accum_type[c_type]()
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     if M * size_of[DType.float32]() % 16 != 0:
         raise Error("TMA expects M to be divisible by 16 bytes")
@@ -154,16 +154,12 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         b_scales_shape_n * b_scales_shape_k
     )
 
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var a_tensor = TileTensor(a_device, a_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
     rand(a_host.ptr, a_host.num_elements())
@@ -184,6 +180,7 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         mma_shape=mma_shape,
         block_swizzle_size=0,
         cta_group=cta_group,
+        gemm_kind=GEMMKind.BLOCK_SCALED_1D2D_FP8,
     )
 
     blockwise_fp8_matmul[

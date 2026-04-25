@@ -20,9 +20,10 @@ This module provides:
 - Atomic utility functions for thread-safe counter operations
 """
 
-from std.gpu import thread_idx_uint as thread_idx, WARP_SIZE
+from std.math.uutils import umod
+from std.gpu import thread_idx, WARP_SIZE
 from linalg.structuring import SMemArray
-from std.os.atomic import Atomic
+from std.atomic import Atomic
 from std.sys._assembly import inlined_assembly
 
 
@@ -53,7 +54,7 @@ def increment_counter_if_first_thread(
     increment: Int32,
 ):
     """Atomically increment counter, but only from the first thread in warp."""
-    if thread_idx.x % UInt(WARP_SIZE) == 0:
+    if umod(thread_idx.x, WARP_SIZE) == 0:
         _ = Atomic.fetch_add(counter, increment)
 
 

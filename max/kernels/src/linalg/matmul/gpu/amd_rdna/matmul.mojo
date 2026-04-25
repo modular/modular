@@ -28,10 +28,10 @@ from std.sys.info import _is_amd_rdna2_or_earlier
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_idx_int as block_idx,
-    lane_id_uint as lane_id,
-    thread_idx_int as thread_idx,
-    warp_id_uint as warp_id,
+    block_idx,
+    lane_id,
+    thread_idx,
+    warp_id,
 )
 from std.gpu.compute.mma import mma as _mma_intrinsic
 from layout import TensorLayout, TileTensor
@@ -62,6 +62,9 @@ comptime CD_FRAG_SIZE = 8
 comptime SMEM_PAD = 8
 
 
+@__name(
+    t"gemm_kernel_rdna_{c_type}_{a_type}_{b_type}_{transpose_b}", mangle=True
+)
 def gemm_kernel_rdna[
     c_type: DType,
     a_type: DType,
@@ -355,8 +358,8 @@ def _wmma_matmul_kernel[
 
     # Thread identification
     var tid = thread_idx.x
-    var wid = Int(warp_id())
-    var lid = Int(lane_id())
+    var wid = warp_id()
+    var lid = lane_id()
 
     # Warp position in the WARPS_M x WARPS_N grid
     var warp_m, warp_n = divmod(wid, WARPS_N)

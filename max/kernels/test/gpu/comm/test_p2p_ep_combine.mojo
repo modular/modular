@@ -54,7 +54,7 @@ def legalize_topk_ids[
 
         # The top-k ids for a token should be unique. If not, we will assign a
         # random id to the duplicate id.
-        def is_duplicate() -> Int:
+        def is_duplicate() {read} -> Int:
             for i in range(top_k):
                 for j in range(i + 1, top_k):
                     if topk_ids_for_token[i] == topk_ids_for_token[j]:
@@ -119,8 +119,8 @@ def test_combine[
     # Shared atomic counter buffer for dispatch and combine
     var atomic_counters_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
 
-    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutAnyOrigin], n_ranks](fill={})
-    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](fill={})
+    var host_topk_ids_list = InlineArray[UnsafePointer[Int32, MutAnyOrigin], n_ranks](uninitialized=True)
+    var host_input_tokens_list = InlineArray[UnsafePointer[Scalar[input_type], MutAnyOrigin], n_ranks](uninitialized=True)
 
     var device_topk_bufs_list = List[DeviceBuffer[DType.int32]](capacity=n_ranks)
     var device_input_bufs_list = List[DeviceBuffer[input_type]](capacity=n_ranks)
@@ -276,7 +276,7 @@ def test_combine[
     @parameter
     def get_output_tensor(dev_idx: Int, slot_idx: Int, out result: TileTensor[input_type, type_of(output_tt_layout), MutAnyOrigin]) raises:
         return type_of(result)(
-            ptr=device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size, 
+            ptr=device_output_bufs_list[dev_idx].unsafe_ptr() + slot_idx * max_recv_num_tokens * hidden_size,
             layout=output_tt_layout
         )
 

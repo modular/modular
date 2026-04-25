@@ -24,9 +24,8 @@ from std.collections import Optional
 from std.memory import Pointer, UnsafePointer
 from std.sys import simd_width_of, size_of, align_of
 
-from std.gpu import WARP_SIZE, thread_idx_int as thread_idx
-from std.gpu import lane_id_uint as lane_id
-from std.gpu import warp_id_uint as get_warp_id
+from std.gpu import WARP_SIZE, thread_idx
+from std.gpu import lane_id, warp_id as get_warp_id
 from std.gpu.memory import AddressSpace, fence_async_view_proxy
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import (
@@ -140,12 +139,8 @@ struct TileWriter[
     comptime MMA_M = Self.mma_shape[0]
     comptime MMA_N = Self.mma_shape[1]
 
-    # FP8 uses float32 epilogue (GEX-2630), bf16 uses native type
-    comptime epilogue_dtype = (
-        DType.bfloat16 if (
-            Self.a_type == Self.c_type == DType.bfloat16
-        ) else DType.float32
-    )
+    # FP8 uses float32 epilogue (GEX-2630), bf16/fp4 uses native type.
+    comptime epilogue_dtype = Self.get_epilogue_dtype()
 
     # Stage dimensions - now use direct dimension access
     comptime N_dim = 0 if Self.transpose_c else 1
@@ -192,6 +187,16 @@ struct TileWriter[
             Self.stage_stride_cols > 0
         ), "stage_stride_cols must be positive"
         self.c_tma_op = c_tma_op
+
+    @always_inline
+    @staticmethod
+    def get_epilogue_dtype() -> DType:
+        if (Self.a_type == Self.c_type == DType.bfloat16) or (
+            Self.a_type == DType.uint8 and Self.c_type == DType.bfloat16
+        ):
+            return DType.bfloat16
+        else:
+            return DType.float32
 
     # ========== Public Write Methods ==========
 

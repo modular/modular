@@ -189,7 +189,7 @@ struct MmaOpSM100_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+                << UInt16(block_id_in_cluster.y * Self.cluster_shape[0])
             ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
@@ -297,6 +297,7 @@ struct MmaOpSM100_BlockScaled_SS[
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     transpose_b: Bool = False,
+    enable_small_sfb: Bool = False,
 ](Defaultable, TrivialRegisterPassable):
     var idesc: UMMAInsDescriptor[Self.scaling_kind]
     var mask: UInt16
@@ -359,7 +360,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             self.mask = (
                 dim0_mask
-                << UInt16((block_id_in_cluster.y * UInt(Self.cluster_shape[0])))
+                << UInt16(block_id_in_cluster.y * Self.cluster_shape[0])
             ) | (dim1_mask << UInt16(block_id_in_cluster.x))
 
             # Include peer cta's row
@@ -369,7 +370,7 @@ struct MmaOpSM100_BlockScaled_SS[
             #             o x o o
             #             o x o o
             comptime if Self.cta_group == 2:
-                self.mask |= dim1_mask << UInt16((block_id_in_cluster.x ^ 1))
+                self.mask |= dim1_mask << UInt16(block_id_in_cluster.x ^ 1)
 
     @always_inline
     def mma(
@@ -411,10 +412,7 @@ struct MmaOpSM100_BlockScaled_SS[
             self._copy_sf_to_tmem_tt[
                 Self.sfa_dtype, sfa_smem.LayoutType, Self.block_tile_shape[0], 0
             ](sfa_smem, sfa_tmem)
-            # Only use tcgen05_cp for SFB when MMA_N meets TMEM
-            # alignment (MMA_N % 64 == 0).  For smaller MMA_N the
-            # caller loads SFB externally via tcgen05_st.
-            comptime if Self.mma_shape[1] % 64 == 0:
+            comptime if Self.mma_shape[1] % 64 == 0 or Self.enable_small_sfb:
                 self._copy_sf_to_tmem_tt[
                     Self.sfb_dtype,
                     sfb_smem.LayoutType,
@@ -516,7 +514,9 @@ struct MmaOpSM100_BlockScaled_SS[
                     Self.block_tile_shape[0],
                     sf_idx,
                 ](sfa_smem, sfa_tmem)
-                comptime if Self.mma_shape[1] % 64 == 0:
+                comptime if Self.mma_shape[
+                    1
+                ] % 64 == 0 or Self.enable_small_sfb:
                     self._copy_sf_to_tmem_tt[
                         Self.sfb_dtype,
                         sfb_smem.LayoutType,

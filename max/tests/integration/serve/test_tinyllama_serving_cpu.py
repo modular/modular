@@ -22,6 +22,7 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.serve.schemas.openai import (
     CreateChatCompletionResponse,
@@ -34,12 +35,16 @@ MAX_READ_SIZE = 10 * 1024
 MODEL_NAME = "modularai/SmolLM-135M-Instruct-FP32"
 
 pipeline_config = PipelineConfig(
-    model=MAXModelConfig(
-        model_path=MODEL_NAME,
-        device_specs=[DeviceSpec.cpu()],
-        quantization_encoding="float32",
-        kv_cache=KVCacheConfig(),
-        max_length=128,
+    models=ModelManifest(
+        {
+            "main": MAXModelConfig(
+                model_path=MODEL_NAME,
+                device_specs=[DeviceSpec.cpu()],
+                quantization_encoding="float32",
+                kv_cache=KVCacheConfig(),
+                max_length=512,
+            )
+        }
     ),
     runtime=PipelineRuntimeConfig(max_batch_size=16),
 )

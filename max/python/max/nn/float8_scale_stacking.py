@@ -17,16 +17,25 @@ from max.graph.shape import Shape
 from max.graph.weights.weights import WeightData
 
 
-def can_use_fused_mlp(state_dict: Mapping[str, WeightData]) -> bool:
-    """Checks if the quantization scales can be used with fused MLP operations.
+def can_use_fused_mlp(
+    state_dict: Mapping[str, WeightData],
+    tensor_wise: bool = False,
+) -> bool:
+    """Checks if gate/up projection scales are compatible for MLP fusion.
+
+    Tensor-wise configs allow differing scalar scales (broadcast to rowwise
+    at compile time). All other configs require scalar scale equality.
+
+    Args:
+        state_dict: Model state dict mapping weight names to weight data.
+        tensor_wise: Whether both weight and input scales use per-tensor
+            granularity, bypassing the scalar equality check.
 
     Returns:
-        Whether or not MLP can be fused.
+        Whether MLP fusion is allowed.
     """
+
     for weight_name, weight_data in state_dict.items():
-        weight_is_scalar = len(weight_data.shape) == 0 or (
-            len(weight_data.shape) == 1 and weight_data.shape[0] == 1
-        )
         weight_prefix = _weight_scale_name(weight_name)
         if weight_prefix is None:
             continue
@@ -41,12 +50,18 @@ def can_use_fused_mlp(state_dict: Mapping[str, WeightData]) -> bool:
             if not _concatable(weight_data.shape, up_weight.shape, axis=0):
                 return False
 
-            # We can only "stack" scalar values if they are equivalent.
-            if weight_is_scalar:
-                gate_value = weight_data.to_buffer().item()
-                up_value = up_weight.to_buffer().item()
-                if gate_value != up_value:
-                    return False
+            # Tensor-wise: scalar scales are broadcast to rowwise at
+            # compile time, so differing values are fine. Otherwise
+            # scalar scales must match for a correct fused matmul.
+            if not tensor_wise:
+                weight_is_scalar = len(weight_data.shape) == 0 or (
+                    len(weight_data.shape) == 1 and weight_data.shape[0] == 1
+                )
+                if weight_is_scalar:
+                    gate_value = weight_data.to_buffer().item()
+                    up_value = up_weight.to_buffer().item()
+                    if gate_value != up_value:
+                        return False
 
     return True
 

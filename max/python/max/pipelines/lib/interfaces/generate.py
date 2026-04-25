@@ -117,16 +117,12 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
         batches: list[list[TextGenerationContextType]] = []
         batch_to_replica_idx: dict[RequestID, int] = {}
         batches = [[] for _ in range(data_parallel_degree)]
-        all_kv_managers = [
-            self.kv_manager
-        ] + self._pipeline_model.extra_kv_managers
         for i, context in enumerate(context_batch):
             req_id = context.request_id
             # Use whatever replica the main models KVCache recommends.
             replica_idx = i % data_parallel_degree
             # Claim the slot for the KV cache manager
-            for kv_manager in all_kv_managers:
-                kv_manager.claim(req_id, replica_idx=replica_idx)
+            self.kv_manager.claim(req_id, replica_idx=replica_idx)
             batches[replica_idx].append(context)
             batch_to_replica_idx[req_id] = replica_idx
 
@@ -145,21 +141,11 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                 for replica_batch in batches:
                     for ctx in replica_batch:
                         replica_idx = batch_to_replica_idx[ctx.request_id]
-                        primary_skip = self.kv_manager.alloc(
+                        self.kv_manager.alloc(
                             ctx,
                             replica_idx=replica_idx,
                             num_steps=num_steps,
-                            skip_tokens=False,
                         )
-                        for extra_kv in self._pipeline_model.extra_kv_managers:
-                            extra_kv.alloc(
-                                ctx,
-                                replica_idx=replica_idx,
-                                num_steps=num_steps,
-                                skip_tokens=False,
-                            )
-                        if primary_skip > 0:
-                            ctx.tokens.skip_processing(primary_skip)
 
                 step_outputs = self.execute(inputs)
 
@@ -192,10 +178,9 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
                                 f"{request_id}"
                             )
 
-                        for kv_manager in all_kv_managers:
-                            kv_manager.release(
-                                request_id, replica_idx=replica_idx
-                            )
+                        self.kv_manager.release(
+                            request_id, replica_idx=replica_idx
+                        )
 
                 if outputs:
                     yield outputs
@@ -211,14 +196,13 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
                 for context in batch:
-                    for kv_manager in all_kv_managers:
-                        if kv_manager.contains(
+                    if self.kv_manager.contains(
+                        context.request_id,
+                        batch_to_replica_idx[context.request_id],
+                    ):
+                        self.kv_manager.release(
                             context.request_id,
-                            batch_to_replica_idx[context.request_id],
-                        ):
-                            kv_manager.release(
-                                context.request_id,
-                                replica_idx=batch_to_replica_idx[
-                                    context.request_id
-                                ],
-                            )
+                            replica_idx=batch_to_replica_idx[
+                                context.request_id
+                            ],
+                        )

@@ -50,7 +50,6 @@ from layout.tma_async import (
     TMATensorTileIm2col,
     create_tensor_tile,
 )
-from std.builtin.variadics import Variadic
 from layout.tile_layout import Layout
 from std.utils.index import IndexList
 from std.memory import stack_allocation
@@ -263,8 +262,8 @@ Parameters:
 # ============================================================================
 
 comptime GMEMLayout1D = Layout[
-    Variadic.types[T=CoordLike, RuntimeInt[DType.int64]],
-    Variadic.types[T=CoordLike, ComptimeInt[1]],
+    Coord[RuntimeInt[DType.int64]].element_types,
+    Coord[ComptimeInt[1]].element_types,
 ]
 """1D layout for flat global memory arrays.
 
@@ -278,8 +277,8 @@ Rank is provably 1 at compile time.
 # ============================================================================
 
 comptime static_row_major[dim0: Int, dim1: Int] = Layout[
-    Variadic.types[T=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]],
-    Variadic.types[T=CoordLike, ComptimeInt[dim1], ComptimeInt[1]],
+    Coord[ComptimeInt[dim0], ComptimeInt[dim1]].element_types,
+    Coord[ComptimeInt[dim1], ComptimeInt[1]].element_types,
 ]
 """2D row-major layout with fully static dimensions.
 
@@ -288,8 +287,8 @@ types with rank=2 provable at compile time.
 """
 
 comptime _StridedLayout[dim0: Int, dim1: Int, stride0: Int] = Layout[
-    Variadic.types[T=CoordLike, ComptimeInt[dim0], ComptimeInt[dim1]],
-    Variadic.types[T=CoordLike, ComptimeInt[stride0], ComptimeInt[1]],
+    Coord[ComptimeInt[dim0], ComptimeInt[dim1]].element_types,
+    Coord[ComptimeInt[stride0], ComptimeInt[1]].element_types,
 ]
 """2D layout with explicit stride for dim0.
 
@@ -353,12 +352,10 @@ comptime tma_desc_layout_2d[
     tile_dim0: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[tile_dim0],
-        ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1]],
+    Coord[
+        ComptimeInt[tile_dim0], ComptimeInt[swizzle.bytes() // size_of[dtype]()]
+    ].element_types,
+    Coord[ComptimeInt[1], ComptimeInt[1]].element_types,
 ]
 """2D TMA descriptor layout: [dim0, swizzle_elems], strides [1, 1]."""
 
@@ -368,13 +365,12 @@ comptime tma_desc_layout_3d[
     tile_dim1: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
+    Coord[
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[T=CoordLike, ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+    ].element_types,
+    Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]].element_types,
 ]
 """3D TMA descriptor layout: [dim0, dim1, swizzle_elems], strides [1,1,1]."""
 
@@ -385,20 +381,15 @@ comptime tma_desc_layout_4d[
     tile_dim2: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
+    Coord[
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[tile_dim2],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[
-        T=CoordLike,
-        ComptimeInt[1],
-        ComptimeInt[1],
-        ComptimeInt[1],
-        ComptimeInt[1],
-    ],
+    ].element_types,
+    Coord[
+        ComptimeInt[1], ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]
+    ].element_types,
 ]
 """4D TMA descriptor layout: [d0,d1,d2,swizzle_elems], strides all 1."""
 
@@ -410,22 +401,20 @@ comptime tma_desc_layout_5d[
     tile_dim3: Int,
     swizzle: TensorMapSwizzle,
 ] = Layout[
-    Variadic.types[
-        T=CoordLike,
+    Coord[
         ComptimeInt[tile_dim0],
         ComptimeInt[tile_dim1],
         ComptimeInt[tile_dim2],
         ComptimeInt[tile_dim3],
         ComptimeInt[swizzle.bytes() // size_of[dtype]()],
-    ],
-    Variadic.types[
-        T=CoordLike,
+    ].element_types,
+    Coord[
         ComptimeInt[1],
         ComptimeInt[1],
         ComptimeInt[1],
         ComptimeInt[1],
         ComptimeInt[1],
-    ],
+    ].element_types,
 ]
 """5D TMA descriptor layout: [d0,d1,d2,d3,swizzle_elems], strides all 1."""
 
@@ -740,8 +729,8 @@ struct SMemTileArrayWithLayout[
 # TODO: This type should correctly propagate mutability.
 struct SMemTileArray[
     dtype: DType,
-    shape_types: Variadic.TypesOfTrait[CoordLike],
-    stride_types: Variadic.TypesOfTrait[CoordLike],
+    shape_types: TypeList[Trait=CoordLike, ...],
+    stride_types: TypeList[Trait=CoordLike, ...],
     num_tiles: Int,
     alignment: Int = 128,
 ](TrivialRegisterPassable):
@@ -754,8 +743,8 @@ struct SMemTileArray[
 
     Parameters:
         dtype: Tile element data type.
-        shape_types: Variadic shape types from Layout (preserves compile-time info).
-        stride_types: Variadic stride types from Layout (preserves compile-time info).
+        shape_types: List of shape types from Layout (preserves compile-time info).
+        stride_types: List of stride types from Layout (preserves compile-time info).
         num_tiles: Number of tiles in the array.
         alignment: Memory alignment (default 128 for shared memory).
 

@@ -22,7 +22,7 @@ from layout import (
     row_major,
 )
 
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.host import DeviceContext, FuncAttribute
 
 from kv_cache.types import KVCollectionT
@@ -41,6 +41,7 @@ from std.utils.index import Index
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"mla_apply_mask", mangle=True)
 def apply_mask_kernel[
     mask_t: MHAMask,
     ScoresLayoutType: TensorLayout,
@@ -58,26 +59,27 @@ def apply_mask_kernel[
     var seq_idx = block_idx.y * 16 + thread_idx.x
     var key_idx = block_idx.z * 16 + thread_idx.y
 
-    var start_of_seq = valid_length.ptr[Int(batch_idx)]
-    var end_of_seq = valid_length.ptr[Int(batch_idx) + 1]
+    var start_of_seq = valid_length.raw_load(batch_idx)
+    var end_of_seq = valid_length.raw_load(batch_idx + 1)
     var seq_len = end_of_seq - start_of_seq
 
-    if seq_idx >= UInt(seq_len) or key_idx >= UInt(max_num_keys):
+    if seq_idx >= Int(seq_len) or key_idx >= Int(max_num_keys):
         return
 
     var global_seq_idx = start_of_seq + UInt32(seq_idx)
-    var current_val = output.ptr[
-        Int(global_seq_idx) * max_num_keys + Int(key_idx)
-    ]
+    var current_val = output.raw_load(
+        Int(global_seq_idx) * max_num_keys + key_idx
+    )
 
     # Apply mask: coord = [batch, head, q_idx, k_idx]
     # For causal mask: q_idx >= k_idx means visible
-    var coord = Index(Int(batch_idx), 0, Int(seq_idx), Int(key_idx))
+    var coord = Index(batch_idx, 0, seq_idx, key_idx)
     var masked_val = mask.mask(coord, current_val)
 
-    output.ptr[Int(global_seq_idx) * max_num_keys + Int(key_idx)] = masked_val
+    output.raw_store(Int(global_seq_idx) * max_num_keys + key_idx, masked_val)
 
 
+@__name(t"mla_fill_invalid_topk_{use_causal_mask}", mangle=True)
 def fill_invalid_topk_kernel[
     IROLayoutType: TensorLayout,
     iro_origin: ImmutOrigin,
@@ -111,8 +113,8 @@ def fill_invalid_topk_kernel[
     """
     comptime assert cache_lengths.flat_rank == 1
 
-    var token_idx = Int(block_idx.x)
-    var k_idx = Int(thread_idx.x)
+    var token_idx = block_idx.x
+    var k_idx = thread_idx.x
 
     if token_idx >= total_seq_len or k_idx >= top_k:
         return
@@ -129,13 +131,13 @@ def fill_invalid_topk_kernel[
     var batch_idx = 0
     var batch_size = Int(input_row_offsets.dim[0]()) - 1
     for b in range(batch_size):
-        var q_end = Int(input_row_offsets.ptr[b + 1])
+        var q_end = Int(input_row_offsets.raw_load(b + 1))
         if token_idx < q_end:
             batch_idx = b
             break
 
-    var q_start = Int(input_row_offsets.ptr[batch_idx])
-    var q_end = Int(input_row_offsets.ptr[batch_idx + 1])
+    var q_start = Int(input_row_offsets.raw_load(batch_idx))
+    var q_end = Int(input_row_offsets.raw_load(batch_idx + 1))
     var seq_len = q_end - q_start
     var local_seq_idx = token_idx - q_start
 
@@ -244,7 +246,7 @@ def mla_indexer_ragged_float8_paged[
     scores_buf.enqueue_fill(-Float32.MAX)
 
     var scores_tile = TileTensor(
-        scores_buf.unsafe_ptr(),
+        scores_buf,
         row_major(Idx(total_seq_len), Idx(max_num_keys)),
     )
 
@@ -330,7 +332,7 @@ def mla_indexer_ragged_float8_paged[
         total_seq_len * effective_k
     )
     var topk_vals_tile = TileTensor(
-        topk_vals_buf.unsafe_ptr(),
+        topk_vals_buf,
         row_major(Idx(total_seq_len), Idx(effective_k)),
     )
 

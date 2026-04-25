@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+from std.collections import OptionalReg
 from std.math import ceildiv
 from std.math.uutils import udivmod
 from std.sys import size_of
@@ -29,11 +30,11 @@ from std.gpu.primitives.grid_controls import (
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx_int as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_int as thread_idx,
+    block_idx,
+    grid_dim,
+    thread_idx,
+    warp_id,
 )
-from std.gpu import warp_id_uint as warp_id
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from std.gpu.memory import (
     AddressSpace,
@@ -450,10 +451,10 @@ struct HopperMatmulSM90Kernel[
             WARPGROUP_SIZE,
         )
 
-        var rank_m = Int(block_id_in_cluster.y)
-        var rank_n = Int(block_id_in_cluster.x)
+        var rank_m = block_id_in_cluster.y
+        var rank_n = block_id_in_cluster.x
 
-        var warp_id = Int(warp_id())
+        var warp_id = warp_id()
         var lane_predicate = elect_one_sync()
 
         return (
@@ -531,7 +532,7 @@ struct HopperMatmulSM90Kernel[
     @staticmethod
     @always_inline
     def get_block_swizzle(
-        lut_ptr: UnsafePointer[UInt32, MutAnyOrigin] = {},
+        lut_ptr: OptionalReg[UnsafePointer[UInt32, MutAnyOrigin]] = None,
     ) -> IndexList[2, element_type=DType.uint32]:
         """Calculate block swizzle for better L2 cache locality.
 
@@ -546,8 +547,8 @@ struct HopperMatmulSM90Kernel[
         comptime if not use_cluster:
             comptime if Self.hilbert_swizzle:
                 # Hilbert curve ordering maximizes spatial locality
-                var linear = UInt32(block_idx.y * Int(grid_dim.x) + block_idx.x)
-                var packed = lut_ptr[linear]
+                var linear = UInt32(block_idx.y * grid_dim.x + block_idx.x)
+                var packed = lut_ptr.unsafe_value()[linear]
                 var new_x = packed & 0xFFFF
                 var new_y = packed >> 16
                 return Index[dtype=DType.uint32](new_x, new_y)
@@ -830,6 +831,10 @@ struct HopperMatmulSM90Kernel[
         ),
         `nvvm.cluster_dim`=Self.cluster_shape,
     )
+    @__name(
+        t"sm90_matmul_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
+        mangle=True,
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -984,6 +989,10 @@ struct HopperMatmulSM90Kernel[
             Int32(Self.num_threads)
         ),
         `nvvm.cluster_dim`=Self.cluster_shape,
+    )
+    @__name(
+        t"sm90_matmul_split_k_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
+        mangle=True,
     )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
@@ -1181,6 +1190,10 @@ struct HopperMatmulSM90Kernel[
         ),
         `nvvm.cluster_dim`=Self.cluster_shape,
     )
+    @__name(
+        t"sm90_matmul_grouped_{Self.a_type}_{Self.b_type}_{Self.c_type}_{Self.transpose_b}",
+        mangle=True,
+    )
     @__llvm_arg_metadata(a_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(b_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
@@ -1356,7 +1369,7 @@ struct HopperMatmulSM90Kernel[
 
             @parameter
             def elementwise_epilogue_fn_wrapper[
-                dtype: DType, width: Int, *, alignment: Int = 1
+                dtype: DType, width: SIMDSize, *, alignment: Int = 1
             ](idx: IndexList[2], val: SIMD[dtype, width]):
                 comptime if Self.elementwise_lambda_fn:
                     comptime elementwise_epilogue = Self.elementwise_lambda_fn.value()

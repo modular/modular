@@ -13,16 +13,17 @@
 """HAL Driver — entry point for interacting with hardware via a plugin."""
 
 from .plugin import (
-    Plugin,
+    RawDriver,
     OutParam,
     DriverHandle,
     DeviceHandle,
     DriverVersion,
-    M_DRIVER_INTERFACE_VERSION_MAJOR,
-    M_DRIVER_INTERFACE_VERSION_MINOR,
-    M_DRIVER_INTERFACE_VERSION_PATCH,
 )
-from .device import Device
+from .device import (
+    Device,
+    get_device_spec,
+)
+
 from .status import STATUS_SUCCESS, STATUS_INVALID_ARG, HALError
 from std.memory import (
     ArcPointer,
@@ -41,116 +42,36 @@ struct Driver(Movable):
     The driver handle is destroyed when the Driver is destroyed.
     """
 
-    var _plugin: Plugin
-    var _handle: DriverHandle
+    var _raw: RawDriver
     var _device_count: Int64
 
-    var _devices: Dict[Int64, ArcPointer[Device]]
-
     @staticmethod
-    def create(plugin_spec: String) raises HALError -> ArcPointer[Self]:
+    def create(plugin_spec: String) raises HALError -> Self:
         """Create a Driver by loading a plugin and initialising the backend.
 
         Args:
             plugin_spec: 'name@/path/to/plugin.so' or just the path.
         """
-        var plugin = Plugin.load(plugin_spec)
-
-        var version = DriverVersion(
-            major=M_DRIVER_INTERFACE_VERSION_MAJOR,
-            minor=M_DRIVER_INTERFACE_VERSION_MINOR,
-            patch=M_DRIVER_INTERFACE_VERSION_PATCH,
-        )
-        var handle = UnsafeMaybeUninit(DriverHandle())
-
-        var status = plugin.create.f(
-            ImmutPointer(
-                to=UnsafePointer[DriverVersion, ImmutAnyOrigin](
-                    UnsafePointer(to=version)
-                )[]
-            ),
-            OutParam[DriverHandle](to=handle),
-        )
-        if status != STATUS_SUCCESS:
-            var err = plugin.get_status_message(status)
-            raise HALError(
-                err.status,
-                message="Failed to initialise driver plugin from "
-                + plugin.so_path
-                + ": "
-                + err.message,
-            )
-
-        var driver_handle = handle.unsafe_assume_init_ref()
-
-        var num_devices = UnsafeMaybeUninit(Int64(0))
-        status = plugin.device_count.f(
-            driver_handle, OutParam[Int64](to=num_devices)
-        )
-        if status != STATUS_SUCCESS:
-            _ = plugin.destroy.f(driver_handle)
-            var err = plugin.get_status_message(status)
-            raise HALError(
-                err.status,
-                message="Failed to get device count: " + err.message,
-            )
-
-        return ArcPointer(
-            Driver(
-                _plugin=plugin^,
-                _handle=driver_handle,
-                _device_count=num_devices.unsafe_assume_init_ref(),
-                _devices=Dict[Int64, ArcPointer[Device]](),
-            )
-        )
-
-    def __del__(deinit self):
-        var _ = self._plugin.destroy.f(self._handle)
-        # TODO: move Driver to @explicit_destroy,
-        # if status != STATUS_SUCCESS:
-        #    raise Error(self._plugin.get_status_message(status))
+        var raw = RawDriver.load(plugin_spec)
+        # If `get_device_count` raises, `raw`'s destructor cleans up the
+        # loaded plugin and initialised driver handle.
+        var device_count = raw.get_device_count()
+        return Driver(_raw=raw^, _device_count=device_count)
 
     # ===-------------------------------------------------------------------===#
     # Queries
     # ===-------------------------------------------------------------------===#
 
     def get_name(self) -> String:
-        return self._plugin.name
+        return self._raw._raw.name
 
     def get_device_count(self) -> Int64:
         return self._device_count
 
-    def get_device(mut self, id: Int64) raises HALError -> ArcPointer[Device]:
-        """Retrieve a device by ID."""
-        if id < 0 or id >= self._device_count:
-            raise HALError(
-                STATUS_INVALID_ARG,
-                message="Invalid device ID "
-                + String(id)
-                + " — range is [0, "
-                + String(self._device_count)
-                + ")",
-            )
-        var cached = self._devices.find(id)
-        if cached:
-            return cached.value()
-
-        var device_handle = UnsafeMaybeUninit(DeviceHandle())
-        var status = self._plugin.device_get.f(
-            self._handle, id, OutParam[DeviceHandle](to=device_handle)
-        )
-        if status != STATUS_SUCCESS:
-            var err = self._plugin.get_status_message(status)
-            raise HALError(
-                err.status,
-                message="Failed to get device "
-                + String(id)
-                + ": "
-                + err.message,
-            )
-
-        var arc = ArcPointer(Device(device_handle.unsafe_assume_init_ref(), id))
-
-        self._devices[id] = arc
-
-        return arc
+    def get_device[
+        id: Int64
+    ](mut self) raises HALError -> Device[
+        origin_of(self), get_device_spec[id]()
+    ]:
+        # """Retrieve a device by ID."""
+        return Device[origin_of(self), get_device_spec[id]()](self, id)

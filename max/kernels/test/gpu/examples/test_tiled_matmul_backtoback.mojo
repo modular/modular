@@ -13,7 +13,7 @@
 
 from std.collections import Optional
 from std.math import ceildiv
-from std.math.uutils import udivmod, ufloordiv
+from std.math.uutils import ufloordiv, udivmod, uceildiv
 from std.os import abort
 from std.sys import size_of
 from std.sys.info import align_of, simd_width_of
@@ -67,7 +67,7 @@ struct BackToBackMatmulConfig[
     # WM x WN x WK
     var warp_tile_shape: IndexList[3, element_type=DType.uint64]
 
-    var num_pipeline_stages: UInt
+    var num_pipeline_stages: Int
 
     def num_warps_m(self) -> Int:
         return self.block_tile_shape[0] // self.warp_tile_shape[0]
@@ -81,15 +81,15 @@ struct BackToBackMatmulConfig[
     def shared_mem_usage(self, K: Int) -> Int:
         return (
             self.block_tile_shape[0] * K
-            + Int(
+            + (
                 self.num_pipeline_stages
-                * UInt(self.block_tile_shape[1])
-                * UInt(self.block_tile_shape[2])
+                * self.block_tile_shape[1]
+                * self.block_tile_shape[2]
             )
         ) * size_of[Self.src_type]()
 
-    def grid_dim(self, M: UInt) -> IndexList[3]:
-        return Index(1, Int(ceildiv(M, UInt(self.block_tile_shape[0]))), 1)
+    def grid_dim(self, M: Int) -> IndexList[3]:
+        return Index(1, uceildiv(M, self.block_tile_shape[0]), 1)
 
     def block_dim(self) -> IndexList[3]:
         return Index(self.num_threads(), 1, 1)
@@ -98,7 +98,7 @@ struct BackToBackMatmulConfig[
         out self,
         block_tile_shape: IndexList[3, element_type=DType.uint64],
         warp_tile_shape: IndexList[3, element_type=DType.uint64],
-        num_pipeline_stages: UInt = 2,
+        num_pipeline_stages: Int = 2,
     ):
         self.block_tile_shape = block_tile_shape
         self.warp_tile_shape = warp_tile_shape
@@ -168,20 +168,20 @@ def b2b_gemm[
     # B is K x L
     # C is L x N
     # B is M x N
-    var M = UInt(D.dim[0]())
-    var L = UInt(B.dim[0 if transpose_b else 1]())
-    # var K: UInt = B.dim[1 if transpose_b else 0]()
+    var M: Int = D.dim[0]()
+    var L: Int = B.dim[0 if transpose_b else 1]()
+    # var K: Int = B.dim[1 if transpose_b else 0]()
     # TODO: allow dynamic `K`, so long as it still
     # fits in shared memory, we shouldn't require static.
-    comptime K = UInt(Int(A.layout.shape[1]))
-    comptime N = UInt(Int(D.layout.shape[1]))
+    comptime K = Int(A.layout.shape[1])
+    comptime N = Int(D.layout.shape[1])
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
     comptime BK = config.block_tile_shape[2]
     comptime WM = config.warp_tile_shape[0]
     comptime WN = config.warp_tile_shape[1]
-    comptime num_pipeline_stages = Int(config.num_pipeline_stages)
+    comptime num_pipeline_stages: Int = config.num_pipeline_stages
     comptime assert WN == BN
     # We have, roughly
     #
@@ -195,15 +195,15 @@ def b2b_gemm[
     #             D += AB[0:BM,(0:BK)+bk*BK] * C[0:BK,0:BN]
 
     # To avoid recalculating `A*B`:
-    comptime assert N == UInt(BN)
+    comptime assert N == BN
     # TODO: lift this restriction
-    comptime assert K % UInt(BK) == 0, "K must be an integer multiple of BK"
+    comptime assert K % BK == 0, "K must be an integer multiple of BK"
     comptime assert BN % BK == 0, "BN must be an integer multiple of BK"
-    comptime assert K == UInt(
-        BK
+    comptime assert (
+        K == BK
     ), "FIXME: currently, K == BK must be true, but that is a bug."
 
-    var num_l_iter = ceildiv(L, UInt(BN))
+    var num_l_iter = uceildiv(L, BN)
     comptime num_warps_m = config.num_warps_m()
     comptime num_warps_n = config.num_warps_n()
     comptime num_threads = config.num_threads()
@@ -233,7 +233,7 @@ def b2b_gemm[
         address_space=AddressSpace.SHARED,
         alignment=align_of[SIMD[in_type, simd_size]](),
     ]()
-    comptime a_smem_size = BM * Int(K)  # single block
+    comptime a_smem_size = BM * K  # single block
     var a_smem_iter = LayoutTensorIter[
         in_type,
         Layout.row_major(BM, BK),
@@ -307,9 +307,9 @@ def b2b_gemm[
     ].stack_allocation()
     for l in range(num_l_iter):
         _ = ab_reg_tile.fill(0)
-        var b_tile_coords = (Int(l), 0) if transpose_b else (0, Int(l))
-        var c_tile_coords = (0, Int(l * UInt(BN // BK))) if transpose_c else (
-            Int(l * UInt(BN // BK)),
+        var b_tile_coords = (l, 0) if transpose_b else (0, l)
+        var c_tile_coords = (0, l * (BN // BK)) if transpose_c else (
+            l * (BN // BK),
             0,
         )
         # We fetch c_gmem_iter when done
@@ -319,7 +319,7 @@ def b2b_gemm[
         var c_gmem_iter = C.tiled_iterator[CD_0, CD_1, axis=c_tile_axis](
             c_tile_coords[0], c_tile_coords[1]
         )
-        var num_rows_b = min(BN, Int(L) - BN * Int(l))
+        var num_rows_b = min(BN, L - BN * l)
         # FIXME: this is a lot of code duplication, for only
         # a few different branches within `multistage_mma`!
         # Maybe fetch `A` outside, and always use `prefetch_a=False`?
@@ -346,7 +346,7 @@ def b2b_gemm[
                 b_gmem_iter,
                 a_smem_iter,
                 b_smem_iter,
-                Int(ceildiv(K, UInt(BK))),
+                uceildiv(K, BK),
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -372,7 +372,7 @@ def b2b_gemm[
                 b_gmem_iter,
                 a_smem_iter,
                 b_smem_iter,
-                Int(ceildiv(K, UInt(BK))),
+                uceildiv(K, BK),
                 num_b_rows=num_rows_b,
                 next_op_b_iter=c_gmem_iter.bitcast[in_type](),
             )
@@ -423,7 +423,7 @@ def b2b_gemm[
             c_gmem_iter,
             a_smem_iter,  # ignored
             c_smem_iter,
-            Int(ceildiv(N, UInt(BK))),
+            uceildiv(N, BK),
             num_b_rows=num_rows_b,
         )
 
@@ -517,7 +517,7 @@ def b2b_gemm[
                     )
                     % type_of(thread_offset)(N)
                 )
-                if m < Int(M) and n < Int(N):
+                if m < M and n < N:
                     epilogue(
                         (m, n),
                         accum_smem_warp_tile.ptr.load[
@@ -568,7 +568,7 @@ def b2b_gemm[
                     )
                     % type_of(thread_offset)(N)
                 )
-                if m < Int(M) and n < Int(N):
+                if m < M and n < N:
                     var vec = (d_reg_frag.ptr + src_idx).load[
                         width=2, alignment=align_of[SIMD[d_type, 2]]()
                     ]()
@@ -624,7 +624,7 @@ def multistage_b2b_gemm[
             A,
             B,
             C,
-            grid_dim=config.grid_dim(UInt(Int(D.runtime_layout.shape[0]))),
+            grid_dim=config.grid_dim(Int(D.runtime_layout.shape[0])),
             block_dim=config.block_dim(),
             shared_mem_bytes=smem_use,
             func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(

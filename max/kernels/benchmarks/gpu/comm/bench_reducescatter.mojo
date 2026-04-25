@@ -137,7 +137,7 @@ def bench_reducescatter_2d[
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Initialize buffers for each GPU.
@@ -186,32 +186,29 @@ def bench_reducescatter_2d[
         )
 
     # Create 2D input and output TileTensors.
-    comptime OutputTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(M), Idx(D)))
-    )
-
-    comptime InputTileType = type_of(
-        TileTensor(
-            cb_inputs[0].unsafe_ptr(), row_major(Idx(M), Idx(D))
-        ).as_immut()
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(M), Idx(D))), MutAnyOrigin
+    ]
+    comptime InputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(M), Idx(D))), ImmutAnyOrigin
+    ]
     var in_bufs = InlineArray[InputTileType, num_buffers](uninitialized=True)
     var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     comptime for i in range(ngpus):
         in_bufs[i if not use_multimem else 0] = InputTileType(
-            cb_inputs[i].unsafe_ptr(), row_major(Idx(M), Idx(D))
+            cb_inputs[i].device_buffer(), row_major(Idx(M), Idx(D))
         )
         if axis == 0:
             var my_rows = rs_config.rank_units(i)
             out_bufs[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(),
+                out_bufs_list[i],
                 row_major(Idx(my_rows), Idx(D)),
             )
         else:
             var my_cols = rs_config.rank_units(i) * simd_size
             out_bufs[i] = OutputTileType(
-                out_bufs_list[i].unsafe_ptr(),
+                out_bufs_list[i],
                 row_major(Idx(M), Idx(my_cols)),
             )
         list_of_ctx[i].synchronize()
@@ -378,7 +375,7 @@ def bench_reducescatter[
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Initialize buffers for each GPU
@@ -428,26 +425,21 @@ def bench_reducescatter[
         )
 
     # Create input and output TileTensors
-    comptime OutputTileType = type_of(
-        TileTensor(
-            out_bufs_list[0].unsafe_ptr(), row_major(Idx(output_lengths[0]))
-        )
-    )
-
-    comptime InputTileType = type_of(
-        TileTensor(
-            cb_inputs[0].unsafe_ptr(), row_major(Idx(input_length))
-        ).as_immut()
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(output_lengths[0]))), MutAnyOrigin
+    ]
+    comptime InputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(output_lengths[0]))), ImmutAnyOrigin
+    ]
     var in_bufs = InlineArray[InputTileType, num_buffers](uninitialized=True)
     var out_bufs = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     for i in range(ngpus):
         in_bufs[i if not use_multimem else 0] = InputTileType(
-            cb_inputs[i].unsafe_ptr(), row_major(Idx(input_length))
+            cb_inputs[i].device_buffer(), row_major(Idx(input_length))
         )
         out_bufs[i] = OutputTileType(
-            out_bufs_list[i].unsafe_ptr(), row_major(Idx(output_lengths[i]))
+            out_bufs_list[i], row_major(Idx(output_lengths[i]))
         )
         list_of_ctx[i].synchronize()
 

@@ -45,6 +45,10 @@ struct CompilationTarget[value: _TargetType = _current_target()](
         value: The target architecture to query. Defaults to the current target.
     """
 
+    def __init__(out self):
+        """Initialize a `CompilationTarget` with the default target."""
+        pass
+
     @always_inline("nodebug")
     @staticmethod
     def unsupported_target_error[
@@ -385,7 +389,9 @@ def platform_map[
     Example:
 
     ```mojo
-    comptime EDEADLK = platform_alias["EDEADLK", linux=35, macos=11]()
+    from std.sys.info import platform_map
+
+    comptime EDEADLK = platform_map["EDEADLK", linux=35, macos=11]()
     ```
     """
 
@@ -519,6 +525,16 @@ def _is_sm_110x_or_newer() -> Bool:
 @always_inline("nodebug")
 def _is_sm_120x_or_newer() -> Bool:
     return _is_sm_120x()
+
+
+@always_inline("nodebug")
+def is_apple_m5() -> Bool:
+    """Returns True if the target is an Apple M5 GPU and False otherwise.
+
+    Returns:
+        True if the target is Apple M5 and False otherwise.
+    """
+    return is_apple_gpu() and CompilationTarget.is_apple_m5()
 
 
 @always_inline("nodebug")
@@ -1000,7 +1016,7 @@ def align_of[dtype: DType, target: _TargetType = _current_target()]() -> Int:
 
 @always_inline("nodebug")
 def bit_width_of[
-    type: TrivialRegisterPassable, target: _TargetType = _current_target()
+    type: RegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the size of (in bits) of the type.
 
@@ -1033,7 +1049,7 @@ def bit_width_of[
 
 @always_inline("nodebug")
 def simd_width_of[
-    type: TrivialRegisterPassable, target: _TargetType = _current_target()
+    type: RegisterPassable, target: _TargetType = _current_target()
 ]() -> Int:
     """Returns the vector size of the type on the host system.
 
@@ -1118,7 +1134,7 @@ def _macos_version() raises -> Tuple[Int, Int, Int]:
         "kern.osproductversion".as_c_string_slice().unsafe_ptr(),
         osver.unsafe_ptr(),
         Pointer(to=buf_len),
-        OpaquePointer[origin=MutAnyOrigin](),
+        Optional[UnsafePointer[NoneType, MutAnyOrigin]](),
         Int(0),
     )
     if err:

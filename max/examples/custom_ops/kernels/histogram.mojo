@@ -12,13 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.os import Atomic
+from std.atomic import Atomic
 
-from std.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, global_idx, thread_idx
 from std.gpu.host.info import is_cpu
 from std.gpu.host import DeviceBuffer
 from std.gpu.memory import AddressSpace
@@ -59,7 +55,7 @@ def _histogram_gpu(
     ):
         var tid = global_idx.x
 
-        if tid >= UInt(n):
+        if tid >= n:
             return
 
         # Allocate shared memory for the histogram
@@ -88,12 +84,8 @@ def _histogram_gpu(
 
     var ctx = ctx_ptr.get_device_context()
 
-    var output_device = DeviceBuffer[output.dtype](
-        ctx, output.unsafe_ptr(), output.size(), owning=False
-    )
-    var input_device = DeviceBuffer[input.dtype](
-        ctx, input.unsafe_ptr(), input.size(), owning=False
-    )
+    var output_device = output.to_device_buffer(ctx)
+    var input_device = input.to_device_buffer(ctx)
 
     # Zero initialize the output buffer
     ctx.enqueue_memset(output_device, 0)

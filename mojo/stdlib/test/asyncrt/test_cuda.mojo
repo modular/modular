@@ -30,7 +30,10 @@ def _run_cuda_context(ctx: DeviceContext) raises:
     with ctx.push_context() as cur_ctx:
         # cur_ctx is still equivalent to the ctx passed in.
         assert_equal(Bool(CUDA(ctx)), Bool(CUDA(cur_ctx)))
-        assert_equal(Bool(CUDA(ctx.stream())), Bool(CUDA(cur_ctx.stream())))
+        assert_equal(
+            Bool(CUDA(ctx.stream())),
+            Bool(CUDA(cur_ctx.stream())),
+        )
         # Make sure that the current CUcontext matches the pushed CUcontext
         assert_equal(Bool(cuda_ctx), Bool(CUDA_get_current_context()))
 
@@ -49,7 +52,10 @@ def _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
     with ctx0.push_context() as cur_ctx0:
         # cur_ctx is still equivalent to the ctx passed in.
         assert_equal(Bool(CUDA(ctx0)), Bool(CUDA(cur_ctx0)))
-        assert_equal(Bool(CUDA(ctx0.stream())), Bool(CUDA(cur_ctx0.stream())))
+        assert_equal(
+            Bool(CUDA(ctx0.stream())),
+            Bool(CUDA(cur_ctx0.stream())),
+        )
         # Make sure that the current CUcontext matches the pushed CUcontext
         assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))
 
@@ -58,10 +64,14 @@ def _run_cuda_multi_context(ctx0: DeviceContext, ctx1: DeviceContext) raises:
             # cur_ctx is still equivalent to the ctx passed in.
             assert_equal(Bool(CUDA(ctx1)), Bool(CUDA(cur_ctx1)))
             assert_equal(
-                Bool(CUDA(ctx1.stream())), Bool(CUDA(cur_ctx1.stream()))
+                Bool(CUDA(ctx1.stream())),
+                Bool(CUDA(cur_ctx1.stream())),
             )
             # Make sure that the current CUcontext matches the pushed CUcontext
-            assert_equal(Bool(cuda_ctx1), Bool(CUDA_get_current_context()))
+            assert_equal(
+                Bool(cuda_ctx1),
+                Bool(CUDA_get_current_context()),
+            )
 
         # Make sure that the previously pushed CUcontext has been restored.
         assert_equal(Bool(cuda_ctx0), Bool(CUDA_get_current_context()))

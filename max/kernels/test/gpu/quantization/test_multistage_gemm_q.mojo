@@ -433,8 +433,8 @@ def test_repack_Q4_0_for_sm8x[
 
     comptime group_size = 32
     comptime pack_factor = 8
-    var N = n.value()
-    var K = k.value()
+    var N = Int(n.value())
+    var K = Int(k.value())
     comptime BN = 128
     comptime BK = 1024
     comptime group_bytes = 2 + (group_size // 2)
@@ -626,9 +626,9 @@ def test_quantized[
     comptime static_K = KType.static_value
     comptime a_type = DType.bfloat16
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     comptime _b_dim0 = NType.static_value
     comptime _b_dim1 = (KType.static_value // group_size) * group_bytes
@@ -713,9 +713,9 @@ def test_quantized[
     )
     var c_tt_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var c_dev_tt = TileTensor(c_device.unsafe_ptr(), c_tt_shape)
-    var a_dev_tt = TileTensor(a_device.unsafe_ptr(), a_tt_shape)
-    var b_dev_tt = TileTensor(b_device.unsafe_ptr(), b_tt_shape)
+    var c_dev_tt = TileTensor(c_device, c_tt_shape)
+    var a_dev_tt = TileTensor(a_device, a_tt_shape)
+    var b_dev_tt = TileTensor(b_device, b_tt_shape)
 
     var c_dev_lt = c_dev_tt.to_layout_tensor()
     var a_dev_lt = a_dev_tt.to_layout_tensor()
@@ -799,8 +799,8 @@ def test_quantized[
     var b_ref_tt_shape = row_major(
         Coord(Idx[NType.static_value](), Idx[KType.static_value]())
     )
-    var c_ref_tt = TileTensor(c_device_ref.unsafe_ptr(), c_ref_tt_shape)
-    var b_ref_tt = TileTensor(b_device_ref.unsafe_ptr(), b_ref_tt_shape)
+    var c_ref_tt = TileTensor(c_device_ref, c_ref_tt_shape)
+    var b_ref_tt = TileTensor(b_device_ref, b_ref_tt_shape)
     multistage_gemm[transpose_b=True, config=config_ref](
         c_ref_tt,
         a_dev_tt,

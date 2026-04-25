@@ -17,15 +17,67 @@ modular_py_library(
 modular_py_binary(
     name = "flux2_comparison",
     srcs = ["flux2_comparison.py"],
-    tags = ["no-pydeps"],
     deps = [
+        "//max/python/max/driver",
         "//max/python/max/interfaces",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
         requirement("diffusers"),
-        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pydantic"),
         requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "wan_comparison",
+    srcs = ["wan_comparison.py"],
+    ignore_extra_deps = [
+        # Required at runtime by diffusers for device dispatch
+        requirement("accelerate"),
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        requirement("accelerate"),
+        requirement("av"),
+        requirement("diffusers"),
+        requirement("numpy"),
+        requirement("pydantic"),
+        requirement("pillow"),
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "wan_mem_repro",
+    srcs = ["wan_mem_repro.py"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/interfaces",
+        "//max/python/max/pipelines",
+        "//max/python/max/pipelines/architectures",
+        "//max/python/max/pipelines/lib",
+        requirement("torch"),
+    ],
+)
+
+modular_py_binary(
+    name = "vae_decode_compare",
+    srcs = ["vae_decode_compare.py"],
+    tags = ["no-pydeps"],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/pipelines/architectures",
+        requirement("huggingface-hub"),
+        requirement("numpy"),
     ],
 )
 

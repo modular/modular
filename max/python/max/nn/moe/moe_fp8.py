@@ -23,6 +23,7 @@ from ..kernels import moe_create_indices
 from .moe import MoE
 from .quant_strategy import (
     Fp8Strategy,
+    Mxfp4Strategy,
     Nvfp4Scales,
     Nvfp4Strategy,
     QuantStrategy,
@@ -53,6 +54,8 @@ class MoEQuantized(MoE):
         assert self.quant_config is not None
         if self.quant_config.is_nvfp4:
             return Nvfp4Strategy(self.quant_config, self.dtype)
+        elif self.quant_config.is_mxfp4:
+            return Mxfp4Strategy(self.quant_config, self.dtype)
         return Fp8Strategy(self.quant_config, self.dtype)
 
     @property
@@ -123,7 +126,7 @@ class MoEQuantized(MoE):
         """Returns stacked gate/up weight scales for grouped matmul."""
         assert self.quant_config is not None
         assert self.quant_config.weight_scale.block_size is not None
-        if not self.quant_config.is_nvfp4:
+        if not self.quant_config.is_fp4:
             assert self.quant_config.weight_scale.block_size == (128, 128), (
                 "Only support block_size=[128, 128] for weights."
             )
@@ -183,29 +186,32 @@ class MoEQuantized(MoE):
         """Whether the current quant config uses NVFP4."""
         return self.quant_config is not None and self.quant_config.is_nvfp4
 
-    def _ep_call(
+    def _ep_dispatch_input_scales(self) -> TensorValue | None:
+        """Returns NVFP4 input scales for EP dispatch, or ``None``."""
+        if self._is_nvfp4:
+            return self._nvfp4_scales().gate_up_input
+        return None
+
+    def _local_ep_compute(
         self,
+        expert_inputs: tuple[TensorValue, ...],
         x: TensorValue,
-        router_idx: TensorValue,
-        router_weight: TensorValue,
+        estimated_total_m: TensorValue,
     ) -> TensorValue:
-        """Executes the expert-parallel quantized MoE path."""
+        """Runs quantized local expert matmuls on dispatched tokens."""
+        # TODO: swiglu_limit is not supported here because
+        # fused_silu_quantize fuses silu + multiply + quantize into one
+        # kernel, leaving no place to insert the clamp.  For NVFP4 the
+        # kernel also produces expert-aware padded scales that cannot be
+        # replicated with unfused ops.
+        if self.swiglu_limit > 0:
+            raise ValueError(
+                "swiglu_limit is not supported in the expert-parallel"
+                " quantized MoE path because fused_silu_quantize does not"
+                " support clamping."
+            )
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
-
-        # With EP MoE, the host doesn't know the exact tokens assigned to each
-        # device. We estimate per-device received token count by assuming an
-        # even distribution, i.e., each device receives roughly as many tokens
-        # as it sends.
-        estimated_total_m = (
-            ops.shape_to_tensor(x.shape)[0].cast(DType.uint32)
-            * self.num_experts_per_token
-        )
-
-        device_id = self.devices[0].id
-        expert_inputs = self.ep_batch_manager.ep_dispatch(
-            x, router_idx, device_id, nvfp4.gate_up_input if nvfp4 else None
-        )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
             self.gate_up_proj_scales, self.down_proj_scales, x.device
@@ -227,7 +233,7 @@ class MoEQuantized(MoE):
         )
 
         down_inputs = (down_in, silu_scales) + expert_inputs[2:]
-        down = strategy.grouped_matmul(
+        return strategy.grouped_matmul(
             self.down_proj,
             down_scales,
             expert_scales=nvfp4.down_expert if nvfp4 else None,
@@ -236,15 +242,14 @@ class MoEQuantized(MoE):
             estimated_total_m=estimated_total_m,
         )
 
-        out = self.ep_batch_manager.ep_combine(down, router_weight, device_id)
-
-        if self.has_shared_experts and not self._fused_shared_expert:
-            out += self.shared_experts(x)
-
-        return out.cast(x.dtype)
-
     def __call__(self, x: TensorValue) -> TensorValue:
         """Runs quantized MoE routing and expert computation."""
+        if self._ep_batch_manager:
+            raise ValueError(
+                "Use forward_moe_sharded_layers for expert-parallel inference "
+                "instead of calling MoEQuantized directly."
+            )
+
         strategy = self._strategy()
         nvfp4 = self._nvfp4_scales() if self._is_nvfp4 else None
 
@@ -253,23 +258,19 @@ class MoEQuantized(MoE):
         )
 
         router_idx, router_weight = self.gate(x)
-        if self._ep_batch_manager:
-            return self._ep_call(
-                x, ops.cast(router_idx, DType.int32), router_weight
-            )
 
         router_idx = ops.reshape(router_idx, [-1])
         seq_len = x.shape[0]
 
-        (
-            token_order,
-            expert_start,
-            restore_order,
-            expert_ids,
-            usage_stats,
-        ) = moe_create_indices(
-            ops.cast(router_idx, DType.int32), self.num_experts
+        create_indices_result = moe_create_indices(
+            ops.cast(router_idx, DType.int32),
+            self.num_experts,
+            needs_scales_offset=self._is_nvfp4,
         )
+        token_order, expert_start, restore_order, expert_ids, usage_stats = (
+            create_indices_result[:5]
+        )
+        scales_offset = create_indices_result[5] if nvfp4 else None
 
         permuted = ops.gather(
             x,
@@ -277,11 +278,23 @@ class MoEQuantized(MoE):
             axis=0,
         )
 
-        permuted_quant, permuted_scales = strategy.quantize(
-            permuted,
-            self._token_group_size,
-            _scalar_max(nvfp4.gate_up_input) if nvfp4 else None,
-        )
+        total_m = ops.shape_to_tensor(permuted.shape)[0].cast(DType.uint32)
+
+        if nvfp4:
+            assert scales_offset is not None
+            permuted_quant, permuted_scales = strategy.grouped_quantize(
+                permuted,
+                self._token_group_size,
+                nvfp4.gate_up_input,
+                expert_start,
+                scales_offset,
+                expert_ids,
+            )
+        else:
+            permuted_quant, permuted_scales = strategy.quantize(
+                permuted,
+                self._token_group_size,
+            )
 
         gate_up_scales, down_scales = strategy.prepare_weight_scales(
             self.gate_up_proj_scales, self.down_proj_scales, permuted.device
@@ -292,16 +305,14 @@ class MoEQuantized(MoE):
             permuted_scales,
             expert_start,
             expert_ids,
-            usage_stats.to(DeviceRef.CPU()),
+            usage_stats,
         )
 
         if nvfp4:
-            a_scale_offsets = ops.constant(
-                0, dtype=DType.uint32, device=x.device
-            ).broadcast_to([expert_ids.shape[0]])
+            assert scales_offset is not None
             expert_inputs = (
                 *expert_inputs[:3],
-                a_scale_offsets,
+                scales_offset,
                 *expert_inputs[3:],
             )
 
@@ -310,36 +321,48 @@ class MoEQuantized(MoE):
             gate_up_scales,
             expert_scales=nvfp4.gate_up_expert if nvfp4 else None,
             expert_inputs=expert_inputs,
+            estimated_total_m=total_m,
         )
 
-        gate_up = silu_gate(gate_up, self.moe_dim)
+        if self.swiglu_limit > 0:
+            gate = ops.silu(gate_up[:, : self.moe_dim])
+            up = gate_up[:, self.moe_dim :]
+            lim = ops.constant(
+                self.swiglu_limit, gate.dtype, device=gate.device
+            )
+            neg_lim = ops.constant(
+                -self.swiglu_limit, up.dtype, device=up.device
+            )
+            gate = ops.min(gate, lim)
+            up = ops.min(ops.max(up, neg_lim), lim)
+            gate_up = gate * up
+        else:
+            gate_up = silu_gate(gate_up, self.moe_dim)
 
         if nvfp4:
-            # down_expert = weight_scale * down_input_i (per-expert),
-            # but quantize() below scales activations by max(down_input)
-            # (global). Multiply through by max / down_input_i so the
-            # activation scale and expert scale agree.
-            max_down_input = _scalar_max(nvfp4.down_input)
-            adjusted_down_expert = nvfp4.down_expert * (
-                max_down_input / nvfp4.down_input
+            assert scales_offset is not None
+            gate_up_quant, gate_up_scales = strategy.grouped_quantize(
+                gate_up,
+                self._token_group_size,
+                nvfp4.down_input,
+                expert_start,
+                scales_offset,
+                expert_ids,
             )
         else:
-            max_down_input = None
-            adjusted_down_expert = None
-
-        gate_up_quant, gate_up_scales = strategy.quantize(
-            gate_up,
-            self._token_group_size,
-            max_down_input,
-        )
+            gate_up_quant, gate_up_scales = strategy.quantize(
+                gate_up,
+                self._token_group_size,
+            )
 
         down_inputs = (gate_up_quant, gate_up_scales) + expert_inputs[2:]
 
         down = strategy.grouped_matmul(
             self.down_proj,
             down_scales,
-            expert_scales=adjusted_down_expert,
+            expert_scales=nvfp4.down_expert if nvfp4 else None,
             expert_inputs=down_inputs,
+            estimated_total_m=total_m,
         )
 
         down = ops.gather(down, restore_order, axis=0).reshape(

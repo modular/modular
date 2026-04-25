@@ -147,6 +147,7 @@ def load_scheduler(
         assert (
             pipeline_config.runtime.enable_prioritize_first_decode is not None
         )
+        assert pipeline_config.model is not None
         assert pipeline_config.model.max_length is not None
 
         token_gen_config = AudioGenerationSchedulerConfig(

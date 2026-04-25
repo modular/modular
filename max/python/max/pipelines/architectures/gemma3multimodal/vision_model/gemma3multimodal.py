@@ -198,7 +198,9 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
             )
         ]
 
-        # Run through transformer layers
+        # Run through transformer layers, passing image_token_indices so
+        # that global attention layers can apply bidirectional masking for
+        # image tokens
         for idx, layer in enumerate(self.layers):
             layer_idx_tensor = ops.constant(
                 idx, DType.uint32, device=self.devices[0]
@@ -209,6 +211,7 @@ class Gemma3LanguageModel(DistributedLogitsPostprocessMixin, Module):
                 signal_buffers,
                 kv_collections,
                 input_row_offsets=input_row_offsets,
+                image_token_indices=image_token_indices[0],
             )
 
         return self._postprocess_logits(
@@ -299,8 +302,8 @@ class Gemma3VisionModel(Module):
         pixel_values: Sequence[TensorValue],
         signal_buffers: Sequence[BufferValue],
     ) -> Sequence[TensorValue]:
-        """Processes vision inputs through the Gemma3 vision tower and produces a
-        sequence of image embeddings"""
+        """Processes vision inputs through the Gemma3 vision tower and produces
+        a sequence of image embeddings"""
         hidden_states: TensorValue | Sequence[TensorValue] = [
             embed(pixels)
             for embed, pixels in zip(

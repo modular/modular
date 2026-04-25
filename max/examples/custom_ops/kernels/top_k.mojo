@@ -20,9 +20,9 @@ from compiler import register
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
+    block_dim,
+    block_idx,
+    thread_idx,
 )
 from std.gpu.primitives import warp
 from std.gpu.memory import AddressSpace, external_memory

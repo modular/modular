@@ -44,25 +44,21 @@ def test_stopping_criteria() raises:
     # stop after ub (max_runtime_secs)
     var max_iters_1 = 1000_000_000
 
-    @__copy_capture(lb, ub)
-    @parameter
-    def timer() raises:
+    def timer() raises {var lb, var ub, mut max_iters_1}:
         var report = run[func4=time_me](
             max_iters=max_iters_1, min_runtime_secs=lb, max_runtime_secs=ub
         )
         assert_true(report.mean() > 0)
         assert_true(report.iters() != max_iters_1)
 
-    var t1 = time_function[timer]()
+    var t1 = time_function(timer)
     assert_true(Float64(t1) / 1e9 >= ub)
 
     # stop after lb (min_runtime_secs)
     var ub_big = 1  # 1s
     var max_iters_2 = 1
 
-    @__copy_capture(ub_big, lb)
-    @parameter
-    def timer2() raises:
+    def timer2() raises {var ub_big, var lb, mut max_iters_2}:
         var report = run[func4=time_me](
             max_iters=max_iters_2,
             min_runtime_secs=lb,
@@ -71,7 +67,7 @@ def test_stopping_criteria() raises:
         assert_true(report.mean() > 0)
         assert_true(report.iters() >= max_iters_2)
 
-    var t2 = time_function[timer2]()
+    var t2 = time_function(timer2)
 
     assert_true(
         Float64(t2) / 1e9 >= lb and Float64(t2) / 1e9 <= Float64(ub_big)
@@ -80,9 +76,7 @@ def test_stopping_criteria() raises:
     # stop on or before max_iters
     var max_iters_3 = 3
 
-    @__copy_capture(ub_big)
-    @parameter
-    def timer3() raises:
+    def timer3() raises {var ub_big, mut max_iters_3}:
         var report = run[func4=time_me](
             max_iters=max_iters_3,
             min_runtime_secs=0,
@@ -91,7 +85,7 @@ def test_stopping_criteria() raises:
         assert_true(report.mean() > 0)
         assert_true(report.iters() <= max_iters_3)
 
-    var t3 = time_function[timer3]()
+    var t3 = time_function(timer3)
 
     assert_true(Float64(t3) / 1e9 <= Float64(ub_big))
 
@@ -216,7 +210,7 @@ def test_bencher_iter_unified() raises:
     var count = 0
 
     @always_inline
-    def increment() unified {
+    def increment() {
         mut count,
     }:
         count += 1
@@ -233,13 +227,13 @@ def test_bencher_iter_preproc_unified() raises:
     var preproc_count = 0
 
     @always_inline
-    def work() unified {
+    def work() {
         mut count,
     }:
         count += 1
 
     @always_inline
-    def preproc() unified {
+    def preproc() {
         mut preproc_count,
     }:
         preproc_count += 1
@@ -254,7 +248,7 @@ def test_bencher_iter_custom_unified() raises:
     var bencher = Bencher(5)
 
     @always_inline
-    def custom_timer(num_iters: Int) unified {} -> Int:
+    def custom_timer(num_iters: Int) -> Int:
         return num_iters * 100
 
     bencher.iter_custom(custom_timer)
@@ -268,13 +262,13 @@ def test_bench_function_unified() raises:
     var call_count = 0
 
     @always_inline
-    def noop() unified {}:
+    def noop():
         pass
 
     @always_inline
     def my_bench(
         mut b: Bencher,
-    ) unified {mut call_count,}:
+    ) {mut call_count,}:
         call_count += 1
         b.iter(noop)
 
@@ -293,11 +287,11 @@ def test_bench_with_input_unified() raises:
     def my_bench(
         mut b: Bencher,
         input: Int,
-    ) unified {mut call_count,}:
+    ) {mut call_count,}:
         call_count += 1
 
         @always_inline
-        def noop() unified {}:
+        def noop():
             pass
 
         b.iter(noop)
@@ -314,7 +308,7 @@ def test_bench_function_no_arg_unified() raises:
     var count = 0
 
     @always_inline
-    def my_func() unified {
+    def my_func() {
         mut count,
     }:
         count += 1

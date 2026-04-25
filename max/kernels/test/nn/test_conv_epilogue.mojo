@@ -204,8 +204,7 @@ def test[
             )
 
             @always_inline
-            @parameter
-            def body0[width: Int](offset: Int) unified {var}:
+            def body0[width: Int](offset: Int) {var}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -222,7 +221,7 @@ def test[
     @parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        def body1[width: Int](idx: Int) unified {mut}:
+        def body1[width: Int](idx: Int) {read}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 

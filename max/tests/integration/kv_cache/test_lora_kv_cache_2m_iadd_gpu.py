@@ -72,11 +72,12 @@ def dump_kv_cache_to_torch(
     device_id: int = 0,
 ) -> list[torch.Tensor]:
     """Extract K or V cache contents for each sequence in batch."""
-    torch_dtype = max_dtype_to_torch(cache.params.dtype)
+    kv_params = cache.cache_params()
+    torch_dtype = max_dtype_to_torch(kv_params.dtype)
     device_buffer = cache.get_device_buffer(replica_idx=0).values[device_id]
     device_buffer_torch = from_dlpack(device_buffer).to(torch_dtype).cpu()
     device_buffer_torch = device_buffer_torch[:, key_or_value, :, :, :, :]
-    page_size = cache.params.page_size
+    page_size = kv_params.page_size
 
     results = []
     for ctx in batch:
@@ -85,8 +86,8 @@ def dump_kv_cache_to_torch(
 
         result = torch.empty(
             seq_len,
-            cache.params.n_kv_heads_per_device,
-            cache.params.head_dim,
+            kv_params.n_kv_heads_per_device,
+            kv_params.head_dim,
             dtype=torch_dtype,
         )
 
@@ -162,7 +163,7 @@ def run_kv_cache_2m_iadd(
         Buffer.zeros(cache_tensor.shape, dtype=DTYPE, device=device)
     )
 
-    kv_symbolic_inputs = kv_params.get_symbolic_inputs()[0]
+    kv_symbolic_inputs = kv_params.get_symbolic_inputs().flatten()
 
     with Graph(
         "kv_cache_2m_iadd_test",
@@ -208,14 +209,14 @@ def run_kv_cache_2m_iadd(
 
     batch_seq_len_arr = np.array([total_seq_len], dtype=np.int64)
 
-    kv_runtime_inputs = kv_manager.runtime_inputs([batch]).inputs[0]
+    kv_runtime_inputs = kv_manager.runtime_inputs([batch])
 
     compiled.execute(
         to_max_tensor(kv_lora_output, device),
         Buffer.from_numpy(input_row_offsets).to(device),
         Buffer.from_numpy(lora_end_idx_arr),
         Buffer.from_numpy(batch_seq_len_arr),
-        *kv_runtime_inputs,
+        *kv_runtime_inputs.flatten(),
     )
 
     for ctx in batch:

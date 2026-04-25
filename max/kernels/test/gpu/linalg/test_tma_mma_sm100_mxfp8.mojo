@@ -500,11 +500,11 @@ def sm100_block_scaled_mxfp8[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, _],
+    a: LayoutTensor[mut=True, a_type, a_layout, _],
+    b: LayoutTensor[mut=True, b_type, b_layout, _],
+    a_scales: LayoutTensor[mut=True, a_scales_type, a_scales_layout, _],
+    b_scales: LayoutTensor[mut=True, b_scales_type, b_scales_layout, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -675,8 +675,8 @@ def test_block_scaled_mxfp8[
 ](ctx: DeviceContext, m: MType, n: NType) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = m.value()
-    var N = n.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
     var K = k
 
     comptime BM = block_tile_shape[0]
@@ -857,16 +857,12 @@ def test_block_scaled_mxfp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_scales = TileTensor(
-        a_scales_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var b_scales = TileTensor(
-        b_scales_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
-    var c_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var a = TileTensor(a_device, row_major(a_shape))
+    var b = TileTensor(b_device, row_major(b_shape))
+    var c = TileTensor(c_device, row_major(c_shape))
+    var a_scales = TileTensor(a_scales_device, row_major(a_scales_shape))
+    var b_scales = TileTensor(b_scales_device, row_major(b_scales_shape))
+    var c_ref = TileTensor(c_device_ref, row_major(c_shape))
 
     sm100_block_scaled_mxfp8[
         transpose_b=transpose_b,
@@ -874,7 +870,7 @@ def test_block_scaled_mxfp8[
         block_tile_shape=block_tile_shape,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
-        c.to_layout_tensor(),
+        c.to_layout_tensor().as_any_origin(),
         a.to_layout_tensor(),
         b.to_layout_tensor(),
         a_scales.to_layout_tensor(),

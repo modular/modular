@@ -40,9 +40,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer.distributed_transformer import (
-    forward_sharded_layers,
-)
+from max.nn.transformer.distributed_transformer import forward_sharded_layers
 
 from ..deepseekV3.deepseekV3 import (
     DeepseekV3DecoderLayer,
@@ -163,15 +161,16 @@ class DeepseekV3NextN(Module):
     def __call__(
         self,
         tokens: TensorValue,
-        hidden_state: TensorValue,
+        hidden_state: list[TensorValue],
         signal_buffers: list[BufferValue],
         kv_collections: list[PagedCacheValues],
         return_n_logits: TensorValue,
-        input_row_offsets: TensorValue,
+        input_row_offsets: list[TensorValue],
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         ep_inputs: list[Value[Any]] | None = None,
+        split_prefix: str = "draft",
     ) -> tuple[TensorValue, ...]:
         if not host_input_row_offsets.device == DeviceRef.CPU():
             raise ValueError("host_input_row_offsets must be located on CPU")
@@ -182,57 +181,58 @@ class DeepseekV3NextN(Module):
 
         h_embed = self.embed_tokens(tokens, signal_buffers)
 
-        # broadcast hidden_state to all devices
-        hidden_states = ops.distributed_broadcast(hidden_state, signal_buffers)
+        hidden_states = list(hidden_state)
         norm_embed = forward_sharded_layers(self.enorm_shards, h_embed)
         norm_hidden = forward_sharded_layers(self.hnorm_shards, hidden_states)
         freqs_cis = [self.rope.freqs_cis.to(device) for device in devices]
-        input_row_offsets_ = ops.distributed_broadcast(
-            input_row_offsets.to(devices[0]), signal_buffers
-        )
-        # Both norm_embed and norm_hidden are replicated (full batch on each
-        # device). In the DP case, split both before concatenating.
+        input_row_offsets_ = list(input_row_offsets)
         if self.use_data_parallel_attention:
             host_offsets_i64 = host_input_row_offsets.cast(DType.int64)
-            unsplit_row_offsets = input_row_offsets_
             norm_embed, input_row_offsets_ = split_batch_replicated(
                 devices,
                 norm_embed,
-                unsplit_row_offsets,
+                input_row_offsets_,
                 host_offsets_i64,
                 data_parallel_splits,
-                prefix="draft",
-            )
-            norm_hidden, _ = split_batch_replicated(
-                devices,
-                norm_hidden,
-                unsplit_row_offsets,
-                host_offsets_i64,
-                data_parallel_splits,
-                prefix="draft",
+                prefix=split_prefix,
             )
 
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
             norm_hidden = [
                 ops.rebind(
                     norm_hidden[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [
+                        f"{split_prefix}_seq_len_device_{i}",
+                        self.config.hidden_size,
+                    ],
                 )
                 for i in range(len(devices))
             ]
         else:
-            # Single-device case: rebind norm_embed to match hidden_states dimension names
-            # hidden_states uses 'seq_len_device_0' but norm_embed uses 'total_seq_len'
+            # TP or single-device case: rebind norm_embed and norm_hidden.
+            # Use a COMMON dim name so reduce-scatter/allgather (which
+            # require matching shapes) work in TP mode.
+            common_dim = f"{split_prefix}_seq_len"
             norm_embed = [
                 ops.rebind(
                     norm_embed[i],
-                    [f"seq_len_device_{i}", self.config.hidden_size],
+                    [common_dim, self.config.hidden_size],
+                )
+                for i in range(len(devices))
+            ]
+            norm_hidden = [
+                ops.rebind(
+                    norm_hidden[i],
+                    [common_dim, self.config.hidden_size],
                 )
                 for i in range(len(devices))
             ]
@@ -272,11 +272,11 @@ class DeepseekV3NextN(Module):
 
         # Extract dispatch metadata from KV collections for MLA decode.
         mla_decode_scalar_args: list[TensorValue] | None = None
-        if kv_collections[0].dispatch_metadata is not None:
+        if kv_collections[0].attention_dispatch_metadata is not None:
             mla_decode_scalar_args = [
-                kv.dispatch_metadata.tensor
+                kv.attention_dispatch_metadata
                 for kv in kv_collections
-                if kv.dispatch_metadata is not None
+                if kv.attention_dispatch_metadata is not None
             ]
 
         h = self.decoder_layer(
@@ -307,7 +307,6 @@ class DeepseekV3NextN(Module):
             return_logits=self.return_logits,
             return_hidden_states=self.return_hidden_states,
             logits_scaling=self.logits_scaling,
-            duplicated_hs=not self.use_data_parallel_attention,
         )
 
     def input_types(

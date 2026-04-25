@@ -65,6 +65,23 @@ class KVConnectorConfig(ConfigFileModel):
     )
     """Whether to use O_DIRECT for disk I/O."""
 
+    block_store_endpoint: str | None = Field(
+        default=None,
+        description=(
+            "Endpoint for the co-located dKV service. Supports IPC "
+            "(ipc:///path) or TCP (tcp://host:port). "
+            "Required when kv_connector is 'dkv'."
+        ),
+    )
+    """Endpoint for the co-located dKV service.
+
+    Remote dKV endpoints are discovered at runtime through the
+    Orchestrator (via ``external_block_metadata`` on the request
+    context), not configured statically. For multi-store reads, the
+    discovered metadata must include MAX-native transfer-engine metadata so
+    the connector can reuse ``KVTransferEngine.connect()``.
+    """
+
     def as_lmcache_config(self) -> dict[str, object]:
         """Returns only the extra (LMCache-specific) fields as a dict.
 
@@ -156,6 +173,7 @@ class KVCacheConfig(ConfigFileModel):
         is_mla: bool = False,
         num_q_heads: int | None = None,
         kvcache_quant_config: KVCacheQuantizationConfig | None = None,
+        num_eagle_speculative_tokens: int = 0,
     ) -> KVCacheParams:
         """Returns :class:`~max.nn.kv_cache.cache_params.KVCacheParams` built from this config.
 
@@ -170,6 +188,7 @@ class KVCacheConfig(ConfigFileModel):
             num_q_heads: Number of query attention heads. Required when
                 ``is_mla`` is True.
             kvcache_quant_config: KV cache quantization configuration.
+            num_eagle_speculative_tokens: Number of draft tokens to generate for EAGLE speculative decoding.
 
         Returns:
             The constructed KV cache parameters.
@@ -192,4 +211,5 @@ class KVCacheConfig(ConfigFileModel):
             num_q_heads=num_q_heads,
             data_parallel_degree=data_parallel_degree,
             kvcache_quant_config=kvcache_quant_config,
+            num_eagle_speculative_tokens=num_eagle_speculative_tokens,
         )

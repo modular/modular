@@ -234,5 +234,79 @@ def test_cycle_modulo_behavior() raises:
         assert_equal(next(it), expected)
 
 
+@fieldwise_init
+struct _CopyableOwnedIter[size: Int](Copyable, IterableOwned, Iterator):
+    """A `Copyable` owned iterator backed by an `InlineArray` for testing."""
+
+    comptime Element = Int
+    comptime IteratorOwnedType: Iterator = Self
+    var _data: InlineArray[Int, Self.size]
+    var _index: Int
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    def __next__(mut self) raises StopIteration -> Int:
+        if self._index >= Self.size:
+            raise StopIteration()
+        var val = self._data[self._index]
+        self._index += 1
+        return val
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = Self.size - self._index
+        return (remaining, remaining)
+
+
+@fieldwise_init
+struct _CopyableOwned[size: Int](IterableOwned):
+    """An `IterableOwned` whose owned iterator is `Copyable` for testing."""
+
+    comptime IteratorOwnedType: Iterator = _CopyableOwnedIter[Self.size]
+    var _data: InlineArray[Int, Self.size]
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return _CopyableOwnedIter(self._data, 0)
+
+
+def _owned1(a: Int) -> _CopyableOwned[1]:
+    var data: InlineArray[Int, 1] = [a]
+    return _CopyableOwned(data)
+
+
+def _owned3(a: Int, b: Int, c: Int) -> _CopyableOwned[3]:
+    var data: InlineArray[Int, 3] = [a, b, c]
+    return _CopyableOwned(data)
+
+
+def test_cycle_owned() raises:
+    var it = cycle(_owned3(1, 2, 3))
+
+    # First cycle
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+
+    # Second cycle
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+
+    # Third cycle
+    assert_equal(next(it), 1)
+    assert_equal(next(it), 2)
+    assert_equal(next(it), 3)
+
+
+def test_cycle_owned_single() raises:
+    var it = cycle(_owned1(42))
+
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+    assert_equal(next(it), 42)
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

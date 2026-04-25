@@ -60,6 +60,7 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         "//max/python/max/interfaces",
+        "//max/python/max/nn",
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
@@ -159,6 +160,7 @@ modular_py_test(
         "//max/tests/integration/test_common:mocks",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
+        requirement("transformers"),
     ],
 )
 
@@ -200,18 +202,6 @@ modular_py_test(
         "//max/tests/integration:hf_repo_lock",
         "//max/tests/integration/test_common:pipeline_model_dummy",
         "//max/tests/integration/test_common:registry",
-        requirement("numpy"),
-    ],
-)
-
-modular_py_test(
-    name = "test_unified_eagle_pipeline",
-    size = "large",
-    srcs = ["test_unified_eagle_pipeline.py"],
-    deps = [
-        "//max/python/max/interfaces",
-        "//max/python/max/pipelines/core",
-        "//max/python/max/pipelines/lib",
         requirement("numpy"),
     ],
 )
@@ -358,9 +348,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
-        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
-        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
     gpu_constraints = ["//:has_gpu"] + select({
@@ -388,9 +378,9 @@ modular_py_test(
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
-        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
-        "MOJO_ASSERT_LEVEL": "all",
+        "MODULAR_MAX_DEBUG_ASSERT_LEVEL": "all",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
     gpu_constraints = ["//:has_gpu"] + select({

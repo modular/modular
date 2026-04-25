@@ -34,11 +34,9 @@ from max.interfaces import (
     VLMTextGenerationContext,
 )
 from max.kv_cache.kv_connector import KVConnector
+from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-)
 from max.support.math import ceildiv
 
 from .block_pool import BlockPool
@@ -56,7 +54,8 @@ def _compute_seq_len(
 ) -> int:
     seq_len = (
         len(ctx.tokens)
-        + ctx.spec_decoding_state.num_draft_tokens
+        + len(ctx.spec_decoding_state.draft_tokens_to_verify)
+        + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
         + num_speculative_steps
         + num_steps
         - 1
@@ -327,6 +326,14 @@ class BlockManager:
         # Load from host cache via connector - returns the block hashes.
         loaded_hashes = self.connector.load(ctx, device_block_ids)
 
+        # The connector may return fewer hashes than requested (e.g.
+        # transport failure or connector degraded between lookup/load).
+        # Free any surplus pre-allocated device blocks.
+        if len(loaded_hashes) < len(blocks):
+            for surplus_block in blocks[len(loaded_hashes) :]:
+                self.device_block_pool.free_block(surplus_block)
+            blocks = blocks[: len(loaded_hashes)]
+
         # Commit the device blocks into the device prefix cache.
         for device_block, block_hash in zip(blocks, loaded_hashes, strict=True):
             self.device_block_pool.commit_into_prefix_cache(
@@ -411,24 +418,42 @@ class BlockManager:
         # to the block size.
         num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
-        # Commit these blocks into the prefix cache.
+        # Commit blocks into the prefix cache, grouping contiguous runs
+        # of new blocks with their parent hash for the connector.
+        # When a block already exists in the device prefix cache (dup),
+        # it breaks the current run; the dup's hash becomes the parent
+        # of the next new block.
+        current_parent = (
+            req_hashes[num_committed_blocks - 1]
+            if num_committed_blocks > 0
+            else 0
+        )
+        run_bids: list[int] = []
+        run_hashes: list[int] = []
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
-
-            # Get the block hash.
             block_hash = req_hashes[block_idx]
 
-            # Get the parent block hash.
             new_block = self.device_block_pool.get_or_commit_into_prefix_cache(
                 block_hash, block
             )
             if new_block is not None:
                 req_blocks[block_idx] = new_block
+                if run_bids:
+                    self.connector.save(
+                        run_bids, run_hashes, parent_seq_hash=current_parent
+                    )
+                    run_bids = []
+                    run_hashes = []
+                current_parent = block_hash
             else:
-                # This block was newly committed (not a duplicate).
-                # Queue for offload to connector's external tier.
-                # Note: actual D2H copy and metrics are tracked by the connector.
-                self.connector.save([block.bid], [block_hash])
+                run_bids.append(block.bid)
+                run_hashes.append(block_hash)
+
+        if run_bids:
+            self.connector.save(
+                run_bids, run_hashes, parent_seq_hash=current_parent
+            )
 
         # Update committed index managed by BlockManager.
         self.req_to_committed_idx[ctx.request_id] = (
@@ -483,7 +508,11 @@ class BlockManager:
         # This should literally never happen unless the user sets an absurdly
         # large max seq len or the KV cache is very small.
         total_kv_slots = self.total_num_blocks * self.block_size
-        seq_len = len(ctx.tokens) + ctx.spec_decoding_state.num_draft_tokens
+        seq_len = (
+            len(ctx.tokens)
+            + len(ctx.spec_decoding_state.draft_tokens_to_verify)
+            + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
+        )
         if seq_len > total_kv_slots:
             raise InsufficientBlocksError(
                 f"Insufficient KV pages for a single request with {seq_len} tokens.\n"

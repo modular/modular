@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements the VariadicList, VariadicParamList and VariadicPack types.
+"""Implements the VariadicList, ParameterList and VariadicPack types.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -22,145 +22,193 @@ from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
 
 
-struct Variadic:
-    """A namespace for variadic utilities."""
+struct _MLIR:
+    comptime KGENTypeType = __mlir_type.`!kgen.type`
 
-    comptime ValuesOfType[type: AnyType] = __mlir_type[
-        `!kgen.variadic<`, type, `>`
+    comptime POPArrayType[
+        size: __mlir_type.index, elt_type: AnyType
+    ] = __mlir_type[`!pop.array<`, size, `, `, elt_type, `>`]
+
+    comptime KGENParamListType[elt_type: Self.KGENTypeType] = __mlir_type[
+        `!kgen.param_list<`, elt_type, `>`
     ]
-    """Represents a raw variadic sequence of values of the specified type.
+
+
+# ===-----------------------------------------------------------------------===#
+# ParameterList and TypeList Utilities
+# ===-----------------------------------------------------------------------===#
+
+comptime _IntToXGeneratorType[ToT: _MLIR.KGENTypeType] = __mlir_type[
+    `!lit.generator<<"Idx":`,
+    Int,
+    `>`,
+    +ToT,
+    `>`,
+]
+
+# ===-----------------------------------------------------------------------===#
+# TypeList
+# ===-----------------------------------------------------------------------===#
+
+
+struct TypeList[
+    Trait: type_of(AnyType), //, values: _MLIR.KGENParamListType[Trait]
+](Sized, TrivialRegisterPassable):
+    """A compile-time list of types conforming to a common trait.
+
+    `TypeList` provides type-level operations on variadic sequences of types,
+    such as reversing, slicing, mapping, and membership testing.
 
     Parameters:
-        type: The type of values in the variadic sequence.
+        Trait: The trait that all types in the list must conform to.
+        values: The types in the list.
+
+    Examples:
+
+    ```text
+    from std.builtin.variadics import TypeList
+    from std.sys.intrinsics import _type_is_eq
+    from std.testing import assert_equal
+
+    # Create a type list
+    comptime tl = TypeList[Trait=AnyType, Int, String, Float64]()
+
+    def main():
+        # Query size
+        assert_equal(tl.size, 3)
+
+        # Check membership
+        comptime assert tl.contains[Int]
+        comptime assert not tl.contains[Bool]
+
+        # Index into the list
+        comptime assert _type_is_eq[tl[0], Int]()
+    ```
     """
 
-    comptime TypesOfTrait[T: type_of(AnyType)] = __mlir_type[
-        `!kgen.variadic<`, T, `>`
+    comptime _mlir_type = _MLIR.KGENParamListType[Self.Trait]
+    """The low-level MLIR type of the type list."""
+
+    comptime size: Int = Int(
+        mlir_value=__mlir_attr[
+            `#kgen.param_list.size<:`,
+            Self._mlir_type,
+            ` `,
+            +Self.values,
+            `> : index`,
+        ]
+    )
+    """The number of types in the list."""
+
+    comptime __getitem_param__[idx: Int] = __mlir_attr[
+        `#kgen.param_list.get<:`,
+        Self._mlir_type,
+        ` `,
+        +Self.values,
+        `, `,
+        idx._mlir_value,
+        `> : `,
+        +Self.Trait,
     ]
-    """Represents a raw variadic sequence of types that satisfy the specified trait.
+    """Gets a type at the given index.
 
     Parameters:
-        T: The trait that types in the variadic sequence must conform to.
+        idx: The index of the type to access.
     """
 
-    @staticmethod
+    @implicit
     @always_inline("builtin")
-    def size[T: AnyType](seq: Self.ValuesOfType[T]) -> Int:
-        """Returns the length of a variadic sequence.
-
-        Parameters:
-            T: The type of values in the sequence.
+    def __init__(
+        existing: TypeList[...],
+        out self: TypeList[
+            Trait=Self.Trait,
+            __mlir_attr[
+                `#kgen.upcast<`,
+                existing.values,
+                `> : `,
+                _MLIR.KGENParamListType[Self.Trait],
+            ],
+        ],
+    ) where __mlir_attr[
+        `#kgen.is_refined_type<`, existing.Trait, `, `, Self.Trait, `>`
+    ]:
+        """Upcasts a TypeList to a base trait.
 
         Args:
-            seq: The variadic sequence to measure.
+            existing: The TypeList to upcast from.
 
-        Returns:
-            The length of the variadic sequence.
+        Constraints:
+            The existing.Trait is more refined than Self.Trait.
         """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
+        pass
 
-    @staticmethod
+    # ===-------------------------------------------------------------------===#
+    # Constructors
+    # ===-------------------------------------------------------------------===#
+
     @always_inline("builtin")
-    def size[T: type_of(AnyType)](seq: Self.TypesOfTrait[T]) -> Int:
-        """Returns the length of a variadic sequence.
+    def __init__(out self):
+        """Constructs a TypeList."""
+        pass
 
-        Parameters:
-            T: The trait that types in the sequence must conform to.
-
-        Args:
-            seq: The variadic sequence of types to measure.
-
-        Returns:
-            The length of the variadic sequence.
-        """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(seq))
-
-    # ===-----------------------------------------------------------------------===#
-    # Utils
-    # ===-----------------------------------------------------------------------===#
-
-    comptime empty_of_trait[T: type_of(AnyType)] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+    comptime of[Trait: type_of(AnyType), //, *values: Trait] = TypeList[
+        Trait=Trait, values.values
     ]
-    """Empty comptime variadic of type values.
+    """Form a compile-time list of types with some elements, uninstantiated.
 
     Parameters:
-        T: The trait that types in the variadic sequence must conform to.
+        Trait: The type of the elements in the list.
+        values: The values in the list.
+
+    Examples:
+        ```mojo
+        comptime Ts = TypeList.of[Trait=AnyType, Int, String, Float64, Bool]
+        comptime Ms = TypeList.of[Trait=Movable, Int, String, Float64, Bool]
+        ```
     """
 
-    comptime empty_of_type[T: AnyType] = __mlir_attr[
-        `#kgen.variadic<>: !kgen.variadic<`, T, `>`
+    comptime _IndexToIntTypeTabulateWrap[
+        Trait: type_of(AnyType),
+        ToT: Trait,
+        //,
+        ToWrap: _IntToXGeneratorType[Trait],
+        idx: __mlir_type.index,
+    ] = ToWrap[Int(mlir_value=idx)]
+
+    comptime tabulate[
+        Trait: type_of(AnyType),
+        ToT: Trait,
+        //,
+        count: Int,
+        Mapper: _IntToXGeneratorType[Trait],
+    ] = TypeList[
+        Trait=Trait,
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._int_mlir_index(),
+            `,`,
+            Self._IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+            `> : `,
+            _MLIR.KGENParamListType[Trait],
+        ],
     ]
-    """Empty comptime variadic of values.
+    """Builds a type list by applying an index-to-type mapper `count` times.
 
     Parameters:
-        T: The type of values in the variadic sequence.
+        Trait: The trait of the generated TypeList.
+        ToT: The type of the values in the generated TypeList.
+        count: The number of times to apply the generator, the length of the result..
+        Mapper: The generator to apply, mapping from Int to ToT.
     """
 
-    comptime types[T: type_of(AnyType), //, *Ts: T] = Ts
-    """Turn discrete type values (bound by `T`) into a single variadic.
+    comptime _SplatTypeTabulator[
+        Trait: type_of(AnyType), T: Trait, index: Int
+    ]: Trait = T
 
-    Parameters:
-        T: The trait that the types must conform to.
-        Ts: The types to collect into a variadic sequence.
-    """
-
-    comptime values[T: AnyType, //, *values_: T]: Variadic.ValuesOfType[
-        T
-    ] = values_
-    """Turn discrete values (bound by `T`) into a single variadic.
-
-    Parameters:
-        T: The type of the values.
-        values_: The values to collect into a variadic sequence.
-    """
-
-    # ===-----------------------------------------------------------------------===#
-    # VariadicConcat
-    # ===-----------------------------------------------------------------------===#
-
-    comptime concat_types[
-        T: type_of(AnyType), //, *Ts: Variadic.TypesOfTrait[T]
-    ] = __mlir_attr[
-        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.TypesOfTrait[T]
-    ]
-    """Represents the concatenation of multiple variadic sequences of types.
-
-    Parameters:
-        T: The trait that types in the variadic sequences must conform to.
-        Ts: The variadic sequences to concatenate.
-    """
-
-    comptime concat_values[
-        T: AnyType, //, *Ts: Variadic.ValuesOfType[T]
-    ] = __mlir_attr[
-        `#kgen.variadic.concat<`, Ts, `> :`, Variadic.ValuesOfType[T]
-    ]
-    """Represents the concatenation of multiple variadic sequences of values.
-
-    Parameters:
-        T: The types of the values in the variadic sequences.
-        Ts: The variadic sequences to concatenate.
-    """
-
-    comptime reverse[
-        T: type_of(AnyType), //, *element_types: T
-    ]: Variadic.TypesOfTrait[T] = _MapVariadicAndIdxToType[
-        To=T, VariadicType=element_types, Mapper=_ReversedVariadic[T, ...]
-    ]
-    """A wrapper to reverse a variadic sequence of types.
-
-    Parameters:
-        T: The trait that the types conform to.
-        element_types: The variadic sequence of types to reverse.
-    """
-
-    comptime splat_type[
+    comptime splat[
         Trait: type_of(AnyType), //, count: Int, type: Trait
-    ]: Variadic.TypesOfTrait[Trait] = Self.tabulate_type[
-        Trait=Trait, ToT=type, count, _SplatTypeTabulator[Trait, type, _]
-    ]
-    """Splat a type into a variadic sequence.
+    ] = TypeList.tabulate[count, Self._SplatTypeTabulator[Trait, type, _]]
+    """Splats a type a given number of times.
 
     Parameters:
         Trait: The trait that the types conform to.
@@ -168,334 +216,421 @@ struct Variadic:
         type: The type to splat.
     """
 
-    comptime splat_value[
-        T: AnyType, //, count: Int, value: T
-    ]: Variadic.ValuesOfType[T] = Self.tabulate[
-        count, _SplatValueTabulator[value, _]
+    # Note: this is _concat instead of concat because it takes MLIR typelists
+    comptime _concat[
+        Trait: type_of(AnyType), //, *Ts: _MLIR.KGENParamListType[Trait]
+    ] = TypeList[
+        __mlir_attr[
+            `#kgen.param_list.concat<`,
+            Ts.values,
+            `> :`,
+            _MLIR.KGENParamListType[Trait],
+        ]
     ]
-    """Splat a value into a variadic sequence.
+    """Form a TypeList from the concatenation of multiple MLIR type lists.
 
     Parameters:
-        T: The type of the value to splat.
-        count: The number of times to splat the value.
-        value: The value to splat.
+        Trait: The trait that types in the variadic sequences must conform to.
+        Ts: The variadic sequences to concatenate.
     """
 
-    comptime tabulate[
-        ToT: AnyType,
+    # ===-------------------------------------------------------------------===#
+    # Reductions
+    # ===-------------------------------------------------------------------===#
+
+    comptime _ReducerGeneratorType[
+        FromAndTo: AnyType,
+    ] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +FromAndTo,
+        `, "From": `,
+        +Self.Trait,
+        `>`,
+        +FromAndTo,
+        `>`,
+    ]
+
+    comptime _DiscardIndexWrapper[
+        FromAndTo: AnyType,
+        ToWrap: Self._ReducerGeneratorType[FromAndTo],
+        PrevV: FromAndTo,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: Int,
+    ] = ToWrap[PrevV, TypeList[VA].__getitem_param__[idx]]
+    """Adapts a (prev, element) reducer to the variadic reduce index signature."""
+
+    comptime _ReduceVariadicIdxGeneratorTypeGenerator[
+        Prev: AnyType
+    ] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +Prev,
+        `, "From": `,
+        _MLIR.KGENParamListType[Self.Trait],
+        `, "Idx":`,
+        SIMDSize,
+        `>`,
+        +Prev,
+        `>`,
+    ]
+    comptime _IndexToIntWrap[
+        ReduceT: AnyType,
+        ToWrap: Self._ReduceVariadicIdxGeneratorTypeGenerator[ReduceT],
+        PrevV: ReduceT,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        idx: __mlir_type.index,
+    ] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
+    """Wrapper for type -> value."""
+
+    comptime reduce[
+        FromAndTo: AnyType,
         //,
-        count: Int,
-        Mapper: _TabulateIntToValueGeneratorType[ToT],
-    ]: Variadic.ValuesOfType[ToT] = __mlir_attr[
-        `#kgen.variadic.tabulate<`,
-        count._mlir_value,
+        BaseVal: FromAndTo,
+        Reducer: Self._ReducerGeneratorType[FromAndTo],
+    ] = __mlir_attr[
+        `#kgen.param_list.reduce<`,
+        BaseVal,
         `,`,
-        _IndexToIntTabulateWrap[Mapper, ...],
-        `> : `,
-        Variadic.ValuesOfType[ToT],
-    ]
-    """Apply an "index -> value" generator, N times to build a variadic.
-
-    Parameters:
-        ToT: The type of the values in the variadic sequence.
-        count: The number of times to apply the generator.
-        Mapper: The generator to apply, mapping from Int to ToT.
-    """
-
-    comptime tabulate_type[
-        Trait: type_of(AnyType),
-        ToT: Trait,
-        //,
-        count: Int,
-        Mapper: _TabulateIntToTypeGeneratorType[Trait, ToT],
-    ]: Variadic.TypesOfTrait[Trait] = __mlir_attr[
-        `#kgen.variadic.tabulate<`,
-        count._mlir_value,
+        Self.values,
         `,`,
-        _IndexToIntTypeTabulateWrap[Trait=Trait, ToT=ToT, Mapper, ...],
+        Self._IndexToIntWrap[
+            FromAndTo,
+            Self._DiscardIndexWrapper[FromAndTo, Reducer, ...],
+            ...,
+        ],
         `> : `,
-        Variadic.TypesOfTrait[Trait],
+        +FromAndTo,
     ]
-    """Apply an "index -> value" generator, N times to build a variadic.
+    """Folds this type list to a single value using an associative step function.
 
     Parameters:
-        Trait: The trait that the types conform to.
-        ToT: The type of the values in the variadic sequence.
-        count: The number of times to apply the generator.
-        Mapper: The generator to apply, mapping from Int to ToT.
+        FromAndTo: The type of the accumulator and the final result.
+        BaseVal: The initial accumulator value.
+        Reducer: A compile-time generator
+            `[prev: FromAndTo, element: Self.Trait] -> FromAndTo`.
     """
 
-    comptime contains[
-        Trait: type_of(AnyType),
-        //,
-        type: Trait,
-        element_types: Variadic.TypesOfTrait[Trait],
-    ] = _ReduceVariadicAndIdxToValue[
-        BaseVal=Variadic.values[False],
-        VariadicType=element_types,
-        #  Curry `_ContainsMapper` to fit the reducer signature
-        Reducer=_ContainsReducer[Trait=Trait, Type=type, ...],
-    ][
-        0
+    comptime _TypeIndexReducerGenerator[Acc: AnyType] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +Acc,
+        `, "From": `,
+        +Self.Trait,
+        `, "Idx":`,
+        Int,
+        `>`,
+        +Acc,
+        `>`,
     ]
-    """
-    Check if a type is contained in a variadic sequence.
+
+    comptime _PassIndexReducerWrapper[
+        FromAndTo: AnyType,
+        ToWrap: Self._TypeIndexReducerGenerator[FromAndTo],
+        PrevV: FromAndTo,
+        VA: _MLIR.KGENParamListType[Self.Trait],
+        list_idx: Int,
+    ] = ToWrap[
+        PrevV,
+        TypeList[VA].__getitem_param__[list_idx],
+        list_idx,
+    ]
+    """Adapts a (prev, element, index) reducer to the variadic reduce index signature."""
+
+    comptime reduce_idx[
+        FromAndTo: AnyType,
+        //,
+        BaseVal: FromAndTo,
+        Reducer: Self._TypeIndexReducerGenerator[FromAndTo],
+    ] = __mlir_attr[
+        `#kgen.param_list.reduce<`,
+        BaseVal,
+        `,`,
+        Self.values,
+        `,`,
+        Self._IndexToIntWrap[
+            FromAndTo,
+            Self._PassIndexReducerWrapper[FromAndTo, Reducer, ...],
+            ...,
+        ],
+        `> : `,
+        +FromAndTo,
+    ]
+    """Folds this type list to a single value using a step function of position.
+
+    Like `reduce`, but the reducer receives each element's index in this list,
+    from `0` through `size - 1`, as a third compile-time argument.
 
     Parameters:
-        Trait: The trait that the types conform to.
-        type: The type to check for.
-        element_types: The variadic sequence of types to search.
+        FromAndTo: The type of the accumulator and the final result.
+        BaseVal: The initial accumulator value.
+        Reducer: A compile-time generator
+            `[prev: FromAndTo, element: Self.Trait, idx: Int] -> FromAndTo`.
     """
 
-    comptime contains_value[
-        T: Equatable,
-        //,
-        value: T,
-        element_values: Variadic.ValuesOfType[T],
-    ] = _ReduceValueAndIdxToValue[
-        BaseVal=Variadic.values[False],
-        VariadicType=element_values,
-        #  Curry `_ContainsValueReducer` to fit the reducer signature
-        Reducer=_ContainsValueReducer[T=T, value=value, ...],
-    ][
-        0
+    comptime _TypePredicateGenerator = __mlir_type[
+        `!lit.generator<<"Type": `,
+        Self.Trait,
+        `>`,
+        Bool,
+        `>`,
     ]
-    """
-    Check if a value is contained in a variadic sequence of values.
+    """Generator type for type predicates.
+
+    A predicate takes a type and returns a boolean indicating whether to keep it.
 
     Parameters:
-        T: The type of the values. Must be `Equatable`.
-        value: The value to search for.
-        element_values: The variadic sequence of values to search.
+        T: The trait that the types conform to.
     """
 
-    comptime map_types_to_types[
-        From: type_of(AnyType),
-        To: type_of(AnyType),
-        //,
-        element_types: Variadic.TypesOfTrait[From],
-        Mapper: _TypeToTypeGenerator[From, To],
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[To],
-        VariadicType=element_types,
-        Reducer=_MapTypeToTypeReducer[From, To, Mapper, ...],
-    ]
-    """Map a variadic of types to a new variadic of types using a mapper.
+    comptime _AnySatisfiesReducer[
+        predicate: Self._TypePredicateGenerator,
+        last_value: Bool,
+        this_element: Self.Trait,
+    ] = last_value or predicate[this_element]
 
-    Returns a new variadic of types resulting from applying `Mapper[T]` to each
-    type in the input variadic.
+    @always_inline("builtin")
+    @staticmethod
+    def any_satisfies[
+        predicate: Self._TypePredicateGenerator,
+    ]() -> Bool:
+        """Returns true if `predicate` holds for at least one type in this list.
+
+        Parameters:
+            predicate: A compile-time generator `[T: Self.Trait] -> Bool`.
+
+        Returns:
+            True if `predicate` holds for at least one type in this list, False otherwise.
+        """
+
+        return Self.reduce[
+            False,
+            Self._AnySatisfiesReducer[predicate, ...],
+        ]
+
+    comptime _AllSatisfiesReducer[
+        predicate: Self._TypePredicateGenerator,
+        last_value: Bool,
+        this_element: Self.Trait,
+    ] = last_value and predicate[this_element]
+
+    @always_inline("builtin")
+    @staticmethod
+    def all_satisfies[
+        predicate: Self._TypePredicateGenerator,
+    ]() -> Bool:
+        """Returns true if `predicate` holds for every type in this list.
+
+        For an empty list, returns true.
+
+        Parameters:
+            predicate: A compile-time generator `[T: Self.Trait] -> Bool`.
+
+        Returns:
+            True if `predicate` holds for every type in this list, False otherwise.
+        """
+        return Self.reduce[
+            True,
+            Self._AllSatisfiesReducer[predicate, ...],
+        ]
+
+    comptime _ContainsTypePredicate[
+        search: Self.Trait,
+        element: Self.Trait,
+    ] = _type_is_eq_parse_time[element, search]()
+
+    @always_inline("builtin")
+    @staticmethod
+    def contains[type: Self.Trait]() -> Bool:
+        """Checks if a type is contained in this type list.
+
+        Parameters:
+            type: The type to check for.
+
+        Returns:
+            True if the type is contained in this type list, False otherwise.
+        """
+        return Self.any_satisfies[Self._ContainsTypePredicate[type, ...],]()
+
+    # ===-------------------------------------------------------------------===#
+    # Mappings
+    # ===-------------------------------------------------------------------===#
+
+    comptime _TypeToTypeGenerator[ToTrait: type_of(AnyType)] = __mlir_type[
+        `!lit.generator<<"From":`, Self.Trait, `>`, ToTrait, `>`
+    ]
+    comptime _MapTabulator[
+        ToTrait: type_of(AnyType),
+        Mapper: Self._TypeToTypeGenerator[ToTrait],
+        idx: Int,
+    ]: ToTrait = Mapper[Self.__getitem_param__[idx]]
+
+    comptime map[
+        ToTrait: type_of(AnyType),
+        //,
+        Mapper: Self._TypeToTypeGenerator[ToTrait],
+    ] = TypeList.tabulate[
+        Trait=ToTrait,
+        Self.size,
+        Self._MapTabulator[ToTrait, Mapper, idx=_],
+    ]
+    """Maps types to new types using a mapper.
+
+    Returns a new TypeList resulting from applying `Mapper[T]` to each element
+    in this list.
 
     Parameters:
-        From: The trait that the input types conform to.
-        To: The trait that the output types conform to.
-        element_types: The input variadic of types to map.
-        Mapper: A generator that maps a type to another type. The generator type is `[T: From] -> To`.
-
-    Examples:
-
-    ```mojo
-    from std.builtin.variadics import Variadic
-    from std.testing import *
-
-    trait MyError:
-        comptime ErrorType: AnyType
-
-    struct Foo(MyError):
-        comptime ErrorType = Int
-
-    struct Baz(MyError):
-        comptime ErrorType = String
-
-    # Given a variadic of types [Foo, Baz]
-    comptime input_types = Variadic.types[T=MyError, Foo, Baz]
-
-    # And a mapper that maps the type to it's MyError `ErrorType` type
-    comptime mapper[T: MyError] = T.ErrorType
-
-    # The resulting variadic of types is [Int, String]
-    comptime output = Variadic.map_types_to_types[input_types, mapper]
-
-    assert_equal(Variadic.size(output), 2)
-    assert_true(_type_is_eq[output[0], Int]())
-    assert_true(_type_is_eq[output[1], String]())
-    ```
+        ToTrait: The trait that the output types conform to.
+        Mapper: A generator that maps a type to another type.
+            The generator type is `[T: Trait] -> To`.
     """
 
-    comptime slice_types[
-        T: type_of(AnyType),
-        //,
-        element_types: Variadic.TypesOfTrait[T],
-        start: Int where start >= 0 = 0,
-        end: Int where (
-            start <= end <= Variadic.size(element_types)
-        ) = Variadic.size(element_types),
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[T],
-        VariadicType=element_types,
-        Reducer=_SliceReducer[T, start, end, ...],
+    comptime _TypeIndexPredicateGenerator = __mlir_type[
+        `!lit.generator<<"Elt": `,
+        Self.Trait,
+        `, "Idx":`,
+        Int,
+        `>`,
+        Bool,
+        `>`,
     ]
-    """Extract a contiguous subsequence from a variadic sequence.
+    """Generator type for indexed type predicates.
+
+    A predicate takes an element type and its index in the list and returns whether
+    to retain that element in the filtered list.
+
+    Parameters:
+        T: The trait that the types conform to.
+    """
+
+    comptime _FilterIdxTabulator[
+        Predicate: Self._TypeIndexPredicateGenerator,
+        idx: Int,
+    ]: _MLIR.KGENParamListType[Self.Trait] = TypeList.of[
+        Trait=Self.Trait, Self.__getitem_param__[idx]
+    ]().values if Predicate[
+        Self.__getitem_param__[idx], idx
+    ] else TypeList.of[
+        Trait=Self.Trait
+    ]().values
+
+    comptime filter_idx[
+        Predicate: Self._TypeIndexPredicateGenerator,
+    ] = TypeList._concat[
+        *ParameterList.tabulate[
+            Self.size,
+            Self._FilterIdxTabulator[Predicate, _],
+        ]()
+    ]
+    """Returns a new `TypeList` containing only elements selected by a predicate.
+
+    The predicate is evaluated at compile time for each `(element, index)` pair.
+    Indices are the positions in this list, from `0` through `size - 1`.
+
+    Parameters:
+        Predicate: A compile-time generator
+            `[element: Self.Trait, idx: Int] -> Bool`. When it returns `True`,
+            `element` is kept in order; when `False`, the element is dropped.
+
+    Returns:
+        A `TypeList` of the same trait containing the kept elements in order.
+    """
+
+    comptime _TypeToValueGeneratorType[ValueType: AnyType] = __mlir_type[
+        `!lit.generator<<"Elt": `,
+        +Self.Trait,
+        `> `,
+        +ValueType,
+        `>`,
+    ]
+    """Maps a conforming element type to a compile-time value."""
+
+    comptime _MapToValuesGeneratorType[
+        ValueType: AnyType,
+    ] = Self._TypeToValueGeneratorType[ValueType]
+
+    comptime _MapToValuesIntTabulator[
+        ValueType: AnyType,
+        //,
+        Mapper: Self._MapToValuesGeneratorType[ValueType=ValueType],
+        idx: Int,
+    ]: ValueType = Mapper[Self.__getitem_param__[idx]]
+
+    comptime map_to_values[
+        ValueType: AnyType,
+        //,
+        Mapper: Self._MapToValuesGeneratorType[ValueType=ValueType],
+    ] = ParameterList.tabulate[
+        type=ValueType,
+        Self.size,
+        Self._MapToValuesIntTabulator[
+            ValueType=ValueType, Mapper=Mapper, idx=_
+        ],
+    ]
+    """Convert each type in this list to a value, forming a ParameterList.
+
+    This is the value analogue of `ParameterList.map_to_type`: each element
+    type is passed to `Mapper`, and the resulting values share the homogeneous
+    element type `ValueType`.
+
+    Parameters:
+        ValueType: The element type of the resulting `ParameterList`.
+        Mapper: A compile-time generator that maps an element type to a value.
+            The generator type is `[T: Self.Trait] -> ValueType`.
+    """
+
+    # ===-------------------------------------------------------------------===#
+    # Other
+    # ===-------------------------------------------------------------------===#
+
+    comptime _ReverseTabulator[idx: Int]: Self.Trait = Self.__getitem_param__[
+        Self.size - 1 - idx
+    ]
+    comptime reverse = TypeList.tabulate[Self.size, Self._ReverseTabulator[_]]
+    """Returns this type list in reverse order."""
+
+    comptime _SliceTabulator[
+        start: Int,
+        idx: Int,
+    ]: Self.Trait = Self.__getitem_param__[start + idx]
+
+    comptime slice[
+        start: Int = 0,
+        end: Int = Self.size,
+    ] = TypeList.tabulate[
+        max(end - start, 0),
+        Self._SliceTabulator[start, _],
+    ]
+    """Extracts a contiguous subsequence from the type list.
 
     Returns a new variadic containing elements from index `start` (inclusive)
     to index `end` (exclusive). Similar to Python's slice notation [start:end].
 
     Parameters:
-        T: The trait that the types conform to.
-        element_types: The variadic sequence to slice.
-        start: The starting index (inclusive).
-        end: The ending index (exclusive).
+        start: The starting index (inclusive). Defaults to 0.
+        end: The ending index (exclusive). Defaults to the list size.
 
     Constraints:
-        - 0 <= start <= end <= Variadic.size(element_types)
-
-    Examples:
-        ```mojo
-        from std.builtin.variadics import Variadic
-        # Given a variadic of types [Int, String, Float64, Bool]
-        comptime MyTypes = Tuple[Int, String, Float64, Bool].element_types
-        # Extract middle elements: [String, Float64]
-        comptime Sliced = Variadic.slice_types[start=1, end=3, element_types=MyTypes]
-        # Extract first two: [Int, String]
-        comptime First2 = Variadic.slice_types[start=0, end=2, element_types=MyTypes]
-        # Extract last element: [Bool]
-        comptime Last = Variadic.slice_types[start=3, end=4, element_types=MyTypes]
-        ```
+        0 <= start <= end <= size.
     """
 
-    comptime zip_types[
-        Trait: type_of(AnyType), //, *types: Variadic.TypesOfTrait[Trait]
-    ] = __mlir_attr[
-        `#kgen.variadic.zip<`,
-        types,
-        `> : !kgen.variadic<`,
-        Variadic.TypesOfTrait[Trait],
-        `>`,
-    ]
-    """
-    Zips a group of variadics of types together.
+    @always_inline
+    def __len__(self) -> Int:
+        """Gets the size of the TypeList.
 
-    Parameters:
-        Trait: The trait that the types conform to.
-        types: The type to check for.
-    """
-
-    comptime zip_values[
-        type: AnyType, //, *values: Variadic.ValuesOfType[type]
-    ] = __mlir_attr[
-        `#kgen.variadic.zip<`,
-        values,
-        `> : !kgen.variadic<`,
-        Variadic.ValuesOfType[type],
-        `>`,
-    ]
-    """
-    Zips a group of variadics of values together.
-
-    Parameters:
-        type: The type that the values conform to.
-        values: The values to zip.
-    """
-
-    comptime filter_types[
-        T: type_of(AnyType),
-        //,
-        *element_types: T,
-        predicate: _TypePredicateGenerator[T],
-    ] = _ReduceVariadicAndIdxToVariadic[
-        BaseVal=Variadic.empty_of_trait[T],
-        VariadicType=element_types,
-        Reducer=_FilterReducer[T, predicate, ...],
-    ]
-    """Filter types from a variadic sequence based on a predicate function.
-
-    Returns a new variadic containing only the types for which the predicate
-    returns True.
-
-    Parameters:
-        T: The trait that the types conform to.
-        element_types: The input variadic sequence.
-        predicate: A generator function that takes a type and returns Bool.
-
-    Examples:
-
-    ```mojo
-    from std.builtin.variadics import Variadic
-    from std.utils import Variant
-    from std.sys.intrinsics import _type_is_eq
-
-    comptime FullVariant = Variant[Int, String, Float64, Bool]
-
-    # Exclude a single type
-    comptime IsNotInt[Type: AnyType] = not _type_is_eq[Type, Int]()
-    comptime WithoutInt = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotInt]
-    comptime FilteredVariant = Variant[*WithoutInt]
-    # FilteredVariant is Variant[String, Float64, Bool]
-
-    # Keep only specific types
-    comptime IsNumeric[Type: AnyType] = (
-        _type_is_eq[Type, Int]() or _type_is_eq[Type, Float64]()
-    )
-    comptime OnlyNumeric = Variadic.filter_types[*FullVariant.Ts, predicate=IsNumeric]
-    # OnlyNumeric is Variadic.types[T=AnyType, Int, Float64]
-
-    # Exclude multiple types using a variadic check
-    comptime ExcludeList = Variadic.types[T=AnyType, Int, Bool]
-    comptime NotInList[Type: AnyType] = not Variadic.contains[
-        type=Type, element_types=ExcludeList
-    ]
-    comptime Filtered = Variadic.filter_types[*FullVariant.Ts, predicate=NotInList]
-    # Filtered is Variadic.types[T=AnyType, String, Float64]
-    ```
-
-    Filter operations can be chained for complex transformations:
-
-    ```mojo
-    comptime IsNotBool[Type: AnyType] = not _type_is_eq[Type, Bool]()
-    comptime Step1 = Variadic.filter_types[*FullVariant.Ts, predicate=IsNotBool]
-    comptime Step2 = Variadic.filter_types[*Step1, predicate=IsNotInt]
-    comptime ChainedVariant = Variant[*Step2]
-    ```
-    """
-
-    comptime _ValueIdxToValueGeneratorType[
-        From: AnyType, To: AnyType
-    ] = __mlir_type[
-        `!lit.generator<<"From": `,
-        +From,
-        `, "Idx":`,
-        Int,
-        `>`,
-        +To,
-        `>`,
-    ]
-    """This specifies a generator to generate a generator type for the reducer of
-    values. The result generator type is [From, idx: Int] -> To,
-    """
-
-    comptime _ValueToValueMapper[
-        FromType: AnyType,
-        ToType: AnyType,
-        //,
-        Mapper: Variadic._ValueIdxToValueGeneratorType[FromType, ToType],
-        Prev: Variadic.ValuesOfType[ToType],
-        From: Variadic.ValuesOfType[FromType],
-        idx: Int,
-    ] = Variadic.concat_values[
-        Prev,
-        Variadic.values[Mapper[From[idx], idx]],
-    ]
+        Returns:
+            The number of elements on the TypeList.
+        """
+        return Self.size
 
 
 # ===-----------------------------------------------------------------------===#
-# VariadicParamList
+# ParameterList
 # ===-----------------------------------------------------------------------===#
 
 
 @fieldwise_init
-struct _VariadicParamListIter[type: Copyable, //, *values: type](
-    ImplicitlyCopyable, Iterable, Iterator
+struct _ParameterListIter[type: Copyable, //, *values: type](
+    ImplicitlyCopyable, Iterable, Iterator, TrivialRegisterPassable
 ):
-    """Const Iterator for VariadicParamList.
+    """Const Iterator for ParameterList.
 
     Parameters:
         type: The type of the elements in the list.
@@ -515,37 +650,36 @@ struct _VariadicParamListIter[type: Copyable, //, *values: type](
     ) raises StopIteration -> ref[StaticConstantOrigin] Self.type:
         var index = self.index
 
-        comptime params = VariadicParamList[*Self.values]()
-        if index >= params.size:
+        if index >= Self.values.size:
             raise StopIteration()
         self.index = index + 1
-        return params[index]
+        return Self.values[index]
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
         return self
 
     @always_inline
     def bounds(self) -> Tuple[Int, Optional[Int]]:
-        var len = VariadicParamList[*Self.values].size - self.index
+        var len = Self.values.size - self.index
         return (len, {len})
 
 
 # TODO: Make this conform to Iterable when IteratorType can be conditionally
 # defined only when 'type' is Copyable.
-struct VariadicParamList[type: AnyType, //, *values: type](
+struct ParameterList[type: AnyType, //, values: _MLIR.KGENParamListType[type]](
     Sized, TrivialRegisterPassable, Writable
 ):
     """A utility class to access homogeneous variadic parameters.
 
-    `VariadicParamList` is used by homogenous variadic parameter lists. Unlike
-    `VariadicPack` (which is heterogeneous), `VariadicParamList` requires all
+    `ParameterList` is used by homogenous variadic parameter lists. Unlike
+    `VariadicPack` (which is heterogeneous), `ParameterList` requires all
     elements to have the same type.
 
-    `VariadicParamList` is only used for parameter lists, `VariadicList` is
+    `ParameterList` is only used for parameter lists, `VariadicList` is
     used for function arguments.
 
     For example, in the following function signature, `*args: Int` creates a
-    `VariadicParamList` because it uses a single type `Int` instead of a variadic type
+    `ParameterList` because it uses a single type `Int` instead of a variadic type
     parameter. The `*` before `args` indicates that `args` is a variadic argument,
     which means that the function can accept any number of arguments, but all
     arguments must have the same type `Int`.
@@ -554,14 +688,14 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     def sum_values[*args: Int]() -> Int:
         var total = 0
 
-        # Can use regular for loop because args is a VariadicParamList
+        # Can use regular for loop because args is a ParameterList
         for i in range(len(args)):
             total += args[i]  # All elements are Int, so uniform access
 
         return total
 
     def main():
-        print(sum_values(1, 2, 3, 4, 5))
+        print(sum_values[1, 2, 3, 4, 5]())
     ```
 
     Parameters:
@@ -569,10 +703,13 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         values: The values in the list.
     """
 
-    comptime size = Int(
+    comptime _mlir_type = _MLIR.KGENParamListType[Self.type]
+    """The low-level MLIR type of the parameter list."""
+
+    comptime size: Int = Int(
         mlir_value=__mlir_attr[
-            `#kgen.variadic.size<:`,
-            type_of(Self.values),
+            `#kgen.param_list.size<:`,
+            Self._mlir_type,
             ` `,
             +Self.values,
             `> : index`,
@@ -580,10 +717,9 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     )
     """The number of elements in the list."""
 
-    @always_inline
-    def __init__(out self):
-        """Constructs a VariadicParamList."""
-        pass
+    # ===-------------------------------------------------------------------===#
+    # Accessors
+    # ===-------------------------------------------------------------------===#
 
     @always_inline
     def __len__(self) -> Int:
@@ -605,7 +741,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         # Convert 'values' to use a flat array representation.
         comptime array = __mlir_attr[
             `#pop.variadic_to_array<:`,
-            type_of(Self.values),
+            Self._mlir_type,
             ` `,
             +Self.values,
             `>`,
@@ -629,16 +765,274 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         return self.get_span()[idx]
 
     comptime __getitem_param__[idx: Int]: Self.type = __mlir_attr[
-        `#kgen.variadic.get<:`,
-        type_of(Self.values),
+        `#kgen.param_list.get<:`,
+        Self._mlir_type,
         ` `,
         +Self.values,
         `, `,
-        idx._mlir_value,
+        idx._int_mlir_index(),
         `> : `,
         +Self.type,
     ]
     """Gets a single element on the variadic list."""
+
+    # ===-------------------------------------------------------------------===#
+    # Constructors
+    # ===-------------------------------------------------------------------===#
+
+    @always_inline
+    def __init__(out self):
+        """Constructs a ParameterList."""
+        pass
+
+    comptime empty_of[type: AnyType] = Self.of[type=type]
+    """Form an empty compile-time list of values some element type.
+
+    Parameters:
+        type: The type of the elements in the list.
+
+    Examples:
+        ```mojo
+        comptime Ints = ParameterList.empty_of[Int]()
+        ```
+    """
+
+    comptime of[type: AnyType, //, *values: type] = ParameterList[
+        type=type, values.values
+    ]
+    """Form a compile-time list of values with some elements, uninstantiated.
+
+    Parameters:
+        type: The type of the elements in the list.
+        values: The values in the list.
+
+    Examples:
+        ```mojo
+        comptime Ints = ParameterList.of[4, 5, 6]
+        comptime Strings = ParameterList.of["foo", "bar", "baz"]
+        ```
+    """
+
+    comptime _IndexToIntTabulateWrap[
+        ToT: AnyType,
+        //,
+        ToWrap: _IntToXGeneratorType[ToT],
+        idx: __mlir_type.index,
+    ]: ToT = ToWrap[Int(mlir_value=idx)]
+
+    comptime tabulate[
+        type: AnyType,
+        //,
+        count: Int,
+        Mapper: _IntToXGeneratorType[type],
+    ] = ParameterList[
+        type=type,
+        __mlir_attr[
+            `#kgen.param_list.tabulate<`,
+            count._int_mlir_index(),
+            `,`,
+            Self._IndexToIntTabulateWrap[Mapper, ...],
+            `> : `,
+            _MLIR.KGENParamListType[type],
+        ],
+    ]
+    """Builds a parameter list by applying an index-to-value mapper `count` times.
+
+    Parameters:
+        type: The element type of the resulting list.
+        count: The length of the result; the mapper is invoked for each index in
+            `0..<count`.
+        Mapper: Compile-time generator mapping `Int` index to a value of `type`.
+    """
+
+    comptime _splat_tabulator[value: Some[AnyType], idx: Int] = value
+    comptime splat[type: AnyType, //, count: Int, value: type] = Self.tabulate[
+        count, Self._splat_tabulator[value, _]
+    ]
+    """Builds a homogeneous parameter list by repeating `value` `count` times.
+
+    Parameters:
+        type: The element type.
+        count: The number of copies of `value` in the result.
+        value: The value to repeat at every index.
+    """
+
+    comptime _concat[
+        type: AnyType, //, *values: _MLIR.KGENParamListType[type]
+    ] = __mlir_attr[
+        `#kgen.param_list.concat<`,
+        values.values,
+        `> :`,
+        _MLIR.KGENParamListType[type],
+    ]
+    """Represents the concatenation of multiple variadic sequences of values.
+
+    Parameters:
+        type: The types of the values in the variadic sequences.
+        values: The variadic sequences to concatenate.
+    """
+
+    # ===-------------------------------------------------------------------===#
+    # Reductions
+    # ===-------------------------------------------------------------------===#
+
+    comptime _ReducerGeneratorType[
+        FromAndTo: AnyType,
+    ] = __mlir_type[
+        `!lit.generator<<"Prev": `,
+        +FromAndTo,
+        `, "From": `,
+        +Self.type,
+        `>`,
+        +FromAndTo,
+        `>`,
+    ]
+
+    comptime _DiscardIndexWrapper[
+        FromAndTo: AnyType,
+        ToWrap: Self._ReducerGeneratorType[FromAndTo],
+        PrevV: FromAndTo,
+        VA: Self._mlir_type,
+        idx: __mlir_type.index,
+    ] = ToWrap[PrevV, Self.__getitem_param__[Int(mlir_value=idx)]]
+    """Takes an index because kgen.variadic.reduce passes it but we don't want it"""
+
+    # TODO: This isn't returning a ParamList, so it should really be a 'def' so
+    # we get parens on the caller side. However, that requires the type to be
+    # materializable from parameter space to runtime.  We could split this into
+    # reduce_param and reduce() where the later does materialization, or we
+    # could just always use materialize?
+    comptime reduce[
+        FromAndTo: AnyType,
+        //,
+        BaseVal: FromAndTo,
+        Reducer: Self._ReducerGeneratorType[FromAndTo],
+    ] = __mlir_attr[
+        `#kgen.param_list.reduce<`,
+        BaseVal,
+        `,`,
+        Self.values,
+        `,`,
+        Self._DiscardIndexWrapper[FromAndTo, Reducer, ...],
+        `> : `,
+        +FromAndTo,
+    ]
+    """Form a value by applying a function that merges each element into a
+    starting value, then return the result.
+
+    Parameters:
+        FromAndTo: The type of the input and output result.
+        BaseVal: The initial value to reduce on.
+        Reducer: A `[BaseVal: FromAndTo, T: Self.type] -> FromAndTo` that does the reduction.
+    """
+
+    comptime _ElementToBoolGeneratorType = __mlir_type[
+        `!lit.generator<<"Elt": `, +Self.type, `>`, +Bool, `>`
+    ]
+
+    comptime _AnySatisfiesReducer[
+        predicate: Self._ElementToBoolGeneratorType,
+        last_value: Bool,
+        this_element: Self.type,
+    ]: Bool = last_value or predicate[this_element]
+
+    @always_inline("builtin")
+    @staticmethod
+    def any_satisfies[predicate: Self._ElementToBoolGeneratorType]() -> Bool:
+        """'any_satisfies' applies a function to each element and returns true if
+        the function returns True for any element.
+
+        Parameters:
+            predicate: A `[elt: Self.Type] -> Bool` comptime expression to apply.
+
+        Returns:
+            True if the predicate returns True for any element, False otherwise.
+        """
+        return Self.reduce[
+            False,
+            Self._AnySatisfiesReducer[predicate, ...],
+        ]
+
+    comptime _AllSatisfiesReducer[
+        predicate: Self._ElementToBoolGeneratorType,
+        last_value: Bool,
+        this_element: Self.type,
+    ]: Bool = last_value and predicate[this_element]
+
+    @always_inline("builtin")
+    @staticmethod
+    def all_satisfies[predicate: Self._ElementToBoolGeneratorType]() -> Bool:
+        """'all_satisfies' applies a function to each element and returns true if
+        the function returns True for all elements.
+
+        Parameters:
+            predicate: A `[elt: Self.Type] -> Bool` comptime expression to apply.
+
+        Returns:
+            True if the predicate returns True for all elements, False otherwise.
+        """
+        return Self.reduce[
+            True,
+            Self._AllSatisfiesReducer[predicate, ...],
+        ]
+
+    comptime _ContainsValuePredicate[
+        search_value: Self.type,
+        element_value: Self.type where conforms_to(Self.type, Equatable),
+    ] = trait_downcast[Equatable](search_value) == trait_downcast[Equatable](
+        element_value
+    )
+
+    @always_inline("builtin")
+    @staticmethod
+    def contains[
+        value: Self.type,
+    ]() -> Bool where conforms_to(Self.type, Equatable):
+        """
+        Check if a value is contained in a variadic sequence of values.
+
+        Parameters:
+            value: The value to search for.
+
+        Returns:
+            True if the value is contained in the list, False otherwise.
+        """
+        return Self.any_satisfies[Self._ContainsValuePredicate[value, ...]]()
+
+    # ===-------------------------------------------------------------------===#
+    # Mappings
+    # ===-------------------------------------------------------------------===#
+
+    comptime _MapToTypeGeneratorType[Trait: type_of(AnyType)] = __mlir_type[
+        `!lit.generator<<"Elt": `, +Self.type, `> `, Trait, `>`
+    ]
+    comptime _MapToTypeTabulator[
+        Trait: type_of(AnyType),
+        //,
+        Mapper: Self._MapToTypeGeneratorType[Trait=Trait],
+        idx: Int,
+    ]: Trait = Mapper[Self.__getitem_param__[idx]]
+
+    comptime map_to_type[
+        Trait: type_of(AnyType),
+        //,
+        Mapper: Self._MapToTypeGeneratorType[Trait=Trait],
+    ] = TypeList.tabulate[
+        Trait=Trait,
+        Self.size,
+        Self._MapToTypeTabulator[Trait=Trait, Mapper=Mapper, idx=_],
+    ]
+    """Convert each element of this list into a type, forming a TypeList with
+    the result.
+
+    Parameters:
+        Trait: The trait of the resulting TypeList.
+        Mapper: A generator that maps an element of this list to a type.
+    """
+
+    # ===-------------------------------------------------------------------===#
+    # Other
+    # ===-------------------------------------------------------------------===#
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -686,7 +1080,7 @@ struct VariadicParamList[type: AnyType, //, *values: type](
         def write_fields(mut w: Some[Writer]):
             self._write_elements[is_repr=True](w)
 
-        FormatStruct(writer, "VariadicParamList").params(
+        FormatStruct(writer, "ParameterList").params(
             TypeNames[Self.type](),
         ).fields[FieldsFn=write_fields]()
 
@@ -695,10 +1089,12 @@ struct VariadicParamList[type: AnyType, //, *values: type](
     @always_inline
     def __iter__(
         ref self,
-    ) -> _VariadicParamListIter[
-        *rebind[Variadic.ValuesOfType[downcast[Self.type, Copyable]]](
-            Self.values
-        )
+    ) -> _ParameterListIter[
+        *ParameterList[
+            rebind[_MLIR.KGENParamListType[downcast[Self.type, Copyable]]](
+                Self.values
+            )
+        ]()
     ] where conforms_to(Self.type, Copyable):
         """Iterate over the list.
 
@@ -742,10 +1138,7 @@ struct _VariadicListIter[
     comptime Element = Self.elt_type
 
     var index: Int
-    var src: Pointer[
-        Self.variadic_list_type,
-        Self.list_origin,
-    ]
+    var src: Pointer[Self.variadic_list_type, Self.list_origin]
 
     def __init__(
         out self,
@@ -758,14 +1151,12 @@ struct _VariadicListIter[
     @always_inline
     def __next__(
         mut self,
-    ) raises StopIteration -> ref[Self.elt_origin._mlir_origin] Self.elt_type:
+    ) raises StopIteration -> ref[self.src[][0]] Self.elt_type:
         var index = self.index
-        if index >= len(self.src[]):
+        if index == len(self.src[]):
             raise StopIteration()
         self.index = index + 1
-        return rebind[Self.variadic_list_type.reference_type](
-            Pointer(to=self.src[][index])
-        )[]
+        return self.src[][index]
 
 
 struct VariadicList[
@@ -788,30 +1179,49 @@ struct VariadicList[
                   passed as an 'var' argument.
     """
 
-    comptime reference_type = Pointer[Self.element_type, Self.origin]
-    """The pointer type for references to elements."""
-
-    comptime _mlir_type = Variadic.ValuesOfType[Self.reference_type._mlir_type]
-
-    var value: Self._mlir_type
-    """The underlying storage, a variadic list of references to elements of the
-    given type."""
+    comptime _EltPointerType = Pointer[Self.element_type, Self.origin]
+    # FIXME: This should be the origin of the container, not ExternalOrigin.
+    var _value: Span[Self._EltPointerType, ExternalOrigin[mut=False]]
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
     # ===-------------------------------------------------------------------===#
 
-    # Provide support for read-only variadic arguments.
     @doc_hidden
     @always_inline
     @implicit
-    def __init__(out self, value: Self._mlir_type):
-        """Constructs a VariadicList from a variadic argument type.
+    def __init__[
+        size: __mlir_type.index, container_origin: ImmutOrigin
+    ](
+        out self,
+        value: Pointer[
+            _MLIR.POPArrayType[size, Self._EltPointerType._mlir_type],
+            container_origin,
+        ]._mlir_type,
+    ):
+        """Constructs a VariadicList from a compiler-generated array of element
+        pointers.
+
+        Parameters:
+            size: The number of elements in the variadic list.
+            container_origin: The origin of the container.
 
         Args:
-            value: The variadic argument to construct the list with.
+            value: The raw reference to the array of element pointers.
         """
-        self.value = value
+        # Convert the !lit.ref to an UnsafePointer, then cast to a pointer to
+        # the first element.
+        var array_up = UnsafePointer(
+            to=Pointer(_mlir_value=value)[]
+        ).unsafe_origin_cast[ExternalOrigin[mut=False]]()
+        var elt_ptr = UnsafePointer[_, ExternalOrigin[mut=False]](
+            __mlir_op.`pop.array.gep`(
+                array_up.address,
+                Int(0)._int_mlir_index(),
+            )
+        ).bitcast[Self._EltPointerType]()
+        var size_tmp = size  # FIXME: Weird MLIR syntax error?
+        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned
@@ -877,7 +1287,7 @@ struct VariadicList[
         Returns:
             The number of elements on the variadic list.
         """
-        return Int(mlir_value=__mlir_op.`pop.variadic.size`(self.value))
+        return len(self._value)
 
     # ===-------------------------------------------------------------------===#
     # Operator dunders
@@ -906,9 +1316,7 @@ struct VariadicList[
             A low-level pointer to the element on the list corresponding to the
             given index.
         """
-        return __get_litref_as_mvalue(
-            __mlir_op.`pop.variadic.get`(self.value, idx._mlir_value)
-        )
+        return self._value.unsafe_ptr()[idx][]
 
     def _write_elements[is_repr: Bool = False](self, mut writer: Some[Writer]):
         _constrained_conforms_to[
@@ -986,16 +1394,16 @@ struct VariadicList[
 struct VariadicPack[
     elt_is_mutable: Bool,
     origin: Origin[mut=elt_is_mutable],
+    element_trait: type_of(AnyType),
     //,
     is_owned: Bool,
-    element_trait: type_of(AnyType),
     *element_types: element_trait,
 ](Copyable, RegisterPassable, Sized):
     """A utility class to access heterogeneous variadic function arguments.
 
     `VariadicPack` is used when you need to accept variadic arguments where each
     argument can have a different type, but all types conform to a common trait.
-    Unlike `VariadicParamList` (which is homogeneous), `VariadicPack` allows each
+    Unlike `ParameterList` (which is homogeneous), `VariadicPack` allows each
     element to have a different concrete type.
 
     `VariadicPack` is essentially a heterogeneous tuple that gets lowered to a
@@ -1005,7 +1413,7 @@ struct VariadicPack[
     time to generate the correct memory layout and access code.
 
     Therefore, indexing into `VariadicPack` requires compile-time indices using
-    `comptime for` loops, whereas indexing into `VariadicParamList` uses runtime
+    `comptime for` loops, whereas indexing into `ParameterList` uses runtime
     indices.
 
     For example, in the following function signature, `*args: *ArgTypes` creates a
@@ -1028,25 +1436,25 @@ struct VariadicPack[
 
         return total
 
-    def main() raises:
-        print(count_many_things(5, 11.7, 12))  # Prints: 28
+    def main():
+        print(count_many_things(Int8(5), UInt32(11), Int(12)))  # Prints: 28
     ```
 
     Parameters:
         elt_is_mutable: True if the elements of the list are mutable for an
                         mut or owned argument pack.
         origin: The origin of the underlying elements.
+        element_trait: The trait that each element of the pack conforms to.
         is_owned: Whether the elements are owned by the pack. If so, the pack
                   will release the elements when it is destroyed.
-        element_trait: The trait that each element of the pack conforms to.
         element_types: The list of types held by the argument pack.
     """
 
     comptime _mlir_type = __mlir_type[
-        `!lit.ref.pack<:variadic<`,
+        `!lit.ref.pack<:param_list<`,
         Self.element_trait,
         `> `,
-        Self.element_types,
+        Self.element_types.values,
         `, `,
         Self.origin._mlir_origin,
         `>`,
@@ -1148,9 +1556,7 @@ struct VariadicPack[
         Returns:
             The number of elements in the variadic pack.
         """
-
-        comptime result = Variadic.size(Self.element_types)
-        return result
+        return Self.element_types.size
 
     @always_inline
     def __len__(self) -> Int:
@@ -1179,7 +1585,7 @@ struct VariadicPack[
             mutability of the pack argument convention.
         """
         litref_elt = __mlir_op.`lit.ref.pack.extract`[
-            index=index.__mlir_index__()
+            index=index._int_mlir_index()
         ](self._value)
         return __get_litref_as_mvalue(litref_elt)
 
@@ -1189,8 +1595,8 @@ struct VariadicPack[
 
     # FIXME: bound by AnyType
     comptime _kgen_element_types = rebind[
-        Variadic.ValuesOfType[__mlir_type.`!kgen.type`]
-    ](Self.element_types)
+        _MLIR.KGENParamListType[__mlir_type.`!kgen.type`]
+    ](Self.element_types.values)
     """This is the element_types list lowered to `variadic<type>` type for kgen.
     """
 
@@ -1199,14 +1605,14 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptr_map, `,
         Self._kgen_element_types,
         `, 0: index>: `,
-        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
+        _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     """Use variadic_ptr_map to construct the type list of the !kgen.pack that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
     references.
     """
     comptime _kgen_pack_with_pointer_type = __mlir_type[
-        `!kgen.pack<:variadic<type> `, Self._variadic_pointer_types, `>`
+        `!kgen.pack<:param_list<type> `, Self._variadic_pointer_types, `>`
     ]
     """This is the !kgen.pack type with pointer elements."""
 
@@ -1222,10 +1628,12 @@ struct VariadicPack[
         `#kgen.param.expr<variadic_ptrremove_map, `,
         Self._variadic_pointer_types,
         `>: `,
-        Variadic.ValuesOfType[__mlir_type.`!kgen.type`],
+        _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
-        `!kgen.pack<:variadic<type> `, Self._variadic_with_pointers_removed, `>`
+        `!kgen.pack<:param_list<type> `,
+        Self._variadic_with_pointers_removed,
+        `>`,
     ]
     """This is the `!kgen.pack` type that happens if one loads all the elements
     of the pack.
@@ -1247,7 +1655,7 @@ struct VariadicPack[
         *,
         is_repr: Bool = False,
     ](
-        self: VariadicPack[_, Writable, ...],
+        self: VariadicPack[element_trait=Writable, _, ...],
         mut writer: Some[Writer],
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
@@ -1286,7 +1694,8 @@ struct VariadicPack[
 
     @no_inline
     def write_to(
-        self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
+        self: VariadicPack[element_trait=Writable, _, ...],
+        mut writer: Some[Writer],
     ):
         """Writes the elements of this pack to a writer.
 
@@ -1301,7 +1710,8 @@ struct VariadicPack[
 
     @no_inline
     def write_repr_to(
-        self: VariadicPack[_, Writable, ...], mut writer: Some[Writer]
+        self: VariadicPack[element_trait=Writable, _, ...],
+        mut writer: Some[Writer],
     ):
         """Writes the repr of the elements of this pack to a writer.
 
@@ -1313,416 +1723,3 @@ struct VariadicPack[
             start=StaticString("("),
             end=StaticString(")"),
         )
-
-
-# ===-----------------------------------------------------------------------===#
-# Tabulate Helpers
-# ===-----------------------------------------------------------------------===#
-
-comptime _TabulateIntToValueGeneratorType[ToT: AnyType] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `>`,
-    +ToT,
-    `>`,
-]
-
-comptime _TabulateIntToTypeGeneratorType[
-    Trait: type_of(AnyType), ToT: Trait
-] = __mlir_type[
-    `!lit.generator<<"Idx":`,
-    Int,
-    `> `,
-    Trait,
-    `>`,
-]
-
-
-comptime _IndexToIntTabulateWrap[
-    ToT: AnyType,
-    //,
-    ToWrap: _TabulateIntToValueGeneratorType[ToT],
-    idx: __mlir_type.index,
-]: ToT = ToWrap[Int(mlir_value=idx)]
-
-comptime _IndexToIntTypeTabulateWrap[
-    Trait: type_of(AnyType),
-    ToT: Trait,
-    //,
-    ToWrap: _TabulateIntToTypeGeneratorType[Trait, ToT],
-    idx: __mlir_type.index,
-] = ToWrap[Int(mlir_value=idx)]
-
-
-comptime _SplatValueTabulator[T: AnyType, //, value: T, index: Int] = value
-comptime _SplatTypeTabulator[
-    Trait: type_of(AnyType), T: Trait, index: Int
-]: Trait = T
-
-# ===-----------------------------------------------------------------------===#
-# VariadicReduce
-# ===-----------------------------------------------------------------------===#
-
-
-comptime _ReduceVariadicIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": !kgen.variadic<`,
-    From,
-    `>, "Idx":`,
-    Int,
-    `>`,
-    +Prev,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> Prev,
-"""
-
-comptime _IndexToIntWrap[
-    From: type_of(AnyType),
-    ReduceT: AnyType,
-    ToWrap: _ReduceVariadicIdxGeneratorTypeGenerator[ReduceT, From],
-    PrevV: ReduceT,
-    VA: Variadic.TypesOfTrait[From],
-    idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
-"""Wrapper for type -> value."""
-
-comptime _ReduceVariadicAndIdxToVariadic[
-    From: type_of(AnyType),
-    To: type_of(AnyType),
-    //,
-    *,
-    BaseVal: Variadic.TypesOfTrait[To],
-    VariadicType: Variadic.TypesOfTrait[From],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
-        Variadic.TypesOfTrait[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
-    BaseVal,
-    `,`,
-    VariadicType,
-    `,`,
-    _IndexToIntWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-"""Construct a new variadic of types using a reducer. To reduce to a single
-type, one could reduce the input to a single element variadic instead.
-
-Parameters:
-    From: The common trait bound for the input variadic types.
-    To: The common trait bound for the output variadic types.
-    BaseVal: The initial value to reduce on.
-    VariadicType: The variadic to be reduced.
-    Reducer: A `[BaseVal: Variadic.TypesOfTrait[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""
-
-
-comptime _ReduceValueIdxGeneratorTypeGenerator[
-    Prev: AnyType, From: AnyType
-] = __mlir_type[
-    `!lit.generator<<"Prev": `,
-    +Prev,
-    `, "From": !kgen.variadic<`,
-    From,
-    `>, "Idx":`,
-    Int,
-    `>`,
-    +Prev,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the reducer.
-The generated generator type is [Prev: AnyType, Ts: Variadic.ValuesOfType[AnyType], idx: Int] -> Prev,
-"""
-
-
-comptime _IndexToIntValueWrap[
-    From: AnyType,
-    ReduceT: AnyType,
-    ToWrap: _ReduceValueIdxGeneratorTypeGenerator[ReduceT, From],
-    PrevV: ReduceT,
-    VA: Variadic.ValuesOfType[From],
-    idx: __mlir_type.index,
-] = ToWrap[PrevV, VA, Int(mlir_value=idx)]
-
-
-comptime _ReduceValueAndIdxToVariadic[
-    From: AnyType,
-    To: type_of(AnyType),
-    //,
-    *,
-    BaseVal: Variadic.TypesOfTrait[To],
-    VariadicType: Variadic.ValuesOfType[From],
-    Reducer: _ReduceValueIdxGeneratorTypeGenerator[
-        Variadic.TypesOfTrait[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
-    BaseVal,
-    `,`,
-    VariadicType,
-    `,`,
-    _IndexToIntValueWrap[From, Variadic.TypesOfTrait[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-"""Construct a new variadic of types using a reducer. To reduce to a single
-type, one could reduce the input to a single element variadic instead.
-
-Parameters:
-    From: The type of the input variadic values.
-    To: The common trait bound for the output variadic types.
-    BaseVal: The initial value to reduce on.
-    VariadicType: The variadic to be reduced.
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""
-
-
-comptime _ReduceValueAndIdxToValue[
-    To: AnyType,
-    From: AnyType,
-    //,
-    *,
-    BaseVal: Variadic.ValuesOfType[To],
-    VariadicType: Variadic.ValuesOfType[From],
-    Reducer: _ReduceValueIdxGeneratorTypeGenerator[
-        Variadic.ValuesOfType[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
-    BaseVal,
-    `,`,
-    VariadicType,
-    `,`,
-    _IndexToIntValueWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-"""Construct a new variadic of values using a reducer over an input variadic of
-values.
-
-Parameters:
-    To: The type of the output variadic values.
-    From: The type of the input variadic values.
-    BaseVal: The initial value to reduce on.
-    VariadicType: The variadic of values to be reduced.
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: Variadic.ValuesOfType[From], idx: Int] -> Variadic.ValuesOfType[To]` that does the reduction.
-"""
-
-
-comptime _ReduceVariadicAndIdxToValue[
-    To: AnyType,
-    From: type_of(AnyType),
-    //,
-    *,
-    BaseVal: Variadic.ValuesOfType[To],
-    VariadicType: Variadic.TypesOfTrait[From],
-    Reducer: _ReduceVariadicIdxGeneratorTypeGenerator[
-        Variadic.ValuesOfType[To], From
-    ],
-] = __mlir_attr[
-    `#kgen.variadic.reduce<`,
-    BaseVal,
-    `,`,
-    VariadicType,
-    `,`,
-    _IndexToIntWrap[From, Variadic.ValuesOfType[To], Reducer, ...],
-    `> : `,
-    type_of(BaseVal),
-]
-"""Construct a new variadic of types using a reducer. To reduce to a single
-type, one could reduce the input to a single element variadic instead.
-
-Parameters:
-    To: The type of the output variadic values.
-    From: The common trait bound for the input variadic types.
-    BaseVal: The initial value to reduce on.
-    VariadicType: The variadic to be reduced.
-    Reducer: A `[BaseVal: Variadic.ValuesOfType[To], Ts: *From, idx: index] -> To` that does the reduction.
-"""
-
-
-# ===-----------------------------------------------------------------------===#
-# VariadicMap
-# ===-----------------------------------------------------------------------===#
-
-comptime _TypeToTypeGenerator[
-    From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[`!lit.generator<<"From":`, From, `>`, To, `>`]
-"""A generator of type [T: From] -> To, which maps a type to another type."""
-
-comptime _VariadicIdxToTypeGeneratorTypeGenerator[
-    From: type_of(AnyType), To: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
-    From,
-    `>, "Idx":`,
-    Int,
-    `>`,
-    To,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
-which maps the input variadic + index of the current element to another type.
-"""
-
-
-comptime _WrapVariadicIdxToTypeMapperToReducer[
-    F: type_of(AnyType),
-    T: type_of(AnyType),
-    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[F, T],
-    Prev: Variadic.TypesOfTrait[T],
-    From: Variadic.TypesOfTrait[F],
-    Idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
-
-
-comptime _MapVariadicAndIdxToType[
-    From: type_of(AnyType),
-    //,
-    *,
-    To: type_of(AnyType),
-    VariadicType: Variadic.TypesOfTrait[From],
-    Mapper: _VariadicIdxToTypeGeneratorTypeGenerator[From, To],
-] = _ReduceVariadicAndIdxToVariadic[
-    BaseVal=Variadic.empty_of_trait[To],  # reduce from a empty variadic
-    VariadicType=VariadicType,
-    Reducer=_WrapVariadicIdxToTypeMapperToReducer[From, To, Mapper, ...],
-]
-"""Construct a new variadic of types using a type-to-type mapper.
-
-Parameters:
-    From: The common trait bound for the input variadic types.
-    To: A common trait bound for the mapped type.
-    VariadicType: The variadic to be mapped.
-    Mapper: A `[Ts: *From, idx: index] -> To` that does the transform.
-"""
-
-
-comptime _VariadicValuesIdxToTypeGeneratorTypeGenerator[
-    From: AnyType, To: type_of(AnyType)
-] = __mlir_type[
-    `!lit.generator<<"From": !kgen.variadic<`,
-    From,
-    `>, "Idx":`,
-    Int,
-    `>`,
-    To,
-    `>`,
-]
-"""This specifies a generator to generate a generator type for the mapper.
-The generated generator type is [Ts: Variadic.TypesOfTrait[AnyType], idx: Int] -> AnyType,
-which maps the input variadic + index of the current element to another type.
-"""
-
-comptime _WrapVariadicValuesIdxToTypeMapperToReducer[
-    F: AnyType,
-    T: type_of(AnyType),
-    Mapper: _VariadicValuesIdxToTypeGeneratorTypeGenerator[F, T],
-    Prev: Variadic.TypesOfTrait[T],
-    From: Variadic.ValuesOfType[F],
-    Idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[Mapper[From, Idx]]]
-
-comptime _ReversedVariadic[
-    T: type_of(AnyType),
-    element_types: Variadic.TypesOfTrait[T],
-    idx: Int,
-] = element_types[Variadic.size(element_types) - 1 - idx]
-"""A generator that reverses a variadic sequence of types.
-
-Parameters:
-    T: The common trait bound for the variadic types.
-    element_types: The variadic sequence of types to reverse.
-    idx: The index of the type to generate in the reversed sequence.
-"""
-
-
-comptime _ContainsReducer[
-    Trait: type_of(AnyType),
-    Type: Trait,
-    Prev: Variadic.ValuesOfType[Bool],
-    From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
-] = Variadic.values[_type_is_eq_parse_time[From[idx], Type]() or Prev[0]]
-
-comptime _ContainsValueReducer[
-    T: Equatable,
-    value: T,
-    Prev: Variadic.ValuesOfType[Bool],
-    From: Variadic.ValuesOfType[T],
-    idx: Int,
-] = Variadic.values[From[idx] == value or Prev[0]]
-
-comptime _MapTypeToTypeReducer[
-    FromTrait: type_of(AnyType),
-    ToTrait: type_of(AnyType),
-    Mapper: _TypeToTypeGenerator[FromTrait, ToTrait],
-    Prev: Variadic.TypesOfTrait[ToTrait],
-    From: Variadic.TypesOfTrait[FromTrait],
-    idx: Int,
-] = Variadic.concat_types[Prev, Variadic.types[T=ToTrait, Mapper[From[idx]]]]
-
-comptime _SliceReducer[
-    Trait: type_of(AnyType),
-    start: Int,
-    end: Int,
-    Prev: Variadic.TypesOfTrait[Trait],
-    From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
-] = (
-    Variadic.concat_types[Prev, Variadic.types[T=Trait, From[idx]]] if idx
-    >= start
-    and idx < end else Prev
-)
-"""A reducer that extracts elements within a specified index range.
-Parameters:
-    Trait: The trait that the types conform to.
-    start: The starting index (inclusive).
-    end: The ending index (exclusive).
-    Prev: The accumulated result variadic so far.
-    From: The input variadic sequence.
-    idx: The current index being processed.
-"""
-
-comptime _TypePredicateGenerator[T: type_of(AnyType)] = __mlir_type[
-    `!lit.generator<<"Type": `,
-    T,
-    `>`,
-    Bool,
-    `>`,
-]
-"""Generator type for type predicates.
-
-A predicate takes a type and returns a boolean indicating whether to keep it.
-
-Parameters:
-    T: The trait that the types conform to.
-"""
-
-comptime _FilterReducer[
-    Trait: type_of(AnyType),
-    Predicate: _TypePredicateGenerator[Trait],
-    Prev: Variadic.TypesOfTrait[Trait],
-    From: Variadic.TypesOfTrait[Trait],
-    idx: Int,
-] = (
-    Variadic.concat_types[
-        Prev, Variadic.types[T=Trait, From[idx]]
-    ] if Predicate[From[idx]] else Prev
-)
-"""A reducer that filters types based on a predicate function.
-
-Parameters:
-    Trait: The trait that the types conform to.
-    Predicate: A generator that takes a type and returns Bool.
-    Prev: The accumulated result variadic so far.
-    From: The input variadic sequence.
-    idx: The current index being processed.
-"""

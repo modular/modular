@@ -167,19 +167,19 @@ def test[
 
     # Construct TileTensors for Q, K, output.
     var q_tt = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_tt = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var out_tt = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -211,7 +211,7 @@ def test[
     def kernel_launch(ctx: DeviceContext) raises:
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             flare_mla_decoding[
-                config=MHAConfig[q_type](UInt(num_heads), UInt(depth)),
+                config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
                 out_tt.as_any_origin(),
@@ -225,7 +225,7 @@ def test[
             )
         elif mla_mask_type == MLAMaskType.NO_MASK:
             flare_mla_decoding[
-                config=MHAConfig[q_type](UInt(num_heads), UInt(depth)),
+                config=MHAConfig[q_type](num_heads, depth),
                 decoding_warp_split_k=decoding_warp_split_k,
             ](
                 out_tt.as_any_origin(),
@@ -283,9 +283,9 @@ def test[
         comptime if mla_mask_type == MLAMaskType.CAUSAL:
             var k_operand = LayoutTensorMHAOperand(k_ref_device)
             var null_valid_length = LayoutTensor[
-                DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+                DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
             ](
-                UnsafePointer[UInt32, MutAnyOrigin](),
+                None,
                 RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
                     Index(0)
                 ),

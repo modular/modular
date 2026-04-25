@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv, udivmod, uceildiv
 from std.sys import (
     align_of,
     has_amd_gpu_accelerator,
@@ -26,10 +27,10 @@ from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
     barrier,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    lane_id_int as lane_id,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    grid_dim,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.memory import (
     async_copy_commit_group,
@@ -64,7 +65,7 @@ from std.utils.numerics import get_accum_type
 
 from ...utils import apply_epilogue, elementwise_epilogue_type
 from ...utils_gpu import MatmulConfig, block_swizzle
-from .amd import gemm_kernel_amd
+from .amd import AMDMatmul
 
 from ...structuring import SMemTile
 
@@ -114,7 +115,7 @@ def warp_split_k_reduction[
     comptime c_frag_size = c_layout.shape[1].value()
 
     var i_red = num_warp_k_partitions // 2
-    var tid = Int(thread_idx.x)
+    var tid = thread_idx.x
 
     while i_red > 0:
         barrier()
@@ -209,7 +210,7 @@ def multistage_mma[
     next_op_b_iter_alignment: Int = align_of[b_type](),
     next_op_b_layout_int_type: DType = DType.int64,
     next_op_b_linear_idx_type: DType = DType.int64,
-    k_group_size: UInt = 1,
+    k_group_size: Int = 1,
 ](
     c: LayoutTensor[
         mut=True, c_type, c_layout, address_space=AddressSpace.LOCAL, ...
@@ -257,7 +258,7 @@ def multistage_mma[
     # In the slice-K method, we pass `num_threads_per_warp_k_part` as `num_threads`
     # in the parameters. This ensures that `tid` represents the relative thread position
     # within each warp_k_part_id groups.
-    var tid = UInt32(thread_idx.x % UInt(num_threads))
+    var tid = UInt32(umod(thread_idx.x, num_threads))
     var warp_id = warp.broadcast(tid // UInt32(WARP_SIZE))
 
     comptime num_warps_m = BM // WM
@@ -373,12 +374,12 @@ def multistage_mma[
     comptime MMA_M = mma_shape[0]
     comptime MMA_N = mma_shape[1]
     comptime MMA_K = mma_shape[2]
-    comptime num_k_mmas = UInt(BK // MMA_K)
-    comptime num_k_mma_iters: UInt = num_k_mmas // k_group_size
+    comptime num_k_mmas = BK // MMA_K
+    comptime num_k_mma_iters: Int = num_k_mmas // k_group_size
     comptime num_m_mmas = WM // MMA_M
     comptime num_n_mmas = WN // MMA_N
     comptime assert (
-        num_k_mmas % UInt(2 * Int(k_group_size)) == 0
+        num_k_mmas % (2 * k_group_size) == 0
     ), "num_k_mmas must be an integer multiple of 2*k_group_size"
 
     comptime accum_type = get_accum_type[a_type]()
@@ -387,10 +388,10 @@ def multistage_mma[
     comptime b_frag_size = frag_size[1]
     comptime c_frag_size = frag_size[2]
 
-    comptime num_reg_tiles = 2 * Int(k_group_size)
+    comptime num_reg_tiles = 2 * k_group_size
     # Register tiles.
     comptime a_reg_layout = Layout.row_major(
-        2 * Int(k_group_size) * num_m_mmas, a_frag_size
+        2 * k_group_size * num_m_mmas, a_frag_size
     )
     var a_reg_tiles = (
         LayoutTensor[
@@ -400,11 +401,11 @@ def multistage_mma[
             address_space=AddressSpace.LOCAL,
         ]
         .stack_allocation()
-        .split[2 * Int(k_group_size)]()
+        .split[2 * k_group_size]()
     )
 
     comptime b_reg_layout = Layout.row_major(
-        2 * Int(k_group_size) * num_n_mmas, b_frag_size
+        2 * k_group_size * num_n_mmas, b_frag_size
     )
     var b_reg_tiles = (
         LayoutTensor[
@@ -415,7 +416,7 @@ def multistage_mma[
         ]
         .stack_allocation()
         .vectorize[1, b_frag_size]()
-        .split[2 * Int(k_group_size)]()
+        .split[2 * k_group_size]()
     )
 
     var a_warp_tile = a_smem_iter[].tile[WM, BK](Int(warp_y), 0)
@@ -445,7 +446,7 @@ def multistage_mma[
                 a_warp_tile, a_reg_tiles[i].vectorize[1, a_frag_size](), i
             )
 
-        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, UInt(warp_x))
+        mma_op.load_b(b_warp_tile, b_reg_tiles[i], i, Int(warp_x))
 
     comptime if static_num_iters >= 0:
         comptime assert (
@@ -522,13 +523,13 @@ def multistage_mma[
                             b_wtile_dim0, b_wtile_dim1
                         ](b_wtile_coord0, b_wtile_coord1)
 
-                    comptime kidx = k_mma_next % UInt32(num_k_mmas)
+                    comptime kidx = Int(k_mma_next % UInt32(num_k_mmas))
 
                     comptime if a_iter.address_space == AddressSpace.SHARED:
                         mma_op.load_a[swizzle_a_pattern](
                             a_warp_tile,
                             a_reg_tiles[next].vectorize[1, a_frag_size](),
-                            UInt(kidx),
+                            kidx,
                         )
                     else:
                         # Assume input is the 16x8 output of 16x8x16 or 16x8x8 mma.
@@ -538,8 +539,8 @@ def multistage_mma[
                     mma_op.load_b(
                         b_warp_tile,
                         b_reg_tiles[next],
-                        UInt(kidx),
-                        UInt(warp_x),
+                        kidx,
+                        Int(warp_x),
                     )
 
                 comptime for k_mma1 in range(k_group_size):
@@ -674,13 +675,13 @@ def multistage_mma[
                 mma_op.load_a[swizzle_a_pattern](
                     a_warp_tile,
                     a_reg_tiles[next].vectorize[1, a_frag_size](),
-                    UInt(kidx),
+                    kidx,
                 )
                 mma_op.load_b(
                     b_warp_tile,
                     b_reg_tiles[next],
-                    UInt(kidx),
-                    UInt(warp_x),
+                    kidx,
+                    Int(warp_x),
                 )
 
             comptime for k_mma1 in range(k_group_size):
@@ -693,6 +694,10 @@ def multistage_mma[
                 )
 
 
+@__name(
+    t"multistage_gemm_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    mangle=True,
+)
 def multistage_gemm_kernel[
     c_type: DType,
     CLT: TensorLayout,
@@ -730,9 +735,9 @@ def multistage_gemm_kernel[
     ), "Pipeline gemm only supports tf32, BF16, E4M3, and E5M2 mma"
     comptime simd_size = simd_width_of[c_type]()
 
-    var M = UInt(c.dim[0]())
-    var N = UInt(b.dim[0 if transpose_b else 1]())
-    var K = UInt(b.dim[1 if transpose_b else 0]())
+    var M: Int = c.dim[0]()
+    var N: Int = b.dim[0 if transpose_b else 1]()
+    var K: Int = b.dim[1 if transpose_b else 0]()
 
     comptime BM = config.block_tile_shape[0]
     comptime BN = config.block_tile_shape[1]
@@ -751,10 +756,11 @@ def multistage_gemm_kernel[
     var tid = thread_idx.x
     var ln_id = lane_id()
     var warp_k_part_id = (
-        tid // num_threads_per_warp_k_part if num_warp_k_partitions > 1 else 0
+        ufloordiv(tid, num_threads_per_warp_k_part) if num_warp_k_partitions
+        > 1 else 0
     )
     var warp_id = warp.broadcast(
-        (tid % num_threads_per_warp_k_part) // UInt(WARP_SIZE)
+        ufloordiv(umod(tid, num_threads_per_warp_k_part), WARP_SIZE)
     )
 
     # Only apply block swizzling for half precision types.
@@ -768,7 +774,7 @@ def multistage_gemm_kernel[
     ) if swizzle_block else Index[dtype=DType.uint32](block_idx.x, block_idx.y)
 
     # Coordinates of the current warp.
-    warp_y, warp_x = divmod(warp_id, num_warps_n)
+    warp_y, warp_x = udivmod(warp_id, num_warps_n)
 
     # Prepare circular shared memory buffer for A and B.
     # Each pipeline stage has its own buffer.
@@ -778,7 +784,7 @@ def multistage_gemm_kernel[
         address_space=AddressSpace.SHARED,
         alignment=alignment,
     ]()
-    comptime a_smem_size = num_pipeline_stages * UInt(BM) * UInt(BK)
+    comptime a_smem_size: Int = num_pipeline_stages * BM * BK
     comptime IteratorTypeA = LayoutTensorIter[
         a_type,
         Layout.row_major(BM, BK),
@@ -796,7 +802,7 @@ def multistage_gemm_kernel[
     var b_smem = (a_smem + num_warp_k_partitions * a_smem_size).bitcast[
         Scalar[b_type]
     ]()
-    comptime b_smem_size = num_pipeline_stages * UInt(BK) * UInt(BN)
+    comptime b_smem_size: Int = num_pipeline_stages * BK * BN
     comptime BD_0 = BN if transpose_b else BK
     comptime BD_1 = BK if transpose_b else BN
     comptime b_smem_layout = Layout.row_major(BD_0, BD_1)
@@ -814,8 +820,8 @@ def multistage_gemm_kernel[
 
     # create input layout tensors A and Bv
     # global memory iterator
-    var bk_start: Int = Int(
-        (K // UInt(BK) // num_warp_k_partitions) * warp_k_part_id
+    var bk_start: Int = (
+        ufloordiv(ufloordiv(K, BK), num_warp_k_partitions) * warp_k_part_id
     )
     var a_gmem_iter = a.tiled_iterator[BM, BK, axis=1](
         block_idx_swizzle[1], bk_start
@@ -861,8 +867,8 @@ def multistage_gemm_kernel[
         BK,
         WM,
         WN,
-        Int(num_threads_per_warp_k_part),
-        Int(num_pipeline_stages),
+        num_threads_per_warp_k_part,
+        num_pipeline_stages,
         transpose_b,
         k_group_size=config.k_group_size,
         swizzle_a=is_nvidia_gpu(),
@@ -872,7 +878,7 @@ def multistage_gemm_kernel[
         b_gmem_iter,
         a_smem_iter,
         b_smem_iter,
-        Int(ceildiv(K // num_warp_k_partitions, UInt(BK))),
+        uceildiv(ufloordiv(K, num_warp_k_partitions), BK),
     )
 
     # reduce within the threadblock
@@ -880,10 +886,10 @@ def multistage_gemm_kernel[
         warp_split_k_reduction[
             BM,
             BN,
-            Int(num_threads_per_warp_k_part),
-            Int(num_warp_k_partitions),
+            num_threads_per_warp_k_part,
+            num_warp_k_partitions,
         ](
-            Int(warp_k_part_id),
+            warp_k_part_id,
             c_reg_tile,
         )
         if warp_k_part_id > 0:
@@ -891,7 +897,7 @@ def multistage_gemm_kernel[
 
     # Map global memory tile down to thread.
     var c_gmem_tile = c.tile[BM, BN](block_idx_swizzle[1], block_idx_swizzle[0])
-    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](Int(warp_y), Int(warp_x))
+    var c_gmem_warp_tile = c_gmem_tile.tile[WM, WN](warp_y, warp_x)
 
     @always_inline
     @parameter
@@ -920,16 +926,16 @@ def multistage_gemm_kernel[
 
         comptime for i in range(type_of(c_gmem_frag).layout.size()):
             comptime src_idx = c_reg_frag.layout(i)
-            comptime dst_static_idx = UInt(type_of(c_gmem_frag).layout(i))
+            comptime dst_static_idx = Int(type_of(c_gmem_frag).layout(i))
             var dst_idx: Int
 
             comptime if c_gmem_frag.layout.all_dims_known():
-                dst_idx = Int(dst_static_idx)
+                dst_idx = dst_static_idx
             else:
                 dst_idx = Int(c_gmem_frag.runtime_layout(i))
             comptime alignment = align_of[SIMD[c_type, src_simd_width_y]]()
-            var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
-            if m < Int(M) and n < Int(N):
+            var m, n = divmod(Int(thread_offset) + dst_idx, N)
+            if m < M and n < N:
                 var vec = (c_reg_frag.ptr + src_idx).load[
                     width=src_simd_width_y,
                     alignment=align_of[SIMD[c_type, src_simd_width_y]](),
@@ -939,7 +945,7 @@ def multistage_gemm_kernel[
                     epilogue[alignment=alignment]((m, n), vec)
                 else:
                     comptime for j in range(dst_simd_width_x):
-                        if m + j < Int(M):
+                        if m + j < M:
                             epilogue[alignment=alignment](
                                 (m + j, n), vec[j].cast[c_type]()
                             )
@@ -958,7 +964,7 @@ def multistage_gemm_kernel[
             Layout.row_major(WM, WN),
             MutAnyOrigin,
             address_space=AddressSpace.SHARED,
-        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * UInt(WM) * UInt(WN))
+        ](a_smem.bitcast[Scalar[c_type]]() + warp_id * WM * WN)
 
         copy_local_to_shared[
             thread_layout=Layout.row_major(8, 4),
@@ -981,10 +987,10 @@ def multistage_gemm_kernel[
             )
             var c_gmem_frag = c_gmem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](Int(thread_idx.x))
+            ]().distribute[warp_layout](thread_idx.x)
             var c_smem_frag = accum_smem_warp_tile.vectorize[
                 1, simd_size
-            ]().distribute[warp_layout](Int(thread_idx.x))
+            ]().distribute[warp_layout](thread_idx.x)
             var thread_offset = c_gmem_frag.distance(c.ptr)
             comptime num_stores_per_thread = type_of(c_gmem_frag).layout.size()
 
@@ -1009,9 +1015,9 @@ def multistage_gemm_kernel[
                 else:
                     dst_idx = Int(c_gmem_frag.runtime_layout(i))
 
-                var m, n = divmod(Int(thread_offset) + dst_idx, Int(N))
+                var m, n = divmod(Int(thread_offset) + dst_idx, N)
                 comptime alignment = align_of[SIMD[c_type, simd_size]]()
-                if m < Int(M) and n < Int(N):
+                if m < M and n < N:
                     epilogue[alignment=alignment](
                         (m, n),
                         accum_smem_warp_tile.ptr.load[
@@ -1070,6 +1076,10 @@ def multistage_gemm_kernel[
         Int32(config.num_threads())
     )
 )
+@__name(
+    t"multistage_gemm_split_k_kernel_{c_type}_{a_type}_{b_type}_{transpose_b}",
+    mangle=True,
+)
 def multistage_gemm_split_k_kernel[
     c_type: DType,
     c_layout: Layout,
@@ -1097,10 +1107,10 @@ def multistage_gemm_split_k_kernel[
     # If K is not divisible by num_partitions, the first num_partitions-1 parts
     # will be rounded up to multiple of BK.
     var a_part = a.split[axis=1, split_alignment=BK](
-        num_partitions, Int(block_idx.z)
+        num_partitions, block_idx.z
     )
     var b_part = b.split[axis=1 if transpose_b else 0, split_alignment=BK](
-        num_partitions, Int(block_idx.z)
+        num_partitions, block_idx.z
     )
 
     comptime work_space_tensor_type = LayoutTensor[
@@ -1108,7 +1118,7 @@ def multistage_gemm_split_k_kernel[
     ]
 
     var work_space_part = work_space_tensor_type(
-        work_space.ptr + block_idx.z * UInt(M) * UInt(N),
+        work_space.ptr + block_idx.z * M * N,
         RuntimeLayout[
             c_layout,
             element_type=work_space_tensor_type.layout_int_type,
@@ -1139,7 +1149,13 @@ def multistage_gemm_split_k_kernel[
         and not has_amd_rdna_gpu_accelerator()
         and transpose_b
     ):
-        gemm_kernel_amd[config=k_partition_config,](ws_tt, a_tt, b_tt)
+        AMDMatmul[
+            a_type,
+            b_type,
+            work_space_type,
+            transpose_b,
+            k_partition_config,
+        ].run(ws_tt, a_tt, b_tt)
 
     else:
         multistage_gemm_kernel[config=k_partition_config,](ws_tt, a_tt, b_tt)

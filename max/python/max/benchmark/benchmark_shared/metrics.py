@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
@@ -24,7 +25,9 @@ from typing import TYPE_CHECKING, Any, Literal
 import numpy as np
 
 if TYPE_CHECKING:
-    from .server_metrics import ParsedMetrics
+    from max.diagnostics.cpu import CPUMetrics
+
+    from .server_metrics import HistogramData, ParsedMetrics
 
 
 def _validate_data(data: list[float]) -> None:
@@ -184,6 +187,30 @@ class PercentileMetrics(Metrics):
             for label, value in metrics_data
         )
 
+    def to_flat_dict(self, name: str) -> dict[str, float]:
+        """Flatten percentile stats into ``{"mean_{name}": v, ...}``."""
+        return {
+            f"mean_{name}": self.mean,
+            f"std_{name}": self.std,
+            f"median_{name}": self.median,
+            f"p90_{name}": self.p90,
+            f"p95_{name}": self.p95,
+            f"p99_{name}": self.p99,
+        }
+
+    def confidence_to_flat_dict(self, name: str) -> dict[str, object]:
+        """Flatten confidence-interval metadata into ``{"{name}_confidence": v, ...}``."""
+        ci = self.confidence_info
+        if ci is None:
+            return {}
+        return {
+            f"{name}_ci_lower": ci.ci_lower,
+            f"{name}_ci_upper": ci.ci_upper,
+            f"{name}_ci_relative_width": ci.ci_relative_width,
+            f"{name}_confidence": ci.confidence,
+            f"{name}_sample_size": ci.sample_size,
+        }
+
     def validate(self) -> tuple[bool, list[str]]:
         """Validate that the mean is finite and positive."""
         if not _is_finite_and_positive(self.mean):
@@ -319,95 +346,64 @@ class LoRAMetrics:
     total_swaps: int = 0
 
 
-@dataclass
-class BenchmarkMetrics(Metrics):
-    """Container for comprehensive benchmark metrics."""
+@dataclass(kw_only=True)
+class BaseBenchmarkMetrics(Metrics):
+    """Shared fields and logic for all benchmark metric containers."""
 
+    duration: float
     completed: int
     failures: int
-    total_input: int
-    total_output: int
-    nonempty_response_chunks: int
     max_concurrency: int
     request_throughput: float
 
-    input_throughput: ThroughputMetrics
-    output_throughput: ThroughputMetrics
-    ttft_ms: StandardPercentileMetrics
-    tpot_ms: StandardPercentileMetrics
-    itl_ms: StandardPercentileMetrics
     latency_ms: StandardPercentileMetrics
 
-    max_input: int
-    max_output: int
-    max_total: int
-    # 'benchmark/gpu:i/memory_used (MiB)/max'
     peak_gpu_memory_mib: list[float]
-    # 'benchmark/gpu:i/memory_free (MiB)/min'
     available_gpu_memory_mib: list[float]
-    # 'benchmark/gpu:i/gpu_utilization (%)/mean'
     gpu_utilization: list[float]
 
-    # measured in percent (0-100), combined over server pids
-    cpu_utilization_user: float | None
-    cpu_utilization_system: float | None
+    cpu_metrics: CPUMetrics | None = None
 
-    # Server-side metrics (optional, from Prometheus endpoint)
-    server_metrics: ParsedMetrics | None = None
+    metrics_by_endpoint: Mapping[str, ParsedMetrics] = field(
+        default_factory=dict
+    )
 
-    # Convenience properties for common server-side metrics
-    @property
-    def mean_prefill_batch_time_ms(self) -> float | None:
-        """Mean prefill (context encoding) batch execution time in milliseconds."""
-        if not self.server_metrics:
-            return None
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
-        )
-        return hist.mean if hist else None
+    def to_result_dict(self) -> dict[str, object]:
+        """Serialize aggregate metrics to a flat dict.
 
-    @property
-    def mean_decode_batch_time_ms(self) -> float | None:
-        """Mean decode (token generation) batch execution time in milliseconds."""
-        if not self.server_metrics:
-            return None
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
-        )
-        return hist.mean if hist else None
+        Produces the key layout that the upload script and the
+        ``--result-filename`` JSON expect (e.g. ``mean_ttft_ms``,
+        ``p99_latency_ms``, ``ttft_ms_confidence``, …).
 
-    @property
-    def prefill_batch_count(self) -> int:
-        """Total number of prefill (context encoding) batches executed."""
-        if not self.server_metrics:
-            return 0
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "CE"}
-        )
-        return int(hist.count) if hist else 0
-
-    @property
-    def decode_batch_count(self) -> int:
-        """Total number of decode (token generation) batches executed."""
-        if not self.server_metrics:
-            return 0
-        hist = self.server_metrics.get_histogram(
-            "maxserve_batch_execution_time_milliseconds", {"batch_type": "TG"}
-        )
-        return int(hist.count) if hist else 0
+        Subclasses should call ``super().to_result_dict()`` and merge in
+        their own fields.
+        """
+        d: dict[str, object] = {
+            "duration": self.duration,
+            "completed": self.completed,
+            "failures": self.failures,
+            "max_concurrency": self.max_concurrency,
+            "request_throughput": self.request_throughput,
+            "peak_gpu_memory_mib": self.peak_gpu_memory_mib,
+            "available_gpu_memory_mib": self.available_gpu_memory_mib,
+            "gpu_utilization": self.gpu_utilization,
+        }
+        if self.cpu_metrics is not None:
+            d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
+        for f in dataclasses.fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
+                d.update(val.to_flat_dict(f.name))
+                d.update(val.confidence_to_flat_dict(f.name))
+            elif isinstance(val, ChunkTimingMetrics):
+                d.update(val.to_flat_dict(f.name))
+        return d
 
     def validate(self) -> tuple[bool, list[str]]:
-        """Validate that metrics contain meaningful, non-degenerate values.
+        """Validate common metric invariants.
 
-        Checks scalar fields owned by this class, then delegates to each
-        sub-metric's own ``validate()``.  Intended to be called after metrics
-        are computed and before results are persisted or the process exits
-        successfully.
-
-        Returns:
-            A ``(success, errors)`` tuple where *success* is ``True`` when all
-            checks pass and *errors* is a list of human-readable descriptions
-            of any failed checks.
+        Subclasses should call ``super().validate()`` and extend the error
+        list with their own checks.
         """
         errors: list[str] = []
 
@@ -417,29 +413,93 @@ class BenchmarkMetrics(Metrics):
         if self.completed <= 0:
             errors.append(f"No requests completed (completed={self.completed})")
 
-        if self.total_output <= 0:
-            errors.append(
-                f"No output tokens generated (total_output={self.total_output})"
-            )
-
         if not _is_finite_and_positive(self.request_throughput):
             errors.append(
                 "Invalid throughput:"
                 f" request_throughput={self.request_throughput}"
             )
 
-        sub_metrics: list[tuple[str, Metrics]] = [
-            ("output_throughput", self.output_throughput),
-            ("ttft_ms", self.ttft_ms),
-            ("latency_ms", self.latency_ms),
-        ]
-        for name, metric in sub_metrics:
-            ok, sub_errors = metric.validate()
-            if not ok:
-                for err in sub_errors:
-                    errors.append(f"{name}: {err}")
+        for f in dataclasses.fields(self):
+            val = getattr(self, f.name)
+            if isinstance(val, Metrics):
+                ok, sub_errors = val.validate()
+                if not ok:
+                    for err in sub_errors:
+                        errors.append(f"{f.name}: {err}")
 
         return len(errors) == 0, errors
+
+
+@dataclass(kw_only=True)
+class BenchmarkMetrics(BaseBenchmarkMetrics):
+    """Container for comprehensive text-generation benchmark metrics."""
+
+    total_input: int
+    total_output: int
+    nonempty_response_chunks: int
+    max_concurrent_conversations: int | None = None
+
+    input_throughput: ThroughputMetrics
+    output_throughput: ThroughputMetrics
+    ttft_ms: StandardPercentileMetrics
+    tpot_ms: StandardPercentileMetrics
+    itl_ms: StandardPercentileMetrics
+
+    max_input: int
+    max_output: int
+    max_total: int
+
+    def _find_batch_histogram(self, batch_type: str) -> HistogramData | None:
+        """First endpoint that exposes the MAX-serve batch-time histogram."""
+        for pm in self.metrics_by_endpoint.values():
+            hist = pm.get_histogram(
+                "maxserve_batch_execution_time_milliseconds",
+                {"batch_type": batch_type},
+            )
+            if hist:
+                return hist
+        return None
+
+    @property
+    def mean_prefill_batch_time_ms(self) -> float | None:
+        """Mean prefill (context encoding) batch execution time in milliseconds."""
+        hist = self._find_batch_histogram("CE")
+        return hist.mean if hist else None
+
+    @property
+    def mean_decode_batch_time_ms(self) -> float | None:
+        """Mean decode (token generation) batch execution time in milliseconds."""
+        hist = self._find_batch_histogram("TG")
+        return hist.mean if hist else None
+
+    @property
+    def prefill_batch_count(self) -> int:
+        """Total number of prefill (context encoding) batches executed."""
+        hist = self._find_batch_histogram("CE")
+        return int(hist.count) if hist else 0
+
+    @property
+    def decode_batch_count(self) -> int:
+        """Total number of decode (token generation) batches executed."""
+        hist = self._find_batch_histogram("TG")
+        return int(hist.count) if hist else 0
+
+    def validate(self) -> tuple[bool, list[str]]:
+        _, errors = super().validate()
+
+        if self.total_output <= 0:
+            errors.append(
+                f"No output tokens generated (total_output={self.total_output})"
+            )
+
+        return len(errors) == 0, errors
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_input_tokens"] = self.total_input
+        d["total_output_tokens"] = self.total_output
+        d["max_concurrent_conversations"] = self.max_concurrent_conversations
+        return d
 
     def confidence_warnings(self) -> list[str]:
         """Return warnings for metrics with low or insufficient confidence."""
@@ -459,49 +519,110 @@ class BenchmarkMetrics(Metrics):
         return warns
 
 
-@dataclass
-class PixelGenerationBenchmarkMetrics(Metrics):
+@dataclass(kw_only=True)
+class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for pixel generation serving benchmark metrics."""
 
-    completed: int
-    failures: int
-    max_concurrency: int
-    request_throughput: float
     total_generated_outputs: int
 
-    latency_ms: StandardPercentileMetrics
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_generated_outputs"] = self.total_generated_outputs
+        return d
 
-    peak_gpu_memory_mib: list[float]
-    available_gpu_memory_mib: list[float]
-    gpu_utilization: list[float]
 
-    cpu_utilization_user: float | None
-    cpu_utilization_system: float | None
+@dataclass
+class ChunkTimingMetrics:
+    """Timing statistics for audio chunks (min, mean, median, p99, max)."""
 
-    server_metrics: ParsedMetrics | None = None
+    min: float
+    mean: float
+    median: float
+    p99: float
+    max: float
 
-    def validate(self) -> tuple[bool, list[str]]:
-        """Validate that pixel generation metrics are meaningful."""
-        errors: list[str] = []
-
-        if self.failures > 0:
-            errors.append(f"Some requests failed (failures={self.failures})")
-
-        if self.completed <= 0:
-            errors.append(f"No requests completed (completed={self.completed})")
-
-        if not _is_finite_and_positive(self.request_throughput):
-            errors.append(
-                "Invalid throughput:"
-                f" request_throughput={self.request_throughput}"
+    @staticmethod
+    def from_samples(data: list[float]) -> ChunkTimingMetrics:
+        if not data:
+            return ChunkTimingMetrics(
+                min=0.0, mean=0.0, median=0.0, p99=0.0, max=0.0
             )
+        return ChunkTimingMetrics(
+            min=float(np.min(data)),
+            mean=float(np.mean(data)),
+            median=float(np.median(data)),
+            p99=float(np.percentile(data, 99)),
+            max=float(np.max(data)),
+        )
 
-        ok, sub_errors = self.latency_ms.validate()
-        if not ok:
-            for err in sub_errors:
-                errors.append(f"latency_ms: {err}")
+    def to_flat_dict(self, name: str) -> dict[str, float]:
+        return {
+            f"min_{name}": self.min,
+            f"mean_{name}": self.mean,
+            f"median_{name}": self.median,
+            f"p99_{name}": self.p99,
+            f"max_{name}": self.max,
+        }
 
-        return len(errors) == 0, errors
+
+@dataclass(kw_only=True)
+class TTSBenchmarkMetrics(BaseBenchmarkMetrics):
+    """Container for TTS (text-to-speech) serving benchmark metrics.
+
+    Extends BaseBenchmarkMetrics with TTS-specific fields: real-time factor,
+    chunk timing, audio quality scores, and output length statistics.
+    """
+
+    total_input: int
+    total_output: float
+    nonempty_response_chunks: int
+
+    ttft_ms: StandardPercentileMetrics
+    tpot_ms: StandardPercentileMetrics
+    itl_ms: StandardPercentileMetrics
+    rtf_perc: StandardPercentileMetrics
+    first_chunk: ChunkTimingMetrics
+    nth_chunk: ChunkTimingMetrics
+
+    word_error_rate: float
+    noise_suppression_score: float
+
+    min_output: float
+    mean_output: float
+    median_output: float
+    max_output: float
+
+    startup_time: float
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = super().to_result_dict()
+        d["total_input"] = self.total_input
+        d["total_output"] = self.total_output
+        d["nonempty_response_chunks"] = self.nonempty_response_chunks
+        d["word_error_rate"] = self.word_error_rate
+        d["noise_suppression_score"] = self.noise_suppression_score
+        d["min_output"] = self.min_output
+        d["mean_output"] = self.mean_output
+        d["median_output"] = self.median_output
+        d["max_output"] = self.max_output
+        d["startup_time"] = self.startup_time
+        return d
+
+    def confidence_warnings(self) -> list[str]:
+        warns: list[str] = []
+        for name, metric in [
+            ("ttft_ms", self.ttft_ms),
+            ("tpot_ms", self.tpot_ms),
+            ("rtf_perc", self.rtf_perc),
+        ]:
+            ci = getattr(metric, "confidence_info", None)
+            if ci and ci.confidence in ("low", "insufficient_data"):
+                warns.append(
+                    f"{name}: {ci.confidence} confidence"
+                    f" (CI width {ci.ci_relative_width:.0%} of mean,"
+                    f" n={ci.sample_size})"
+                )
+        return warns
 
 
 # ---------------------------------------------------------------------------
@@ -580,10 +701,32 @@ def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
     )
 
 
+@dataclass
+class SpecDecodeStats:
+    """Speculative decoding statistics for a benchmark window.
+
+    Attributes:
+        num_drafts: Number of draft sequences generated.
+        draft_tokens: Total number of draft tokens generated.
+        accepted_tokens: Total number of draft tokens accepted.
+        acceptance_rate: Percentage of draft tokens accepted.
+        acceptance_length: Average number of tokens accepted per draft
+            (including the verified token).
+        per_position_acceptance_rates: Acceptance rate at each draft position.
+    """
+
+    num_drafts: int
+    draft_tokens: int
+    accepted_tokens: int
+    acceptance_rate: float
+    acceptance_length: float
+    per_position_acceptance_rates: list[float]
+
+
 def calculate_spec_decode_stats(
     metrics_before: SpecDecodeMetrics,
     metrics_after: SpecDecodeMetrics,
-) -> dict[str, Any] | None:
+) -> SpecDecodeStats | None:
     """Compute benchmark-window speculative decoding stats from metric deltas.
 
     Args:
@@ -591,8 +734,8 @@ def calculate_spec_decode_stats(
         metrics_after: Snapshot taken after the benchmark window.
 
     Returns:
-        A dict of computed stats (acceptance rate, length, per-position rates),
-        or ``None`` when there were no draft tokens in the window.
+        A ``SpecDecodeStats`` object with computed stats, or ``None`` when
+        there were no draft tokens in the window.
     """
     delta_drafts = metrics_after.num_drafts - metrics_before.num_drafts
     delta_draft_tokens = (
@@ -620,11 +763,11 @@ def calculate_spec_decode_stats(
     acceptance_length = (
         1 + delta_accepted / delta_drafts if delta_drafts > 0 else 0.0
     )
-    return {
-        "num_drafts": delta_drafts,
-        "draft_tokens": delta_draft_tokens,
-        "accepted_tokens": delta_accepted,
-        "acceptance_rate": acceptance_rate,
-        "acceptance_length": acceptance_length,
-        "per_position_acceptance_rates": per_pos_rates,
-    }
+    return SpecDecodeStats(
+        num_drafts=delta_drafts,
+        draft_tokens=delta_draft_tokens,
+        accepted_tokens=delta_accepted,
+        acceptance_rate=acceptance_rate,
+        acceptance_length=acceptance_length,
+        per_position_acceptance_rates=per_pos_rates,
+    )

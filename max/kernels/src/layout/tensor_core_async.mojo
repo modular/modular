@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Tensor Core Async Module
+"""Tensor Core Async Module.
 
 This module provides high-performance abstractions for utilizing NVIDIA's Tensor Cores
 to perform asynchronous matrix multiplication operations. It implements optimized memory

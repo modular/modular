@@ -46,6 +46,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),  # FIXME: PRDT-506
     "gpu/bench_matmul_mxfp4.mojo": ["//:amd_gpu"],
+    "gpu/linalg/bench_grouped_matmul_dequant_mxfp4_amd.mojo": ["//:amd_gpu"],
     "gpu/bench_topk.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -73,6 +74,23 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # Requires NVIDIA GPU warp primitives
+    "gpu/bench_cp_async_bulk.mojo": ["//:b200_gpu"],  # cp.async.bulk requires SM100+ architecture
+    "gpu/comm/bench_scatter.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEN-535
+    "gpu/nn/bench_argsort.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # FIXME: GEN-535
+    "gpu/nn/profile_gemv_partial_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses device-scope atomics (_DEVICE_SCOPE) unsupported on Metal.
+    "gpu/nn/trace_gemv_partial_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses device-scope atomics (_DEVICE_SCOPE) unsupported on Metal.
 }
 
 _CPU_TESTS = glob(
@@ -155,7 +173,10 @@ _CPU_TESTS = glob(
             "@mojo//:std",
         ],
     )
-    for src in glob(["gpu/**/*.mojo"])
+    for src in glob(
+        ["gpu/**/*.mojo"],
+        exclude = ["gpu/nn/bench_conv3d.mojo"],
+    )
 ]
 
 [
@@ -164,8 +185,34 @@ _CPU_TESTS = glob(
         tags = ["gpu"],
         targets = [src.split(".")[0]],
     )
-    for src in glob(["gpu/**/*.mojo"])
+    for src in glob(
+        ["gpu/**/*.mojo"],
+        exclude = ["gpu/nn/bench_conv3d.mojo"],
+    )
 ]
+
+# Runnable GPU benchmark targets (mojo_test wrappers so they execute on the
+# remote GPU via `bazel test --config=remote-b200 ...`).
+mojo_test(
+    name = "gpu/nn/bench_conv3d.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_conv3d.mojo"],
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "6",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
 
 pkg_files(
     name = "kernel_benchmark_input_files",

@@ -165,7 +165,12 @@ class AutoencoderKLWanModel(ComponentModel):
                 # -- 4D conv weights --
                 if key.endswith(".weight") and len(weight_data.shape) == 4:
                     is_resample_conv = "resample" in key
-                    if not is_resample_conv:
+                    # Resample convs use Conv2dPermuted, which keeps FCRS only
+                    # when cuDNN is the target. Otherwise transpose to RSCF.
+                    keep_fcrs = is_resample_conv and _use_nvidia_fcrs_conv3d(
+                        self.config.device
+                    )
+                    if not keep_fcrs:
                         buf = (
                             weight_data.to_buffer()
                             if hasattr(weight_data, "to_buffer")

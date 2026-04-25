@@ -23,13 +23,11 @@ from __future__ import annotations
 import logging
 
 from max.interfaces import RequestID, TextGenerationContext
+from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import KVCacheParams
 from max.nn.kv_cache.cache_params import KVCacheBuffer
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_agent_service_v1_pb2 import (  # type: ignore
-    MemoryTier,
-)
 
 from ..paged_kv_cache.block_copy_engine import BlockOffloadEngine
 from ..paged_kv_cache.block_pool import BlockPool
@@ -167,6 +165,7 @@ class LocalConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
         """Queue device blocks for offload to host. Executed in flush()."""
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):

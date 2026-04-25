@@ -27,11 +27,7 @@ from std.benchmark import (
     keep,
 )
 from std.compile import compile_info
-from std.gpu import (
-    block_dim_uint as block_dim,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-)
+from std.gpu import block_dim, global_idx, grid_dim
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.random import Random
 from std.utils import IndexList
@@ -146,7 +142,7 @@ def parse_shape[name: StaticString]() -> List[Int]:
     var vals: List[Int] = List[Int]()
     var sum: Int = 0
 
-    comptime for i in range(len(name)):
+    comptime for i in range(name.byte_length()):
         comptime diff = Int(name_unsafe_ptr[i] - zero)
         comptime assert name_unsafe_ptr[i] == x_ptr or 0 <= diff <= 9
 
@@ -363,7 +359,7 @@ def init_vector_gpu[
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
-                if tid >= UInt(len):
+                if tid >= len:
                     return
             x[tid] = values[i]
             tid += stride
@@ -394,8 +390,8 @@ def init_vector_gpu[
         values = SIMD[dtype, 4](
             UInt64(tid).cast[dtype](),
             UInt64(tid + stride).cast[dtype](),
-            UInt64(tid + UInt(2 * Int(stride))).cast[dtype](),
-            UInt64(tid + UInt(3 * Int(stride))).cast[dtype](),
+            UInt64(tid + 2 * stride).cast[dtype](),
+            UInt64(tid + 3 * stride).cast[dtype](),
         )
     apply(values)
 
@@ -413,7 +409,7 @@ def init_vector_launch[
     # using num-threads = 1/4th of length to initialize the array
 
     comptime kernel = init_vector_gpu[dtype]
-    context.enqueue_function_experimental[kernel](
+    context.enqueue_function[kernel, kernel](
         out_device,
         length,
         init_type,
@@ -437,7 +433,7 @@ def _init_block_scaled_scales_gpu[
     def apply(values: SIMD[dtype, 4]):
         comptime for i in range(4):
             comptime if i == 3:
-                if tid >= UInt(len):
+                if tid >= len:
                     return
             x[tid] = Scalar[dtype](values[i])
             tid += stride

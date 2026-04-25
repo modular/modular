@@ -1,3 +1,5 @@
+# Code examples and tests
+
 This directory contains code examples for the existing Modular site and
 the future Mojo homepage.
 

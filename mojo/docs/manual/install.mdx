@@ -26,7 +26,8 @@ tutorial](/mojo/manual/get-started), which includes installation steps.
 :::note System requirements
 
 You can use Mac, Linux, or Windows with WSL. For details, see the
-[system requirements](/mojo/requirements).
+[system requirements](/mojo/requirements). For GPU programming, see
+[GPU compatibility](/mojo/requirements#gpu-compatibility).
 
 :::
 
@@ -56,24 +57,24 @@ more help with it, see our [Pixi basics guide](/pixi).
     ```
 
 2. Navigate to the directory where you want to create a project
-    and run this:
+   and run this:
 
-    ```bash
-    pixi init hello-world \
-      -c https://conda.modular.com/max-nightly/ -c conda-forge \
-      && cd hello-world
-    ```
+   ```bash
+   pixi init hello-world \
+     -c https://conda.modular.com/max-nightly/ -c conda-forge \
+     && cd hello-world
+   ```
 
-    This creates a project directory named `hello-world`, adds the channel
-    for Modular conda packages, and enters the directory.
+   This creates a project directory named `hello-world`, adds the channel
+   for Modular conda packages, and enters the directory.
 
-    :::tip
+   :::tip
 
-    **Tip:**
-    You can remove the `-c` options if you [specify default
-    channels](/pixi#create-a-project-and-virtual-environment).
+   **Tip:**
+   You can remove the `-c` options if you [specify default
+   channels](/pixi#create-a-project-and-virtual-environment).
 
-    :::
+   :::
 
 <ConditionalVersionDocs version="nightly">
 
@@ -195,7 +196,7 @@ file with a `main()` function:
 1. Create a file named `hello.mojo` with this code:
 
     ```mojo title="hello.mojo"
-    def main() raises:
+    def main():
         print("Hello, World!")
     ```
 
@@ -211,12 +212,27 @@ file with a `main()` function:
 
 ### Try Mojo agent skills
 
-Use [Mojo agent skills](/mojo/tools/skills) with your AI tools
-to generate more accurate Mojo code while learning Mojo:
+Use Mojo agent skills with your AI tools to generate more accurate Mojo code
+and learn current syntax and patterns.
+
+Install the skills:
 
 ```bash
 npx skills add modular/skills
 ```
+
+These skills help AI tools produce code that reflects current syntax,
+APIs, and best practices.
+
+Two skills are especially useful when you're getting started:
+
+- *Project setup* (`new-modular-project`): creates and structures new Mojo
+  projects. Just describe what you want to build, and the skill handles the
+  basic setup.
+- *Mojo syntax* (`mojo-syntax`): keeps generated code aligned with the
+  current language. The syntax skill keeps your code accurate and up-to-date
+  as the language evolves, so your AI tool isn't limited by when the model
+  was trained.
 
 ### Try some examples
 
@@ -247,30 +263,32 @@ language and its standard library. Here's how to download and use them.
    build and run the examples. For example, to run the reference solution for
    the Game of Life tutorial project, use the following command:
 
-    ```sh
-    pixi run lifev1
-    ```
+   ```sh
+   pixi run lifev1
+   ```
 
-    This displays a window that shows an initial random state for the grid and
-    then automatically updates it with subsequent generations. Quit the program
-    by pressing the <kbd>Q</kbd> or <kbd>Esc</kbd> key or by closing the window.
+   <!-- markdownlint-disable MD033 -->
+   This displays a window that shows an initial random state for the grid and
+   then automatically updates it with subsequent generations. Quit the program
+   by pressing the <kbd>Q</kbd> or <kbd>Esc</kbd> key or by closing the window.
+   <!-- markdownlint-enable MD033 -->
 
-    :::note
+   :::note
 
-    If you're using a package manager other than `pixi`, make sure `mojo` is
-    installed and accessible in your current shell environment. Consult the
-    `README.md` file in the example project subdirectory for information about
-    any other dependencies that need to be installed for that particular example
-    project. (The Game of Life example requires a compatible Python runtime and
-    the [pygame-ce](https://pyga.me/docs/index.html) library.) Then run the
-    example with the [`mojo`](/mojo/cli) CLI. For example, to run the reference
-    solution for the Game of Life tutorial project, use the following command:
+   If you're using a package manager other than `pixi`, make sure `mojo` is
+   installed and accessible in your current shell environment. Consult the
+   `README.md` file in the example project subdirectory for information about
+   any other dependencies that need to be installed for that particular example
+   project. (The Game of Life example requires a compatible Python runtime and
+   the [pygame-ce](https://pyga.me/docs/index.html) library.) Then run the
+   example with the [`mojo`](/mojo/cli) CLI. For example, to run the reference
+   solution for the Game of Life tutorial project, use the following command:
 
-    ```sh
-    mojo lifev1.mojo
-    ```
+   ```sh
+   mojo lifev1.mojo
+   ```
 
-    :::
+   :::
 
 ## Update
 

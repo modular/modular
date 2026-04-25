@@ -186,7 +186,7 @@ def check_ldmatrix_transposed_bf16[
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(
@@ -302,7 +302,7 @@ def check_ldmatrix(
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

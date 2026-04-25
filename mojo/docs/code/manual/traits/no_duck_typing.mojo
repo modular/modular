@@ -32,6 +32,6 @@ def make_it_quack(not_a_duck: StealthCow):
     not_a_duck.quack()
 
 
-def main() raises:
+def main():
     make_it_quack(Duck())
     make_it_quack(StealthCow())

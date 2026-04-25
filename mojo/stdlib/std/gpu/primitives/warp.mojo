@@ -61,7 +61,7 @@ comptime _FULL_MASK = UInt(2**WARP_SIZE - 1)
 comptime _WIDTH_MASK_SHUFFLE_UP = 0
 
 # Common function type for binary SIMD reduction operations (add, max, min).
-comptime _ReduceFn = def[dtype: DType, width: Int](
+comptime _ReduceFn = def[dtype: DType, width: SIMDSize](
     SIMD[dtype, width], SIMD[dtype, width]
 ) capturing -> SIMD[dtype, width]
 
@@ -113,7 +113,7 @@ def _dpp_update_i32[
 
 @always_inline
 def _dpp_move[
-    dtype: DType, simd_width: Int, //, dpp_ctrl: Int
+    dtype: DType, simd_width: SIMDSize, //, dpp_ctrl: Int
 ](val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     """Returns a neighboring lane's value via a DPP cross-lane operation.
 
@@ -156,7 +156,7 @@ def _dpp_move[
 @always_inline
 def _dpp_reduce_and_broadcast[
     dtype: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     func: _ReduceFn,
     num_lanes: Int = WARP_SIZE,
@@ -194,8 +194,8 @@ def _dpp_reduce_and_broadcast[
         The reduction result across the lane group, broadcast to every lane
         in the group.
     """
-    comptime assert (
-        num_lanes >= 2 and num_lanes.is_power_of_two()
+    comptime assert num_lanes >= 2 and Bool(
+        num_lanes.is_power_of_two()
     ), "num_lanes must be a power of 2 >= 2"
 
     comptime assert num_lanes <= WARP_SIZE, "num_lanes cannot exceed WARP_SIZE"
@@ -256,7 +256,7 @@ def _dpp_reduce_and_broadcast[
 def _shuffle[
     mnemonic: StringSlice,
     dtype: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     *,
     WIDTH_MASK: Int32,
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
@@ -312,7 +312,7 @@ def _shuffle[
 
 @always_inline
 def _shuffle_amd_helper[
-    dtype: DType, simd_width: Int
+    dtype: DType, simd_width: SIMDSize
 ](dst_lane: UInt32, val: SIMD[dtype, simd_width]) -> SIMD[dtype, simd_width]:
     comptime if size_of[SIMD[dtype, simd_width]]() == 4:
         # Handle int32, float32, float16x2, etc.
@@ -343,7 +343,7 @@ def _shuffle_amd_helper[
 
 @always_inline
 def _shuffle_apple_helper[
-    op: StringSlice, dtype: DType, simd_width: Int
+    op: StringSlice, dtype: DType, simd_width: SIMDSize
 ](
     mask: UInt,  # Ignored, for API parity
     val: SIMD[dtype, simd_width],
@@ -414,7 +414,7 @@ def _shuffle_apple_helper[
 
 @always_inline
 def shuffle_idx[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Copies a value from a source lane to other lanes in a warp.
 
@@ -436,7 +436,7 @@ def shuffle_idx[
     Example:
 
         ```mojo
-            from std.gpu import shuffle_idx
+            from std.gpu.primitives.warp import shuffle_idx
 
             val = SIMD[DType.float32, 16](1.0)
 
@@ -452,7 +452,7 @@ def shuffle_idx[
 
 @always_inline
 def _shuffle_idx_amd[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -469,7 +469,7 @@ def _shuffle_idx_amd[
 
 @always_inline
 def shuffle_idx[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -495,7 +495,7 @@ def shuffle_idx[
     Example:
 
         ```mojo
-            from std.gpu import shuffle_idx
+            from std.gpu.primitives.warp import shuffle_idx
 
             # Only broadcast to first 16 lanes
             var mask = 0xFFFF  # 16 ones
@@ -528,7 +528,7 @@ def shuffle_idx[
 
 @always_inline
 def shuffle_up[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Copies values from threads with lower lane IDs in the warp.
 
@@ -557,7 +557,7 @@ def shuffle_up[
 
 @always_inline
 def _shuffle_up_amd[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -571,7 +571,7 @@ def _shuffle_up_amd[
 
 @always_inline
 def shuffle_up[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -623,7 +623,7 @@ def shuffle_up[
 
 @always_inline
 def shuffle_down[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Copies values from threads with higher lane IDs in the warp.
 
@@ -653,7 +653,7 @@ def shuffle_down[
 
 @always_inline
 def _shuffle_down_amd[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -668,7 +668,7 @@ def _shuffle_down_amd[
 
 @always_inline
 def shuffle_down[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -723,7 +723,7 @@ def shuffle_down[
 
 @always_inline
 def shuffle_xor[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[dtype, simd_width]:
     """Exchanges values between threads in a warp using a butterfly pattern.
 
@@ -748,7 +748,7 @@ def shuffle_xor[
 
 @always_inline
 def _shuffle_xor_amd[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -764,7 +764,7 @@ def _shuffle_xor_amd[
 
 @always_inline
 def shuffle_xor[
-    dtype: DType, simd_width: Int, //
+    dtype: DType, simd_width: SIMDSize, //
 ](mask: UInt, val: SIMD[dtype, simd_width], offset: UInt32) -> SIMD[
     dtype, simd_width
 ]:
@@ -792,7 +792,7 @@ def shuffle_xor[
     Example:
 
         ```mojo
-            from std.gpu import shuffle_xor
+            from std.gpu.primitives.warp import shuffle_xor
 
             # Exchange values between even-numbered threads 4 lanes apart
             mask = 0xAAAAAAAA  # Even threads only
@@ -825,11 +825,11 @@ def shuffle_xor[
 @always_inline
 def lane_group_reduce[
     val_type: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
-    shuffle: def[dtype: DType, simd_width: Int](
+    shuffle: def[dtype: DType, simd_width: SIMDSize](
         val: SIMD[dtype, simd_width], offset: UInt32
-    ) -> SIMD[dtype, simd_width],
+    ) thin -> SIMD[dtype, simd_width],
     func: _ReduceFn,
     num_lanes: Int,
     *,
@@ -859,11 +859,11 @@ def lane_group_reduce[
     Example:
 
         ```mojo
-            from std.gpu import lane_group_reduce, shuffle_down
+            from std.gpu.primitives.warp import lane_group_reduce, shuffle_down
 
             # Compute sum across 16 threads using shuffle down
             @parameter
-            def add[dtype: DType, width: Int](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
+            def add[dtype: DType, width: SIMDSize](x: SIMD[dtype, width], y: SIMD[dtype, width]) -> SIMD[dtype, width]:
                 return x + y
             var val = SIMD[DType.float32, 16](42.0)
             var result = lane_group_reduce[shuffle_down, add, num_lanes=16](val)
@@ -883,11 +883,11 @@ def lane_group_reduce[
 @always_inline
 def reduce[
     val_type: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
-    shuffle: def[dtype: DType, simd_width: Int](
+    shuffle: def[dtype: DType, simd_width: SIMDSize](
         val: SIMD[dtype, simd_width], offset: UInt32
-    ) -> SIMD[dtype, simd_width],
+    ) thin -> SIMD[dtype, simd_width],
     func: _ReduceFn,
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Performs a generic warp-wide reduction operation using shuffle operations.
@@ -912,11 +912,11 @@ def reduce[
     Example:
 
     ```mojo
-        from std.gpu import reduce, shuffle_down
+        from std.gpu.primitives.warp import reduce, shuffle_down
 
         # Compute warp-wide sum using shuffle down
         @parameter
-        def add[dtype: DType, width: Int](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
+        def add[dtype: DType, width: SIMDSize](x: SIMD[dtype, width], y: SIMD[dtype, width]) capturing -> SIMD[dtype, width]:
             return x + y
 
         val = SIMD[DType.float32, 4](2.0, 4.0, 6.0, 8.0)
@@ -934,7 +934,7 @@ def reduce[
 @always_inline
 def _lane_group_broadcast_reduce[
     val_type: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     func: _ReduceFn,
     num_lanes: Int,
@@ -956,7 +956,7 @@ def _lane_group_broadcast_reduce[
     elif (
         stride == 1
         and num_lanes >= 2
-        and num_lanes.is_power_of_two()
+        and Bool(num_lanes.is_power_of_two())
         and is_amd_gpu()
     ):
         return _dpp_reduce_and_broadcast[func, num_lanes=num_lanes](val)
@@ -974,7 +974,7 @@ def _lane_group_broadcast_reduce[
 @always_inline
 def lane_group_sum[
     val_type: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     num_lanes: Int,
     stride: Int = 1,
@@ -1118,7 +1118,7 @@ def _redux_f32_max_min[direction: StaticString](val: SIMD) -> type_of(val):
 @always_inline
 def lane_group_max[
     val_type: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     num_lanes: Int,
     stride: Int = 1,
@@ -1183,7 +1183,7 @@ def max(val: SIMD) -> Scalar[val.dtype]:
 @always_inline
 def lane_group_min[
     val_type: DType,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     num_lanes: Int,
     stride: Int = 1,
@@ -1247,7 +1247,7 @@ def min(val: SIMD) -> Scalar[val.dtype]:
 
 @always_inline
 def broadcast[
-    val_type: DType, simd_width: Int, //
+    val_type: DType, simd_width: SIMDSize, //
 ](val: SIMD[val_type, simd_width]) -> SIMD[val_type, simd_width]:
     """Broadcasts a SIMD value from lane 0 to all lanes in the warp.
 

@@ -5,10 +5,12 @@ package(default_visibility = ["//max:consumers"])
 mojo_shared_library(
     name = "kv_cache_ops",
     srcs = ["kv_cache_ops.mojo"],
+    data = [
+        "@mojo//:python",
+    ],
     shared_lib_name = "kv_cache_ops.so",
     deps = [
         "//max:nn",
-        "@mojo//:python",
         "@mojo//:std",
     ],
 )

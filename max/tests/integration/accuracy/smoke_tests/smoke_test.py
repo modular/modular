@@ -45,11 +45,12 @@ from pathlib import Path
 from pprint import pformat
 from subprocess import DEVNULL, check_call, check_output
 from tempfile import TemporaryDirectory
-from typing import Any, TypedDict
+from typing import Any
 
 import click
 import requests
 from inference_server_harness import start_server
+from requests.structures import CaseInsensitiveDict
 
 DUMMY_2X2_IMAGE = (
     "data:image/png;base64,"
@@ -74,70 +75,69 @@ logger = logging.getLogger(__name__)
 EvalResults = dict[str, Any]
 EvalSamples = list[dict[str, Any]]
 
-
-class ModelAlias(TypedDict):
-    hf_model_path: str
-    max_serve_args: str
-
-
 # Maps alias model names to their real HuggingFace model path and extra
 # MAX serve args. Aliases let the same weights be tested under different
 # configurations while keeping results separate in dashboards.
 # max_serve_args are only applied to MAX frameworks, not vllm/sglang.
-MODEL_ALIASES: dict[str, ModelAlias] = {
-    "meta-llama/llama-3.1-8b-instruct__modulev3": {
-        "hf_model_path": "meta-llama/llama-3.1-8b-instruct",
+# fmt: off
+MODEL_ALIASES = CaseInsensitiveDict({
+    "google/gemma-4-26B-A4B-it__no_dgc": {
+        "max_serve_args": "--max-num-steps 1 --no-device-graph-capture --force",
+    },
+    "meta-llama/Llama-3.1-8B-Instruct__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
-    "meta-llama/llama-3.2-1b-instruct__modulev3": {
-        "hf_model_path": "meta-llama/llama-3.2-1b-instruct",
+    "meta-llama/Llama-3.2-1B-Instruct__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
-    "unsloth/gpt-oss-20b-bf16__modulev3": {
-        "hf_model_path": "unsloth/gpt-oss-20b-bf16",
+    "unsloth/gpt-oss-20b-BF16__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
-    "microsoft/phi-3.5-mini-instruct__modulev3": {
-        "hf_model_path": "microsoft/phi-3.5-mini-instruct",
+    "microsoft/Phi-3.5-mini-instruct__modulev3": {
         "max_serve_args": "--prefer-module-v3",
     },
     "microsoft/phi-4__modulev3": {
-        "hf_model_path": "microsoft/phi-4",
         "max_serve_args": "--prefer-module-v3",
     },
-    "nvidia/deepseek-v3.1-nvfp4__fp8kv": {
-        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+    "google/gemma-3-4b-it__modulev3": {
+        "max_serve_args": "--prefer-module-v3",
+    },
+    "nvidia/DeepSeek-V3.1-NVFP4__fp8kv": {
         "max_serve_args": "--kv-cache-format float8_e4m3fn",
     },
-    "nvidia/deepseek-v3.1-nvfp4__tpep": {
-        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep": {
         "max_serve_args": "--data-parallel-degree 1",
     },
-    "nvidia/kimi-k2.5-nvfp4__with_vision": {  # MODELS-1066
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
-        "max_serve_args": "--ep-size 8 --data-parallel-degree 8 --max-batch-input-tokens 4096 --max-num-steps 1 --max-length 262144 --trust-remote-code --no-enable-in-flight-batching --device-memory-utilization 0.80 --enable-chunked-prefill --enable-prefix-caching",
+    "nvidia/DeepSeek-V3.1-NVFP4__tptp": {
+        "max_serve_args": "--ep-size 1 --data-parallel-degree 1",
     },
-    "nvidia/kimi-k2.5-nvfp4__no_vision": {
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+    "nvidia/Kimi-K2.5-NVFP4__no_vision": {
         "max_serve_args": "--enable-prefix-caching --enable-chunked-prefill --max-num-steps 1 --trust-remote-code",
     },
-    "meta-llama/llama-3.1-8b-instruct__eagle": {
-        "hf_model_path": "meta-llama/Llama-3.1-8B-Instruct",
+    "meta-llama/Llama-3.1-8B-Instruct__eagle": {
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
+            "--devices gpu:0 "
+            "--draft-devices gpu:0 "
             "--speculative-method eagle"
         ),
     },
-    "nvidia/deepseek-v3.1-nvfp4__mtp": {
-        "hf_model_path": "nvidia/deepseek-v3.1-nvfp4",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp": {
         "max_serve_args": (
             "--speculative-method eagle "
             "--kv-cache-format float8_e4m3fn "
-            "--num-speculative-tokens 1"
+            "--num-speculative-tokens 3"
         ),
     },
-    "nvidia/kimi-k2.5-nvfp4__eagle": {
-        "hf_model_path": "nvidia/kimi-k2.5-nvfp4",
+    "nvidia/DeepSeek-V3.1-NVFP4__mtp_tpep": {
+        "max_serve_args": (
+            "--data-parallel-degree 1 "
+            "--speculative-method eagle "
+            "--kv-cache-format float8_e4m3fn "
+            "--num-speculative-tokens 3"
+        ),
+    },
+    "nvidia/Kimi-K2.5-NVFP4__eagle": {
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--draft-trust-remote-code "
@@ -145,7 +145,7 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--draft-data-parallel-degree 8 "
             "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
-            "--num-speculative-tokens 1 "
+            "--num-speculative-tokens 3 "
             "--kv-cache-format float8_e4m3fn "
             "--device-memory-utilization 0.75 "
             "--max-batch-input-tokens 4096 "
@@ -153,14 +153,42 @@ MODEL_ALIASES: dict[str, ModelAlias] = {
             "--max-num-steps 1"
         ),
     },
-}
+})
+# fmt: on
+
+
+# TODO Refactor this to a model list/matrix specifying type of model
+def is_vision_model(model: str) -> bool:
+    """Check if the model supports vision tasks."""
+    model = model.casefold()
+    if any(
+        kw in model for kw in ("no_vision", "__eagle", "__mtp", "gemma-3-1b")
+    ):
+        return False
+    return any(
+        kw in model
+        for kw in (
+            "gemma-3",
+            "gemma-4",
+            "idefics",
+            "internvl",
+            "kimi-k2",
+            "kimi-vl",
+            "olmocr",
+            "pixtral",
+            "qwen2.5-vl",
+            "qwen3-vl",
+            "vision",
+        )
+    )
 
 
 def is_huge_moe(model: str) -> bool:
     """Large MoE models that need expert parallelism instead of tensor parallelism."""
+    model = model.casefold()
     if "deepseek" in model and "lite" not in model:
         return True
-    return any(x in model for x in ["minimax-m", "kimi-k"])
+    return any(x in model for x in ["minimax-m", "kimi-k", "qwen3-235b"])
 
 
 def validate_hf_token() -> None:
@@ -233,6 +261,23 @@ def get_gpu_name_and_count() -> tuple[str, int]:
             return "N/A", 0
 
 
+def resolve_canonical_repo_id(repo_id: str) -> str:
+    """HF disk cache is case-sensitive, so do what we can to avoid issues"""
+    if os.environ.get("HF_HUB_OFFLINE") == "1":
+        return repo_id
+    try:
+        r = requests.get(
+            f"https://huggingface.co/api/models/{repo_id}",
+            headers={"Authorization": f"Bearer {os.environ['HF_TOKEN']}"},
+            timeout=(5, 10),
+        )
+        r.raise_for_status()
+        return r.json()["id"]
+    except Exception as e:
+        logger.warning("Failed repo id lookup for %s: %s", repo_id, e)
+        return repo_id
+
+
 def get_server_cmd(
     framework: str,
     model: str,
@@ -260,7 +305,7 @@ def get_server_cmd(
             VLLM += f" --tensor-parallel-size={gpu_count}"
 
         # Remove once vLLM >= 0.17 (which includes vllm-project/vllm#34673).
-        if "minimax-m2" in model:
+        if "minimax-m2" in model.casefold():
             os.environ["VLLM_USE_FLASHINFER_MOE_FP8"] = "0"
             VLLM += " --attention-backend FLASH_ATTN"
         # Have not been successful in getting SGLang to work with R1 yet
@@ -286,10 +331,10 @@ def get_server_cmd(
 
     # GPT-OSS uses repetition_penalty in lm_eval to prevent reasoning loops,
     # so we need to enable penalties on the server
-    if "gpt-oss" in model and framework in ["max-ci", "max"]:
+    if "gpt-oss" in model.casefold() and framework in ["max-ci", "max"]:
         cmd += ["--enable-penalties"]
 
-    revision = _load_hf_repo_lock().get(model)
+    revision = _load_hf_repo_lock().get(model.casefold())
     if revision:
         if framework in ("max", "max-ci"):
             cmd += [
@@ -328,15 +373,17 @@ def call_eval(
 ) -> tuple[EvalResults, EvalSamples]:
     extra_gen_kwargs = ""
     is_reasoning_model = any(
-        kw in model
+        kw in model.casefold()
         for kw in (
             "academic-ds",
             "deepseek-r1",
             "deepseek-v3",
+            "gemma-4",
             "gpt-oss",
             "internvl3_5",
             "qwen3",
             "kimi-k2.5",
+            "minimax-m2",
         )
     )
     # Reasoning models needs extra tokens for .. reasoning
@@ -345,7 +392,7 @@ def call_eval(
 
     # GPT-OSS sometimes gets stuck in a reasoning loop. To ensure consistency
     # in CI, we add a repetition penalty which helps prevent the loop
-    if "gpt-oss" in model:
+    if "gpt-oss" in model.casefold():
         extra_gen_kwargs = extra_gen_kwargs + ",repetition_penalty=1.1"
 
     interpreter = sys.executable if _inside_bazel() else ".venv-eval/bin/python"
@@ -569,7 +616,7 @@ def smoke_test(
     disable_timeouts: bool,
 ) -> None:
     """
-    Example usage: ./bazelw run smoke-test -- meta-llama/llama-3.2-1b-instruct
+    Example usage: ./bazelw run smoke-test -- meta-llama/Llama-3.2-1B-Instruct
 
     This command asks 320 questions against the model behind the given hf_model_path.
     It runs the provided framework (defaulting to MAX serve) in the background,
@@ -589,9 +636,10 @@ def smoke_test(
     if output_path and build_workspace and not output_path.is_absolute():
         output_path = Path(build_workspace) / output_path
 
-    model = hf_model_path.lower().strip()
+    model = hf_model_path.strip()
     alias = MODEL_ALIASES.get(model)
-    hf_model_path = alias["hf_model_path"] if alias else model
+    hf_model_path = model.rsplit("__", 1)[0] if alias else model
+    hf_model_path = resolve_canonical_repo_id(hf_model_path)
     if alias and framework in ["max-ci", "max"]:
         serve_extra_args = (
             f"{serve_extra_args} {alias['max_serve_args']}".strip()
@@ -602,32 +650,8 @@ def smoke_test(
         serve_extra_args=serve_extra_args,
     )
 
-    # TODO Refactor this to a model list/matrix specifying type of model
-    is_vision_model = any(
-        kw in model
-        for kw in (
-            "gemma-3",
-            "idefics",
-            "internvl",
-            "kimi-k2",
-            "olmocr",
-            "pixtral",
-            "qwen2.5-vl",
-            "qwen3-vl",
-            "vision",
-            "kimi-vl",
-        )
-    )
-    # 1b is non-vision
-    if "gemma-3-1b" in model:
-        is_vision_model = False
-    if "no-vision" in model or model.endswith("__no_vision"):
-        is_vision_model = False
-    if "__eagle" in model or "__mtp" in model:
-        is_vision_model = False
-
     tasks = [TEXT_TASK]
-    if is_vision_model:
+    if is_vision_model(model):
         tasks = [VISION_TASK] + tasks
 
     logger.info(f"Starting server with command:\n {' '.join(cmd)}")
@@ -635,8 +659,9 @@ def smoke_test(
     all_samples = []
     if disable_timeouts:
         timeout = sys.maxsize
-    elif is_huge_moe(model):
-        timeout = 1800
+    elif is_huge_moe(hf_model_path):
+        # TODO(GEX-3508): Reduce timeout once model build time is optimized
+        timeout = 2700
     else:
         timeout = 900
 

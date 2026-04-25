@@ -23,18 +23,13 @@ adding more complexity. The concepts you learn here will serve as a foundation
 for more advanced GPU programming with Mojo. If you just want to see the
 finished code, you can [get it on
 GitHub](https://github.com/modular/modular/tree/main/mojo/examples/gpu-intro).
+See [GPU compatibility](/mojo/requirements#gpu-compatibility) for a list of
+compatible GPUs and software requirements.
 
 :::tip
 
 **Tip:** To use AI coding assistants with Mojo, see our guide for
 [using Mojo AI skills](/mojo/tools/skills/).
-
-:::
-
-:::note System requirements
-
-You can use Mac, Linux, or Windows with WSL. For details, see the
-[system requirements](/mojo/requirements).
 
 :::
 
@@ -139,7 +134,7 @@ Found GPU: NVIDIA A10G
 :::note
 
 Mojo requires a
-[compatible GPU development environment](/mojo/requirements/#gpu-compatibility)
+[compatible GPU development environment](/mojo/requirements#gpu-compatibility)
 to compile kernel functions, otherwise it raises a compile-time error. In our
 code, we're using the
 [`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
@@ -194,12 +189,7 @@ from std.gpu import block_idx, thread_idx
 def print_threads():
     """Print thread IDs."""
 
-    print("Block index: [",
-        block_idx.x,
-        "]\tThread index: [",
-        thread_idx.x,
-        "]"
-    )
+    print(block_idx.x, thread_idx.x, sep="\t")
 ```
 
 ## 4. Compile and run the kernel
@@ -209,11 +199,10 @@ our GPU and then run it, specifying the number of thread blocks in the grid and
 the number of threads per thread block. For this initial example, let's define a
 grid consisting of 2 thread blocks, each with 64 threads.
 
-Modify the `main()` function and add `has_apple_gpu_accelerator()` to the list
-of imports from the `sys` module so that your program looks like this:
+Modify the `main()` function so that your program looks like this:
 
 ```mojo title="vector_addition.mojo"
-from std.sys import has_accelerator, has_apple_gpu_accelerator
+from std.sys import has_accelerator
 
 from std.gpu.host import DeviceContext
 from std.gpu import block_idx, thread_idx
@@ -222,24 +211,15 @@ from std.gpu import block_idx, thread_idx
 def print_threads():
     """Print thread IDs."""
 
-    print("Block index: [",
-        block_idx.x,
-        "]\tThread index: [",
-        thread_idx.x,
-        "]"
-    )
+    print(block_idx.x, thread_idx.x, sep="\t")
 
 
 def main() raises:
     comptime if not has_accelerator():
         print("No compatible GPU found")
-    elif has_apple_gpu_accelerator():
-        print(
-            "Printing from a kernel is not currently supported on Apple silicon"
-            " GPUs"
-        )
     else:
         ctx = DeviceContext()
+        print("block\tthread")
         ctx.enqueue_function[print_threads, print_threads](
             grid_dim=2, block_dim=64
         )
@@ -253,33 +233,30 @@ Save the file and run it:
 mojo vector_addition.mojo
 ```
 
-You should see something like the following output (which is abbreviated here):
+You should see something like the following output (which is abbreviated here).
+The kernel prints the block and thread index for each thread as tab-separated
+numeric values, with the `main()` function printing a header row before
+launching the kernel. The output order is indeterminate because the threads
+execute concurrently.
 
 ```output
-Block index: [ 1 ] Thread index: [ 32 ]
-Block index: [ 1 ] Thread index: [ 33 ]
-Block index: [ 1 ] Thread index: [ 34 ]
+block	thread
+1	32
+1	33
+1	34
 ...
-Block index: [ 0 ] Thread index: [ 30 ]
-Block index: [ 0 ] Thread index: [ 31 ]
+0	30
+0	31
 Program finished
 ```
 
-:::caution If you're completing this tutorial on macOS
+:::note Known limitation
 
-Printing from within a kernel function is not currently supported on Apple
-silicon GPUs. If you run this program on macOS, you'll see only the following
-output:
-
-```output
-Printing from a kernel is not currently supported on Apple silicon GPUs
-```
-
-If you're completing this tutorial on macOS, go ahead and read the rest of this
-step and the next step to learn the concepts of compiling and running a kernel.
-You'll be able to continue the hands-on portion of the tutorial starting with
-[6. Allocate host memory for the input vectors](#6-allocate-host-memory-for-the-input-vectors),
-where we'll begin writing a different kernel that doesn't use `print()`.
+On Apple silicon GPUs, each `print()` call inside a GPU kernel currently
+supports at most one string literal argument. To ensure readable output across
+all GPU platforms, the examples here print numeric values only, with the host
+printing column headers before launching the kernel. This restriction doesn't
+apply to NVIDIA or AMD GPUs.
 
 :::
 
@@ -381,7 +358,7 @@ all operations in its queue.
 
 ## 5. Manage grid dimensions
 
-The grid in the previous step consisted of a one-dimensional grid of 2 thread
+The previous step used a one-dimensional grid of 2 thread
 blocks with 64 threads in each block. However, you can also organize the thread
 blocks in a two- or three-dimensional grid. Similarly, you can arrange
 the threads in a thread block across one, two, or three dimensions. Typically,
@@ -409,18 +386,25 @@ components of the thread block and thread indices for each thread.
 def print_threads():
     """Print thread IDs."""
 
-    print("Block index: [",
-        block_idx.x, block_idx.y, block_idx.z,
-        "]\tThread index: [",
-        thread_idx.x, thread_idx.y, thread_idx.z,
-        "]"
+    print(
+        block_idx.x,
+        block_idx.y,
+        block_idx.z,
+        thread_idx.x,
+        thread_idx.y,
+        thread_idx.z,
+        sep="\t",
     )
 ```
 
-Then, update `main()` to enqueue the kernel function with a 2x2x1 grid of
-thread blocks and a 16x4x2 arrangement of threads within each thread block:
+Then, update `main()` to print column headers and enqueue the kernel function
+with a 2x2x1 grid of thread blocks and a 16x4x2 arrangement of threads within
+each thread block:
 
 ```mojo title="vector_addition.mojo"
+        print("block_idx\t\tthread_idx")
+        print("x\ty\tz", "x\ty\tz", sep="\t")
+        print("-" * 20, "-" * 20, sep="\t")
         ctx.enqueue_function[print_threads, print_threads](
             grid_dim=(2, 2, 1),
             block_dim=(16, 4, 2)
@@ -436,12 +420,15 @@ mojo vector_addition.mojo
 You should see something like the following output (which is abbreviated here):
 
 ```output
-Block index: [ 1 1 0 ] Thread index: [ 0 2 0 ]
-Block index: [ 1 1 0 ] Thread index: [ 1 2 0 ]
-Block index: [ 1 1 0 ] Thread index: [ 2 2 0 ]
+block_idx		thread_idx
+x	y	z	x	y	z
+--------------------	--------------------
+1	1	0	0	2	0
+1	1	0	1	2	0
+1	1	0	2	2	0
 ...
-Block index: [ 0 0 0 ] Thread index: [ 14 1 0 ]
-Block index: [ 0 0 0 ] Thread index: [ 15 1 0 ]
+0	0	0	14	1	0
+0	0	0	15	1	0
 Program finished
 ```
 
@@ -522,7 +509,7 @@ def main() raises:
         # Initialize the input vectors
         for i in range(vector_size):
             lhs_host_buffer[i] = Float32(i)
-            rhs_host_buffer[i] = Float32(Float64(i) * 0.5)
+            rhs_host_buffer[i] = Float32(i * 0.5)
 
         print("LHS buffer: ", lhs_host_buffer)
         print("RHS buffer: ", rhs_host_buffer)
@@ -634,7 +621,7 @@ the copy operations in the previous example with the following equivalent code:
 ## 8. Create `LayoutTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`LayoutTensor`](/mojo/kernels/layout/layout_tensor/LayoutTensor) view for each
+[`LayoutTensor`](/mojo/layout/layout_tensor/LayoutTensor) view for each
 of the vectors. `LayoutTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
@@ -650,7 +637,7 @@ First, add the following import to the top of the file:
 from layout import Layout, LayoutTensor
 ```
 
-A [`Layout`](/mojo/kernels/layout/layout/Layout) is a representation of memory
+A [`Layout`](/mojo/layout/layout/Layout) is a representation of memory
 layouts using shape and stride information, and it maps between logical
 coordinates and linear memory indices. We'll need to use the same `Layout`
 definition multiple times, so add the following `comptime` value to the top of

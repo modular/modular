@@ -43,11 +43,11 @@ def bench_argsort[
     ctx.enqueue_copy(device_input, input_host_ptr)
 
     var device_input_tensor = TileTensor(
-        device_input.unsafe_ptr(),
+        device_input,
         row_major(Idx(N)),
     )
     var device_indices_tensor = TileTensor(
-        device_indices.unsafe_ptr(),
+        device_indices,
         row_major(Idx(N)),
     )
 

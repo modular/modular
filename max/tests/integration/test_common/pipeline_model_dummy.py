@@ -85,7 +85,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextGenerationContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DummyModelInputs:
         """Prepares the initial inputs to be passed to `.execute()`.
@@ -167,6 +167,7 @@ class DummyPipelineModel(PipelineModelWithKVCache):  # type: ignore[type-arg]
         kv_cache_config: KVCacheConfig,
         cache_dtype: DType,
     ) -> KVCacheParams:
+        assert pipeline_config.model is not None
         num_kv_heads = cls._get_num_kv_heads(huggingface_config)
         hidden_size = cls._get_hidden_size(huggingface_config)
         head_dim = hidden_size // num_kv_heads
@@ -218,6 +219,7 @@ class DummyLlamaPipelineModel(DummyPipelineModel):
     def calculate_max_seq_len(
         cls, pipeline_config: PipelineConfig, huggingface_config: AutoConfig
     ) -> int:
+        assert pipeline_config.model is not None
         try:
             return upper_bounded_default(
                 upper_bound=huggingface_config.max_position_embeddings,
@@ -236,6 +238,7 @@ class DummyTextTokenizer(TextTokenizer):
     def __init__(
         self, model_path: str, pipeline_config: PipelineConfig, *args, **kwargs
     ) -> None:
+        assert pipeline_config.model is not None
         self.max_length = pipeline_config.model.max_length or 100
         self.delegate = DummyTextTokenizer.Delegate(max_length=self.max_length)
 

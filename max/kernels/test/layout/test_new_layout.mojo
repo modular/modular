@@ -14,6 +14,7 @@
 from layout import (
     ComptimeInt,
     Coord,
+    CoordLike,
     Idx,
     RuntimeInt,
     TileTensor,
@@ -119,14 +120,14 @@ def test_zipped_divide_layout() raises:
     comptime a = row_major[8, 16]()
     comptime b = Coord(Idx[2](), Idx[4]())
     comptime layout = ZippedDivideLayout[type_of(a), b.element_types]
-    assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
-    assert_equal(layout._shape_types[0].VariadicType[1].static_value, 4)
-    assert_equal(layout._shape_types[1].VariadicType[0].static_value, 4)
-    assert_equal(layout._shape_types[1].VariadicType[1].static_value, 4)
-    assert_equal(layout._stride_types[0].VariadicType[0].static_value, 16)
-    assert_equal(layout._stride_types[0].VariadicType[1].static_value, 1)
-    assert_equal(layout._stride_types[1].VariadicType[0].static_value, 32)
-    assert_equal(layout._stride_types[1].VariadicType[1].static_value, 4)
+    assert_equal(layout._shape_types[0].ParamListType[0].static_value, 2)
+    assert_equal(layout._shape_types[0].ParamListType[1].static_value, 4)
+    assert_equal(layout._shape_types[1].ParamListType[0].static_value, 4)
+    assert_equal(layout._shape_types[1].ParamListType[1].static_value, 4)
+    assert_equal(layout._stride_types[0].ParamListType[0].static_value, 16)
+    assert_equal(layout._stride_types[0].ParamListType[1].static_value, 1)
+    assert_equal(layout._stride_types[1].ParamListType[0].static_value, 32)
+    assert_equal(layout._stride_types[1].ParamListType[1].static_value, 4)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -349,22 +350,22 @@ def test_blocked_product_type_alias() raises:
     comptime layout = BlockedProductLayout[type_of(block), type_of(tiler)]
 
     # Mode 0: (block_shape[0], tiler_shape[0]) = (2, 2)
-    assert_equal(layout._shape_types[0].VariadicType[0].static_value, 2)
-    assert_equal(layout._shape_types[0].VariadicType[1].static_value, 2)
+    assert_equal(layout._shape_types[0].ParamListType[0].static_value, 2)
+    assert_equal(layout._shape_types[0].ParamListType[1].static_value, 2)
 
     # Mode 1: (block_shape[1], tiler_shape[1]) = (2, 3)
-    assert_equal(layout._shape_types[1].VariadicType[0].static_value, 2)
-    assert_equal(layout._shape_types[1].VariadicType[1].static_value, 3)
+    assert_equal(layout._shape_types[1].ParamListType[0].static_value, 2)
+    assert_equal(layout._shape_types[1].ParamListType[1].static_value, 3)
 
     # Mode 0 stride: (block_stride[0], cosize * tiler_stride[0]) = (2, 12)
     # block = row_major[2, 2](): stride = (2, 1), cosize = 4
     # tiler = row_major[2, 3](): stride = (3, 1)
-    assert_equal(layout._stride_types[0].VariadicType[0].static_value, 2)
-    assert_equal(layout._stride_types[0].VariadicType[1].static_value, 12)
+    assert_equal(layout._stride_types[0].ParamListType[0].static_value, 2)
+    assert_equal(layout._stride_types[0].ParamListType[1].static_value, 12)
 
     # Mode 1 stride: (block_stride[1], cosize * tiler_stride[1]) = (1, 4)
-    assert_equal(layout._stride_types[1].VariadicType[0].static_value, 1)
-    assert_equal(layout._stride_types[1].VariadicType[1].static_value, 4)
+    assert_equal(layout._stride_types[1].ParamListType[0].static_value, 1)
+    assert_equal(layout._stride_types[1].ParamListType[1].static_value, 4)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -565,13 +566,17 @@ def test_coord_flat_rank_deep_nesting() raises:
     """Test that flat_rank is correct for deeply nested Coords."""
     # Depth 1: Coord(Coord(1, 2), 3) -> flat_rank = 3
     comptime depth1 = Coord[
-        ComptimeInt[1], Coord[ComptimeInt[2], ComptimeInt[3]]
+        ComptimeInt[1],
+        Coord[ComptimeInt[2], ComptimeInt[3]],
     ]
     comptime assert depth1.flat_rank == 3
 
     # Depth 2: Coord(Coord(Coord(1, 2), 3), 4) -> flat_rank = 4
     comptime depth2 = Coord[
-        Coord[Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]],
+        Coord[
+            Coord[ComptimeInt[1], ComptimeInt[2]],
+            ComptimeInt[3],
+        ],
         ComptimeInt[4],
     ]
     comptime assert depth2.flat_rank == 4
@@ -579,7 +584,13 @@ def test_coord_flat_rank_deep_nesting() raises:
     # Depth 3: Coord(Coord(Coord(Coord(1, 2), 3), 4), 5) -> flat_rank = 5
     comptime depth3 = Coord[
         Coord[
-            Coord[Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]],
+            Coord[
+                Coord[
+                    ComptimeInt[1],
+                    ComptimeInt[2],
+                ],
+                ComptimeInt[3],
+            ],
             ComptimeInt[4],
         ],
         ComptimeInt[5],
@@ -1253,20 +1264,20 @@ def test_zipped_divide_layout_type_level() raises:
     comptime ZD = ZippedDivideLayout[RM, Tile]
 
     # inner_shape = tile
-    comptime assert ZD._shape_types[0].VariadicType[0].static_value == 2
-    comptime assert ZD._shape_types[0].VariadicType[1].static_value == 4
+    comptime assert ZD._shape_types[0].ParamListType[0].static_value == 2
+    comptime assert ZD._shape_types[0].ParamListType[1].static_value == 4
 
     # outer_shape = shape / tile
-    comptime assert ZD._shape_types[1].VariadicType[0].static_value == 4
-    comptime assert ZD._shape_types[1].VariadicType[1].static_value == 4
+    comptime assert ZD._shape_types[1].ParamListType[0].static_value == 4
+    comptime assert ZD._shape_types[1].ParamListType[1].static_value == 4
 
     # inner_stride = original stride
-    comptime assert ZD._stride_types[0].VariadicType[0].static_value == 16
-    comptime assert ZD._stride_types[0].VariadicType[1].static_value == 1
+    comptime assert ZD._stride_types[0].ParamListType[0].static_value == 16
+    comptime assert ZD._stride_types[0].ParamListType[1].static_value == 1
 
     # outer_stride = stride * tile
-    comptime assert ZD._stride_types[1].VariadicType[0].static_value == 32
-    comptime assert ZD._stride_types[1].VariadicType[1].static_value == 4
+    comptime assert ZD._stride_types[1].ParamListType[0].static_value == 32
+    comptime assert ZD._stride_types[1].ParamListType[1].static_value == 4
 
     # Default-init produces a usable layout.
     var layout = ZD()
@@ -1295,20 +1306,20 @@ def test_upcast_then_zipped_divide_type_level() raises:
     comptime ZD = ZippedDivideLayout[Up, Tile]
 
     # inner shape = tile = (2, 2)
-    comptime assert ZD._shape_types[0].VariadicType[0].static_value == 2
-    comptime assert ZD._shape_types[0].VariadicType[1].static_value == 2
+    comptime assert ZD._shape_types[0].ParamListType[0].static_value == 2
+    comptime assert ZD._shape_types[0].ParamListType[1].static_value == 2
 
     # outer shape = (4/2, 4/2) = (2, 2)
-    comptime assert ZD._shape_types[1].VariadicType[0].static_value == 2
-    comptime assert ZD._shape_types[1].VariadicType[1].static_value == 2
+    comptime assert ZD._shape_types[1].ParamListType[0].static_value == 2
+    comptime assert ZD._shape_types[1].ParamListType[1].static_value == 2
 
     # inner stride = upcast stride = (4, 1)
-    comptime assert ZD._stride_types[0].VariadicType[0].static_value == 4
-    comptime assert ZD._stride_types[0].VariadicType[1].static_value == 1
+    comptime assert ZD._stride_types[0].ParamListType[0].static_value == 4
+    comptime assert ZD._stride_types[0].ParamListType[1].static_value == 1
 
     # outer stride = upcast stride * tile = (4*2, 1*2) = (8, 2)
-    comptime assert ZD._stride_types[1].VariadicType[0].static_value == 8
-    comptime assert ZD._stride_types[1].VariadicType[1].static_value == 2
+    comptime assert ZD._stride_types[1].ParamListType[0].static_value == 8
+    comptime assert ZD._stride_types[1].ParamListType[1].static_value == 2
 
 
 def test_coalesced_blocked_product_1d() raises:
@@ -1344,16 +1355,16 @@ def test_coalesced_blocked_product_no_coalesce() raises:
     comptime C = BlockedProductLayout[Block, Tiler, coalesce_output=True]
 
     # Mode 0: nested shape (2, 2), stride (2, 12)
-    comptime assert C._shape_types[0].VariadicType[0].static_value == 2
-    comptime assert C._shape_types[0].VariadicType[1].static_value == 2
-    comptime assert C._stride_types[0].VariadicType[0].static_value == 2
-    comptime assert C._stride_types[0].VariadicType[1].static_value == 12
+    comptime assert C._shape_types[0].ParamListType[0].static_value == 2
+    comptime assert C._shape_types[0].ParamListType[1].static_value == 2
+    comptime assert C._stride_types[0].ParamListType[0].static_value == 2
+    comptime assert C._stride_types[0].ParamListType[1].static_value == 12
 
     # Mode 1: nested shape (2, 3), stride (1, 4)
-    comptime assert C._shape_types[1].VariadicType[0].static_value == 2
-    comptime assert C._shape_types[1].VariadicType[1].static_value == 3
-    comptime assert C._stride_types[1].VariadicType[0].static_value == 1
-    comptime assert C._stride_types[1].VariadicType[1].static_value == 4
+    comptime assert C._shape_types[1].ParamListType[0].static_value == 2
+    comptime assert C._shape_types[1].ParamListType[1].static_value == 3
+    comptime assert C._stride_types[1].ParamListType[0].static_value == 1
+    comptime assert C._stride_types[1].ParamListType[1].static_value == 4
 
 
 def test_coalesced_blocked_product_partial() raises:
@@ -1373,10 +1384,10 @@ def test_coalesced_blocked_product_partial() raises:
     comptime assert C._stride_types[0].static_value == 4
 
     # Mode 1: not coalesced — nested Coord.
-    comptime assert C._shape_types[1].VariadicType[0].static_value == 4
-    comptime assert C._shape_types[1].VariadicType[1].static_value == 2
-    comptime assert C._stride_types[1].VariadicType[0].static_value == 1
-    comptime assert C._stride_types[1].VariadicType[1].static_value == 24
+    comptime assert C._shape_types[1].ParamListType[0].static_value == 4
+    comptime assert C._shape_types[1].ParamListType[1].static_value == 2
+    comptime assert C._stride_types[1].ParamListType[0].static_value == 1
+    comptime assert C._stride_types[1].ParamListType[1].static_value == 24
 
 
 def test_write_to_static() raises:
@@ -1393,7 +1404,8 @@ def test_weakly_compatible_scalar_coord() raises:
     """Scalar coord elements are always compatible with any layout."""
     comptime L = type_of(row_major[3, 4]())
     comptime assert WeaklyCompatible[
-        L, Coord[ComptimeInt[5], ComptimeInt[7]].element_types
+        L,
+        Coord[ComptimeInt[5], ComptimeInt[7]].element_types,
     ]
     comptime assert WeaklyCompatible[
         L,
@@ -1405,7 +1417,8 @@ def test_weakly_compatible_flat_match() raises:
     """Flat coord types with matching rank is compatible."""
     comptime L = type_of(row_major[3, 4]())
     comptime assert WeaklyCompatible[
-        L, Coord[ComptimeInt[2], ComptimeInt[3]].element_types
+        L,
+        Coord[ComptimeInt[2], ComptimeInt[3]].element_types,
     ]
 
 
@@ -1423,7 +1436,8 @@ def test_weakly_compatible_1d_layout() raises:
     comptime L = type_of(row_major[8]())
     comptime assert WeaklyCompatible[L, Coord[ComptimeInt[4]].element_types]
     comptime assert not WeaklyCompatible[
-        L, Coord[ComptimeInt[2], ComptimeInt[4]].element_types
+        L,
+        Coord[ComptimeInt[2], ComptimeInt[4]].element_types,
     ]
 
 
@@ -1447,7 +1461,11 @@ def test_weakly_compatible_nested_depth2() raises:
     comptime assert not WeaklyCompatible[
         L,
         Coord[
-            Coord[ComptimeInt[1], ComptimeInt[1], ComptimeInt[1]],
+            Coord[
+                ComptimeInt[1],
+                ComptimeInt[1],
+                ComptimeInt[1],
+            ],
             Coord[ComptimeInt[1], ComptimeInt[1]],
         ].element_types,
     ]
@@ -1462,7 +1480,8 @@ def test_weakly_compatible_mixed_scalar_and_tuple() raises:
 
     # Outer rank matches (2 modes), but sub-coords are scalar — compatible.
     comptime assert WeaklyCompatible[
-        L, Coord[ComptimeInt[5], ComptimeInt[7]].element_types
+        L,
+        Coord[ComptimeInt[5], ComptimeInt[7]].element_types,
     ]
 
 
@@ -1492,7 +1511,8 @@ def test_weakly_compatible_coord_tuple_vs_layout_scalar() raises:
     comptime assert not WeaklyCompatible[
         L,
         Coord[
-            Coord[ComptimeInt[1], ComptimeInt[2]], ComptimeInt[3]
+            Coord[ComptimeInt[1], ComptimeInt[2]],
+            ComptimeInt[3],
         ].element_types,
     ]
 
@@ -1516,7 +1536,8 @@ def test_weakly_compatible_not_symmetric() raises:
     comptime assert not WeaklyCompatible[
         flat_L,
         Coord[
-            Coord[ComptimeInt[1], ComptimeInt[1]], ComptimeInt[1]
+            Coord[ComptimeInt[1], ComptimeInt[1]],
+            ComptimeInt[1],
         ].element_types,
     ]
 

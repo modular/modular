@@ -7,7 +7,7 @@ def custom_op_example_py_binary(
         srcs,
         extra_data = [],
         extra_deps = [],
-        target_compatible_with = None,
+        target_compatible_with = [],
         tags = []):
     modular_py_binary(
         name = name,
@@ -19,7 +19,6 @@ def custom_op_example_py_binary(
         mojo_deps = [
             "//max:compiler",
             "//max:layout",
-            "//max:MOGGKernelAPI",
             "//max:tensor",
             "@mojo//:std",
         ],
@@ -46,4 +45,5 @@ def custom_op_example_py_binary(
         args = [],
         binary = name,
         tags = ["gpu"] + tags,
+        target_compatible_with = target_compatible_with,
     )

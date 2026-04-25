@@ -80,12 +80,16 @@ class KVConnector(Protocol):
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
         """Queue device blocks for save to external cache.
 
         Args:
             block_ids: Device block IDs to save.
             block_hashes: Hashes for the blocks being saved.
+            parent_seq_hash: Hash of the parent block for the first block
+                in this sequence (0 means root). Subsequent blocks chain
+                to their predecessor within the sequence.
         """
         ...
 
@@ -122,7 +126,7 @@ class KVConnector(Protocol):
 
     def reset_prefix_cache(self) -> None:
         """Reset prefix cache. No-op by default."""
-        ...
+        return None
 
     @property
     def metrics(self) -> KVCacheMetrics:

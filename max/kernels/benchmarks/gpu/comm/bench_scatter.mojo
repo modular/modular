@@ -133,7 +133,7 @@ def bench_scatter[
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     for gpu_idx in range(ngpus):
@@ -150,24 +150,22 @@ def bench_scatter[
         )
 
     # Build TileTensor arrays for the scatter API.
-    comptime InputTileType = type_of(
-        TileTensor(
-            cb_inputs[0].unsafe_ptr(), row_major(Idx(num_elems))
-        ).as_immut()
-    )
+    comptime InputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(num_elems))), ImmutAnyOrigin
+    ]
     var tt_in_bufs = InlineArray[InputTileType, dp_size](uninitialized=True)
     for dp_idx in range(dp_size):
         tt_in_bufs[dp_idx] = TileTensor(
-            cb_inputs[dp_idx].unsafe_ptr(), row_major(Idx(num_elems))
+            cb_inputs[dp_idx].device_buffer(), row_major(Idx(num_elems))
         ).as_immut()
 
-    comptime OutputTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(num_elems)))
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(num_elems))), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
     for gpu_idx in range(ngpus):
         out_tiles[gpu_idx] = OutputTileType(
-            out_bufs_list[gpu_idx].unsafe_ptr(), row_major(Idx(num_elems))
+            out_bufs_list[gpu_idx], row_major(Idx(num_elems))
         )
         list_of_ctx[gpu_idx].synchronize()
 

@@ -91,7 +91,7 @@ def test_conv_transposed_cudnn[
     # Create host TileTensors for NHWC
     var input_host = TileTensor(input_host_ptr, input_layout)
     var filter_host = TileTensor(filter_host_ptr, filter_layout)
-    var output_host = TileTensor(output_host_ptr, output_layout)
+    var _output_host = TileTensor(output_host_ptr, output_layout)
     var output_ref_host = TileTensor(output_ref_host_ptr, output_layout)
 
     random(input_host)
@@ -168,17 +168,17 @@ def test_conv_transposed_cudnn[
     # Invoke cuDNN helper.
     conv_transposed_cudnn[dtype, dtype, dtype](
         TileTensor(
-            d_input.unsafe_ptr(),
+            d_input,
             row_major(Coord(IndexList[4](1, in_channels, 1, input_len))),
         ),  # dy (input grad)
         TileTensor(
-            d_filter.unsafe_ptr(),
+            d_filter,
             row_major(
                 Coord(IndexList[4](in_channels, out_channels, 1, kernel_len))
             ),
         ),  # w (filter)
         TileTensor(
-            d_output.unsafe_ptr(),
+            d_output,
             row_major(Coord(IndexList[4](1, out_channels, 1, output_len))),
         ),  # dx (output)
         stride_hw,

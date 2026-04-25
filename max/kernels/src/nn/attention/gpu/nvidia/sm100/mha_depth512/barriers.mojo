@@ -10,30 +10,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Barrier infrastructure for depth=512 pair-CTA SM100 attention kernels.
+"""Barrier infrastructure for depth=256/512 pair-CTA SM100 attention kernels.
 
 Manages all mbarrier resources for the warp-specialized kernel. Each CTA has
 12 warps (384 threads, 3 warp groups of 128) divided into 4 warp kinds:
 softmax (warps 0-3, 128 threads), correction (warps 4-7, 128 threads),
 MMA (warp 8), load (warp 9), and spare (warps 10-11).
 
-O is split into two halves (O_lo, O_hi) produced by separate P@V MMA
-instructions (MMA_N=ov_depth/2 each). Each half has its own commit barrier
-(O_mma_lo, O_mma_hi) and ready barrier (PO_lo, PO_hi), enabling the
-correction warp to rescale O_lo while the MMA is still producing O_hi.
+When split_o=True (depth=512), O is split into O_lo/O_hi with separate commit
+barriers (O_mma_lo, O_mma_hi) and ready barriers (PO_lo, PO_hi). When
+split_o=False (depth=256), PO_hi and O_mma_hi are eliminated (8 fixed
+barriers instead of 10).
 
-Barrier layout (low to high index):
-    [0]   PO_lo           (count-256: softmax 128 + correction 128)
-    [1]   PO_hi           (count-128: correction 128 only)
-    [2]   S_even consumer (count-128: softmax 4 warps)
-    [3]   S_odd consumer  (count-128: softmax 4 warps)
-    [4]   C producer      (count-128: softmax 4 warps)
-    [5]   C consumer      (count-128: correction 4 warps)
+Barrier layout (split_o=True, 10 fixed):
+    [0]   PO_lo           (count-512: softmax 128×2 CTAs + correction 128×2 CTAs)
+    [1]   PO_hi           (count-256: correction 128×2 CTAs)
+    [2]   S_even consumer (count-256: softmax 128×2 CTAs)
+    [3]   S_odd consumer  (count-256: softmax 128×2 CTAs)
+    [4]   C producer      (count-128: softmax 4 warps, CTA-local)
+    [5]   C consumer      (count-128: correction 4 warps, CTA-local)
     [6]   S_even producer (count-1: MMA mma_arrive)
     [7]   S_odd producer  (count-1: MMA mma_arrive)
     [8]   O_mma_lo        (count-1: MMA mma_arrive after V_lo stages)
     [9]   O_mma_hi        (count-1: MMA mma_arrive after V_hi stages)
     [10..] KV pipeline    (count-1: 2 per stage, producer+consumer pairs)
+
+Barrier layout (split_o=False, 8 fixed):
+    [0]   PO_lo           (count-512)
+    [1]   S_even consumer (count-256)
+    [2]   S_odd consumer  (count-256)
+    [3]   C producer      (count-128)
+    [4]   C consumer      (count-128)
+    [5]   S_even producer (count-1)
+    [6]   S_odd producer  (count-1)
+    [7]   O_mma_lo        (count-1)
+    [8..] KV pipeline     (count-1: 2 per stage)
 
 Synchronization flow per KV iteration (even S buffer):
     Load:       TMA K/V sub-tile → arrive KV[stage] producer
@@ -59,37 +70,53 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
 
 struct Depth512MBars[
     num_kv_stages: Int,
+    split_o: Bool = True,
 ](TrivialRegisterPassable):
-    """Manages all mbarrier resources for depth=512 pair-CTA attention.
+    """Manages all mbarrier resources for depth=256/512 pair-CTA attention.
 
     Parameters:
         num_kv_stages: Number of fused KV pipeline buffer slots.
+        split_o: True for depth=512 (O_lo/O_hi split, 10 fixed barriers),
+            False for depth=256 (single O, 8 fixed barriers).
     """
 
-    # ---- comptime barrier offsets ---------------------------------------------
-    # Count-256 (index 0).
+    # ---- Conditional barrier counts ------------------------------------------
+    comptime _num_po_hi: Int = 1 if Self.split_o else 0
+    comptime _num_o_mma_hi: Int = 1 if Self.split_o else 0
+
+    # ---- comptime barrier offsets (additive chain) ---------------------------
+    # Count-512 (PO_lo always at index 0).
     comptime PO_lo_offset: Int = 0
 
-    # Count-128 section (indices 1-5).
-    comptime PO_hi_offset: Int = 1
-    comptime S_even_consumer_offset: Int = 2
-    comptime S_odd_consumer_offset: Int = 3
-    comptime C_producer_offset: Int = 4
-    comptime C_consumer_offset: Int = 5
+    # PO_hi: only present when split_o.
+    comptime PO_hi_offset: Int = Self.PO_lo_offset + 1  # valid only when split_o
 
-    # Count-1 section (indices 6-9).
-    comptime S_even_producer_offset: Int = 6
-    comptime S_odd_producer_offset: Int = 7
-    comptime O_mma_lo_offset: Int = 8
-    comptime O_mma_hi_offset: Int = 9
+    # Count-256 section (S consumers).
+    comptime S_even_consumer_offset: Int = Self.PO_lo_offset + 1 + Self._num_po_hi
+    comptime S_odd_consumer_offset: Int = Self.S_even_consumer_offset + 1
+
+    # Count-128 section (C producer/consumer).
+    comptime C_producer_offset: Int = Self.S_odd_consumer_offset + 1
+    comptime C_consumer_offset: Int = Self.C_producer_offset + 1
+
+    # Count-1 section (S producers, O MMA barriers).
+    comptime S_even_producer_offset: Int = Self.C_consumer_offset + 1
+    comptime S_odd_producer_offset: Int = Self.S_even_producer_offset + 1
+    comptime O_mma_lo_offset: Int = Self.S_odd_producer_offset + 1
+    comptime O_mma_hi_offset: Int = Self.O_mma_lo_offset + 1  # valid only when split_o
+
+    # Number of fixed barriers: 10 when split_o, 8 otherwise.
+    comptime num_fixed: Int = Self.O_mma_lo_offset + 1 + Self._num_o_mma_hi
 
     # KV pipeline barriers (count-1, 2 per stage).
-    comptime KV_offset: Int = 10
+    comptime KV_offset: Int = Self.num_fixed
     comptime KV_barriers: Int = 2 * Self.num_kv_stages
 
     # Totals.
-    comptime num_high_count_barriers: Int = 6  # indices 0-5 are count >= 128
-    comptime size: Int = 10 + Self.KV_barriers
+    # Barriers with count >= 128: PO_lo, [PO_hi], S_even_cons, S_odd_cons,
+    # C_prod, C_cons.
+    comptime num_high_count_barriers: Int = 5 + Self._num_po_hi
+    comptime size: Int = Self.num_fixed + Self.KV_barriers
 
     # ---- storage --------------------------------------------------------------
     var mbar_base: MBarType
@@ -109,12 +136,15 @@ struct Depth512MBars[
     def _init_count(lane_idx: Int32) -> Int32:
         """Return mbarrier thread count for the given barrier index.
 
-        Index 0: count-256 (PO_lo: softmax 128 + correction 128).
-        Index 1: count-128 (PO_hi: correction 128 only).
-        Indices 2-5: count-128 (S consumers, C producer, C consumer).
-        Indices 6+: count-1 (S producers, O mma lo/hi, KV pipeline).
+        PO_lo: count-512 (softmax 128×2 + correction 128×2).
+        PO_hi (split_o only): count-256 (correction 128×2).
+        S_even/S_odd consumers: count-256 (softmax 128×2).
+        C producer/consumer: count-128 (CTA-local).
+        Everything else (S producers, O mma, KV pipeline): count-1.
         """
         if lane_idx == Int32(Self.PO_lo_offset):
+            return 512
+        if lane_idx < Int32(Self.C_producer_offset):
             return 256
         if lane_idx < Int32(Self.num_high_count_barriers):
             return 128

@@ -248,50 +248,50 @@ def run_selective_scan_gpu[
             )
         ),
     )
-    var delta_bias_cpu_buf = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var _delta_bias_cpu_buf = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         delta_bias_h, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
 
     # Create LayoutTensors for GPU
-    var output_gpu_buf = LayoutTensor[dtype, layout_3d](
+    var _output_gpu_buf = LayoutTensor[dtype, layout_3d](
         output_gpu_d,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    var x_gpu_buf = LayoutTensor[dtype, layout_4d](
+    var _x_gpu_buf = LayoutTensor[dtype, layout_4d](
         x_gpu_d,
         RuntimeLayout[layout_4d].row_major(
             Index(batch, dim, n_chunks, 2 * dstate)
         ),
     )
-    var out_z_gpu_buf = LayoutTensor[dtype, layout_3d](
+    var _out_z_gpu_buf = LayoutTensor[dtype, layout_3d](
         out_z_gpu_d,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    var u_gpu_buf = LayoutTensor[dtype, layout_3d](
+    var _u_gpu_buf = LayoutTensor[dtype, layout_3d](
         u_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
-    var delta_gpu_buf = LayoutTensor[dtype, layout_3d](
+    var _delta_gpu_buf = LayoutTensor[dtype, layout_3d](
         delta_d, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
-    var A_gpu_buf = LayoutTensor[dtype, layout_2d](
+    var _A_gpu_buf = LayoutTensor[dtype, layout_2d](
         A_d, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
-    var B_gpu_buf = LayoutTensor[dtype, layout_4d](
+    var _B_gpu_buf = LayoutTensor[dtype, layout_4d](
         B_d,
         RuntimeLayout[layout_4d].row_major(
             Index(batch, n_groups, dstate, seqlen)
         ),
     )
-    var C_gpu_buf = LayoutTensor[dtype, layout_4d](
+    var _C_gpu_buf = LayoutTensor[dtype, layout_4d](
         C_d,
         RuntimeLayout[layout_4d].row_major(
             Index(batch, n_groups, dstate, seqlen)
         ),
     )
-    var D_gpu_buf = LayoutTensor[dtype, layout_1d](
+    var _D_gpu_buf = LayoutTensor[dtype, layout_1d](
         D_d, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
-    var z_gpu_buf = LayoutTensor[dtype, layout_3d](
+    var _z_gpu_buf = LayoutTensor[dtype, layout_3d](
         z_d,
         RuntimeLayout[layout_3d].row_major(
             Index(
@@ -301,7 +301,7 @@ def run_selective_scan_gpu[
             )
         ),
     )
-    var delta_bias_gpu_buf = LayoutTensor[dtype, layout_1d](
+    var _delta_bias_gpu_buf = LayoutTensor[dtype, layout_1d](
         delta_bias_d, RuntimeLayout[layout_1d].row_major(Index(delta_bias_size))
     )
 
@@ -409,45 +409,45 @@ def run_selective_scan_gpu[
 
     # Create TileTensors for GPU kernel
     var output_gpu_tt = TileTensor(
-        output_gpu_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        output_gpu_d,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var x_gpu_tt = TileTensor(
-        x_gpu_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        x_gpu_d,
         row_major(Idx(batch), Idx(dim), Idx(n_chunks), Idx(2 * dstate)),
     )
     var out_z_gpu_tt = TileTensor(
-        out_z_gpu_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        out_z_gpu_d,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var u_gpu_tt = TileTensor(
-        u_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        u_d,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var delta_gpu_tt = TileTensor(
-        delta_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        delta_d,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var A_gpu_tt = TileTensor(
-        A_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        A_d,
         row_major(Idx(dim), Idx(dstate)),
     )
     var B_gpu_tt = TileTensor(
-        B_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        B_d,
         row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
     )
     var C_gpu_tt = TileTensor(
-        C_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        C_d,
         row_major(Idx(batch), Idx(n_groups), Idx(dstate), Idx(seqlen)),
     )
     var D_gpu_tt = TileTensor(
-        D_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        D_d,
         row_major(
             Idx(D_size),
         ),
     )
     var z_gpu_tt = TileTensor(
-        z_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        z_d,
         row_major(
             (
                 Idx(batch if has_z else 0),
@@ -457,7 +457,7 @@ def run_selective_scan_gpu[
         ),
     )
     var delta_bias_gpu_tt = TileTensor(
-        delta_bias_d.unsafe_ptr().bitcast[Scalar[dtype]](),
+        delta_bias_d,
         row_major(
             Idx(delta_bias_size),
         ),
@@ -746,7 +746,7 @@ def run_selective_scan_update_gpu[
             Index(batch if has_z else 0, dim if has_z else 0)
         ),
     )
-    var dt_bias_device_tensor = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var _dt_bias_device_tensor = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
         dt_bias_device.unsafe_ptr(),
         RuntimeLayout[layout_1d].row_major(Index(dt_bias_size)),
     )
@@ -766,45 +766,45 @@ def run_selective_scan_update_gpu[
 
     # Create TileTensors for GPU kernel
     var state_in_device_tt = TileTensor(
-        state_in_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        state_in_device,
         row_major(Idx(batch), Idx(dim), Idx(dstate)),
     )
     var state_out_device_tt = TileTensor(
-        state_out_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        state_out_device,
         row_major(Idx(batch), Idx(dim), Idx(dstate)),
     )
     var output_device_tt = TileTensor(
-        output_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        output_device,
         row_major(Idx(batch), Idx(dim)),
     )
     var x_device_tt = TileTensor(
-        x_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        x_device,
         row_major(Idx(batch), Idx(dim)),
     )
     var dt_device_tt = TileTensor(
-        dt_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        dt_device,
         row_major(Idx(batch), Idx(dim)),
     )
     var A_device_tt = TileTensor(
-        A_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        A_device,
         row_major(Idx(dim), Idx(dstate)),
     )
     var B_device_tt = TileTensor(
-        B_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        B_device,
         row_major(Idx(batch), Idx(n_groups), Idx(dstate)),
     )
     var C_device_tt = TileTensor(
-        C_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        C_device,
         row_major(Idx(batch), Idx(n_groups), Idx(dstate)),
     )
     var D_device_tt = TileTensor(
-        D_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        D_device,
         row_major(
             Idx(D_size),
         ),
     )
     var z_device_tt = TileTensor(
-        z_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        z_device,
         row_major(
             (
                 Idx(batch if has_z else 0),
@@ -813,7 +813,7 @@ def run_selective_scan_update_gpu[
         ),
     )
     var dt_bias_device_tt = TileTensor(
-        dt_bias_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        dt_bias_device,
         row_major(
             Idx(dt_bias_size),
         ),

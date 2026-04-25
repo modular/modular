@@ -49,6 +49,7 @@ def serve_main() -> None:
     )
     from max.pipelines import PipelineConfig
     from max.pipelines.lib.config.model_config import MAXModelConfig
+    from max.pipelines.lib.model_manifest import ModelManifest
     from max.serve.config import Settings
 
     settings = Settings(
@@ -57,10 +58,14 @@ def serve_main() -> None:
     )
     # Configure pipeline with GGUF model for fast loading on CPU
     pipeline_config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=MODEL,
-            device_specs=[DeviceSpec.cpu()],
-            quantization_encoding="float32",
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig(
+                    model_path=MODEL,
+                    device_specs=[DeviceSpec.cpu()],
+                    quantization_encoding="float32",
+                )
+            }
         ),
     )
     # Launch server (blocks until shutdown)
