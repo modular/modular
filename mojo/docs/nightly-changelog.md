@@ -433,6 +433,9 @@ This version is still a work in progress.
 - `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
   or `String.count_codepoints()`.
 
+- `Span.__eq__` now uses `memcmp` for integer and boolean element types
+  instead of an element-by-element loop.
+
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
   `and_then()` chains operations that themselves return an `Optional`, enabling

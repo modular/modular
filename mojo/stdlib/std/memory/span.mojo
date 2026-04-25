@@ -23,17 +23,41 @@ from std.builtin.builtin_slice import ContiguousSlice
 from std.reflection import call_location
 from std.bit.mask import splat
 from std.bit import pop_count
-from std.memory import pack_bits, uninit_copy_n
+from std.memory import memcmp, pack_bits, uninit_copy_n
 from std.collections import check_bounds
 from std.builtin.rebind import downcast
-from std.sys import align_of
+from std.sys import align_of, size_of
 from std.sys.info import simd_width_of
+from std.sys.intrinsics import _type_is_eq
 
 from std.algorithm import vectorize
 from std.hashlib import Hasher
 from std.builtin.device_passable import DevicePassable
 from std.compile import get_type_name
 import std.format._utils as fmt
+
+
+fn _is_bitwise_eq_comparable[T: Equatable]() -> Bool:
+    """Returns True if the type has bitwise equality semantics.
+
+    This is true for integer and boolean types, where `memcmp` can safely
+    replace element-wise comparison. Float types are excluded because
+    IEEE 754 requires NaN != NaN and +0.0 == -0.0, which differ from
+    bitwise comparison.
+    """
+    return (
+        _type_is_eq[T, Byte]()
+        or _type_is_eq[T, Int8]()
+        or _type_is_eq[T, UInt16]()
+        or _type_is_eq[T, Int16]()
+        or _type_is_eq[T, UInt32]()
+        or _type_is_eq[T, Int32]()
+        or _type_is_eq[T, UInt64]()
+        or _type_is_eq[T, Int64]()
+        or _type_is_eq[T, UInt]()
+        or _type_is_eq[T, Int]()
+        or _type_is_eq[T, Bool]()
+    )
 
 
 # ===-----------------------------------------------------------------------===#
@@ -618,6 +642,16 @@ struct Span[
         # same pointer and length, so equal
         if self.unsafe_ptr() == rhs.unsafe_ptr():
             return True
+        # Fast path: use memcmp for types with bitwise equality semantics.
+        comptime if _is_bitwise_eq_comparable[_T]():
+            return (
+                memcmp(
+                    self.unsafe_ptr().bitcast[Byte](),
+                    rhs.unsafe_ptr().bitcast[Byte](),
+                    len(self) * size_of[_T](),
+                )
+                == 0
+            )
         for i in range(len(self)):
             if self[i] != rhs[i]:
                 return False
