@@ -1035,6 +1035,22 @@ def main() raises:
             atol=2e-2,
         ](ctx)
 
+        # End-to-end dispatch at batch=2 through a Q-slice-eligible
+        # shape (bf16, stride=1, zero temporal pad, C_in and C_out
+        # both 64-aligned, Q>1). Guards against the batch-stride class
+        # of bugs where the qslice outer batch loop uses the wrong
+        # per-n input offset.
+        test_conv3d_gpu_dispatch[
+            Layout.row_major(2, 5, 6, 6, 192),
+            Layout.row_major(3, 3, 3, 192, 192),
+            DType.bfloat16,
+            IndexList[3](1, 1, 1),
+            IndexList[3](1, 1, 1),
+            IndexList[3](0, 1, 1),
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
         # Direct dispatch of the 1x1x1 matmul path with + without
         # epilogue, over the post_quant_conv shape. Validates the
         # 2D->5D coord-unpack closure and confirms no-scratch allocation.

@@ -28,6 +28,9 @@ from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
 from nn.conv.conv import conv3d_gpu_naive_ndhwc_qrscf, conv3d_cudnn
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
+from nn.conv.gpu.nvidia.sm100.qslice_conv3d import (
+    dispatch_qslice_conv3d_sm100,
+)
 
 from std.utils.index import IndexList
 
@@ -177,6 +180,7 @@ def bench_conv3d[
     var output_naive_dev = ctx.enqueue_create_buffer[dtype](output_size)
     var output_im2col_dev = ctx.enqueue_create_buffer[dtype](output_size)
     var output_1x1x1_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_qslice_dev = ctx.enqueue_create_buffer[dtype](output_size)
     var output_cudnn_dev = ctx.enqueue_create_buffer[dtype](output_size)
 
     ctx.enqueue_copy(input_dev, input_host)
@@ -226,6 +230,12 @@ def bench_conv3d[
     )
     var output_1x1x1_tt = TileTensor(
         output_1x1x1_dev.unsafe_ptr(),
+        row_major(
+            Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
+        ),
+    )
+    var output_qslice_tt = TileTensor(
+        output_qslice_dev.unsafe_ptr(),
         row_major(
             Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
         ),
@@ -283,6 +293,18 @@ def bench_conv3d[
             input_tt,
             filter_qrscf_tt,
             output_1x1x1_tt,
+            stride_idx,
+            dilation_idx,
+            pad_idx,
+            1,
+            ctx,
+        )
+        _ = dispatch_qslice_conv3d_sm100[
+            dtype, dtype, dtype, filter_is_fcrs=False
+        ](
+            input_tt,
+            filter_qrscf_tt,
+            output_qslice_tt,
             stride_idx,
             dilation_idx,
             pad_idx,
@@ -401,6 +423,46 @@ def bench_conv3d[
         p1x1x1_ms = Float64(p1x1x1_ns) / 1e6 / Float64(num_iters)
         p1x1x1_tflops = Float64(flops) / (p1x1x1_ms / 1000) / 1e12
 
+    # Probe once for the Q-slice SM100 path. Declines unless C_in%64==0,
+    # C_out%128==0, Q>1, stride=1, dilation=1, pad_q=0, bf16.
+    var qslice_handled = dispatch_qslice_conv3d_sm100[
+        dtype, dtype, dtype, filter_is_fcrs=False
+    ](
+        input_tt,
+        filter_qrscf_tt,
+        output_qslice_tt,
+        stride_idx,
+        dilation_idx,
+        pad_idx,
+        1,
+        ctx,
+    )
+    ctx.synchronize()
+
+    var qslice_ms: Float64 = 0.0
+    var qslice_tflops: Float64 = 0.0
+    if qslice_handled:
+
+        @parameter
+        @__copy_capture(input_tt, filter_qrscf_tt, output_qslice_tt)
+        def qslice_bench() raises:
+            _ = dispatch_qslice_conv3d_sm100[
+                dtype, dtype, dtype, filter_is_fcrs=False
+            ](
+                input_tt,
+                filter_qrscf_tt,
+                output_qslice_tt,
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
+            )
+
+        var qslice_ns = ctx.execution_time[qslice_bench](num_iters)
+        qslice_ms = Float64(qslice_ns) / 1e6 / Float64(num_iters)
+        qslice_tflops = Float64(flops) / (qslice_ms / 1000) / 1e12
+
     @parameter
     @__copy_capture(input_buf, filter_fcqrs_buf, output_cudnn_buf)
     def cudnn_bench() raises:
@@ -469,6 +531,22 @@ def bench_conv3d[
         output_1x1x1_host.free()
         output_cudnn_host3.free()
 
+    var max_diff_qslice_vs_cudnn: Float32 = 0.0
+    if qslice_handled:
+        var output_qslice_host = alloc[Scalar[dtype]](output_size)
+        var output_cudnn_host4 = alloc[Scalar[dtype]](output_size)
+        ctx.enqueue_copy(output_qslice_host, output_qslice_dev)
+        ctx.enqueue_copy(output_cudnn_host4, output_cudnn_dev)
+        ctx.synchronize()
+        for i in range(output_size):
+            var a = output_qslice_host[i].cast[DType.float32]()
+            var b = output_cudnn_host4[i].cast[DType.float32]()
+            var d1 = abs(a - b)
+            if d1 > max_diff_qslice_vs_cudnn:
+                max_diff_qslice_vs_cudnn = d1
+        output_qslice_host.free()
+        output_cudnn_host4.free()
+
     print(
         "  Naive Mojo : ",
         naive_ms,
@@ -502,6 +580,20 @@ def bench_conv3d[
             "  1x1x1 mm   : (dispatcher declined; not a 1x1x1 / s=1 / p=0"
             " shape)"
         )
+    if qslice_handled:
+        print(
+            "  qslice sm100: ",
+            qslice_ms,
+            " ms  (",
+            qslice_tflops,
+            " TFLOPS)",
+            sep="",
+        )
+    else:
+        print(
+            "  qslice sm100: (dispatcher declined; Q<=1 / !SM100 /"
+            " C_in%64 or C_out%64 misalign / R=S=1)"
+        )
     print(
         "  cuDNN      : ", cudnn_ms, " ms  (", cudnn_tflops, " TFLOPS)", sep=""
     )
@@ -517,6 +609,19 @@ def bench_conv3d[
             "  1x1x1 / cuDNN: ",
             p1x1x1_ms / cudnn_ms,
             "x  (lower is better)",
+            sep="",
+        )
+    if qslice_handled:
+        print(
+            "  qslice / cuDNN: ",
+            qslice_ms / cudnn_ms,
+            "x  (lower is better)",
+            sep="",
+        )
+    if qslice_handled:
+        print(
+            "  max |qslice - cuDNN|: ",
+            max_diff_qslice_vs_cudnn,
             sep="",
         )
     # Combined max-diff line.
@@ -563,6 +668,7 @@ def bench_conv3d[
     _ = output_naive_dev^
     _ = output_im2col_dev^
     _ = output_1x1x1_dev^
+    _ = output_qslice_dev^
     _ = output_cudnn_dev^
 
 
@@ -625,10 +731,14 @@ def main() raises:
         ](ctx, label="WAN_conv_in_16to384", num_iters=50, warmup_iters=5)
 
         # WAN mid ResidualBlock: 3x3x3, 384->384.
+        # pad_d=0 with in_depth expanded to match production (the
+        # pipeline externally pre-pads the temporal axis for causal
+        # convs, so by the time the kernel runs pad_d=0 and d=T+2).
+        # Same D_out as before, qualifies for qslice dispatch.
         bench_conv3d[
             DType.bfloat16,
             batch=1,
-            in_depth=21,
+            in_depth=23,
             in_height=30,
             in_width=52,
             in_channels=384,
@@ -636,7 +746,7 @@ def main() raises:
             filter_q=3,
             filter_r=3,
             filter_s=3,
-            pad_d=1,
+            pad_d=0,
             pad_h=1,
             pad_w=1,
         ](ctx, label="WAN_mid_res_384to384", num_iters=20, warmup_iters=3)
@@ -645,7 +755,7 @@ def main() raises:
         bench_conv3d[
             DType.bfloat16,
             batch=1,
-            in_depth=21,
+            in_depth=23,
             in_height=60,
             in_width=104,
             in_channels=192,
@@ -653,16 +763,18 @@ def main() raises:
             filter_q=3,
             filter_r=1,
             filter_s=1,
-            pad_d=1,
+            pad_d=0,
             pad_h=0,
             pad_w=0,
         ](ctx, label="WAN_time_conv_192to384", num_iters=20, warmup_iters=3)
 
         # WAN upsampled residual: 3x3x3, 192->192 at 42x120x208.
+        # (Same pad_d=0 expansion; doesn't qualify for qslice due to
+        # C_out=192 not being 128-aligned, stays on im2col.)
         bench_conv3d[
             DType.bfloat16,
             batch=1,
-            in_depth=42,
+            in_depth=44,
             in_height=120,
             in_width=208,
             in_channels=192,
@@ -670,7 +782,7 @@ def main() raises:
             filter_q=3,
             filter_r=3,
             filter_s=3,
-            pad_d=1,
+            pad_d=0,
             pad_h=1,
             pad_w=1,
         ](ctx, label="WAN_upsampled_res_192to192", num_iters=10, warmup_iters=2)

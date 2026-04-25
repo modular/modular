@@ -136,6 +136,7 @@ from .conv_utils import (
 )
 from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from .gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
+from .gpu.nvidia.sm100.qslice_conv3d import dispatch_qslice_conv3d_sm100
 from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from layout import lt_to_tt
@@ -4777,6 +4778,36 @@ def conv_gpu[
                 ctx,
             ):
                 return
+
+            # Phase B (SM100 Q-slice): decompose the Q filter dimension
+            # into Q sequential 2-D SM100 conv calls accumulated into an
+            # fp32 buffer. Qualifies shapes with bf16, stride=1,
+            # dilation=1, groups=1, C_in%64==0, C_out%128==0 on SM100
+            # hardware. Covers WAN mid_res and time_conv; declines
+            # conv_in (C_in=16) and upsampled_res (C_out=192).
+            # Comptime-gated on SM100 + bf16 so the SM100 conv2d kernel
+            # (which uses tcgen05 / Blackwell-only intrinsics) is not
+            # instantiated when compiling for non-SM100 targets.
+            comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
+            comptime _is_supported_dtype = input_type == DType.bfloat16
+            comptime if _is_sm100 and _is_supported_dtype:
+                if dispatch_qslice_conv3d_sm100[
+                    input_type,
+                    filter_type,
+                    output_type,
+                    filter_is_fcrs,
+                    maybe_epilogue_func,
+                ](
+                    input,
+                    filter,
+                    output,
+                    rebind[IndexList[3]](stride),
+                    rebind[IndexList[3]](dilation),
+                    rebind[IndexList[3]](symmetric_padding),
+                    num_groups,
+                    ctx,
+                ):
+                    return
 
             # Phase 2 path: explicit im2col + _matmul_gpu for bf16 3D convs.
             # Covers 3x3x3, 3x1x1, etc. and falls back to the naive kernel on
