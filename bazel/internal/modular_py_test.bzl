@@ -24,6 +24,12 @@ def _get_resource_tags(use_resource_tags, name):
             tags.append("resources:memory:{}".format(resources["memory"]))
     return tags
 
+def _get_manual_srcs(tags, per_test_tags, srcs):
+    if "manual" in tags:
+        return srcs
+
+    return [src for src in srcs if "manual" in per_test_tags.get(src, [])]
+
 def modular_py_test(
         name,
         srcs,
@@ -166,7 +172,8 @@ def modular_py_test(
             "main": "pytest_runner.py",
         }
 
-    if "manual" in tags:
+    manual_srcs = _get_manual_srcs(tags, per_test_tags, srcs)
+    if manual_srcs:
         # TODO: Remove once we run mypy-style lints in a separate test target
         modular_py_library(
             name = name + ".mypy_library",
@@ -179,7 +186,7 @@ def modular_py_test(
                 "@rules_python//python/runfiles",
             ],
             testonly = True,
-            srcs = srcs + ["//bazel/internal:pytest_runner"],
+            srcs = manual_srcs + ["//bazel/internal:pytest_runner"],
             visibility = ["//visibility:private"],
             imports = imports,
             # NOTE: Intentionally exclude other attrs that shouldn't matter for mypy
