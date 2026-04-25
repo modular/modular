@@ -33,6 +33,7 @@ from typing import (
 import numpy as np
 import numpy.typing as npt
 from max.interfaces.context import BaseContext, SamplingParams
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.log_probabilities import LogProbabilities
 from max.interfaces.pipeline import PipelineInputs, PipelineOutput
 from max.interfaces.request import RequestID
@@ -104,7 +105,15 @@ class ImageContentPart(MessageContentPart):
     )
 
 
-MessageContent = TextContentPart | ImageContentPart
+class VideoContentPart(MessageContentPart):
+    """A video content part of a message."""
+
+    type: Literal["video"] = Field(
+        default="video", description="Content type identifier"
+    )
+
+
+MessageContent = TextContentPart | ImageContentPart | VideoContentPart
 
 MessageRole = Literal["system", "user", "assistant", "tool", "function"]
 
@@ -137,7 +146,9 @@ class TextGenerationRequestMessage(BaseModel):
 
         normalized: list[MessageContent] = []
         for item in v:
-            if isinstance(item, (TextContentPart, ImageContentPart)):
+            if isinstance(
+                item, (TextContentPart, ImageContentPart, VideoContentPart)
+            ):
                 normalized.append(item)
                 continue
 
@@ -159,11 +170,19 @@ class TextGenerationRequestMessage(BaseModel):
                 normalized.append(TextContentPart(text=text_value))
             elif content_type == "image":
                 normalized.append(ImageContentPart())
+            elif content_type == "video":
+                normalized.append(VideoContentPart())
             elif content_type == "image_url":
                 raise ValueError(
                     "image_url content type not supported in internal format. "
                     "Images must be provided as bytes in TextGenerationRequest.images "
                     "with image placeholders (type='image') in message content."
+                )
+            elif content_type == "video_url":
+                raise ValueError(
+                    "video_url content type not supported in internal format. "
+                    "Videos must be provided as bytes in TextGenerationRequest.videos "
+                    "with video placeholders (type='video') in message content."
                 )
             else:
                 raise ValueError(
@@ -199,6 +218,15 @@ class TextGenerationRequestMessage(BaseModel):
             1 for item in self.content if isinstance(item, ImageContentPart)
         )
 
+    @cached_property
+    def number_of_videos(self) -> int:
+        """Returns the number of VideoContentPart instances in the message content."""
+        if isinstance(self.content, str):
+            return 0
+        return sum(
+            1 for item in self.content if isinstance(item, VideoContentPart)
+        )
+
 
 @dataclass(frozen=True)
 class TextGenerationRequest:
@@ -231,6 +259,11 @@ class TextGenerationRequest:
     A list of image byte arrays that can be included as part of the request.
     This field is optional and may be used for multimodal inputs where images
     are relevant to the prompt or task.
+    """
+    videos: list[bytes] = field(default_factory=list)
+    """
+    A list of video byte arrays that can be included as part of the request.
+    Each video is decoded into frames during preprocessing.
     """
     tools: list[TextGenerationRequestTool] | None = None
     """
@@ -285,6 +318,14 @@ class TextGenerationRequest:
     If not specified, the request will be routed to the default endpoint.
     """
 
+    dkv_cache_hint: dict[str, Any] | None = None
+    """Cache hint from the Orchestrator for distributed KV cache.
+
+    When present, the serving layer converts this into
+    ``TextContext.external_block_metadata`` so the DKVConnector can
+    fetch cached blocks before the forward pass.
+    """
+
     def __str__(self) -> str:
         return str(self.request_id)
 
@@ -315,9 +356,19 @@ class TextGenerationRequest:
                 "string prompts cannot be provided, when images are provided, use messages"
             )
 
+        if self.videos and isinstance(self.prompt, str):
+            raise ValueError(
+                "string prompts cannot be provided, when videos are provided, use messages"
+            )
+
         if self.images and self.number_of_images != len(self.images):
             raise ValueError(
                 f"number of images provided in TextGenerationRequest do not match messages:\n{self.messages}"
+            )
+
+        if self.videos and self.number_of_videos != len(self.videos):
+            raise ValueError(
+                f"number of videos provided in TextGenerationRequest do not match messages:\n{self.messages}"
             )
 
     @cached_property
@@ -329,6 +380,19 @@ class TextGenerationRequest:
         """
         return (
             sum(message.number_of_images for message in self.messages)
+            if self.messages
+            else 0
+        )
+
+    @cached_property
+    def number_of_videos(self) -> int:
+        """Returns the total number of video-type contents across all provided messages.
+
+        Returns:
+            Total count of video-type contents found in messages.
+        """
+        return (
+            sum(message.number_of_videos for message in self.messages)
             if self.messages
             else 0
         )
@@ -416,12 +480,11 @@ class TextGenerationContext(BaseContext, Protocol):
         ...
 
     @property
-    def eos_token_ids(self) -> set[int]:
-        """The set of end-of-sequence token IDs that can terminate generation.
+    def eos_tracker(self) -> EOSTracker:
+        """Holds EOS-related settings for this sequence and performs EOS/stop checks.
 
         Returns:
-            A set of token IDs that, when generated, will signal the end of the
-            sequence and terminate the generation process.
+            The ``EOSTracker`` for this sequence.
         """
         ...
 
@@ -520,18 +583,60 @@ class TextGenerationContext(BaseContext, Protocol):
         """
         ...
 
+    def advance_token_buffer(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+        mark_previous_as_processed: bool = True,
+    ) -> None:
+        """Advance the token buffer without touching FSM state.
+
+        This method handles token buffer mutations including log probability
+        storage, token buffer advancement, and EOS/max-length status updates.
+        It does NOT advance the FSM matcher.
+
+        Use ``advance_fsm()`` separately if FSM advancement is needed, or use
+        ``update()`` for the common case of advancing both together.
+
+        Args:
+            new_token: The token to append to the buffer.
+            log_probabilities: Optional log probabilities for this token.
+            mark_previous_as_processed: If True, mark previous tokens as
+                processed. If False, keep them unprocessed so they're
+                returned to the user (used for jump-ahead tokens).
+        """
+        ...
+
+    def advance_fsm(self, token: int) -> bool:
+        """Advance the FSM matcher state by one token.
+
+        This method advances only the FSM state for constrained decoding.
+        It does NOT modify the token buffer. Use ``advance_token_buffer()``
+        separately if token buffer advancement is needed, or use ``update()``
+        for the common case of advancing both together.
+
+        Args:
+            token: The token to consume in the FSM.
+
+        Returns:
+            True if the token was accepted by the matcher, False if no
+            matcher is present.
+        """
+        ...
+
     def update(
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
     ) -> None:
-        """Updates the context with a newly generated token, and updates status.
+        """Advance both token buffer and FSM state.
 
-        This method adds a generated token to the context, updating the token
-        array, associated metadata, and log probabilities (if provided).
-        It is also responsible for updating the context's generation status and
-        determining if the generation sequence is complete, either due to reaching
-        an end-of-sequence condition or meeting stopping criteria.
+        This is the standard single-step update that most callers should use.
+        It combines ``advance_token_buffer()`` and ``advance_fsm()`` for the
+        common case where both need to be advanced together.
+
+        For multi-step execution where FSM is advanced separately (e.g., to
+        compute bitmasks between steps), use the individual methods directly.
 
         Args:
             new_token: The token ID to add to the generation sequence.
@@ -658,12 +763,17 @@ class TextGenerationContext(BaseContext, Protocol):
 class SpecDecodingState:
     """Per-request state for speculative decoding."""
 
-    saved_draft_tokens: list[int] = field(default_factory=list)
+    draft_tokens_to_verify: list[int] = field(default_factory=list)
+    """The draft tokens to verify in the next batch"""
 
-    @property
-    def num_draft_tokens(self) -> int:
-        """Returns the number of speculative tokens."""
-        return len(self.saved_draft_tokens)
+    maybe_accepted_draft_tokens: list[int] = field(default_factory=list)
+    """The draft tokens that are being verified in the current batch
+
+    We are unsure whether these tokens will be accepted or not. However, to ensure
+    that we allocate enough KV, we conservatively assume that they will all be
+    accepted.
+
+    This should only be present when running with overlap scheduler."""
 
 
 TextGenerationContextType = TypeVar(

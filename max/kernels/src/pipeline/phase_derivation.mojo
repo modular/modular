@@ -651,12 +651,12 @@ def apply_edge_rules(
 
     # Half assignment per op.
     @always_inline
-    def _op_half(idx: Int) -> Int:
+    def _op_half(idx: Int) {mut half} -> Int:
         return 0 if idx < half else 1
 
     # _in_half for Phase 1: op at idx is in the half that processes stage.
     @always_inline
-    def _in_half(idx: Int, stage: Int) -> Bool:
+    def _in_half(idx: Int, stage: Int) {mut half} -> Bool:
         return (stage == 0) == (idx < half)
 
     var edges = List[DepEdge]()

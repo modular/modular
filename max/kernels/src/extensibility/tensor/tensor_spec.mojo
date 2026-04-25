@@ -10,11 +10,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""
-You can import these APIs from the `max.tensor` package. For example:
+"""Provides tensor spec types for describing tensor shapes and dtypes.
+
+You can import these APIs from the `tensor` package. For example:
 
 ```mojo
-from max.tensor import RuntimeTensorSpec
+from tensor import RuntimeTensorSpec
 ```
 """
 

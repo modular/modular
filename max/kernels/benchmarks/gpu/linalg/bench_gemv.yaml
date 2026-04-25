@@ -12,12 +12,11 @@
 ##===----------------------------------------------------------------------===##
 
 name: bench_gemv
-file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_gemv.mojo
+file: $KERNEL_BENCHMARKS_ROOT/gpu/linalg/bench_matmul.mojo
 
 
 gemv-commons: &gemv-commons
   $M: 1
-  $mode: ["default", "transpose", "naive"]
 
 params:
 
@@ -48,37 +47,15 @@ params:
 - $M: 1
   N: 4096
   K: 4096
-  $mode: "transpose"
-  output_type: "float32"
 
 - $M: 1
   N: 75837
   K: 5120
-  $mode: "transpose"
-  output_type: "float32"
-
-- $M: 4096
-  N: 1
-  K: 4096
-  output_type: "float32"
-
-- $M: 5120
-  N: 1
-  K: 13824
-  $mode: "transpose"
 
 - $M: 1
   N: 4096
   K: 4095
-  $mode: "transpose"
-  output_type: "float32"
-
-- $M: 4096
-  N: 1
-  K: 4095
-  output_type: "float32"
 
 - $M: 1
   N: 4096
   K: 4095
-  output_type: "float32"

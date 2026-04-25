@@ -75,10 +75,6 @@ def test_chat_template_preserves_text_with_image() -> None:
         pipeline_config=pipeline_config,
     )
 
-    # Create a test image.
-    image = test_image(224, 224)
-    image_b64 = image_to_base64(image)
-
     # Create message structure that mimics OpenAI API format.
     test_question = (
         "When a spring does work on an object, we cannot find the work by "
@@ -136,9 +132,6 @@ def test_chat_template_multiple_text_parts() -> None:
         model_path=model_path,
         pipeline_config=pipeline_config,
     )
-
-    image = test_image(224, 224)
-    image_b64 = image_to_base64(image)
 
     text_part_1 = "First part of the question."
     text_part_2 = "Second part of the question."

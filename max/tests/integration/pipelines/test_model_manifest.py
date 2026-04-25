@@ -202,15 +202,18 @@ class TestDiffusersAutoExpansion:
         assert registry["main"].model_path == "org/llm-model"
         assert len(registry) == 1
 
-    def test_rejects_kwargs_for_composite_model(
+    def test_propagates_kwargs_to_diffusers_components(
         self, _mock_validate: Any
     ) -> None:
         with patch(LOAD_INDEX_TARGET, return_value=self._fake_model_index()):
-            with pytest.raises(ValueError, match="ModelManifest directly"):
-                ModelManifest.from_model_path(
-                    "org/diffusion-model",
-                    quantization_encoding="float32",
-                )
+            registry = ModelManifest.from_model_path(
+                "org/diffusion-model",
+                quantization_encoding="float32",
+            )
+
+        # kwargs are forwarded to each component's MAXModelConfig
+        for config in registry.values():
+            assert config.quantization_encoding == "float32"
 
     def test_skips_private_keys(self, _mock_validate: Any) -> None:
         model_index: dict[str, object] = {
@@ -879,17 +882,10 @@ class TestPrimaryArchitectureName:
         cfg = _make_config("org/llm-model")
         manifest = ModelManifest({"main": cfg})
 
-        with (
-            patch.object(
-                type(cfg),
-                "huggingface_config",
-                new_callable=lambda: property(lambda self: None),
-            ),
-            patch.object(
-                type(cfg),
-                "diffusers_config",
-                new_callable=lambda: property(lambda self: None),
-            ),
+        with patch.object(
+            type(cfg),
+            "huggingface_config",
+            new_callable=lambda: property(lambda self: None),
         ):
             with pytest.raises(
                 ValueError, match="Cannot determine architecture name"
@@ -935,7 +931,6 @@ _COMPUTED_FIELDS = {
     "huggingface_weight_repo",
     "huggingface_model_repo",
     "huggingface_config",
-    "diffusers_config",
     "model_name",
     "graph_quantization_encoding",
     "generation_config",
@@ -968,3 +963,70 @@ def _msgpack_round_trip(manifest: ModelManifest) -> ModelManifest:
         for role, cfg_data in unpacked["models"].items()
     }
     return ModelManifest(models, metadata=unpacked.get("metadata"))
+
+
+@patch(HF_OFFLINE_TARGET, False)
+@patch(VALIDATE_HF_ACCESS_TARGET)
+class TestCrossRepoSubfolder:
+    """Tests for cross-repo weight subfolder handling."""
+
+    def test_huggingface_weight_repo_clears_subfolder_for_external_repo(
+        self, _mock_validate: Any
+    ) -> None:
+        """When _weights_repo_id differs from model_path, subfolder is None."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+        cfg._weights_repo_id = "org/external-weights"
+
+        repo = cfg.huggingface_weight_repo
+        assert repo.subfolder is None
+        assert repo.repo_id == "org/external-weights"
+
+    def test_huggingface_weight_repo_preserves_subfolder_for_same_repo(
+        self, _mock_validate: Any
+    ) -> None:
+        """When _weights_repo_id matches model_path, subfolder is preserved."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+        cfg._weights_repo_id = "org/base-model"
+
+        repo = cfg.huggingface_weight_repo
+        assert repo.subfolder == "transformer"
+
+    def test_huggingface_weight_repo_preserves_subfolder_when_no_override(
+        self, _mock_validate: Any
+    ) -> None:
+        """When _weights_repo_id is None, subfolder is preserved."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(update={"subfolder": "transformer"})
+
+        repo = cfg.huggingface_weight_repo
+        assert repo.subfolder == "transformer"
+
+    @patch(DEVICES_EXIST_TARGET, return_value=True)
+    @patch("max.pipelines.lib.config.model_config.validate_hf_repo_access")
+    def test_resolve_skips_subfolder_prepend_for_cross_repo_weights(
+        self, _mock_cfg_validate: Any, _mock_devices: Any, _mock_validate: Any
+    ) -> None:
+        """resolve() does not prepend subfolder to cross-repo weight paths."""
+        cfg = _make_config("org/base-model")
+        cfg = cfg.model_copy(
+            update={
+                "subfolder": "transformer",
+                "weight_path": [Path("weights.safetensors")],
+                "quantization_encoding": "float4_e2m1fnx2",
+            }
+        )
+        manifest = ModelManifest({"transformer": cfg})
+
+        def fake_parse(
+            model_path: str, weight_path: list[Path]
+        ) -> tuple[list[Path], str | None]:
+            return ([Path("weights.safetensors")], "org/external-weights")
+
+        with patch(WEIGHT_PARSE_TARGET, side_effect=fake_parse):
+            manifest.resolve()
+
+        assert manifest["transformer"].weight_path == [
+            Path("weights.safetensors")
+        ]

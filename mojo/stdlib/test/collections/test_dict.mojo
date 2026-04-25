@@ -16,12 +16,12 @@ from std.collections.dict import (
     DictKeyError,
     EmptyDictError,
     OwnedKwargsDict,
-    _GROUP_WIDTH,
 )
+from std.collections._swisstable import GROUP_WIDTH
 
 from std.hashlib import Hasher, default_comp_time_hasher
 
-from test_utils import CopyCounter, check_write_to
+from test_utils import CopyCounter, DelCounter, check_write_to
 from std.testing import (
     assert_equal,
     assert_false,
@@ -617,16 +617,16 @@ def test_clear() raises:
 
 
 def test_init_initial_capacity() raises:
-    var initial_capacity = 16
+    var initial_capacity = 14
     var x = Dict[Int, Int](capacity=initial_capacity)
-    assert_equal(x._reserved(), initial_capacity)
+    assert_equal(x._reserved(), 16)
     for i in range(initial_capacity):
         x[i] = i
     for i in range(initial_capacity):
         assert_equal(i, x[i])
 
     var y = Dict[Int, Int](capacity=64)
-    assert_equal(y._reserved(), 64)
+    assert_equal(y._reserved(), 128)
 
     # Non-power-of-two capacity is rounded up
     var z = Dict[Int, Int](capacity=50)
@@ -897,12 +897,12 @@ def test_reversed_items() raises:
 
 
 def test_minimum_capacity() raises:
-    """The minimum capacity is _GROUP_WIDTH (16) for SIMD correctness."""
+    """The minimum capacity is GROUP_WIDTH (16) for SIMD correctness."""
     var d = Dict[Int, Int](capacity=16)
-    assert_true(d._capacity >= _GROUP_WIDTH)
-    # Default constructor also gets at least _GROUP_WIDTH capacity
+    assert_true(d._reserved() >= GROUP_WIDTH)
+    # Default constructor also gets at least GROUP_WIDTH capacity
     var d2 = Dict[Int, Int]()
-    assert_true(d2._capacity >= _GROUP_WIDTH)
+    assert_true(d2._reserved() >= GROUP_WIDTH)
 
 
 def test_inplace_rehash() raises:
@@ -980,10 +980,9 @@ def test_tombstone_heavy_no_capacity_growth() raises:
 
 def test_high_load_still_doubles() raises:
     """When most slots are genuinely occupied, resize should still double."""
-    var capacity = 16
-    var max_load = capacity * 7 // 8  # 14
-    var d = Dict[Int, Int](capacity=capacity)
-    var initial_cap = d._reserved()
+    var max_load = 14
+    var d = Dict[Int, Int](capacity=max_load)
+    assert_equal(d._reserved(), 16)
 
     # Fill to capacity without deleting
     for i in range(max_load):
@@ -991,7 +990,7 @@ def test_high_load_still_doubles() raises:
 
     # _len(14) > capacity*7/16(7), so next insert should double
     d[max_load] = max_load
-    assert_equal(d._reserved(), initial_cap * 2)
+    assert_equal(d._reserved(), 32)
 
 
 def test_inplace_rehash_string_keys() raises:
@@ -1188,6 +1187,71 @@ def test_dict_conditional_conformances() raises:
     assert_true(conforms_to(Dict[Int, Int], Equatable))
     assert_true(conforms_to(Dict[Int, Int], Hashable))
     assert_false(conforms_to(Dict[Int, NonWritable], Writable))
+
+
+def test_dict_iter_owned() raises:
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    var keys = List[String]()
+    for key in d^:
+        keys.append(key)
+
+    assert_equal(len(keys), 3)
+    assert_equal(keys[0], "a")
+    assert_equal(keys[1], "b")
+    assert_equal(keys[2], "c")
+
+
+def test_dict_iter_owned_destroys_elements_if_not_consumed() raises:
+    var del_count = 0
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var d = Dict[Int, DelCounter[ptr.origin]]()
+    d[1] = DelCounter(ptr)
+    d[2] = DelCounter(ptr)
+    d[3] = DelCounter(ptr)
+    assert_equal(del_count, 0)
+
+    # Create the owned iterator but never consume it; all values should
+    # still be destroyed when the iterator is dropped.
+    var _ = d^.__iter__()
+    assert_equal(del_count, 3)
+
+
+def test_dict_iter_owned_destroys_elements_if_partially_consumed() raises:
+    var del_count = 0
+    var ptr = UnsafePointer(to=del_count).as_immutable().as_any_origin()
+    var d = Dict[Int, DelCounter[ptr.origin]]()
+    d[1] = DelCounter(ptr)
+    d[2] = DelCounter(ptr)
+    d[3] = DelCounter(ptr)
+    assert_equal(del_count, 0)
+
+    var it = d^.__iter__()
+    _ = it.__next__()  # consume one key; entry (including value) is dropped
+    assert_equal(del_count, 1)
+
+    # Drop the iterator with two unconsumed entries remaining.
+    _ = it^
+    assert_equal(del_count, 3)
+
+
+def test_dict_iter_owned_bounds() raises:
+    var d = Dict[String, Int]()
+    d["a"] = 1
+    d["b"] = 2
+    d["c"] = 3
+
+    var it = d^.__iter__()
+    assert_equal(it.bounds()[0], 3)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 2)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 1)
+    _ = it.__next__()
+    assert_equal(it.bounds()[0], 0)
 
 
 def main() raises:

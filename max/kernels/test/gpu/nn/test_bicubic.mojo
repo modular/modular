@@ -587,10 +587,8 @@ def test_bicubic_kernel[
     var input_dev = ctx.enqueue_create_buffer[dtype](input_dim_flattened)
     var output_dev = ctx.enqueue_create_buffer[dtype](output_dim_flattened)
 
-    var input_dev_nd = TileTensor(input_dev.unsafe_ptr(), row_major(input_dim))
-    var output_dev_nd = TileTensor(
-        output_dev.unsafe_ptr(), row_major(output_dim)
-    )
+    var input_dev_nd = TileTensor(input_dev, row_major(input_dim))
+    var output_dev_nd = TileTensor(output_dev, row_major(output_dim))
 
     ctx.enqueue_copy(input_dev, input_host_ptr)
 

@@ -221,9 +221,9 @@ def main() raises:
         W,
         K,
         N,
-        d_F.unsafe_ptr(),
-        d_X.unsafe_ptr(),
-        d_Y.unsafe_ptr(),
+        d_F,
+        d_X,
+        d_Y,
         grid_dim=(grid_x, grid_y, N),
         block_dim=(TILE_WIDTH, TILE_WIDTH, 1),
     )

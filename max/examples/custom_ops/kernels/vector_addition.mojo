@@ -15,11 +15,7 @@
 
 from std.math import ceildiv
 
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import InputTensor, ManagedTensorSlice, OutputTensor
 
@@ -59,8 +55,8 @@ def _vector_addition_gpu(
     @parameter
     def vector_addition_gpu_kernel(length: Int):
         var tid = block_dim.x * block_idx.x + thread_idx.x
-        if tid < UInt(length):
-            var idx = IndexList[output.rank](Int(tid))
+        if tid < length:
+            var idx = IndexList[output.rank](tid)
             var result = lhs.load[1](idx) + rhs.load[1](idx)
             output.store[1](idx, result)
 

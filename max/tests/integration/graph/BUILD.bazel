@@ -18,6 +18,7 @@ _AMD_ONLY_TESTS = [
 
 # CPU-only tests that don't require GPU
 _CPU_ONLY_TESTS = [
+    "test_bf16_cpu_error.py",
     "test_is_inf.py",
     "test_is_nan.py",
     "test_matmul_packed.py",
@@ -28,12 +29,19 @@ _CPU_ONLY_TESTS = [
 
 # Tests with their own targets due to special configurations
 _SEPARATE_TARGET_TESTS = [
+    "test_debug_config.py",
+    "test_debug_config_integration.py",
     "test_engine_device_graph.py",
     "test_graph_pinned.py",
     "test_graph_telemetry.py",
     "test_load_weights_no_deps.py",
     "test_logits_processor_gpu.py",
     "test_runtime_source_notes.py",
+]
+
+# Temporarily disabled tests (MAXPLAT-477: causes H100 timeouts)
+_DISABLED_TESTS = [
+    "test_advanced_indexing.py",
 ]
 
 modular_py_library(
@@ -58,7 +66,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["*.py"],
-        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + [
+        exclude = _AMD_ONLY_TESTS + _NVIDIA_ONLY_TESTS + _CPU_ONLY_TESTS + _SEPARATE_TARGET_TESTS + _DISABLED_TESTS + [
             "modular_graph_test.py",
             "test_nan_check.py",
         ],
@@ -109,6 +117,34 @@ modular_py_test(
         requirement("numpy"),
         requirement("torch"),
         requirement("torchvision"),
+    ],
+)
+
+# MAXPLAT-477: Temporarily disabled from CI due to H100 timeouts.
+# Run locally on demand: ./bazelw test //max/tests/integration/graph:test_advanced_indexing
+modular_py_test(
+    name = "test_advanced_indexing",
+    size = "large",
+    srcs = [
+        "conftest.py",
+        "test_advanced_indexing.py",
+    ],
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("hypothesis"),
+        requirement("numpy"),
+        requirement("torch"),
     ],
 )
 
@@ -168,7 +204,6 @@ modular_py_test(
         "test_shard_and_stack.py",
         "test_symbolic_dimension_validation.py",
     ],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = [
         "external-exclusive",  # Times out if run with too many other tests (only test_matmul_packed)
     ],
@@ -190,6 +225,7 @@ modular_py_test(
     size = "medium",
     srcs = [
         "conftest.py",
+        "test_bf16_cpu_error.py",
         "test_is_inf.py",
         "test_is_nan.py",
     ],
@@ -302,7 +338,7 @@ modular_py_test(
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
-        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
@@ -354,5 +390,32 @@ modular_py_test(
         "//max/python/max/engine",
         "//max/python/max/graph",
         requirement("numpy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_debug_config",
+    size = "medium",
+    srcs = ["test_debug_config.py"],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
+modular_py_test(
+    name = "test_debug_config_integration",
+    size = "medium",
+    srcs = ["test_debug_config_integration.py"],
+    # The test spawns subprocesses that `import max.engine` / `max.graph`;
+    # the parent test file itself only references these modules inside
+    # subprocess script strings, so pydeps flags them as extra.
+    ignore_extra_deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+    deps = [
+        "//max/python/max/engine",
+        "//max/python/max/graph",
     ],
 )

@@ -24,11 +24,12 @@ modular_py_test(
     srcs = ["test_image_processor.py"],
     tags = [
         "manual",
-        "no-pydeps",  # TODO: Fix and re-enable
         "requires-network",
     ],
     deps = [
         "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pillow"),
         requirement("transformers"),
     ],
 )

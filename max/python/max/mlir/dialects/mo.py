@@ -56,7 +56,7 @@ class IfOp(IfOp):  # type: ignore[no-redef]
     ) -> None:
         if out_types is None:
             out_types = []
-        super().__init__(results_=out_types, cond=pred)
+        super().__init__(results_=list(out_types), cond=pred)
         Block.create_at_start(self.thenRegion, [])
         Block.create_at_start(self.elseRegion, [])
 
@@ -99,42 +99,48 @@ def while_(  # type: ignore[no-redef]
 
 @_ods_common._cext.register_operation(_Dialect, replace=True)
 class ParallelOp(ParallelOp):  # type: ignore[no-redef]
-    """Extends mo.parallel op with a simpler builder that creates block args."""
+    """Extends mo.parallel op with a simpler builder that creates block args.
+
+    The parallel op takes ``!mo.bundle`` operands and produces bundle results.
+    An optional ``buffers`` list provides per-launch signal buffers for
+    collective operations.  ``buffers`` and ``in_chain`` must be both present
+    or both absent.  ``block_arg_types`` supplies the representative per-launch
+    types so that the body block can be created with the right argument types.
+    """
 
     def __init__(
         self,
         results_,  # noqa: ANN001
         inputs,  # noqa: ANN001
-        extra_inputs=None,  # noqa: ANN001
+        buffers=None,  # noqa: ANN001
         in_chain=None,  # noqa: ANN001
         *,
+        block_arg_types=None,  # noqa: ANN001
         loc=None,  # noqa: ANN001
         ip=None,  # noqa: ANN001
     ) -> None:
-        extra_inputs = extra_inputs or []
         all_results = list(results_)
         if in_chain is not None:
             all_results.append(Type.parse("!mo.chain"))
         super().__init__(
             results_=all_results,
             inputs=inputs,
-            extraInputs=extra_inputs,
+            buffers=buffers if buffers is not None else [],
             inChain=in_chain,
             loc=loc,
             ip=ip,
         )
-        block_arg_types = [self.inputs[0].type]
-        if extra_inputs:
-            block_arg_types.append(self.extraInputs[0].type)
-        Block.create_at_start(self.bodyRegion, block_arg_types)
+        if block_arg_types is not None:
+            Block.create_at_start(self.bodyRegion, block_arg_types)
 
 
 def parallel_(
     results_,  # noqa: ANN001
     inputs,  # noqa: ANN001
-    extra_inputs=None,  # noqa: ANN001
+    buffers=None,  # noqa: ANN001
     in_chain=None,  # noqa: ANN001
     *,
+    block_arg_types=None,  # noqa: ANN001
     loc=None,  # noqa: ANN001
     ip=None,  # noqa: ANN001
 ) -> _ods_common.VariadicResultValueT:
@@ -142,8 +148,9 @@ def parallel_(
         ParallelOp(  # type: ignore[call-arg]
             results_=results_,
             inputs=inputs,
-            extra_inputs=extra_inputs,
+            buffers=buffers,
             in_chain=in_chain,
+            block_arg_types=block_arg_types,
             loc=loc,
             ip=ip,
         )

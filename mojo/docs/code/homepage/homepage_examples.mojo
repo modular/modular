@@ -16,7 +16,7 @@
 # if they break.
 
 from std.algorithm import vectorize
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv
@@ -42,7 +42,7 @@ def vector_add(
     a: LayoutTensor[float_dtype, layout, MutAnyOrigin],
     b: LayoutTensor[float_dtype, layout, MutAnyOrigin],
 ):
-    i = Int(global_idx.x)
+    i = global_idx.x
     if i < size:
         result[i] = a[i] + b[i]
 
@@ -111,7 +111,7 @@ def mojo_square_array(array_obj: PythonObject) raises:
     comptime simd_width = simd_width_of[DType.int64]()
     ptr = array_obj.ctypes.data.unsafe_get_as_pointer[DType.int64]()
 
-    def pow[width: Int](i: Int) unified {mut ptr}:
+    def pow[width: Int](i: Int) {mut ptr}:
         elem = ptr.load[width=width](i)
         ptr.store[width=width](i, elem * elem)
 
@@ -158,7 +158,7 @@ def vector_addition_gpu(
     lhs: InputTensor[...],
     rhs: InputTensor[...],
     ctx: DeviceContextPtr,
-) raises:
+):
     pass
 
 
@@ -167,7 +167,7 @@ def vector_addition_cpu(
     lhs: InputTensor[...],
     rhs: InputTensor[...],
     ctx: DeviceContextPtr,
-) raises:
+):
     pass
 
 

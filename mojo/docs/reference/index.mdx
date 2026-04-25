@@ -1,0 +1,41 @@
+---
+title: Mojo language reference
+sidebar_label: Introduction
+description: Reference for the syntax, keywords, decorators, and more
+---
+
+Welcome to the Mojo language reference. This documentation provides a concise
+reference for Mojo's syntax—identifiers, keywords, literals, expressions,
+operators, statements, function declarations, and more. It's organized by
+grammar construct and is designed for quick lookup when you need the exact
+rules, precedence, or form of a specific language element.
+
+import ListingCard from '@site/src/components/Listing/ListingCard';
+import ListingCards from '@site/src/components/Listing/ListingCards';
+
+<ListingCards>
+  <ListingCard title="Identifiers & keywords"
+    url="/mojo/reference/mojo-keywords"
+    description="Naming rules, reserved words, escaped identifiers, and argument conventions" />
+  <ListingCard title="Literals"
+    url="/mojo/reference/mojo-literals"
+    description="Integer, floating-point, string, t-string, boolean, None, and Self literals" />
+  <ListingCard title="Expressions"
+    url="/mojo/reference/mojo-expressions"
+    description="Tuples, collection displays, member access, calls, subscripts, ternary conditionals, and comprehensions" />
+  <ListingCard title="Operators"
+    url="/mojo/reference/mojo-operators"
+    description="Operator precedence, associativity, and implementing operators for custom types" />
+  <ListingCard title="Simple statements"
+    url="/mojo/reference/mojo-simple-statements"
+    description="Imports, assignments, return, raise, break, continue, and compile-time declarations" />
+  <ListingCard title="Compound statements"
+    url="/mojo/reference/mojo-compound-statements"
+    description="If statements, loops, error handling with try/except, context managers, and compile-time control flow" />
+  <ListingCard title="Function declarations"
+    url="/mojo/reference/mojo-function-declarations"
+    description="Signatures, parameters, arguments, default values, constraints, effects, and special methods" />
+  <ListingCard title="Inline MLIR"
+    url="/mojo/reference/mojo-inline-mlir"
+    description="Mojo's inline MLIR built-ins can call operations that the language doesn't expose natively." />
+</ListingCards>

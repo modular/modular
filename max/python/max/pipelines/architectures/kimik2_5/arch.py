@@ -12,12 +12,8 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.core import TextContext
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
+from max.interfaces import InputModality, PipelineTask
+from max.pipelines.lib import SupportedArchitecture
 from transformers import AutoConfig, PretrainedConfig
 
 from . import weight_adapters
@@ -25,6 +21,7 @@ from .context import KimiK2_5TextAndVisionContext
 from .model import KimiK2_5Model
 from .model_config import KimiK2_5Config, KimiK2_5TextConfig
 from .tokenizer import KimiK2_5VLTokenizer
+from .tool_parser import KimiToolParser
 from .unified_eagle_pipeline_model import Eagle3KimiK25Model
 
 
@@ -47,7 +44,6 @@ kimik2_5_arch = SupportedArchitecture(
     name="KimiK25ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
     example_repo_ids=[
-        "moonshotai/Kimi-K2.5",
         "nvidia/Kimi-K2.5-NVFP4",
     ],
     default_encoding="bfloat16",
@@ -57,6 +53,7 @@ kimik2_5_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
@@ -67,6 +64,7 @@ kimik2_5_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
+    tool_parser=KimiToolParser,
 )
 
 kimivl_arch = SupportedArchitecture(
@@ -82,6 +80,7 @@ kimivl_arch = SupportedArchitecture(
         "float4_e2m1fnx2",
     },
     multi_gpu_supported=True,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     pipeline_model=KimiK2_5Model,
     tokenizer=KimiK2_5VLTokenizer,
     context_type=KimiK2_5TextAndVisionContext,
@@ -92,12 +91,13 @@ kimivl_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5Config,
+    tool_parser=KimiToolParser,
 )
 
 eagle3_kimik25_arch = SupportedArchitecture(
     name="Eagle3DeepseekV2ForCausalLM",
     task=PipelineTask.TEXT_GENERATION,
-    example_repo_ids=["moonshotai/Kimi-K2.5"],
+    example_repo_ids=["nvidia/Kimi-K2.5-NVFP4"],
     default_encoding="bfloat16",
     supported_encodings={
         "bfloat16",
@@ -106,8 +106,8 @@ eagle3_kimik25_arch = SupportedArchitecture(
     },
     multi_gpu_supported=True,
     pipeline_model=Eagle3KimiK25Model,
-    tokenizer=TextTokenizer,
-    context_type=TextContext,
+    tokenizer=KimiK2_5VLTokenizer,
+    context_type=KimiK2_5TextAndVisionContext,
     default_weights_format=WeightsFormat.safetensors,
     weight_adapters={
         WeightsFormat.safetensors: weight_adapters.convert_kimik2_5_safetensor_state_dict,
@@ -115,4 +115,5 @@ eagle3_kimik25_arch = SupportedArchitecture(
     supports_empty_batches=True,
     requires_max_batch_context_length=True,
     config=KimiK2_5TextConfig,
+    tool_parser=KimiToolParser,
 )

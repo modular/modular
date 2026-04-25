@@ -23,6 +23,7 @@ from std.algorithm.functional import (
     _get_start_indices_of_nth_subvolume,
     parallelize_over_rows,
 )
+from std.gpu.host import DeviceContext
 from std.utils import IndexList
 from std.utils.index import Index
 
@@ -51,7 +52,7 @@ comptime cblas_gemm_type = def(
     Float32,
     UnsafePointer[Float32, MutAnyOrigin],
     Int32,
-) -> None
+) thin -> None
 
 # ===-----------------------------------------------------------------------===#
 # Constants
@@ -251,6 +252,7 @@ def apple_gemv[
     c: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
     a: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
     b: TileTensor[mut=False, address_space=AddressSpace.GENERIC, ...],
+    ctx: Optional[DeviceContext] = None,
 ) raises:
     comptime assert c.flat_rank >= 2
     comptime assert a.flat_rank >= 2
@@ -262,9 +264,11 @@ def apple_gemv[
     var K = Int(a.dim[1]()) if b_packed else Int(b.dim[0]())
     var N = Int(b.dim[0]()) if transpose_b or b_packed else Int(b.dim[1]())
 
-    var transposed_b_ptr = UnsafePointer[Scalar[b.dtype], MutExternalOrigin]()
+    var transposed_b_ptr = Optional[
+        UnsafePointer[Scalar[b.dtype], MutExternalOrigin]
+    ]()
     var transposed_b = TileTensor(
-        UnsafePointer[Scalar[b.dtype], MutExternalOrigin](),
+        UnsafePointer[Scalar[b.dtype], MutExternalOrigin].unsafe_dangling(),
         row_major(Coord(Idx(Int(0)), Idx(Int(0)))),
     )
 
@@ -272,9 +276,10 @@ def apple_gemv[
     # runtime (which is suboptimal, but enables faster gemv below).
     comptime if b_packed == False and not transpose_b:
         var transposed_b_shape = Index(Int(b.dim[1]()), Int(b.dim[0]()))
-        transposed_b_ptr = alloc[Scalar[b.dtype]](b.num_elements())
+        var allocated_ptr = alloc[Scalar[b.dtype]](b.num_elements())
+        transposed_b_ptr = allocated_ptr
         transposed_b = TileTensor(
-            transposed_b_ptr,
+            allocated_ptr,
             row_major(
                 Coord(Idx(transposed_b_shape[0]), Idx(transposed_b_shape[1]))
             ),
@@ -305,7 +310,7 @@ def apple_gemv[
             var acc_scalar = Scalar[c.dtype]()
 
             @always_inline
-            def compute_fn[width: Int](k: Int) unified {mut}:
+            def compute_fn[width: Int](k: Int) {a, b, c, mut}:
                 var a_val = a.load[width=width](Coord(Idx(0), Idx(k))).cast[
                     c.dtype
                 ]()
@@ -344,10 +349,11 @@ def apple_gemv[
     # TODO: Experiment with this.
     comptime parallelism_grain_size = 16
     parallelize_over_rows[process_rows](
-        IndexList[2](N, K), 1, parallelism_grain_size
+        IndexList[2](N, K), 1, parallelism_grain_size, ctx
     )
 
-    transposed_b_ptr.free()
+    if transposed_b_ptr:
+        transposed_b_ptr.unsafe_value().free()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -498,7 +504,7 @@ def apple_batched_matmul[
         @parameter
         @__copy_capture(batch_coords)
         def elementwise_lambda_2d[
-            c_type: DType, width: Int, *, alignment: Int = 1
+            c_type: DType, width: SIMDSize, *, alignment: Int = 1
         ](out_coords: IndexList[2], out_val: SIMD[c_type, width]):
             var local_batch_coords = batch_coords
             local_batch_coords[rank - 1] = out_coords[1]

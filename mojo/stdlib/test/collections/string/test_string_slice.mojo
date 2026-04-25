@@ -246,7 +246,7 @@ def test_string_substring() raises:
     var string = "Hello"
     var str_slice = StringSlice(string)
 
-    assert_equal(len(str_slice), 5)
+    assert_equal(str_slice.byte_length(), 5)
     assert_equal(str_slice[byte=0], "H")
     assert_equal(str_slice[byte=1], "e")
     assert_equal(str_slice[byte=2], "l")
@@ -259,7 +259,7 @@ def test_string_substring() raises:
 
     # Slice the whole thing
     var sub1 = str_slice[byte=:5]
-    assert_equal(len(sub1), 5)
+    assert_equal(sub1.byte_length(), 5)
     assert_equal(sub1[byte=0], "H")
     assert_equal(sub1[byte=1], "e")
     assert_equal(sub1[byte=2], "l")
@@ -268,47 +268,47 @@ def test_string_substring() raises:
 
     # Slice the end
     var sub2 = str_slice[byte=2:5]
-    assert_equal(len(sub2), 3)
+    assert_equal(sub2.byte_length(), 3)
     assert_equal(sub2[byte=0], "l")
     assert_equal(sub2[byte=1], "l")
     assert_equal(sub2[byte=2], "o")
 
     # Slice the first element
     var sub3 = str_slice[byte=0:1]
-    assert_equal(len(sub3), 1)
+    assert_equal(sub3.byte_length(), 1)
     assert_equal(sub3[byte=0], "H")
-    assert_equal(sub3[byte=-1], "H")
+    assert_equal(sub3[byte=sub3.byte_length() - 1], "H")
 
     # ----------------------------------
     # Test empty subslicing
     # ----------------------------------
 
     var sub4 = str_slice[byte=0:0]
-    assert_equal(len(sub4), 0)
+    assert_equal(sub4.byte_length(), 0)
 
     var sub5 = str_slice[byte=2:2]
-    assert_equal(len(sub5), 0)
+    assert_equal(sub5.byte_length(), 0)
 
     # Empty slices still have a pointer value
     assert_equal(Int(sub5.unsafe_ptr()) - Int(sub4.unsafe_ptr()), 2)
 
 
 def test_slice_len() raises:
-    assert_equal(5, len(StringSlice("12345")))
-    assert_equal(4, len(StringSlice("1234")))
-    assert_equal(3, len(StringSlice("123")))
-    assert_equal(2, len(StringSlice("12")))
-    assert_equal(1, len(StringSlice("1")))
-    assert_equal(0, len(StringSlice("")))
+    assert_equal(5, StringSlice("12345").byte_length())
+    assert_equal(4, StringSlice("1234").byte_length())
+    assert_equal(3, StringSlice("123").byte_length())
+    assert_equal(2, StringSlice("12").byte_length())
+    assert_equal(1, StringSlice("1").byte_length())
+    assert_equal(0, StringSlice("").byte_length())
 
     # String length is in bytes, not codepoints.
     var s0 = "ನಮಸ್ಕಾರ"
-    assert_equal(len(s0), 21)
+    assert_equal(s0.byte_length(), 21)
     assert_equal(len(s0.codepoints()), 7)
 
     # For ASCII string, the byte and codepoint length are the same:
     var s1 = "abc"
-    assert_equal(len(s1), 3)
+    assert_equal(s1.byte_length(), 3)
     assert_equal(len(s1.codepoints()), 3)
 
 
@@ -504,7 +504,7 @@ def test_find_mstdl_2258() raises:
     var postfix = "a" * simd_width
     var haystack = prefix + needle + postfix
 
-    var expected_pos = len(prefix)
+    var expected_pos = prefix.byte_length()
     var found = haystack.find(needle)
     assert_equal(found, expected_pos)
     assert_true(needle in haystack)
@@ -512,21 +512,21 @@ def test_find_mstdl_2258() raises:
 
 def test_is_codepoint_boundary() raises:
     var abc = StringSlice("abc")
-    assert_equal(len(abc), 3)
+    assert_equal(abc.byte_length(), 3)
     assert_true(abc.is_codepoint_boundary(0))
     assert_true(abc.is_codepoint_boundary(1))
     assert_true(abc.is_codepoint_boundary(2))
     assert_true(abc.is_codepoint_boundary(3))
 
     var thumb = StringSlice("👍")
-    assert_equal(len(thumb), 4)
+    assert_equal(thumb.byte_length(), 4)
     assert_true(thumb.is_codepoint_boundary(0))
     assert_false(thumb.is_codepoint_boundary(1))
     assert_false(thumb.is_codepoint_boundary(2))
     assert_false(thumb.is_codepoint_boundary(3))
 
     var empty = StringSlice("")
-    assert_equal(len(empty), 0)
+    assert_equal(empty.byte_length(), 0)
     assert_true(empty.is_codepoint_boundary(0))
     # Also tests that positions greater then the length don't raise/abort.
     assert_false(empty.is_codepoint_boundary(1))
@@ -966,96 +966,22 @@ def test_count() raises:
     assert_equal(StringSlice("aaaaaa").count("aa"), 3)
 
 
-def test_chars_iter() raises:
-    # Test `for` loop iteration support
-    for char in StringSlice("abc").codepoints():
-        assert_true(
-            char in (Codepoint.ord("a"), Codepoint.ord("b"), Codepoint.ord("c"))
-        )
-
-    # Test empty string chars
-    var s0 = StringSlice("")
-    var s0_iter = s0.codepoints()
-
-    with assert_raises():
-        _ = s0_iter.__next__()  # raises StopIteration
-    assert_true(s0_iter.peek_next() is None)
-    assert_true(s0_iter.next() is None)
-
-    # Test simple ASCII string chars
-    var s1 = StringSlice("abc")
-    var s1_iter = s1.codepoints()
-
-    assert_equal(s1_iter.next().value(), Codepoint.ord("a"))
-    assert_equal(s1_iter.next().value(), Codepoint.ord("b"))
-    assert_equal(s1_iter.next().value(), Codepoint.ord("c"))
-    assert_true(s1_iter.next() is None)
-
-    # Multibyte character decoding: A visual character composed of a combining
-    # sequence of 2 codepoints.
-    var s2 = StringSlice("á")
-    assert_equal(s2.byte_length(), 3)
-    assert_equal(s2.count_codepoints(), 2)
-
-    var iter = s2.codepoints()
-    assert_equal(iter.__next__(), Codepoint.ord("a"))
-    # U+0301 Combining Acute Accent
-    assert_equal(iter.__next__().to_u32(), 0x0301)
-    with assert_raises():
-        _ = iter.__next__()  # raises StopIteration
-
-    # A piece of text containing, 1-byte, 2-byte, 3-byte, and 4-byte codepoint
-    # sequences.
-    var s3 = EVERY_CODEPOINT_LENGTH_STR
-    assert_equal(s3.byte_length(), 13)
-    assert_equal(s3.count_codepoints(), 5)
-    var s3_iter = s3.codepoints()
-
-    # Iterator __len__ returns length in codepoints, not bytes.
-    assert_equal(s3_iter.__len__(), 5)
-    assert_equal(s3_iter._slice.byte_length(), 13)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("߷"))
-
-    assert_equal(s3_iter.__len__(), 4)
-    assert_equal(s3_iter._slice.byte_length(), 11)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("ക"))
-
-    # Combining character, visually comes first, but codepoint-wise comes
-    # after the character it combines with.
-    assert_equal(s3_iter.__len__(), 3)
-    assert_equal(s3_iter._slice.byte_length(), 8)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("ൈ"))
-
-    assert_equal(s3_iter.__len__(), 2)
-    assert_equal(s3_iter._slice.byte_length(), 5)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("🔄"))
-
-    assert_equal(s3_iter.__len__(), 1)
-    assert_equal(s3_iter._slice.byte_length(), 1)
-    assert_equal(s3_iter.__next__(), Codepoint.ord("!"))
-
-    assert_equal(s3_iter.__len__(), 0)
-    assert_equal(s3_iter._slice.byte_length(), 0)
-    with assert_raises():
-        _ = s3_iter.__next__()  # raises StopIteration
-
-
 def test_string_slice_from_pointer() raises:
     var a = StringSlice("AAA")
     var b = StaticString(unsafe_from_utf8_ptr=a.unsafe_ptr())
-    assert_equal(3, len(a))
-    assert_equal(3, len(b))
+    assert_equal(3, a.byte_length())
+    assert_equal(3, b.byte_length())
     var c = "ABCD"
     var d = StringSlice(unsafe_from_utf8_ptr=c.as_c_string_slice().unsafe_ptr())
     var e = StringSlice(unsafe_from_utf8_ptr=c.unsafe_ptr())
-    assert_equal(4, len(c))
-    assert_equal(4, len(d))
-    assert_equal(4, len(e))
+    assert_equal(4, c.byte_length())
+    assert_equal(4, d.byte_length())
+    assert_equal(4, e.byte_length())
     assert_equal("A", d[byte=0])
     assert_equal("B", d[byte=1])
     assert_equal("C", d[byte=2])
     assert_equal("D", d[byte=3])
-    assert_equal("D", d[byte=-1])
+    assert_equal("D", d[byte=d.byte_length() - 1])
 
 
 def test_replace() raises:
@@ -1144,36 +1070,6 @@ def test_merge() raises:
         return a if pred else b
 
     _ = cond(True, a, b)
-
-
-def test_string_slice_codepoint_slices_reversed() raises:
-    # Test ASCII
-    var s: StaticString = "xyz"
-    var iter = s.codepoint_slices_reversed()
-    assert_equal(iter.__next__(), "z")
-    assert_equal(iter.__next__(), "y")
-    assert_equal(iter.__next__(), "x")
-
-    # Test concatenation
-    s = "abc"
-    var concat = String()
-    for v in s.codepoint_slices_reversed():
-        concat += v
-    assert_equal(concat, "cba")
-
-    # Test Unicode
-    s = "hello🌍"
-    concat = String()
-    for v in s.codepoint_slices_reversed():
-        concat += v
-    assert_equal(concat, "🌍olleh")
-
-    # Test empty string
-    s = ""
-    concat = String()
-    for v in s.codepoint_slices_reversed():
-        concat += v
-    assert_equal(concat, "")
 
 
 def main() raises:

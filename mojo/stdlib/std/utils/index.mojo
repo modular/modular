@@ -25,7 +25,6 @@ from std.sys import bit_width_of
 
 from std.builtin.device_passable import DevicePassable
 from std.builtin.dtype import _int_type_of_width, _uint_type_of_width
-from std.builtin.variadics import Variadic
 import std.format._utils as fmt
 
 from .static_tuple import StaticTuple
@@ -57,7 +56,9 @@ def _reduce_and_fn(a: Bool, b: Bool) -> Bool:
 
 @always_inline
 def _int_tuple_binary_apply[
-    binary_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Scalar[dtype],
+    binary_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) thin -> Scalar[
+        dtype
+    ],
 ](a: IndexList, b: type_of(a), out c: type_of(a)):
     """Applies a given element binary function to each pair of corresponding
     elements in two tuples.
@@ -88,7 +89,7 @@ def _int_tuple_binary_apply[
 
 @always_inline
 def _int_tuple_compare[
-    comp_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) -> Bool,
+    comp_fn: def[dtype: DType](Scalar[dtype], Scalar[dtype]) thin -> Bool,
 ](a: IndexList, b: type_of(a)) -> StaticTuple[Bool, a.size]:
     """Applies a given element compare function to each pair of corresponding
     elements in two tuples and produces a tuple of Bools containing result.
@@ -119,7 +120,7 @@ def _int_tuple_compare[
 
 @always_inline
 def _bool_tuple_reduce[
-    reduce_fn: def(Bool, Bool) -> Bool,
+    reduce_fn: def(Bool, Bool) thin -> Bool,
 ](a: StaticTuple[Bool, _], init: Bool) -> Bool:
     """Reduces the tuple argument with the given reduce function and initial
     value.
@@ -230,7 +231,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
         self = tup
 
     @always_inline
-    def __init__(out self, *elems: Int, __list_literal__: () = ()):
+    def __init__(out self, *elems: Int, __list_literal__: NoneType = None):
         """Constructs a static int tuple given a set of arguments.
 
         Args:
@@ -242,7 +243,18 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
 
-        self = Self(values=elems)
+        comptime assert (
+            Self.element_type.is_integral()
+        ), "Element type must be of integral type."
+        var num_elements = len(elems)
+
+        assert (
+            Self.size == num_elements
+        ), "[IndexList] mismatch in the number of elements"
+
+        self = Self()
+        comptime for idx in range(Self.size):
+            self[idx] = elems[idx]
 
     @always_inline
     def __init__(out self, fill: Int):
@@ -255,29 +267,6 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
             Self.element_type.is_integral()
         ), "Element type must be of integral type."
         self.data = StaticTuple[_, Self.size](fill=Self._int_type(fill))
-
-    @always_inline
-    def __init__(out self, values: VariadicList[Int, is_owned=False]):
-        """Creates a tuple constant using the specified values.
-
-        Args:
-            values: The list of values.
-        """
-        comptime assert (
-            Self.element_type.is_integral()
-        ), "Element type must be of integral type."
-        var num_elements = len(values)
-
-        assert (
-            Self.size == num_elements
-        ), "[IndexList] mismatch in the number of elements"
-
-        var tup = Self()
-
-        comptime for idx in range(Self.size):
-            tup[idx] = values[idx]
-
-        self = tup
 
     @always_inline("nodebug")
     def __len__(self) -> Int:
@@ -727,10 +716,7 @@ struct IndexList[size: Int, *, element_type: DType = DType.int64](
 def Index[
     *Ts: Intable,
     dtype: DType = DType.int64,
-](
-    *args: *Ts,
-    out result: IndexList[type_of(args).__len__(), element_type=dtype],
-):
+](*args: *Ts, out result: IndexList[args.__len__(), element_type=dtype]):
     """Constructs an N-D Index from the given values.
 
     Parameters:
@@ -743,11 +729,8 @@ def Index[
     Returns:
         The constructed IndexList.
     """
-    comptime arg_count = args.__len__()
-
-    result = IndexList[arg_count, element_type=dtype]()
-
-    comptime for i in range(arg_count):
+    result = {}
+    comptime for i in range(args.__len__()):
         result[i] = Int(args[i])
 
 

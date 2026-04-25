@@ -29,7 +29,7 @@ def _destroy_global_runtime(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
 
 
 @always_inline
-def _ensure_current_or_global_runtime_init():
+def _ensure_runtime_init():
     var current_runtime = external_call[
         "KGEN_CompilerRT_AsyncRT_GetCurrentRuntime",
         _CPointer[NoneType, ExternalOrigin[mut=True]],
@@ -40,7 +40,7 @@ def _ensure_current_or_global_runtime_init():
 
 
 def __wrap_and_execute_main[
-    main_func: def() -> None
+    main_func: def() thin -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -48,7 +48,7 @@ def __wrap_and_execute_main[
     """Define a C-ABI compatible entry point for non-raising main function."""
 
     # Initialize the global runtime.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
 
     comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
@@ -57,10 +57,10 @@ def __wrap_and_execute_main[
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
 
     # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
-    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
-    # Such functionality needs to be explicitly hidden under the env var,
-    # because otherwise extra signal handler will be registered if user runs
-    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    # trace unless the `max-debug.stack-trace-on-crash` Config key is
+    # disabled.  This functionality is gated because otherwise an extra signal
+    # handler will be registered when the user runs code with a sanitizer
+    # enabled, which would lead to duplicate stack traces being printed.
     external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.
@@ -74,7 +74,7 @@ def __wrap_and_execute_main[
 
 
 def __wrap_and_execute_raising_main[
-    main_func: def() raises -> None
+    main_func: def() thin raises -> None
 ](
     argc: Int32,
     argv: __mlir_type[`!kgen.pointer<!kgen.pointer<scalar<ui8>>>`],
@@ -82,7 +82,7 @@ def __wrap_and_execute_raising_main[
     """Define a C-ABI compatible entry point for a raising main function."""
 
     # Initialize the global runtime.
-    _ensure_current_or_global_runtime_init()
+    _ensure_runtime_init()
 
     comptime if SanitizeAddress:
         external_call["KGEN_CompilerRT_SetAsanAllocators", NoneType]()
@@ -91,10 +91,10 @@ def __wrap_and_execute_raising_main[
     external_call["KGEN_CompilerRT_SetArgV", NoneType](argc, argv)
 
     # Initialize signal handler for SIGSEGV  SIGABRT that will print a stack
-    # trace if MOJO_ENABLE_STACK_TRACE_ON_CRASH is set to non-zero or false.
-    # Such functionality needs to be explicitly hidden under the env var,
-    # because otherwise extra signal handler will be registered if user runs
-    # code with sanitizer enabled, which will lead to extra stack trace printed.
+    # trace unless the `max-debug.stack-trace-on-crash` Config key is
+    # disabled.  This functionality is gated because otherwise an extra signal
+    # handler will be registered when the user runs code with a sanitizer
+    # enabled, which would lead to duplicate stack traces being printed.
     external_call["KGEN_CompilerRT_PrintStackTraceOnFault", NoneType]()
 
     # Call into the user main function.

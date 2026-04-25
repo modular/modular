@@ -74,7 +74,6 @@ def create_encoder_layer_weights(
     """Create shared encoder layer weights for both PyTorch and MAX models."""
     torch.manual_seed(42)
     std = IDEFICS3_VISION_CONFIG["initializer_range"]  # 0.02
-    head_dim = hidden_size // num_attention_heads
 
     weights = {}
 
@@ -182,7 +181,6 @@ def generate_max_outputs(
         device=DeviceRef.GPU(),
     )
 
-    # Convert weights to CPU before loading (MAX expects CPU weights)
     cpu_weights = {key: weight.cpu() for key, weight in encoder_weights.items()}
     max_encoder.load_state_dict(cpu_weights)
 

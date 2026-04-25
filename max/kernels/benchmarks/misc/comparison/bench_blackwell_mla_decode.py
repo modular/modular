@@ -661,7 +661,7 @@ def bench_max(
     scalar_args_type = TensorType(
         DType.int64,
         shape=[3],
-        device=DeviceRef.CPU(),
+        device=DeviceRef.GPU(),
     )
 
     # Build graph with MLA decode
@@ -850,21 +850,25 @@ def bench_max(
         0, total_tokens + 1, q_len_per_request, dtype=torch.int32, device="cuda"
     ).to(torch.uint32)
 
-    # Scalar dispatch args for the MLA decode kernel (shape [3], int64, CPU).
+    # Scalar dispatch args for the MLA decode kernel (shape [3], int64, GPU).
     # Use the canonical Mojo dispatch heuristic via mla_dispatch_args_scalar
     # instead of duplicating the logic in Python.
+    # The kernel reads these from device memory, so we must place them on GPU
+    # (matching the production path in AttentionDispatchResolver).
     device = Accelerator()
-    scalar_args_np = np.array(
-        mla_dispatch_args_scalar(
-            batch_size,
-            cache_len,
-            q_len_per_request,
-            num_q_heads,
-            is_fp8_kv,
-            device,
-        ),
-        dtype=np.int64,
-    )
+    scalar_args_gpu = Buffer.from_numpy(
+        np.array(
+            mla_dispatch_args_scalar(
+                batch_size,
+                cache_len,
+                q_len_per_request,
+                num_q_heads,
+                is_fp8_kv,
+                device,
+            ),
+            dtype=np.int64,
+        )
+    ).to(device)
 
     def run_kernel() -> Any:
         if per_token_scale_rope_aware:
@@ -877,7 +881,7 @@ def bench_max(
                 max_lengths_max,
                 kv_scales_max,
                 q_scales_max,
-                scalar_args_np,
+                scalar_args_gpu,
             )[0]
         else:
             output = model.execute(
@@ -887,7 +891,7 @@ def bench_max(
                 cache_lengths_max,
                 lut_max,
                 max_lengths_max,
-                scalar_args_np,
+                scalar_args_gpu,
             )[0]
         return output
 
@@ -918,13 +922,19 @@ def bench_max(
         torch.cuda.synchronize()
         return 1.0, total_bytes
 
-    # Benchmark with CUPTI warmup
-    # Note: Split-K implementation uses two kernels (decode + combine), so we
-    # need with_multiple_kernels=True to sum their times
+    # Benchmark with CUPTI warmup.
+    # Split-K launches two kernels (decode + combine), so we use
+    # with_multiple_kernels=True to sum their times.
+    # Kernel names use the @__name decorator pattern, e.g.
+    #   sm100_mla_decode_kv_bf16_..._<hash>   (main decode)
+    #   sm100_mla_decode_combine_..._<hash>    (reduction)
+    # The substring "sm100_mla_decode" matches all MLA decode variants
+    # (kv_bf16, kv_fp8, qkv_fp8, qkv_fp8_per_token_scale_rope_aware,
+    # and the combine kernel).
     try:
         time_s = bench_kineto_with_cupti_warmup(
             run_kernel,
-            kernel_names="mla",
+            kernel_names="sm100_mla_decode",
             num_tests=num_iters,
             suppress_kineto_output=True,
             flush_l2=True,

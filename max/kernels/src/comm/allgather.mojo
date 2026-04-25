@@ -38,8 +38,13 @@ from std.memory import UnsafePointer
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     WARP_SIZE,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
+)
+from std.gpu.primitives.grid_controls import (
+    PDL,
+    PDLLevel,
+    pdl_launch_attributes,
 )
 from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
 
@@ -57,7 +62,11 @@ from .sync import (
     circular_add,
 )
 
-# Tuning table to get num_blocks for allgather
+# Tuning table to get num_blocks for allgather.
+# Arch-specific defaults use ngpus=-1, num_bytes=-1 with the arch's sm_version.
+# The global default (sm_version="default") is the ultimate fallback for
+# unknown architectures -- dispatch_max_num_blocks prefers arch-specific
+# defaults when available.
 comptime allgather_tuning_table = Table(
     [
         # default for sm90 (encoded with ngpus=-1, num_bytes=-1)
@@ -68,9 +77,17 @@ comptime allgather_tuning_table = Table(
         CommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="sm_100a", num_blocks=512
         ),
+        # default for sm103 (B300, encoded with ngpus=-1, num_bytes=-1)
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="sm_103a", num_blocks=512
+        ),
         # default for CDNA4 (MI355X, encoded with ngpus=-1, num_bytes=-1)
         CommTuningConfig(
             ngpus=-1, num_bytes=-1, sm_version="CDNA4", num_blocks=216
+        ),
+        # global default for unknown architectures
+        CommTuningConfig(
+            ngpus=-1, num_bytes=-1, sm_version="default", num_blocks=512
         ),
     ],
     "allgather_table",
@@ -131,6 +148,7 @@ def _allgather_naive[
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"allgather_p2p_{dtype}", mangle=True)
 def _allgather_p2p_kernel[
     dtype: DType,
     rank: Int,
@@ -154,7 +172,7 @@ def _allgather_p2p_kernel[
     comptime alignment = align_of[SIMD[dtype, simd_width]]()
 
     var global_tid = global_idx.x
-    var stride = grid_dim.x * UInt(BLOCK_SIZE)
+    var stride = grid_dim.x * BLOCK_SIZE
     var my_sig = rank_sigs[my_rank]
 
     var src_ptrs_rr = InlineArray[
@@ -170,45 +188,46 @@ def _allgather_p2p_kernel[
         out_ptrs_rr[i] = outputs[target]
         lengths_rr[i] = lengths[target]
 
-    # Synchronize before reading.
-    _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
+    with PDL():
+        # Synchronize before reading.
+        _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
 
-    # Copy data from each source GPU to corresponding output buffer.
-    # outputs[i] should contain data from GPU i.
-    comptime for gpu_idx in range(ngpus):
-        var length = lengths_rr[gpu_idx]
-        var num_simd_vectors, remainder = divmod(length, simd_width)
+        # Copy data from each source GPU to corresponding output buffer.
+        # outputs[i] should contain data from GPU i.
+        comptime for gpu_idx in range(ngpus):
+            var length = lengths_rr[gpu_idx]
+            var num_simd_vectors, remainder = divmod(length, simd_width)
 
-        # Grid-strided loop for this source (vectorized).
-        for idx in range(Int(global_tid), num_simd_vectors, Int(stride)):
-            var elem_idx = idx * simd_width
-            # Read directly from source GPU.
-            var data = (
-                src_ptrs_rr[gpu_idx]
-                .address_space_cast[_target_address_space]()
-                .load[
-                    width=simd_width,
-                    alignment=alignment,
-                ](elem_idx)
-            )
-            # Write to output buffer for this source GPU.
-            out_ptrs_rr[gpu_idx].address_space_cast[
-                _target_address_space
-            ]().store[width=simd_width, alignment=alignment](elem_idx, data)
+            # Grid-strided loop for this source (vectorized).
+            for idx in range(global_tid, num_simd_vectors, stride):
+                var elem_idx = idx * simd_width
+                # Read directly from source GPU.
+                var data = (
+                    src_ptrs_rr[gpu_idx]
+                    .address_space_cast[_target_address_space]()
+                    .load[
+                        width=simd_width,
+                        alignment=alignment,
+                    ](elem_idx)
+                )
+                # Write to output buffer for this source GPU.
+                out_ptrs_rr[gpu_idx].address_space_cast[
+                    _target_address_space
+                ]().store[width=simd_width, alignment=alignment](elem_idx, data)
 
-        # Handle remainder elements with scalar operations.
-        if remainder > 0:
-            var tail_start = num_simd_vectors * simd_width
-            # Use first warp to handle tail to minimize divergence.
-            if global_tid < UInt(WARP_SIZE):
-                for i in range(Int(global_tid), remainder, WARP_SIZE):
-                    var elem_idx = tail_start + i
-                    out_ptrs_rr[gpu_idx][elem_idx] = src_ptrs_rr[gpu_idx][
-                        elem_idx
-                    ]
+            # Handle remainder elements with scalar operations.
+            if remainder > 0:
+                var tail_start = num_simd_vectors * simd_width
+                # Use first warp to handle tail to minimize divergence.
+                if global_tid < WARP_SIZE:
+                    for i in range(global_tid, remainder, WARP_SIZE):
+                        var elem_idx = tail_start + i
+                        out_ptrs_rr[gpu_idx][elem_idx] = src_ptrs_rr[gpu_idx][
+                            elem_idx
+                        ]
 
-    # Synchronize after writing.
-    _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
+        # Synchronize after writing.
+        _multi_gpu_barrier[ngpus, is_start=False](rank_sigs, my_sig, my_rank)
 
 
 @always_inline
@@ -282,7 +301,7 @@ def _allgather_p2p[
         ngpus,
         BLOCK_SIZE=BLOCK_SIZE,
     ]
-    ctx.enqueue_function_experimental[allgather_p2p_kernel](
+    ctx.enqueue_function[allgather_p2p_kernel, allgather_p2p_kernel](
         output_ptrs,
         list_of_in_ptrs,
         rank_sigs,
@@ -291,6 +310,7 @@ def _allgather_p2p[
         my_rank,
         grid_dim=grid_size,
         block_dim=BLOCK_SIZE,
+        attributes=pdl_launch_attributes(PDLLevel(1)),
     )
 
 

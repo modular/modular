@@ -14,7 +14,6 @@
 from std.algorithm import parallelize
 from std.collections.optional import OptionalReg
 from std.os import abort
-from std.builtin.variadics import Variadic
 from std.builtin.device_passable import DevicePassable
 from std.sys import (
     CompilationTarget,
@@ -52,7 +51,7 @@ from .shmem_api import (
 )
 
 
-def shmem_launch[func: def(ctx: SHMEMContext) raises]() raises:
+def shmem_launch[func: def(ctx: SHMEMContext) thin raises]() raises:
     """Takes a function defining a SHMEM program and launches it
     on one thread for each GPU you have attached.
 
@@ -64,7 +63,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) raises]() raises:
         var destination = ctx.enqueue_create_buffer[DType.int32](1)
 
         ctx.enqueue_function[simple_shift_kernel](
-            destination.unsafe_ptr(), grid_dim=1, block_dim=1
+            destination, grid_dim=1, block_dim=1
         )
 
         ctx.barrier_all()
@@ -103,7 +102,7 @@ def shmem_launch[func: def(ctx: SHMEMContext) raises]() raises:
         ]()
 
 
-def _shmem_launch_mpi[func: def(ctx: SHMEMContext) raises]() raises:
+def _shmem_launch_mpi[func: def(ctx: SHMEMContext) thin raises]() raises:
     var _argv = argv()
     var argc = len(_argv)
     MPI_Init(argc, _argv)
@@ -135,7 +134,7 @@ def _shmem_launch_mpi[func: def(ctx: SHMEMContext) raises]() raises:
     MPI_Finalize()
 
 
-def _shmem_launch_tcp[func: def(ctx: SHMEMContext) raises]() raises:
+def _shmem_launch_tcp[func: def(ctx: SHMEMContext) thin raises]() raises:
     # Enable any exceptions inside the closure passed to abort with the original
     # error and device ID in the message, as `parallelize` can't run on raising
     # functions.
@@ -366,9 +365,9 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @always_inline
     @parameter
     def enqueue_function[
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
-        func: def(* args: * declared_arg_types) -> None,
+        func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -454,10 +453,10 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
     @parameter
     def enqueue_function_collective_checked[
         func_type: TrivialRegisterPassable,
-        declared_arg_types: Variadic.TypesOfTrait[AnyType],
+        declared_arg_types: TypeList[Trait=AnyType, ...],
         //,
         func: func_type,
-        signature_func: def(* args: * declared_arg_types) -> None,
+        signature_func: def(* args: * declared_arg_types) thin -> None,
         *actual_arg_types: DevicePassable,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,

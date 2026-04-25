@@ -16,7 +16,7 @@ from std.sys import argv
 
 from std.gpu import WARP_SIZE
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx_uint as block_idx, warp_id_uint as warp_id
+from std.gpu import block_idx, warp_id
 from std.gpu.memory import async_copy_wait_all
 from std.gpu.sync import barrier
 from layout import (
@@ -85,8 +85,8 @@ def gemm_kernel[
     var num_warps = NUM_THREADS // WARP_SIZE
     var n_warp_n = BN // WN
     var n_warp_m = BM // WM
-    var warp_m = Int(warp_id()) // n_warp_n
-    var warp_n = Int(warp_id()) % n_warp_n
+    var warp_m = warp_id() // n_warp_n
+    var warp_n = warp_id() % n_warp_n
 
     # Allocate register tiles.
     var a_reg = LayoutTensor[
@@ -115,13 +115,13 @@ def gemm_kernel[
     comptime warp_layout = Layout.row_major(8, 4)
 
     for k_i in range(ceildiv(K, BK)):
-        var a_tile_dram = mat_a.tile[BM, BK](Int(block_idx.y), k_i)
+        var a_tile_dram = mat_a.tile[BM, BK](block_idx.y, k_i)
 
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BK, BK)
         ](a_tile_sram, a_tile_dram)
 
-        var b_tile_dram = mat_b.tile[BK, BN](k_i, Int(block_idx.x))
+        var b_tile_dram = mat_b.tile[BK, BN](k_i, block_idx.x)
 
         copy_dram_to_sram_async[
             thread_layout=Layout.row_major(NUM_THREADS // BN, BN)
@@ -149,9 +149,9 @@ def gemm_kernel[
         # Otherwise a data race, faster threads will modify shared memory.
         barrier()
 
-    var c_warp_tile = mat_c.tile[BM, BN](
-        Int(block_idx.y), Int(block_idx.x)
-    ).tile[WM, WN](warp_m, warp_n)
+    var c_warp_tile = mat_c.tile[BM, BN](block_idx.y, block_idx.x).tile[WM, WN](
+        warp_m, warp_n
+    )
 
     copy_local_to_dram[dst_thread_layout=warp_layout](c_warp_tile, c_reg)
 
@@ -237,7 +237,7 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

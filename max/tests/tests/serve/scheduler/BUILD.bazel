@@ -21,7 +21,6 @@ _MACOS_INCOMPATIBLE_TESTS = [
         name = src.split("/")[-1].split(".")[0],
         size = "large",
         srcs = [src],
-        mojo_deps = ["//max:MOGGKernelAPI"],
         tags = [
             "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
         ] + (
@@ -54,7 +53,6 @@ _MACOS_INCOMPATIBLE_TESTS = [
 modular_py_test(
     name = "test_di",
     srcs = ["test_di.py"],
-    mojo_deps = ["//max:MOGGKernelAPI"],
     tags = [
         "external-exclusive",  # Times out if run with too many other tests
     ],
@@ -70,7 +68,6 @@ modular_py_test(
         "//max/python/max/nn",
         "//max/python/max/pipelines/core",
         "//max/python/max/pipelines/lib",
-        "//max/python/max/serve:config",
         "//max/python/max/serve/scheduler",
         "//max/python/max/serve/worker_interface",
         requirement("numpy"),
@@ -78,29 +75,33 @@ modular_py_test(
 )
 
 # GPU tests
-[
-    modular_py_test(
-        name = src.split("/")[-1].split(".")[0],
-        srcs = [src],
-        gpu_constraints = [
-            "//:has_gpu",
-            "//:nvidia_gpu",
-        ] + select({
-            "//:apple_gpu": ["@platforms//:incompatible"],
-            "//conditions:default": [],
-        }),
-        mojo_deps = ["//max:MOGGKernelAPI"],
-        tags = [
-            "gpu",
-            "no-pydeps",  # Declaring tests in a loop like this doesn't work well with pydeps
-        ],
-        deps = [":common"],
-    )
-    for src in glob(
+
+modular_py_test(
+    name = "gpu_tests",
+    srcs = glob(
         ["*_gpu.py"],
         exclude = ["common.py"],
-    )
-]
+    ),
+    gpu_constraints = [
+        "//:has_gpu",
+        "//:nvidia_gpu",
+    ] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    tags = [
+        "gpu",
+    ],
+    deps = [
+        ":common",
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        "//max/python/max/nn",
+        requirement("numpy"),
+    ],
+)
 
 modular_py_library(
     name = "common",

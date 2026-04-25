@@ -27,8 +27,10 @@ from max._core.driver import Buffer
 # Import op bindings from categorized Mojo modules
 from . import (  # type: ignore[attr-defined]
     argmax_ops,
+    argnonzero_ops,
     avg_pool_ops,
     band_part_ops,
+    bottomk_ops,
     conv_ops,
     data_movement_ops,
     elementwise_binary_ops,
@@ -36,11 +38,17 @@ from . import (  # type: ignore[attr-defined]
     elementwise_comparison_ops,
     elementwise_unary_ops,
     gather_scatter_ops,
+    group_norm_ops,
     layer_norm_ops,
     matmul_ops,
     misc_ops,
+    nms_ops,
+    pad_ops,
     pooling_ops,
     reduce_ops,
+    resize_ops,
+    rms_norm_ops,
+    roi_align_ops,
     softmax_ops,
     split_ops,
     tile_ops,
@@ -108,7 +116,7 @@ REDUCE: dict[
     mo.ReduceMaxOp: reduce_ops.ReduceMax,
     mo.ReduceMinOp: reduce_ops.ReduceMin,
     mo.ReduceAddOp: reduce_ops.ReduceAdd,
-    mo.MeanOp: reduce_ops.Mean,
+    mo.ReduceMeanOp: reduce_ops.Mean,
     mo.ReduceMulOp: reduce_ops.ReduceMul,
 }
 
@@ -127,8 +135,8 @@ UNARY_MIXED: dict[
 SOFTMAX: dict[
     type[_core.Operation], Callable[[Buffer, Buffer, int, int], None]
 ] = {
-    mo.SoftmaxOp: softmax_ops.Softmax,
-    mo.LogsoftmaxOp: softmax_ops.LogSoftmax,
+    mo.ReduceSoftmaxOp: softmax_ops.Softmax,
+    mo.ReduceLogsoftmaxOp: softmax_ops.LogSoftmax,
 }
 
 # Import handlers after defining kernels to avoid circular import issues.

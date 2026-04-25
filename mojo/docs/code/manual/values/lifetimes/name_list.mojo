@@ -17,7 +17,7 @@ from std.collections import List
 struct NameList:
     var names: List[String]
 
-    def __init__(out self, *names: String) raises:
+    def __init__(out self, *names: String):
         self.names = List[String]()
         for name in names:
             self.names.append(name)

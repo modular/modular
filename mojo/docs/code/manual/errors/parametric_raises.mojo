@@ -30,7 +30,7 @@ struct ParseError(Copyable, Writable):
 
 def run_action[
     ErrorType: AnyType
-](action: def() raises ErrorType -> Int) raises ErrorType -> Int:
+](action: def() thin raises ErrorType -> Int) raises ErrorType -> Int:
     return action()
 
 

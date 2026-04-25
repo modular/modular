@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from max.dtype import DType
@@ -26,28 +27,60 @@ from max.graph import (
     Value,
     ops,
 )
+from max.kv_cache.paged_kv_cache.increment_cache_lengths import (
+    increment_cache_lengths_from_counts,
+)
 from max.nn.comm import Signals
-from max.nn.kernels import eagle_prefill_shift_tokens
+from max.nn.kernels import (
+    eagle_prefill_shift_tokens,
+)
 from max.nn.kv_cache import (
+    KVCacheInputsPerDevice,
     KVCacheParamInterface,
     KVCacheParams,
     PagedCacheValues,
 )
-from max.nn.kv_cache.input_types import PagedCacheInputSymbols
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
+    AcceptanceSampler,
     _reshape_target_logits,
-    greedy_acceptance_sampler,
 )
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.pipelines.lib.config import SpeculativeConfig
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
+    shape_to_scalar,
 )
 
 from ..deepseekV3.deepseekV3 import DeepseekV3
 from ..deepseekV3.model_config import DeepseekV3Config
 from ..deepseekV3_nextn.deepseekV3_nextn import DeepseekV3NextN
 from ..deepseekV3_nextn.model_config import DeepseekV3NextNConfig
+
+
+def compute_host_merged_offsets(
+    host_input_row_offsets: TensorValue,
+    draft_tokens: TensorValue,
+) -> TensorValue:
+    """Computes merged offsets on CPU, avoiding D2H copies.
+
+    merged_offsets[i] = host_input_row_offsets[i] + i * K where K is the
+    number of draft tokens per request. This mirrors the GPU-side merger
+    logic but stays on CPU so CUDA graph capture is not blocked by a
+    device-to-host transfer.
+    """
+    K = ops.shape_to_tensor([draft_tokens.shape[1]])[0].cast(DType.uint32)
+    batch_size_plus_one = ops.shape_to_tensor(
+        [host_input_row_offsets.shape[0]]
+    )[0]
+    indices = ops.range(
+        start=0,
+        stop=batch_size_plus_one,
+        out_dim=host_input_row_offsets.shape[0],
+        device=DeviceRef.CPU(),
+        dtype=DType.uint32,
+    )
+    return host_input_row_offsets + indices * K
 
 
 class UnifiedMTPDeepseekV3(Module):
@@ -62,9 +95,24 @@ class UnifiedMTPDeepseekV3(Module):
         self,
         config: DeepseekV3Config,
         draft_config: DeepseekV3NextNConfig | None = None,
+        speculative_config: SpeculativeConfig | None = None,
     ) -> None:
         super().__init__()
         self.config = config
+        self.num_draft_steps = (
+            speculative_config.num_speculative_tokens
+            if speculative_config
+            else 1
+        )
+        self.acceptance_sampler = AcceptanceSampler(
+            synthetic_acceptance_rate=(
+                speculative_config.synthetic_acceptance_rate
+                if speculative_config
+                else None
+            ),
+            num_draft_steps=self.num_draft_steps,
+            use_stochastic=True,
+        )
         self.target = DeepseekV3(config)
         self.merger = RaggedTokenMerger(config.devices[0])
 
@@ -82,33 +130,58 @@ class UnifiedMTPDeepseekV3(Module):
         host_input_row_offsets: TensorValue,
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
+        seed: TensorValue,
+        temperature: TensorValue,
+        top_k: TensorValue,
+        max_k: TensorValue,
+        top_p: TensorValue,
+        min_top_p: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
     ) -> tuple[TensorValue, ...]:
         merged_tokens, merged_offsets = self.merger(
             tokens, input_row_offsets, draft_tokens
         )
+        merged_tokens = ops.rebind(merged_tokens, ["merged_seq_len"])
+        merged_offsets = ops.rebind(merged_offsets, ["input_row_offsets_len"])
 
-        host_merged_offsets = merged_offsets.cast(DType.uint32).to(
-            DeviceRef.CPU()
+        host_merged_offsets = compute_host_merged_offsets(
+            host_input_row_offsets, draft_tokens
         )
 
+        # Broadcast merged_offsets once (uint32, small) and reuse the
+        # per-device list for target + draft step 0 + the accept-position
+        # gather. Hoisting this eliminates the broadcast that target and
+        # each draft step would otherwise run independently.
+        merged_offsets_per_dev = ops.distributed_broadcast(
+            merged_offsets, signal_buffers
+        )
         target_outputs = self.target(
             merged_tokens,
             signal_buffers,
             kv_collections,
             return_n_logits,
-            merged_offsets,
+            merged_offsets_per_dev,
             host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,
         )
-        logits = target_outputs[1]
-        hidden_states = target_outputs[3]
+        devices = self.config.devices
+        n_devs = len(devices)
 
-        num_accepted_draft_tokens, recovered, bonus = greedy_acceptance_sampler(
-            draft_tokens, logits
+        logits = target_outputs[1]
+        hidden_states = list(target_outputs[3 : 3 + n_devs])
+
+        num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
+            draft_tokens,
+            logits,
+            seed=seed,
+            temperature=temperature,
+            top_k=top_k,
+            max_k=max_k,
+            top_p=top_p,
+            min_top_p=min_top_p,
         )
 
         target_tokens = ops.concat([recovered, bonus], axis=1)
@@ -130,11 +203,9 @@ class UnifiedMTPDeepseekV3(Module):
             bonus.reshape((-1,)),
         )
 
-        host_merged_offsets = merged_offsets.cast(DType.uint32).to(
-            DeviceRef.CPU()
-        )
-
         assert draft_kv_collections is not None
+        # Step 0 always uses ALL hidden states (for per-batch-element gather
+        # at accepted positions) + VARIABLE logits (for draft argmax).
         self.draft.return_hidden_states = ReturnHiddenStates.ALL
         self.draft.return_logits = ReturnLogits.VARIABLE
         draft_outputs = self.draft(
@@ -143,32 +214,209 @@ class UnifiedMTPDeepseekV3(Module):
             signal_buffers,  # reuse target signal buffers for draft
             draft_kv_collections,
             return_n_logits,
-            merged_offsets,
+            merged_offsets_per_dev,
             host_merged_offsets,
             data_parallel_splits,
             batch_context_lengths,
             ep_inputs,  # reuse target ep inputs for draft
         )
-        self.draft.return_hidden_states = ReturnHiddenStates.LAST
+        # Steps 1..K use LAST_PER_DEVICE. The underlying LAST path's
+        # internal allgather acts as a collective fence between successive
+        # draft invocations — without it, the draft's EP/MoE dispatch
+        # leaves pending async work that surfaces `mgp.sync` on the 2nd
+        # decoder call during CUDA graph capture. LAST_PER_DEVICE returns
+        # the post-allgather per-device tensors directly.
+        self.draft.return_hidden_states = ReturnHiddenStates.LAST_PER_DEVICE
         self.draft.return_logits = ReturnLogits.LAST_TOKEN
 
-        draft_logits = draft_outputs[1]
+        draft_variable_logits = draft_outputs[1]
+        all_hs = list(draft_outputs[3 : 3 + n_devs])
 
-        draft_logits = _reshape_target_logits(draft_logits)
-        draft_token_candidates = ops.squeeze(
-            ops.argmax(draft_logits, axis=-1), axis=-1
+        draft_logits_3d = _reshape_target_logits(draft_variable_logits)
+        draft_argmax = ops.squeeze(
+            ops.argmax(draft_logits_3d, axis=-1), axis=-1
         )
-
         next_draft_tokens = ops.gather_nd(
-            draft_token_candidates,
+            draft_argmax,
             ops.unsqueeze(num_accepted_draft_tokens, axis=-1),
             batch_dims=1,
-        ).reshape([-1, 1])
+        ).reshape([-1])
+
+        devices = self.config.devices
+        device0 = devices[0]
+        hidden_dim = self.draft.config.hidden_size
+
+        last_idx = merged_offsets[1:] - 1
+        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device0)
+        last_accepted_idx = (
+            ops.rebind(last_idx, ["batch_size"])
+            - num_draft_sentinel_gpu.broadcast_to(["batch_size"])
+            + num_accepted_draft_tokens
+        )
+        # Per-device gather at accepted positions. Broadcast indices once,
+        # then either slice by DP splits (DP mode, each device holds its
+        # local batch shard) or gather directly (TP mode, each device
+        # holds a full replica).
+        last_accepted_idx_i64 = last_accepted_idx.cast(DType.int64)
+        last_accepted_idx_per_dev = ops.distributed_broadcast(
+            last_accepted_idx_i64, signal_buffers
+        )
+
+        draft_hs: list[TensorValue] = []
+        if self.config.data_parallel_degree > 1:
+            for i in range(n_devs):
+                start = data_parallel_splits[i]
+                end = data_parallel_splits[i + 1]
+                global_idx_dev_i = ops.slice_tensor(
+                    last_accepted_idx_per_dev[i],
+                    [(slice(start, end), f"mtp_batch_split_{i}")],
+                )
+                local_seq_offset_i = merged_offsets_per_dev[i][start].cast(
+                    DType.int64
+                )
+                local_idx_dev_i = global_idx_dev_i - local_seq_offset_i
+                draft_hs.append(ops.gather(all_hs[i], local_idx_dev_i, axis=0))
+        else:
+            # TP / single-device: each all_hs[i] is a full replica, index
+            # directly with the global accepted-idx on each device.
+            for i in range(n_devs):
+                draft_hs.append(
+                    ops.gather(all_hs[i], last_accepted_idx_per_dev[i], axis=0)
+                )
+
+        input_lengths = ops.rebind(
+            (input_row_offsets[1:] - input_row_offsets[:-1]).cast(DType.int64),
+            ["batch_size"],
+        )
+        accepted_lengths = (
+            input_lengths + num_accepted_draft_tokens.cast(DType.int64)
+        ).rebind(["batch_size"])
+
+        use_comm = len(devices) > 1
+        cache_lengths_per_dev = increment_cache_lengths_from_counts(
+            accepted_lengths,
+            data_parallel_splits,
+            [kv.cache_lengths for kv in draft_kv_collections],
+            signal_buffers if use_comm else None,
+        )
+
+        draft_return_n_logits = ops.constant(
+            1, DType.int64, DeviceRef.CPU()
+        ).broadcast_to([1])
+
+        decode_offsets = ops.range(
+            start=0,
+            stop=input_row_offsets.shape[0],
+            out_dim="input_row_offsets_len",
+            device=device0,
+            dtype=DType.uint32,
+        )
+        decode_offsets_per_dev = ops.distributed_broadcast(
+            decode_offsets, signal_buffers
+        )
+        host_decode_offsets = ops.range(
+            start=0,
+            stop=input_row_offsets.shape[0],
+            out_dim="input_row_offsets_len",
+            device=DeviceRef.CPU(),
+            dtype=DType.uint32,
+        )
+
+        one = ops.constant(1, DType.uint32, DeviceRef.CPU()).broadcast_to([1])
+        new_max_lengths = [
+            ops.concat(
+                [one, kv.max_lengths[0, 1].broadcast_to([1])], axis=-1
+            ).reshape([1, 2])
+            for kv in draft_kv_collections
+        ]
+
+        draft_kv_collections = [
+            replace(
+                kv,
+                max_lengths=max_lengths,
+                attention_dispatch_metadata=kv.draft_attention_dispatch_metadata,
+            )
+            for kv, max_lengths in zip(
+                draft_kv_collections, new_max_lengths, strict=True
+            )
+        ]
+
+        next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
+        all_draft_tokens = [next_draft_tokens]
+
+        for step in range(1, self.num_draft_steps):
+            # Per-device shapes differ across DP replicas; use per-device
+            # dim names. The draft internally rebinds to
+            # `{split_prefix}_seq_len_device_{i}` once inside __call__.
+            draft_hs = [
+                draft_hs[i].rebind(
+                    [f"mtp_step{step}_batch_dev_{i}", hidden_dim]
+                )
+                for i in range(n_devs)
+            ]
+
+            step_kv: list[PagedCacheValues] = [
+                replace(kv, cache_lengths=cl)
+                for kv, cl in zip(
+                    draft_kv_collections, cache_lengths_per_dev, strict=True
+                )
+            ]
+
+            step_outputs = self.draft(
+                next_draft_tokens,
+                draft_hs,
+                signal_buffers,
+                step_kv,
+                draft_return_n_logits,
+                decode_offsets_per_dev,
+                host_decode_offsets,
+                data_parallel_splits,
+                batch_context_lengths,
+                ep_inputs,
+                split_prefix=f"mtp_draft_step{step}",
+            )
+
+            logits = step_outputs[0]
+            draft_hs_full = list(step_outputs[1 : 1 + n_devs])
+            next_step = step + 1
+            if self.config.data_parallel_degree > 1:
+                draft_hs = [
+                    ops.slice_tensor(
+                        draft_hs_full[i],
+                        [
+                            (
+                                slice(
+                                    data_parallel_splits[i],
+                                    data_parallel_splits[i + 1],
+                                ),
+                                f"mtp_step{next_step}_batch_dev_{i}",
+                            ),
+                        ],
+                    )
+                    for i in range(n_devs)
+                ]
+            else:
+                # TP / single-device: each device already holds a full
+                # replica, no per-device slicing needed.
+                draft_hs = list(draft_hs_full)
+
+            next_draft_tokens = ops.argmax(logits, axis=-1).reshape([-1])
+            all_draft_tokens.append(
+                ops.rebind(next_draft_tokens, ["batch_size"])
+            )
+
+            cache_lengths_per_dev = [cl + 1 for cl in cache_lengths_per_dev]
+            batch_context_lengths = [bcl + 1 for bcl in batch_context_lengths]
+
+        if len(all_draft_tokens) > 1:
+            new_token = ops.stack(all_draft_tokens, axis=-1)
+        else:
+            new_token = ops.unsqueeze(all_draft_tokens[0], -1)
 
         return (
             num_accepted_draft_tokens,
             next_tokens,
-            next_draft_tokens,
+            new_token,
         )
 
     def input_types(
@@ -178,10 +426,11 @@ class UnifiedMTPDeepseekV3(Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types for the with-MTP graph.
 
-        Order: tokens, device_offsets, host_offsets, draft_tokens,
-               return_n_logits, data_parallel_splits, signal_buffers,
-               target_kv_cache, draft_kv_blocks_per_device,
-               batch_context_lengths, ep_inputs.
+        Order: tokens, device_offsets, host_offsets, return_n_logits,
+               data_parallel_splits, signal_buffers, target_kv_cache,
+               batch_context_lengths, ep_inputs, draft_tokens,
+               draft_kv_blocks_per_device, seed, temperature, top_k,
+               max_k, top_p, min_top_p.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -220,17 +469,11 @@ class UnifiedMTPDeepseekV3(Module):
             tokens_type,
             device_input_row_offsets_type,
             host_input_row_offsets_type,
-            draft_tokens_type,
             return_n_logits_type,
             data_parallel_splits_type,
         ]
         all_input_types.extend(signal_buffer_types)
         all_input_types.extend(kv_params.get_symbolic_inputs().flatten())
-
-        if draft_kv_params is not None:
-            for sym in draft_kv_params.get_symbolic_inputs():
-                assert isinstance(sym, PagedCacheInputSymbols)
-                all_input_types.append(sym.kv_blocks)
 
         batch_context_length_type = TensorType(
             DType.int32, shape=[1], device=DeviceRef.CPU()
@@ -241,5 +484,36 @@ class UnifiedMTPDeepseekV3(Module):
 
         if self.target.ep_manager is not None:
             all_input_types.extend(self.target.ep_manager.input_types())
+
+        all_input_types.append(draft_tokens_type)
+        if draft_kv_params is not None:
+            for sym in draft_kv_params.get_symbolic_inputs().inputs:
+                assert isinstance(sym, KVCacheInputsPerDevice)
+                all_input_types.append(sym.kv_blocks)
+
+        all_input_types.append(ops.random.SeedType)
+
+        temperature_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        top_k_type = TensorType(
+            DType.int64, shape=["batch_size"], device=device_ref
+        )
+        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
+        top_p_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        min_top_p_type = TensorType(
+            DType.float32, shape=[], device=DeviceRef.CPU()
+        )
+        all_input_types.extend(
+            [
+                temperature_type,
+                top_k_type,
+                max_k_type,
+                top_p_type,
+                min_top_p_type,
+            ]
+        )
 
         return tuple(all_input_types)

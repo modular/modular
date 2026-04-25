@@ -20,6 +20,7 @@ from max.graph.weights import WeightsFormat
 from max.interfaces import PipelineTask
 from max.pipelines import PIPELINE_REGISTRY, PipelineConfig, TextContext
 from max.pipelines.lib.config.model_config import MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.registry import SupportedArchitecture
 from max.pipelines.lib.tokenizer import TextTokenizer
@@ -55,12 +56,16 @@ def test_registry__test_retrieve_with_unknown_architecture_max_engine() -> None:
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
 
     with pytest.raises(ValueError):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="GSAI-ML/LLaDA-8B-Instruct",
-                # This forces it to fail if we dont have it.
-                trust_remote_code=True,
-                max_length=1,
+        PipelineConfig(
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="GSAI-ML/LLaDA-8B-Instruct",
+                        # This forces it to fail if we dont have it.
+                        trust_remote_code=True,
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -78,11 +83,15 @@ def test_registry__test_retrieve_with_unknown_architecture_unknown_engine() -> (
         Exception,
         match=r"Cannot determine architecture|no 'architectures' field",
     ):
-        config = PipelineConfig(
-            model=MAXModelConfig(
-                model_path="GSAI-ML/LLaDA-8B-Instruct",
-                trust_remote_code=True,
-                max_length=1,
+        PipelineConfig(
+            models=ModelManifest(
+                {
+                    "main": MAXModelConfig(
+                        model_path="GSAI-ML/LLaDA-8B-Instruct",
+                        trust_remote_code=True,
+                        max_length=1,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_batch_size=1),
         )
@@ -96,7 +105,7 @@ def test_registry__retrieve_pipeline_task_returns_text_generation() -> None:
 
 
 @prepare_registry
-def test_registry__retrieve_pipeline_task_raises_on_ambiguous_architecture() -> (
+def test_registry__retrieve_pipeline_task_defaults_to_text_generation_on_ambiguous_architecture() -> (
     None
 ):
     PIPELINE_REGISTRY.register(DUMMY_LLAMA_ARCH)
@@ -113,8 +122,8 @@ def test_registry__retrieve_pipeline_task_raises_on_ambiguous_architecture() -> 
         config=DummyLlamaArchConfig,
     )
     PIPELINE_REGISTRY.register(embedding_arch)
-    with pytest.raises(ValueError, match="multiple pipeline tasks"):
-        PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
+    task = PIPELINE_REGISTRY.retrieve_pipeline_task("LlamaForCausalLM")
+    assert task == PipelineTask.TEXT_GENERATION
 
 
 @prepare_registry
@@ -139,8 +148,6 @@ def test_registry__retrieve_factory_pixel_uses_arch_config_max_length() -> None:
         max_batch_size=1,
         max_length=1,
     )
-    pipeline_config.model._diffusers_config = {"components": {}}
-
     PIPELINE_REGISTRY.retrieve_factory(
         pipeline_config,
         task=PipelineTask.PIXEL_GENERATION,

@@ -267,7 +267,7 @@ def _write_int[
         # SAFETY:
         #   This static origin is valid as long as we're using a
         #   `StaticString` for `digit_chars`.
-        var zero_char = digit_chars_array[0]
+        var zero_char = digit_chars_array.unsafe_ptr()[]
 
         # Construct a null-terminated buffer of single-byte char.
         var zero_buf: InlineArray[UInt8, 2] = [zero_char, 0]
@@ -307,8 +307,8 @@ def _write_int[
 
     @parameter
     def process_digits[
-        get_digit_value: def(Scalar[dtype]) -> Scalar[dtype],
-        div_fn: def(Scalar[dtype]) -> Scalar[dtype],
+        get_digit_value: def(Scalar[dtype]) thin -> Scalar[dtype],
+        div_fn: def(Scalar[dtype]) thin -> Scalar[dtype],
     ]():
         while remaining_int:
             var digit_value = get_digit_value(remaining_int)
@@ -316,7 +316,7 @@ def _write_int[
             # Write the char representing the value of the least significant
             # digit.
             (buf.unsafe_ptr() + offset).init_pointee_copy(
-                digit_chars_array[Int(digit_value)]
+                digit_chars_array.unsafe_ptr()[Int(digit_value)]
             )
 
             # Position the offset to write the next digit.

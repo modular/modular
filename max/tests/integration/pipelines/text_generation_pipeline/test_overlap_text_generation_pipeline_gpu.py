@@ -15,6 +15,7 @@ import math
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock
 
@@ -148,6 +149,9 @@ class FakeModelConfig(ConfigFileModel):
     enable_echo: bool = False
     data_parallel_degree: int = 1
 
+    def resolved_weight_paths(self) -> list[Path]:
+        return []
+
 
 class FakeRuntimeConfig(ConfigFileModel):
     execute_empty_batches: bool = False
@@ -157,12 +161,17 @@ class FakeRuntimeConfig(ConfigFileModel):
     pipeline_role: str = "prefill_and_decode"
 
 
+class FakeSpeculativeConfig(ConfigFileModel):
+    num_speculative_tokens: int = 0
+
+
 class FakePipelineConfig(ConfigFileModel):
     model: FakeModelConfig
     sampling: FakeSamplingConfig
     runtime: FakeRuntimeConfig = FakeRuntimeConfig()
     enable_echo: bool = False
     debug_verify_replay: bool = False
+    speculative: FakeSpeculativeConfig | None = None
 
     def configure_session(self, *args: Any, **kwargs: Any) -> None:
         pass
@@ -204,7 +213,7 @@ def build_graph(device_ref: DeviceRef) -> Model:
             ),
             # input row offsets
             TensorType(
-                DType.int64,
+                DType.uint32,
                 [SymbolicDim("input_row_offsets_len")],
                 device=device_ref,
             ),
@@ -268,7 +277,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         del kv_cache_inputs, return_n_logits  # Unused args
@@ -292,7 +301,7 @@ class FakePipelineModel(PipelineModelWithKVCache[TextContext]):
         )
         input_row_offsets = DevicePinnedBuffer(
             shape=[len(batch) + 1],
-            dtype=DType.int64,
+            dtype=DType.uint32,
             device=self.device,
         )
         np.cumsum(
@@ -353,7 +362,6 @@ def monkeypatch_weight_and_kvcache_loading(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     for func in [
-        "get_weight_paths",
         "load_weights",
         "weights_format",
         "load_kv_manager",
@@ -363,6 +371,7 @@ def monkeypatch_weight_and_kvcache_loading(
 
 def create_overlap_pipeline(
     enable_overlap_scheduler: bool,
+    disable_overlap: bool = False,
 ) -> OverlapTextGenerationPipeline[Any]:
     sampling_config = FakeSamplingConfig(enable_penalties=False)
     model_config = FakeModelConfig(
@@ -385,6 +394,7 @@ def create_overlap_pipeline(
         eos_token_id=9999,
         weight_adapters=MagicMock(),
         tokenizer=MagicMock(),
+        disable_overlap=disable_overlap,
     )
     return pipeline
 
@@ -570,3 +580,46 @@ def test_overlap_execution_with_preemption(
     assert context.tokens.all.tolist() == (
         list(range(100, 120)) + [FUTURE_TOKEN]
     )
+
+
+def test_disable_overlap_returns_outputs_immediately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify disable_overlap=True returns current-batch outputs in the same
+    execute() call, never deferring them to the next iteration."""
+    monkeypatch_weight_and_kvcache_loading(monkeypatch)
+    prime_host_buffer_cache()
+
+    pipeline = create_overlap_pipeline(
+        enable_overlap_scheduler=True,
+        disable_overlap=True,
+    )
+
+    def create_inputs(
+        contexts: list[TextContext],
+    ) -> TextGenerationInputs[TextContext]:
+        return TextGenerationInputs(batches=[contexts], num_steps=1)
+
+    # --- Single request, multiple generation steps ---
+    req_a = create_context(isl=17, osl=3, offset=100)
+    req_a_id = req_a.request_id
+
+    # Every execute() must return outputs immediately and never hold a
+    # deferred _prev_batch.
+    out = pipeline.execute(create_inputs([req_a]))
+    assert not pipeline.has_pending_outputs()
+    assert req_a_id in out
+    assert out[req_a_id].tokens == [117]
+
+    out = pipeline.execute(create_inputs([req_a]))
+    assert not pipeline.has_pending_outputs()
+    assert out[req_a_id].tokens == [118]
+
+    out = pipeline.execute(create_inputs([req_a]))
+    assert not pipeline.has_pending_outputs()
+    assert out[req_a_id].tokens == [119]
+
+    # --- Empty batch returns empty outputs and no pending state ---
+    out = pipeline.execute(create_inputs([]))
+    assert not pipeline.has_pending_outputs()
+    assert len(out) == 0

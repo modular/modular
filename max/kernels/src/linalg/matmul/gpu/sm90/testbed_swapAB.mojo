@@ -63,9 +63,9 @@ def test_matmul_sm90_swapAB_comparison[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     # Convert SM90 configs to base configs for the kernel
     comptime base_config = config.to_base_config()
@@ -101,17 +101,13 @@ def test_matmul_sm90_swapAB_comparison[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(
-        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
-    ).as_immut()
-    var b_tensor = TileTensor(
-        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
-    ).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
     var c_normal_tensor = TileTensor(
-        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_normal_dev_buffer, row_major(Coord(m, n))
     )
     var c_swapAB_tensor = TileTensor(
-        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_swapAB_dev_buffer, row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
@@ -445,9 +441,9 @@ def test_matmul_sm90_swapAB_comparison_v2[
         k: The K dimension (can be static or dynamic).
     """
     comptime transpose_b = True
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     # Build compile-time configs directly using BaseMatmulConfig
     comptime base_config = BaseMatmulConfig[
@@ -457,11 +453,11 @@ def test_matmul_sm90_swapAB_comparison_v2[
         warp_tile_shape=Index(MMA_M, MMA_N, BK),
         mma_shape=Index(MMA_M, MMA_N, MMA_K),
         cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_k_partitions=UInt(num_k_partitions),
-        k_group_size=UInt(k_group_size),
+        num_pipeline_stages=num_pipeline_stages,
+        num_k_partitions=num_k_partitions,
+        k_group_size=k_group_size,
         num_warp_k_partitions=1,
-        num_consumer=UInt(num_consumer),
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
     )
 
@@ -472,11 +468,11 @@ def test_matmul_sm90_swapAB_comparison_v2[
         warp_tile_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, BK_SWAPAB),
         mma_shape=Index(MMA_M_SWAPAB, MMA_N_SWAPAB, MMA_K_SWAPAB),
         cluster_shape=Index(1, 1, 1),
-        num_pipeline_stages=UInt(num_pipeline_stages_swapAB),
-        num_k_partitions=UInt(num_k_partitions_swapAB),
-        k_group_size=UInt(k_group_size_swapAB),
+        num_pipeline_stages=num_pipeline_stages_swapAB,
+        num_k_partitions=num_k_partitions_swapAB,
+        k_group_size=k_group_size_swapAB,
         num_warp_k_partitions=1,
-        num_consumer=UInt(num_consumer_swapAB),
+        num_consumer=num_consumer_swapAB,
         partitioned_multicast=partitioned_multicast_swapAB,
     )
 
@@ -505,17 +501,13 @@ def test_matmul_sm90_swapAB_comparison_v2[
 
     # Construct TileTensors for device buffers
     # transpose_b=True: b shape is (N, K)
-    var a_tensor = TileTensor(
-        a_dev_buffer.unsafe_ptr(), row_major(Coord(m, k))
-    ).as_immut()
-    var b_tensor = TileTensor(
-        b_dev_buffer.unsafe_ptr(), row_major(Coord(n, k))
-    ).as_immut()
+    var a_tensor = TileTensor(a_dev_buffer, row_major(Coord(m, k))).as_immut()
+    var b_tensor = TileTensor(b_dev_buffer, row_major(Coord(n, k))).as_immut()
     var c_normal_tensor = TileTensor(
-        c_normal_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_normal_dev_buffer, row_major(Coord(m, n))
     )
     var c_swapAB_tensor = TileTensor(
-        c_swapAB_dev_buffer.unsafe_ptr(), row_major(Coord(m, n))
+        c_swapAB_dev_buffer, row_major(Coord(m, n))
     )
 
     # Initialize matmul operands with random values
@@ -646,7 +638,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     @__copy_capture(c_normal_tensor)
     def epilogue_fn_normal[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -659,7 +651,7 @@ def test_matmul_sm90_swapAB_comparison_v2[
     @__copy_capture(c_swapAB_tensor)
     def epilogue_fn_swapAB[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:

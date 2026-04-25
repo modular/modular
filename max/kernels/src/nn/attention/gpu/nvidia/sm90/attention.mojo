@@ -13,6 +13,7 @@
 
 from std.collections import OptionalReg
 from std.math import ceildiv, align_up
+from std.math.uutils import ufloordiv
 from std.math.constants import log2e
 from std.memory import (
     bitcast,
@@ -22,7 +23,7 @@ from std.sys import size_of
 
 import std.gpu.primitives.warp as warp
 from std.algorithm.functional import unswitch
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.host import DeviceContext, DeviceBuffer
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -155,7 +156,7 @@ struct NonNullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        assert Bool(self.ptr), (
+        assert Int(self.ptr) != 0, (
             "NonNullPointer is supposed to provide a compile-time guarantee"
             " of being non-null"
         )
@@ -178,7 +179,9 @@ struct NullPointer[
 
     @always_inline
     def value(self) -> Self.PtrType:
-        return {}
+        # NullPointer.value() should never be called at runtime — it exists
+        # only for trait conformance. Return dangling as a safe sentinel.
+        return Self.PtrType.unsafe_dangling()
 
 
 struct Pack[
@@ -503,10 +506,11 @@ def get_seq_info[
         flip_prompt_idx=flip_prompt_idx,
         pair_cta=pair_cta,
     ]()
+    # SAFETY: Stored in MHATileState.sidx_ptr but never dereferenced.
     var state: MHATileState = scheduler.initial_state(
         UnsafePointer[
             UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](),
+        ].unsafe_dangling(),
         tile_summary,
     )
     return scheduler.unsafe_seq_info(tile_summary, state)
@@ -712,13 +716,26 @@ def q_smem_shape[
     group: Int,
     depth: Int,
     decoding: Bool,
+    fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
-](out res: IndexList[4 if decoding else 3]):
+](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
     comptime L = res.size
     comptime assert L in (3, 4)
     comptime swizzle_granularity = swizzle_mode.bytes() // size_of[dtype]()
 
-    comptime if L == 3:  # prefill
+    comptime if decoding:
+        return {1, 1, max(group, 8), swizzle_granularity}
+    elif fuse_gqa:
+        comptime if num_qk_stages == 1:
+            return {BM // group, 1, group, depth}
+        else:
+            return {
+                BM // group,
+                1,
+                group,
+                align_up(depth, swizzle_granularity) // num_qk_stages,
+            }
+    else:
         comptime if num_qk_stages == 1:
             return {BM, 1, depth}
         else:
@@ -727,8 +744,6 @@ def q_smem_shape[
                 1,
                 align_up(depth, swizzle_granularity) // num_qk_stages,
             }
-    else:
-        return {1, 1, max(group, 8), swizzle_granularity}
 
 
 def q_gmem_shape[
@@ -739,13 +754,14 @@ def q_gmem_shape[
     q_num_heads: Int,
     depth: Int,
     decoding: Bool,
-](out res: IndexList[4 if decoding else 3]):
+    fuse_gqa: Bool = False,
+](out res: IndexList[4 if (decoding or fuse_gqa) else 3]):
     comptime L = res.size
     comptime assert L in (3, 4)
 
-    comptime if L == 3:  # prefill
+    comptime if L == 3:  # prefill, no fusion
         return {UNKNOWN_VALUE, q_num_heads, depth}
-    else:
+    else:  # decoding or fuse_gqa prefill
         return {UNKNOWN_VALUE, q_num_heads // group, group, depth}
 
 
@@ -757,6 +773,7 @@ comptime QTMATile[
     depth: Int,
     group: Int,
     decoding: Bool,
+    fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
 ] = SplitLastDimTMATensorTile[
     dtype,
@@ -767,6 +784,7 @@ comptime QTMATile[
         group=group,
         depth=depth,
         decoding=decoding,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=num_qk_stages,
     ](),
     swizzle_mode,
@@ -796,6 +814,7 @@ def q_tma[
     q_num_heads: Int,
     group: Int,
     decoding: Bool,
+    fuse_gqa: Bool = False,
     num_qk_stages: Int = 1,
 ](
     ctx: DeviceContext,
@@ -808,6 +827,7 @@ def q_tma[
     depth=depth,
     group=group,
     decoding=decoding,
+    fuse_gqa=fuse_gqa,
     num_qk_stages=num_qk_stages,
 ]:
     comptime smem_dim = q_smem_shape[
@@ -817,6 +837,7 @@ def q_tma[
         group=group,
         depth=depth,
         decoding=decoding,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=num_qk_stages,
     ]()
     comptime gmem_dim = q_gmem_shape[
@@ -826,6 +847,7 @@ def q_tma[
         q_num_heads=q_num_heads,
         depth=depth,
         decoding=decoding,
+        fuse_gqa=fuse_gqa,
     ]()
     return create_split_tma[smem_dim, gmem_dim, swizzle_mode](ctx, ptr, rows)
 
@@ -904,7 +926,9 @@ def _apply_mask[
     var batch_cache_valid_length: UInt32
 
     comptime if decoding:
-        if warp.broadcast((thread_idx.x - 128) // 32) > UInt((group - 1) // 16):
+        if warp.broadcast(ufloordiv(thread_idx.x - 128, 32)) > (
+            (group - 1) // 16
+        ):
             return
         if lane >= UInt32(4 * group):
             return
@@ -1109,11 +1133,15 @@ def produce[
     consumed_mbar_kv: UnsafePointer[
         SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
     ],
-    produced_mbar_q: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    produced_mbar_q: Optional[
+        UnsafePointer[
+            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ]
     ],
-    consumed_mbar_q: UnsafePointer[
-        SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+    consumed_mbar_q: Optional[
+        UnsafePointer[
+            SharedMemBarrier, MutAnyOrigin, address_space=AddressSpace.SHARED
+        ]
     ],
     kv_lut: KVLUTType,
     initial_position: MHAPosition[
@@ -1171,6 +1199,7 @@ def produce[
     comptime k_smem_layout = tile_layout_k_major[
         qkv_type, BN, padded_depth, swizzle_mode
     ]()
+    comptime assert pipeline_stages >= 2
 
     @parameter
     @always_inline
@@ -1189,11 +1218,19 @@ def produce[
         comptime sz = BN * padded_depth
         tile = {kv_smem + UInt32(sz) * idx}
 
+    comptime KVTMA = KVTMATile[
+        qkv_type,
+        swizzle_mode,
+        BN=BN,
+        BK=padded_depth,
+    ]
+
     @parameter
     @always_inline("nodebug")
-    def produce_k[
+    def produce_kv[
         wait: Bool
     ](
+        tma_op: KVTMA,
         mut state: PipelineState[pipeline_stages],
         row: UInt32,
         kv_head_idx: UInt32,
@@ -1208,32 +1245,9 @@ def produce[
             consumed_mbar_kv[write_idx].wait(write_phase)
             comptime bytes = BN * padded_depth * size_of[qkv_type]()
             p_mbar.expect_bytes(Int32(bytes))
-        k_tma_op.async_copy(
+
+        tma_op.async_copy(
             k_sub,
-            p_mbar,
-            kv_coord[depth=depth](row, kv_head_idx),
-        )
-        state.step()
-
-    @parameter
-    @always_inline("nodebug")
-    def produce_v(
-        mut state: PipelineState[pipeline_stages],
-        row: UInt32,
-        kv_head_idx: UInt32,
-        key_start: UInt32,
-        key_end: UInt32,
-    ):
-        var write_idx: UInt32 = state.index()
-        var write_phase: UInt32 = state.phase()
-
-        ref p_mbar = produced_mbar_kv[write_idx]
-        v_sub = kv_tile(write_idx)
-        consumed_mbar_kv[write_idx].wait(write_phase)
-        comptime bytes = BN * padded_depth * size_of[qkv_type]()
-        p_mbar.expect_bytes(Int32(bytes))
-        v_tma_op.async_copy(
-            v_sub,
             p_mbar,
             kv_coord[depth=depth](row, kv_head_idx),
         )
@@ -1322,7 +1336,7 @@ def produce[
     var kv_row: UInt32 = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
     var kv_head_idx: UInt32 = position.kv_head_idx()
 
-    produce_k[False](write_pipeline_states, kv_row, kv_head_idx)
+    produce_kv[False](k_tma_op, write_pipeline_states, kv_row, kv_head_idx)
 
     var kv_row_prev: UInt32 = kv_row
     var kv_head_idx_prev: UInt32 = kv_head_idx
@@ -1348,7 +1362,7 @@ def produce[
                 var q_idx_old: UInt32 = q_pipeline_state.index()
                 var q_phase_old: UInt32 = q_pipeline_state.phase()
                 q_pipeline_state.step()
-                consumed_mbar_q[q_idx_old].wait(q_phase_old)
+                consumed_mbar_q.unsafe_value()[q_idx_old].wait(q_phase_old)
                 # we must wait before advancing, as this mbar
                 # is for both `q_smem` and `sidx_ptr`
                 var q_idx: UInt32 = q_pipeline_state.index()
@@ -1359,7 +1373,7 @@ def produce[
                 # must signal somehow
                 if not docontinue:
                     break
-                ref pq_mbar = produced_mbar_q[q_idx_old]
+                ref pq_mbar = produced_mbar_q.unsafe_value()[q_idx_old]
                 position = get_position(docontinue.value())
                 pq_mbar.expect_bytes(
                     Int32(q_copy_rows * padded_depth * size_of[qkv_type]())
@@ -1377,12 +1391,12 @@ def produce[
 
                 else:
                     comptime for d_idx in range(depth // 64):
-                        comptime d: UInt = UInt(d_idx * 64)
+                        comptime d: Int = d_idx * 64
                         q_tma_op.async_copy_4d(
                             q_producer(q_idx),
                             pq_mbar,
                             (
-                                Int(d),
+                                d,
                                 0,
                                 Int(position.head_idx),
                                 Int(position.q_row),
@@ -1404,24 +1418,22 @@ def produce[
         ):
             continue
         kv_row = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
-        produce_k[True](write_pipeline_states, kv_row, kv_head_idx)
-        produce_v(
+        produce_kv[True](k_tma_op, write_pipeline_states, kv_row, kv_head_idx)
+        produce_kv[True](
+            v_tma_op,
             write_pipeline_states,
             kv_row_prev,
             kv_head_idx_prev,
-            kv_tile_start_row_prev,
-            end,
         )
         kv_row_prev = kv_row
         kv_head_idx_prev = kv_head_idx
         kv_tile_start_row_prev = kv_tile_start_row
 
-    produce_v(
+    produce_kv[True](
+        v_tma_op,
         write_pipeline_states,
         kv_row_prev,
         kv_head_idx_prev,
-        kv_tile_start_row_prev,
-        end,
     )
 
 
@@ -1462,7 +1474,7 @@ def output_reg_to_smem_st_matrix[
             )
             var accum_smem_idx = swizzle(st_matrix_rt_layout(st_matrix_args))
             var offset = accum_smem_tile.ptr + accum_smem_idx
-            var output_frag = output_reg_tile.ptr.load[width=8](
+            var output_frag = output_reg_tile.raw_load[width=8](
                 m_mma * o_frag_size + i * 8
             ).cast[output_type]()
             var output_frag_f32_packed = bitcast[DType.float32, 4](output_frag)

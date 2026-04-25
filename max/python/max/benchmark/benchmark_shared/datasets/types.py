@@ -17,7 +17,6 @@ import base64
 import os
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from enum import Enum
 from io import BytesIO
 from typing import Any, Literal
 
@@ -25,17 +24,20 @@ from PIL import Image
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from typing_extensions import TypedDict
 
+DatasetMode = Literal["local", "huggingface"]
 
-class DatasetMode(str, Enum):
-    """Enumeration of supported dataset loading modes.
 
-    This enum defines the different ways datasets can be loaded:
-    - LOCAL: Load from a local file path (from environment variable or --dataset-path)
-    - HUGGINGFACE: Load from HuggingFace Hub (default behavior)
+@dataclass
+class SharedContext:
+    """A single entry in the prefix-cache warmup list.
+
+    Represents the longest observed variant of a unique shared context.
+    Sending the longest variant is sufficient because all shorter variants
+    built from the same base are token-level prefixes of it.
     """
 
-    LOCAL = "local"
-    HUGGINGFACE = "huggingface"
+    text: str
+    num_tokens: int
 
 
 class OpenAIImageURL(TypedDict):
@@ -54,6 +56,7 @@ class SampledRequest:
     output_len: int | None
     encoded_images: list[OpenAIImage]
     ignore_eos: bool
+    response_format: dict[str, Any] | None = None
 
 
 @dataclass
@@ -97,16 +100,19 @@ class ChatMessage:
 class ChatSession:
     id: int | None
     messages: Sequence[ChatMessage]
+    prefix_turns: int = 0
 
 
 @dataclass
 class RequestSamples:
     requests: Sequence[SampledRequest]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 @dataclass
 class ChatSamples:
     chat_sessions: Sequence[ChatSession]
+    shared_contexts: list[SharedContext] = field(default_factory=list)
 
 
 Samples = RequestSamples | ChatSamples

@@ -45,6 +45,7 @@ from std.io.io import input, print
 from std.builtin.anytype import (
     AnyType,
     Some,
+    SomeTypeList,
     ImplicitlyDestructible,
 )
 from std.builtin.bool import Bool, Boolable, all, any
@@ -62,13 +63,14 @@ from std.builtin.format_int import bin, hex, oct
 from std.builtin.identifiable import Identifiable
 from std.builtin.int import (
     Indexer,
+    SIMDSize,
     Int,
     Intable,
     IntableRaising,
     index,
 )
 from std.builtin.int_literal import IntLiteral
-from std.builtin.len import Sized, SizedRaising, UIntSized, len
+from std.builtin.len import Sized, SizedRaising, len
 from std.math.math import (
     Absable,
     Powable,
@@ -144,8 +146,8 @@ from std.builtin.value import (
     TrivialRegisterPassable,
 )
 from std.builtin.variadics import (
-    Variadic,
-    VariadicParamList,
+    TypeList,
+    ParameterList,
     VariadicList,
     VariadicPack,
 )
@@ -167,6 +169,7 @@ from std.memory import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalUnsafePointer,
     Pointer,
     Span,
     ImmutUnsafePointer,

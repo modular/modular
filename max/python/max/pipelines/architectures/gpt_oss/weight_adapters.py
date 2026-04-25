@@ -25,6 +25,7 @@ GPT_OSS_SAFETENSOR_MAP: dict[str, str] = {
     "model.norm.": "language_model.norm.",
     "lm_head.": "language_model.lm_head.",
     "model.layers.": "language_model.layers.",
+    # Remap unfused Q/K/V projections into StackedLinear namespace.
     # MoE weight mappings
     ".mlp.router": ".mlp.gate.gate_score",
 }
@@ -41,7 +42,7 @@ def _convert_mxfp4_weight(
     Non-MXFP4 weights are returned unchanged.
     """
     if name.endswith("_blocks"):
-        arr = np.from_dlpack(data)  # type: ignore[arg-type]
+        arr = np.from_dlpack(data)
         if arr.ndim != 4:
             raise ValueError(
                 f"Expected 4D MXFP4 block tensor, got {arr.ndim}D"

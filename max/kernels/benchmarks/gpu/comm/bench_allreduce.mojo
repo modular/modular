@@ -95,7 +95,7 @@ def bench_reduce[
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Set up temp buffers for GPUs to reduce-scatter into / all-gather from.
@@ -155,21 +155,16 @@ def bench_reduce[
         )
 
     # Create and initialize input and output buffers.
-    comptime InTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[dtype], ImmutAnyOrigin](),
-            row_major(Idx(length)),
-        )
-    )
-    comptime OutTensorType = type_of(
-        TileTensor(
-            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(length))
-        )
-    )
+    comptime InTensorType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), ImmutAnyOrigin
+    ]
+    comptime OutTensorType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+    ]
     var in_tensors = InlineArray[InTensorType, num_buffers](uninitialized=True)
     var out_tensors = InlineArray[OutTensorType, ngpus](uninitialized=True)
 
-    var multi_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
+    var multi_ptr = Optional[UnsafePointer[Scalar[dtype], MutAnyOrigin]]()
 
     comptime if use_multimem:
         multicast_buf = DeviceMulticastBuffer[dtype](
@@ -185,7 +180,9 @@ def bench_reduce[
             list_of_ctx[0]
         ).unsafe_ptr()
         in_tensors[0] = TileTensor(
-            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](multi_ptr),
+            rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
+                multi_ptr.unsafe_value()
+            ),
             row_major(Idx(length)),
         )
     else:
@@ -198,9 +195,7 @@ def bench_reduce[
             )
 
     for i in range(ngpus):
-        out_tensors[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors[i] = TileTensor(out_dev[i], row_major(Idx(length)))
         # Ensure setup has propagated.
         list_of_ctx[i].synchronize()
 
@@ -210,16 +205,10 @@ def bench_reduce[
         list_of_ctx[i].enqueue_memset(out_dev[i], 0)
 
     # Copy-capture in registers since the lambda will be used on GPU.
-    var out_tensors_capture = StaticTuple[OutTensorType, ngpus](
-        TileTensor(
-            UnsafePointer[Scalar[dtype], MutAnyOrigin](), row_major(Idx(length))
-        )
-    )
+    var out_tensors_capture = StaticTuple[OutTensorType, ngpus]()
 
     comptime for i in range(ngpus):
-        out_tensors_capture[i] = TileTensor(
-            out_dev[i].unsafe_ptr(), row_major(Idx(length))
-        )
+        out_tensors_capture[i] = TileTensor(out_dev[i], row_major(Idx(length)))
 
     # Pre-initialize vendor CCL communicators from the main thread.
     # ncclCommInitAll is not thread-safe, so we must initialize before
@@ -244,9 +233,11 @@ def bench_reduce[
                         row_major(Idx(length)),
                     )
             else:
+                # multi_ptr is set when use_multimem == True
                 in_tensors[0] = TileTensor(
                     rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](
-                        multi_ptr + cb_template.offset(cache_iter)
+                        multi_ptr.unsafe_value()
+                        + cb_template.offset(cache_iter)
                     ),
                     row_major(Idx(length)),
                 )

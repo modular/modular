@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import udivmod
 from std.random import random_ui64, seed
 
 from std.gpu.host import DeviceBuffer, DeviceContext
@@ -160,7 +161,7 @@ def execute_matmul_k_cache_ragged_scale[
     This test follows the same pattern as execute_matmul_k_cache_ragged but
     includes input_scale and weight_scale parameters for scaled FP8 operations.
     """
-    comptime hidden_size = num_q_heads * Int(kv_params.head_size)
+    comptime hidden_size = num_q_heads * kv_params.head_size
     comptime kv_hidden_size = kv_params.num_heads * kv_params.head_size
 
     comptime num_paged_blocks = 32
@@ -171,9 +172,9 @@ def execute_matmul_k_cache_ragged_scale[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     comptime kv_block_layout = Layout.row_major[6]()
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
-    comptime weight_layout = Layout.row_major(Int(kv_hidden_size), hidden_size)
+    comptime weight_layout = Layout.row_major(kv_hidden_size, hidden_size)
     comptime input_scale_rows = ceildiv(hidden_size, block_scale)
-    comptime weight_scale_rows = Int(ceildiv(kv_hidden_size, block_scale))
+    comptime weight_scale_rows: Int = ceildiv(kv_hidden_size, block_scale)
     comptime weight_scale_cols = ceildiv(hidden_size, block_scale)
     comptime input_scale_layout = Layout.row_major(
         input_scale_rows, UNKNOWN_VALUE
@@ -181,9 +182,7 @@ def execute_matmul_k_cache_ragged_scale[
     comptime weight_scale_layout = Layout.row_major(
         weight_scale_rows, weight_scale_cols
     )
-    comptime ref_output_layout = Layout.row_major(
-        UNKNOWN_VALUE, Int(kv_hidden_size)
-    )
+    comptime ref_output_layout = Layout.row_major(UNKNOWN_VALUE, kv_hidden_size)
 
     var batch_size = len(prompt_lens)
 
@@ -196,16 +195,16 @@ def execute_matmul_k_cache_ragged_scale[
         * 2
         * num_layers
         * page_size
-        * Int(kv_params.num_heads)
-        * Int(kv_params.head_size)
+        * kv_params.num_heads
+        * kv_params.head_size
     )
     var kv_block_shape = IndexList[6](
         num_paged_blocks,
         2,
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
     var kv_block = ManagedLayoutTensor[dtype, kv_block_layout](
         RuntimeLayout[kv_block_layout].row_major(kv_block_shape),
@@ -255,8 +254,8 @@ def execute_matmul_k_cache_ragged_scale[
     var init_max_seq_length_batch = init_result[4]
 
     # Initialize the weights.
-    var weight_size = Int(kv_hidden_size) * hidden_size
-    var weight_shape = IndexList[2](Int(kv_hidden_size), hidden_size)
+    var weight_size = kv_hidden_size * hidden_size
+    var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
     var weight_host_ptr = alloc[Scalar[weight_dtype]](weight_size)
     var weight_host = LayoutTensor[weight_dtype, weight_layout](
         weight_host_ptr,
@@ -285,10 +284,8 @@ def execute_matmul_k_cache_ragged_scale[
     random(weight_scale_host)
 
     # Initialize reference output.
-    var ref_output_size = ragged_total_length * Int(kv_hidden_size)
-    var ref_output_shape = IndexList[2](
-        ragged_total_length, Int(kv_hidden_size)
-    )
+    var ref_output_size = ragged_total_length * kv_hidden_size
+    var ref_output_shape = IndexList[2](ragged_total_length, kv_hidden_size)
     var ref_output = ManagedLayoutTensor[dtype, ref_output_layout](
         RuntimeLayout[ref_output_layout].row_major(ref_output_shape),
         ctx,
@@ -346,17 +343,15 @@ def execute_matmul_k_cache_ragged_scale[
     # Create TileTensors for naive_blockwise_scaled_fp8_matmul
     var ref_output_tt = TileTensor(
         ref_output.device_tensor[update=False]().ptr,
-        row_major(
-            Coord(Idx(Int(ragged_total_length)), Idx[Int(kv_hidden_size)]())
-        ),
+        row_major(Coord(Idx(Int(ragged_total_length)), Idx[kv_hidden_size]())),
     )
     var hidden_state_ragged_tt = TileTensor(
-        hidden_state_ragged_device.unsafe_ptr(),
+        hidden_state_ragged_device,
         row_major(Coord(Idx(Int(ragged_total_length)), Idx[hidden_size]())),
     )
     var weight_ref_tt = TileTensor(
-        weight_device.unsafe_ptr(),
-        row_major(Coord(Idx[Int(kv_hidden_size)](), Idx[hidden_size]())),
+        weight_device,
+        row_major(Coord(Idx[kv_hidden_size](), Idx[hidden_size]())),
     )
     var ref_input_scale_tt = TileTensor(
         input_scale.device_tensor[update=False]().ptr,
@@ -391,13 +386,13 @@ def execute_matmul_k_cache_ragged_scale[
             for k_dim in range(kv_hidden_size):
                 var head_idx, head_dim_idx = divmod(k_dim, kv_params.head_size)
                 var a = ref_output_host[
-                    Int(input_row_offsets_host_ptr[bs]) + s, Int(k_dim)
+                    Int(input_row_offsets_host_ptr[bs]) + s, k_dim
                 ]
                 var b = k_cache_host.load[width=1](
                     bs,
-                    Int(head_idx),
+                    head_idx,
                     cache_sizes[bs] + s,
-                    Int(head_dim_idx),
+                    head_dim_idx,
                 )
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
 

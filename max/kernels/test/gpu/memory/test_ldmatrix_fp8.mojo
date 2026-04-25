@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod, ufloordiv
 
-from std.gpu import WARP_SIZE, barrier, lane_id_uint as lane_id
+from std.gpu import WARP_SIZE, barrier, lane_id
 from std.gpu.host import DeviceContext
 from std.gpu.compute.mma import ld_matrix, mma
 from std.gpu.compute.mma_util import store_matrix_d
@@ -57,20 +58,20 @@ def test_ldmatrix_fp8[
         N * K, input_type, alignment=32, address_space=AddressSpace.SHARED
     ]()
 
-    for i in range(Int(lane_id()), M * K, WARP_SIZE):
+    for i in range(lane_id(), M * K, WARP_SIZE):
         a_shared[i] = a_ptr[i]
 
-    for i in range(Int(lane_id()), N * K, WARP_SIZE):
+    for i in range(lane_id(), N * K, WARP_SIZE):
         b_shared[i] = b_ptr[i]
 
     barrier()
 
     var a_reg = ld_matrix[a_frag_size](
-        a_shared + Int((lane_id() % 16) * 32 + (lane_id() // 16) * 16)
+        a_shared + umod(lane_id(), 16) * 32 + ufloordiv(lane_id(), 16) * 16
     )
 
     var b_reg = ld_matrix[b_frag_size](
-        b_shared + Int((lane_id() % 8) * 32 + (lane_id() // 8) * 16)
+        b_shared + umod(lane_id(), 8) * 32 + ufloordiv(lane_id(), 8) * 16
     )
 
     mma(d, a_reg, b_reg, d)
@@ -142,7 +143,7 @@ def check_ldmatrix_fp8[
     from std.memory import UnsafePointer
 
     var c_ref_tt = TileTensor(
-        c_device_ref.unsafe_ptr(),
+        c_device_ref,
         row_major(Coord(Idx(M), Idx(N))),
     )
     var a_tt = TileTensor(

@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.compile import compile_info
-from std.memory import UnsafePointer, alloc
-from std.sys import size_of
+from std.ffi import external_call
+from std.memory import UnsafeMaybeUninit
+from std.sys import align_of, size_of
 
 from test_utils import (
     ExplicitCopyOnly,
@@ -36,34 +37,28 @@ from std.testing import (
 
 
 def _mutable_pointer(p: MutUnsafePointer[Int, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _immutable_pointer(p: ImmutUnsafePointer[Int, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _mutable_any_pointer(p: UnsafePointer[Int, MutAnyOrigin, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _immutable_any_pointer(p: UnsafePointer[Int, ImmutAnyOrigin, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _parameterized_pointer(p: UnsafePointer[Int, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
 def _named_origin[
     mut: Bool, //, origin: Origin[mut=mut]
 ](p: UnsafePointer[Int, origin, ...]) raises:
-    assert_true(p)
     assert_equal(p[], 42)
 
 
@@ -218,9 +213,6 @@ def test_bitcast() raises:
 
 
 def test_unsafepointer_string() raises:
-    var nullptr = UnsafePointer[Int, MutExternalOrigin]()
-    assert_equal(String(nullptr), "0x0")
-
     var ptr = alloc[Int](1)
     assert_true(String(ptr).startswith("0x"))
     assert_not_equal(String(ptr), "0x0")
@@ -371,16 +363,6 @@ def test_indexing_simd() raises:
     assert_equal(ptr[Int32(3)], 3)
     assert_equal(ptr[Int64(1)], 1)
     assert_equal(ptr[Int64(3)], 3)
-
-    ptr.free()
-
-
-def test_bool() raises:
-    var nullptr = UnsafePointer[Int, MutExternalOrigin]()
-    var ptr = alloc[Int](1)
-
-    assert_true(ptr.__bool__())
-    assert_false(nullptr.__bool__())
 
     ptr.free()
 
@@ -612,15 +594,8 @@ def test_unsafe_from_address() raises:
     var ptr2 = type_of(ptr)(unsafe_from_address=Int(ptr))
     assert_equal(ptr2[], 42)
 
-    var ptr3 = UnsafePointer[Int, MutExternalOrigin](unsafe_from_address=42)
-    assert_true(ptr3)
-
 
 def test_write_to() raises:
-    check_write_to(
-        UnsafePointer[Int, MutAnyOrigin](), expected="0x0", is_repr=False
-    )
-
     var x = 42
     check_write_to(UnsafePointer(to=x), contains="0x", is_repr=False)
 
@@ -629,15 +604,6 @@ def test_write_to() raises:
 
 
 def test_write_repr_to() raises:
-    check_write_to(
-        UnsafePointer[Int, MutAnyOrigin](),
-        expected=(
-            "UnsafePointer[mut=True, Int,"
-            " address_space=AddressSpace.GENERIC](0x0)"
-        ),
-        is_repr=True,
-    )
-
     var x = 42
     check_write_to(
         UnsafePointer(to=x),
@@ -672,6 +638,61 @@ def test_write_repr_to() raises:
         ),
         is_repr=True,
     )
+
+
+def test_unsafe_pointer_niche() raises:
+    var x = 42
+    comptime UP = UnsafePointer[Int, ImmutOrigin(origin_of(x))]
+    assert_equal(size_of[UP](), size_of[Optional[UP]]())
+
+    var storage = UnsafeMaybeUninit[UP]()
+    UP.write_niche(UnsafePointer(to=storage))
+    assert_true(UP.isa_niche(UnsafePointer(to=storage)))
+
+    storage.init_from(UP(to=x))
+    assert_false(UP.isa_niche(UnsafePointer(to=storage)))
+
+
+def test_unsafe_pointer_dangling() raises:
+    var int_ptr = UnsafePointer[Int, MutExternalOrigin].unsafe_dangling()
+    assert_equal(Int(int_ptr) % align_of[Int](), 0)
+
+    var str_ptr = UnsafePointer[String, MutExternalOrigin].unsafe_dangling()
+    assert_equal(Int(str_ptr) % align_of[String](), 0)
+
+
+def test_optional_unsafe_pointer_across_c_ffi() raises:
+    var string = "abc"
+    comptime Result = Optional[UnsafePointer[Int8, origin_of(string)]]
+
+    var not_found = external_call[
+        "strchr",
+        Result,
+    ](string.as_c_string_slice(), Int8(ord("z")))
+    assert_false(not_found)
+
+    var found = external_call[
+        "strchr",
+        Result,
+    ](string.as_c_string_slice(), Int8(ord("a")))
+    assert_true(found)
+    assert_equal(Int(found[]), Int(string.unsafe_ptr()))
+
+
+def _test_lower(pointer: Optional[UnsafePointer[Int32, MutAnyOrigin]]) -> Bool:
+    return Bool(pointer)
+
+
+def test_optional_unsafe_pointer_llvm_lowering() raises:
+    var info = String(compile_info[_test_lower, emission_kind="llvm-opt"]())
+
+    for line in info.splitlines():
+        if "define" in line and "::_test_lower" in line:
+            assert_true("ptr" in line, info)
+            assert_false("[1 x ptr]" in line)
+            return
+
+    raise Error("did not find _test_lower function")
 
 
 def main() raises:

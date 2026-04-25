@@ -31,6 +31,8 @@ import asyncio
 import base64
 import gc
 import io
+import json
+import logging
 import os
 import random
 import shutil
@@ -70,6 +72,7 @@ from max.pipelines.core import PixelContext
 from max.pipelines.lib import PixelGenerationTokenizer
 from max.pipelines.lib.interfaces import DiffusionPipeline
 from max.pipelines.lib.interfaces.cache_mixin import DenoisingCacheConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from max.pipelines.lib.pipeline_variants.pixel_generation import (
     PixelGenerationPipeline,
@@ -425,6 +428,29 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Taylor expansion order: 1=linear, 2=quadratic (model default if unset).",
     )
     parser.add_argument(
+        "--weight-path",
+        type=str,
+        action="append",
+        default=None,
+        help="Path(s) to model weight files. Can be specified multiple times.",
+    )
+    parser.add_argument(
+        "--quantization-encoding",
+        type=str,
+        default=None,
+        choices=[
+            "float32",
+            "bfloat16",
+            "q4_k",
+            "q4_0",
+            "q6_k",
+            "float8_e4m3fn",
+            "float4_e2m1fnx2",
+            "gptq",
+        ],
+        help="Weight encoding type (e.g., 'float4_e2m1fnx2' for NVFP4).",
+    )
+    parser.add_argument(
         "--prefer-module-v3",
         action="store_true",
         help=(
@@ -458,6 +484,17 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--no-output",
         action="store_true",
         help="Skip saving generated images to disk.",
+    )
+    parser.add_argument(
+        "--model-override",
+        type=str,
+        action="append",
+        default=None,
+        help=(
+            "Per-component overrides in 'component.field=value' format. "
+            "Repeatable. Example: "
+            "'transformer.quantization_encoding=float4_e2m1fnx2'."
+        ),
     )
     return parser.parse_args(argv)
 
@@ -593,7 +630,7 @@ def _build_image_filename(
     """Build a descriptive image filename encoding all relevant settings."""
     parts = [
         f"iter{iteration}",
-        f"output_{backend}_bf16_seed{args.seed}_{width}x{height}_{steps}steps",
+        f"output_{backend}_{(args.quantization_encoding or 'bf16')}_seed{args.seed}_{width}x{height}_{steps}steps",
     ]
     if args.first_block_caching:
         parts.append(f"fbc_thresh{args.residual_threshold}")
@@ -797,17 +834,71 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     """Load FLUX.2 pipeline via MAX."""
     model_id = args.model
 
+    manifest = ModelManifest.from_model_path(
+        model_id,
+        device_specs=[DeviceSpec.accelerator()],
+    )
+    if args.weight_path:
+        manifest = manifest.with_override(
+            "transformer",
+            weight_path=[Path(p) for p in args.weight_path],
+        )
+    if args.quantization_encoding:
+        manifest = manifest.with_override(
+            "transformer",
+            quantization_encoding=args.quantization_encoding,
+        )
+
+    # Apply flexible per-component overrides from --model-override.
+    if args.model_override:
+        from pydantic import TypeAdapter
+
+        for override in args.model_override:
+            dot_pos = override.find(".")
+            if dot_pos < 1:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            eq_pos = override.find("=", dot_pos)
+            if eq_pos < dot_pos + 2:
+                raise ValueError(
+                    f"Invalid --model-override format: {override!r}. "
+                    f"Expected 'component.field=value'."
+                )
+            component = override[:dot_pos]
+            field_name = override[dot_pos + 1 : eq_pos]
+            raw_value = override[eq_pos + 1 :]
+
+            if field_name not in MAXModelConfig.model_fields:
+                raise ValueError(
+                    f"Unknown MAXModelConfig field: {field_name!r}. "
+                    f"Valid fields: "
+                    f"{sorted(MAXModelConfig.model_fields.keys())}"
+                )
+            if component not in manifest:
+                raise ValueError(
+                    f"Component {component!r} not found in manifest. "
+                    f"Available: {list(manifest.keys())}"
+                )
+
+            field_info = MAXModelConfig.model_fields[field_name]
+            adapter: TypeAdapter[Any] = TypeAdapter(field_info.annotation)
+            try:
+                parsed = json.loads(raw_value)
+            except (json.JSONDecodeError, ValueError):
+                parsed = raw_value
+            value = adapter.validate_python(parsed)
+            manifest = manifest.with_override(component, **{field_name: value})
+
     config = PipelineConfig(
-        model=MAXModelConfig(
-            model_path=model_id,
-            device_specs=[DeviceSpec.accelerator()],
-        ),
+        models=manifest,
         runtime=PipelineRuntimeConfig(
             prefer_module_v3=args.prefer_module_v3,
         ),
     )
     arch = PIPELINE_REGISTRY.retrieve_architecture(
-        config.model.architecture_name,
+        config.models.main_architecture_name,
         prefer_module_v3=config.runtime.prefer_module_v3,
         task=PipelineTask.PIXEL_GENERATION,
     )
@@ -815,13 +906,8 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         f"No architecture found in MAX registry for {model_id}."
     )
 
-    diffusers_config = config.model.diffusers_config
     max_length = None
-    if (
-        diffusers_config is not None
-        and (comps := diffusers_config.get("components"))
-        and comps.get("tokenizer") is not None
-    ):
+    if "tokenizer" in config.models:
         max_length = 512  # Flux2-specific override
 
     tokenizer = PixelGenerationTokenizer(
@@ -831,7 +917,7 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
         max_length=max_length,
     )
 
-    cache_config = DenoisingCacheConfig(
+    config.runtime.denoising_cache = DenoisingCacheConfig(
         first_block_caching=args.first_block_caching,
         taylorseer=args.taylorseer,
         taylorseer_cache_interval=args.taylorseer_cache_interval,
@@ -846,7 +932,6 @@ def _load_max_pipeline(args: argparse.Namespace) -> tuple[Any, Any, Any]:
     pipeline = PixelGenerationPipeline[PixelContext](
         pipeline_config=config,
         pipeline_model=pipeline_model,
-        cache_config=cache_config,
     )
     return pipeline, tokenizer, config
 
@@ -1067,6 +1152,10 @@ def _print_per_iteration(
 
 
 def main(argv: list[str] | None = None) -> int:
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s %(name)s %(levelname)s: %(message)s",
+    )
     args = parse_args(argv)
 
     # Resolve seed: generate a random one if not explicitly provided.
@@ -1228,7 +1317,12 @@ def main(argv: list[str] | None = None) -> int:
     print("    dtype          : BF16")
     print()
     print("  MAX config:")
-    print("    dtype          : BF16")
+    max_dtype = (
+        args.quantization_encoding.upper()
+        if args.quantization_encoding
+        else "BF16"
+    )
+    print(f"    dtype          : {max_dtype}")
     caching_parts: list[str] = []
     if args.first_block_caching:
         caching_parts.append(

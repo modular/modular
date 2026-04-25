@@ -84,6 +84,31 @@ Image generation
    ImageMetadata
    PixelGenerationContext
    PixelGenerationInputs
+   VideoContentPart
+
+Reasoning
+---------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ReasoningParser
+   ReasoningSpan
+
+Tool parsing
+------------
+
+.. autosummary::
+   :nosignatures:
+   :toctree: generated
+   :template: autosummary/class.rst
+
+   ParsedToolCall
+   ParsedToolCallDelta
+   ParsedToolResponse
+   ToolParser
 
 Context and sampling
 --------------------

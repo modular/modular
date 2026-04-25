@@ -186,23 +186,23 @@ def test_prefill[
 
     # construct device buffers
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major((Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
+        v_device_ptr,
         row_major(
             (Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var cache_device = TileTensor(
-        cache_device_ptr.unsafe_ptr(),
+        cache_device_ptr,
         row_major(
             (
                 Idx(batch_size),
@@ -213,17 +213,17 @@ def test_prefill[
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var input_row_offsets_device = TileTensor(
-        input_row_offsets_device_ptr.unsafe_ptr(),
+        input_row_offsets_device_ptr,
         row_major(Idx(batch_size + 1)),
     )
     var cache_row_offsets_device = TileTensor(
-        cache_row_offsets_device_ptr.unsafe_ptr(),
+        cache_row_offsets_device_ptr,
         row_major(Idx(batch_size + 1)),
     )
 
@@ -365,9 +365,9 @@ def test_prefill[
     ctx.enqueue_copy(v_ref_device_ptr, v_ref_ptr)
 
     var null_valid_length = LayoutTensor[
-        DType.uint32, Layout.row_major(UNKNOWN_VALUE)
+        DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
     ](
-        UnsafePointer[UInt32, MutAnyOrigin](),
+        None,
         RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(Index(0)),
     )
 

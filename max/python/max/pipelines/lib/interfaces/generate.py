@@ -35,10 +35,14 @@ from max.interfaces import (
 )
 from max.kv_cache.paged_kv_cache import PagedKVCacheManager
 
+from .pipeline_model import PipelineModelWithKVCache
+
 
 @runtime_checkable
 class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
     """Protocol for pipelines that support text generation."""
+
+    _pipeline_model: PipelineModelWithKVCache[TextGenerationContextType]
 
     @property
     def kv_manager(self) -> PagedKVCacheManager:
@@ -136,11 +140,13 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             while done < len(context_batch):
                 for replica_batch in batches:
                     for ctx in replica_batch:
+                        replica_idx = batch_to_replica_idx[ctx.request_id]
                         self.kv_manager.alloc(
                             ctx,
-                            replica_idx=batch_to_replica_idx[ctx.request_id],
+                            replica_idx=replica_idx,
                             num_steps=num_steps,
                         )
+
                 step_outputs = self.execute(inputs)
 
                 # Filter out all responses for requests that are already released.
@@ -190,7 +196,13 @@ class GenerateMixin(Protocol[TextGenerationContextType, RequestType]):
             # Release remaining requests if the generation was interrupted.
             for batch in batches:
                 for context in batch:
-                    self.kv_manager.release(
+                    if self.kv_manager.contains(
                         context.request_id,
-                        replica_idx=batch_to_replica_idx[context.request_id],
-                    )
+                        batch_to_replica_idx[context.request_id],
+                    ):
+                        self.kv_manager.release(
+                            context.request_id,
+                            replica_idx=batch_to_replica_idx[
+                                context.request_id
+                            ],
+                        )

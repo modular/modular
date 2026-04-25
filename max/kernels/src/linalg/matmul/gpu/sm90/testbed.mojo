@@ -57,9 +57,9 @@ def test_matmul_sm90[
     backend: Backend = Backend.CUBLAS,
     k_group_size: Int = 1,
 ](ctx: DeviceContext, m: MType, n: NType, k: KType) raises:
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     comptime CLUSTER_N = cluster_shape[0]
     comptime CLUSTER_M = cluster_shape[1]
@@ -168,7 +168,7 @@ def test_matmul_sm90[
     @__copy_capture(c_tensor)
     def epilogue_fn[
         _dtype: DType,
-        width: Int,
+        width: SIMDSize,
         *,
         alignment: Int = align_of[SIMD[_dtype, width]](),
     ](idx: IndexList[2], val: SIMD[_dtype, width]) capturing -> None:
@@ -184,10 +184,10 @@ def test_matmul_sm90[
         block_tile_shape=block_tile_shape,
         mma_shape=wgmma_shape,
         cluster_shape=cluster_shape,
-        num_pipeline_stages=UInt(num_pipeline_stages),
-        num_consumer=UInt(num_consumer),
+        num_pipeline_stages=num_pipeline_stages,
+        num_consumer=num_consumer,
         partitioned_multicast=partitioned_multicast,
-        k_group_size=UInt(k_group_size),
+        k_group_size=k_group_size,
     )
 
     warp_specialize_gemm_with_multicasting[

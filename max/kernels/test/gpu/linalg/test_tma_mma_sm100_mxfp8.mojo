@@ -15,10 +15,10 @@ from std.sys import size_of, argv
 from std.gpu import (
     WARP_SIZE,
     barrier,
-    warp_id_uint as get_warp_id,
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-    thread_idx_uint as thread_idx,
+    warp_id as get_warp_id,
+    block_idx,
+    lane_id,
+    thread_idx,
 )
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -41,6 +41,7 @@ from layout.tma_async import (
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 from std.math import ceildiv
+from std.math.uutils import udivmod
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from internal_utils import assert_almost_equal
 from std.random import rand
@@ -94,7 +95,7 @@ def block_scaled_mxfp8_kernel[
     transpose_b: Bool = True,
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
-    num_threads: UInt = 256,
+    num_threads: Int = 256,
 ](
     a_tma_op: TMATensorTile[a_type, a_tile_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tile_rank, b_tile_shape, b_desc_shape],
@@ -111,7 +112,7 @@ def block_scaled_mxfp8_kernel[
         b_scales_desc_shape,
     ],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime assert num_threads == 256
     comptime assert (
@@ -218,7 +219,7 @@ def block_scaled_mxfp8_kernel[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    comptime c_frag_size = MMA_M * MMA_N // Int(num_threads)
+    comptime c_frag_size = MMA_M * MMA_N // num_threads
     var c_frag: InlineArray[Scalar[accum_type], c_frag_size]
 
     comptime a_expected_bytes = a_size * size_of[a_type]()
@@ -296,17 +297,17 @@ def block_scaled_mxfp8_kernel[
             a_tma_op.async_copy(
                 a_smem_tile,
                 tma_mbar[0],
-                (Int(k_iter) * BK, Int(block_idx.y) * BM),
+                (k_iter * BK, block_idx.y * BM),
             )
             b_tma_op.async_copy(
                 b_smem_tile,
                 tma_mbar[0],
                 (
-                    Int(k_iter) * BK,
-                    Int(block_idx.x) * BN,
+                    k_iter * BK,
+                    block_idx.x * BN,
                 ) if transpose_b else (
-                    Int(block_idx.x) * BN,
-                    Int(k_iter) * BK,
+                    block_idx.x * BN,
+                    k_iter * BK,
                 ),
             )
             a_scales_tma_op.async_copy_4d(
@@ -315,8 +316,8 @@ def block_scaled_mxfp8_kernel[
                 (
                     0,
                     0,
-                    Int(k_iter),
-                    Int(block_idx.y) * (BM // SF_MN_GROUP_SIZE),
+                    k_iter,
+                    block_idx.y * (BM // SF_MN_GROUP_SIZE),
                 ),
             )
             b_scales_tma_op.async_copy_4d(
@@ -325,8 +326,8 @@ def block_scaled_mxfp8_kernel[
                 (
                     0,
                     0,
-                    Int(k_iter),
-                    Int(block_idx.x) * (BN // SF_MN_GROUP_SIZE),
+                    k_iter,
+                    block_idx.x * (BN // SF_MN_GROUP_SIZE),
                 ),
             )
 
@@ -443,19 +444,19 @@ def block_scaled_mxfp8_kernel[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    comptime num_warps = num_threads // UInt(WARP_SIZE)
+    comptime num_warps = num_threads // WARP_SIZE
     var warp_id = get_warp_id()
-    var warp_id_q, warp_id_r = divmod(warp_id, 4)
+    var warp_id_q, warp_id_r = udivmod(warp_id, 4)
     warp_id = 2 * warp_id_r + warp_id_q
 
-    ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
-                4 * m_mma + Int(warp_id), n_mma
+            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+                4 * m_mma + warp_id, n_mma
             )
 
             c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[
@@ -499,11 +500,11 @@ def sm100_block_scaled_mxfp8[
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
     accum_type: DType = get_accum_type[c_type](),
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[a_scales_type, a_scales_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[b_scales_type, b_scales_layout, MutAnyOrigin],
+    c: LayoutTensor[mut=True, c_type, c_layout, _],
+    a: LayoutTensor[mut=True, a_type, a_layout, _],
+    b: LayoutTensor[mut=True, b_type, b_layout, _],
+    a_scales: LayoutTensor[mut=True, a_scales_type, a_scales_layout, _],
+    b_scales: LayoutTensor[mut=True, b_scales_type, b_scales_layout, _],
     ctx: DeviceContext,
 ) raises:
     comptime assert transpose_b, "Only support transposed B"
@@ -649,7 +650,7 @@ def sm100_block_scaled_mxfp8[
         a_scales_tma_op,
         b_scales_tma_op,
         c,
-        UInt(ceildiv(K, BK)),
+        ceildiv(K, BK),
         grid_dim=(ceildiv(N, BN), ceildiv(M, BM)),
         block_dim=(block_dim),
         shared_mem_bytes=smem_use,
@@ -674,8 +675,8 @@ def test_block_scaled_mxfp8[
 ](ctx: DeviceContext, m: MType, n: NType) raises:
     comptime assert transpose_b, "transpose_b must be true"
 
-    var M = m.value()
-    var N = n.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
     var K = k
 
     comptime BM = block_tile_shape[0]
@@ -856,16 +857,12 @@ def test_block_scaled_mxfp8[
     ctx.enqueue_copy(a_scales_device, a_scales_host_ptr)
     ctx.enqueue_copy(b_scales_device, b_scales_host_ptr)
 
-    var a = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var c = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_scales = TileTensor(
-        a_scales_device.unsafe_ptr(), row_major(a_scales_shape)
-    )
-    var b_scales = TileTensor(
-        b_scales_device.unsafe_ptr(), row_major(b_scales_shape)
-    )
-    var c_ref = TileTensor(c_device_ref.unsafe_ptr(), row_major(c_shape))
+    var a = TileTensor(a_device, row_major(a_shape))
+    var b = TileTensor(b_device, row_major(b_shape))
+    var c = TileTensor(c_device, row_major(c_shape))
+    var a_scales = TileTensor(a_scales_device, row_major(a_scales_shape))
+    var b_scales = TileTensor(b_scales_device, row_major(b_scales_shape))
+    var c_ref = TileTensor(c_device_ref, row_major(c_shape))
 
     sm100_block_scaled_mxfp8[
         transpose_b=transpose_b,
@@ -873,7 +870,7 @@ def test_block_scaled_mxfp8[
         block_tile_shape=block_tile_shape,
         SF_VECTOR_SIZE=SF_VECTOR_SIZE,
     ](
-        c.to_layout_tensor(),
+        c.to_layout_tensor().as_any_origin(),
         a.to_layout_tensor(),
         b.to_layout_tensor(),
         a_scales.to_layout_tensor(),

@@ -247,7 +247,6 @@ def test_vision_rotary_embedding(image_size: int) -> None:
     vision_transformer = HFQwen2_5VisionTransformer(
         config=Qwen2_5_VLVisionConfig()
     )
-    window_index_len = seq_len // spatial_merge_unit
     window_index, _ = vision_transformer.get_window_index(grid_thw)
 
     window_index = window_index.to("cuda")

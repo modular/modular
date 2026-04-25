@@ -3,6 +3,10 @@ load("//bazel:api.bzl", "mojo_filecheck_test", "mojo_test")
 package(default_visibility = ["//max:consumers"])
 
 _EXTRA_CONSTRAINTS = {
+    "test_mma_ws_ts.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     "test_cudnn_conv.mojo": ["//:nvidia_gpu"],
     "test_miopen_conv.mojo": ["//:amd_gpu"],
     "test_conv2d_sm100.mojo": select({
@@ -16,7 +20,10 @@ _EXTRA_CONSTRAINTS = {
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
-    "test_mha_causal_mask_amd.mojo": ["//:amd_gpu"],  # FIXME: KERN-1448, KERN-1437, KERN-1429
+    "test_mha_sink_weights.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     "test_mha_operand_tma.mojo": select({
         "//:h100_gpu": [],
         "//:b200_gpu": [],
@@ -45,6 +52,7 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_mla_prefill_qkv_fp8.mojo": select({
         "//:b200_gpu": [],
+        "//:amd_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_prefill_per_token_scale_fp8.mojo": select({
@@ -52,6 +60,10 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_mla_decode_qkv_fp8_per_token_scale_rope_aware.mojo": select({
+        "//:b200_gpu": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mla_sparse.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
@@ -112,6 +124,10 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),  # FIXME: MOCO-3104
+    "test_gemv_partial_norm.mojo": select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),  # Kernel uses device-scope atomics (_DEVICE_SCOPE) unsupported on Metal.
     "test_rope_split_store.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -131,7 +147,7 @@ _EXTRA_CONSTRAINTS = {
         "//conditions:default": [],
     }),
     "test_spatial_merge.mojo": select({
-        "//:apple_gpu": ["@platforms//:incompatible"],
+        "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     # TODO(GEX-3342): Metal GPU sorting produces incorrect results
@@ -162,7 +178,7 @@ _EXTRA_CONSTRAINTS = {
     "test_toppminp_gpu.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
-    }),  # NaN in BFloat16 top-p sampling on Apple GPU
+    }),  # FIXME: MOCO-3650 — NaN in BFloat16 top-p sampling on Apple GPU
 }
 
 _FILECHECK_TESTS = [
@@ -202,6 +218,7 @@ _FILECHECK_TESTS = [
             "//:amd_gpu": src not in [
                 "test_flash_attention.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
                 "test_flash_attention_amd.mojo",  # MSTDL-2240: stack frame size exceeds limit with assertions
+                "test_mha_sink_weights.mojo",  # KERN-2751: sink kernel triggers OOB on AMD
             ],
             # KERN-2339: H100 MLA kernel has OOB in LayoutTensor masking
             # infrastructure on boundary tiles (num_keys not aligned to BN).
@@ -230,54 +247,120 @@ _FILECHECK_TESTS = [
         ["**/*.mojo"],
         exclude = _FILECHECK_TESTS + [
             "test_mha_causal_mask.mojo",
+            "test_mha_causal_mask_amd.mojo",
         ],
     )
 ]
 
-# test_mha_causal_mask.mojo split by depth via -D depth=N.
-# Each depth gets its own target for parallel execution.
-# Depths and their GPU constraints:
-#   64, 128: all GPUs
-#   72, 80, 96, 256: H100 and B200 only
-#   512: B200 only (prefill-only support)
-_MHA_CAUSAL_MASK_DEPTHS = {
-    "64": [],
-    "128": [],
-    "72": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "80": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "96": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "256": select({
-        "//:h100_gpu": [],
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    "512": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-}
+# test_mha_causal_mask.mojo split by depth and optional pair-CTA flag.
+# Each (depth, pair_cta) combination gets its own target for parallel execution.
+# Pair-CTA requires SM100 (B200) and is valid for 64 < depth <= 128.
+#
+# GPU constraints per depth:
+#   64, 128:       all GPUs
+#   72, 80, 96:    H100 and B200 only
+#   256:           H100, B200, and AMD only
+#   512:           B200 and AMD only (prefill-only support)
+#   *_pair_cta:    B200 only (SM100-only feature)
+_MHA_CAUSAL_MASK_CONFIGS = [
+    # (depth, pair_cta, extra_constraints)
+    ("64", False, []),
+    ("128", False, []),
+    (
+        "128",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "72",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "72",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "80",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "80",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "96",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "96",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "256",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//:amd_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "512",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//:amd_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+]
 
 [
     mojo_test(
-        name = "test_mha_causal_mask_depth_{}.mojo.test".format(depth),
+        name = "test_mha_causal_mask{}_depth_{}.mojo.test".format(
+            "_pair_cta" if pair_cta else "",
+            depth,
+        ),
         size = "large",
         srcs = ["test_mha_causal_mask.mojo"],
         copts = [
             "-D",
             "depth={}".format(depth),
-        ],
+        ] + ([
+            "-D",
+            "ENABLE_MHA_PREFILL_PAIR_CTA=True",
+        ] if pair_cta else []),
         exec_properties = {
             "test.resources:gpu-memory": "3",
         },
@@ -291,5 +374,40 @@ _MHA_CAUSAL_MASK_DEPTHS = {
             "@mojo//:std",
         ],
     )
-    for depth, constraints in _MHA_CAUSAL_MASK_DEPTHS.items()
+    for depth, pair_cta, constraints in _MHA_CAUSAL_MASK_CONFIGS
+]
+
+# test_mha_causal_mask_amd.mojo split by dtype via -D USE_FP8.
+# FP8 is prefill-only on AMD.
+_MHA_CAUSAL_MASK_AMD_DTYPES = {
+    "bf16": [],
+    "fp8": [
+        "-D",
+        "USE_FP8=True",
+    ],
+}
+
+[
+    mojo_test(
+        name = "test_mha_causal_mask_amd_{}.mojo.test".format(dtype),
+        size = "large",
+        srcs = ["test_mha_causal_mask_amd.mojo"],
+        copts = copts,
+        exec_properties = {
+            "test.resources:gpu-memory": "3",
+        },
+        tags = ["gpu"],
+        target_compatible_with = [
+            "//:has_gpu",
+            "//:amd_gpu",
+        ],
+        deps = [
+            "//max:internal_utils",
+            "//max:linalg",
+            "//max:nn",
+            "//max:testdata",
+            "@mojo//:std",
+        ],
+    )
+    for dtype, copts in _MHA_CAUSAL_MASK_AMD_DTYPES.items()
 ]

@@ -20,6 +20,7 @@ from max.pipelines.architectures.unified_eagle_llama3.model_config import (
 from max.pipelines.architectures.unified_eagle_llama3.unified_eagle_llama3 import (
     UnifiedEagleLlama3,
 )
+from max.pipelines.lib.config import SpeculativeConfig
 
 
 def create_dummy_llama3_config(layers: int) -> Llama3Config:
@@ -44,6 +45,7 @@ def create_dummy_llama3_config(layers: int) -> Llama3Config:
             num_layers=layers,
             devices=[DeviceRef.GPU(0)],
             data_parallel_degree=1,
+            num_eagle_speculative_tokens=1,
         ),
         attention_multiplier=1.0,
         embedding_multiplier=2.0,
@@ -59,7 +61,7 @@ def create_dummy_eagle_llama3_config() -> UnifiedEagleLlama3Config:
     return UnifiedEagleLlama3Config(
         target=create_dummy_llama3_config(layers=8),
         draft=create_dummy_llama3_config(layers=1),
-        num_draft_steps=1,
+        speculative_config=SpeculativeConfig(num_speculative_tokens=1),
     )
 
 
@@ -85,10 +87,11 @@ def test_graph_construction() -> None:
 
     # Verify input types include draft_tokens and draft_cache_lengths.
     input_types = model.input_types()
-    # Expected: tokens, input_row_offsets, draft_tokens, return_n_logits,
-    #           + target KV (5 fields), + draft_kv_blocks
-    assert len(input_types) == 10, (
-        f"Expected 10 input types, got {len(input_types)}"
+    # Expected: tokens, input_row_offsets, return_n_logits,
+    #           + target KV (6 fields), + draft_tokens, + draft_kv_blocks,
+    #           + rng seed, + sampling params (temperature, top_k, max_k, top_p, min_top_p)
+    assert len(input_types) == 17, (
+        f"Expected 17 input types, got {len(input_types)}"
     )
 
     # Smoke test that graph construction (not compilation) works

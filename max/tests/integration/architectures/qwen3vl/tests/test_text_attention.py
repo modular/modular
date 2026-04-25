@@ -22,7 +22,7 @@ from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
 from max.graph import DeviceRef, Dim, Graph, TensorType, ops
 from max.kv_cache import PagedKVCacheManager, load_kv_manager
-from max.nn.kv_cache import KVCacheParams, unflatten_ragged_attention_inputs
+from max.nn.kv_cache import KVCacheParams
 from max.nn.linear import Linear
 from max.pipelines import KVCacheConfig
 from max.pipelines.architectures.qwen3vl_moe.nn.text_attention import (
@@ -301,9 +301,9 @@ def generate_qwen3_max_outputs(
     ) as graph:
         x, input_row_offsets_input, *kv_cache = graph.inputs
 
-        kv_collection = unflatten_ragged_attention_inputs(
-            kv_cache, n_devices=1
-        )[0]
+        kv_collection = (
+            kv_params.get_symbolic_inputs().unflatten(iter(kv_cache)).inputs[0]
+        )
 
         output = attention(
             layer_idx=ops.constant(0, DType.uint32, DeviceRef.CPU()),
@@ -330,7 +330,7 @@ def generate_qwen3_max_outputs(
     result = compiled.execute(
         Buffer.from_dlpack(flat_input.to(torch_device)).to(device),
         Buffer.from_dlpack(input_row_offsets.to(torch_device)).to(device),
-        *kv_cache_runtime,
+        *kv_cache_runtime.flatten(),
     )
     max_tensor = result[0]
     return from_dlpack(max_tensor)

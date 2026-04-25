@@ -32,7 +32,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
         var idx = tensor.layout(Coord(index))
-        print(tensor.ptr[idx])
+        print(tensor.raw_load(idx))
 
     elementwise[print_elements_lambda, 1](shape)
 
@@ -43,7 +43,7 @@ def test_slice_dim[
 ](dims: IndexList[outer_rank], start: Int, stop: Int, step: Int) raises:
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
-        memory1.unsafe_ptr(),
+        memory1,
         row_major(Coord(dims)),
     )
 
@@ -53,7 +53,7 @@ def test_slice_dim[
     print("In strides:", stride)
 
     for i in range(numelems):
-        in_tensor.ptr[i] = Scalar[dtype](i)
+        in_tensor.raw_store(i, Scalar[dtype](i))
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_dim_as_view[dtype, dim](

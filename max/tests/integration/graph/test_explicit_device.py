@@ -99,7 +99,6 @@ def test_io_device_properties() -> None:
 def test_io_device_output_errors() -> None:
     graph = create_test_graph_io_devices()
     host = CPU()
-    cuda0 = Accelerator(0)
     session = InferenceSession(devices=[host])
     with pytest.raises(
         ValueError,
@@ -108,7 +107,7 @@ def test_io_device_output_errors() -> None:
             r" in InferenceSession"
         ),
     ):
-        compiled = session.load(graph)
+        session.load(graph)
 
 
 @pytest.mark.skipif(

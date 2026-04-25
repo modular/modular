@@ -144,6 +144,15 @@ def validate_hf_repo_access(repo_id: str, revision: str) -> None:
             _create_repo_not_found_error_message(repo_id, revision, str(e))
         ) from e
     except Exception as e:
+        # For transient server errors, re-raise directly so _detect_hf_flakes
+        # can identify them as flakes. Wrapping in ValueError would cause pydantic
+        # to swallow the exception chain inside a ValidationError.
+        if (
+            isinstance(e, hf_hub_errors.HfHubHTTPError)
+            and e.response is not None
+            and e.response.status_code == 503
+        ):
+            raise
         # Fallback for other HuggingFace or network errors
         raise ValueError(
             _create_repo_access_fallback_error_message(repo_id, str(e))
@@ -199,7 +208,7 @@ def download_weight_files(
 
     Args:
         huggingface_model_id:
-          The Hugging Face model identifier, ie. `modularai/Llama-3.1-8B-Instruct-GGUF`
+          The Hugging Face model identifier, that is, ``modularai/Llama-3.1-8B-Instruct-GGUF``
 
         filenames:
           A list of file paths relative to the root of the Hugging Face repo.
@@ -220,14 +229,40 @@ def download_weight_files(
           The number of worker threads to concurrently download files.
 
     """
+    # 1. Check if all files exist as direct local paths (absolute or CWD-relative).
     if not force_download and all(
         os.path.exists(Path(filename)) for filename in filenames
     ):
         logger.info("All files exist locally, skipping download.")
         return [Path(filename) for filename in filenames]
 
+    # 2. Check the HuggingFace local cache (no network calls).
+    #    try_to_load_from_cache resolves branch refs (e.g. "main") from the
+    #    local refs file, so this works even with non-hash revisions after
+    #    the first successful download.
+    if not force_download:
+        cached_paths: list[Path] = []
+        for filename in filenames:
+            cached = huggingface_hub.try_to_load_from_cache(
+                huggingface_model_id,
+                filename,
+                revision=revision,
+            )
+            if isinstance(cached, (str, os.PathLike)):
+                cached_paths.append(Path(cached))
+            else:
+                # Cache miss or cached-as-nonexistent — need to download.
+                break
+        else:
+            # All files found in HF cache.
+            logger.info(
+                "All weight files for %s found in local HF cache.",
+                huggingface_model_id,
+            )
+            return cached_paths
+
     start_time = datetime.datetime.now()
-    logger.info(f"Starting download of model: {huggingface_model_id}")
+    logger.info(f"Downloading weight files for: {huggingface_model_id}")
     with _hf_tqdm_using_threading_only_lock():
         weight_paths = list(
             thread_map(
@@ -246,7 +281,8 @@ def download_weight_files(
         )
 
     logger.info(
-        f"Finished download of model: {huggingface_model_id} in {(datetime.datetime.now() - start_time).total_seconds()} seconds."
+        f"Finished downloading weight files for: {huggingface_model_id} "
+        f"in {(datetime.datetime.now() - start_time).total_seconds():.1f}s."
     )
 
     return weight_paths
@@ -291,8 +327,12 @@ def _repo_exists_with_retry(repo_id: str, revision: str) -> bool:
         ):
             return False
         except (hf_hub_errors.HfHubHTTPError, RequestsConnectionError) as e:
-            # Do not retry if Too Many Requests error received
-            if e.response.status_code == 429:
+            # Do not retry if Too Many Requests error received.
+            # Not all exceptions have an HTTP response (e.g. ConnectionError).
+            if (
+                getattr(e, "response", None) is not None
+                and e.response.status_code == 429
+            ):
                 logger.error(e)
                 raise
 
@@ -464,8 +504,7 @@ class HuggingFaceRepo:
     @cached_property
     def supported_encodings(self) -> list[SupportedEncoding]:
         """Returns encodings supported by this repo's weight files."""
-        # TODO(AITLIB-128): Detection of supported encodings in weights can be cleaned up
-        supported_encodings = set([])
+        supported_encodings: set[SupportedEncoding] = set()
 
         # Parse gguf file names.
         for gguf_path in self.weight_files.get(WeightsFormat.gguf, []):
@@ -473,86 +512,49 @@ class HuggingFaceRepo:
             if encoding:
                 supported_encodings.add(encoding)
 
-        # Get Safetensor Metadata.
+        # Detect safetensors encodings.
         if WeightsFormat.safetensors in self.weight_files:
-            if self.repo_type == "local":
-                # Safetensor repos are assumed to only have one encoding in them.
-                with open(
-                    os.path.join(
-                        self.repo_id,
-                        self.weight_files[WeightsFormat.safetensors][0],
-                    ),
-                    "rb",
-                ) as file:
-                    supported_encodings.update(
-                        self._get_safetensors_encoding(file)
-                    )
+            # For online repos, prefer the aggregated HF Hub metadata
+            # when available (no file I/O needed).  When subfolder is set,
+            # repo-level safetensors metadata (self.info.safetensors)
+            # aggregates ALL files in the repo and is not scoped to the
+            # subfolder, so read the actual weight files instead.
+            safetensors_info = None
+            if self.repo_type == "online" and self.subfolder is None:
+                safetensors_info = self.info.safetensors
 
-                # Workaround for FP8/FP4 models that don't have proper safetensors metadata.
-                # Check the path for fp8/fp4 hints (works for both local paths and HF cache paths
-                # since cache paths preserve the model name: models--org--model-FP8/snapshots/...)
-                if not supported_encodings and re.search(
-                    r"FP8|fp8", self.repo_id, re.IGNORECASE
-                ):
-                    supported_encodings.add("float8_e4m3fn")
-                if not supported_encodings and re.search(
-                    r"FP4|fp4", self.repo_id, re.IGNORECASE
-                ):
-                    supported_encodings.add("float4_e2m1fnx2")
-
-            elif self.repo_type == "online":
-                # When subfolder is set, repo-level safetensors metadata
-                # (self.info.safetensors) aggregates ALL files in the repo
-                # and is not scoped to the subfolder.  In that case, read
-                # the actual weight files within the subfolder to detect
-                # encodings accurately.
-                safetensors_info = (
-                    self.info.safetensors if self.subfolder is None else None
+            if safetensors_info:
+                for params in safetensors_info.parameters:
+                    if "F8_E4M3" in params:
+                        supported_encodings.add("float8_e4m3fn")
+                    elif "U8" in params:
+                        supported_encodings.add("float4_e2m1fnx2")
+                    elif "BF16" in params:
+                        supported_encodings.add("bfloat16")
+                    elif "F32" in params:
+                        supported_encodings.add("float32")
+            else:
+                # Read all shard headers (works for both local and online).
+                supported_encodings.update(
+                    self._detect_safetensors_encodings_from_files()
                 )
 
-                # Workaround for FP8 models that don't have safetensors metadata populated
-                # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
-                # do not have safetensors metadata populated so we need to add a
-                # workaround to support them.
-                if safetensors_info is None and re.search(
-                    r"FP8|fp8", self.repo_id, re.IGNORECASE
-                ):
+            # Workaround for FP8/FP4 models that don't have proper
+            # safetensors metadata.  Check the path for fp8/fp4 hints
+            # (works for both local paths and HF cache paths since cache
+            # paths preserve the model name: models--org--model-FP8/...).
+            # Some repos like "RedHatAI/Llama-3.3-70B-Instruct-FP8-dynamic"
+            # do not have safetensors metadata populated.
+            if safetensors_info is None:
+                if re.search(r"FP8|fp8", self.repo_id, re.IGNORECASE):
                     supported_encodings.add("float8_e4m3fn")
-                if safetensors_info is None and re.search(
-                    r"FP4|fp4", self.repo_id, re.IGNORECASE
-                ):
+                elif re.search(r"FP4|fp4", self.repo_id, re.IGNORECASE):
                     supported_encodings.add("float4_e2m1fnx2")
 
-                if safetensors_info:
-                    for params in safetensors_info.parameters:
-                        if "F8_E4M3" in params:
-                            supported_encodings.add("float8_e4m3fn")
-                        elif "U8" in params:
-                            supported_encodings.add("float4_e2m1fnx2")
-                        elif "BF16" in params:
-                            supported_encodings.add("bfloat16")
-                        elif "F32" in params:
-                            supported_encodings.add("float32")
-                else:
-                    fs = huggingface_hub.HfFileSystem()
-                    for weight_file in self.weight_files[
-                        WeightsFormat.safetensors
-                    ]:
-                        with fs.open(
-                            f"{self.repo_id}/{weight_file}", "rb"
-                        ) as file:
-                            supported_encodings.update(
-                                self._get_safetensors_encoding(file)
-                            )
-
-                if safetensors_config := self.info.config:
-                    if quant_config := safetensors_config.get(
-                        "quantization_config"
-                    ):
-                        if quant_config["quant_method"] == "gptq":
-                            supported_encodings.add("gptq")
-            else:
-                raise ValueError(f"Unsupported repo_type: {self.repo_type}")
+            # Check quantization_config for gptq (both local and online).
+            if quant_config := self._get_quantization_config():
+                if quant_config.get("quant_method") == "gptq":
+                    supported_encodings.add("gptq")
 
         return list(supported_encodings)
 
@@ -584,6 +586,52 @@ class HuggingFaceRepo:
                         f"unknown dtype found in safetensors file: {weight_dtype}"
                     )
         return supported_encodings
+
+    def _detect_safetensors_encodings_from_files(
+        self,
+    ) -> set[SupportedEncoding]:
+        """Detect encodings by reading headers of all safetensors weight files."""
+        encodings: set[SupportedEncoding] = set()
+        fs = (
+            huggingface_hub.HfFileSystem()
+            if self.repo_type == "online"
+            else None
+        )
+        for weight_file in self.weight_files.get(WeightsFormat.safetensors, []):
+            try:
+                if self.repo_type == "local":
+                    with open(
+                        os.path.join(self.repo_id, weight_file), "rb"
+                    ) as f:
+                        encodings.update(self._get_safetensors_encoding(f))
+                elif fs is not None:
+                    with fs.open(f"{self.repo_id}/{weight_file}", "rb") as f:
+                        encodings.update(self._get_safetensors_encoding(f))
+            except Exception:
+                logger.debug(
+                    "Failed to read safetensors header from %s",
+                    weight_file,
+                )
+        return encodings
+
+    def _get_quantization_config(self) -> dict[str, object] | None:
+        """Return the quantization_config dict from config.json, or None."""
+        try:
+            if self.repo_type == "online":
+                if config := self.info.config:
+                    return config.get("quantization_config")
+            elif self.repo_type == "local":
+                config_path = os.path.join(self.repo_id, "config.json")
+                if self.subfolder is not None:
+                    config_path = os.path.join(
+                        self.repo_id, self.subfolder, "config.json"
+                    )
+                if os.path.isfile(config_path):
+                    with open(config_path) as f:
+                        return json.load(f).get("quantization_config")
+        except Exception:
+            logger.debug("Failed to read quantization_config from config.json")
+        return None
 
     def _get_gguf_files_for_encoding(
         self, encoding: SupportedEncoding
@@ -644,11 +692,36 @@ class HuggingFaceRepo:
         """Returns the weight formats available in this repo."""
         return list(self.weight_files.keys())
 
-    def encoding_for_file(self, file: str | Path) -> SupportedEncoding:
-        """Infers the supported encoding for a given weight file path."""
+    def encoding_for_file(
+        self,
+        file: str | Path,
+        preferred_encoding: SupportedEncoding | None = None,
+    ) -> SupportedEncoding:
+        """Infers the supported encoding for a given weight file path.
+
+        Args:
+            file: The weight file path.
+            preferred_encoding: If set and present in the repo's supported
+                encodings, return it directly. Useful for multi-encoding
+                safetensors repos (e.g. FP4 repos that also contain BF16
+                norm weights).
+        """
         if str(file).endswith(".safetensors"):
-            # If this file is safetensors, return the first encoding, as Safetensor repos can only have one.
-            return self.supported_encodings[0]
+            supported = self.supported_encodings
+            if preferred_encoding and preferred_encoding in supported:
+                return preferred_encoding
+            # For multi-encoding repos, pick the most specific quantized
+            # format (matches priority in MAXModelConfig._try_infer_encoding).
+            if len(supported) > 1:
+                for candidate in (
+                    "float4_e2m1fnx2",
+                    "float8_e4m3fn",
+                    "bfloat16",
+                    "float32",
+                ):
+                    if candidate in supported:
+                        return candidate
+            return supported[0]
         elif str(file).endswith(".gguf"):
             encoding = parse_supported_encoding_from_file_name(str(file))
             if encoding:
@@ -685,7 +758,7 @@ def is_diffusion_pipeline(repo: HuggingFaceRepo) -> bool:
 
 
 def generate_local_model_path(repo_id: str, revision: str) -> str:
-    """Generate the local filesystem path where a Hugging Face model repo is cached.
+    """Generates the local filesystem path where a Hugging Face model repo is cached.
 
     This function resolves the model from the local Hugging Face cache only.
     Missing snapshots should be pre-downloaded explicitly so tests without the

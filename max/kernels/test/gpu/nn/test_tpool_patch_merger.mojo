@@ -97,7 +97,7 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     seed(42)
-    rand[dtype](x_host.unsafe_ptr(), total_in * D, min=0.0, max=1.0)
+    rand[dtype](x_host.as_span(), min=0.0, max=1.0)
 
     bounds_host[0] = Int64(t0)
     bounds_host[1] = Int64(h0)
@@ -119,9 +119,9 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     var ref_host = ctx.enqueue_create_host_buffer[dtype](total_out * D)
 
     cpu_reference_one_video[dtype](
-        x_host.unsafe_ptr(),
+        x_host.as_span().unsafe_ptr(),
         0,
-        ref_host.unsafe_ptr(),
+        ref_host.as_span().unsafe_ptr(),
         t0,
         h0,
         w0,
@@ -130,9 +130,9 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
         D,
     )
     cpu_reference_one_video[dtype](
-        x_host.unsafe_ptr(),
+        x_host.as_span().unsafe_ptr(),
         len0,
-        ref_host.unsafe_ptr() + out0_rows * D,
+        ref_host.as_span().unsafe_ptr() + out0_rows * D,
         t1,
         h1,
         w1,
@@ -142,16 +142,16 @@ def test_tpool_patch_merger(ctx: DeviceContext) raises:
     )
 
     # GPU kernel: contiguous output
-    var x_tile = TileTensor(
-        x_dev.unsafe_ptr().as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+    var x_tile = TileTensor[mut=False](
+        x_dev,
         row_major(Coord(Idx(total_in), Idx(D))),
     )
     var out_tile = TileTensor(
-        out_dev.unsafe_ptr().unsafe_origin_cast[MutAnyOrigin](),
+        out_dev,
         row_major(Coord(Idx(total_out), Idx(D))),
     )
-    var bounds_tensor = TileTensor(
-        bounds.unsafe_ptr().as_immutable().unsafe_origin_cast[ImmutAnyOrigin](),
+    var bounds_tensor = TileTensor[mut=False](
+        bounds,
         row_major(Coord(Idx(n_videos), Idx(3))),
     )
 

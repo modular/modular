@@ -64,9 +64,9 @@ For the most reliable experience, we recommend installing with `pixi`.
 ## Start a model endpoint
 
 Now you'll serve an LLM from a local endpoint using
-[`max serve`](/max/cli/serve). Choose whether you want **text-to-text** or
-**image-to-text (multimodal)** inference by switching tabs below, then use the
-dropdown to select a model that fits your hardware's memory constraints.
+[`max serve`](/max/cli/serve). Choose whether you want **text-to-text**,
+**image-to-text**, or **video-to-text** inference by switching tabs below, then
+use the dropdown to select a model that fits your hardware's memory constraints.
 
 <ModelDropdownTabs groupId="inference" sticky dropdownOptions={allModelOptions}>
 <TabItem value="text" label="Text to text">
@@ -76,6 +76,13 @@ dropdown to select a model that fits your hardware's memory constraints.
 Select a model to change the code below:
 
 export const textModelOptions = [
+  {
+    label: "gemma-4-31B-it",
+    value: "google/gemma-4-31B-it",
+    description:
+      "Requires >96 GiB of GPU RAM — we suggest an NVIDIA B200 or AMD MI355X",
+    default: true,
+  },
   {
     label: "gemma-3-4b-it",
     value: "google/gemma-3-4b-it",
@@ -92,7 +99,6 @@ export const textModelOptions = [
     value: "google/gemma-3-27b-it",
     description:
       "Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better",
-    default: true,
   },
   {
     label: "Llama-3.1-8B-Instruct",
@@ -104,6 +110,13 @@ export const textModelOptions = [
 
 export const imageModelOptions = [
   {
+    label: "gemma-4-31B-it",
+    value: "google/gemma-4-31B-it",
+    description:
+      "Requires >96 GiB of GPU RAM — we suggest an NVIDIA B200 or AMD MI355X",
+    default: true,
+  },
+  {
     label: "gemma-3-12b-it",
     value: "google/gemma-3-12b-it",
     description:
@@ -114,7 +127,6 @@ export const imageModelOptions = [
     value: "google/gemma-3-27b-it",
     description:
       "Requires >60 GiB of GPU RAM — we suggest an H100, MI300, or better",
-    default: true,
   },
   {
     label: "InternVL3-8B-Instruct",
@@ -130,22 +142,43 @@ export const imageModelOptions = [
   },
 ];
 
+export const videoModelOptions = [
+  {
+    label: "gemma-4-31B-it",
+    value: "google/gemma-4-31B-it",
+    description:
+      "Requires >96 GiB of GPU RAM — we suggest an NVIDIA B200 or AMD MI355X",
+    default: true,
+  },
+];
+
 export const allModelOptions = {
   text: textModelOptions,
   image: imageModelOptions,
+  video: videoModelOptions,
 };
 
 <ModelSelector modelOptions={allModelOptions} variableName="text" />
 
 <ConditionalContent
   variableName="text"
-  condition={(model) => model.includes('gemma')} >
+  condition={(model) => model.includes('gemma-3')} >
 
 Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
 models are multimodal. MAX supports text input for all available sizes and image
 input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
 [27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
 [compatible GPU](/max/packages#gpu-compatibility).
+
+</ConditionalContent>
+
+<ConditionalContent
+  variableName="text"
+  condition={(model) => model.includes('gemma-4')} >
+
+MAX supports text, image, and video input for the developer-focused
+[Gemma 4 31B](https://huggingface.co/google/gemma-4-31B-it) model. A
+[compatible GPU](/max/packages#gpu-compatibility) is required.
 
 </ConditionalContent>
 
@@ -174,7 +207,14 @@ Start the endpoint with the `max` CLI:
 
 <ConditionalContent
   variableName="text"
-  condition={(model) => model.includes('gemma')} >
+  condition={(model) => model.includes('gemma-4')} >
+
+2. Agree to the [Gemma 4 license](https://huggingface.co/google/gemma-4-31B-it).
+
+</ConditionalContent>
+<ConditionalContent
+  variableName="text"
+  condition={(model) => model.includes('gemma-3')} >
 
 2. Agree to the [Gemma 3 license](https://huggingface.co/google/gemma-3-27b-it).
 
@@ -204,13 +244,23 @@ Select a model to change the code below:
 
 <ConditionalContent
   variableName="image"
-  condition={(model) => model.includes('gemma')} >
+  condition={(model) => model.includes('gemma-3')} >
 
 Google's [Gemma 3](https://huggingface.co/collections/google/gemma-3-release)
 models are multimodal. MAX supports text input for all available sizes and image
 input for the [12B](https://huggingface.co/google/gemma-3-12b-it) and
 [27B](https://huggingface.co/google/gemma-3-27b-it) models. All sizes require a
 [compatible GPU](/max/packages#gpu-compatibility).
+
+</ConditionalContent>
+
+<ConditionalContent
+  variableName="image"
+  condition={(model) => model.includes('gemma-4')} >
+
+MAX supports text, image, and video input for the developer-focused
+[Gemma 4 31B](https://huggingface.co/google/gemma-4-31B-it) model. A
+[compatible GPU](/max/packages#gpu-compatibility) is required.
 
 </ConditionalContent>
 
@@ -231,9 +281,22 @@ the endpoint.
 
 <ConditionalContent
   variableName="image"
-  condition={(model) => model.includes('gemma')} >
+  condition={(model) => model.includes('gemma-3')} >
 
 Agree to the [Gemma 3 license](https://huggingface.co/google/gemma-3-27b-it) and
+add your [HF Access Token](https://huggingface.co/settings/tokens) as an
+environment variable:
+
+```bash
+export HF_TOKEN="hf_..."
+```
+
+</ConditionalContent>
+<ConditionalContent
+  variableName="image"
+  condition={(model) => model.includes('gemma-4')} >
+
+Agree to the [Gemma 4 license](https://huggingface.co/google/gemma-4-31B-it) and
 add your [HF Access Token](https://huggingface.co/settings/tokens) as an
 environment variable:
 
@@ -247,6 +310,35 @@ Start the endpoint with the `max` CLI:
 
 <DynamicCode language="sh" variableName="image">{
 `max serve --model {image} --trust-remote-code`
+}</DynamicCode>
+
+</TabItem>
+<TabItem value="video" label="Video to text">
+
+<div className="model-selector-container">
+
+Select a model to change the code below:
+
+<ModelSelector modelOptions={allModelOptions} variableName="video" />
+
+MAX supports video-to-text inference for the developer-focused
+[Gemma 4 31B](https://huggingface.co/google/gemma-4-31B-it) model. A
+[compatible GPU](/max/packages#gpu-compatibility) is required.
+
+</div>
+
+Agree to the [Gemma 4 license](https://huggingface.co/google/gemma-4-31B-it) and
+add your [HF Access Token](https://huggingface.co/settings/tokens) as an
+environment variable:
+
+```bash
+export HF_TOKEN="hf_..."
+```
+
+Start the endpoint with the `max` CLI:
+
+<DynamicCode language="sh" variableName="video">{
+`max serve --model {video}`
 }</DynamicCode>
 
 </TabItem>
@@ -510,6 +602,130 @@ your first terminal:
     ```
 
 </TabItem>
+<TabItem value="video" label="Video to text">
+
+1. Navigate to the project you created above and then install the `openai`
+package:
+
+    <Tabs groupId="install">
+      <TabItem value="pixi" label="pixi">
+
+        ```bash
+        pixi add openai
+        ```
+
+      </TabItem>
+      <TabItem value="uv" label="uv">
+
+        ```bash
+        uv add openai
+        ```
+
+      </TabItem>
+      <TabItem value="pip" label="pip">
+
+        ```bash
+        pip install openai
+        ```
+
+      </TabItem>
+      <TabItem value="conda" label="conda">
+
+        ```bash
+        conda install -c conda-forge openai
+        ```
+
+      </TabItem>
+    </Tabs>
+
+2. Activate the virtual environment:
+
+    <Tabs groupId="install">
+      <TabItem value="pixi" label="pixi">
+
+        ```bash
+        pixi shell
+        ```
+
+      </TabItem>
+      <TabItem value="uv" label="uv">
+
+        ```bash
+        source .venv/bin/activate
+        ```
+
+      </TabItem>
+      <TabItem value="pip" label="pip">
+
+        ```bash
+        source .venv/quickstart/bin/activate
+        ```
+
+      </TabItem>
+      <TabItem value="conda" label="conda">
+
+        ```bash
+        conda init
+        ```
+
+        Or if you're on a Mac, use:
+
+        ```bash
+        conda init zsh
+        ```
+
+      </TabItem>
+    </Tabs>
+
+3. Create a new file that sends an inference request:
+
+    <DynamicCode language="python" title="generate-video-description.py" variableName="video">{
+    `from openai import OpenAI
+
+    client = OpenAI(base_url="http://localhost:8000/v1", api_key="EMPTY")
+
+    completion = client.chat.completions.create(
+        model="{video}",
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Describe what is happening in this video"
+                    },
+                    {
+                        "type": "video_url",
+                        "video_url": {
+                            "url": "https://avtshare01.rz.tu-ilmenau.de/avt-vqdb-uhd-1/test_1/segments/bigbuck_bunny_8bit_15000kbps_1080p_60.0fps_h264.mp4"
+                        }
+                    }
+                ]
+            }
+        ],
+        max_tokens=300
+    )
+
+    print(completion.choices[0].message.content)`
+    }</DynamicCode>
+
+    Notice that the `OpenAI` API requires the `api_key` argument, but you
+    don't need that with MAX.
+
+4. Wait until the model server is ready—when it is, you'll see this message in
+your first terminal:
+
+    ```output
+    🚀 Server ready on http://0.0.0.0:8000 (Press CTRL+C to quit)
+    ```
+
+    Then run the Python script from your second terminal with a real video URL:
+
+    ```sh
+    python generate-video-description.py
+    ```
+
+</TabItem>
 </Tabs>
 
 ## Benchmark the endpoint
@@ -529,7 +745,8 @@ your endpoint:
     --num-prompts 500 \\
     --sonnet-input-len 550 \\
     --output-lengths 256 \\
-    --sonnet-prefix-len 200`
+    --sonnet-prefix-len 200 \\
+    --max-concurrency 32`
     }</DynamicCode>
 
 </TabItem>
@@ -545,7 +762,32 @@ your endpoint:
     --random-input-len 40 \\
     --random-output-len 150 \\
     --random-image-size 512,512 \\
-    --random-coefficient-of-variation 0.1,0.6`
+    --random-image-count 1 \\
+    --max-concurrency 32`
+    }</DynamicCode>
+
+</TabItem>
+<TabItem value="video" label="Video to text">
+
+    :::note
+
+    Video input isn't supported in `max benchmark` yet, but you can benchmark
+    text and image input today using the endpoint you set up.
+
+    :::
+
+    <DynamicCode language="sh" variableName="image">{
+    `max benchmark \\
+    --model {image} \\
+    --backend modular \\
+    --endpoint /v1/chat/completions \\
+    --dataset-name random \\
+    --num-prompts 500 \\
+    --random-input-len 40 \\
+    --random-output-len 150 \\
+    --random-image-size 512,512 \\
+    --random-image-count 1 \\
+    --max-concurrency 32`
     }</DynamicCode>
 
 </TabItem>

@@ -150,6 +150,7 @@ def _make_metrics(
     latency_values = latency_values or [0.5]
 
     return BenchmarkMetrics(
+        duration=10.0,
         completed=completed,
         failures=failures,
         total_input=total_input,
@@ -179,8 +180,6 @@ def _make_metrics(
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],
-        cpu_utilization_user=None,
-        cpu_utilization_system=None,
     )
 
 
@@ -382,3 +381,109 @@ def test_confidence_warnings_for_low_confidence() -> None:
     )
     warns = m.confidence_warnings()
     assert any("ttft_ms" in w for w in warns)
+
+
+# ---------------------------------------------------------------------------
+# PercentileMetrics.to_flat_dict / confidence_to_flat_dict
+# ---------------------------------------------------------------------------
+
+
+def test_percentile_to_flat_dict() -> None:
+    pm = PercentileMetrics(
+        mean=10.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+    )
+    d = pm.to_flat_dict("ttft_ms")
+    assert d == {
+        "mean_ttft_ms": 10.0,
+        "std_ttft_ms": 1.0,
+        "median_ttft_ms": 9.5,
+        "p90_ttft_ms": 15.0,
+        "p95_ttft_ms": 18.0,
+        "p99_ttft_ms": 20.0,
+    }
+
+
+def test_confidence_to_flat_dict_present() -> None:
+    from max.benchmark.benchmark_shared.metrics import ConfidenceInfo
+
+    ci = ConfidenceInfo(
+        ci_lower=9.0,
+        ci_upper=11.0,
+        ci_relative_width=0.2,
+        confidence="medium",
+        sample_size=30,
+    )
+    pm = PercentileMetrics(
+        mean=10.0,
+        std=1.0,
+        median=9.5,
+        p90=15.0,
+        p95=18.0,
+        p99=20.0,
+        confidence_info=ci,
+    )
+    d = pm.confidence_to_flat_dict("ttft_ms")
+    assert d["ttft_ms_confidence"] == "medium"
+    assert d["ttft_ms_ci_lower"] == 9.0
+    assert d["ttft_ms_sample_size"] == 30
+
+
+def test_confidence_to_flat_dict_absent() -> None:
+    pm = PercentileMetrics(
+        mean=10.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
+    )
+    assert pm.confidence_to_flat_dict("x") == {}
+
+
+def test_standard_percentile_delegates_to_flat_dict() -> None:
+    spm = StandardPercentileMetrics([0.05, 0.06], scale_factor=1000.0)
+    d = spm.to_flat_dict("ttft_ms")
+    assert "mean_ttft_ms" in d
+    assert "p99_ttft_ms" in d
+
+
+# ---------------------------------------------------------------------------
+# BenchmarkMetrics.to_result_dict
+# ---------------------------------------------------------------------------
+
+
+def test_benchmark_metrics_to_result_dict_keys() -> None:
+    m = _make_metrics()
+    d = m.to_result_dict()
+    assert d["duration"] == 10.0
+    assert d["completed"] == 10
+    assert d["total_input_tokens"] == 500
+    assert d["total_output_tokens"] == 200
+    assert d["request_throughput"] == 5.0
+    assert "mean_ttft_ms" in d
+    assert "p99_latency_ms" in d
+    assert "mean_input_throughput" in d
+    assert "p99_output_throughput" in d
+
+
+# ---------------------------------------------------------------------------
+# PixelGenerationBenchmarkMetrics.to_result_dict
+# ---------------------------------------------------------------------------
+
+
+def test_pixel_metrics_to_result_dict() -> None:
+    from max.benchmark.benchmark_shared.metrics import (
+        PixelGenerationBenchmarkMetrics,
+    )
+
+    pm = PixelGenerationBenchmarkMetrics(
+        duration=5.0,
+        completed=8,
+        failures=0,
+        max_concurrency=2,
+        request_throughput=1.6,
+        total_generated_outputs=8,
+        latency_ms=StandardPercentileMetrics([0.5, 0.6], scale_factor=1000.0),
+        peak_gpu_memory_mib=[],
+        available_gpu_memory_mib=[],
+        gpu_utilization=[],
+    )
+    d = pm.to_result_dict()
+    assert d["total_generated_outputs"] == 8
+    assert "mean_latency_ms" in d
+    assert "p99_latency_ms" in d

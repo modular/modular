@@ -200,7 +200,7 @@ def cudnnGetRNNDescriptor_v6(
             type_of(cell_mode),
             type_of(algo),
             type_of(math_prec),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         rnn_desc,
@@ -253,7 +253,7 @@ def cudnnDestroyAttnDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyAttnDescriptor",
-        def(type_of(attn_desc)) -> cudnnStatus_t,
+        def(type_of(attn_desc)) thin -> cudnnStatus_t,
     ]()(attn_desc)
 
 
@@ -274,7 +274,7 @@ def cudnnGetRNNTempSpaceSizes(
             type_of(x_desc),
             type_of(work_space_size),
             type_of(reserve_space_size),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, rnn_desc, fwd_mode, x_desc, work_space_size, reserve_space_size)
 
 
@@ -303,7 +303,7 @@ def cudnnSetRNNDescriptor_v6(
             type_of(cell_mode),
             type_of(algo),
             type_of(math_prec),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         rnn_desc,
@@ -331,7 +331,7 @@ def cudnnCreatePersistentRNNPlan(
             type_of(minibatch),
             type_of(data_type),
             type_of(plan),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(rnn_desc, minibatch, data_type, plan)
 
 
@@ -360,7 +360,7 @@ def cudnnGetSeqDataDescriptor(
             type_of(seq_length_size_requested),
             type_of(seq_length_array),
             type_of(padding_fill),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         seq_data_desc,
         data_type,
@@ -390,7 +390,7 @@ def cudnnRNNGetClip_v8(
             type_of(clip_nan_opt),
             type_of(lclip),
             type_of(rclip),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(rnn_desc, clip_mode, clip_nan_opt, lclip, rclip)
 
 
@@ -405,7 +405,7 @@ def cudnnSetRNNAlgorithmDescriptor(
             type_of(handle),
             type_of(rnn_desc),
             type_of(algo_desc),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, rnn_desc, algo_desc)
 
 
@@ -424,7 +424,7 @@ def cudnnGetRNNParamsSize(
             type_of(x_desc),
             type_of(size_in_bytes),
             type_of(data_type),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, rnn_desc, x_desc, size_in_bytes, data_type)
 
 
@@ -433,7 +433,7 @@ def cudnnSetRNNMatrixMathType(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNMatrixMathType",
-        def(type_of(rnn_desc), type_of(m_type)) -> cudnnStatus_t,
+        def(type_of(rnn_desc), type_of(m_type)) thin -> cudnnStatus_t,
     ]()(rnn_desc, m_type)
 
 
@@ -482,7 +482,7 @@ def cudnnGetAttnDescriptor(
             type_of(kv_max_seq_length),
             type_of(max_batch_size),
             type_of(max_beam_size),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         attn_desc,
         attn_mode,
@@ -524,7 +524,7 @@ def cudnnRNNSetClip(
             type_of(clip_nan_opt),
             type_of(lclip),
             type_of(rclip),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, rnn_desc, clip_mode, clip_nan_opt, lclip, rclip)
 
 
@@ -547,7 +547,7 @@ def cudnnGetMultiHeadAttnWeights(
             type_of(weights),
             type_of(w_desc),
             type_of(w_addr),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle, attn_desc, w_kind, weight_size_in_bytes, weights, w_desc, w_addr
     )
@@ -574,7 +574,7 @@ def cudnnSetSeqDataDescriptor(
             type_of(seq_length_array_size),
             type_of(seq_length_array),
             type_of(padding_fill),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         seq_data_desc,
         data_type,
@@ -594,7 +594,7 @@ def cudnnCreateSeqDataDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnCreateSeqDataDescriptor",
-        def(type_of(seq_data_desc)) -> cudnnStatus_t,
+        def(type_of(seq_data_desc)) thin -> cudnnStatus_t,
     ]()(seq_data_desc)
 
 
@@ -604,7 +604,7 @@ def cudnnGetRNNPaddingMode(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnGetRNNPaddingMode",
-        def(type_of(rnn_desc), type_of(padding_mode)) -> cudnnStatus_t,
+        def(type_of(rnn_desc), type_of(padding_mode)) thin -> cudnnStatus_t,
     ]()(rnn_desc, padding_mode)
 
 
@@ -638,7 +638,7 @@ def cudnnGetRNNLinLayerBiasParams(
             type_of(lin_layer_id),
             type_of(lin_layer_bias_desc),
             type_of(lin_layer_bias),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         rnn_desc,
@@ -663,7 +663,7 @@ def cudnnGetRNNForwardInferenceAlgorithmMaxCount(
             type_of(handle),
             type_of(rnn_desc),
             type_of(count),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(handle, rnn_desc, count)
 
 
@@ -692,7 +692,7 @@ def cudnnGetRNNWeightParams(
             type_of(m_addr),
             type_of(b_desc),
             type_of(b_addr),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         handle,
         rnn_desc,
@@ -742,7 +742,7 @@ def cudnnGetRNNDescriptor_v8(
             type_of(num_layers),
             type_of(dropout_desc),
             type_of(aux_flags),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         rnn_desc,
         algo,
@@ -806,7 +806,7 @@ def cudnnSetRNNPaddingMode(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnSetRNNPaddingMode",
-        def(type_of(rnn_desc), type_of(padding_mode)) -> cudnnStatus_t,
+        def(type_of(rnn_desc), type_of(padding_mode)) thin -> cudnnStatus_t,
     ]()(rnn_desc, padding_mode)
 
 
@@ -815,7 +815,7 @@ def cudnnDestroyRNNDescriptor(
 ) raises -> cudnnStatus_t:
     return _get_dylib_function[
         "cudnnDestroyRNNDescriptor",
-        def(type_of(rnn_desc)) -> cudnnStatus_t,
+        def(type_of(rnn_desc)) thin -> cudnnStatus_t,
     ]()(rnn_desc)
 
 
@@ -840,7 +840,7 @@ def cudnnSetRNNDataDescriptor(
             type_of(vector_size),
             type_of(seq_length_array),
             type_of(padding_fill),
-        ) -> cudnnStatus_t,
+        ) thin -> cudnnStatus_t,
     ]()(
         rnn_data_desc,
         data_type,

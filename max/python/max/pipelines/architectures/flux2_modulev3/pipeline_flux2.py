@@ -46,6 +46,9 @@ class Flux2ModelInputs:
     tokens: Tensor
     """Primary encoder token IDs on device."""
 
+    text_ids: Tensor
+    """Text position IDs for the transformer, shape ``(B, S, 4)`` int64."""
+
     latents: Tensor
     """Initial latent noise tensor on device."""
 
@@ -157,7 +160,6 @@ class Flux2Pipeline(DiffusionPipeline):
             device=self.transformer.devices[0],
         )
         self._cached_guidance: BoundedCache[str, Tensor] = BoundedCache(32)
-        self._cached_text_ids: BoundedCache[str, Tensor] = BoundedCache(32)
         self._cached_sigmas: BoundedCache[str, Tensor] = BoundedCache(32)
         self._cached_shape_carriers: BoundedCache[int, Tensor] = BoundedCache(
             32
@@ -242,6 +244,9 @@ class Flux2Pipeline(DiffusionPipeline):
                 storage=Buffer.from_dlpack(context.tokens.array).to(
                     self.text_encoder.devices[0]
                 )
+            ),
+            text_ids=Tensor(
+                storage=Buffer.from_dlpack(context.text_ids).to(device)
             ),
             latents=Tensor(
                 storage=Buffer.from_dlpack(context.latents).to(device)
@@ -467,8 +472,9 @@ class Flux2Pipeline(DiffusionPipeline):
 
             # Call the compiled encoder directly, bypassing
             # DiagonalGaussianDistribution to avoid eager recompilation.
-            assert self.vae.encoder_model is not None
-            encoder_moments = self.vae.encoder_model(image)
+            # Encoder compilation is deferred to first img2img use.
+            encoder = self.vae.ensure_encoder_compiled()
+            encoder_moments = encoder(image)
 
             raw_h = int(encoder_moments.shape[2])
             raw_w = int(encoder_moments.shape[3])
@@ -502,8 +508,8 @@ class Flux2Pipeline(DiffusionPipeline):
         tokens: Tensor,
         num_images_per_prompt: int = 1,
         attention_mask: Tensor | npt.ArrayLike | None = None,
-    ) -> tuple[Tensor, Tensor]:
-        """Create prompt embeddings and text position IDs for the transformer.
+    ) -> Tensor:
+        """Create prompt embeddings for the transformer.
 
         The text encoder returns fused prompt embeddings directly, with hidden
         states from the configured layers already stacked and merged across the
@@ -514,9 +520,7 @@ class Flux2Pipeline(DiffusionPipeline):
             num_images_per_prompt: Number of image generations per prompt.
 
         Returns:
-            A tuple of:
-                - prompt_embeds: Tensor of shape (B', S, L*D)
-                - text_ids: Tensor[int64] of shape (B', S, 4)
+            prompt_embeds Tensor of shape ``(B', S, L*D)``.
         """
         # Shape metadata is host-side; this does not trigger a GPU sync.
         seq_len = int(tokens.shape[0])
@@ -543,19 +547,7 @@ class Flux2Pipeline(DiffusionPipeline):
                     [batch_size * num_images_per_prompt, seq_len, -1],
                 )
 
-            batch_size_final = batch_size * num_images_per_prompt
-            text_ids_key = f"{batch_size_final}_{seq_len}"
-            if text_ids_key in self._cached_text_ids:
-                text_ids = self._cached_text_ids[text_ids_key]
-            else:
-                text_ids = self._prepare_text_ids(
-                    batch_size=batch_size_final,
-                    seq_len=seq_len,
-                    device=self.text_encoder.devices[0],
-                )
-                self._cached_text_ids[text_ids_key] = text_ids
-
-        return prompt_embeds, text_ids
+        return prompt_embeds
 
     @traced(message="Flux2Pipeline.decode_latents")
     def decode_latents(
@@ -577,37 +569,6 @@ class Flux2Pipeline(DiffusionPipeline):
         decoded = self._postprocess_and_decode(latents, h_carrier, w_carrier)
 
         return np.from_dlpack(decoded)  # (B, H, W, C)
-
-    @staticmethod
-    def _prepare_text_ids(
-        batch_size: int,
-        seq_len: int,
-        device: Device,
-    ) -> Tensor:
-        """Create 4D text position IDs in (T, H, W, L) format.
-
-        For text tokens:
-            T = 0, H = 0, W = 0, and L indexes the token position [0..seq_len-1].
-
-        Returns:
-            Tensor[int64] of shape (batch_size, seq_len, 4).
-        """
-        coords = np.stack(
-            [
-                np.zeros(seq_len, dtype=np.int64),  # T
-                np.zeros(seq_len, dtype=np.int64),  # H
-                np.zeros(seq_len, dtype=np.int64),  # W
-                np.arange(seq_len, dtype=np.int64),  # L
-            ],
-            axis=-1,
-        )  # (seq_len, 4)
-
-        text_ids = np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
-        return Tensor(
-            storage=Buffer.from_dlpack(np.ascontiguousarray(text_ids)).to(
-                device
-            )
-        )
 
     @traced(message="Flux2Pipeline.preprocess_latents")
     def preprocess_latents(self, latents: Tensor) -> Tensor:
@@ -672,8 +633,9 @@ class Flux2Pipeline(DiffusionPipeline):
         )
         latents_dtype = latents.dtype
         latents_f32 = latents.cast(DType.float32)
-        noise_pred_sliced = rebind(noise_pred_sliced, latents_f32.shape)
-        return (latents_f32 + dt * noise_pred_sliced).cast(latents_dtype)
+        noise_pred_f32 = noise_pred_sliced.cast(DType.float32)
+        noise_pred_f32 = rebind(noise_pred_f32, latents_f32.shape)
+        return (latents_f32 + dt * noise_pred_f32).cast(latents_dtype)
 
     def prepare_scheduler(self, sigmas: Tensor) -> tuple[Tensor, Tensor]:
         """Precompute timesteps and dt values from sigmas in a single fused graph.
@@ -732,10 +694,11 @@ class Flux2Pipeline(DiffusionPipeline):
             DiffusionPipelineOutput containing one output per batch element.
         """
         # 1) Encode prompts.
-        prompt_embeds, text_ids = self.prepare_prompt_embeddings(
+        prompt_embeds = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
         )
+        text_ids = model_inputs.text_ids
         batch_size = int(prompt_embeds.shape[0])
 
         image_latents = None

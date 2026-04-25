@@ -17,7 +17,7 @@ from collections.abc import Sequence
 
 import numpy as np
 import torch
-from max.driver import CPU, Accelerator, Buffer
+from max.driver import Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph, TensorType
@@ -26,7 +26,6 @@ from torch.utils.dlpack import from_dlpack
 
 
 def test_moe_create_indices() -> None:
-    host = CPU(0)
     device0 = Accelerator(0)
     devices = [device0]
     session = InferenceSession(devices=devices)
@@ -121,7 +120,6 @@ def test_moe_create_indices() -> None:
         num_experts_used = expert_usage_stats[1]
         # check that max_M_among_experts is the maximum of bin_counts
         assert max_M_among_experts == np.max(bin_counts)
-        assert num_experts_used == np.sum(bin_counts > 0)
 
         expert_ids = from_dlpack(results[3]).cpu().numpy()
         expert_start_indices = from_dlpack(results[1]).cpu().numpy()

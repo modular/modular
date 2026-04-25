@@ -24,17 +24,22 @@ from fastapi import FastAPI
 from max.driver import DeviceSpec
 from max.pipelines import PipelineConfig
 from max.pipelines.lib import KVCacheConfig, MAXModelConfig
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_runtime_config import PipelineRuntimeConfig
 from PIL import Image
 
 pipeline_config = PipelineConfig(
-    model=MAXModelConfig(
-        model_path="OpenGVLab/InternVL3-1B-Instruct",
-        device_specs=[DeviceSpec.accelerator()],
-        quantization_encoding="bfloat16",
-        trust_remote_code=True,
-        max_length=512,
-        kv_cache=KVCacheConfig(),
+    models=ModelManifest(
+        {
+            "main": MAXModelConfig(
+                model_path="OpenGVLab/InternVL3-1B-Instruct",
+                device_specs=[DeviceSpec.accelerator()],
+                quantization_encoding="bfloat16",
+                trust_remote_code=True,
+                max_length=512,
+                kv_cache=KVCacheConfig(),
+            )
+        }
     ),
     runtime=PipelineRuntimeConfig(max_batch_size=1),
 )

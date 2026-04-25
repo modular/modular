@@ -15,7 +15,7 @@ from std.math import ceildiv
 
 from std.gpu import MAX_THREADS_PER_BLOCK_METADATA
 from std.gpu.globals import WARPGROUP_SIZE
-from std.gpu import thread_idx_int as thread_idx
+from std.gpu import thread_idx
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
 from layout import LayoutTensor
 from layout.tma_async import TMATensorTile

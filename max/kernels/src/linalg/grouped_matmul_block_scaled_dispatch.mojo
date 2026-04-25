@@ -13,22 +13,24 @@
 """General dispatch for grouped block-scaled matmul.
 
 Routes to format-specific grouped matmul implementations based on the
-input dtype and target GPU architecture. Currently supports NVFP4 on SM100;
-MXFP4 and MXFP8 will be added in subsequent commits.
+input dtype and target GPU architecture. Currently supports NVFP4, MXFP4,
+and MXFP8 on SM100.
 """
 
 from std.gpu.host import DeviceContext
 from std.gpu.host.info import _is_sm10x_gpu
+from std.gpu.primitives.grid_controls import PDLLevel
 from layout import TileTensor
 
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
-    grouped_matmul_nvfp4_dispatch,
+    grouped_matmul_block_scaled_sm100_dispatch,
 )
 
 
 def grouped_matmul_block_scaled_dispatch[
     transpose_b: Bool = True,
     target: StaticString = "cpu",
+    pdl_level: PDLLevel = PDLLevel(1),
 ](
     c: TileTensor[...],
     a: TileTensor[...],
@@ -45,16 +47,15 @@ def grouped_matmul_block_scaled_dispatch[
 ) raises:
     """Dispatch grouped block-scaled matmul to format-specific implementation.
 
-    Currently only NVFP4 on SM100 is supported. See
-    `grouped_matmul_nvfp4_dispatch` for parameter documentation.
+    Currently NVFP4, MXFP4, and MXFP8 on SM100 are supported. See
+    `grouped_matmul_block_scaled_sm100_dispatch` for parameter documentation.
     """
     comptime assert _is_sm10x_gpu(
         ctx.default_device_info
     ), "Only support SM100 for grouped block-scaled matmul"
 
-    grouped_matmul_nvfp4_dispatch[
-        transpose_b,
-        target,
+    grouped_matmul_block_scaled_sm100_dispatch[
+        transpose_b, target, pdl_level=pdl_level
     ](
         c,
         a,

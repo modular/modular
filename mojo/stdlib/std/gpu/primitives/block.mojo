@@ -32,17 +32,12 @@ order: `linear_id = x + y * dim_x + z * dim_x * dim_y`.
 """
 
 from std.math import align_up, ceildiv
+from std.math.uutils import ufloordiv
 
 from std.memory import stack_allocation
 from std.utils.static_tuple import StaticTuple
 
-from std.gpu import (
-    WARP_SIZE,
-    lane_id_uint as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-    barrier,
-)
+from std.gpu import WARP_SIZE, lane_id, thread_idx, warp_id, barrier
 import .warp
 
 # ===-----------------------------------------------------------------------===#
@@ -58,7 +53,7 @@ def _block_reduce_with_padding[
     *,
     n_warps: Int,
     padding: Int,
-    warp_reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+    warp_reduce_fn: def[dtype: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[dtype, width]
     ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
@@ -74,7 +69,7 @@ def _block_reduce_with_padding[
         num_reductions * smem_stride, dtype, address_space=AddressSpace.SHARED
     ]()
 
-    var lid = Int(lane_id())
+    var lid = lane_id()
 
     # Step 1: Perform warp-level reduction for each reduction.
     var warp_results = StaticTuple[Scalar[dtype], num_reductions]()
@@ -86,7 +81,7 @@ def _block_reduce_with_padding[
         """Computes the offset with the padding if needed."""
 
         comptime if padding > 0:
-            return offset + Int(UInt(offset) // UInt(WARP_SIZE))
+            return offset + ufloordiv(offset, WARP_SIZE)
         else:
             return offset
 
@@ -138,7 +133,7 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: Int, reduction_idx: Int](
+    warp_reduce_fn: def[dtype: DType, width: SIMDSize, reduction_idx: Int](
         SIMD[dtype, width]
     ) capturing[_] -> Scalar[dtype],
     broadcast: Bool = False,
@@ -194,10 +189,10 @@ def _block_reduce[
     # thread_idx.x // WARP_SIZE, matching the original warp_id() behaviour.
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
-    var wid = Int(linear_tid // UInt(WARP_SIZE))
+    var wid = ufloordiv(linear_tid, WARP_SIZE)
 
     # Allocate shared memory for inter-warp communication.
     comptime n_warps = block_size // WARP_SIZE
@@ -242,9 +237,9 @@ def _block_reduce[
     block_dim_y: Int = 1,
     block_dim_z: Int = 1,
     *,
-    warp_reduce_fn: def[dtype: DType, width: Int](SIMD[dtype, width]) -> Scalar[
-        dtype
-    ],
+    warp_reduce_fn: def[dtype: DType, width: SIMDSize](
+        SIMD[dtype, width]
+    ) thin -> Scalar[dtype],
     broadcast: Bool = False,
 ](val: Scalar[dtype], *, initial_val: Scalar[dtype]) -> Scalar[dtype]:
     """Performs a single block-level reduction operation.
@@ -276,7 +271,7 @@ def _block_reduce[
     @always_inline
     @parameter
     def _indexed_fn[
-        dtype: DType, width: Int, reduction_idx: Int
+        dtype: DType, width: SIMDSize, reduction_idx: Int
     ](v: SIMD[dtype, width]) -> Scalar[dtype]:
         return warp_reduce_fn(v)
 
@@ -301,7 +296,12 @@ def _block_reduce[
 
 @always_inline
 def sum[
-    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+    dtype: DType,
+    width: SIMDSize,
+    //,
+    *,
+    block_size: Int,
+    broadcast: Bool = True,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the sum of values across all threads in a block.
 
@@ -332,7 +332,7 @@ def sum[
 @always_inline
 def sum[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -379,7 +379,12 @@ def sum[
 
 @always_inline
 def max[
-    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+    dtype: DType,
+    width: SIMDSize,
+    //,
+    *,
+    block_size: Int,
+    broadcast: Bool = True,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the maximum value across all threads in a block.
 
@@ -412,7 +417,7 @@ def max[
 @always_inline
 def max[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -461,7 +466,12 @@ def max[
 
 @always_inline
 def min[
-    dtype: DType, width: Int, //, *, block_size: Int, broadcast: Bool = True
+    dtype: DType,
+    width: SIMDSize,
+    //,
+    *,
+    block_size: Int,
+    broadcast: Bool = True,
 ](val: SIMD[dtype, width]) -> SIMD[dtype, width]:
     """Computes the minimum value across all threads in a block.
 
@@ -493,7 +503,7 @@ def min[
 @always_inline
 def min[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -541,7 +551,7 @@ def min[
 
 @always_inline
 def broadcast[
-    dtype: DType, width: Int, //, *, block_size: Int
+    dtype: DType, width: SIMDSize, //, *, block_size: Int
 ](val: SIMD[dtype, width], src_thread: UInt = 0) -> SIMD[dtype, width]:
     """Broadcasts a value from a source thread to all threads in a block.
 
@@ -579,7 +589,7 @@ def broadcast[
     ]()
 
     # Source thread writes its value to shared memory
-    if thread_idx.x == src_thread:
+    if thread_idx.x == Int(src_thread):
         shared_mem.store(val)
 
     barrier()
@@ -591,7 +601,7 @@ def broadcast[
 @always_inline
 def broadcast[
     dtype: DType,
-    width: Int,
+    width: SIMDSize,
     //,
     *,
     block_dim_x: Int,
@@ -636,10 +646,10 @@ def broadcast[
 
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
-    if linear_tid == src_thread:
+    if linear_tid == Int(src_thread):
         shared_mem.store(val)
 
     barrier()
@@ -659,7 +669,7 @@ def _prefix_sum[
     *,
     block_size: Int,
     exclusive: Bool = False,
-](val: Scalar[dtype], *, wid: UInt) -> Scalar[dtype]:
+](val: Scalar[dtype], *, wid: Int) -> Scalar[dtype]:
     """Performs a prefix sum (scan) operation across all threads in a block."""
     comptime assert (
         block_size % WARP_SIZE == 0
@@ -675,7 +685,7 @@ def _prefix_sum[
     var thread_result = warp.prefix_sum[exclusive=exclusive](val)
 
     # Step 2: Store last value from each warp to shared memory
-    if lane_id() == UInt(WARP_SIZE - 1):
+    if lane_id() == WARP_SIZE - 1:
         var inclusive_warp_sum: Scalar[dtype] = thread_result
 
         comptime if exclusive:
@@ -694,7 +704,7 @@ def _prefix_sum[
         var previous_warps_prefix = warp.prefix_sum[exclusive=False](
             warp_mem[lid]
         )
-        if lid < UInt(n_warps):
+        if lid < n_warps:
             warp_mem[lid] = previous_warps_prefix
     barrier()
 
@@ -769,9 +779,9 @@ def prefix_sum[
     comptime block_size = block_dim_x * block_dim_y * block_dim_z
     var linear_tid = (
         thread_idx.x
-        + thread_idx.y * UInt(block_dim_x)
-        + thread_idx.z * UInt(block_dim_x * block_dim_y)
+        + thread_idx.y * block_dim_x
+        + thread_idx.z * block_dim_x * block_dim_y
     )
     return _prefix_sum[block_size=block_size, exclusive=exclusive](
-        val, wid=linear_tid // UInt(WARP_SIZE)
+        val, wid=ufloordiv(linear_tid, WARP_SIZE)
     )

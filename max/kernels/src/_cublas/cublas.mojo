@@ -27,16 +27,15 @@ from std.os import abort
 from std.pathlib import Path
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
-from std.ffi import _Global, OwnedDLHandle
+from std.ffi import _CPointer, _Global, OwnedDLHandle
 
 from std.gpu.host._nvidia_cuda import CUstream
 
 from .dtype import DataType, Property
 from .result import Result
 
-
 comptime cublasContext = NoneType
-comptime cublasHandle_t = UnsafePointer[cublasContext, _]
+comptime cublasHandle_t = OptionalUnsafePointer[cublasContext, _]
 
 # ===-----------------------------------------------------------------------===#
 # Library Load
@@ -158,7 +157,7 @@ def cublasScopy(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -191,7 +190,7 @@ def cublasDgemv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -216,7 +215,7 @@ def cublasStpsv(
             type_of(_ap),
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -253,7 +252,7 @@ def cublasDgbmv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -298,7 +297,7 @@ def cublasDgemmStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -352,7 +351,7 @@ def cublasDsyrkx(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -397,7 +396,7 @@ def cublasUint8gemmBias(
             Int16,
             Int16,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -425,7 +424,7 @@ def cublasGetProperty(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetProperty",
-        def(Property, type_of(value)) -> Result,
+        def(Property, type_of(value)) thin -> Result,
     ]()(type, value)
 
 
@@ -450,7 +449,7 @@ def cublasSsyr(
             Int16,
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -469,7 +468,7 @@ def cublasIdamax(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -492,7 +491,7 @@ def cublasGetMatrix(
             Int16,
             type_of(_b),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -533,7 +532,7 @@ def cublasSgemvStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         trans,
@@ -583,7 +582,7 @@ def cublasStrsm(
             Int16,
             type_of(_b),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -614,7 +613,7 @@ def cublasRotmEx(
             type_of(param),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -663,7 +662,7 @@ def cublasSgemm(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -698,7 +697,7 @@ def cublasSgeam(
             Int64,
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -719,7 +718,7 @@ def cublasStrttp(
             type_of(_a),
             Int16,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, _a, lda, _ap)
 
 
@@ -752,7 +751,7 @@ def cublasRotmgEx(
             type_of(param),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         d1,
@@ -792,7 +791,7 @@ def cublasStrmv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -838,7 +837,7 @@ def cublasDnrm2(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -859,7 +858,7 @@ def cublasIaminEx(
             DataType,
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -888,7 +887,7 @@ def cublasDger(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -933,7 +932,7 @@ def cublasDgemmStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -1013,7 +1012,7 @@ def cublasSdot(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -1038,7 +1037,7 @@ def cublasGetMatrixAsync(
             type_of(_b),
             Int16,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -1059,7 +1058,7 @@ def cublasGetVector(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, x, incx, y, incy)
 
 
@@ -1086,7 +1085,7 @@ def cublasStrsv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -1119,13 +1118,13 @@ def cublasSgemv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
 def cublasXerbla(sr_name: UnsafePointer[Int8, _], info: Int16) raises:
     return _get_dylib_function[
-        "cublasXerbla", def(type_of(sr_name), Int16) -> None
+        "cublasXerbla", def(type_of(sr_name), Int16) thin -> None
     ]()(sr_name, info)
 
 
@@ -1150,7 +1149,7 @@ def cublasGetMatrixAsync(
             type_of(_b),
             Int64,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -1179,7 +1178,7 @@ def cublasStbsv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -1189,7 +1188,7 @@ def cublasGetSmCountTarget(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetSmCountTarget",
-        def(type_of(handle), type_of(sm_count_target)) -> Result,
+        def(type_of(handle), type_of(sm_count_target)) thin -> Result,
     ]()(handle, sm_count_target)
 
 
@@ -1198,7 +1197,7 @@ def cublasSetMathMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetMathMode",
-        def(type_of(handle), cublasMath_t) -> Result,
+        def(type_of(handle), cublasMath_t) thin -> Result,
     ]()(handle, mode)
 
 
@@ -1231,7 +1230,7 @@ def cublasDsbmv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1254,7 +1253,7 @@ def cublasSdot(
             type_of(y),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -1287,7 +1286,7 @@ def cublasSsbmv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1306,7 +1305,7 @@ def cublasIsamax(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -1335,7 +1334,7 @@ def cublasSdgmm(
             Int64,
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -1360,7 +1359,7 @@ def cublasSwapEx(
             type_of(y),
             DataType,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
@@ -1391,7 +1390,7 @@ def cublasDotcEx(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -1436,7 +1435,7 @@ def cublasRotEx(
             type_of(s),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -1480,7 +1479,7 @@ def cublasSsymv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1509,7 +1508,7 @@ def cublasSsyr2(
             Int16,
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -1519,7 +1518,7 @@ def cublasGetStream(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetStream_v2",
-        def(type_of(handle), type_of(stream_id)) -> Result,
+        def(type_of(handle), type_of(stream_id)) thin -> Result,
     ]()(handle, stream_id)
 
 
@@ -1538,7 +1537,7 @@ def cublasIsamin(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -1567,7 +1566,7 @@ def cublasStbsv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -1592,7 +1591,7 @@ def cublasSetMatrixAsync(
             type_of(_b),
             Int16,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -1615,7 +1614,7 @@ def cublasSaxpy(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -1650,7 +1649,7 @@ def cublasDgeam(
             Int16,
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -1675,12 +1674,12 @@ def cublasCopyEx(
             type_of(y),
             DataType,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
 def cublasGetCudartVersion() raises -> Int:
-    return _get_dylib_function["cublasGetCudartVersion", def() -> Int]()()
+    return _get_dylib_function["cublasGetCudartVersion", def() thin -> Int]()()
 
 
 def cublasIdamax(
@@ -1698,7 +1697,7 @@ def cublasIdamax(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -1727,7 +1726,7 @@ def cublasSsyr2(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -1750,7 +1749,7 @@ def cublasDaxpy(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -1785,16 +1784,16 @@ def cublasDsyr2k(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
 def cublasSetLoggerCallback(
-    user_callback: def(UnsafePointer[Int8, ImmutAnyOrigin]) -> None,
+    user_callback: def(UnsafePointer[Int8, ImmutAnyOrigin]) thin -> None,
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetLoggerCallback",
-        def(type_of(user_callback)) -> Result,
+        def(type_of(user_callback)) thin -> Result,
     ]()(user_callback)
 
 
@@ -1829,7 +1828,7 @@ def cublasSgeam(
             Int16,
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -1850,7 +1849,7 @@ def cublasDtpttr(
             type_of(_ap),
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, _ap, _a, lda)
 
 
@@ -1871,7 +1870,7 @@ def cublasIamaxEx(
             DataType,
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -1900,7 +1899,7 @@ def cublasSspmv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -1931,7 +1930,7 @@ def cublasSsymv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -1986,7 +1985,7 @@ def cublasGemmStridedBatchedEx(
             Int64,
             ComputeType,
             Algorithm,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -2035,7 +2034,7 @@ def cublasNrm2Ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, execution_type)
 
 
@@ -2048,7 +2047,7 @@ def cublasGetPointerMode(
         def(
             type_of(handle),
             type_of(mode),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode)
 
 
@@ -2071,7 +2070,7 @@ def cublasSrotm(
             type_of(y),
             Int64,
             type_of(param),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -2254,7 +2253,7 @@ def cublasSsyrk(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -2279,7 +2278,7 @@ def cublasDsyr(
             Int16,
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -2306,7 +2305,7 @@ def cublasStrmv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -2327,7 +2326,7 @@ def cublasDcopy(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -2364,7 +2363,7 @@ def cublasDtrmm(
             Int64,
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -2387,7 +2386,7 @@ def cublasDdot(
             type_of(y),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -2406,7 +2405,7 @@ def cublasSscal(
             type_of(alpha),
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -2451,7 +2450,7 @@ def cublasSgemmStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -2499,7 +2498,7 @@ def cublasDdgmm(
             Int64,
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -2520,7 +2519,7 @@ def cublasStpttr(
             type_of(_ap),
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, _ap, _a, lda)
 
 
@@ -2545,7 +2544,7 @@ def cublasDsyr(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -2566,7 +2565,7 @@ def cublasSetVector(
             Int16,
             type_of(device_ptr),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, x, incx, device_ptr, incy)
 
 
@@ -2591,7 +2590,7 @@ def cublasSetMatrixAsync(
             type_of(_b),
             Int64,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb, stream)
 
 
@@ -2616,7 +2615,7 @@ def cublasSasum(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -2641,7 +2640,7 @@ def cublasRotgEx(
             type_of(s),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, a, b, ab_type, c, s, cs_type, executiontype)
 
 
@@ -2757,7 +2756,7 @@ def cublasDsymm(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -2780,7 +2779,7 @@ def cublasSspr(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -2799,7 +2798,7 @@ def cublasIdamin(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -2822,7 +2821,7 @@ def cublasGetVectorAsync(
             type_of(host_ptr),
             Int16,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
 
@@ -2845,7 +2844,7 @@ def cublasGetMatrix(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -2868,7 +2867,7 @@ def cublasDaxpy(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -2903,7 +2902,7 @@ def cublasDsyr2k(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -2932,7 +2931,7 @@ def cublasSger(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -2961,7 +2960,7 @@ def cublasSdgmm(
             Int16,
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -2990,7 +2989,7 @@ def cublasDtbsv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -3023,7 +3022,7 @@ def cublasDtrsm(
             Int16,
             type_of(_b),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -3052,7 +3051,7 @@ def cublasStbmv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -3081,7 +3080,7 @@ def cublasDspmv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -3102,7 +3101,7 @@ def cublasSswap(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -3131,7 +3130,7 @@ def cublasDspmv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -3152,7 +3151,7 @@ def cublasSrotmg(
             type_of(x1),
             type_of(y1),
             type_of(param),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -3177,7 +3176,7 @@ def cublasDtpmv(
             type_of(_ap),
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -3196,7 +3195,7 @@ def cublasDasum(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -3229,7 +3228,7 @@ def cublasRotEx(
             type_of(s),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -3265,7 +3264,7 @@ def cublasDrotm(
             type_of(y),
             Int16,
             type_of(param),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -3296,7 +3295,7 @@ def cublasAxpyEx(
             DataType,
             Int16,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -3345,7 +3344,7 @@ def cublasSgemm(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3380,7 +3379,7 @@ def cublasSsymm(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3405,7 +3404,7 @@ def cublasCopyEx(
             type_of(y),
             DataType,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
@@ -3430,7 +3429,7 @@ def cublasSwapEx(
             type_of(y),
             DataType,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, y, y_type, incy)
 
 
@@ -3455,7 +3454,7 @@ def cublasSrot(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -3476,7 +3475,7 @@ def cublasGetVector(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, x, incx, y, incy)
 
 
@@ -3503,7 +3502,7 @@ def cublasDtrsv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -3538,7 +3537,7 @@ def cublasSsymm(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3575,7 +3574,7 @@ def cublasDtrmm(
             Int16,
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -3610,13 +3609,15 @@ def cublasCherk3mEx(
             type_of(_c),
             DataType,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
 
 
-comptime cublasLogCallback = def(UnsafePointer[Int8, ImmutAnyOrigin]) -> None
+comptime cublasLogCallback = def(
+    UnsafePointer[Int8, ImmutAnyOrigin]
+) thin -> None
 
 
 def cublasDtrmv(
@@ -3642,7 +3643,7 @@ def cublasDtrmv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -3671,7 +3672,7 @@ def cublasDdgmm(
             Int16,
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode, m, n, _a, lda, x, incx, _c, ldc)
 
 
@@ -3700,7 +3701,7 @@ def cublasDtbsv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -3735,7 +3736,7 @@ def cublasSsyr2k(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3772,7 +3773,7 @@ def cublasDgemm(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -3785,7 +3786,7 @@ def cublasGetMathMode(
         def(
             type_of(handle),
             type_of(mode),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode)
 
 
@@ -3810,7 +3811,7 @@ def cublasDrot(
             Int64,
             type_of(c),
             type_of(s),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -3833,7 +3834,7 @@ def cublasSspr(
             type_of(x),
             Int16,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -3852,7 +3853,7 @@ def cublasGemmEx64(
     _btype: DataType,
     ldb: Int64,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: OpaquePointer[MutAnyOrigin],
+    _c: _CPointer[NoneType, MutAnyOrigin],
     _ctype: DataType,
     ldc: Int64,
     compute_type: ComputeType,
@@ -3880,7 +3881,7 @@ def cublasGemmEx64(
             Int64,
             ComputeType,
             Algorithm,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -3931,7 +3932,7 @@ def cublasDotEx(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -3964,7 +3965,7 @@ def cublasSswap(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -3987,7 +3988,7 @@ def cublasDrotm(
             type_of(y),
             Int64,
             type_of(param),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -4030,7 +4031,7 @@ def cublasSgemmEx(
             type_of(_c),
             DataType,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -4085,7 +4086,7 @@ def cublasDgemm(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -4116,7 +4117,7 @@ def cublasSsyrk(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -4135,7 +4136,7 @@ def cublasDnrm2(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -4154,7 +4155,7 @@ def cublasDasum(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -4189,7 +4190,7 @@ def cublasDsyrkx(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -4220,7 +4221,7 @@ def cublasRotmEx(
             type_of(param),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -4257,7 +4258,7 @@ def cublasDtpsv(
             type_of(_ap),
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -4284,7 +4285,7 @@ def cublasSspr2(
             type_of(y),
             Int16,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4307,7 +4308,7 @@ def cublasSetMatrix(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -4326,7 +4327,7 @@ def cublasDrotg(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, a, b, c, s)
 
 
@@ -4339,7 +4340,7 @@ def cublasGetAtomicsMode(
         def(
             type_of(handle),
             type_of(mode),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, mode)
 
 
@@ -4368,7 +4369,7 @@ def cublasStbmv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -4399,7 +4400,7 @@ def cublasAxpyEx(
             DataType,
             Int64,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -4432,7 +4433,7 @@ def cublasIaminEx(
             DataType,
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -4459,7 +4460,7 @@ def cublasDspr2(
             type_of(y),
             Int16,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4490,7 +4491,7 @@ def cublasDotEx(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -4523,7 +4524,7 @@ def cublasScopy(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -4554,14 +4555,14 @@ def cublasDsyrk(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
-def cublasDestroy(handle: UnsafePointer[cublasContext, _]) raises -> Result:
+def cublasDestroy(handle: cublasHandle_t) raises -> Result:
     return _get_dylib_function[
         "cublasDestroy_v2",
-        def(type_of(handle)) -> Result,
+        def(type_of(handle)) thin -> Result,
     ]()(handle)
 
 
@@ -4584,7 +4585,7 @@ def cublasSetVectorAsync(
             type_of(device_ptr),
             Int16,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
 
@@ -4605,7 +4606,7 @@ def cublasIamaxEx(
             DataType,
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result)
 
 
@@ -4640,7 +4641,7 @@ def cublasSsyrkx(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -4661,7 +4662,7 @@ def cublasDswap(
             Int64,
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -4686,7 +4687,7 @@ def cublasAsumEx(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, executiontype)
 
 
@@ -4742,7 +4743,7 @@ def cublasSspr2(
             type_of(y),
             Int64,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -4779,7 +4780,7 @@ def cublasSgbmv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -4804,7 +4805,7 @@ def cublasAsumEx(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, executiontype)
 
 
@@ -4814,7 +4815,7 @@ def cublasGetVersion(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasGetVersion_v2",
-        def(type_of(handle), type_of(version)) -> Result,
+        def(type_of(handle), type_of(version)) thin -> Result,
     ]()(handle, version)
 
 
@@ -4839,7 +4840,7 @@ def cublasScalEx(
             DataType,
             Int64,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
@@ -4849,7 +4850,7 @@ def cublasSetPointerMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetPointerMode_v2",
-        def(type_of(handle), cublasPointerMode_t) -> Result,
+        def(type_of(handle), cublasPointerMode_t) thin -> Result,
     ]()(handle, mode)
 
 
@@ -4882,7 +4883,7 @@ def cublasDgemv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -4891,7 +4892,7 @@ def cublasGetStatusString(
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasGetStatusString",
-        def(Result) -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) thin -> UnsafePointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -4910,7 +4911,7 @@ def cublasSnrm2(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -4947,7 +4948,7 @@ def cublasDgbmv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -4976,7 +4977,7 @@ def cublasDsyr2(
             Int16,
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -5001,7 +5002,7 @@ def cublasDtpsv(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5022,7 +5023,7 @@ def cublasSetVector(
             Int64,
             type_of(device_ptr),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, x, incx, device_ptr, incy)
 
 
@@ -5063,7 +5064,7 @@ def cublasDgemvStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         trans,
@@ -5115,7 +5116,7 @@ def cublasSsyrkx(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -5124,7 +5125,7 @@ def cublasGetStatusName(
 ) raises -> UnsafePointer[Int8, ImmutAnyOrigin]:
     return _get_dylib_function[
         "cublasGetStatusName",
-        def(Result) -> UnsafePointer[Int8, ImmutAnyOrigin],
+        def(Result) thin -> UnsafePointer[Int8, ImmutAnyOrigin],
     ]()(status)
 
 
@@ -5153,7 +5154,7 @@ def cublasDtbmv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -5172,7 +5173,7 @@ def cublasSrotg(
             type_of(b),
             type_of(c),
             type_of(s),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, a, b, c, s)
 
 
@@ -5207,7 +5208,7 @@ def cublasCherkEx(
             type_of(_c),
             DataType,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
@@ -5230,7 +5231,7 @@ def cublasDrotmg(
             type_of(x1),
             type_of(y1),
             type_of(param),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, d1, d2, x1, y1, param)
 
 
@@ -5259,7 +5260,7 @@ def cublasDger(
             Int16,
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -5278,7 +5279,7 @@ def cublasSscal(
             type_of(alpha),
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -5289,7 +5290,7 @@ def cublasSetWorkspace(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetWorkspace_v2",
-        def(type_of(handle), type_of(workspace), Int) -> Result,
+        def(type_of(handle), type_of(workspace), Int) thin -> Result,
     ]()(handle, workspace, workspace_size_in_bytes)
 
 
@@ -5314,7 +5315,7 @@ def cublasStpsv(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5337,7 +5338,7 @@ def cublasDspr(
             type_of(x),
             Int64,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -5356,7 +5357,7 @@ def cublasGemmEx(
     _btype: DataType,
     ldb: Int32,
     beta: OpaquePointer[ImmutAnyOrigin],
-    _c: OpaquePointer[MutAnyOrigin],
+    _c: _CPointer[NoneType, MutAnyOrigin],
     _ctype: DataType,
     ldc: Int32,
     compute_type: ComputeType,
@@ -5384,7 +5385,7 @@ def cublasGemmEx(
             Int32,
             ComputeType,
             Algorithm,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -5437,7 +5438,7 @@ def cublasSsbmv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -5478,7 +5479,7 @@ def cublasDgemvStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         trans,
@@ -5526,7 +5527,7 @@ def cublasDsymv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -5534,11 +5535,11 @@ def cublasLoggerConfigure(
     log_is_on: Int16,
     log_to_std_out: Int16,
     log_to_std_err: Int16,
-    log_file_name: UnsafePointer[Int8, _],
+    log_file_name: OptionalUnsafePointer[Int8, _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasLoggerConfigure",
-        def(Int16, Int16, Int16, type_of(log_file_name)) -> Result,
+        def(Int16, Int16, Int16, type_of(log_file_name)) thin -> Result,
     ]()(log_is_on, log_to_std_out, log_to_std_err, log_file_name)
 
 
@@ -5563,7 +5564,7 @@ def cublasStpmv(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5604,7 +5605,7 @@ def cublasSgemvStridedBatched(
             Int64,
             Int64,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         trans,
@@ -5640,7 +5641,7 @@ def cublasIsamin(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -5665,7 +5666,7 @@ def cublasDrot(
             Int16,
             type_of(c),
             type_of(s),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -5700,7 +5701,7 @@ def cublasDgeam(
             Int64,
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, transa, transb, m, n, alpha, _a, lda, beta, _b, ldb, _c, ldc)
 
 
@@ -5723,7 +5724,7 @@ def cublasGetVectorAsync(
             type_of(host_ptr),
             Int64,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, device_ptr, incx, host_ptr, incy, stream)
 
 
@@ -5756,7 +5757,7 @@ def cublasStrsm(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -5799,7 +5800,7 @@ def cublasSgemmEx(
             type_of(_c),
             DataType,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -5842,7 +5843,7 @@ def cublasStpmv(
             type_of(_ap),
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -5869,7 +5870,7 @@ def cublasDtrmv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -5896,7 +5897,7 @@ def cublasDtrsv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -5925,7 +5926,7 @@ def cublasDsyr2(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -5950,7 +5951,7 @@ def cublasSrot(
             Int16,
             type_of(c),
             type_of(s),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, c, s)
 
 
@@ -5969,16 +5970,16 @@ def cublasDscal(
             type_of(alpha),
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
 def cublasCreate(
-    handle: UnsafePointer[UnsafePointer[cublasContext, MutAnyOrigin], _],
+    handle: UnsafePointer[cublasHandle_t[MutAnyOrigin], _],
 ) raises -> Result:
     return _get_dylib_function[
         "cublasCreate_v2",
-        def(type_of(handle)) -> Result,
+        def(type_of(handle)) thin -> Result,
     ]()(handle)
 
 
@@ -5987,7 +5988,7 @@ def cublasSetSmCountTarget(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetSmCountTarget",
-        def(type_of(handle), Int16) -> Result,
+        def(type_of(handle), Int16) thin -> Result,
     ]()(handle, sm_count_target)
 
 
@@ -6008,7 +6009,7 @@ def cublasDswap(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -6035,7 +6036,7 @@ def cublasStrsv(
             Int64,
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _a, lda, x, incx)
 
 
@@ -6062,7 +6063,7 @@ def cublasDspr2(
             type_of(y),
             Int64,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, y, incy, _ap)
 
 
@@ -6087,7 +6088,7 @@ def cublasSsyr(
             Int64,
             type_of(_a),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _a, lda)
 
 
@@ -6112,7 +6113,7 @@ def cublasNrm2Ex(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, x_type, incx, result, result_type, execution_type)
 
 
@@ -6141,7 +6142,7 @@ def cublasDtbmv(
             Int16,
             type_of(x),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, k, _a, lda, x, incx)
 
 
@@ -6203,7 +6204,7 @@ def cublasSsyr2k(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -6238,7 +6239,7 @@ def cublasCherk3mEx(
             type_of(_c),
             DataType,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
@@ -6265,7 +6266,7 @@ def cublasScalEx(
             DataType,
             Int16,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, alpha_type, x, x_type, incx, execution_type)
 
 
@@ -6296,7 +6297,7 @@ def cublasDotcEx(
             type_of(result),
             DataType,
             DataType,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         n,
@@ -6343,7 +6344,7 @@ def cublasDsymm(
             type_of(beta),
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, m, n, alpha, _a, lda, _b, ldb, beta, _c, ldc)
 
 
@@ -6362,7 +6363,7 @@ def cublasIsamax(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -6385,7 +6386,7 @@ def cublasSaxpy(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx, y, incy)
 
 
@@ -6404,7 +6405,7 @@ def cublasSnrm2(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -6439,7 +6440,7 @@ def cublasCherkEx(
             type_of(_c),
             DataType,
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle, uplo, trans, n, k, alpha, _a, _atype, lda, beta, _c, _ctype, ldc
     )
@@ -6491,7 +6492,7 @@ def cublasSetMatrix(
             Int16,
             type_of(_b),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(rows, cols, elem_size, _a, lda, _b, ldb)
 
 
@@ -6524,7 +6525,7 @@ def cublasDtrsm(
             Int64,
             type_of(_b),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb)
 
 
@@ -6545,7 +6546,7 @@ def cublasDcopy(
             Int16,
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy)
 
 
@@ -6568,7 +6569,7 @@ def cublasSetVectorAsync(
             type_of(device_ptr),
             Int64,
             CUstream,
-        ) -> Result,
+        ) thin -> Result,
     ]()(n, elem_size, host_ptr, incx, device_ptr, incy, stream)
 
 
@@ -6591,7 +6592,7 @@ def cublasDspr(
             type_of(x),
             Int16,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, x, incx, _ap)
 
 
@@ -6624,7 +6625,7 @@ def cublasSgemv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6645,7 +6646,7 @@ def cublasDtrttp(
             type_of(_a),
             Int16,
             type_of(_ap),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, _a, lda, _ap)
 
 
@@ -6668,7 +6669,7 @@ def cublasDdot(
             type_of(y),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, result)
 
 
@@ -6723,7 +6724,7 @@ def cublasGemmStridedBatchedEx(
             Int16,
             ComputeType,
             Algorithm,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -6784,7 +6785,7 @@ def cublasStrmm(
             Int64,
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -6815,7 +6816,7 @@ def cublasDsyrk(
             type_of(beta),
             type_of(_c),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, n, k, alpha, _a, lda, beta, _c, ldc)
 
 
@@ -6834,7 +6835,7 @@ def cublasDscal(
             type_of(alpha),
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, alpha, x, incx)
 
 
@@ -6859,7 +6860,7 @@ def cublasDtpmv(
             type_of(_ap),
             type_of(x),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, trans, diag, n, _ap, x, incx)
 
 
@@ -6896,7 +6897,7 @@ def cublasSgbmv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, trans, m, n, kl, ku, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6919,7 +6920,7 @@ def cublasSrotm(
             type_of(y),
             Int16,
             type_of(param),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, y, incy, param)
 
 
@@ -6929,7 +6930,7 @@ def cublasSetAtomicsMode(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetAtomicsMode",
-        def(type_of(handle), cublasAtomicsMode_t) -> Result,
+        def(type_of(handle), cublasAtomicsMode_t) thin -> Result,
     ]()(handle, mode)
 
 
@@ -6962,7 +6963,7 @@ def cublasDsbmv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, k, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -6991,7 +6992,7 @@ def cublasSger(
             Int16,
             type_of(_a),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, m, n, alpha, x, incx, y, incy, _a, lda)
 
 
@@ -7022,7 +7023,7 @@ def cublasDsymv(
             type_of(beta),
             type_of(y),
             Int64,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _a, lda, x, incx, beta, y, incy)
 
 
@@ -7031,7 +7032,7 @@ def cublasSetStream(
 ) raises -> Result:
     return _get_dylib_function[
         "cublasSetStream_v2",
-        def(type_of(handle), CUstream) -> Result,
+        def(type_of(handle), CUstream) thin -> Result,
     ]()(handle, stream_id)
 
 
@@ -7068,7 +7069,7 @@ def cublasStrmm(
             Int16,
             type_of(_c),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, side, uplo, trans, diag, m, n, alpha, _a, lda, _b, ldb, _c, ldc)
 
 
@@ -7123,7 +7124,7 @@ def cublasIdamin(
             type_of(x),
             Int16,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)
 
 
@@ -7152,7 +7153,7 @@ def cublasSspmv(
             type_of(beta),
             type_of(y),
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, uplo, n, alpha, _ap, x, incx, beta, y, incy)
 
 
@@ -7197,7 +7198,7 @@ def cublasSgemmStridedBatched(
             Int16,
             Int64,
             Int16,
-        ) -> Result,
+        ) thin -> Result,
     ]()(
         handle,
         transa,
@@ -7235,5 +7236,5 @@ def cublasSasum(
             type_of(x),
             Int64,
             type_of(result),
-        ) -> Result,
+        ) thin -> Result,
     ]()(handle, n, x, incx, result)

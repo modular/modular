@@ -15,6 +15,7 @@ from std.math import ceildiv
 from std.sys import CompilationTarget, align_of, simd_width_of, size_of
 
 from std.algorithm import sync_parallelize, tile
+from std.gpu.host import DeviceContext
 from layout import (
     Layout,
     LayoutTensor,
@@ -975,6 +976,7 @@ def _matmul_qint4_m_1[
     c: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime assert a_quant.rank == 2
     comptime assert a_scale.rank == 2
@@ -991,7 +993,7 @@ def _matmul_qint4_m_1[
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(N, K, k_groups, work_count, num_workers)
@@ -1040,7 +1042,7 @@ def _matmul_qint4_m_1[
         _ = task_n_start
         _ = b_ptr
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 def _matmul_qint4_m_any[
@@ -1060,6 +1062,7 @@ def _matmul_qint4_m_any[
     c: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
@@ -1073,7 +1076,7 @@ def _matmul_qint4_m_any[
     comptime grain_size = simd_width * 2
 
     var work_count = ceildiv(N, grain_size)
-    var num_workers = min(work_count, parallelism_level())
+    var num_workers = min(work_count, parallelism_level(ctx))
 
     @parameter
     @__copy_capture(M, N, K, k_groups, work_count, num_workers)
@@ -1117,7 +1120,7 @@ def _matmul_qint4_m_any[
                     alignment=alignment,
                 ]() if needs_correction else UnsafePointer[
                     Int32, MutExternalOrigin
-                ]()
+                ].unsafe_dangling()
 
                 _unpack_weights[
                     group_size,
@@ -1205,7 +1208,7 @@ def _matmul_qint4_m_any[
         _ = task_n_start
         _ = b_ptr
 
-    sync_parallelize[task_func](num_workers)
+    sync_parallelize[task_func](num_workers, ctx)
 
 
 def _matmul_qint4[
@@ -1221,6 +1224,7 @@ def _matmul_qint4[
     c: LayoutTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     comptime simd_width = simd_width_of[DType.float32]()
     comptime alignment = align_of[SIMD[DType.float32, simd_width]]()
@@ -1248,11 +1252,11 @@ def _matmul_qint4[
     if M == 1:
         _matmul_qint4_m_1[
             kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
-        ](a_quant, a_scale, b, c)
+        ](a_quant, a_scale, b, c, ctx)
     else:
         _matmul_qint4_m_any[
             kernel, group_size, elementwise_lambda_fn=elementwise_lambda_fn
-        ](a_quant, a_scale, b, c)
+        ](a_quant, a_scale, b, c, ctx)
 
     a_quant_base_ptr.free()
     a_scale_base_ptr.free()
@@ -1267,6 +1271,7 @@ def matmul_qint4[
     c_tt: TileTensor[
         mut=True, DType.float32, address_space=AddressSpace.GENERIC, ...
     ],
+    ctx: Optional[DeviceContext] = None,
 ):
     var a = a_tt.to_layout_tensor()
     var b = b_tt.to_layout_tensor()
@@ -1278,7 +1283,7 @@ def matmul_qint4[
             kernel,
             group_size=group_size,
             elementwise_lambda_fn=elementwise_lambda_fn,
-        ](a, b, c)
+        ](a, b, c, ctx)
 
     comptime if CompilationTarget.has_vnni():
         kernel_dispatch[_MatmulQInt4Kernel_x86_vnni]()

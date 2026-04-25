@@ -200,7 +200,12 @@ def test_provider_options_nested_validation() -> None:
 
 
 class TestImageDimensionValidation:
-    """Tests for height/width validation on ImageProviderOptions."""
+    """Tests for height/width validation on ImageProviderOptions.
+
+    Pixel-area limits are enforced per-architecture via context validators
+    (see ``max.pipelines.core.pixel_context_validators``); the schema only
+    enforces minimum size and multiple-of-16.
+    """
 
     def test_dimensions_none_is_valid(self) -> None:
         opts = ImageProviderOptions()
@@ -237,21 +242,7 @@ class TestImageDimensionValidation:
         with pytest.raises(ValidationError, match="must be a multiple of 16"):
             ImageProviderOptions(width=512, height=130)
 
-    def test_pixel_area_exceeds_max(self) -> None:
-        with pytest.raises(
-            ValidationError, match="exceeds the maximum pixel area"
-        ):
-            ImageProviderOptions(width=2048, height=1024)
-
-    def test_pixel_area_at_max(self) -> None:
-        opts = ImageProviderOptions(width=1024, height=1024)
-        assert opts.width == 1024
-        assert opts.height == 1024
-
-    def test_only_width_set_skips_area_check(self) -> None:
-        opts = ImageProviderOptions(width=2048)
-        assert opts.width == 2048
-
-    def test_only_height_set_skips_area_check(self) -> None:
-        opts = ImageProviderOptions(height=2048)
-        assert opts.height == 2048
+    def test_large_dimensions_accepted_at_schema_layer(self) -> None:
+        opts = ImageProviderOptions(width=4096, height=4096)
+        assert opts.width == 4096
+        assert opts.height == 4096

@@ -16,7 +16,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle, TMADescriptor
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.sync import syncwarp
 from layout import Layout, LayoutTensor
 from layout._fillers import arange
@@ -71,11 +71,11 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
         alignment=128,
     ].stack_allocation()
 
-    device_tma_tile[Int(block_idx.x)][].tensormap_fence_acquire()
-    device_tma_tile[
-        Int(block_idx.x)
-    ][].replace_tensormap_global_address_in_gmem(new_src.ptr)
-    device_tma_tile[Int(block_idx.x)][].tensormap_fence_release()
+    device_tma_tile[block_idx.x][].tensormap_fence_acquire()
+    device_tma_tile[block_idx.x][].replace_tensormap_global_address_in_gmem(
+        new_src.ptr
+    )
+    device_tma_tile[block_idx.x][].tensormap_fence_release()
 
     mbar = stack_allocation[
         1,
@@ -87,13 +87,13 @@ def test_tma_replace_global_addr_in_gmem_descriptor_kernel[
     if thread_idx.x == 0:
         mbar[0].init()
         mbar[0].expect_bytes(Int32(expected_bytes))
-        device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
+        device_tma_tile[block_idx.x][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[M, N](Int(block_idx.x), 0)
+    dst_tile = dst.tile[M, N](block_idx.x, 0)
     copy_sram_to_dram[thread_layout](dst_tile, tile)
 
 
@@ -227,12 +227,12 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
 
     barrier()
 
-    device_tma_tile[Int(block_idx.x)][].tensormap_fence_acquire()
+    device_tma_tile[block_idx.x][].tensormap_fence_acquire()
 
     # update the smem tensor map global addr. Only the one elected thread should call this
     if thread_idx.x == 0:
         device_tma_tile[
-            Int(block_idx.x)
+            block_idx.x
         ][].replace_tensormap_global_address_in_shared_mem(
             smem_desc, new_src.ptr
         )
@@ -241,7 +241,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     syncwarp()
 
     # Entire warp should call this as it's an aligned instruction
-    device_tma_tile[Int(block_idx.x)][].tensormap_cp_fence_release(smem_desc)
+    device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
     mbar = stack_allocation[
         1,
@@ -253,7 +253,7 @@ def test_tma_replace_global_addr_in_smem_descriptor_kernel[
     if thread_idx.x == 0:
         mbar[0].init()
         mbar[0].expect_bytes(Int32(expected_bytes))
-        device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
+        device_tma_tile[block_idx.x][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
@@ -391,14 +391,14 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
 
     barrier()
 
-    device_tma_tile[Int(block_idx.x)][].tensormap_fence_acquire()
+    device_tma_tile[block_idx.x][].tensormap_fence_acquire()
 
     # update the smem tensor map global addr, dims, and strides. Only the one elected thread should call this
     if thread_idx.x == 0:
         global_addr = src.ptr + subtensors_m[block_idx.x] * tile_N
 
         device_tma_tile[
-            Int(block_idx.x)
+            block_idx.x
         ][].replace_tensormap_global_address_in_shared_mem(
             smem_desc,
             global_addr,
@@ -409,7 +409,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
         )
 
         device_tma_tile[
-            Int(block_idx.x)
+            block_idx.x
         ][].replace_tensormap_global_dim_strides_in_shared_mem[
             dtype,
             2,
@@ -422,7 +422,7 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     syncwarp()
 
     # Entire warp should call this as it's an aligned instruction
-    device_tma_tile[Int(block_idx.x)][].tensormap_cp_fence_release(smem_desc)
+    device_tma_tile[block_idx.x][].tensormap_cp_fence_release(smem_desc)
 
     mbar = stack_allocation[
         1,
@@ -434,13 +434,13 @@ def test_tma_replace_global_dim_in_smem_descriptor_kernel[
     if thread_idx.x == 0:
         mbar[0].init()
         mbar[0].expect_bytes(Int32(expected_bytes))
-        device_tma_tile[Int(block_idx.x)][].async_copy(tile, mbar[0], (0, 0))
+        device_tma_tile[block_idx.x][].async_copy(tile, mbar[0], (0, 0))
 
     # Ensure all threads sees initialized mbarrier
     barrier()
     mbar[0].wait()
 
-    dst_tile = dst.tile[tile_M, tile_N](Int(block_idx.x), 0)
+    dst_tile = dst.tile[tile_M, tile_N](block_idx.x, 0)
     copy_sram_to_dram[Layout.row_major(tile_M, tile_N)](dst_tile, tile)
 
 

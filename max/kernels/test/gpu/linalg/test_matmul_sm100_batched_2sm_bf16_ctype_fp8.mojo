@@ -32,6 +32,7 @@ from linalg.matmul.gpu.sm100_structured.default.matmul import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     MatmulConfig,
+    GEMMKind,
 )
 
 from std.utils.index import Index, IndexList
@@ -67,10 +68,10 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     k_group_size: Int = 1,
     accum_dtype: DType = DType.float32,
 ](ctx: DeviceContext, batch: BatchType, m: MType, n: NType, k: KType) raises:
-    var B = batch.value()
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var B = Int(batch.value())
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type})  problem shape=({B},"
@@ -91,9 +92,9 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     var c_shape = row_major(Coord(batch, m, Idx[NType.static_value]()))
     var c_ref_shape = row_major(Coord(batch, m, Idx[NType.static_value]()))
 
-    var a_size = batch.value() * m.value() * k.value()
-    var b_size = batch.value() * n.value() * k.value()
-    var c_size = batch.value() * m.value() * n.value()
+    var a_size = Int(batch.value()) * Int(m.value()) * Int(k.value())
+    var b_size = Int(batch.value()) * Int(n.value()) * Int(k.value())
+    var c_size = Int(batch.value()) * Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -105,13 +106,13 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
     var c_host_ref = TileTensor(c_host_ref_ptr, c_ref_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[accum_dtype](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_ref_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_ref_shape)
 
     # Initialize matmul operands
     if simple_init():
@@ -146,6 +147,7 @@ def test_blackwell_batched_matmul_tma_umma_warp_specialized[
         cta_group=cta_group,
         AB_swapped=swapAB,
         k_group_size=k_group_size,
+        gemm_kind=GEMMKind.BMM,
     )
 
     blackwell_batched_matmul_tma_umma_warp_specialized[

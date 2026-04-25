@@ -34,6 +34,7 @@ from internal_utils import arg_parse
 from internal_utils._utils import InitializationType, init_vector_launch
 from linalg.grouped_matmul import grouped_matmul
 from linalg.matmul.gpu.sm100.config import MatmulConfig
+from std.gpu.primitives.grid_controls import PDLLevel
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_nvfp4_dispatch,
 )
@@ -127,6 +128,7 @@ def bench_grouped_matmul[
     mma_bn: Int = 8,
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
+    pdl_level: Int = 0,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -236,23 +238,23 @@ def bench_grouped_matmul[
     )
 
     var a_dev = TileTensor(
-        a_dev_buffer.unsafe_ptr(),
+        a_dev_buffer,
         row_major(Coord(_ri(total_num_tokens), Idx[packed_K]())),
     ).as_any_origin()
     var b_dev = TileTensor(
-        b_dev_buffer.unsafe_ptr(),
+        b_dev_buffer,
         row_major(Coord(Idx[num_experts](), Idx[N](), Idx[packed_K]())),
     ).as_any_origin()
     var c_dev = TileTensor(
-        c_dev_buffer.unsafe_ptr(),
+        c_dev_buffer,
         row_major(Coord(_ri(total_num_tokens), Idx[N]())),
     ).as_any_origin()
     var a_offsets_dev = TileTensor(
-        a_offsets_dev_buffer.unsafe_ptr(),
+        a_offsets_dev_buffer,
         row_major(Coord(_ri(num_active_experts + 1))),
     ).as_any_origin()
     var expert_ids_dev = TileTensor(
-        expert_ids_dev_buffer.unsafe_ptr(),
+        expert_ids_dev_buffer,
         row_major(Coord(_ri(num_active_experts))),
     ).as_any_origin()
 
@@ -288,7 +290,7 @@ def bench_grouped_matmul[
             DType.uint32
         ](num_active_experts)
         var a_scale_offsets_dev = TileTensor(
-            a_scale_offsets_dev_buffer.unsafe_ptr(),
+            a_scale_offsets_dev_buffer,
             row_major(Coord(_ri(num_active_experts))),
         ).as_any_origin()
         ctx.enqueue_copy(a_scale_offsets_dev_buffer, a_scale_offsets_ptr)
@@ -337,7 +339,7 @@ def bench_grouped_matmul[
         comptime k_groups = ceildiv(K, NVFP4_SF_VECTOR_SIZE * SF_ATOM_K)
         comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
         var a_scales_tt = TileTensor(
-            a_scales_dev_buffer.unsafe_ptr().bitcast[Scalar[NVFP4_SF_DTYPE]](),
+            a_scales_dev_buffer,
             row_major(
                 Coord(
                     RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
@@ -349,7 +351,7 @@ def bench_grouped_matmul[
             ),
         ).as_any_origin()
         var b_scales_tt = TileTensor(
-            b_scales_dev_buffer.unsafe_ptr().bitcast[Scalar[NVFP4_SF_DTYPE]](),
+            b_scales_dev_buffer,
             row_major(
                 Coord(
                     Idx[num_experts](),
@@ -372,9 +374,7 @@ def bench_grouped_matmul[
             )
         ctx.enqueue_copy(expert_scales_dev_buffer, expert_scales_host_ptr)
         var expert_scales_tt = TileTensor(
-            expert_scales_dev_buffer.unsafe_ptr().bitcast[
-                Scalar[DType.float32]
-            ](),
+            expert_scales_dev_buffer,
             row_major(
                 Coord(
                     RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
@@ -405,6 +405,7 @@ def bench_grouped_matmul[
 
                 else:
                     comptime transpose_b = True
+                    comptime _pdl_level = PDLLevel(pdl_level)
                     grouped_matmul_nvfp4_dispatch[
                         transpose_b=transpose_b,
                         override=override,
@@ -412,6 +413,7 @@ def bench_grouped_matmul[
                         mma_bn=mma_bn,
                         cta_group=cta_group,
                         num_pipeline_stages=num_pipeline_stages,
+                        pdl_level=_pdl_level,
                     ](
                         c_dev,
                         a_dev,
@@ -476,11 +478,11 @@ def bench_grouped_matmul[
         )
 
         var a_scales_dev = TileTensor(
-            a_scales_dev_buffer.unsafe_ptr(),
+            a_scales_dev_buffer,
             row_major(Coord(Idx[K // BLOCK_SCALE_K](), _ri(total_num_tokens))),
         ).as_any_origin()
         var b_scales_dev = TileTensor(
-            b_scales_dev_buffer.unsafe_ptr(),
+            b_scales_dev_buffer,
             row_major(
                 Coord(
                     Idx[num_experts](),
@@ -667,6 +669,7 @@ def create_grouped_matmul_bench[
     mma_bn: Int = 8,
     cta_group: Int = 1,
     num_pipeline_stages: Int = -1,
+    pdl_level: Int = 0,
 ](
     ctx: DeviceContext,
     mut bench: Bench,
@@ -688,6 +691,7 @@ def create_grouped_matmul_bench[
         mma_bn=mma_bn,
         cta_group=cta_group,
         num_pipeline_stages=num_pipeline_stages,
+        pdl_level=pdl_level,
     ](
         ctx,
         bench,
@@ -737,6 +741,7 @@ def main() raises:
     comptime mma_bn = get_defined_int["mma_bn", 8]()
     comptime cta_group = get_defined_int["cta_group", 1]()
     comptime num_pipeline_stages = get_defined_int["num_pipeline_stages", -1]()
+    comptime pdl_level = get_defined_int["pdl_level", 0]()
 
     var b = Bench()
     comptime expert_shape = IndexList[2](N, K)
@@ -755,6 +760,7 @@ def main() raises:
             mma_bn=mma_bn,
             cta_group=cta_group,
             num_pipeline_stages=num_pipeline_stages,
+            pdl_level=pdl_level,
         ](
             ctx,
             b,

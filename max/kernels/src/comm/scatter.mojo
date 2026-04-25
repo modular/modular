@@ -31,8 +31,8 @@ from std.collections import InlineArray
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
+    global_idx,
+    grid_dim,
 )
 from std.gpu.primitives.grid_controls import (
     PDL,
@@ -57,6 +57,7 @@ from .sync import (
 @__llvm_metadata(
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(BLOCK_SIZE))
 )
+@__name(t"scatter_pull_{dtype}", mangle=True)
 def scatter_pull_kernel[
     dtype: DType,
     BLOCK_SIZE: Int,
@@ -80,8 +81,8 @@ def scatter_pull_kernel[
     """
     var my_sig = rank_sigs[my_rank]
 
-    var global_tid = Int(global_idx.x)
-    var stride = Int(grid_dim.x) * BLOCK_SIZE
+    var global_tid = global_idx.x
+    var stride = grid_dim.x * BLOCK_SIZE
 
     with PDL():
         _multi_gpu_barrier[ngpus, is_start=True](rank_sigs, my_sig, my_rank)
@@ -123,7 +124,7 @@ def scatter[
     dp_size: Int,
     in_layout: TensorLayout,
     in_origin: Origin,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel(),
 ](
     input_buffers: InlineArray[
         TileTensor[dtype, in_layout, in_origin], dp_size
@@ -161,7 +162,7 @@ def scatter[
     # Extract raw pointers and sizes from TileTensors for the kernel.
     var input_ptrs = InlineArray[
         UnsafePointer[Scalar[dtype], ImmutAnyOrigin], dp_size
-    ](fill={})
+    ](uninitialized=True)
     var chunk_num_elems = InlineArray[Int, dp_size](fill=0)
     for i in range(dp_size):
         input_ptrs[i] = rebind[UnsafePointer[Scalar[dtype], ImmutAnyOrigin]](

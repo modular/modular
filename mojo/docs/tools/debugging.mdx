@@ -1,6 +1,6 @@
 ---
 title: Debugging
-sidebar_position: 1
+sidebar_position: 2
 description: Debugging Mojo programs.
 ---
 
@@ -546,7 +546,7 @@ is an easy way to switch debugging logic on and off. For example:
 ```mojo
 from std.sys import is_defined
 
-def some_function_with_issues() raises:
+def some_function_with_issues():
     # ...
     comptime if is_defined["DEBUG_ME"]():
         breakpoint()

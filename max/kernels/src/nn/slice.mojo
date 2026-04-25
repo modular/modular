@@ -205,7 +205,7 @@ def copy_to_slice[
             coords, in_slice.load[width=simd_width](coords)
         )
 
-    elementwise[copy, 1, target=target](
+    elementwise[copy, 1, target=target, _trace_description="slice_copy"](
         coord_to_index_list(buffer_slice_view.layout.shape_coord()),
         context,
     )
@@ -366,7 +366,12 @@ def sliced_add[
         comptime compile_target = get_gpu_target()
         comptime simd_width = simd_width_of[dtype, target=compile_target]()
 
-        elementwise[_sliced_add, simd_width, target=target](
+        elementwise[
+            _sliced_add,
+            simd_width,
+            target=target,
+            _trace_description="slice_add",
+        ](
             coord_to_index_list(c.layout.shape_coord()),
             ctx.value(),
         )

@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.gpu.host import get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.memory import external_memory
@@ -49,9 +49,9 @@ def test_case_thread_id_nvidia():
     )
 
 
-# CHECK-LABEL: test_case_thread_id_mi300x
-def test_case_thread_id_mi300x():
-    print("== test_case_thread_id_mi300x")
+# CHECK-LABEL: test_case_thread_id_mi355x
+def test_case_thread_id_mi355x():
+    print("== test_case_thread_id_mi355x")
 
     def kernel(output: UnsafePointer[Int32, MutAnyOrigin]):
         output[] = Int32(thread_idx.x + thread_idx.x + thread_idx.x)
@@ -59,7 +59,7 @@ def test_case_thread_id_mi300x():
     # CHECK-COUNT-1: call i32 @llvm.amdgcn.workitem.id.x()
     print(
         _compile_code[
-            kernel, emission_kind="llvm", target=get_gpu_target["mi300x"]()
+            kernel, emission_kind="llvm", target=get_gpu_target["mi355x"]()
         ]()
     )
 
@@ -88,5 +88,5 @@ def test_dynamic_shared_mem():
 def main():
     test_array_offset()
     test_case_thread_id_nvidia()
-    test_case_thread_id_mi300x()
+    test_case_thread_id_mi355x()
     test_dynamic_shared_mem()

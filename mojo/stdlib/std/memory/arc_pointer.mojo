@@ -19,7 +19,7 @@ from std.memory import ArcPointer
 ```
 """
 
-from std.os.atomic import Atomic, Consistency, fence
+from std.atomic import Atomic, Ordering, fence
 from std.sys.info import size_of
 from std.format._utils import (
     Repr,
@@ -48,7 +48,7 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         #
         # This is further explained in the [boost documentation]
         # (https://www.boost.org/doc/libs/1_55_0/doc/html/atomic/usage_examples.html)
-        _ = self.refcount.fetch_add[ordering=Consistency.MONOTONIC](1)
+        _ = self.refcount.fetch_add[ordering=Ordering.RELAXED](1)
 
     def drop_ref(mut self) -> Bool:
         """Atomically decrement the refcount and return true if the result
@@ -58,14 +58,14 @@ struct _ArcPointerInner[T: Movable & ImplicitlyDestructible]:
         # decreasing the refcount. `ACQUIRE_RELEASE` is not needed since we
         # don't need the guarantees of `ACQUIRE` on the load portion of
         # fetch_sub if the recount does not reach zero.
-        if self.refcount.fetch_sub[ordering=Consistency.RELEASE](1) != 1:
+        if self.refcount.fetch_sub[ordering=Ordering.RELEASE](1) != 1:
             return False
 
         # However, if the refcount results in zero, this `ACQUIRE` fence is
         # needed to synchronize with the `fetch_sub[RELEASE]` above, ensuring
         # that use of data happens before the fence and therefore before the
         # deletion of the data.
-        fence[ordering=Consistency.ACQUIRE]()
+        fence[ordering=Ordering.ACQUIRE]()
         return True
 
 
@@ -142,12 +142,12 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Args:
             unsafe_from_raw_pointer: A raw pointer previously returned from `ArcPointer.steal_data`.
 
-        ### Safety
+        **Safety:**
 
         The `unsafe_from_raw_pointer` argument *must* have been previously returned by a call
         to `ArcPointer.steal_data`. Any other pointer may result in undefined behaviour.
 
-        ### Example
+        **Example:**
 
         ```mojo
         from std.memory import ArcPointer
@@ -238,7 +238,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         # No synchronization is needed as this is not attempting to free the
         # shared data and it is not possible for the data to be freed until
         # this ArcPointer is destroyed.
-        return self._inner[].refcount.load[ordering=Consistency.MONOTONIC]()
+        return self._inner[].refcount.load[ordering=Ordering.RELAXED]()
 
     def steal_data(deinit self) -> UnsafePointer[Self.T, MutExternalOrigin]:
         """Consume this `ArcPointer`, returning a raw pointer to the underlying data.
@@ -246,7 +246,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Returns:
             An `UnsafePointer` to the underlying `T` value.
 
-        ### Safety
+        **Safety:**
 
         To avoid leaking memory, this pointer must be converted back to an `ArcPointer`
         using `ArcPointer(unsafe_from_raw_pointer=ptr)`.

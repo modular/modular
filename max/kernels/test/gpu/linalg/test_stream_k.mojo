@@ -12,13 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
+from std.math.uutils import umod
 
-from std.gpu import (
-    Semaphore,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import Semaphore, block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceBuffer, DeviceContext
 from layout import TileTensor, row_major
 from linalg.matmul.gpu import matmul_kernel_naive
@@ -100,11 +96,12 @@ def mac_loop[
 
     var tx = thread_idx.x
     var ty = thread_idx.y
-    var global_r = rm_base + Int(ty)
-    var global_c = rn_base + Int(tx)
+
+    var global_r = rm_base + ty
+    var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
     var thread_id = thread_idx.x + thread_idx.y * block_dim.x
-    var sema = Semaphore(locks + tile_id, Int(thread_id))
+    var sema = Semaphore(locks + tile_id, thread_id)
     sema.fetch()
 
     for iter in range(start_iter, end_iter):
@@ -164,22 +161,24 @@ def first_wave_kernel[
 ):
     var pid = block_idx.x
 
-    var start_iter = pid * UInt(total_full_tiles_streamk) + (
-        pid if pid
-        < UInt(total_partial_tiles_streamk) else UInt(
-            total_partial_tiles_streamk
+    var start_iter = Int(
+        pid * total_full_tiles_streamk
+        + (
+            pid if pid
+            < total_partial_tiles_streamk else total_partial_tiles_streamk
         )
     )
-    var last_iter = (pid + 1) * UInt(total_full_tiles_streamk) + (
-        (pid + 1) if (pid + 1)
-        < UInt(total_partial_tiles_streamk) else UInt(
-            total_partial_tiles_streamk
+    var last_iter = Int(
+        (pid + 1) * total_full_tiles_streamk
+        + (
+            (pid + 1) if (pid + 1)
+            < total_partial_tiles_streamk else total_partial_tiles_streamk
         )
     )
 
     while start_iter < last_iter:
-        var remainder = iters_per_tile - Int(start_iter % UInt(iters_per_tile))
-        var boundary = start_iter + UInt(remainder)
+        var remainder = iters_per_tile - umod(start_iter, iters_per_tile)
+        var boundary = start_iter + remainder
         var end_iter = boundary if (boundary < last_iter) else last_iter
         mac_loop(
             C,
@@ -196,8 +195,8 @@ def first_wave_kernel[
             stride_cm,
             stride_cn,
             iters_per_tile,
-            Int(start_iter),
-            Int(end_iter),
+            start_iter,
+            end_iter,
             BLOCK_M,
             BLOCK_N,
             BLOCK_K,
@@ -230,7 +229,7 @@ def full_tiles_kernel[
     stride_cn: Int,
     total_tiles_streamk: Int,
 ):
-    var tile_id = Int(block_idx.x + UInt(total_tiles_streamk))
+    var tile_id = block_idx.x + total_tiles_streamk
     var pid: IndexList[2]
     if GROUP_M > 0:
         pid = swizzle_tile(tile_id, M, N, K, BLOCK_M, BLOCK_N, BLOCK_K, GROUP_M)
@@ -243,8 +242,8 @@ def full_tiles_kernel[
     var tx = thread_idx.x
     var ty = thread_idx.y
 
-    var global_r = rm_base + Int(ty)
-    var global_c = rn_base + Int(tx)
+    var global_r = rm_base + ty
+    var global_c = rn_base + tx
     var accum = Scalar[c_type](0)
 
     var steps = (K + BLOCK_K - 1) // BLOCK_K

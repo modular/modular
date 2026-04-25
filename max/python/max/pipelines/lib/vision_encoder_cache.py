@@ -33,6 +33,7 @@ from max.interfaces.pipeline_variants.text_generation import (
 )
 from max.interfaces.request import RequestID
 from max.pipelines.lib.vlm_utils import compute_multimodal_merge_indices
+from max.profiler import traced
 
 
 def _concat_buffers(bufs: list[Buffer]) -> Buffer:
@@ -98,6 +99,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._max_entries = max_entries
         self._request_refs: defaultdict[RequestID, set[int]] = defaultdict(set)
 
+    @traced
     def lookup(self, image_hash: int) -> VisionEncoderCacheEntry | None:
         """Look up a cached entry by image hash, refreshing LRU order."""
         entry = self._cache.get(image_hash)
@@ -110,6 +112,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         """Whether caching is enabled (max_entries > 0)."""
         return self._max_entries > 0
 
+    @traced
     def insert(
         self,
         image_hash: int,
@@ -136,6 +139,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         self._cache[image_hash] = entry
         return entry
 
+    @traced
     def acquire(self, request_id: RequestID, image_hash: int) -> None:
         """Increment ref count for a (request, image) pair."""
         refs = self._request_refs[request_id]
@@ -146,6 +150,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
             entry.ref_count += 1
         refs.add(image_hash)
 
+    @traced
     def release_request(self, request_id: RequestID) -> None:
         """Release all cache refs held by a request."""
         for h in self._request_refs.pop(request_id, set()):
@@ -177,6 +182,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                     "vision caching is enabled"
                 )
 
+    @traced
     def get_uncached_contexts(
         self,
         context_batch: Sequence[VLMContextType],
@@ -225,6 +231,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
 
         return uncached_contexts
 
+    @traced
     def _cache_and_split(
         self,
         vision_outputs: list[Buffer],
@@ -253,6 +260,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
                 self.insert(img_hash, per_device, count)
                 self.acquire(req_id, img_hash)
 
+    @traced
     def prepare_vision_outputs(
         self,
         context_batch: Sequence[VLMContextType],
@@ -282,12 +290,26 @@ class VisionEncoderCache(Generic[VLMContextType]):
             int32 scatter-index array.
         """
         if not self.enabled:
-            # Cache disabled — pass through embeddings directly.
             embeddings = (
                 vision_embeds if uncached_contexts else empty_embeddings
             )
             indices = compute_multimodal_merge_indices(context_batch)
             return embeddings, indices
+
+        if not per_image_token_counts:
+            # All images cached or text-only — assemble from cache,
+            # no sync or slicing needed.
+            embeddings = self._assemble_embeddings(
+                context_batch, n_devices, empty_embeddings
+            )
+            indices = compute_multimodal_merge_indices(context_batch)
+            return embeddings, indices
+
+        # Record an event and synchronize so the vision encoder output
+        # is visible before we slice or cache it.
+        for buf in vision_embeds:
+            if not buf.is_host:
+                buf.device.default_stream.record_event().synchronize()
 
         hashes: list[int] = []
         req_ids: list[RequestID] = []
@@ -322,6 +344,7 @@ class VisionEncoderCache(Generic[VLMContextType]):
         indices = compute_multimodal_merge_indices(context_batch)
         return embeddings, indices
 
+    @traced
     def _assemble_embeddings(
         self,
         context_batch: Sequence[VLMContextType],

@@ -11,8 +11,9 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.logger import Logger
 from std.math import fma
-from std.ffi import external_call
+from std.ffi import external_call, c_size_t
 from std.sys import size_of, align_of
 
 from compiler_internal import StaticTensorSpec
@@ -29,6 +30,7 @@ from layout import (
     row_major,
 )
 from std.memory import memcpy
+from std.memory.unsafe_pointer import unsafe_cast
 
 from nn.concat import concat
 from register import register_internal
@@ -42,8 +44,11 @@ from tensor.managed_tensor_slice import DynamicTensor, get_kernel_simd_width
 
 from std.utils import Index, IndexList, StaticTuple
 
+from .buffer_plan import BufferPlanState, BufferPlanStats
+
 comptime MutByteBuffer = DynamicTensor[DType.int8, 1]
 comptime ImmutByteBuffer = DynamicTensor[DType.int8, 1]
+comptime logger = Logger()
 
 # ===-----------------------------------------------------------------------===#
 # Helper Structures
@@ -361,9 +366,7 @@ def mgp_buffer_constant(
 
 
 @no_inline
-def fill_buffer[
-    dtype: DType
-](buf: MutByteBuffer, vals: VariadicList[Int, is_owned=False],):
+def fill_buffer[dtype: DType](buf: MutByteBuffer, *vals: Int):
     var ptr = buf.unsafe_ptr().bitcast[Scalar[dtype]]()
     var offset: Int = 0
     for val in vals:
@@ -385,9 +388,9 @@ def mgp_buffer_set_with_index[
 
     var elSize = bufSize // numArgs
     if elSize == 4:
-        fill_buffer[DType.int32](buffer, vals)
+        fill_buffer[DType.int32](buffer, *vals)
     elif elSize == 8:
-        fill_buffer[DType.int64](buffer, vals)
+        fill_buffer[DType.int64](buffer, *vals)
     else:
         raise Error("unsupported element size")
 
@@ -423,6 +426,110 @@ def mgp_buffer_slice(
     buffer: MutByteBuffer, offset: Int, size: Int
 ) -> MutByteBuffer:
     return MutByteBuffer(buffer.unsafe_ptr() + offset, Index(size))
+
+
+@register_internal("mgp.buffer.bulk_slice")
+@no_inline
+def mgp_buffer_bulk_slice[
+    N: Int,
+    //,
+](
+    base: MutByteBuffer,
+    offsets: InlineArray[Int, N],
+    sizes: InlineArray[Int, N],
+) -> InlineArray[MutByteBuffer, N]:
+    """Bulk slice: produce N non-overlapping sub-buffers from a pool buffer.
+
+    Parameters:
+        N: Number of slices.
+
+    Args:
+        base: The pool buffer.
+        offsets: Byte offset of each slice within the pool.
+        sizes: Byte size of each slice.
+
+    Returns:
+        An InlineArray of N MutByteBuffer views into the pool.
+    """
+    var result = InlineArray[MutByteBuffer, N](uninitialized=True)
+
+    for i in range(N):
+        result[i] = mgp_buffer_slice(base, offsets[i], sizes[i])
+    return result
+
+
+@register_internal("mgp.buffer.plan")
+@no_inline
+def mgp_buffer_plan[
+    num_static_sizes: Int,
+    num_runtime_sizes: Int,
+    //,
+    alignments: InlineArray[Int, num_static_sizes + num_runtime_sizes],
+    can_share: InlineArray[
+        Int,
+        (num_static_sizes + num_runtime_sizes)
+        * (num_static_sizes + num_runtime_sizes),
+    ],
+    static_sizes: InlineArray[Int, num_static_sizes],
+](runtime_sizes: InlineArray[Int, num_runtime_sizes]) -> Tuple[
+    Int, InlineArray[Int, num_static_sizes + num_runtime_sizes]
+]:
+    """Runtime memory planning for buffers.
+
+    Given static and runtime size information along with a sharing matrix for
+    allocations, returns the high watermark size and offsets for each
+    allocation.
+
+    The allocations are ordered as: [static_sizes..., runtime_sizes...]
+    where the first num_static_sizes allocations have compile-time known sizes,
+    and the remaining num_runtime_sizes allocations have runtime sizes.
+
+    can_share is a flat NxN matrix (row-major) where can_share[i*N+j]=1 iff
+    allocations i and j have non-overlapping lifetimes and can therefore
+    occupy the same memory slot. N = num_static_sizes + num_runtime_sizes.
+
+    Parameters:
+        num_static_sizes: Number of allocations with static sizes.
+        num_runtime_sizes: Number of allocations with runtime sizes.
+        alignments: Alignment requirements for each allocation.
+        can_share: NxN sharing matrix (row-major, 0/1 values).
+        static_sizes: Compile-time known sizes for first num_static_sizes allocations.
+
+    Args:
+        runtime_sizes: Runtime sizes for last num_runtime_sizes allocations.
+
+    Returns:
+        A tuple containing:
+        - highWatermark: Total memory required.
+        - offsets: Offsets for each allocation (static_sizes first, then runtime_sizes).
+    """
+
+    @parameter
+    def compute_static_allocations(
+        out result: BufferPlanState[
+            alignments,
+            can_share,
+        ],
+    ):
+        result = {}
+        result.allocate_greedy(static_sizes)
+
+    comptime state = compute_static_allocations()
+
+    # If all sizes are static, then we can avoid materializing the allocator
+    # state.
+    comptime if num_runtime_sizes == 0:
+        comptime stats = state.stats()
+        logger.debug(stats)
+
+        comptime results = state.take_results()
+        return results
+    else:
+        var runtime_state = materialize[state]()
+        runtime_state.allocate_greedy[start=num_static_sizes](runtime_sizes)
+
+        logger.debug(runtime_state.stats())
+        return runtime_state^.take_results()
 
 
 @register_internal("mgp.buffer.concat")
@@ -476,12 +583,7 @@ def mgp_buffer_device_to_host[
     comptime if is_cpu[dHostDevice]() and is_gpu[cOtherDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
             host_buf.unsafe_ptr(),
-            DeviceBuffer[DType.int8](
-                dev_ctx[],
-                dev_buf.unsafe_ptr(),
-                dev_buf.size(),
-                owning=False,
-            ),
+            dev_buf.to_device_buffer(dev_ctx[]),
         )
     else:
         raise Error("mgp.buffer.device_to_host must be scheduled on gpu device")
@@ -500,18 +602,8 @@ def mgp_buffer_device_to_device[
 ) raises:
     comptime if is_gpu[cSrcDevice]() and is_gpu[dDstDevice]():
         dst_dev_ctx[].enqueue_copy[DType.int8](
-            DeviceBuffer[DType.int8](
-                dst_dev_ctx[],
-                dst_buf.unsafe_ptr(),
-                dst_buf.size(),
-                owning=False,
-            ),
-            DeviceBuffer[DType.int8](
-                src_dev_ctx[],
-                src_buf.unsafe_ptr(),
-                src_buf.size(),
-                owning=False,
-            ),
+            dst_buf.to_device_buffer(dst_dev_ctx[]),
+            src_buf.to_device_buffer(src_dev_ctx[]),
         )
     elif is_cpu[cSrcDevice]() and is_cpu[dDstDevice]():
         memcpy(
@@ -538,12 +630,7 @@ def mgp_buffer_host_to_device[
 ) raises:
     comptime if is_gpu[dOtherDevice]() and is_cpu[cHostDevice]():
         dev_ctx[].enqueue_copy[DType.int8](
-            DeviceBuffer[DType.int8](
-                dev_ctx[],
-                dev_buf.unsafe_ptr(),
-                dev_buf.size(),
-                owning=False,
-            ),
+            dev_buf.to_device_buffer(dev_ctx[]),
             host_buf.unsafe_ptr(),
         )
     else:
@@ -661,7 +748,7 @@ def mgp_debug_tensor_print[
 ) raises:
     external_call["MGP_RT_DebugTensorPrint", NoneType](
         label_ptr,
-        UInt(label_len),
+        c_size_t(label_len),
         dtype,
         UnsafePointer(to=shape.data),
         spec_rank,
@@ -960,7 +1047,7 @@ def mogg_async_pack_borrow[
 ](
     borrower: AnyAsyncValueRefPtr,
     buffer: DynamicTensor[dtype, buffer_rank],
-    mem: TensorBufferRefPtr,
+    mem: Optional[TensorBufferRefPtr],
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
@@ -991,7 +1078,7 @@ def mogg_async_pack_borrow[
 ](
     borrower: AnyAsyncValueRefPtr,
     buffer: TensorBufferRefPtr,
-    mem: TensorBufferRefPtr,
+    mem: Optional[TensorBufferRefPtr],
 ):
     """
     Borrows an async value. This differs from `mogg.async.pack` which assigns a
@@ -1161,7 +1248,7 @@ def mgp_buffer_get_cached(
     Get a reference to the cached tensor.
     """
     var buffer_size: UInt64 = 0
-    var buffer_data = OpaquePointer[MutAnyOrigin]()
+    var buffer_data = Optional[OpaquePointer[MutAnyOrigin]]()
 
     var buffer_ref = external_call[
         "TMP_MGP_RT_GetCachedBuffer", TensorBufferRefPtr
@@ -1172,7 +1259,10 @@ def mgp_buffer_get_cached(
         UnsafePointer(to=buffer_data),
     )
 
-    var buffer = MutByteBuffer(buffer_data.bitcast[Int8](), Index(buffer_size))
+    var buffer = MutByteBuffer(
+        buffer_data.unsafe_value().bitcast[Int8](),
+        Index(buffer_size),
+    )
     var res = Tuple[MutByteBuffer, TensorBufferRefPtr](buffer, buffer_ref)
 
     return res
@@ -1180,7 +1270,7 @@ def mgp_buffer_get_cached(
 
 @register_internal("mgp.buffer.remove_cached")
 @no_inline
-def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: UInt64):
+def mgp_buffer_remove_cached(ctx: StateContextRef, buffer_slot: Int):
     external_call["TMP_MGP_RT_RemoveCachedBuffer", NoneType](buffer_slot, ctx)
 
 

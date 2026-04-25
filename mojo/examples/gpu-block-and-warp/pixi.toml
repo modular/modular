@@ -1,4 +1,4 @@
-[project]
+[workspace]
 name = "Mojo GPU block and warp operation examples"
 version = "0.1.0"
 description = "Examples of Mojo GPU block and warp operations"

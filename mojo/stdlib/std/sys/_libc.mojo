@@ -28,7 +28,6 @@ from std.ffi import (
     _CPointer,
 )
 from std.sys import CompilationTarget
-from std.memory._nonnull import NonNullUnsafePointer
 
 # ===-----------------------------------------------------------------------===#
 # stdlib.h — core C standard library operations
@@ -48,14 +47,14 @@ def free(ptr: UnsafePointer[mut=True, NoneType, ...]):
 
 
 @always_inline
-def free(ptr: _CPointer[NoneType, ExternalOrigin[mut=True]]):
+def free(ptr: OptionalUnsafePointer[mut=True, NoneType, ...]):
     """Frees memory previously allocated by `malloc`, `calloc`, or `realloc`.
 
-    This overload accepts an `_CPointer` because it is valid in C to call
-    `free` on a null pointer (it is a no-op).
+    This overload accepts an `Optional[UnsafePointer]` because it is valid in
+    C to call `free` on a null pointer (it is a no-op).
 
     Args:
-        ptr: A c-pointer to the memory to free.
+        ptr: A pointer to the memory to free.
     """
     free(
         UnsafePointer(to=ptr).bitcast[
@@ -137,9 +136,9 @@ def posix_spawnp[
     argv_origin: ImmutOrigin,
     //,
 ](
-    pid: NonNullUnsafePointer[mut=True, c_pid_t, _],
+    pid: UnsafePointer[mut=True, c_pid_t, _],
     file: CStringSlice[_],
-    argv: NonNullUnsafePointer[Optional[CStringSlice[argv_origin]], _],
+    argv: UnsafePointer[Optional[CStringSlice[argv_origin]], _],
     envp: _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin],
 ) -> c_int:
     """[`posix_spawn`](https://pubs.opengroup.org/onlinepubs/007904975/functions/posix_spawn.html)
@@ -161,6 +160,37 @@ def posix_spawnp[
         argv,
         envp,
     )
+
+
+@always_inline
+def _get_environ() -> (
+    _CPointer[Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin]
+):
+    """Returns the process environment pointer (POSIX `environ`).
+
+    Returns:
+        A pointer to the null-terminated array of environment strings,
+        suitable for passing as the `envp` argument to `posix_spawnp`.
+    """
+    comptime _EnvpType = _CPointer[
+        Optional[CStringSlice[ImmutAnyOrigin]], ImmutAnyOrigin
+    ]
+    comptime if CompilationTarget.is_macos():
+        # _NSGetEnviron() from <crt_externs.h> returns char ***,
+        # a pointer to the `environ` variable.
+        return external_call[
+            "_NSGetEnviron",
+            _CPointer[_EnvpType, ExternalOrigin[mut=False]],
+        ]().value()[]
+    elif CompilationTarget.is_linux():
+        # On Linux, look up `environ` via dlsym(RTLD_DEFAULT, "environ").
+        # RTLD_DEFAULT is ((void *)0) on Linux.
+        return dlsym[_EnvpType](
+            _CPointer[NoneType, MutExternalOrigin](),
+            "environ".as_c_string_slice().unsafe_ptr(),
+        ).value()[]
+    else:
+        CompilationTarget.unsupported_target_error[operation="_get_environ"]()
 
 
 # ===-----------------------------------------------------------------------===#
@@ -298,7 +328,7 @@ def dlerror(out result: _CPointer[c_char, MutExternalOrigin]):
 
 @always_inline
 def dlopen(
-    filename: UnsafePointer[mut=False, c_char, _], flags: c_int
+    filename: OptionalUnsafePointer[c_char, _], flags: c_int
 ) -> _CPointer[NoneType, MutExternalOrigin]:
     return external_call["dlopen", _CPointer[NoneType, MutExternalOrigin]](
         filename, flags
@@ -306,7 +336,7 @@ def dlopen(
 
 
 @always_inline
-def dlclose(handle: OpaquePointer[mut=True, _]) -> c_int:
+def dlclose(handle: _CPointer[mut=True, NoneType, _]) -> c_int:
     return external_call["dlclose", c_int](handle)
 
 
@@ -315,7 +345,7 @@ def dlsym[
     # Default `dlsym` result is an OpaquePointer.
     result_type: AnyType = NoneType
 ](
-    handle: OpaquePointer,
+    handle: _CPointer[NoneType, _],
     name: UnsafePointer[mut=False, c_char, _],
     out result: _CPointer[result_type, MutExternalOrigin],
 ):

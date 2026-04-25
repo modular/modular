@@ -16,23 +16,26 @@
 from __future__ import annotations
 
 import logging
-from pathlib import Path
-from typing import TYPE_CHECKING
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
+import llguidance.hf
+import llguidance.numpy
 import numpy as np
 import numpy.typing as npt
+from llguidance import LLMatcher
 from max.interfaces import (
+    GenerationStatus,
     LogProbabilities,
     RequestID,
     TextGenerationContextType,
     TextGenerationOutput,
 )
-from transformers import AutoConfig
-
-from ..hf_utils import download_weight_files
+from max.pipelines.lib.utils import upper_bounded_default
+from transformers import AutoConfig, PreTrainedTokenizerFast
 
 if TYPE_CHECKING:
-    from ..config.model_config import MAXModelConfig
+    from max.interfaces import PipelineTokenizer
 
 logger = logging.getLogger("max.pipelines")
 
@@ -68,6 +71,38 @@ def calculate_num_steps(
     return min(num_available_steps, num_steps)
 
 
+def build_response(
+    context_batch: list[TextGenerationContextType], max_seq_len: int
+) -> dict[RequestID, TextGenerationOutput]:
+    """Build response from updated contexts.
+
+    Args:
+        context_batch: The list of context objects
+        max_seq_len: The maximum sequence length
+
+    Returns:
+        Dictionary mapping request IDs to TextGenerationOutput objects
+    """
+    res: dict[RequestID, TextGenerationOutput] = {}
+
+    for context in context_batch:
+        # Identify the Max Length
+        context_max_length = upper_bounded_default(
+            upper_bound=max_seq_len, default=context.max_length
+        )
+
+        # Break early if beyond max length
+        current_length = context.tokens.processed_length + 1
+        if current_length >= context_max_length:
+            context.status = GenerationStatus.MAXIMUM_LENGTH
+
+        output = context.to_generation_output()
+        if output.tokens:
+            res[context.request_id] = output
+
+    return res
+
+
 def update_context_and_prepare_responses(
     generated_tokens_host: npt.NDArray[np.int32],
     flat_batch: list[TextGenerationContextType],
@@ -75,6 +110,7 @@ def update_context_and_prepare_responses(
     batch_log_probabilities: list[list[LogProbabilities | None]] | None = None,
     enable_log_probs: bool = False,
     overwrite_future: bool = False,
+    fsm_already_advanced_steps: int = 0,
 ) -> dict[RequestID, TextGenerationOutput]:
     """Updates context objects and prepares response objects after generation.
 
@@ -88,6 +124,9 @@ def update_context_and_prepare_responses(
             None), each entry is a list per batch for that step.
         enable_log_probs: Whether to include log probability data in outputs.
         overwrite_future: Whether to overwrite future tokens in the context.
+        fsm_already_advanced_steps: Number of steps for which the FSM was
+            already advanced during multi-step execution. For these steps,
+            only the token buffer is updated (FSM is skipped).
 
     Returns:
         A dictionary mapping request IDs to their respective generation outputs.
@@ -117,9 +156,14 @@ def update_context_and_prepare_responses(
                         new_token=next_token, log_probabilities=log_probs
                     )
             else:
-                context.update(
+                # Update token buffer for all steps
+                context.advance_token_buffer(
                     new_token=next_token, log_probabilities=log_probs
                 )
+                # Only advance FSM for steps that weren't already advanced
+                # during multi-step execution
+                if step >= fsm_already_advanced_steps:
+                    context.advance_fsm(next_token)
 
             if context.is_done:
                 break
@@ -131,6 +175,65 @@ def update_context_and_prepare_responses(
             res[context.request_id] = output
 
     return res
+
+
+def update_spec_decode_context_and_prepare_responses(
+    draft_tokens: npt.NDArray[np.int32],
+    next_draft_tokens: npt.NDArray[np.int32],
+    num_accepted_draft_tokens: npt.NDArray[np.int32],
+    next_tokens: npt.NDArray[np.int32],
+    context_batch: list[TextGenerationContextType],
+    max_seq_len: int,
+) -> dict[RequestID, TextGenerationOutput]:
+    """Updates context objects and prepares response objects after speculative decoding."""
+    num_draft_tokens_to_verify = draft_tokens.shape[1]
+    num_speculative_tokens = next_draft_tokens.shape[1]
+
+    assert num_accepted_draft_tokens.shape == (len(context_batch),)
+    assert next_tokens.shape == (len(context_batch),)
+    assert next_draft_tokens.shape == (
+        len(context_batch),
+        num_speculative_tokens,
+    )
+    assert all(
+        num_accept <= num_draft_tokens_to_verify
+        for num_accept in num_accepted_draft_tokens
+    )
+
+    # Handle chunked prefill case where there are no future tokens.
+    for batch_idx, ctx in enumerate(context_batch):
+        if not ctx.tokens.generated_length:
+            continue
+
+        maybe_accepted_draft_tokens: list[int] = draft_tokens[
+            batch_idx
+        ].tolist()
+        num_accept = num_accepted_draft_tokens[batch_idx]
+        tokens = maybe_accepted_draft_tokens[:num_accept]
+        tokens += [next_tokens[batch_idx]]
+        for i, token in enumerate(tokens):
+            # The overlap scheduler leaves a FUTURE_TOKEN placeholder as the last
+            # generated token; realize_future_token overwrites it in place. Calling
+            # update() for that same index would append a duplicate (see
+            # update_context_and_prepare_responses with overwrite_future).
+            if i == 0:
+                ctx.realize_future_token(token)
+            elif ctx.is_done:
+                break
+            else:
+                ctx.update(token)
+
+        ctx.spec_decoding_state.maybe_accepted_draft_tokens = []
+        if not ctx.is_done:
+            # Save the generated draft tokens for verification in next iteration.
+            ctx.spec_decoding_state.draft_tokens_to_verify = next_draft_tokens[
+                batch_idx
+            ].tolist()
+
+    return build_response(
+        context_batch=context_batch,
+        max_seq_len=max_seq_len,
+    )
 
 
 def get_rope_theta(config: AutoConfig) -> float:
@@ -177,25 +280,145 @@ def get_eos_tokens(hf_config: AutoConfig, eos_token_id: int) -> set[int]:
         return set([eos_token_id])
 
 
-def get_weight_paths(model_config: MAXModelConfig) -> list[Path]:
-    """Resolves local paths or downloads weight files for the model config.
+@dataclass
+class StructuredOutputHelper:
+    """Helper for structured output (constrained decoding) in text generation pipelines.
 
-    Args:
-        model_config: Model configuration containing weight repo and paths.
+    Encapsulates grammar compilation and bitmask management, consolidating
+    shared logic between TextGenerationPipeline and OverlapTextGenerationPipeline.
 
-    Returns:
-        List of paths to weight files (local or downloaded).
+    Attributes:
+        enabled: Whether structured output is enabled.
+        vocab_size: Vocabulary size from the tokenizer, or None if disabled.
     """
-    weight_repo = model_config.huggingface_weight_repo
-    if weight_repo.repo_type == "online":
-        # Download weight files if not existent.
-        return download_weight_files(
-            huggingface_model_id=weight_repo.repo_id,
-            filenames=[str(x) for x in model_config.weight_path],
-            revision=model_config.huggingface_weight_revision,
-            force_download=model_config.force_download,
+
+    enabled: bool = False
+    vocab_size: int | None = None
+    _tokenizer_info: Any = field(default=None, repr=False)
+
+    @classmethod
+    def from_tokenizer(
+        cls,
+        tokenizer: PipelineTokenizer[Any, Any, Any],
+        enable_structured_output: bool,
+    ) -> StructuredOutputHelper:
+        """Create a helper from a tokenizer.
+
+        Args:
+            tokenizer: A pipeline tokenizer with a HuggingFace delegate attribute.
+            enable_structured_output: Whether structured output is enabled.
+
+        Returns:
+            A configured StructuredOutputHelper instance.
+        """
+        if not enable_structured_output:
+            return cls(enabled=False)
+
+        assert hasattr(tokenizer, "delegate")
+        hf_tokenizer = tokenizer.delegate
+        assert isinstance(hf_tokenizer, PreTrainedTokenizerFast)
+        vocab_size = len(hf_tokenizer)
+        tokenizer_info = llguidance.hf.from_tokenizer(
+            hf_tokenizer, n_vocab=vocab_size
         )
-    else:
-        # Use the resolved repo_id (which points to local cache in offline mode)
-        local_path = Path(weight_repo.repo_id)
-        return [local_path / x for x in model_config.weight_path]
+        return cls(
+            enabled=True,
+            vocab_size=vocab_size,
+            _tokenizer_info=tokenizer_info,
+        )
+
+    def update_context(
+        self,
+        context: TextGenerationContextType,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+        support_jump_ahead: bool = True,
+    ) -> None:
+        """Update context and bitmask for structured output.
+
+        If a json_schema is present and no matcher is set, this compiles a
+        grammar matcher and installs it on the context. Optionally applies
+        jump-ahead tokens, then fills the per-request token bitmask.
+
+        Args:
+            context: Request context to update.
+            bitmask: Preallocated bitmask buffer; updated in-place.
+            index: Position in the bitmask for this request.
+            support_jump_ahead: Whether to apply jump-ahead tokens. Set to
+                False for overlap scheduling where jump-ahead would break
+                CUDA graph capture.
+
+        Raises:
+            ValueError: If a JSON schema is provided but structured output
+                is not enabled.
+        """
+        if context.json_schema and context.matcher is None:
+            if not self.enabled:
+                raise ValueError(
+                    "json_schema provided but structured output is not enabled."
+                )
+
+            try:
+                serialized_grammar = LLMatcher.grammar_from_json_schema(
+                    context.json_schema,
+                )
+                matcher = LLMatcher(self._tokenizer_info, serialized_grammar)
+                context.set_matcher(matcher)
+            except Exception as e:
+                msg = (
+                    f"Json schema provided in request cannot be compiled to "
+                    f"valid grammar. Update your json schema to produce valid "
+                    f"structured output. From llguidance: {e}"
+                )
+                logger.warning(msg)
+                # Remove json_schema so we don't retry compilation repeatedly.
+                context.json_schema = None  # type: ignore
+
+        if context.matcher:
+            if support_jump_ahead:
+                # Jump ahead in generation if possible.
+                jump_forward_tokens = context.matcher.compute_ff_tokens()
+                for token in jump_forward_tokens:
+                    context.jump_ahead(token)
+
+            # Fill the bitmask for this context.
+            self.fill_bitmask(context, bitmask, index)
+
+    def allocate_bitmask(
+        self,
+        batch_size: int,
+    ) -> npt.NDArray[np.int32]:
+        """Allocate a token bitmask for the given batch size.
+
+        Args:
+            batch_size: Number of requests in the batch.
+
+        Returns:
+            A bitmask array of shape [batch_size, ceil(vocab_size/32)].
+
+        Raises:
+            ValueError: If vocab_size is not set.
+        """
+        if self.vocab_size is None:
+            raise ValueError("vocab_size must be set to allocate bitmask")
+        return llguidance.numpy.allocate_token_bitmask(
+            batch_size, self.vocab_size
+        )
+
+    def fill_bitmask(
+        self,
+        context: TextGenerationContextType,
+        bitmask: npt.NDArray[np.int32],
+        index: int,
+    ) -> None:
+        """Fill the bitmask for a context's matcher.
+
+        Args:
+            context: Request context with a matcher.
+            bitmask: Bitmask buffer to update in-place.
+            index: Position in the bitmask for this request.
+        """
+        if context.matcher:
+            llguidance.numpy.fill_next_token_bitmask(
+                context.matcher, bitmask, index=index
+            )

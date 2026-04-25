@@ -24,6 +24,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     Value,
+    ops,
 )
 from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
 from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
@@ -67,12 +68,15 @@ class KimiK2_5MoEDecoder(DeepseekV3):
             )
         ]
 
+        input_row_offsets_per_dev = list(
+            ops.distributed_broadcast(input_row_offsets, signal_buffers)
+        )
         return self._process_hidden_states(
             h,
             signal_buffers,
             kv_collections,
             return_n_logits,
-            input_row_offsets,
+            input_row_offsets_per_dev,
             host_input_row_offsets,
             data_parallel_splits,
             batch_context_lengths,

@@ -34,7 +34,6 @@ _LONG_TIMEOUT_TESTS = [
             src,
         ],
         gpu_constraints = ["//:has_gpu"] if "_gpu.py" in src else [],
-        mojo_deps = ["//max:MOGGKernelAPI"],
         tags = ["no-pydeps"] + (["skip-external-ci"] if src in [
             # FIXME: SDLC-3032
             "test_module.py",
@@ -51,6 +50,7 @@ _LONG_TIMEOUT_TESTS = [
             "//max/python/max/mlir",
             "//max/python/max/nn",
             requirement("numpy"),
+            requirement("torch"),
         ] + (
             # pipelines/lib is only needed by the GPU sampling test; keep it
             # out of the default dep list so cpu_tests stays lightweight.

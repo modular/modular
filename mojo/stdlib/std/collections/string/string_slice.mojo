@@ -14,7 +14,8 @@
 
 from std.builtin.builtin_slice import ContiguousSlice
 from std.builtin.format_int import _write_int
-from std.collections._index_normalization import normalize_index
+from std.reflection import call_location
+from std.collections import check_bounds
 from std.collections.string._unicode import (
     is_lowercase,
     is_uppercase,
@@ -25,12 +26,16 @@ from std.collections.string._utf8 import (
     _count_utf8_continuation_bytes,
     _is_newline_char_utf8,
     _is_valid_utf8,
-    _utf8_byte_type,
     _utf8_first_byte_sequence_length,
     _is_utf8_continuation_byte,
     _is_utf8_start_byte,
 )
 from std.collections.string.format import _FormatUtils
+from std.collections.string.iterators import (
+    CodepointSliceIter,
+    CodepointsIter,
+    GraphemeSliceIter,
+)
 from std.hashlib.hasher import Hasher
 from std.format._utils import _TotalWritableBytes, _WriteBufferStack
 from std.math import align_down
@@ -47,9 +52,9 @@ from std.memory import (
     memcpy,
     pack_bits,
 )
-from std.memory._nonnull import NonNullUnsafePointer
 from std.python import ConvertibleToPython, Python, PythonObject
 from std.format._utils import _write_hex
+
 
 comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
@@ -79,389 +84,6 @@ print(format_string.format("bats", 6))     # => bats: 6
 """
 
 
-struct CodepointSliceIter[
-    mut: Bool,
-    //,
-    origin: Origin[mut=mut],
-    forward: Bool = True,
-](ImplicitlyCopyable, Iterable, Iterator, Sized):
-    """Iterator for `StringSlice` over substring slices containing a single
-    Unicode codepoint.
-
-    Parameters:
-        mut: Whether the slice is mutable.
-        origin: The origin of the underlying string data.
-        forward: The iteration direction. `False` is backwards.
-
-    The `forward` parameter only controls the behavior of the `__next__()`
-    method used for normal iteration. Calls to `next()` will always take an
-    element from the front of the iterator, and calls to `next_back()` will
-    always take an element from the end.
-    """
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    """The iterator type for this codepoint iterator.
-
-    Parameters:
-        iterable_mut: Whether the iterable is mutable.
-        iterable_origin: The origin of the iterable.
-    """
-
-    comptime Element = StringSlice[Self.origin]
-    """The element type yielded by iteration."""
-
-    var _slice: StringSlice[Self.origin]
-
-    # Note:
-    #   Marked private since `StringSlice.codepoints()` is the intended public
-    #   way to construct this type.
-    @doc_hidden
-    def __init__(out self, str_slice: StringSlice[Self.origin]):
-        self._slice = str_slice
-
-    # ===-------------------------------------------------------------------===#
-    # Trait implementations
-    # ===-------------------------------------------------------------------===#
-
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        """Iterate over the `StringSlice` yielding individual characters.
-
-        Returns:
-            An iterator over the characters in the string slice.
-        """
-        return self.copy()
-
-    @always_inline
-    def __next__(mut self) raises StopIteration -> StringSlice[Self.origin]:
-        """Get the next codepoint in the underlying string slice.
-
-        This returns the next single-codepoint substring slice encoded in the
-        underlying string, and advances the iterator state.
-
-        If `forward` is set to `False`, this will return the next codepoint
-        from the end of the string.
-
-        This function will abort if this iterator has been exhausted.
-
-        Returns:
-            The next character in the string.
-
-        Raises:
-            `StopIteration` if the iterator has been exhausted.
-        """
-
-        # NOTE: This intentionally check if the length *in bytes* is greater
-        # than zero, because checking the codepoint length requires a linear
-        # scan of the string, which is needlessly expensive for this purpose.
-        if len(self._slice) <= 0:
-            raise StopIteration()
-
-        comptime if Self.forward:
-            return self.next().value()
-        else:
-            return self.next_back().value()
-
-    @always_inline
-    def __len__(self) -> Int:
-        """Returns the remaining length of this iterator in `Codepoint`s.
-
-        The value returned from this method indicates the number of subsequent
-        calls to `next()` that will return a value.
-
-        Returns:
-            Number of codepoints remaining in this iterator.
-        """
-        return self._slice.count_codepoints()
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    def peek_next(self) -> Optional[StringSlice[Self.origin]]:
-        """Check what the next single-codepoint slice in this iterator is,
-        without advancing the iterator state.
-
-        Repeated calls to this method will return the same value.
-
-        Returns:
-            The next codepoint slice in the underlying string, or None if the
-            string is empty.
-
-        # Examples
-
-        `peek_next()` does not advance the iterator, so repeated calls will
-        return the same value:
-
-        ```mojo
-        from std.collections.string import Codepoint
-        from std.testing import assert_equal
-
-        var input = StringSlice("123")
-        var iter = input.codepoint_slices()
-
-        assert_equal(iter.peek_next().value(), "1")
-        assert_equal(iter.peek_next().value(), "1")
-        assert_equal(iter.peek_next().value(), "1")
-
-        # A call to `next()` return the same value as `peek_next()` had,
-        # but also advance the iterator.
-        assert_equal(iter.next().value(), "1")
-
-        # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), "2")
-        ```
-        """
-        if len(self._slice) > 0:
-            # SAFETY: Will not read out of bounds because `_slice` is guaranteed
-            #   to contain valid UTF-8.
-            var curr_ptr = self._slice.unsafe_ptr()
-            var byte_len = _utf8_first_byte_sequence_length(curr_ptr[])
-            return StringSlice[Self.origin](ptr=curr_ptr, length=byte_len)
-        else:
-            return None
-
-    def peek_back(mut self) -> Optional[StringSlice[Self.origin]]:
-        """Check what the last single-codepoint slice in this iterator is,
-        without advancing the iterator state.
-
-        Repeated calls to this method will return the same value.
-
-        Returns:
-            The last codepoint slice in the underlying string, or None if the
-            string is empty.
-
-        # Examples
-
-        `peek_back()` does not advance the iterator, so repeated calls will
-        return the same value:
-
-        ```mojo
-        from std.collections.string import Codepoint
-        from std.testing import assert_equal
-
-        var input = StringSlice("123")
-        var iter = input.codepoint_slices()
-
-        # Repeated calls to `peek_back()` return the same value.
-        assert_equal(iter.peek_back().value(), "3")
-        assert_equal(iter.peek_back().value(), "3")
-        assert_equal(iter.peek_back().value(), "3")
-
-        # A call to `next_back()` return the same value as `peek_back()` had,
-        # but also advance the iterator.
-        assert_equal(iter.next_back().value(), "3")
-
-        # Later `peek_back()` calls will return the _new_ next character:
-        assert_equal(iter.peek_back().value(), "2")
-        ```
-        """
-        if len(self._slice) > 0:
-            var byte_len = 1
-            var back_ptr = self._slice.unsafe_ptr() + len(self._slice) - 1
-            # SAFETY:
-            #   Guaranteed not to go out of bounds because UTF-8
-            #   guarantees there is always a "start" byte eventually before any
-            #   continuation bytes.
-            while _is_utf8_continuation_byte(back_ptr[]):
-                byte_len += 1
-                back_ptr -= 1
-
-            return StringSlice[Self.origin](ptr=back_ptr, length=byte_len)
-        else:
-            return None
-
-    def next(mut self) -> Optional[StringSlice[Self.origin]]:
-        """Get the next codepoint slice in the underlying string slice, or None
-        if the iterator is empty.
-
-        This returns the next single-codepoint substring encoded in the
-        underlying string, and advances the iterator state.
-
-        Returns:
-            A character if the string is not empty, otherwise None.
-        """
-        var result: Optional[StringSlice[Self.origin]] = self.peek_next()
-
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var slice_len = len(result.unsafe_value())
-            # Advance the pointer in _slice.
-            self._slice._slice._data += slice_len
-            # Decrement the byte-length of _slice.
-            self._slice._slice._len -= slice_len
-
-        return result
-
-    def next_back(mut self) -> Optional[StringSlice[Self.origin]]:
-        """Get the last single-codepoint slice in this iterator is, or None
-        if the iterator is empty.
-
-        This returns the last codepoint slice in this iterator, and advances
-        the iterator state.
-
-        Returns:
-            The last codepoint slice in the underlying string, or None if the
-            string is empty.
-        """
-        var result: Optional[StringSlice[Self.origin]] = self.peek_back()
-
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var slice_len = len(result.unsafe_value())
-            # Decrement the byte-length of _slice.
-            self._slice._slice._len -= slice_len
-
-        return result
-
-
-struct CodepointsIter[mut: Bool, //, origin: Origin[mut=mut]](
-    ImplicitlyCopyable, Iterable, Iterator, Sized
-):
-    """Iterator over the `Codepoint`s in a string slice, constructed by
-    `StringSlice.codepoints()`.
-
-    Parameters:
-        mut: Mutability of the underlying string data.
-        origin: Origin of the underlying string data.
-    """
-
-    comptime IteratorType[
-        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
-    ]: Iterator = Self
-    """The iterator type for this codepoint iterator.
-
-    Parameters:
-        iterable_mut: Whether the iterable is mutable.
-        iterable_origin: The origin of the iterable.
-    """
-
-    comptime Element = Codepoint
-    """The element type yielded by iteration."""
-
-    var _slice: StringSlice[Self.origin]
-    """String slice containing the bytes that have not been read yet.
-
-    When this iterator advances, the pointer in `_slice` is advanced by the
-    byte length of each read character, and the slice length is decremented by
-    the same amount.
-    """
-
-    # Note:
-    #   Marked private since `StringSlice.codepoints()` is the intended public
-    #   way to construct this type.
-    @doc_hidden
-    def __init__(out self, str_slice: StringSlice[Self.origin]):
-        self._slice = str_slice
-
-    # ===-------------------------------------------------------------------===#
-    # Trait implementations
-    # ===-------------------------------------------------------------------===#
-
-    @doc_hidden
-    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self.copy()
-
-    def __next__(mut self) raises StopIteration -> Codepoint:
-        """Get the next codepoint in the underlying string slice.
-
-        This returns the next `Codepoint` encoded in the underlying string, and
-        advances the iterator state.
-
-        Returns:
-            The next character in the string.
-
-        Raises:
-            StopIteration: If the iterator is exhausted.
-        """
-        if len(self._slice) <= 0:
-            raise StopIteration()
-        return self.next().value()
-
-    @always_inline
-    def __len__(self) -> Int:
-        """Returns the remaining length of this iterator in `Codepoint`s.
-
-        The value returned from this method indicates the number of subsequent
-        calls to `next()` that will return a value.
-
-        Returns:
-            Number of codepoints remaining in this iterator.
-        """
-        return self._slice.count_codepoints()
-
-    # ===-------------------------------------------------------------------===#
-    # Methods
-    # ===-------------------------------------------------------------------===#
-
-    def peek_next(self) -> Optional[Codepoint]:
-        """Check what the next codepoint in this iterator is, without advancing
-        the iterator state.
-
-        Repeated calls to this method will return the same value.
-
-        Returns:
-            The next character in the underlying string, or None if the string
-            is empty.
-
-        # Examples
-
-        `peek_next()` does not advance the iterator, so repeated calls will
-        return the same value:
-
-        ```mojo
-        from std.collections.string import Codepoint
-        from std.testing import assert_equal
-
-        var input = StringSlice("123")
-        var iter = input.codepoints()
-
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-        assert_equal(iter.peek_next().value(), Codepoint.ord("1"))
-
-        # A call to `next()` return the same value as `peek_next()` had,
-        # but also advance the iterator.
-        assert_equal(iter.next().value(), Codepoint.ord("1"))
-
-        # Later `peek_next()` calls will return the _new_ next character:
-        assert_equal(iter.peek_next().value(), Codepoint.ord("2"))
-        ```
-        """
-        if len(self._slice) > 0:
-            # SAFETY: Will not read out of bounds because `_slice` is guaranteed
-            #   to contain valid UTF-8.
-            codepoint, _ = Codepoint.unsafe_decode_utf8_codepoint(
-                self._slice._slice
-            )
-            return codepoint
-        else:
-            return None
-
-    def next(mut self) -> Optional[Codepoint]:
-        """Get the next codepoint in the underlying string slice, or None if
-        the iterator is empty.
-
-        This returns the next `Codepoint` encoded in the underlying string, and
-        advances the iterator state.
-
-        Returns:
-            A character if the string is not empty, otherwise None.
-        """
-        var result: Optional[Codepoint] = self.peek_next()
-
-        if result:
-            # SAFETY: We just checked that `result` holds a value
-            var char_len = result.unsafe_value().utf8_byte_length()
-            # Advance the pointer in _slice.
-            self._slice._slice._data += char_len
-            # Decrement the byte-length of _slice.
-            self._slice._slice._len -= char_len
-
-        return result
-
-
 struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     Boolable,
     ConvertibleToPython,
@@ -473,7 +95,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     IntableRaising,
     KeyElement,
     PathLike,
-    Sized,
     TrivialRegisterPassable,
     Writable,
 ):
@@ -736,48 +357,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
     # Trait implementations
     # ===------------------------------------------------------------------===#
 
-    @always_inline
-    def __len__(self) -> Int:
-        """Get the string length in bytes.
-
-        This function returns the number of bytes in the underlying UTF-8
-        representation of the string.
-
-        To get the number of Unicode codepoints in a string, use
-        `len(str.codepoints())`.
-
-        Returns:
-            The string length in bytes.
-
-        # Examples
-
-        Query the length of a string, in bytes and Unicode codepoints:
-
-        ```mojo
-
-        from std.testing import assert_equal
-
-        var s = StringSlice("ನಮಸ್ಕಾರ")
-
-        assert_equal(len(s), 21)
-        assert_equal(len(s.codepoints()), 7)
-        ```
-
-        Strings containing only ASCII characters have the same byte and
-        Unicode codepoint length:
-
-        ```mojo
-
-        from std.testing import assert_equal
-
-        var s = StringSlice("abc")
-
-        assert_equal(len(s), 3)
-        assert_equal(len(s.codepoints()), 3)
-        ```
-        """
-        return self.byte_length()
-
     def write_to(self, mut writer: Some[Writer]):
         """Formats this string slice to the provided `Writer`.
 
@@ -845,7 +424,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             hasher: The hasher instance.
         """
-        hasher._update_with_bytes(Span(ptr=self.unsafe_ptr(), length=len(self)))
+        hasher._update_with_bytes(
+            Span(ptr=self.unsafe_ptr(), length=self.byte_length())
+        )
 
     def __fspath__(self) -> String:
         """Return the file system path representation of this string.
@@ -951,7 +532,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """Verify if a `StringSlice` is equal to another `String`.
 
         Args:
-            rhs: The `StringSlice` to compare against.
+            rhs: The `String` to compare against.
 
         Returns:
             If the `StringSlice` is equal to the input in length and contents.
@@ -1023,8 +604,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             If the `StringSlice` bytes are strictly less than the input in
             overlapping content.
         """
-        var len1 = len(self)
-        var len2 = len(rhs)
+        var len1 = self.byte_length()
+        var len2 = rhs.byte_length()
         return Int(len1 < len2) > memcmp(
             self.unsafe_ptr(), rhs.unsafe_ptr(), min(len1, len2)
         )
@@ -1113,6 +694,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         return self.codepoint_slices()
 
+    @always_inline
     def __getitem__[I: Indexer, //](self, *, byte: I) -> Self:
         """Gets a single byte at the specified byte index.
 
@@ -1125,27 +707,140 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             I: A type that can be used as an index.
 
         Args:
-            byte: The byte index (0-based). Negative indices count from the end.
+            byte: The byte index (0-based).
 
         Returns:
             A StringSlice containing the codepoint starting at the specified
             byte position.
         """
-        var normalized_idx = normalize_index["StringSlice"](
-            byte, self.byte_length()
+        var idx = index(byte)
+        self._check_valid_index(idx)
+        return self._unchecked_get_byte(idx)
+
+    @always_inline
+    def __getitem__(self, *, byte: IntLiteral) -> Self:
+        """Gets a single byte at the specified byte index.
+
+        This performs byte-level indexing, not character (codepoint) indexing.
+        For strings containing multi-byte UTF-8 characters `byte` must fall on
+        a codepoint boundary and an entire codepoint will be returned.
+        Aborts if `byte` does not fall on a codepoint boundary.
+
+        Args:
+            byte: The byte index (0-based).
+
+        Returns:
+            A StringSlice containing a single byte at the specified position.
+        """
+        comptime assert IntLiteral[byte.value]() >= 0, (
+            "negative indexing is not supported, use e.g."
+            " `slice[byte=slice.byte_length() - 1]`"
         )
-        # _utf8_first_byte_sequence_length also checks for this, but
-        # we want subscripting to check unconditionally.
+        var idx = index(byte)
+        self._check_valid_index(idx)
+        return self._unchecked_get_byte(idx)
+
+    def __getitem__(self, *, grapheme: ContiguousSlice) -> Self:
+        """Gets a substring at the specified grapheme-cluster positions.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen (see `graphemes()`). Slicing by
+        grapheme requires a forward scan of the string and is O(n) in the
+        byte length; use `byte=` slicing when you already have byte
+        offsets.
+
+        Out-of-range ends are clamped to the end of the string. Negative
+        indices are not supported.
+
+        Args:
+            grapheme: A slice specifying the grapheme-cluster range of the
+                new substring.
+
+        Returns:
+            A new `StringSlice` covering the requested grapheme range.
+
+        Examples:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "café" decomposed: 'c', 'a', 'f', 'e' + combining acute.
+        # 5 codepoints, 4 graphemes.
+        var s = StringSlice("cafe\\u{0301}")
+        assert_equal(s[grapheme=0:3], "caf")
+        assert_equal(s[grapheme=3:4], "e\\u{0301}")
+        assert_equal(s[grapheme=3:], "e\\u{0301}")
+        assert_equal(s[grapheme=:], s)
+        ```
+        """
+        var start_idx = grapheme.start.or_else(0)
         debug_assert[assert_mode="safe"](
-            _is_utf8_start_byte(self._slice.unsafe_get(normalized_idx)),
-            "String slice index, ",
-            normalized_idx,
-            " does not lie on a codepoint boundary.",
+            start_idx >= 0, "grapheme start index must be non-negative"
         )
+
+        var iter = self.graphemes()
+        var start_bytes = 0
+        var i = 0
+
+        # Skip `start_idx` graphemes to find the starting byte offset.
+        while i < start_idx:
+            var g = iter.next()
+            if not g:
+                break
+            start_bytes += g.unsafe_value().byte_length()
+            i += 1
+
+        if not grapheme.end:
+            return Self(
+                unsafe_from_utf8=Span[Byte, Self.origin](
+                    ptr=self._slice.unsafe_ptr() + start_bytes,
+                    length=self._slice.__len__() - start_bytes,
+                )
+            )
+
+        var end_idx = grapheme.end.unsafe_value()
+        debug_assert[assert_mode="safe"](
+            end_idx >= start_idx,
+            "grapheme end index must be >= start index",
+        )
+
+        var end_bytes = start_bytes
+        while i < end_idx:
+            var g = iter.next()
+            if not g:
+                break
+            end_bytes += g.unsafe_value().byte_length()
+            i += 1
+
+        return Self(
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                ptr=self._slice.unsafe_ptr() + start_bytes,
+                length=end_bytes - start_bytes,
+            )
+        )
+
+    @always_inline
+    def _check_valid_index(self, idx: Int):
+        # Show source location where user provided incorrect index by skipping
+        # two levels of inlining above this function call.
+        var location = call_location[inline_count=2]()
+        check_bounds(idx, self.byte_length(), location)
+        # Subscripting checks codepoint boundaries unconditionally, to avoid
+        # breaking methods that assume valid utf8.
+        debug_assert[assert_mode="safe"](
+            _is_utf8_start_byte(self._slice.unsafe_get(idx)),
+            "String slice index, ",
+            idx,
+            " does not lie on a codepoint boundary.",
+            location=location,
+        )
+
+    @always_inline
+    def _unchecked_get_byte(self, idx: Int) -> Self:
         return StringSlice(
-            ptr=self.unsafe_ptr() + normalized_idx,
+            ptr=self.unsafe_ptr() + idx,
             length=_utf8_first_byte_sequence_length(
-                self._slice.unsafe_get(normalized_idx)
+                self._slice.unsafe_get(idx)
             ),
         )
 
@@ -1229,10 +924,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         other_type: type_of(StringSlice[_]),
     ](
         self,
-        out result: StringSlice[
-            mut=Self.mut & other_type.origin.mut,
-            origin_of(Self.origin, other_type.origin),
-        ],
+        out result: StringSlice[origin_of(Self.origin, other_type.origin)],
     ):
         """Returns a string slice with merged origins.
 
@@ -1246,27 +938,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             ptr = self.unsafe_ptr()
             .unsafe_mut_cast[result.mut]()
             .unsafe_origin_cast[result.origin](),
-            length = len(self),
+            length = self.byte_length(),
         }
-
-    @always_inline("nodebug")
-    def __merge_with__[
-        other_type: type_of(String),
-    ](self, out result: String):
-        """Returns a string slice merge with a String.
-
-        Parameters:
-            other_type: The type of the origin to merge with.
-
-        Returns:
-            A String this is merged with.
-        """
-        # Note, this is used to disambiguate some cases because String converts
-        # to StringSlice and StringSlice converts to string.  Ideally this would
-        # return a StringSlice, but the __merge_with__ protocol is type
-        # directed, not value directed.  Types don't carry the origins of a
-        # value.
-        return String(self)
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -1502,12 +1175,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             An iterator type that returns successive `Codepoint` values stored in
             this string slice.
 
-        # Examples
+        **Examples:**
 
         Print the characters in a string:
 
         ```mojo
-
         from std.testing import assert_equal, assert_raises
 
         var s = StringSlice("abc")
@@ -1523,7 +1195,6 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         codepoints:
 
         ```mojo
-
         from std.testing import assert_equal, assert_raises
 
         # A visual character composed of a combining sequence of 2 codepoints.
@@ -1561,6 +1232,81 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             A reversed iterator of references to the string slice elements.
         """
         return CodepointSliceIter[Self.origin, forward=False](self)
+
+    def graphemes(self) -> GraphemeSliceIter[Self.origin]:
+        """Return an iterator over the grapheme clusters in this string.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen. This handles combining marks, emoji
+        ZWJ sequences, flag emoji, Hangul syllables, and other
+        multi-codepoint clusters as defined by UAX #29.
+
+        Returns:
+            An iterator yielding each grapheme cluster as a `StringSlice`.
+
+        Example:
+
+        ```mojo
+        %# from testing import assert_equal
+        # "café" with combining accent: c, a, f, e + combining acute
+        var s = StringSlice("cafe\\u{0301}")
+        var count = 0
+        for g in s.graphemes():
+            count += 1
+        assert_equal(count, 4)
+        ```
+        """
+        return GraphemeSliceIter(self)
+
+    def graphemes_reversed(self) -> GraphemeSliceIter[Self.origin, False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster. Reverse
+        iteration is more expensive per element than forward iteration: the
+        UAX #29 state machine is forward-scanning, so each step backs up
+        to a guaranteed grapheme boundary (typically a line break or the
+        start of the string) and forward-scans from there.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        var s = StringSlice("abc")
+        var result = List[String]()
+        for g in s.graphemes_reversed():
+            result.append(String(g))
+        assert_equal(len(result), 3)
+        assert_equal(result[0], "c")
+        assert_equal(result[1], "b")
+        assert_equal(result[2], "a")
+        ```
+        """
+        return GraphemeSliceIter[Self.origin, False](self)
+
+    def count_graphemes(self) -> Int:
+        """Count the number of grapheme clusters in this string.
+
+        This is an O(n) operation that scans the full string to identify
+        grapheme cluster boundaries using UAX #29 rules.
+
+        Returns:
+            The number of grapheme clusters.
+
+        Example:
+
+        ```mojo
+        %# from testing import assert_equal
+        var s = StringSlice("Hello")
+        assert_equal(s.count_graphemes(), 5)
+        ```
+        """
+        return len(self.graphemes())
 
     @always_inline
     def as_bytes(self) -> Span[Byte, Self.origin]:
@@ -1656,7 +1402,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         A byte position is considered a codepoint boundary if a valid subslice
         of the string would end (noninclusive) at `index`.
 
-        Positions `0` and `len(self)` are considered to be codepoint boundaries.
+        Positions `0` and `self.byte_length()` are considered to be codepoint boundaries.
 
         Positions beyond the length of the string slice will return False.
 
@@ -1736,8 +1482,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         """
         # TODO: Example: Print the byte indices that are codepoints boundaries:
 
-        if index >= UInt(len(self)):
-            return index == UInt(len(self))
+        if index >= UInt(self.byte_length()):
+            return index == UInt(self.byte_length())
 
         var byte = self.as_bytes()[index]
         # If this is not a continuation byte, then it must be a start byte.
@@ -1758,11 +1504,10 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is prefixed by the input prefix.
+            True if the `self[byte=start:end]` is prefixed by the input prefix.
         """
         if end == -1:
             return self.find(prefix, start) == start
-        # FIXME: use normalize_index
         return StringSlice[Self.origin](
             ptr=self.unsafe_ptr() + start, length=end - start
         ).startswith(prefix)
@@ -1782,12 +1527,15 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             end: The end offset in bytes from which to check.
 
         Returns:
-            True if the `self[start:end]` is suffixed by the input suffix.
+            True if the `self[byte=start:end]` is suffixed by the input suffix.
         """
-        if len(suffix) > len(self):
+        if suffix.byte_length() > self.byte_length():
             return False
         if end == -1:
-            return self.rfind(suffix, start) + len(suffix) == len(self)
+            return (
+                self.rfind(suffix, start) + suffix.byte_length()
+                == self.byte_length()
+            )
         # FIXME: use normalize_index
         return StringSlice[Self.origin](
             ptr=self.unsafe_ptr() + start, length=end - start
@@ -1800,8 +1548,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             prefix: The prefix to remove from the string.
 
         Returns:
-            `string[len(prefix):]` if the string starts with the prefix string,
-            or a copy of the original string otherwise.
+            `string[byte=prefix.byte_length():]` if the string starts with the
+            prefix string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1811,7 +1559,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if self.startswith(prefix):
-            return self[byte = len(prefix) :]
+            return self[byte = prefix.byte_length() :]
         return self
 
     def removesuffix(self, suffix: StringSlice, /) -> Self:
@@ -1821,8 +1569,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             suffix: The suffix to remove from the string.
 
         Returns:
-            `string[:-len(suffix)]` if the string ends with the suffix string,
-            or a copy of the original string otherwise.
+            `string[byte=:(self.byte_length()-suffix.byte_length())]` if the string ends with the
+            suffix string, or a copy of the original string otherwise.
 
         Examples:
 
@@ -1832,7 +1580,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         if suffix and self.endswith(suffix):
-            return self[byte = : -len(suffix)]
+            return self[byte = : -suffix.byte_length()]
         return self
 
     @always_inline
@@ -1915,9 +1663,9 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             string.
         """
         if not substr:
-            return len(self)
+            return self.byte_length()
 
-        if len(self) < len(substr) + start:
+        if self.byte_length() < substr.byte_length() + start:
             return -1
 
         # The substring to search within, offset from the beginning if `start`
@@ -2236,7 +1984,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             The number of occurrences of `substr`.
         """
         if not substr:
-            return len(self) + 1
+            return self.byte_length() + 1
 
         var res = 0
         var offset = 0
@@ -2275,7 +2023,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             True if all cased characters in the string are uppercase and there
             is at least one cased character, False otherwise.
         """
-        return len(self) > 0 and is_uppercase(self)
+        return self.byte_length() > 0 and is_uppercase(self)
 
     def islower(self) -> Bool:
         """Returns True if all cased characters in the string are lowercase and
@@ -2285,7 +2033,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             True if all cased characters in the string are lowercase and there
             is at least one cased character, False otherwise.
         """
-        return len(self) > 0 and is_lowercase(self)
+        return self.byte_length() > 0 and is_lowercase(self)
 
     def lower(self) -> String:
         """Returns a copy of the string with all cased characters
@@ -2351,7 +2099,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         print(s.ascii_rjust(3))         # "hello" (no padding)
         ```
         """
-        return self._justify(width - len(self), width, fillchar)
+        return self._justify(width - self.byte_length(), width, fillchar)
 
     def ascii_ljust(self, width: Int, fillchar: StaticString = " ") -> String:
         """Returns the string slice left justified in a string of specified width.
@@ -2409,12 +2157,12 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
         ```mojo
         var s = StringSlice("hello")
-        print(s.center(10))        # "  hello   "
-        print(s.center(11, "*"))   # "***hello***"
-        print(s.center(3))         # "hello" (no padding)
+        print(s.ascii_center(10))        # "  hello   "
+        print(s.ascii_center(11, "*"))   # "***hello***"
+        print(s.ascii_center(3))         # "hello" (no padding)
         ```
         """
-        return self._justify(width - len(self) >> 1, width, fillchar)
+        return self._justify(width - self.byte_length() >> 1, width, fillchar)
 
     def _justify(
         self, start: Int, width: Int, fillchar: StaticString
@@ -2429,8 +2177,8 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         Args:
             start: The number of fill characters to add at the beginning (left
                 padding). For left justification this is 0, for right
-                justification this is `width - len(self)`, and for center
-                justification this is `(width - len(self)) >> 1`.
+                justification this is `width - self.byte_length()`, and for center
+                justification this is `(width - self.byte_length()) >> 1`.
             width: The total width of the resulting string in bytes. If the
                 original string is already greater than or equal to this width,
                 no padding is added and the original string is returned.
@@ -2442,9 +2190,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             padding the original string, or the original string if it's already
             at least as wide as the requested width.
         """
-        if len(self) >= width:
+        if self.byte_length() >= width:
             return String(self)
-        assert len(fillchar) == 1, "fill char needs to be a one byte literal"
+        assert (
+            fillchar.byte_length() == 1
+        ), "fill char needs to be a one byte literal"
 
         var result = String(capacity=width)
         for _ in range(start):
@@ -2520,7 +2270,7 @@ def _get_kgen_string[
         `#kgen.param.expr<data_to_str,`,
         string,
         `,`,
-        extra,
+        extra.values,
         `> : !kgen.string`,
     ]
 
@@ -2548,8 +2298,8 @@ def _to_string_list[
     O: ImmutOrigin,
     T: Copyable,
     //,
-    len_fn: def(T) -> Int,
-    unsafe_ptr_fn: def(T) -> UnsafePointer[Byte, O],
+    len_fn: def(T) thin -> Int,
+    unsafe_ptr_fn: def(T) thin -> UnsafePointer[Byte, O],
 ](items: List[T]) -> List[String]:
     var i_len = len(items)
 
@@ -2641,7 +2391,7 @@ def _unsafe_strlen(
 def _memchr[
     dtype: DType, //
 ](source: Span[mut=False, Scalar[dtype], ...], char: Scalar[dtype]) -> Optional[
-    NonNullUnsafePointer[Scalar[dtype], source.origin]
+    UnsafePointer[Scalar[dtype], source.origin]
 ]:
     if (
         __is_run_in_comptime_interpreter
@@ -2651,7 +2401,7 @@ def _memchr[
 
         for i in range(len(source)):
             if ptr[i] == char:
-                return {{unsafe_from_nullable = ptr + i}}
+                return ptr + i
         return {}
     else:
         return _memchr_impl(source, char)
@@ -2663,7 +2413,7 @@ def _memchr_impl[
 ](
     source: Span[mut=False, Scalar[dtype], ...],
     char: Scalar[dtype],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], source.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], source.origin]]:
     var haystack = source.unsafe_ptr()
     var length = len(source)
     comptime bool_mask_width = simd_width_of[DType.bool]()
@@ -2674,16 +2424,11 @@ def _memchr_impl[
         var bool_mask = haystack.load[width=bool_mask_width](i).eq(first_needle)
         var mask = pack_bits(bool_mask)
         if mask:
-            return {
-                {
-                    unsafe_from_nullable = haystack
-                    + Int(type_of(mask)(i) + count_trailing_zeros(mask))
-                }
-            }
+            return haystack + Int(type_of(mask)(i) + count_trailing_zeros(mask))
 
     for i in range(vectorized_end, length):
         if haystack[i] == char:
-            return {{unsafe_from_nullable = haystack + i}}
+            return haystack + i
 
     return {}
 
@@ -2698,7 +2443,7 @@ def _memmem[
         Scalar[dtype],
         ...,
     ],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack_span.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack_span.origin]]:
     if (
         __is_run_in_comptime_interpreter
         or len(haystack_span) < simd_width_of[Scalar[dtype]]()
@@ -2713,7 +2458,7 @@ def _memmem[
                 continue
 
             if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-                return {{unsafe_from_nullable = haystack + i}}
+                return haystack + i
 
         return {}
     else:
@@ -2730,7 +2475,7 @@ def _memmem_impl[
         Scalar[dtype],
         ...,
     ],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack_span.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack_span.origin]]:
     var haystack = haystack_span.unsafe_ptr()
     var haystack_len = len(haystack_span)
     var needle = needle_span.unsafe_ptr()
@@ -2763,7 +2508,7 @@ def _memmem_impl[
         while mask:
             var offset = i + Int(count_trailing_zeros(mask))
             if memcmp(haystack + offset + 1, needle + 1, needle_len - 1) == 0:
-                return {{unsafe_from_nullable = haystack + offset}}
+                return haystack + offset
             mask = mask & (mask - 1)
 
     for i in range(vectorized_end, haystack_len - needle_len + 1):
@@ -2771,7 +2516,7 @@ def _memmem_impl[
             continue
 
         if memcmp(haystack + i + 1, needle + 1, needle_len - 1) == 0:
-            return {{unsafe_from_nullable = haystack + i}}
+            return haystack + i
     return {}
 
 
@@ -2782,11 +2527,11 @@ def _memrchr[
     source: Span[mut=False, Scalar[dtype], _],
     char: Scalar[dtype],
 ) -> Optional[
-    NonNullUnsafePointer[Scalar[dtype], source.origin]
+    UnsafePointer[Scalar[dtype], source.origin]
 ]:
     for i in reversed(range(len(source))):
         if source.unsafe_get(i) == char:
-            return {{unsafe_from_nullable = source.unsafe_ptr() + i}}
+            return source.unsafe_ptr() + i
     return {}
 
 
@@ -2796,9 +2541,9 @@ def _memrmem[
 ](
     haystack: Span[mut=False, Scalar[dtype], _],
     needle: Span[mut=False, Scalar[dtype], _],
-) -> Optional[NonNullUnsafePointer[Scalar[dtype], haystack.origin]]:
+) -> Optional[UnsafePointer[Scalar[dtype], haystack.origin]]:
     if not needle:
-        return {{unsafe_from_nullable = haystack.unsafe_ptr()}}
+        return haystack.unsafe_ptr()
     if len(needle) > len(haystack):
         return {}
     if len(needle) == 1:
@@ -2814,7 +2559,7 @@ def _memrmem[
             )
             == 0
         ):
-            return {{unsafe_from_nullable = haystack.unsafe_ptr() + i}}
+            return haystack.unsafe_ptr() + i
     return {}
 
 
@@ -2887,8 +2632,10 @@ def _split[
     var items = 0
     var ptr = src_str.unsafe_ptr().as_immutable()
 
+    comptime PointerType = type_of(ptr)
+
     @always_inline("nodebug")
-    def _build_slice(p: type_of(ptr), start: Int, end: Int) -> S:
+    def _build_slice(p: PointerType, start: Int, end: Int) -> S:
         return S(ptr=p + start, length=end - start)
 
     while lhs <= str_byte_len:

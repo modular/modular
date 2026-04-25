@@ -12,9 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import ceildiv
-from std.os.atomic import Atomic, Consistency
+from std.atomic import Atomic
 
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal, TestSuite
 from std.sys import is_apple_gpu, has_apple_gpu_accelerator
@@ -41,7 +41,7 @@ def reduce_add(
 ):
     var tid = global_idx.x
 
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
     _ = Atomic.fetch_add(res_add, vec[tid])
@@ -55,7 +55,7 @@ def reduce_min_max(
 ):
     var tid = global_idx.x
 
-    if tid >= UInt(len):
+    if tid >= len:
         return
 
     Atomic.min(res_min, vec[tid])

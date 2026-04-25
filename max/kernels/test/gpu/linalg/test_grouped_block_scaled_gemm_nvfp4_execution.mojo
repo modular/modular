@@ -52,6 +52,7 @@ from linalg.fp4_utils import (
 
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -196,11 +197,11 @@ def test_grouped_kernel_nvfp4_single_group[
     print("\n--- Testing grouped kernel with NVFP4 (single group) ---")
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " (logical K, actual K/2 bytes)",
         " cta_group=",
         cta_group,
@@ -211,16 +212,16 @@ def test_grouped_kernel_nvfp4_single_group[
     var num_groups = 1
 
     # For FP4, K dimension is packed (2 values per byte)
-    var k_packed = k.value() // 2
+    var k_packed = Int(k.value()) // 2
 
     # Create shapes - K dimension is halved for packed data
     comptime k_packed_static = KType.static_value // 2
     var a_shape = row_major(Coord(m, Idx[k_packed_static]()))
     var c_shape = row_major(Coord(m, n))
 
-    var a_size = m.value() * k_packed
-    var b_size = n.value() * k_packed
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * k_packed
+    var b_size = Int(n.value()) * k_packed
+    var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
@@ -238,16 +239,16 @@ def test_grouped_kernel_nvfp4_single_group[
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     # Scale factor shapes (5D) - using logical K for scale factor calculations
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -256,7 +257,7 @@ def test_grouped_kernel_nvfp4_single_group[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -273,15 +274,11 @@ def test_grouped_kernel_nvfp4_single_group[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
     rand(a_host_ptr, a_size, min=0, max=255)
@@ -311,7 +308,7 @@ def test_grouped_kernel_nvfp4_single_group[
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, Idx[k_packed_static]()))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -324,7 +321,7 @@ def test_grouped_kernel_nvfp4_single_group[
         )
     else:
         var b_shape = row_major(Coord(Idx[k_packed_static](), n))
-        var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+        var b_tensor = TileTensor(b_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c_ref_tensor,
@@ -342,10 +339,10 @@ def test_grouped_kernel_nvfp4_single_group[
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
     var problem_sizes_host = alloc[Int32](max_groups * 4)
-    problem_sizes_host[0] = Int32(m.value())  # M
-    problem_sizes_host[1] = Int32(n.value())  # N
+    problem_sizes_host[0] = Int32(Int(m.value()))  # M
+    problem_sizes_host[1] = Int32(Int(n.value()))  # N
     problem_sizes_host[2] = Int32(
-        k.value()
+        Int(k.value())
     )  # K (logical K, kernel handles packing)
     problem_sizes_host[3] = 1  # L (batch=1)
 
@@ -362,7 +359,7 @@ def test_grouped_kernel_nvfp4_single_group[
 
     # Create DEVICE-based problem_sizes tensor for kernel
     var problem_sizes_tensor_device = TileTensor(
-        problem_sizes_device.unsafe_ptr(), row_major[max_groups, 4]()
+        problem_sizes_device, row_major[max_groups, 4]()
     )
 
     # Compute total tiles on HOST
@@ -403,20 +400,14 @@ def test_grouped_kernel_nvfp4_single_group[
     ctx.enqueue_copy(sfb_ptrs_device, sfb_ptrs_host)
     ctx.synchronize()
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Run the grouped kernel with NVFP4 configuration
@@ -432,6 +423,7 @@ def test_grouped_kernel_nvfp4_single_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -457,7 +449,7 @@ def test_grouped_kernel_nvfp4_single_group[
         num_groups,
         total_tiles,
         k_packed,
-        k.value(),
+        Int(k.value()),
         a_device.unsafe_ptr(),
         b_device.unsafe_ptr(),
         c_device.unsafe_ptr(),
@@ -535,11 +527,11 @@ def test_grouped_kernel_nvfp4_multi_group[
     print("\n--- Testing grouped kernel NVFP4 (2 groups, different ptrs) ---")
     print(
         "  M=",
-        m.value(),
+        Int(m.value()),
         " N=",
-        n.value(),
+        Int(n.value()),
         " K=",
-        k.value(),
+        Int(k.value()),
         " cta_group=",
         cta_group,
     )
@@ -549,23 +541,25 @@ def test_grouped_kernel_nvfp4_multi_group[
     var num_groups = 2
 
     # For FP4, K dimension is packed
-    var k_packed = k.value() // 2
+    var k_packed = Int(k.value()) // 2
 
     # Compute sizes
-    var a_size = m.value() * k_packed
-    var b_size = n.value() * k_packed if transpose_b else k_packed * n.value()
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * k_packed
+    var b_size = (
+        Int(n.value()) * k_packed if transpose_b else k_packed * Int(n.value())
+    )
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_scales_total = (
-        ceildiv(m.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -577,7 +571,7 @@ def test_grouped_kernel_nvfp4_multi_group[
     var c_shape = row_major(Coord(m, n))
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -586,7 +580,7 @@ def test_grouped_kernel_nvfp4_multi_group[
     )
     var b_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -685,23 +679,23 @@ def test_grouped_kernel_nvfp4_multi_group[
     ctx.synchronize()
 
     # Create TileTensors for cuBLAS
-    var a0_tensor = TileTensor(a0_device.unsafe_ptr(), a_shape)
-    var c0_ref_tensor = TileTensor(c0_ref_device.unsafe_ptr(), c_shape)
-    var sfa0_tensor = TileTensor(sfa0_device.unsafe_ptr(), a_scales_shape)
-    var sfb0_tensor = TileTensor(sfb0_device.unsafe_ptr(), b_scales_shape)
+    var a0_tensor = TileTensor(a0_device, a_shape)
+    var c0_ref_tensor = TileTensor(c0_ref_device, c_shape)
+    var sfa0_tensor = TileTensor(sfa0_device, a_scales_shape)
+    var sfb0_tensor = TileTensor(sfb0_device, b_scales_shape)
 
-    var a1_tensor = TileTensor(a1_device.unsafe_ptr(), a_shape)
-    var c1_ref_tensor = TileTensor(c1_ref_device.unsafe_ptr(), c_shape)
-    var sfa1_tensor = TileTensor(sfa1_device.unsafe_ptr(), a_scales_shape)
-    var sfb1_tensor = TileTensor(sfb1_device.unsafe_ptr(), b_scales_shape)
+    var a1_tensor = TileTensor(a1_device, a_shape)
+    var c1_ref_tensor = TileTensor(c1_ref_device, c_shape)
+    var sfa1_tensor = TileTensor(sfa1_device, a_scales_shape)
+    var sfb1_tensor = TileTensor(sfb1_device, b_scales_shape)
 
     # Run cuBLAS for each group separately
     print("  Running cuBLAS for group 0...")
 
     comptime if transpose_b:
         var b_shape = row_major(Coord(n, Idx[k_packed_static]()))
-        var b0_tensor = TileTensor(b0_device.unsafe_ptr(), b_shape)
-        var b1_tensor = TileTensor(b1_device.unsafe_ptr(), b_shape)
+        var b0_tensor = TileTensor(b0_device, b_shape)
+        var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c0_ref_tensor,
@@ -725,8 +719,8 @@ def test_grouped_kernel_nvfp4_multi_group[
         )
     else:
         var b_shape = row_major(Coord(Idx[k_packed_static](), n))
-        var b0_tensor = TileTensor(b0_device.unsafe_ptr(), b_shape)
-        var b1_tensor = TileTensor(b1_device.unsafe_ptr(), b_shape)
+        var b0_tensor = TileTensor(b0_device, b_shape)
+        var b1_tensor = TileTensor(b1_device, b_shape)
         vendor_blas.matmul(
             ctx,
             c0_ref_tensor,
@@ -756,9 +750,9 @@ def test_grouped_kernel_nvfp4_multi_group[
     # Problem sizes: both groups have same size
     var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
-        problem_sizes_host[g * 4 + 0] = Int32(m.value())
-        problem_sizes_host[g * 4 + 1] = Int32(n.value())
-        problem_sizes_host[g * 4 + 2] = Int32(k.value())  # Logical K
+        problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))
+        problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))
+        problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))  # Logical K
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -805,26 +799,22 @@ def test_grouped_kernel_nvfp4_multi_group[
         problem_sizes_host, row_major[max_groups, 4]()
     )
 
-    var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
-    var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
-    )
+    var a_ptrs_tensor = TileTensor(a_ptrs_device, row_major[max_groups, 1]())
+    var b_ptrs_tensor = TileTensor(b_ptrs_device, row_major[max_groups, 1]())
+    var c_ptrs_tensor = TileTensor(c_ptrs_device, row_major[max_groups, 1]())
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfa_ptrs_device, row_major[max_groups, 1]()
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(), row_major[max_groups, 1]()
+        sfb_ptrs_device, row_major[max_groups, 1]()
     )
 
     # Calculate total tiles
     comptime BM = mma_shape[0] // cta_group
     comptime BN = mma_shape[1] // cta_group
-    var tiles_per_group = ceildiv(m.value(), BM) * ceildiv(n.value(), BN)
+    var tiles_per_group = ceildiv(Int(m.value()), BM) * ceildiv(
+        Int(n.value()), BN
+    )
     var total_tiles = tiles_per_group * num_groups
 
     print("  Total tiles across 2 groups:", total_tiles)
@@ -842,6 +832,7 @@ def test_grouped_kernel_nvfp4_multi_group[
         cta_group=cta_group,
         k_group_size=1,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     launch_grouped_gemm_with_templates[
@@ -867,7 +858,7 @@ def test_grouped_kernel_nvfp4_multi_group[
         num_groups,
         total_tiles,
         k_packed,
-        k.value(),
+        Int(k.value()),
         a0_device.unsafe_ptr(),
         b0_device.unsafe_ptr(),
         c0_device.unsafe_ptr(),

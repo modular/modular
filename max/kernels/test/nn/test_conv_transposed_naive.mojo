@@ -42,7 +42,7 @@ def test_convtranspose_pads():
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
     for i in range(9):
-        input.ptr[i] = Float32(i)
+        input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
@@ -114,7 +114,7 @@ def test_convtranspose():
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
     for i in range(9):
-        input.ptr[i] = Float32(i)
+        input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
@@ -180,25 +180,25 @@ def test_convtranspose_dilation():
         uninitialized=True
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
-    input.ptr[0] = 3
-    input.ptr[1] = 8
-    input.ptr[2] = 1
-    input.ptr[3] = 9
-    input.ptr[4] = 5
-    input.ptr[5] = 7
-    input.ptr[6] = 3
-    input.ptr[7] = 2
-    input.ptr[8] = 6
+    input.raw_store(0, 3)
+    input.raw_store(1, 8)
+    input.raw_store(2, 1)
+    input.raw_store(3, 9)
+    input.raw_store(4, 5)
+    input.raw_store(5, 7)
+    input.raw_store(6, 3)
+    input.raw_store(7, 2)
+    input.raw_store(8, 6)
 
     comptime filter_layout = row_major[1, 2, 2, 1, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](
         uninitialized=True
     )
     var filter = TileTensor(filter_stack.unsafe_ptr(), filter_layout)
-    filter.ptr[0] = 7
-    filter.ptr[1] = 2
-    filter.ptr[2] = 1
-    filter.ptr[3] = 9
+    filter.raw_store(0, 7)
+    filter.raw_store(1, 2)
+    filter.raw_store(2, 1)
+    filter.raw_store(3, 9)
 
     comptime output_layout = row_major[1, 1, 5, 5, 1]()
     var output_stack = InlineArray[Scalar[type], output_layout.product()](
@@ -272,7 +272,7 @@ def test_convtranspose_attributes():
     )
     var input = TileTensor(input_stack.unsafe_ptr(), input_layout)
     for i in range(9):
-        input.ptr[i] = Float32(i)
+        input.raw_store(i, Float32(i))
 
     comptime filter_layout = row_major[1, 3, 3, 2, 1]()
     var filter_stack = InlineArray[Scalar[type], filter_layout.product()](

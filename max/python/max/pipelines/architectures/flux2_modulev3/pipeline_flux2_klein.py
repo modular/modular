@@ -41,6 +41,10 @@ class Flux2KleinModelInputs(Flux2ModelInputs):
     negative_tokens: Tensor | None = None
     """Negative prompt token IDs on device (for classifier-free guidance)."""
 
+    negative_text_ids: Tensor | None = None
+    """Negative prompt text position IDs on device, shape ``(B, S', 4)``.
+    ``None`` when no negative prompt is supplied."""
+
     attention_mask: np.ndarray | None = None
     """Tokenizer-generated mask for the padded positive prompt sequence."""
 
@@ -52,6 +56,10 @@ class Flux2KleinModelInputs(Flux2ModelInputs):
 
     is_distilled: bool = False
     """Whether the model is distilled (disables CFG)."""
+
+    explicit_negative_prompt: bool = False
+    """Whether the request explicitly supplied a negative prompt. Used to
+    gate distilled/CFG warnings so they only fire on real user intent."""
 
     @property
     def do_classifier_free_guidance(self) -> bool:
@@ -125,8 +133,9 @@ class Flux2KleinPipeline(Flux2Pipeline):
         """
         base_inputs = super().prepare_inputs(context)
 
-        # Prepare negative tokens on device if present.
+        # Prepare negative tokens and text IDs on device if present.
         negative_tokens = None
+        negative_text_ids = None
         if context.negative_tokens is not None:
             from max.driver import Buffer
 
@@ -135,11 +144,21 @@ class Flux2KleinPipeline(Flux2Pipeline):
                     self.text_encoder.devices[0]
                 )
             )
+            negative_text_ids = Tensor(
+                storage=Buffer.from_dlpack(context.negative_text_ids).to(
+                    self.transformer.devices[0]
+                )
+            )
 
-        diff_cfg = self.pipeline_config.model.diffusers_config or {}
-        is_distilled = bool(diff_cfg.get("is_distilled", False))
+        is_distilled = bool(
+            self.pipeline_config.models.metadata.get("is_distilled", False)
+        )
 
-        if context.guidance_scale > 1.0 and is_distilled:
+        if (
+            context.guidance_scale > 1.0
+            and is_distilled
+            and context.explicit_negative_prompt
+        ):
             logger.warning(
                 "Guidance scale %s is ignored for distilled Klein models.",
                 context.guidance_scale,
@@ -147,6 +166,7 @@ class Flux2KleinPipeline(Flux2Pipeline):
 
         return Flux2KleinModelInputs(
             tokens=base_inputs.tokens,
+            text_ids=base_inputs.text_ids,
             latents=base_inputs.latents,
             latent_image_ids=base_inputs.latent_image_ids,
             sigmas=base_inputs.sigmas,
@@ -160,10 +180,12 @@ class Flux2KleinPipeline(Flux2Pipeline):
             num_images_per_prompt=base_inputs.num_images_per_prompt,
             input_image=base_inputs.input_image,
             negative_tokens=negative_tokens,
+            negative_text_ids=negative_text_ids,
             attention_mask=context.mask,
             negative_attention_mask=context.negative_mask,
             guidance_scale=context.guidance_scale,
             is_distilled=is_distilled,
+            explicit_negative_prompt=context.explicit_negative_prompt,
         )
 
     @traced(message="Flux2KleinPipeline.execute")
@@ -177,29 +199,29 @@ class Flux2KleinPipeline(Flux2Pipeline):
         classifier-free guidance support for non-distilled models.
         """
         # 1) Encode prompts.
-        prompt_embeds, text_ids = self.prepare_prompt_embeddings(
+        prompt_embeds = self.prepare_prompt_embeddings(
             tokens=model_inputs.tokens,
             num_images_per_prompt=model_inputs.num_images_per_prompt,
             attention_mask=model_inputs.attention_mask,
         )
+        text_ids = model_inputs.text_ids
         batch_size = int(prompt_embeds.shape[0])
 
         # Encode negative prompts for CFG.
         negative_prompt_embeds: Tensor | None = None
-        negative_text_ids: Tensor | None = None
+        negative_text_ids: Tensor | None = model_inputs.negative_text_ids
         do_cfg = model_inputs.do_classifier_free_guidance
         if do_cfg and model_inputs.negative_tokens is not None:
-            negative_prompt_embeds, negative_text_ids = (
-                self.prepare_prompt_embeddings(
-                    tokens=model_inputs.negative_tokens,
-                    num_images_per_prompt=model_inputs.num_images_per_prompt,
-                    attention_mask=model_inputs.negative_attention_mask,
-                )
+            negative_prompt_embeds = self.prepare_prompt_embeddings(
+                tokens=model_inputs.negative_tokens,
+                num_images_per_prompt=model_inputs.num_images_per_prompt,
+                attention_mask=model_inputs.negative_attention_mask,
             )
         elif (
             model_inputs.negative_tokens is None
             and not model_inputs.is_distilled
             and model_inputs.guidance_scale > 1.0
+            and model_inputs.explicit_negative_prompt
         ):
             logger.warning(
                 "CFG requested but negative prompt tokens are missing; "

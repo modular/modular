@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Dispatch for depth=512 pair-CTA SM100 (Blackwell) MHA prefill.
+"""Dispatch for depth=256/512 pair-CTA SM100 (Blackwell) MHA prefill.
 
 Creates the Depth512SM100Config, TMA tile descriptors, and launches the
 pair-CTA kernel with cluster_dim=(2,1,1). The TransientScheduler uses
@@ -20,7 +20,7 @@ from block_idx.x >> 1.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
-from std.gpu.host import DeviceContext, FuncAttribute, DeviceBuffer
+from std.gpu.host import DeviceContext, Dim, FuncAttribute, DeviceBuffer
 from layout.tma_async import RaggedTMA3DTile
 from std.logger import Logger
 from nn.attention.gpu.nvidia.sm90.attention import (
@@ -83,16 +83,17 @@ def mha_sm100_depth512_dispatch[
     comptime assert not decoding, "depth512 pair-CTA does not support decoding"
 
     comptime d512_config = Depth512SM100Config[KVType.dtype](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
-        qk_depth=Int(config.depth),
-        ov_depth=Int(config.depth),
+        qk_depth=config.depth,
+        ov_depth=config.depth,
         swizzle_mode=config.swizzle_mode,
         page_size=KVType.page_size,
     )
     comptime assert d512_config.supported(), d512_config.description()
     comptime swizzle_mode = d512_config.swizzle_mode
-    comptime PairBM = d512_config.BM * 2  # 128
+    comptime fuse_gqa = d512_config.fuse_gqa
+    comptime PairBM_eff = d512_config.BM_eff() * 2
     comptime num_threads = d512_config.num_threads  # 384
 
     var q = rebind[UnsafePointer[Scalar[KVType.dtype], q_arg.origin]](q_arg)
@@ -101,21 +102,22 @@ def mha_sm100_depth512_dispatch[
 
     # ---- TMA tile descriptors ------------------------------------------------
 
-    # Output store: BM=64 per CTA, full ov_depth=512.
+    # Output store: BM per CTA, full ov_depth.
     comptime RaggedStoreType = RaggedTMA3DTile[
         output_type,
         swizzle_mode,
         BM=d512_config.BM,
         BN=d512_config.ov_depth,
+        group=d512_config.group if fuse_gqa else 1,
     ]
     var ragged_tma_store = RaggedStoreType.create(
         ctx,
         output.unsafe_ptr(),
         rows=num_rows_q,
-        middle_dim=d512_config.num_q_heads,
+        middle_dim=d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads,
     )
 
-    # Q: BM=64 per CTA (not halved like 2Q).
+    # Q: BM per CTA (not halved like 2Q).
     q_tma_op = q_tma[
         swizzle_mode,
         BM=d512_config.BM,
@@ -123,6 +125,7 @@ def mha_sm100_depth512_dispatch[
         q_num_heads=d512_config.num_q_heads,
         group=d512_config.group,
         decoding=False,
+        fuse_gqa=fuse_gqa,
         num_qk_stages=d512_config.num_qk_stages,
     ](ctx, q, num_rows_q)
 
@@ -134,19 +137,21 @@ def mha_sm100_depth512_dispatch[
         BK=d512_config.BK0,
     ](ctx)
 
-    # V: BK1 rows x ov_depth//4 columns (heavily sub-tiled for SMEM).
+    # V: BK1 rows x v_cols_per_cta columns (heavily sub-tiled for SMEM).
     v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
         BN=d512_config.BK1,
         depth=d512_config.ov_depth,
-        BK=d512_config.ov_depth // 4,
+        BK=d512_config.v_cols_per_cta,
     ](ctx)
 
     # ---- Scheduler -----------------------------------------------------------
 
     comptime SchedulerType = TransientScheduler[
-        UInt32(PairBM),
-        UInt32(d512_config.num_q_heads),
+        UInt32(PairBM_eff),
+        UInt32(
+            d512_config.num_kv_heads if fuse_gqa else d512_config.num_q_heads
+        ),
         flip_prompt_idx=MaskType.get_type_name() == "CausalMask",
         pair_cta=True,
     ]
@@ -184,7 +189,7 @@ def mha_sm100_depth512_dispatch[
             }
 
             var max_num_prompt_tiles: UInt32 = ceildiv(
-                max_prompt_len_arg.as_uint32(), UInt32(PairBM)
+                max_prompt_len_arg.as_uint32(), UInt32(PairBM_eff)
             )
             var block_x: UInt32 = max_num_prompt_tiles
             # SchedulerType.grid_dim doubles block_x (pair_cta=True).
@@ -232,6 +237,7 @@ def mha_sm100_depth512_dispatch[
                 pack,
                 grid_dim=SchedulerType.grid_dim(batch_size, block_x),
                 block_dim=(num_threads, 1, 1),
+                cluster_dim=Dim(2, 1, 1),
                 shared_mem_bytes=smem_use,
                 func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
                     UInt32(smem_use)

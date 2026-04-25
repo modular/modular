@@ -31,6 +31,7 @@ from max.interfaces import (
     ImageMetadata,
     TextGenerationRequest,
     TextGenerationRequestMessage,
+    TextGenerationRequestTool,
     TokenBuffer,
 )
 from max.pipelines.lib import TextAndVisionTokenizer, max_tokens_to_generate
@@ -157,7 +158,9 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             def _encode_fn(
                 prompt: str,
             ) -> npt.NDArray[np.integer[Any]]:
-                return self.delegate.encode(prompt, allow_special_tokens=True)
+                return np.array(
+                    self.delegate.encode(prompt, allow_special_tokens=True)
+                )
 
             encoded_prompt = await run_with_default_executor(_encode_fn, prompt)
 
@@ -173,12 +176,15 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
         return encoded_prompt
 
     def apply_chat_template(
-        self, messages: list[TextGenerationRequestMessage]
+        self,
+        messages: list[TextGenerationRequestMessage],
+        tools: list[TextGenerationRequestTool] | None = None,
     ) -> str:
         """Applies the tokenizer's chat template to messages."""
         templated = self.delegate.apply_chat_template(
             [msg.model_dump() for msg in messages],
             tokenize=False,
+            tools=tools,
             add_generation_prompt=True,
         )
         assert isinstance(templated, str)
@@ -303,11 +309,6 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
             else None
         )
 
-        if request.sampling_params.ignore_eos:
-            eos_token_ids: set[int] = set()
-        else:
-            eos_token_ids = self._default_eos_token_ids
-
         if self.max_length and encoded_prompt.shape[0] > self.max_length:
             raise ValueError(
                 f"encoded_prompt length {encoded_prompt.shape[0]} is greater than the max_length of the tokenizer {self.max_length}"
@@ -323,13 +324,14 @@ class KimiK2_5VLTokenizer(TextAndVisionTokenizer):
 
         context = KimiK2_5TextAndVisionContext(
             request_id=request.request_id,
-            eos_token_ids=eos_token_ids,
+            eos_tracker=await self.create_eos_tracker(request),
             tokens=token_buffer,
             max_length=encoded_prompt.shape[0] + max_gen_tokens
             if max_gen_tokens is not None
             else self.max_length,
             json_schema=json_schema,
             sampling_params=request.sampling_params,
+            target_endpoint=request.target_endpoint,
             grid_thws=grid_thws,
             position_ids=position_ids,
             image_token_indices=image_token_indices,

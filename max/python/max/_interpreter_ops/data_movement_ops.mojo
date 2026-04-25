@@ -13,7 +13,8 @@
 
 """Mojo kernel wrappers for data movement MO interpreter operations.
 
-Contains broadcast, transpose, memcpy, and slice operations.
+Contains broadcast, transpose, memcpy, slice, and mutable-store-slice
+operations.
 """
 
 from std.os import abort
@@ -25,10 +26,15 @@ from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ManagedTensorSlice
-from tensor.io_spec import Input, Output
+from tensor.io_spec import Input, MutableInput, Output
 from compiler_internal import StaticTensorSpec
 from layout import IntTuple, create_unknown_int_tuple
-from MOGGKernelAPI.MOGGKernelAPI import Slice, StaticBroadcastTo, Transpose
+from MOGGKernelAPI.MOGGKernelAPI import (
+    MutableStoreSlice,
+    Slice,
+    StaticBroadcastTo,
+    Transpose,
+)
 from op_utils import (
     _get_dtype,
     _get_buffer_ptr,
@@ -63,6 +69,10 @@ def PyInit_data_movement_ops() -> PythonObject:
             docstring="Copy elements between buffers with offsets",
         )
         b.def_function[slice_dispatcher]("Slice", docstring="Slice operation")
+        b.def_function[mutable_store_slice_dispatcher](
+            "MutableStoreSlice",
+            docstring="Write a dense slice into a strided region in-place",
+        )
 
         return b.finalize()
     except e:
@@ -100,7 +110,7 @@ def static_broadcast_to_op[
     in_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Call StaticBroadcastTo.execute with rank-5 tensors.
 
@@ -137,7 +147,7 @@ def static_broadcast_to_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 StaticBroadcastTo.execute[
                     target="gpu",
                     dtype=dtype,
@@ -163,7 +173,7 @@ struct _StaticBroadcastToBody(Dispatchable):
     var in_addr: Int
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         static_broadcast_to_op[t](
@@ -232,7 +242,7 @@ def transpose_op[
     in_shape: IndexList[MAX_RANK],
     out_shape: IndexList[MAX_RANK],
     perm_data: InlineArray[Int64, MAX_RANK],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Call Transpose.execute with MAX_RANK tensors.
 
@@ -277,7 +287,7 @@ def transpose_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 Transpose.execute[
                     target="gpu",
                     _trace_name="interpreter.transpose",
@@ -303,7 +313,7 @@ struct _TransposeBody(Dispatchable):
     var in_shape: IndexList[MAX_RANK]
     var out_shape: IndexList[MAX_RANK]
     var perm: InlineArray[Int64, MAX_RANK]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         transpose_op[t](
@@ -390,7 +400,7 @@ struct _MemcpyBody(Dispatchable):
     var dst_offset: Int
     var src_offset: Int
     var count: Int
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         memcpy_op[t](
@@ -453,7 +463,7 @@ def memcpy_op[
     dst_offset: Int,
     src_offset: Int,
     count: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Copy count elements from src+src_offset to dst+dst_offset.
 
@@ -486,7 +496,7 @@ def memcpy_op[
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](count), device_ctx
                 )
@@ -514,7 +524,7 @@ def slice_op[
     starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
     stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
     steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin],
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Call Slice.execute with MAX_RANK tensors.
 
@@ -575,7 +585,7 @@ def slice_op[
     else:
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 Slice.execute[
                     target="gpu",
                     _trace_name="interpreter.slice",
@@ -610,7 +620,7 @@ struct _SliceBody(Dispatchable):
     var starts_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
     var stops_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
     var steps_ptr: UnsafePointer[Scalar[DType.int64], MutExternalOrigin]
-    var ctx: OpaquePointer[MutExternalOrigin]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
 
     def call[t: DType](self) raises -> None:
         slice_op[t](
@@ -685,6 +695,195 @@ def slice_dispatcher(
             starts_ptr,
             stops_ptr,
             steps_ptr,
+            ctx,
+        ),
+        dtype,
+    )
+
+
+# ===----------------------------------------------------------------------=== #
+# MutableStoreSlice operation
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline
+def mutable_store_slice_op[
+    dtype: DType
+](
+    dst_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    src_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
+    dst_shape: IndexList[MAX_RANK],
+    src_shape: IndexList[MAX_RANK],
+    starts: InlineArray[Int64, MAX_RANK],
+    stops: InlineArray[Int64, MAX_RANK],
+    steps: InlineArray[Int64, MAX_RANK],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
+) raises:
+    """Call MutableStoreSlice.execute with MAX_RANK tensors.
+
+    Parameters:
+        dtype: The data type of the destination and source tensors.
+
+    Args:
+        dst_ptr: Pointer to the destination (full) buffer data.
+        src_ptr: Pointer to the dense source slice buffer data.
+        dst_shape: Destination shape padded to MAX_RANK with leading 1s.
+        src_shape: Source (slice) shape padded to MAX_RANK with leading 1s.
+        starts: Padded start indices (int64, length MAX_RANK).
+        stops: Padded stop indices (int64, length MAX_RANK).
+        steps: Padded step indices (int64, length MAX_RANK).
+        ctx: Device context pointer (null for CPU).
+    """
+    comptime dst_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+    comptime src_spec = StaticTensorSpec[dtype, MAX_RANK, ...].get_unknown()
+
+    var dst_tensor = ManagedTensorSlice[
+        io_spec=MutableInput, static_spec=dst_spec
+    ](dst_ptr, dst_shape)
+    var src_tensor = ManagedTensorSlice[io_spec=Input, static_spec=src_spec](
+        src_ptr, src_shape
+    )
+
+    comptime idx_spec = StaticTensorSpec[DType.int64, 1, ...].get_unknown()
+
+    # TODO: ManagedTensorSlice should correctly propagate mutability to
+    # prevent us from needing to unsafely cast the pointer mutability here.
+    var starts_ptr = starts.unsafe_ptr().unsafe_mut_cast[True]()
+    var stops_ptr = stops.unsafe_ptr().unsafe_mut_cast[True]()
+    var steps_ptr = steps.unsafe_ptr().unsafe_mut_cast[True]()
+
+    var starts_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
+        starts_ptr, IndexList[1](MAX_RANK)
+    )
+    var stops_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
+        stops_ptr, IndexList[1](MAX_RANK)
+    )
+    var steps_tensor = ManagedTensorSlice[io_spec=Input, static_spec=idx_spec](
+        steps_ptr, IndexList[1](MAX_RANK)
+    )
+
+    if not ctx:
+        MutableStoreSlice.execute[target="cpu", dtype=dtype, rank=MAX_RANK](
+            dst_tensor,
+            src_tensor,
+            starts_tensor,
+            stops_tensor,
+            steps_tensor,
+            DeviceContextPtr(),
+        )
+    else:
+        comptime if has_accelerator():
+            comptime if dtype != DType.float64:
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
+                MutableStoreSlice.execute[
+                    target="gpu", dtype=dtype, rank=MAX_RANK
+                ](
+                    dst_tensor,
+                    src_tensor,
+                    starts_tensor,
+                    stops_tensor,
+                    steps_tensor,
+                    device_ctx,
+                )
+            else:
+                raise Error(
+                    "GPU execution not supported for mutable.store.slice with"
+                    " dtype float64"
+                )
+        else:
+            raise Error("No GPU accelerator available")
+
+
+@fieldwise_init
+struct _MutableStoreSliceBody(Dispatchable):
+    """Dispatch body for the MutableStoreSlice operation over data dtypes."""
+
+    var dst_addr: Int
+    var src_addr: Int
+    var dst_shape: IndexList[MAX_RANK]
+    var src_shape: IndexList[MAX_RANK]
+    var starts: InlineArray[Int64, MAX_RANK]
+    var stops: InlineArray[Int64, MAX_RANK]
+    var steps: InlineArray[Int64, MAX_RANK]
+    var ctx: Optional[OpaquePointer[MutExternalOrigin]]
+
+    def call[t: DType](self) raises -> None:
+        mutable_store_slice_op[t](
+            _make_ptr[t](self.dst_addr),
+            _make_ptr[t](self.src_addr),
+            self.dst_shape,
+            self.src_shape,
+            self.starts,
+            self.stops,
+            self.steps,
+            self.ctx,
+        )
+
+
+def mutable_store_slice_dispatcher(
+    dst_buffer: PythonObject,
+    src_buffer: PythonObject,
+    starts_obj: PythonObject,
+    stops_obj: PythonObject,
+    steps_obj: PythonObject,
+    device_context_ptr: PythonObject,
+) raises:
+    """MutableStoreSlice dispatcher - unwraps PythonObjects and dispatches.
+
+    Pads shapes and start/stop/step to MAX_RANK (leading 1s for shapes;
+    identity 0/1/1 for starts/stops/steps). MOGG's ``slice_as_view``
+    normalizes negative indices so the caller doesn't need to.
+
+    Args:
+        dst_buffer: Destination (full) mutable buffer.
+        src_buffer: Source (dense slice) buffer.
+        starts_obj: Python int sequence of start indices (length dst.rank).
+        stops_obj: Python int sequence of stop indices (length dst.rank).
+        steps_obj: Python int sequence of step values (length dst.rank).
+        device_context_ptr: Device context pointer (null for CPU).
+    """
+    # Caller must ensure src and dst share the same dtype (or be reinterpreted
+    # to match); dtype is taken from dst only.
+    var dtype = _get_dtype(dst_buffer)
+    var dst_shape_obj = dst_buffer.shape
+    var src_shape_obj = src_buffer.shape
+    var dst_rank = Int(py=len(dst_shape_obj))
+    var src_rank = Int(py=len(src_shape_obj))
+    var dst_addr = Int(py=dst_buffer._data_ptr())
+    var src_addr = Int(py=src_buffer._data_ptr())
+    var ctx = _get_ctx(device_context_ptr)
+
+    if dst_rank > MAX_RANK or src_rank > MAX_RANK:
+        raise Error(
+            "Unsupported rank for mutable.store.slice: dst_rank="
+            + String(dst_rank)
+            + ", src_rank="
+            + String(src_rank)
+            + ". Max supported rank is "
+            + String(MAX_RANK)
+        )
+
+    var padded_dst_shape = _pad_shape_to_max_rank(dst_shape_obj, dst_rank)
+    var padded_src_shape = _pad_shape_to_max_rank(src_shape_obj, src_rank)
+
+    var pad_count = MAX_RANK - dst_rank
+    var padded_starts = InlineArray[Int64, MAX_RANK](fill=0)
+    var padded_stops = InlineArray[Int64, MAX_RANK](fill=1)
+    var padded_steps = InlineArray[Int64, MAX_RANK](fill=1)
+    for i in range(dst_rank):
+        padded_starts[pad_count + i] = Int64(Int(py=starts_obj[i]))
+        padded_stops[pad_count + i] = Int64(Int(py=stops_obj[i]))
+        padded_steps[pad_count + i] = Int64(Int(py=steps_obj[i]))
+
+    dispatch_dtype(
+        _MutableStoreSliceBody(
+            dst_addr,
+            src_addr,
+            padded_dst_shape,
+            padded_src_shape,
+            padded_starts,
+            padded_stops,
+            padded_steps,
             ctx,
         ),
         dtype,

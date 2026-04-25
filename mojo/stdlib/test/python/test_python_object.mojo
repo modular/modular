@@ -150,7 +150,7 @@ def _test_inplace_dunder_methods(mut python: Python) raises:
     # @always_inline
     # def __init__[
     #    *Ts: ConvertibleToPython & Copyable
-    # ](out self, var *values: *Ts, __list_literal__: ()) raises:
+    # ](out self, var *values: *Ts, __list_literal__: NoneType) raises:
     #     pass
     #
     # Note that there is no @implicit

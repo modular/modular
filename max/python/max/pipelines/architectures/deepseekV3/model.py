@@ -23,7 +23,7 @@ import numpy as np
 from max.driver import Buffer, DevicePinnedBuffer, is_virtual_device_mode
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph
+from max.graph import DeviceRef, Graph, ops
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
 from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
@@ -80,7 +80,7 @@ class DeepseekV3Inputs(DeepseekV2Inputs):
             self.return_n_logits,
             self.data_parallel_splits,
             *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
+            *(self.kv_cache_inputs.flatten() if self.kv_cache_inputs else ()),
             *self.batch_context_lengths,
             *self.ep_inputs,
         )
@@ -259,12 +259,18 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
         model_config.return_logits = self.return_logits
         model_config.return_hidden_states = self.return_hidden_states
 
-        if ep_size > 1:
-            attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+        num_devices = len(self.devices)
+        if num_devices > 1:
+            if ep_size > 1:
+                attn_strategy = "TP" if data_parallel_degree == 1 else "DP"
+                moe_strategy = "EP"
+            else:
+                attn_strategy = "TP"
+                moe_strategy = "TP"
             logger.info(
                 f"DeepSeekV3: data_parallel_degree={data_parallel_degree},"
-                f" ep_size={ep_size}. Use {attn_strategy}-attention + EP-MoE"
-                f" strategy."
+                f" ep_size={ep_size}. Use {attn_strategy}-attention +"
+                f" {moe_strategy}-MoE strategy."
             )
 
         return model_config
@@ -536,13 +542,6 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
             # Create the model
             config = self._create_model_config(state_dict)
 
-            n_devices = len(self.devices)
-            if (
-                n_devices > 1
-                and self.pipeline_config.runtime.ep_size != n_devices
-            ):
-                raise ValueError("Only the EP strategy is supported.")
-
             self.ep_comm_initializer: EPCommInitializer | None = None
             # Skip EP initialization in virtual device mode (compilation-only)
             # since NVSHMEM functions cannot be linked without real GPU devices.
@@ -603,8 +602,10 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 ]
 
                 # Unmarshal the KV cache arguments.
-                fetch_types = self.kv_params.get_symbolic_inputs()[0]
-                len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
+                fetch_types = (
+                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                )
+                len_of_kv_inputs = len(fetch_types) * len(self.devices)
                 kv_caches_per_dev = self._unflatten_kv_inputs(
                     [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
                 )
@@ -618,12 +619,19 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
                 # all remaining arguments are for EP inputs
                 ep_model_inputs = list(variadic_args_iter)
 
+                # DeepseekV3.__call__ expects a per-device list for
+                # input_row_offsets
+                input_row_offsets_per_dev = list(
+                    ops.distributed_broadcast(
+                        devices_input_row_offsets.tensor, signal_buffers
+                    )
+                )
                 outputs = nn_model(
                     tokens.tensor,
                     signal_buffers,
                     kv_caches_per_dev,
                     return_n_logits.tensor,
-                    devices_input_row_offsets.tensor,
+                    input_row_offsets_per_dev,
                     host_input_row_offsets.tensor,
                     data_parallel_splits.tensor,
                     batch_context_lengths,
@@ -690,7 +698,7 @@ class DeepseekV3Model(AlwaysSignalBuffersMixin, DeepseekV2Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> DeepseekV3Inputs:
         dp = self.pipeline_config.model.data_parallel_degree

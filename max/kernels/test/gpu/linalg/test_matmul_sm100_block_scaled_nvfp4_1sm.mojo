@@ -82,7 +82,7 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 ) raises:
     print(
         t"in/out dtypes=({a_type}, {b_type}, {c_type}, {scales_dtype})  problem"
-        t" shape=({m.value()}, {n.value()}, {k.value()})"
+        t" shape=({Int(m.value())}, {Int(n.value())}, {Int(k.value())})"
         t" mma_shape={mma_shape} block_tile_shape={block_tile_shape} cta_group={cta_group} cluster_shape=({cluster_shape[0]},"
         t" {cluster_shape[1]}, {cluster_shape[2]})"
         t" swapAB={swapAB} k_group_size={k_group_size} SF_VECTOR_SIZE={SF_VECTOR_SIZE} alpha={alpha}"
@@ -94,9 +94,9 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     )
     var c_shape = row_major(Coord(m, Idx[NType.static_value]()))
 
-    var a_size = m.value() * (KType.static_value // 2)
-    var b_size = n.value() * (KType.static_value // 2)
-    var c_size = m.value() * n.value()
+    var a_size = Int(m.value()) * (KType.static_value // 2)
+    var b_size = Int(n.value()) * (KType.static_value // 2)
+    var c_size = Int(m.value()) * Int(n.value())
 
     var a_host_ptr = alloc[Scalar[a_type]](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
@@ -108,17 +108,17 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
     var a_scales_shape = row_major(
         Coord(
-            Idx(ceildiv(m.value(), SF_MN_GROUP_SIZE)),
+            Idx(ceildiv(Int(m.value()), SF_MN_GROUP_SIZE)),
             Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
             Idx[SF_ATOM_M[0]](),
             Idx[SF_ATOM_M[1]](),
@@ -146,15 +146,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # LayoutTensors for reference matmul (vendor_blas)
     var a_lt = a_tensor.to_layout_tensor()
@@ -165,12 +161,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     # Initialize matmul operands
     if simple_init():
-        for m in range(m.value()):
-            for k in range(k.value() // 2):
+        for m in range(Int(m.value())):
+            for k in range(Int(k.value()) // 2):
                 comptime assert a_host.flat_rank >= 2
                 a_host[(Idx(m), Idx(k))] = UInt8(m).cast[a_type]()
-        for n in range(n.value()):
-            for k in range(k.value() // 2):
+        for n in range(Int(n.value())):
+            for k in range(Int(k.value()) // 2):
                 comptime assert b_host.flat_rank >= 2
                 b_host[(Idx(n), Idx(k))] = UInt8(n).cast[b_type]()
     else:
@@ -180,20 +176,24 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     rand(a_scales_host.ptr, a_scales_host.num_elements())
     rand(b_scales_host.ptr, b_scales_host.num_elements())
     # NOTE: It is very important that we set unused scales to 0.0 otherwise we will hit accuracy issues
-    for idx0 in range(align_up(m.value(), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(m.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
-            0, align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+            0,
+            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_VECTOR_SIZE,
         ):
-            if idx0 >= m.value() or idx1 >= k.value():
+            if idx0 >= Int(m.value()) or idx1 >= Int(k.value()):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     a_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
 
-    for idx0 in range(align_up(n.value(), SF_MN_GROUP_SIZE)):
+    for idx0 in range(align_up(Int(n.value()), SF_MN_GROUP_SIZE)):
         for idx1 in range(
-            0, align_up(k.value(), SF_VECTOR_SIZE * SF_ATOM_K), SF_VECTOR_SIZE
+            0,
+            align_up(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K),
+            SF_VECTOR_SIZE,
         ):
-            if idx0 >= n.value() or idx1 >= k.value():
+            if idx0 >= Int(n.value()) or idx1 >= Int(k.value()):
                 set_scale_factor[SF_VECTOR_SIZE=SF_VECTOR_SIZE](
                     b_scales_host, idx0, idx1, Scalar[scales_dtype](0.0)
                 )
@@ -234,11 +234,11 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
 
     vendor_blas.matmul(
         ctx,
-        c_ref_tensor_lt,
+        c_ref_tensor_lt.as_any_origin(),
         a_lt,
         b_lt,
-        a_scales=a_scales_lt.get_immutable(),
-        b_scales=b_scales_lt.get_immutable(),
+        a_scales=a_scales_lt.get_immutable().as_any_origin(),
+        b_scales=b_scales_lt.get_immutable().as_any_origin(),
         transpose_b=transpose_b,
         c_row_major=True,
         alpha=alpha,

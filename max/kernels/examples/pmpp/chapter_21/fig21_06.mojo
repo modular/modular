@@ -139,8 +139,8 @@ def main() raises:
     var grid_dim_y = (vol_dim.y + BLOCK_DIM_Y - 1) // BLOCK_DIM_Y
 
     ctx.enqueue_function[cenergy_gather_kernel, cenergy_gather_kernel](
-        d_energygrid.unsafe_ptr(),
-        d_atoms.unsafe_ptr(),
+        d_energygrid,
+        d_atoms,
         vol_dim.x,
         vol_dim.y,
         gridspacing,

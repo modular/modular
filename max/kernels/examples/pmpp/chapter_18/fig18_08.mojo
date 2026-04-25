@@ -20,7 +20,7 @@ marks itself as visited at the current level.
 
 from std.gpu import block_dim, block_idx, grid_dim, thread_idx
 from std.gpu.host import DeviceContext
-from std.os import Atomic
+from std.atomic import Atomic
 from std.collections import List
 
 from graph_utils import (
@@ -110,11 +110,11 @@ def main() raises:
         ctx.enqueue_copy(d_new_vertex_visited, h_flag)
 
         ctx.enqueue_function_experimental[bfs_kernel](
-            d_dst_ptrs.unsafe_ptr(),
-            d_src.unsafe_ptr(),
+            d_dst_ptrs,
+            d_src,
             NUM_VERTICES,
-            d_level.unsafe_ptr(),
-            d_new_vertex_visited.unsafe_ptr(),
+            d_level,
+            d_new_vertex_visited,
             curr_level,
             grid_dim=(grid_size, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

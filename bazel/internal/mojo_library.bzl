@@ -30,21 +30,22 @@ def mojo_library(
         copts = copts,
     )
 
-    mojo_doc(
-        name = name + ".docs",
-        srcs = srcs,
-        deps = deps,
-        validate_missing_docs = validate_missing_docs,
-        docs_base_path = docs_base_path,
-        show_stability_markers = show_stability_markers,
-        visibility = visibility,
-        tags = [ALLOW_UNUSED_TAG] + tags,
-        testonly = testonly,
-    )
+    if not testonly:
+        mojo_doc(
+            name = name + ".docs",
+            srcs = srcs,
+            deps = deps,
+            validate_missing_docs = validate_missing_docs,
+            docs_base_path = docs_base_path,
+            show_stability_markers = show_stability_markers,
+            visibility = visibility,
+            tags = [ALLOW_UNUSED_TAG] + tags,
+            testonly = testonly,
+        )
 
-    build_test(
-        name = name + ".docs_test",
-        targets = [name + ".docs"],
-        tags = ["mojo-docs", "lint-test"] + tags,
-        visibility = ["//visibility:private"],
-    )
+        build_test(
+            name = name + ".docs_test",
+            targets = [name + ".docs"],
+            tags = ["mojo-docs", "lint-test"] + tags,
+            visibility = ["//visibility:private"],
+        )

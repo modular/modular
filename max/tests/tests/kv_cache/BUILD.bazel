@@ -13,7 +13,6 @@ modular_py_test(
         ["*.py"],
         exclude = ["test_disk_tier.py"],
     ),
-    mojo_deps = ["//max:MOGGKernelAPI"],
     deps = [
         "//max/python/max/dtype",
         "//max/python/max/graph",

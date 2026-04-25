@@ -16,8 +16,8 @@ from std.math import ceildiv
 from std.sys import has_accelerator
 
 from std.gpu.host import DeviceContext
-from std.gpu import global_idx_uint as global_idx
-from layout import Layout, LayoutTensor
+from std.gpu import global_idx
+from layout import TileTensor, row_major
 
 comptime WIDTH = 5
 comptime HEIGHT = 10
@@ -25,8 +25,8 @@ comptime NUM_CHANNELS = 3
 
 comptime int_dtype = DType.uint8
 comptime float_dtype = DType.float32
-comptime rgb_layout = Layout.row_major(HEIGHT, WIDTH, NUM_CHANNELS)
-comptime gray_layout = Layout.row_major(HEIGHT, WIDTH)
+comptime rgb_layout = row_major[HEIGHT, WIDTH, NUM_CHANNELS]()
+comptime gray_layout = row_major[HEIGHT, WIDTH]()
 
 
 def main() raises:
@@ -45,7 +45,7 @@ def main() raises:
 
     # Map device buffer to host to initialize values from CPU
     with rgb_buffer.map_to_host() as host_buffer:
-        var rgb_tensor = LayoutTensor[int_dtype, rgb_layout](host_buffer)
+        var rgb_tensor = TileTensor(host_buffer, rgb_layout)
         # Fill the image with initial colors.
         for row in range(HEIGHT):
             for col in range(WIDTH):
@@ -53,8 +53,8 @@ def main() raises:
                 rgb_tensor[row, col, 1] = UInt8(row + col + 20)
                 rgb_tensor[row, col, 2] = UInt8(row + col + 40)
 
-    var rgb_tensor = LayoutTensor[int_dtype, rgb_layout](rgb_buffer)
-    var gray_tensor = LayoutTensor[int_dtype, gray_layout](gray_buffer)
+    var rgb_tensor = TileTensor(rgb_buffer, rgb_layout)
+    var gray_tensor = TileTensor(gray_buffer, gray_layout)
 
     # The grid is divided up into blocks, making sure there's an extra
     # full block for any remainder. This hasn't been tuned for any specific
@@ -74,14 +74,14 @@ def main() raises:
     )
 
     with gray_buffer.map_to_host() as host_buffer:
-        host_tensor = LayoutTensor[int_dtype, gray_layout](host_buffer)
+        host_tensor = TileTensor(host_buffer, gray_layout)
         print("Resulting grayscale image:")
         print_image(host_tensor)
 
 
 def color_to_grayscale(
-    rgb_tensor: LayoutTensor[int_dtype, rgb_layout, MutAnyOrigin],
-    gray_tensor: LayoutTensor[int_dtype, gray_layout, MutAnyOrigin],
+    rgb_tensor: TileTensor[int_dtype, type_of(rgb_layout), MutAnyOrigin],
+    gray_tensor: TileTensor[int_dtype, type_of(gray_layout), MutAnyOrigin],
 ):
     """Converting each RGB pixel to grayscale, parallelized across the output tensor on the GPU.
     """
@@ -97,7 +97,9 @@ def color_to_grayscale(
         gray_tensor[row, col] = gray.cast[int_dtype]()
 
 
-def print_image(gray_tensor: LayoutTensor[int_dtype, gray_layout, ...]) raises:
+def print_image(
+    gray_tensor: TileTensor[int_dtype, type_of(gray_layout), ...]
+) raises:
     """A helper function to print out the grayscale channel intensities."""
     for row in range(HEIGHT):
         for col in range(WIDTH):

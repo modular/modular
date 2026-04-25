@@ -14,6 +14,7 @@
 
 from std.gpu.host import DeviceContext, get_gpu_target
 from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 from linalg.fp4_utils import (
     SF_ATOM_M,
@@ -40,7 +41,7 @@ from std.gpu.compute.arch.mma_nvidia_sm100 import UMMAKind
 from linalg.matmul.gpu.sm100.block_scaled_matmul import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from linalg.matmul.gpu.sm100_structured.default.tuning_configs import (
     TuningConfigSM100,
     _get_tuning_list_sm100_nvfp4,
@@ -162,6 +163,10 @@ def heuristic_and_outliers_dispatch[
                 num_clc_pipeline_stages=tuning_config.num_clc_pipeline_stages,
                 k_group_size=tuning_config.k_group_size,
                 num_split_k=tuning_config.num_split_k,
+                num_pipeline_stages=Optional(
+                    tuning_config.num_pipeline_stages
+                ) if tuning_config.num_pipeline_stages
+                > 0 else None,
                 is_small_bn=tuning_config.is_small_bn,
             )
 
@@ -172,6 +177,7 @@ def heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 config=matmul_config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
@@ -198,6 +204,7 @@ def heuristic_and_outliers_dispatch[
             transpose_b=transpose_b,
             config=config,
             elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
 
@@ -226,6 +233,7 @@ def heuristic_and_outliers_dispatch[
                 transpose_b=transpose_b,
                 config=config,
                 elementwise_lambda_fn=elementwise_lambda_fn,
+                elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
                 pdl_level=pdl_level,
             ](c, a, b, a_scales, b_scales, tensor_sf, ctx)
             return DISPATCH_HIT
@@ -251,6 +259,9 @@ def _block_scaled_matmul_with_epilogue[
         a_type, b_type, c_type, scales_dtype, scales_dtype, transpose_b
     ],
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    elementwise_compute_lambda_fn: Optional[
+        elementwise_compute_lambda_type
+    ] = None,
     pdl_level: PDLLevel = PDLLevel(),
 ](
     c: TileTensor[mut=True, c_type, ...],
@@ -264,7 +275,9 @@ def _block_scaled_matmul_with_epilogue[
     """Our sm100 block scaled matmul kernel still does not support fusion of elementwise
     operations. This is a temporary implementation that uses our sm100 block scaled matmul
     kernel and dispatch a separate epilogue kernel to apply the elementwise
-    operations.
+    operations. Callers must allocate `c`; when an `elementwise_lambda_fn`
+    is supplied the matmul result is written into `c` and then read back
+    by the lambda.
     """
 
     var m = Int(c.dim[0]())
@@ -272,15 +285,14 @@ def _block_scaled_matmul_with_epilogue[
     if m == 0 or n == 0:
         return
 
-    comptime if not elementwise_lambda_fn:
-        if not c.ptr:
-            raise "c must be allocated!"
+    comptime K_phys = a.static_shape[1]
 
-        comptime K_phys = a.static_shape[1]
+    comptime if not elementwise_lambda_fn:
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
             K=K_phys,
             config=config,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
             pdl_level=pdl_level,
         ](
             c,
@@ -291,7 +303,6 @@ def _block_scaled_matmul_with_epilogue[
             ctx,
             alpha=tensor_sf,
         )
-        return
     else:
         comptime epilogue = elementwise_lambda_fn.value()
         # Nvidia GPUs >= sm_100 arch support 32B load/store to global memory.
@@ -314,55 +325,22 @@ def _block_scaled_matmul_with_epilogue[
             )
             epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
 
-        # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
-        # apply the epilogue.
-        if c.ptr:
-            comptime K_phys = a.static_shape[1]
-            blackwell_block_scaled_matmul_tma_umma_warp_specialized[
-                transpose_b=transpose_b,
-                K=K_phys,
-                config=config,
-                pdl_level=pdl_level,
-            ](
-                c,
-                a,
-                b,
-                a_scales,
-                b_scales,
-                ctx,
-                alpha=tensor_sf,
-            )
-            elementwise[epilogue_wrapper, simd_size, target="gpu"](
-                Index(m, n), ctx
-            )
-            return
-
-        # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var num_elems = m * n
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](num_elems)
-        var c_tmp = TileTensor(
-            rebind[UnsafePointer[Scalar[c_type], MutExternalOrigin]](
-                tmp_device_buffer.unsafe_ptr()
-            ),
-            row_major(Coord(Idx(m), Idx(n))),
-        )
-
-        _block_scaled_matmul_with_epilogue[
-            SF_VECTOR_SIZE=SF_VECTOR_SIZE,
+        blackwell_block_scaled_matmul_tma_umma_warp_specialized[
             transpose_b=transpose_b,
+            K=K_phys,
             config=config,
-            elementwise_lambda_fn=elementwise_lambda_fn,
+            elementwise_compute_lambda_fn=elementwise_compute_lambda_fn,
+            pdl_level=pdl_level,
         ](
-            c_tmp,
+            c,
             a,
             b,
             a_scales,
             b_scales,
-            tensor_sf,
             ctx,
+            alpha=tensor_sf,
         )
-
-        _ = tmp_device_buffer^
+        elementwise[epilogue_wrapper, simd_size, target="gpu"](Index(m, n), ctx)
 
 
 def _vendor_blas_block_scaled_matmul_with_epilogue[
@@ -370,22 +348,17 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
     a_type: DType,
     b_type: DType,
     scales_dtype: DType,
-    c_layout: Layout,
-    a_layout: Layout,
-    b_layout: Layout,
-    sfa_layout: Layout,
-    sfb_layout: Layout,
     //,
     *,
     SF_VECTOR_SIZE: Int,
     transpose_b: Bool = True,
     elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
 ](
-    c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    a: LayoutTensor[a_type, a_layout, MutAnyOrigin],
-    b: LayoutTensor[b_type, b_layout, MutAnyOrigin],
-    a_scales: LayoutTensor[scales_dtype, sfa_layout, MutAnyOrigin],
-    b_scales: LayoutTensor[scales_dtype, sfb_layout, MutAnyOrigin],
+    c: NullableTileTensor[mut=True, c_type, ...],
+    a: TileTensor[a_type, ...],
+    b: TileTensor[b_type, ...],
+    a_scales: TileTensor[scales_dtype, ...],
+    b_scales: TileTensor[scales_dtype, ...],
     tensor_sf: Float32,
     ctx: DeviceContext,
 ) raises:
@@ -404,24 +377,20 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
     ), "SF_VECTOR_SIZE must be equal to NVFP4_SF_VECTOR_SIZE (16 for NVFP4)"
 
     comptime assert (
-        sfa_layout.shape[1].value() == sfb_layout.shape[1].value()
+        a_scales.static_shape[1] == b_scales.static_shape[1]
     ), "Both A and B scales must have the same shape in K dimension"
     comptime assert (
-        sfa_layout.shape[2].value()
-        == sfb_layout.shape[2].value()
-        == SF_ATOM_M[0]
+        a_scales.static_shape[2] == b_scales.static_shape[2] == SF_ATOM_M[0]
     ), ""
     comptime assert (
-        sfa_layout.shape[3].value()
-        == sfb_layout.shape[3].value()
-        == SF_ATOM_M[1]
+        a_scales.static_shape[3] == b_scales.static_shape[3] == SF_ATOM_M[1]
     ), ""
     comptime assert (
-        sfa_layout.shape[4].value() == sfb_layout.shape[4].value() == SF_ATOM_K
+        a_scales.static_shape[4] == b_scales.static_shape[4] == SF_ATOM_K
     ), ""
 
-    var m = c.dim(0)
-    var n = c.dim(1)
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
     if m == 0 or n == 0:
         return
 
@@ -431,11 +400,11 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
 
         matmul(
             ctx,
-            c,
+            c.value(),
             a,
             b,
-            a_scales=a_scales.get_immutable(),
-            b_scales=b_scales.get_immutable(),
+            a_scales=a_scales,
+            b_scales=b_scales,
             transpose_b=True,
             c_row_major=True,
             alpha=tensor_sf,
@@ -448,28 +417,31 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
             simd_width_of[c_type, target=get_gpu_target()]()
         )
 
-        @parameter
-        @__copy_capture(c)
-        def epilogue_wrapper[
-            simd_width: Int, rank: Int, alignment: Int = 1
-        ](idx: IndexList[rank]):
-            var c_coord = Index(idx[0], idx[1])
-            var c_val = c.load[width=simd_width,](c_coord)
-            epilogue[c_type, simd_width, alignment=alignment](c_coord, c_val)
-
         # If c is already allocated, we can just use the sm100 blockwise scaled fp8 matmul and
         # apply the epilogue.
         if c.ptr:
-            var m = c.dim[0]()
-            var n = c.dim[1]()
+            var c_tt = c.value()
+
+            @parameter
+            @__copy_capture(c_tt)
+            def epilogue_wrapper[
+                simd_width: Int, rank: Int, alignment: Int = 1
+            ](idx: IndexList[rank]):
+                var c_coord = Index(idx[0], idx[1])
+                var c_val = rebind[SIMD[c_type, simd_width]](
+                    c_tt.load[width=simd_width](Coord(c_coord))
+                )
+                epilogue[c_type, simd_width, alignment=alignment](
+                    c_coord, c_val
+                )
 
             matmul(
                 ctx,
-                c,
+                c_tt,
                 a,
                 b,
-                a_scales=a_scales.get_immutable(),
-                b_scales=b_scales.get_immutable(),
+                a_scales=a_scales,
+                b_scales=b_scales,
                 alpha=tensor_sf,
                 transpose_b=True,
                 c_row_major=True,
@@ -480,9 +452,10 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
             return
 
         # Otherwise, we need to allocate a new buffer for c and apply the epilogue.
-        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](c.size())
-        var c_tmp = c
-        c_tmp.ptr = tmp_device_buffer.unsafe_ptr()
+        var tmp_device_buffer = ctx.enqueue_create_buffer[c_type](
+            c.num_elements()
+        )
+        var c_tmp = TileTensor(tmp_device_buffer, c.layout)
 
         _vendor_blas_block_scaled_matmul_with_epilogue[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
@@ -497,5 +470,3 @@ def _vendor_blas_block_scaled_matmul_with_epilogue[
             tensor_sf,
             ctx,
         )
-
-        _ = tmp_device_buffer^

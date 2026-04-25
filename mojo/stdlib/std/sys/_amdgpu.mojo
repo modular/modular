@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import InlineArray
-from std.os import Atomic
+from std.atomic import Atomic, Ordering
 from std.sys.intrinsics import (
     ballot,
     implicitarg_ptr,
@@ -21,9 +21,9 @@ from std.sys.intrinsics import (
     sendmsg,
 )
 
-from std.gpu.primitives.id import lane_id_uint as lane_id
+from std.gpu.primitives.id import lane_id
 from std.memory import Span
-from std.memory._nonnull import NonNullUnsafePointer, _Null
+from std.memory.unsafe_pointer import _Null
 
 # NOTE: MOST OF THE CODE HERE IS ADAPTED FROM
 # AMD'S `device-libs`.
@@ -62,7 +62,7 @@ def update_mbox(sig: UnsafePointer[mut=False, amd_signal_t, ...]):
             UInt64, ExternalOrigin[mut=True], address_space=AddressSpace.GLOBAL
         ](unsafe_from_address=Int(mb))
         var id = sig[].event_id.cast[DType.uint64]()
-        Atomic.store(mb_ptr, id)
+        Atomic.store[ordering=Ordering.RELEASE](mb_ptr, id)
         sendmsg(1 | (0 << 4), readfirstlane(id.cast[DType.int32]()) & 0xFF)
 
 
@@ -75,7 +75,9 @@ def hsa_signal_add(sig: UInt64, value: UInt64):
             address_space=AddressSpace.GLOBAL,
         ]
     ]()[]
-    _ = Atomic.fetch_add(UnsafePointer(to=s[].value), value)
+    _ = Atomic.fetch_add[ordering=Ordering.RELEASE](
+        UnsafePointer(to=s[].value), value
+    )
     update_mbox(s)
 
 
@@ -585,12 +587,10 @@ struct Header(TrivialRegisterPassable):
             var ready_flag = UInt32(1)
             if me == low:
                 var ptr = UnsafePointer(to=self._handle[].control)
-                var control = Atomic.fetch_add(ptr, 0)
+                var control = Atomic.load[ordering=Ordering.ACQUIRE](ptr)
                 ready_flag = get_ready_flag(control)
 
-            ready_flag = readfirstlane(ready_flag.cast[DType.int32]()).cast[
-                DType.uint32
-            ]()
+            ready_flag = readfirstlane(ready_flag)
 
             if ready_flag == 0:
                 break
@@ -652,17 +652,19 @@ struct Buffer(TrivialRegisterPassable):
         )
 
     def pop(mut self, top: UnsafePointer[mut=True, UInt64, ...]) -> UInt64:
-        var f = Atomic.fetch_add(top, 0)
+        var f = Atomic.load[ordering=Ordering.ACQUIRE](top)
         # F is guaranteed to be non-zero, since there are at least as
         # many packets as there are waves, and each wave can hold at most
         # one packet.
         while True:
             var p = self.get_header(f)
-            var n = Atomic.fetch_add(
-                UnsafePointer(to=p._handle[].next),
-                0,
+            var n = Atomic.load[ordering=Ordering.RELAXED](
+                UnsafePointer(to=p._handle[].next)
             )
-            if Atomic.compare_exchange(top, f, n):
+            if Atomic.compare_exchange[
+                success_ordering=Ordering.ACQUIRE,
+                failure_ordering=Ordering.RELAXED,
+            ](top, f, n):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
         return f
@@ -679,22 +681,17 @@ struct Buffer(TrivialRegisterPassable):
                 UnsafePointer(to=self._handle[].free_stack),
             )
 
-        var ptr_lo = packet_ptr
-        var ptr_hi = packet_ptr >> 32
-        var ptr_lo_32 = readfirstlane(ptr_lo.cast[DType.int32]())
-        var ptr_hi_32 = readfirstlane(ptr_hi.cast[DType.int32]())
-
-        return (
-            ptr_hi_32.cast[DType.uint64]() << 32
-            | ptr_lo_32.cast[DType.uint64]()
-        )
+        return readfirstlane(packet_ptr)
 
     def push(mut self, top: UnsafePointer[mut=True, UInt64, ...], ptr: UInt64):
-        var f = Atomic.fetch_add(top, 0)
+        var f = Atomic.load[ordering=Ordering.RELAXED](top)
         var p = self.get_header(ptr)
         while True:
             p._handle[].next = f
-            if Atomic.compare_exchange(top, f, ptr):
+            if Atomic.compare_exchange[
+                success_ordering=Ordering.RELEASE,
+                failure_ordering=Ordering.RELAXED,
+            ](top, f, ptr):
                 break
             llvm_intrinsic["llvm.amdgcn.s.sleep", NoneType](Int32(1))
 
@@ -875,7 +872,7 @@ def hostcall(
     )
 
     var me = UInt32(lane_id())
-    var low = readfirstlane(Int32(me)).cast[DType.uint32]()
+    var low = readfirstlane(me)
 
     var packet_ptr = buffer.pop_free_stack(me, low)
 

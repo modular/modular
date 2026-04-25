@@ -27,12 +27,15 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID, TextGenerationContext
 from max.kv_cache.kv_connector import KVConnector
+from max.kv_cache.memory_tier import MemoryTier
 from max.nn.kv_cache import (
     KVCacheBuffer,
     KVCacheInputs,
-    KVCacheInputsPerDevice,
+    KVCacheParamInterface,
     KVCacheParams,
+    MultiKVCacheParams,
 )
+from max.nn.kv_cache import KVCacheInputsPerDevice as _KVCacheInputsPerDevice
 from max.nn.kv_cache.data_parallelism_utils import split_into_groups
 from max.nn.kv_cache.metrics import KVCacheMetrics
 from max.nn.kv_cache.utils import (
@@ -40,13 +43,14 @@ from max.nn.kv_cache.utils import (
     build_max_lengths_tensor,
 )
 from max.profiler import traced
-from max.serve.kvcache_agent.kvcache_types import MemoryTier
 from max.support.math import ceildiv
 
 from ..connectors import create_connector
 from .block_manager import BlockManager, _compute_seq_len
 
 logger = logging.getLogger("max.pipelines")
+
+KVCacheInputsPerDevice = _KVCacheInputsPerDevice[Buffer, Buffer]
 
 
 def _contiguous_prefix_2d(buffer: Buffer, rows: int, cols: int) -> Buffer:
@@ -120,8 +124,8 @@ class _ReplicaMetadata:
     persistent_kv_device_input_buffers: _PersistentKVDeviceInputBuffers
     """Persistent device input buffers for the KV cache."""
 
-    device_buffer: KVCacheBuffer
-    """Device buffer for the KV cache."""
+    device_buffers: list[KVCacheBuffer]
+    """Device buffers for each KV cache (length 1 for single-cache models)."""
 
     devices: Sequence[Device]
     """Devices for the replica."""
@@ -166,7 +170,7 @@ class PagedKVCacheManager:
 
     def __init__(
         self,
-        params: KVCacheParams,
+        params: KVCacheParamInterface,
         session: InferenceSession,
         total_num_pages: int,
         total_num_host_pages: int = 0,
@@ -177,24 +181,34 @@ class PagedKVCacheManager:
         """Initialize the multi-device paged KV cache manager.
 
         Args:
-            params: KV cache parameters including data parallelism settings
-            session: The MAX Engine inference session
-            total_num_pages: The total number of pages to allocate
-            total_num_host_pages: The total number of host pages to allocate
+            params: KV cache parameters.  Pass ``MultiKVCacheParams`` for
+                models with more than one KV cache.
+            session: The MAX Engine inference session.
+            total_num_pages: The total number of pages to allocate.
+            total_num_host_pages: The total number of host pages to allocate.
             max_batch_size: Maximum runtime batch size used to preallocate
                 per-replica runtime lookup-table/cache-length row capacity.
-            enable_runtime_checks: Whether to enable runtime checks
+            enable_runtime_checks: Whether to enable runtime checks.
         """
         if max_batch_size < 1:
             raise ValueError("max_batch_size must be positive")
 
         self.params = params
-        devices = [d.to_device() for d in params.devices]
+
+        if isinstance(params, MultiKVCacheParams):
+            self._cache_params: list[KVCacheParams] = list(params.params)
+        else:
+            assert isinstance(params, KVCacheParams)
+            self._cache_params = [params]
+        self._num_caches = len(self._cache_params)
+
+        primary_params = self._cache_params[0]
+        devices = [d.to_device() for d in primary_params.devices]
         self._total_num_pages = total_num_pages
         self._total_num_host_pages = total_num_host_pages
         self._max_batch_size = max_batch_size
 
-        num_replicas = params.data_parallel_degree
+        num_replicas = primary_params.data_parallel_degree
         assert len(devices) % num_replicas == 0, (
             "Number of devices must be divisible by number of replicas"
         )
@@ -205,23 +219,41 @@ class PagedKVCacheManager:
             if devices[0].is_host
             else MemoryTier.MEMORY_TIER_GPU
         )
-        enable_prefix_caching = params.enable_prefix_caching
-        enable_runtime_checks = enable_runtime_checks
-        device_buffers = params.allocate_buffers(total_num_pages)
+
+        all_device_buffers: list[list[KVCacheBuffer]] = [
+            cp.allocate_buffers(total_num_pages) for cp in self._cache_params
+        ]
 
         self._replica: list[_ReplicaMetadata] = []
         for replica_idx in range(num_replicas):
-            replica_params = params.copy_as_dp_1(replica_idx=replica_idx)
             replica_devices = devices_per_replica[replica_idx]
-            replica_device_buffer = device_buffers[replica_idx]
+
+            replica_device_buffers = [
+                cache_bufs[replica_idx] for cache_bufs in all_device_buffers
+            ]
+            dispatch_resolver = AttentionDispatchResolver(
+                devices=[DeviceRef.from_device(d) for d in replica_devices],
+                is_mla=primary_params.is_mla,
+                n_kv_heads_per_device=primary_params.n_kv_heads_per_device,
+                num_q_heads_per_device=primary_params.num_q_heads_per_device,
+                # TODO(SERVOPT-1094): Replace with quantized_kv_cache
+                # once SnapMLA uses a valid scale_dtype.
+                is_fp8_kv=primary_params.is_fp8_kv_dtype,
+            )
+
+            # TODO(SERVOPT-1254): Connector uses primary cache buffer only.
+            replica_params = primary_params.copy_as_dp_1(
+                replica_idx=replica_idx
+            )
             connector = create_connector(
                 params=replica_params,
                 devices=replica_devices,
-                device_buffer=replica_device_buffer,
+                device_buffer=replica_device_buffers[0],
                 total_num_host_blocks=total_num_host_pages,
                 total_num_blocks=total_num_pages,
                 session=session,
             )
+
             persistent_kv_device_input_buffers = (
                 _PersistentKVDeviceInputBuffers(
                     max_batch_size=max_batch_size,
@@ -229,34 +261,41 @@ class PagedKVCacheManager:
                     devices=replica_devices,
                 )
             )
+
             block_manager = BlockManager(
                 device_memory_tier=device_memory_tier,
                 total_num_blocks=total_num_pages,
-                block_size=params.page_size,
+                block_size=primary_params.page_size,
                 connector=connector,
-                enable_prefix_caching=enable_prefix_caching,
+                enable_prefix_caching=primary_params.enable_prefix_caching,
                 enable_runtime_checks=enable_runtime_checks,
             )
-            attention_dispatch_resolver = AttentionDispatchResolver(
-                devices=[
-                    DeviceRef.from_device(device) for device in replica_devices
-                ],
-                is_mla=params.is_mla,
-                n_kv_heads_per_device=params.n_kv_heads_per_device,
-                num_q_heads_per_device=params.num_q_heads_per_device,
-                # TODO(SERVOPT-1094): Replace with quantized_kv_cache once
-                # SnapMLA uses a valid scale_dtype.
-                is_fp8_kv=params.is_fp8_kv_dtype,
+
+            self._replica.append(
+                _ReplicaMetadata(
+                    block_manager=block_manager,
+                    connector=connector,
+                    persistent_kv_device_input_buffers=persistent_kv_device_input_buffers,
+                    device_buffers=replica_device_buffers,
+                    devices=replica_devices,
+                    attention_dispatch_resolver=dispatch_resolver,
+                )
             )
-            replica_metadata = _ReplicaMetadata(
-                block_manager=block_manager,
-                connector=connector,
-                persistent_kv_device_input_buffers=persistent_kv_device_input_buffers,
-                device_buffer=replica_device_buffer,
-                devices=replica_devices,
-                attention_dispatch_resolver=attention_dispatch_resolver,
-            )
-            self._replica.append(replica_metadata)
+
+    @property
+    def num_caches(self) -> int:
+        """Number of KV caches managed (1 for single-cache, N for multi)."""
+        return self._num_caches
+
+    def cache_params(self, cache_idx: int = 0) -> KVCacheParams:
+        """Returns the ``KVCacheParams`` for a specific cache."""
+        return self._cache_params[cache_idx]
+
+    def dispatch_resolver(
+        self, replica_idx: int = 0
+    ) -> AttentionDispatchResolver:
+        """Returns the attention dispatch resolver for a replica."""
+        return self._replica[replica_idx].attention_dispatch_resolver
 
     def get_pct_used_blocks_after_allocation(
         self, ctx: TextGenerationContext, replica_idx: int, num_steps: int = 1
@@ -285,20 +324,18 @@ class PagedKVCacheManager:
         data: TextGenerationContext,
         replica_idx: int,
         num_steps: int = 1,
-        num_speculative_steps: int = 0,
     ) -> None:
         """Allocates blocks for a request to run for N steps.
 
-        This method allocates blocks needed by a request to run for N steps.
         When prefix caching is enabled, some of the allocated blocks may be
-        retrieved from the prefix cache.
+        retrieved from the prefix cache and the context's active token window
+        is advanced accordingly.
 
         Args:
             data: The text generation context for the request. The request ID
                 must already be assigned to a replica via ``claim``.
             replica_idx: Index of the replica to allocate on.
             num_steps: The number of steps to reserve blocks for. Default: 1.
-            num_speculative_steps: The number of speculative steps to reserve blocks for. Default: 0.
 
         Raises:
             InsufficientBlocksError: If there are insufficient free blocks to
@@ -307,20 +344,23 @@ class PagedKVCacheManager:
         replica = self._replica[replica_idx]
         replica.block_manager.reuse_blocks_from_prefix_cache(data)
         replica.block_manager.allocate_new_blocks(
-            data, num_steps, num_speculative_steps
+            data, num_steps, self.params.num_eagle_speculative_tokens
         )
 
     def _does_req_need_more_blocks(
         self,
         ctx: TextGenerationContext,
         num_steps: int,
-        num_speculative_steps: int,
         replica_idx: int,
     ) -> bool:
         """Determines if a request needs additional blocks."""
         replica = self._replica[replica_idx]
         block_manager = replica.block_manager
-        seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
+        seq_len = _compute_seq_len(
+            ctx,
+            num_steps,
+            self.params.num_eagle_speculative_tokens,
+        )
         num_blocks = len(block_manager.req_to_blocks[ctx.request_id])
         return seq_len > num_blocks * self.params.page_size
 
@@ -332,8 +372,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
-        num_speculative_steps: int = 0,
-    ) -> Sequence[KVCacheInputsPerDevice]:
+    ) -> list[KVCacheInputsPerDevice]:
         """Gets runtime inputs for a batch of requests.
 
         Args:
@@ -342,7 +381,6 @@ class PagedKVCacheManager:
             num_steps: Number of decode steps for the fetch.
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
-            num_speculative_steps: Number of steps to run for the draft generation.
 
         Raises:
             ValueError: If a request in ``batch`` is missing allocated blocks,
@@ -357,14 +395,18 @@ class PagedKVCacheManager:
         for ctx in batch:
             # Allocate blocks for request if we need more.
             if self._does_req_need_more_blocks(
-                ctx, num_steps, num_speculative_steps, replica_idx=replica_idx
+                ctx,
+                num_steps,
+                replica_idx=replica_idx,
             ):
                 raise ValueError(
                     f"Called runtime_inputs with request {ctx.request_id} but it does not have sufficient blocks. `alloc` must be called first."
                 )
 
             # Compute the total sequence length
-            seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
+            seq_len = _compute_seq_len(
+                ctx, num_steps, self.params.num_eagle_speculative_tokens
+            )
             max_seq_len = max(max_seq_len, seq_len)
 
         required_num_pages = ceildiv(max_seq_len, self.params.page_size)
@@ -457,7 +499,9 @@ class PagedKVCacheManager:
             blocks = self.get_req_blocks(ctx.request_id, replica_idx)
 
             # Sanity check that we have enough blocks.
-            seq_len = _compute_seq_len(ctx, num_steps, num_speculative_steps)
+            seq_len = _compute_seq_len(
+                ctx, num_steps, self.params.num_eagle_speculative_tokens
+            )
             num_required_blocks = ceildiv(seq_len, self.params.page_size)
             assert len(blocks) >= num_required_blocks
             if len(blocks) > num_required_blocks:
@@ -469,13 +513,14 @@ class PagedKVCacheManager:
             )
 
             # Get the existing cache length for this sequence.
-            cache_length = ctx.tokens.processed_length
+            cache_length = ctx.tokens.processed_length + len(
+                ctx.spec_decoding_state.maybe_accepted_draft_tokens
+            )
             cache_lengths_np[batch_idx] = cache_length
 
             # Update the maximum lengths seen so far.
-            prompt_tokens = (
-                ctx.tokens.active_length
-                + ctx.spec_decoding_state.num_draft_tokens
+            prompt_tokens = ctx.tokens.active_length + len(
+                ctx.spec_decoding_state.draft_tokens_to_verify
             )
             max_prompt_len = max(max_prompt_len, prompt_tokens)
             max_cached_len = max(max_cached_len, cache_length + prompt_tokens)
@@ -487,46 +532,80 @@ class PagedKVCacheManager:
         # advance to the values for the next row. This should not be allocated
         # on pinned memory since it is exclusively accessed on the CPU and never
         # copied to the GPU.
-        max_lengths_host = build_max_lengths_tensor(
-            num_steps, max_prompt_len, max_cached_len
+        absolute_max_cached_len = (
+            max_cached_len + self.params.num_eagle_speculative_tokens
         )
+        max_lengths_host = build_max_lengths_tensor(
+            num_steps,
+            max_prompt_len,
+            absolute_max_cached_len,
+        )
+        # Copy shared LUT and cache_lengths to each TP shard's device buffer.
+        num_tp_shards = len(replica.devices)
+        for tp_shard in range(num_tp_shards):
+            cache_lengths_by_device[tp_shard].inplace_copy_from(
+                cache_lengths_host
+            )
+            lut_table_by_device[tp_shard].inplace_copy_from(lut_table_host)
+
         # Keep metadata aligned with kernel-side dispatch inputs.
         # `k.max_context_length()` in flash attention corresponds to the
         # max cached context length for this step (including active prompt
         # tokens), i.e. `max_cached_len` here.
         resolved_metadata = (
             replica.attention_dispatch_resolver.resolve_for_replica(
-                batch_size, max_prompt_len, max_cached_len
+                batch_size,
+                max_prompt_len,
+                absolute_max_cached_len,
             )
         )
 
-        ret_list: list[KVCacheInputsPerDevice] = []
-        for tp_shard in range(len(replica.devices)):
-            cache_lengths_device = cache_lengths_by_device[tp_shard]
-            lookup_table_device = lut_table_by_device[tp_shard]
-            cache_lengths_device.inplace_copy_from(cache_lengths_host)
-            lookup_table_device.inplace_copy_from(lut_table_host)
-            metadata = resolved_metadata[tp_shard]
-            block_device = replica.device_buffer.values[tp_shard].device
-            if metadata.device not in (CPU(), block_device):
-                raise AssertionError(
-                    "attention_dispatch_metadata must be host-resident or on "
-                    f"the shard device; got {metadata.device} for shard "
-                    f"{tp_shard} on {block_device}."
-                )
-
-            ret_list.append(
-                KVCacheInputsPerDevice(
-                    blocks=replica.device_buffer.values[tp_shard],
-                    cache_lengths=cache_lengths_device,
-                    lookup_table=lookup_table_device,
-                    max_lengths=max_lengths_host,
-                    kv_scales=replica.device_buffer.scales[tp_shard]
-                    if replica.device_buffer.scales is not None
-                    else None,
-                    attention_dispatch_metadata=metadata,
+        if self.params.num_eagle_speculative_tokens > 0:
+            draft_resolved_metadata: list[Buffer] | None = (
+                replica.attention_dispatch_resolver.resolve_for_replica(
+                    batch_size,
+                    1,
+                    absolute_max_cached_len,
                 )
             )
+        else:
+            draft_resolved_metadata = None
+
+        ret_list: list[KVCacheInputsPerDevice] = []
+        for cache_idx in range(self._num_caches):
+            device_buffer = replica.device_buffers[cache_idx]
+
+            for tp_shard in range(num_tp_shards):
+                metadata = resolved_metadata[tp_shard]
+                draft_metadata = (
+                    draft_resolved_metadata[tp_shard]
+                    if draft_resolved_metadata is not None
+                    else None
+                )
+                block_device = device_buffer.values[tp_shard].device
+                if metadata.device not in (CPU(), block_device):
+                    raise AssertionError(
+                        "attention_dispatch_metadata must be host-resident "
+                        "or on the shard device; got "
+                        f"{metadata.device} for cache {cache_idx}, shard "
+                        f"{tp_shard} on {block_device}."
+                    )
+
+                ret_list.append(
+                    KVCacheInputsPerDevice(
+                        kv_blocks=device_buffer.values[tp_shard],
+                        cache_lengths=cache_lengths_by_device[tp_shard],
+                        lookup_table=lut_table_by_device[tp_shard],
+                        max_lengths=max_lengths_host,
+                        kv_scales=(
+                            device_buffer.scales[tp_shard]
+                            if device_buffer.scales is not None
+                            else None
+                        ),
+                        attention_dispatch_metadata=metadata,
+                        draft_attention_dispatch_metadata=draft_metadata,
+                    )
+                )
 
         return ret_list
 
@@ -536,8 +615,7 @@ class PagedKVCacheManager:
         num_steps: int = 1,
         *,
         max_cache_length: int | None = None,
-        num_speculative_steps: int = 0,
-    ) -> KVCacheInputs:
+    ) -> KVCacheInputs[Buffer, Buffer]:
         """Gets the graph inputs for per-replica batches of requests.
 
         This method will raise a RuntimeError if any request has insufficient blocks
@@ -548,7 +626,6 @@ class PagedKVCacheManager:
             num_steps: Number of steps to run for
             max_cache_length: Optional explicit max cache length to size LUT
                 views. If not provided, uses request-derived runtime length.
-            num_speculative_steps: Number of steps to run for the draft generation.
         """
         if len(batches) != len(self._replica):
             raise ValueError(
@@ -562,7 +639,6 @@ class PagedKVCacheManager:
                     ctxs,
                     num_steps,
                     max_cache_length=max_cache_length,
-                    num_speculative_steps=num_speculative_steps,
                 )
             )
         return KVCacheInputs(inputs=ret_list)
@@ -654,9 +730,7 @@ class PagedKVCacheManager:
                     self.claim(context.request_id, replica_idx=replica_idx)
                     claimed.append((context.request_id, replica_idx))
                     self.alloc(
-                        context,
-                        replica_idx=replica_idx,
-                        num_steps=num_steps,
+                        context, replica_idx=replica_idx, num_steps=num_steps
                     )
             yield
         finally:
@@ -717,7 +791,14 @@ class PagedKVCacheManager:
         replica = self._replica[replica_idx]
         return replica.connector.num_used_host_blocks
 
-    def get_device_buffer(self, replica_idx: int) -> KVCacheBuffer:
-        """Returns device buffer for the replica."""
+    def get_device_buffer(
+        self, replica_idx: int, cache_idx: int = 0
+    ) -> KVCacheBuffer:
+        """Returns device buffer for a specific cache on a replica.
+
+        Args:
+            replica_idx: Index of the replica.
+            cache_idx: Index of the cache (default 0 = primary cache).
+        """
         replica = self._replica[replica_idx]
-        return replica.device_buffer
+        return replica.device_buffers[cache_idx]

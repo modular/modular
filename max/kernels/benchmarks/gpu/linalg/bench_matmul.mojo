@@ -26,13 +26,7 @@ from std.benchmark import (
     BenchMetric,
     ThroughputMeasure,
 )
-from std.gpu import (
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
-    thread_idx_uint as thread_idx,
-    block_idx_uint as block_idx,
-)
+from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from std.gpu.host import DeviceContext
 from std.gpu.primitives import block
 from internal_utils import (
@@ -84,9 +78,9 @@ def _verify_buffers_gpu[
     var ref_nz: Float32 = 0
 
     # Grid-stride loop
-    var i = UInt(global_idx.x)
-    var stride = UInt(grid_dim.x * block_dim.x)
-    while i < UInt(length):
+    var i = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+    while i < length:
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -107,7 +101,7 @@ def _verify_buffers_gpu[
 
     # Each block writes its partial results
     if thread_idx.x == 0:
-        var base = Int(block_idx.x) * 5
+        var base = block_idx.x * 5
         result[base + 0] = abs_diff_sum
         result[base + 1] = abs_ref_sum
         result[base + 2] = max_violation
@@ -128,20 +122,18 @@ def verify_matmul[
     b_shape: Coord,
     init_type: InitializationType,
 ) raises:
-    var c_size = c_shape[0].value() * c_shape[1].value()
-    var a_size = a_shape[0].value() * a_shape[1].value()
-    var b_size = b_shape[0].value() * b_shape[1].value()
+    var c_size = Int(c_shape[0].value()) * Int(c_shape[1].value())
+    var a_size = Int(a_shape[0].value()) * Int(a_shape[1].value())
+    var b_size = Int(b_shape[0].value()) * Int(b_shape[1].value())
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_device_nd = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
+    var a_device_nd = TileTensor(a_device, row_major(a_shape))
     var b_device = ctx.enqueue_create_buffer[a_type](b_size)
-    var b_device_nd = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
+    var b_device_nd = TileTensor(b_device, row_major(b_shape))
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_nd = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
+    var c_device_nd = TileTensor(c_device, row_major(c_shape))
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_device_ref_nd = TileTensor(
-        c_device_ref.unsafe_ptr(), row_major(c_shape)
-    )
+    var c_device_ref_nd = TileTensor(c_device_ref, row_major(c_shape))
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
@@ -165,9 +157,9 @@ def verify_matmul[
                 rand(b_host.ptr, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.ptr[i] = Scalar[a_type](i)
+                    a_host.raw_store(i, Scalar[a_type](i))
                 for i in range(b_host.num_elements()):
-                    b_host.ptr[i] = Scalar[a_type](i)
+                    b_host.raw_store(i, Scalar[a_type](i))
         # Move operands to the Device
         ctx.enqueue_copy(a_device, a_host_ptr)
         ctx.enqueue_copy(b_device, b_host_ptr)
@@ -211,12 +203,12 @@ def verify_matmul[
 
     comptime kernel = _verify_buffers_gpu[c_type, BLOCK_SIZE]
     ctx.enqueue_function_experimental[kernel](
-        c_device.unsafe_ptr(),
-        c_device_ref.unsafe_ptr(),
+        c_device,
+        c_device_ref,
         c_size,
         atol,
         rtol,
-        result_device.unsafe_ptr(),
+        result_device,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
     )
@@ -349,7 +341,7 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
     def get_size(shape: Coord) -> Int:
-        return shape[0].value() * shape[1].value()
+        return Int(shape[0].value()) * Int(shape[1].value())
 
     comptime simd_size = 4
     var cb_a = CacheBustingBuffer[a_type](get_size(shape_a), simd_size, ctx)
@@ -379,9 +371,9 @@ def bench_matmul[
                 rand(b_host.ptr, b_host.num_elements())
             elif init_type == InitializationType.arange:
                 for i in range(a_host.num_elements()):
-                    a_host.ptr[i] = Scalar[a_type](i)
+                    a_host.raw_store(i, Scalar[a_type](i))
                 for i in range(b_host.num_elements()):
-                    b_host.ptr[i] = Scalar[a_type](i)
+                    b_host.raw_store(i, Scalar[a_type](i))
 
         ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
         ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
@@ -449,7 +441,9 @@ def bench_matmul[
         # create a dummy buffer to force using the mojo the matmul kernel to output values
         # in the correct c_type
         var c_dummy = TileTensor(
-            UnsafePointer[Scalar[DType.bfloat16], MutExternalOrigin](),
+            UnsafePointer[
+                Scalar[DType.bfloat16], MutExternalOrigin
+            ].unsafe_dangling(),
             row_major(shape_c),
         )
 
@@ -491,7 +485,10 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2 * shape_c[0].value() * shape_c[1].value() * shape_a[1].value(),
+        2
+        * Int(shape_c[0].value())
+        * Int(shape_c[1].value())
+        * Int(shape_a[1].value()),
     )
     if run_benchmark:
         b.bench_function[bench_func](

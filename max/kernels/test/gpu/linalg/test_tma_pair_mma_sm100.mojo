@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.math import align_up
+from std.math.uutils import ufloordiv, umod
 from std.sys import size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
@@ -25,9 +26,9 @@ from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu import (
     block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_uint as lane_id,
-    warp_id_uint as warp_id,
+    block_idx,
+    lane_id,
+    warp_id,
 )
 from std.gpu.memory import external_memory
 from std.gpu.compute.arch.mma_nvidia_sm100 import *
@@ -78,7 +79,7 @@ def tma_umma_kernel_pair_cta[
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
     c: LayoutTensor[c_type, c_layout, MutAnyOrigin],
-    num_iters: UInt,
+    num_iters: Int,
 ):
     comptime assert a_type == b_type and a_type in (
         DType.float8_e4m3fn,
@@ -217,8 +218,8 @@ def tma_umma_kernel_pair_cta[
 
     # (peer_id, mma_coord_m, mma_coord_n)
     var peer_cta_coord = (
-        rank_m % UInt(cta_group),
-        rank_m // UInt(cta_group),
+        umod(rank_m, cta_group),
+        ufloordiv(rank_m, cta_group),
         rank_n,
     )
 
@@ -234,7 +235,7 @@ def tma_umma_kernel_pair_cta[
 
     a_multicast_mask <<= UInt16(rank_m)
     b_multicast_mask <<= UInt16(peer_cta_coord[0])
-    b_multicast_mask <<= UInt16(rank_n * UInt(CLUSTER_M))
+    b_multicast_mask <<= UInt16(rank_n * CLUSTER_M)
 
     var a_mma_mask = a_multicast_mask >> UInt16(peer_cta_coord[0])
     var b_mma_mask = b_multicast_mask >> UInt16(peer_cta_coord[0])
@@ -242,18 +243,18 @@ def tma_umma_kernel_pair_cta[
         b_mma_mask | b_mma_mask << 1
     )
 
-    for i in range(Int(num_iters)):
+    for i in range(num_iters):
         if elect_one_warp and elect_one_thread:
             if elect_one_cta:
                 tma_mbar[0].expect_bytes(Int32(expected_bytes))
 
             var a_gmem_slice_coord = (
-                Int(peer_cta_coord[2]) * a_tma_rows + Int(block_idx.x) * BM
+                peer_cta_coord[2] * a_tma_rows + block_idx.x * BM
             )
             var b_gmem_slice_coord = (
-                Int(peer_cta_coord[1]) * b_tma_rows
-                + Int(peer_cta_coord[0]) * BN
-                + Int(block_idx.y) * MMA_N
+                peer_cta_coord[1] * b_tma_rows
+                + peer_cta_coord[0] * BN
+                + block_idx.y * MMA_N
             )
 
             var a_smem_reshape = a_smem_tile.reshape[Layout.row_major(BM, BK)]()
@@ -329,17 +330,15 @@ def tma_umma_kernel_pair_cta[
     comptime num_ld_iters = total_repeat // ld_repeat
     comptime ld_width = c_frag_size // num_ld_iters
 
-    var cluster_idx_m = block_idx.x // UInt(CLUSTER_M)
-    var cluster_idx_n = block_idx.y // UInt(CLUSTER_N)
+    var cluster_idx_m = ufloordiv(block_idx.x, CLUSTER_M)
+    var cluster_idx_n = ufloordiv(block_idx.y, CLUSTER_N)
     var global_mma_m = (
-        cluster_idx_m * UInt(CLUSTER_M // cta_group) + peer_cta_coord[1]
+        cluster_idx_m * (CLUSTER_M // cta_group) + peer_cta_coord[1]
     )
-    var global_mma_n = cluster_idx_n * UInt(CLUSTER_N) + peer_cta_coord[2]
+    var global_mma_n = cluster_idx_n * CLUSTER_N + peer_cta_coord[2]
 
-    var c_gmem_block = c.tile[MMA_M, MMA_N](
-        Int(global_mma_m), Int(global_mma_n)
-    )
-    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](Int(peer_cta_coord[0]), 0)
+    var c_gmem_block = c.tile[MMA_M, MMA_N](global_mma_m, global_mma_n)
+    var c_gmem_slice = c_gmem_block.tile[BM, MMA_N](peer_cta_coord[0], 0)
 
     comptime for ld_i in range(num_ld_iters):
         var c_frag = tcgen05_ld[
@@ -359,7 +358,7 @@ def tma_umma_kernel_pair_cta[
 
         comptime if MMA_M == 128:
             var c_gmem_frag = c_gmem_slice.tile[BM // 2, BN](
-                Int(warp_id() % 2), Int(warp_id() // 2)
+                umod(warp_id(), 2), ufloordiv(warp_id(), 2)
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
@@ -371,7 +370,7 @@ def tma_umma_kernel_pair_cta[
                 )
         else:
             var c_gmem_frag = c_gmem_slice.tile[BM // 4, ld_repeat](
-                Int(warp_id()), ld_i
+                warp_id(), ld_i
             ).vectorize[1, 2]()
 
             comptime for i in range(ld_width // 2):
@@ -516,7 +515,7 @@ def test_tma_umma_pair_cta[
         a_tma_op,
         b_tma_op,
         c.device_tensor(),
-        UInt(K // BK),
+        K // BK,
         grid_dim=(
             align_up(M // BM, Int(cluster_shape[0])),
             align_up(N // BN // cta_group, Int(cluster_shape[1])),

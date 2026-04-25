@@ -154,7 +154,7 @@ def run_mha[
 
             b.iter_custom[_kernel_launch](ctx)
 
-        def compute_flops() -> Int:
+        def compute_flops() {read} -> Int:
             # Using causal mask, skip half of tiles.
             return 2 * batch_size * num_heads * seq_len * num_keys * depth
 
@@ -268,7 +268,7 @@ def run_mha[
         ctx.enqueue_copy(mask_device_ptr, mask_ptr)
 
         var mask4d = TileTensor(
-            mask_device_ptr.unsafe_ptr(),
+            mask_device_ptr,
             row_major(
                 (
                     Idx(batch_size),
@@ -281,7 +281,7 @@ def run_mha[
 
         var output_ref_device_ptr = ctx.enqueue_create_buffer[qkv_type](o_size)
         var output_ref_device = TileTensor(
-            output_ref_device_ptr.unsafe_ptr(),
+            output_ref_device_ptr,
             row_major(
                 (
                     Idx(batch_size),
@@ -372,6 +372,14 @@ def main() raises:
         group=group,
         cache_busting=cache_busting,
     )
+
+    print("Running MHA benchmark with config:")
+    print("  qkv_type:", cfg.qkv_type)
+    print("  mask_type:", cfg.mask_type)
+    print("  depth:", cfg.depth)
+    print("  num_heads:", cfg.num_heads)
+    print("  group:", cfg.group)
+    print("  cache_busting:", cfg.cache_busting)
 
     var m = Bench()
     with DeviceContext() as ctx:

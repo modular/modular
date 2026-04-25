@@ -37,7 +37,6 @@ from max.interfaces import (
 from max.pipelines.core import TextAndVisionContext, TextContext, TTSContext
 from max.pipelines.lib import reasoning
 from max.profiler import Tracer
-from max.serve.pipelines.stop_detection import StopDetector
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch, record_ms
 from max.serve.worker_interface import ModelWorkerProxy
@@ -187,10 +186,7 @@ class TokenGeneratorPipeline(
                 )
 
             with record_ms(METRICS.output_time):
-                # stop detector is stateful, so new it up here for
-                # use in the response stream
-                stop_detector = StopDetector(stop=request.sampling_params.stop)
-                has_stop_sequences = len(stop_detector.stop) > 0
+                has_stop_sequences = bool(context.eos_tracker.eos_stop_strings)
 
                 async for responses in self.model_worker.stream(
                     context.request_id, context
@@ -226,10 +222,15 @@ class TokenGeneratorPipeline(
                         )
 
                     if tokens is None and reasoning_tokens is None:
-                        yield TokenGeneratorOutput(
-                            status=response.final_status,
-                            token_count=0,
-                        )
+                        # If the status is not done and there were no tokens,
+                        # this indicates that the chunk contained only stripped
+                        # tokens, such as reasoning delimiters. In this case,
+                        # hold off on yielding a chunk.
+                        if response.final_status.is_done:
+                            yield TokenGeneratorOutput(
+                                status=response.final_status,
+                                token_count=0,
+                            )
                         continue
 
                     token_count = len(tokens) if tokens is not None else 0
@@ -260,18 +261,17 @@ class TokenGeneratorPipeline(
                             )
                         )
 
-                    # Check for stop sequences if configured
+                    # Check for stop sequences if configured (EOSTracker)
                     stop_sequence_match = None
                     if has_stop_sequences and decoded_tokens is not None:
-                        with Tracer("stop_detector.step"):
-                            if stop_sequence_match := stop_detector.step(
-                                decoded_tokens
+                        with Tracer("eos_tracker.is_eos_from_string"):
+                            if (
+                                stop_sequence_match
+                                := context.eos_tracker.is_eos_from_string(
+                                    decoded_tokens
+                                )
                             ):
                                 self.model_worker.cancel(request.request_id)
-                                logger.debug(
-                                    f"Cancelling {request.request_id} because stop "
-                                    f"sequence ({stop_sequence_match}) detected"
-                                )
 
                     # Collect log probability values if present (still per-token)
                     # Does not consider reasoning tokens

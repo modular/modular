@@ -58,6 +58,7 @@ def create_mock_pipeline() -> Mock:
     pipeline.execute = Mock(side_effect=next_token_behavior)
     pipeline.release = Mock()
     pipeline._pipeline_model = Mock(_lora_manager=None)
+    pipeline.extra_kv_managers = []
     return pipeline
 
 
@@ -168,7 +169,6 @@ def test_scheduler_handle_terminated_responses() -> None:
     batch_constructor.enqueue_new_request(mock_2)
     mock_1.update(ARBITRARY_TOKEN_ID)
     mock_2.update(ARBITRARY_TOKEN_ID)
-    batch_executed = [[mock_1, mock_2]]
 
     resp_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
     resp_2: TextGenerationOutput = Mock(is_done=True, tokens=[])
@@ -202,7 +202,6 @@ def test_scheduler_handle_chunked_requests() -> None:
     req_2 = create_mock_request(seq_len=30, start_idx=20)
 
     mock_1: TextGenerationOutput = Mock(is_done=False, tokens=[Mock()])
-    mock_2: TextGenerationOutput = Mock(is_done=False, tokens=[])
     batch_responses = {req_1.request_id: mock_1}
 
     batch_constructor.enqueue_new_request(req_1)
@@ -427,6 +426,7 @@ def _create_lora_scheduler(adapter_name: str) -> TokenGenerationScheduler:
     lora_manager.activate_adapter = Mock()
     lora_manager.max_num_loras = 4
     pipeline._pipeline_model = Mock(_lora_manager=lora_manager)
+    pipeline.extra_kv_managers = []
 
     return TokenGenerationScheduler(
         scheduler_config=TokenGenerationSchedulerConfig(

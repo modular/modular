@@ -38,7 +38,7 @@ from max.interfaces.request.open_responses import (
     InputTextContent,
 )
 from max.pipelines.core import PixelContext
-from transformers import AutoTokenizer
+from transformers import AutoTokenizer, PreTrainedTokenizerFast
 
 from .diffusion_schedulers import SchedulerFactory
 
@@ -64,6 +64,50 @@ async def run_with_default_executor(
     """
     loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, fn, *args, **kwargs)
+
+
+def _load_diffusion_tokenizer(
+    model_path: str,
+    *,
+    subfolder: str,
+    revision: str | None,
+    trust_remote_code: bool,
+    model_max_length: int | None,
+) -> Any:
+    """Load a diffusion-pipeline tokenizer subfolder.
+
+    Loads `tokenizer.json` directly via `PreTrainedTokenizerFast`,
+    falling back to `AutoTokenizer` only if that fails. We avoid
+    `AutoTokenizer` as the primary path because it dispatches on the
+    `tokenizer_class` field in `tokenizer_config.json`, and in
+    `transformers` v5 some of those classes (notably `LlamaTokenizerFast`,
+    now aliased to the slow `LlamaTokenizer`) overwrite the loaded
+    pre-tokenizer with a SentencePiece `Metaspace` regardless of what
+    was in `tokenizer.json`. That silently breaks ByteLevel-BPE
+    tokenizers like FLUX.2's Mistral-Small-3.
+    """
+    try:
+        return PreTrainedTokenizerFast.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=model_max_length,
+            subfolder=subfolder,
+        )
+    except Exception:
+        logger.warning(
+            "PreTrainedTokenizerFast.from_pretrained failed for %s/%s; "
+            "falling back to AutoTokenizer.",
+            model_path,
+            subfolder,
+        )
+        return AutoTokenizer.from_pretrained(
+            model_path,
+            revision=revision,
+            trust_remote_code=trust_remote_code,
+            model_max_length=model_max_length,
+            subfolder=subfolder,
+        )
 
 
 class LockedTokenizer:
@@ -99,23 +143,18 @@ class PipelineClassName(str, Enum):
     FLUX2 = "Flux2Pipeline"
     FLUX2_KLEIN = "Flux2KleinPipeline"
     ZIMAGE = "ZImagePipeline"
+    WAN = "WanPipeline"
+    WAN_I2V = "WanImageToVideoPipeline"
 
     @classmethod
-    def from_diffusers_config(
-        cls, diffusers_config: dict[str, Any]
-    ) -> PipelineClassName:
-        """Resolve a PipelineClassName from a diffusers config dict."""
-        raw = diffusers_config.get("_class_name")
-        if raw is None:
-            raise KeyError(
-                "diffusers_config is missing required key '_class_name'."
-            )
+    def from_class_name(cls, class_name: str) -> PipelineClassName:
+        """Resolve a PipelineClassName from a ``_class_name`` string."""
         try:
-            return cls(raw)
+            return cls(class_name)
         except ValueError as e:
             allowed = ", ".join([m.value for m in cls])
             raise ValueError(
-                f"Unsupported _class_name={raw!r}. Allowed: {allowed}"
+                f"Unsupported _class_name={class_name!r}. Allowed: {allowed}"
             ) from e
 
 
@@ -130,7 +169,7 @@ class PixelGenerationTokenizer(
 
     Args:
         model_path: Path to the model/tokenizer.
-        pipeline_config: Pipeline configuration (must include diffusers_config).
+        pipeline_config: Pipeline configuration with ModelManifest metadata.
         subfolder: Subfolder within the model path for the primary tokenizer.
         subfolder_2: Optional subfolder for a second tokenizer (e.g. text encoder).
         revision: Git revision/branch to use.
@@ -174,23 +213,23 @@ class PixelGenerationTokenizer(
 
         try:
             self.delegate = LockedTokenizer(
-                AutoTokenizer.from_pretrained(
+                _load_diffusion_tokenizer(
                     model_path,
+                    subfolder=subfolder,
                     revision=revision,
                     trust_remote_code=trust_remote_code,
                     model_max_length=self.max_length,
-                    subfolder=subfolder,
                 )
             )
 
             if subfolder_2 is not None:
                 self.delegate_2 = LockedTokenizer(
-                    AutoTokenizer.from_pretrained(
+                    _load_diffusion_tokenizer(
                         model_path,
+                        subfolder=subfolder_2,
                         revision=revision,
                         trust_remote_code=trust_remote_code,
                         model_max_length=self.secondary_max_length,
-                        subfolder=subfolder_2,
                     )
                 )
             else:
@@ -205,34 +244,34 @@ class PixelGenerationTokenizer(
                 "- '--trust-remote-code' is needed but not set\n"
             ) from e
 
-        # Extract diffusers_config
-        if not pipeline_config or not hasattr(
-            pipeline_config.model, "diffusers_config"
-        ):
+        # Extract config from ModelManifest metadata and per-component configs.
+        if not pipeline_config:
             raise ValueError(
-                "pipeline_config.model.diffusers_config is required for PixelGenerationTokenizer. "
-                "Please provide a pipeline_config with a valid diffusers_config."
+                "pipeline_config is required for PixelGenerationTokenizer."
             )
-        if pipeline_config.model.diffusers_config is None:
-            raise ValueError(
-                "pipeline_config.model.diffusers_config cannot be None. "
-                "Please provide a valid diffusers_config."
-            )
-        self.diffusers_config = pipeline_config.model.diffusers_config
+        models = pipeline_config.models
+        metadata = models.metadata
 
-        # Store the pipeline class name for model-specific behavior
-        self._pipeline_class_name = PipelineClassName.from_diffusers_config(
-            self.diffusers_config
+        class_name = metadata.get("_class_name")
+        if not class_name:
+            raise ValueError(
+                "ModelManifest metadata is missing required key '_class_name'."
+            )
+        self._pipeline_class_name = PipelineClassName.from_class_name(
+            class_name
         )
+        self._manifest_metadata = metadata
 
-        # Preserve tokenizer attention masks so downstream text encoders can
-        # derive additive attention bias directly from tokenizer semantics.
-
-        # Extract static config values once during initialization
-        components = self.diffusers_config.get("components", {})
-        vae_config = components.get("vae", {}).get("config_dict", {})
-        transformer_config = components.get("transformer", {}).get(
-            "config_dict", {}
+        # Extract static config values from per-component huggingface_config.
+        vae_config = (
+            models["vae"].huggingface_config.to_dict()
+            if "vae" in models
+            else {}
+        )
+        transformer_config = (
+            models["transformer"].huggingface_config.to_dict()
+            if "transformer" in models
+            else {}
         )
 
         # Compute static VAE scale factor
@@ -246,13 +285,23 @@ class PixelGenerationTokenizer(
         if self._pipeline_class_name == PipelineClassName.ZIMAGE:
             self._num_channels_latents = transformer_config["in_channels"]
         else:
-            self._num_channels_latents = transformer_config["in_channels"] // 4
+            out_channels = transformer_config.get("out_channels")
+            self._num_channels_latents = (
+                out_channels
+                if out_channels is not None
+                else transformer_config["in_channels"] // 4
+            )
 
-        # Create scheduler
-        scheduler_class_name = components.get("scheduler", {}).get(
-            "class_name", None
+        # Create scheduler from its component config.
+        scheduler_config = models["scheduler"].huggingface_config
+        scheduler_class_name: str | None = getattr(
+            scheduler_config, "_class_name", None
         )
-        scheduler_cfg = components.get("scheduler", {}).get("config_dict", {})
+        if scheduler_class_name is None:
+            raise ValueError(
+                "Scheduler config missing '_class_name' attribute."
+            )
+        scheduler_cfg = scheduler_config.to_dict()
         scheduler_cfg["use_empirical_mu"] = self._pipeline_class_name in (
             PipelineClassName.FLUX2,
             PipelineClassName.FLUX2_KLEIN,
@@ -306,6 +355,28 @@ class PixelGenerationTokenizer(
                 -1, latent_image_ids.shape[-1]
             ).astype(np.float32)
 
+    @staticmethod
+    def _build_text_ids(batch_size: int, seq_len: int) -> npt.NDArray[np.int64]:
+        """Create 4D text position IDs in (T, H, W, L) format.
+
+        For text tokens: T=0, H=0, W=0, L=arange(seq_len).
+
+        Returns:
+            Array of shape ``(batch_size, seq_len, 4)`` int64.
+        """
+        coords = np.stack(
+            [
+                np.zeros(seq_len, dtype=np.int64),
+                np.zeros(seq_len, dtype=np.int64),
+                np.zeros(seq_len, dtype=np.int64),
+                np.arange(seq_len, dtype=np.int64),
+            ],
+            axis=-1,
+        )  # (seq_len, 4)
+        return np.ascontiguousarray(
+            np.tile(coords[np.newaxis, :, :], (batch_size, 1, 1))
+        )
+
     def _randn_tensor(
         self,
         shape: tuple[int, ...],
@@ -318,6 +389,16 @@ class PixelGenerationTokenizer(
     def _resize_with_center_crop(
         image: PIL.Image.Image, target_width: int, target_height: int
     ) -> PIL.Image.Image:
+        # When the source is already at or above the target on both dims,
+        # do a pure PIL center crop to match the reference behavior.
+        # See `Flux2ImageProcessor._resize_and_crop` in `diffusers`.
+        w, h = image.size
+        if w >= target_width and h >= target_height:
+            left = (w - target_width) // 2
+            top = (h - target_height) // 2
+            return image.crop(
+                (left, top, left + target_width, top + target_height)
+            )
         ratio = target_width / target_height
         src_ratio = image.width / image.height
 
@@ -760,7 +841,7 @@ class PixelGenerationTokenizer(
         self,
         output: Any,
     ) -> Any:
-        """Post-process pipeline output.
+        """Post-processes pipeline output.
 
         Accepts either a raw numpy array or a GenerationOutput.
         For raw numpy arrays, denormalizes from [-1, 1] to [0, 1].
@@ -877,7 +958,7 @@ class PixelGenerationTokenizer(
         request: OpenResponsesRequest,
         input_image: PIL.Image.Image | None = None,
     ) -> PixelContext:
-        """Create a new PixelContext object, leveraging necessary information from OpenResponsesRequest."""
+        """Creates a new :class:`PixelContext` object, leveraging necessary information from :class:`OpenResponsesRequest`."""
         # Extract prompt from request using the helper method
         prompt = self._retrieve_prompt(request)
         if not prompt:
@@ -904,9 +985,17 @@ class PixelGenerationTokenizer(
                 " but may produce lower quality or unexpected results."
             )
 
+        # Resolve negative_prompt: prefer video options for video pipelines.
+        video_options = request.body.provider_options.video
+        negative_prompt_resolved = (
+            video_options.negative_prompt
+            if video_options and video_options.negative_prompt
+            else None
+        ) or image_options.negative_prompt
+
         if (
             image_options.true_cfg_scale > 1.0
-            and image_options.negative_prompt is None
+            and negative_prompt_resolved is None
         ):
             logger.warning(
                 f"true_cfg_scale={image_options.true_cfg_scale} is set, but no negative_prompt "
@@ -920,17 +1009,27 @@ class PixelGenerationTokenizer(
         )
         if self._pipeline_class_name == PipelineClassName.FLUX2_KLEIN:
             is_distilled_klein = bool(
-                self.diffusers_config.get("is_distilled", False)
+                self._manifest_metadata.get("is_distilled", False)
             )
             # for non-distilled models, CFG is enabled
             # whenever guidance_scale > 1.0; negative prompt defaults to "".
             do_true_cfg = (
                 image_options.guidance_scale > 1.0 and not is_distilled_klein
             )
+        elif self._pipeline_class_name in (
+            PipelineClassName.WAN,
+            PipelineClassName.WAN_I2V,
+        ):
+            # Wan uses classical CFG: diffusers enables it whenever
+            # guidance_scale > 1.0, with an empty-string negative prompt as
+            # the standard "unconditional" conditioning.
+            do_true_cfg = image_options.guidance_scale > 1.0
+            if do_true_cfg and negative_prompt_resolved is None:
+                negative_prompt_resolved = ""
         else:
             do_true_cfg = (
                 image_options.true_cfg_scale > 1.0
-                and image_options.negative_prompt is not None
+                and negative_prompt_resolved is not None
             )
 
         # 1. Tokenize prompts
@@ -955,7 +1054,7 @@ class PixelGenerationTokenizer(
         ) = await self._generate_tokens_ids(
             prompt,
             image_options.secondary_prompt,
-            image_options.negative_prompt,
+            negative_prompt_resolved,
             image_options.secondary_negative_prompt,
             do_true_cfg or do_zimage_cfg,
             images=images_for_tokenization,
@@ -986,13 +1085,20 @@ class PixelGenerationTokenizer(
         # 2. Preprocess input image if provided
         preprocessed_image_array = None
         if input_image is not None:
+            _preserve_aspect = (
+                self._pipeline_class_name != PipelineClassName.ZIMAGE
+            )
             preprocessed_image = self._preprocess_input_image(
                 input_image,
-                target_height=image_options.height,
-                target_width=image_options.width,
-                preserve_aspect_ratio=(
-                    self._pipeline_class_name != PipelineClassName.ZIMAGE
-                ),
+                # Only pass the user's output dims as preprocessing targets
+                # when the pipeline opts out of aspect preservation. For
+                # aspect-preserving pipelines, passing them would force-resize the
+                # input image to the output shape and defeat aspect preservation.
+                target_height=None
+                if _preserve_aspect
+                else image_options.height,
+                target_width=None if _preserve_aspect else image_options.width,
+                preserve_aspect_ratio=_preserve_aspect,
             )
             height = image_options.height or preprocessed_image.height
             width = image_options.width or preprocessed_image.width
@@ -1066,6 +1172,23 @@ class PixelGenerationTokenizer(
             request.body.seed,
         )
 
+        # 4b. Build text position IDs for Flux2-family pipelines.
+        text_ids = np.array([], dtype=np.int64)
+        negative_text_ids = np.array([], dtype=np.int64)
+        if self._pipeline_class_name in (
+            PipelineClassName.FLUX2,
+            PipelineClassName.FLUX2_KLEIN,
+        ):
+            text_ids = self._build_text_ids(
+                image_options.num_images,
+                int(token_buffer.array.shape[0]),
+            )
+            if negative_token_buffer is not None:
+                negative_text_ids = self._build_text_ids(
+                    image_options.num_images,
+                    int(negative_token_buffer.array.shape[0]),
+                )
+
         # 5. Build the context
         context = PixelContext(
             request_id=request.request_id,
@@ -1080,6 +1203,8 @@ class PixelGenerationTokenizer(
             sigmas=sigmas,
             latents=latents,
             latent_image_ids=latent_image_ids,
+            text_ids=text_ids,
+            negative_text_ids=negative_text_ids,
             height=height,
             width=width,
             num_inference_steps=num_inference_steps,

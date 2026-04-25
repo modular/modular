@@ -189,17 +189,17 @@ def bench_conv2d[
 
     # Create TileTensor views for conv2d_fprop
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
+        filter_dev,
         row_major(
             Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
         ),
     )
     var output_sm100_tt = TileTensor(
-        output_sm100_dev.unsafe_ptr(),
+        output_sm100_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -207,17 +207,17 @@ def bench_conv2d[
 
     # Create TileTensor views for cuDNN
     var input_dev_tensor = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_nchw_dev_tensor = TileTensor(
-        filter_nchw_dev.unsafe_ptr(),
+        filter_nchw_dev,
         row_major(
             Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
         ),
     )
     var output_cudnn_dev_tensor = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
+        output_cudnn_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -429,23 +429,23 @@ def bench_all_configs[
     ctx.synchronize()
 
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
+        filter_dev,
         row_major(
             Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
         ),
     )
     var output_1sm_tt = TileTensor(
-        output_1sm_dev.unsafe_ptr(),
+        output_1sm_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
     )
     var output_2sm_tt = TileTensor(
-        output_2sm_dev.unsafe_ptr(),
+        output_2sm_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -453,17 +453,17 @@ def bench_all_configs[
 
     # Create TileTensor views for cuDNN
     var input_dev_tensor = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_nchw_dev_tensor = TileTensor(
-        filter_nchw_dev.unsafe_ptr(),
+        filter_nchw_dev,
         row_major(
             Coord(IndexList[4](out_channels, in_channels, filter_h, filter_w))
         ),
     )
     var output_cudnn_dev_tensor = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
+        output_cudnn_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
@@ -662,29 +662,29 @@ def bench_residual[
     ctx.synchronize()
 
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(Coord(IndexList[4](batch, in_height, in_width, in_channels))),
     )
     var filter_tt = TileTensor(
-        filter_dev.unsafe_ptr(),
+        filter_dev,
         row_major(
             Coord(IndexList[4](out_channels, filter_h, filter_w, in_channels))
         ),
     )
     var output_tt = TileTensor(
-        output_dev.unsafe_ptr(),
+        output_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
     )
     var output_res_tt = TileTensor(
-        output_res_dev.unsafe_ptr(),
+        output_res_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),
     )
     var source_tt = TileTensor(
-        source_dev.unsafe_ptr(),
+        source_dev,
         row_major(
             Coord(IndexList[4](batch, out_height, out_width, out_channels))
         ),

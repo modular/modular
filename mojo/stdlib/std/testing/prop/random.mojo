@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements random number generation for property-based testing."""
 
 from std.random import random_ui64, seed
 

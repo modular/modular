@@ -31,7 +31,7 @@ from max.pipelines.lib import (
     parse_quant_config,
 )
 from max.pipelines.lib.interfaces.arch_config import ArchConfigWithKVCache
-from transformers.models.auto.configuration_auto import AutoConfig
+from transformers import AutoConfig
 from typing_extensions import Self, override
 
 

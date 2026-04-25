@@ -35,23 +35,23 @@ def _stencil_impl_cpu[
     stencil_axis: IndexList[stencil_rank, ...],
     simd_width: Int,
     dtype: DType,
-    map_fn: def(IndexList[stencil_rank, ...]) unified -> Tuple[
+    map_fn: def(IndexList[stencil_rank, ...]) -> Tuple[
         IndexList[stencil_rank],
         IndexList[stencil_rank],
     ],
-    map_strides: def(dim: Int) unified -> Int,
-    load_fn: def[simd_width: Int, dtype: DType](
-        IndexList[rank, ...]
-    ) unified -> SIMD[dtype, simd_width],
-    compute_init_fn: def[simd_width: Int]() unified -> SIMD[dtype, simd_width],
-    compute_fn: def[simd_width: Int](
+    map_strides: def(dim: Int) -> Int,
+    load_fn: def[simd_width: Int, dtype: DType](IndexList[rank, ...]) -> SIMD[
+        dtype, simd_width
+    ],
+    compute_init_fn: def[simd_width: Int]() -> SIMD[dtype, simd_width],
+    compute_fn: def[simd_width: SIMDSize](
         IndexList[rank, ...],
         SIMD[dtype, simd_width],
         SIMD[dtype, simd_width],
-    ) unified -> SIMD[dtype, simd_width],
-    compute_finalize_fn: def[simd_width: Int](
+    ) -> SIMD[dtype, simd_width],
+    compute_finalize_fn: def[simd_width: SIMDSize](
         IndexList[rank, ...], SIMD[dtype, simd_width]
-    ) unified -> None,
+    ) -> None,
 ](
     shape: IndexList[rank, element_type=shape_element_type],
     input_shape: IndexList[rank, element_type=input_shape_element_type],
@@ -132,7 +132,7 @@ def _stencil_impl_cpu[
             @always_inline
             def func_wrapper[
                 simd_width: Int
-            ](idx: Int) unified {
+            ](idx: Int) {
                 mut indices,
                 read input_shape,
                 read map_fn_closure,

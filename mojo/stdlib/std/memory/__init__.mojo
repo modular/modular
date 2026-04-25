@@ -32,11 +32,12 @@ from .memory import (
     memmove,
     memset,
     memset_zero,
-    stack_allocation,
     destroy_n,
     uninit_copy_n,
     uninit_move_n,
+    forget_deinit,
 )
+from .stack_allocation import stack_allocation
 from .owned_pointer import OwnedPointer
 from .pointer import (
     AddressSpace,
@@ -53,6 +54,7 @@ from .unsafe_pointer import (
     ImmutOpaquePointer,
     MutOpaquePointer,
     OpaquePointer,
+    OptionalUnsafePointer,
     ImmutUnsafePointer,
     MutUnsafePointer,
     UnsafePointer,

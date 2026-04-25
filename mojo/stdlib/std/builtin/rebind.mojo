@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Implements type rebind/trait downcast
+"""Implements type rebind/trait downcast.
 
 These are Mojo built-ins, so you don't need to import them.
 """
@@ -103,13 +103,13 @@ def rebind_var[
     """
     ref dest_ref = rebind[dest_type](src)
     dest = UnsafePointer(to=dest_ref).take_pointee()
-    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(src))
+    std.memory.forget_deinit(src^)
 
 
 comptime downcast[
     T: AnyType,
     _Trait: type_of(AnyType),
-] = __mlir_attr[`#kgen.downcast<`, T, `> : `, _Trait]
+] = __mlir_attr[`#kgen.downcast<:`, type_of(T), ` `, +T, `> : `, _Trait]
 """Type alias for downcasting a type to conform to a trait.
 
 Parameters:

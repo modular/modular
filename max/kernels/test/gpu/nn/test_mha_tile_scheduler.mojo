@@ -14,7 +14,7 @@
 from std.math import ceildiv
 
 from std.gpu.host import DeviceContext
-from std.gpu import block_idx_uint as block_idx
+from std.gpu import block_idx
 from nn.attention.gpu.nvidia.sm90.attention import NullPointer
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedule,
@@ -31,7 +31,7 @@ def test_kernel[schedule: MHASchedule]():
     state = scheduler.initial_state(
         UnsafePointer[
             UInt32, MutAnyOrigin, address_space=AddressSpace.SHARED
-        ](),
+        ].unsafe_dangling(),
         tile_summary,
     )
     work_info = scheduler.get_current_work_info(tile_summary, state)

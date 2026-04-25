@@ -128,7 +128,7 @@ def test_parallelize_unified() raises:
     @always_inline
     def parallel_fn(
         thread_id: Int,
-    ) unified {read vector, read chunk_size,}:
+    ) {read vector, read chunk_size,}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
@@ -155,7 +155,7 @@ def test_sync_parallelize_unified() raises:
     @always_inline
     def add_two_parallel(
         thread_id: Int,
-    ) unified {read vector, read chunk_size,}:
+    ) {read vector, read chunk_size,}:
         var start = thread_id * chunk_size
         var end = min(start + chunk_size, len(vector))
 
@@ -174,7 +174,7 @@ def test_sync_parallelize_unified_single_item() raises:
     @always_inline
     def set_result(
         i: Int,
-    ) unified {mut result,}:
+    ) {mut result,}:
         result = 42
 
     sync_parallelize(set_result, 1)
@@ -188,7 +188,7 @@ def test_sync_parallelize_unified_zero_items() raises:
     @always_inline
     def should_not_run(
         i: Int,
-    ) unified {mut called,}:
+    ) {mut called,}:
         called = True
 
     sync_parallelize(should_not_run, 0)

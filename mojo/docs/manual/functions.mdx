@@ -343,7 +343,7 @@ def count_many_things[*ArgTypes: Intable](*args: *ArgTypes) -> Int:
 
     return total
 
-def main() raises:
+def main():
     print(count_many_things(5, 11.7, 12))
 ```
 
@@ -363,7 +363,7 @@ arguments. To define a function that takes a variadic keyword argument, use the
 variadic keyword argument syntax <code>**<var>kw_argument_name</var></code>:
 
 ```mojo
-def print_nicely(**kwargs: Int) raises:
+def print_nicely(**kwargs: Int):
     for item in kwargs.items():
         print(item.key, "=", item.value)
 
@@ -529,26 +529,30 @@ ambiguity by explicitly casting your value to a supported argument type. For
 example, the following code calls the overloaded `foo()` function,
 but both implementations accept an argument that supports [implicit
 conversion](/mojo/manual/lifecycle/life#constructors-and-implicit-conversion)
-from `StringLiteral`. So, the call to `foo(string)` is ambiguous and creates a
+from `String`. So, the call to `foo("Hello")` is ambiguous and creates a
 compiler error. You can fix this by casting the value to the type you really
 want:
 
 ```mojo
 struct MyString:
     @implicit
-    def __init__(out self, string: StringLiteral):
+    def __init__(out self, string: String):
         pass
 
-def foo(name: String):
-    print("String")
+struct YourString:
+    @implicit
+    def __init__(out self, string: String):
+        pass
 
 def foo(name: MyString):
     print("MyString")
 
+def foo(name: YourString):
+    print("YourString")
+
 def call_foo():
-    comptime string = "Hello"
-    # foo(string) # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
-    foo(MyString(string))
+    # foo("Hello") # error: ambiguous call to 'foo' ... This call is ambiguous because two `foo` functions match it
+    foo(MyString("Hello"))
 ```
 
 :::note Overload Sets

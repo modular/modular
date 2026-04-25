@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
+from max.interfaces import InputModality, PipelineTask
 from max.pipelines.core import TextAndVisionContext
 from max.pipelines.lib import SupportedArchitecture
 
@@ -23,6 +23,7 @@ from .tokenizer import Idefics3Tokenizer
 idefics3_arch = SupportedArchitecture(
     name="Idefics3ForConditionalGeneration",
     task=PipelineTask.TEXT_GENERATION,
+    input_modalities={InputModality.TEXT, InputModality.IMAGE},
     example_repo_ids=["HuggingFaceM4/Idefics3-8B-Llama3"],
     default_encoding="bfloat16",
     supported_encodings={

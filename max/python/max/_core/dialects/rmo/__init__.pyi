@@ -127,7 +127,7 @@ class TensorSameDTypeOperandsAndResults(Protocol):
     have the same dtype. Also checks at least one tensor type operand/result.
     """
 
-class MoArgMaxOp(max._core.Operation):
+class MoReduceArgMaxOp(max._core.Operation):
     """
     This op is equivalent to reduce_max, but returns indices instead of values.
 
@@ -148,7 +148,7 @@ class MoArgMaxOp(max._core.Operation):
       %axis = mo.constant {
         value = #M.dense_array<1> : tensor<si32>
       } : !mo.tensor<[], si32>
-      %1 = rmo.mo.arg_max(%0, %axis) : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
+      %1 = rmo.mo.reduce.arg_max(%0, %axis) : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
     ```
     """
 
@@ -183,7 +183,7 @@ class MoArgMaxOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class MoArgMinOp(max._core.Operation):
+class MoReduceArgMinOp(max._core.Operation):
     """
     This op is equivalent to reduce_min, but returns indices instead of values.
 
@@ -204,7 +204,7 @@ class MoArgMinOp(max._core.Operation):
       %axis = mo.constant {
         value = #M.dense_array<1> : tensor<si32>
       } : !mo.tensor<[], si32>
-      %1 = rmo.mo.arg_min(%0, %axis) : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
+      %1 = rmo.mo.reduce.arg_min(%0, %axis) : (!mo.tensor<[2, 2], si32>) -> !mo.tensor<[2, 1], si64>
     ```
     """
 
@@ -2099,7 +2099,7 @@ class MoLogOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class MoLogsoftmaxOp(max._core.Operation):
+class MoReduceLogsoftmaxOp(max._core.Operation):
     """
     Returns `log(softmax(x))`, where `x` is input tensor.
 
@@ -2109,7 +2109,7 @@ class MoLogsoftmaxOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %res = rmo.mo.logsoftmax(%arg) : !mo.tensor<[2, 3], f32>
+      %res = rmo.mo.reduce.logsoftmax(%arg) : !mo.tensor<[2, 3], f32>
     ```
     """
 
@@ -2389,7 +2389,7 @@ class MoMaxPoolOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class MoMeanOp(max._core.Operation):
+class MoReduceMeanOp(max._core.Operation):
     """
     Reduces `input` elements across `axis` to their mean value, changng that
     axis's dimension to 1.
@@ -2403,7 +2403,7 @@ class MoMeanOp(max._core.Operation):
       %arg: !mo.tensor<[2, 3], f32>
       %axis = mo.constant {
         value = #M.dense_array<1> : tensor<1xsi64>} : !mo.tensor<[], si64>
-      %res = rmo.mo.mean(%arg, %axis) : (
+      %res = rmo.mo.reduce.mean(%arg, %axis) : (
         !mo.tensor<[2, 3], f32>, !mo.tensor<[], si64>) -> !mo.tensor<[2, 1], f32>
     ```
     """
@@ -4668,7 +4668,7 @@ class MoSliceOp(max._core.Operation):
         self, arg: max._core.dialects.kgen.ParamDeclArrayAttr, /
     ) -> None: ...
 
-class MoSoftmaxOp(max._core.Operation):
+class MoReduceSoftmaxOp(max._core.Operation):
     """
     Returns `exp(input) / sum(exp(input))`, where `x` is input tensor.
 
@@ -4678,7 +4678,7 @@ class MoSoftmaxOp(max._core.Operation):
 
     ```mlir
       %arg: !mo.tensor<[2, 3], f32>
-      %res = rmo.mo.softmax(%arg) : !mo.tensor<[2, 3], f32>
+      %res = rmo.mo.reduce.softmax(%arg) : !mo.tensor<[2, 3], f32>
     ```
     """
 
@@ -5520,8 +5520,12 @@ class ConvOp(max._core.Operation):
     The op supports 1D-3D convolution, with the following layout assumptions:
     - input has channel last layout. For 2D, that's NHWC, i.e.,
       (batch_size, height, width, in_channels)
-    - filter has layout RSCF, i.e.,
-      (height, width, in_channels / num_groups, out_channels)
+    - filter has layout FCRS, i.e.,
+      (out_channels, in_channels / num_groups, height, width)
+
+    The filter layout is determined by the layout attribute on the filter
+    tensor type. Supported layouts include FCRS (default), RSCF (legacy),
+    and packed variants like FRSCf.
 
     `strides`, `dilations`, and `padding` are all shape attributes.
     If the input has static rank, and must have have sizes of `input_rank - 2`,
@@ -5560,7 +5564,7 @@ class ConvOp(max._core.Operation):
 
     ```mlir
     %input: !mo.tensor<[10, 5, 5, 32], f32>,
-    %filter: !mo.tensor<[2, 2, 32, 64], f32>
+    %filter: !mo.tensor<[64, 32, 2, 2], f32>
 
     %result = rmo.conv(%input, %filter) {
       strides = #mosh<ape[2, 2]> : !mosh.ape,
@@ -5568,7 +5572,7 @@ class ConvOp(max._core.Operation):
       dilations = #mosh<ape[1, 1]> : !mosh.ape,
       num_groups = 1 : si64
     } : (
-      !mo.tensor<[10, 5, 5, 32], f32>, !mo.tensor<[2, 2, 32, 64], f32>
+      !mo.tensor<[10, 5, 5, 32], f32>, !mo.tensor<[64, 32, 2, 2], f32>
     ) -> !mo.tensor<[10, 4, 4, 64], f32>
     ```
     """

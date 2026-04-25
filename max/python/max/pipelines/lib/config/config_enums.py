@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Literal
 
 from max.driver import DeviceSpec
@@ -99,7 +100,7 @@ def supported_encoding_dtype(encoding: SupportedEncoding) -> DType:
 def supported_encoding_quantization(
     encoding: SupportedEncoding,
 ) -> QuantizationEncoding | None:
-    """Returns the QuantizationEncoding for the given encoding."""
+    """Returns the :class:`QuantizationEncoding` for the given encoding."""
     if encoding not in _SUPPORTED_ENCODING_TO_QUANTIZATION_ENCODING:
         raise ValueError(
             f"SupportedEncoding '{encoding}' does not have corresponding"
@@ -121,7 +122,9 @@ def parse_supported_encoding_from_file_name(
         ``None`` if no known encoding pattern is found.
     """
     # TODO(AITLIB-127): Robustify detection of quantization encoding
-    name = name.lower()
+    # Strip directory components so that parent path segments (e.g. HF
+    # cache revision hashes) don't cause false-positive matches.
+    name = os.path.basename(name).lower()
     if "f32" in name or "fp32" in name or "float32" in name:
         return "float32"
     elif "bf16" in name or "bfloat16" in name:

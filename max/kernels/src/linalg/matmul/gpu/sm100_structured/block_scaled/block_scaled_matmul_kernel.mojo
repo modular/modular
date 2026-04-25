@@ -849,6 +849,14 @@ struct BlackwellBlockScaledMatmulKernel[
     @__llvm_arg_metadata(c_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfa_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(sfb_tma_op, `nvvm.grid_constant`)
+    @__name(
+        StaticString(Self.config.get_kernal_name())
+        + StaticString(
+            "_fused_compute_epi" if Self.elementwise_compute_lambda_fn
+            is not None else ""
+        ),
+        mangle=True,
+    )
     def run(
         a_tma_op: Self.ATmaOp,
         b_tma_op: Self.BTmaOp,
@@ -925,9 +933,6 @@ struct BlackwellBlockScaledMatmulKernel[
             cluster_dim, clc_response_arr, clc_full, clc_empty, clc_throttle
         )
 
-        # Per-warp work iterator - owns work_info, pipeline state, and throttle
-        var work_iter = scheduler.work_iterator()
-
         # CTA coordinates and multicast masks come from context
         # ctx.rank_m, ctx.rank_n, ctx.peer_cta_coord
         # ctx.a_multicast_mask, ctx.b_multicast_mask, ctx.mma_complete_mask
@@ -941,40 +946,39 @@ struct BlackwellBlockScaledMatmulKernel[
 
         # ===== TMA LOAD WARP =====
         if WarpRole.is_main_load():
+            var load_iter = scheduler.work_iterator()
+
             with MatmulProfilerType[0](workspace, 0):
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
                 with input_pipeline.producer() as producer:
-                    while work_iter.has_work():
-                        with work_iter.next() as current:
-                            work_iter.throttle_signal(
-                                ctx.is_first_cta_in_cluster
-                            )
+                    for current in load_iter:
+                        scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                            for i in range(
-                                num_iters // UInt32(Self.config.k_group_size)
-                            ):
-                                with producer.acquire() as tiles:  # waits for consumer
-                                    Self.load_input_tiles(
-                                        a_tma_op,
-                                        b_tma_op,
-                                        sfa_tma_op,
-                                        sfb_tma_op,
-                                        tiles,
-                                        ctx.peer_cta_coord,
-                                        (
-                                            Int(current.m),
-                                            Int(current.n),
-                                            Int(current.k_start),
-                                        ),
-                                        ctx.a_multicast_mask,
-                                        ctx.b_multicast_mask,
-                                        i * UInt32(Self.config.k_group_size),
-                                        ctx.elect_one_cta,
-                                    )
+                        for i in range(
+                            num_iters // UInt32(Self.config.k_group_size)
+                        ):
+                            with producer.acquire() as tiles:  # waits for consumer
+                                Self.load_input_tiles(
+                                    a_tma_op,
+                                    b_tma_op,
+                                    sfa_tma_op,
+                                    sfb_tma_op,
+                                    tiles,
+                                    ctx.peer_cta_coord,
+                                    (
+                                        Int(current.m),
+                                        Int(current.n),
+                                        Int(current.k_start),
+                                    ),
+                                    ctx.a_multicast_mask,
+                                    ctx.b_multicast_mask,
+                                    i * UInt32(Self.config.k_group_size),
+                                    ctx.elect_one_cta,
+                                )
 
-                            syncwarp()
+                        syncwarp()
 
                     producer.drain()  # wait for consumer before CTA exits
 
@@ -989,9 +993,8 @@ struct BlackwellBlockScaledMatmulKernel[
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     wait_on_dependent_grids()
 
-                while sched_iter.has_work():
-                    with sched_iter.next():
-                        sched_iter.signal_and_advance()
+                for _ in sched_iter:
+                    sched_iter.signal_and_advance()
 
                 sched_iter.drain()
 
@@ -1015,32 +1018,31 @@ struct BlackwellBlockScaledMatmulKernel[
                 )
 
                 with mma_ctx:  # TMEM lifecycle
-                    while work_iter.has_work():
-                        with work_iter.wait_and_advance():  # blocks on CLC
-                            if ctx.elect_one_cta:
-                                with mma_ctx.output_pipeline.producer() as output_stage:  # waits for epilogue
-                                    var tmem_offset = UInt32(
-                                        output_stage.tmem.offset()
-                                    )
+                    for _ in scheduler.work_iterator():
+                        if ctx.elect_one_cta:
+                            with mma_ctx.output_pipeline.producer() as output_stage:  # waits for epilogue
+                                var tmem_offset = UInt32(
+                                    output_stage.tmem.offset()
+                                )
 
-                                    with input_pipeline.consumer() as consumer:
-                                        for i in range(
-                                            num_iters
-                                            // UInt32(Self.config.k_group_size)
-                                        ):
-                                            with consumer.acquire() as input_tiles:  # waits for TMA
-                                                Self.mma(
-                                                    input_tiles,
-                                                    mma_op,
-                                                    tmem_offset,
-                                                    sfa_tmem,
-                                                    sfb_tmem,
-                                                    i
-                                                    * UInt32(
-                                                        Self.config.k_group_size
-                                                    ),
-                                                    0,
-                                                )
+                                with input_pipeline.consumer() as consumer:
+                                    for i in range(
+                                        num_iters
+                                        // UInt32(Self.config.k_group_size)
+                                    ):
+                                        with consumer.acquire() as input_tiles:  # waits for TMA
+                                            Self.mma(
+                                                input_tiles,
+                                                mma_op,
+                                                tmem_offset,
+                                                sfa_tmem,
+                                                sfb_tmem,
+                                                i
+                                                * UInt32(
+                                                    Self.config.k_group_size
+                                                ),
+                                                0,
+                                            )
 
                 comptime if Self.pdl_level > PDLLevel.OFF:
                     launch_dependent_grids()
@@ -1058,25 +1060,22 @@ struct BlackwellBlockScaledMatmulKernel[
                 Self.TmemDealloc(smem.pipelines.tmem_dealloc()),
             )
 
+            var epi_iter = scheduler.work_iterator()
+
             with epi_ctx:  # signals TMEM dealloc on exit
-                var tile_idx = 0
-
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
-                            with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
-                                Self.epilogue(
-                                    c_tiles,
-                                    c_tma_op,
-                                    output_stage,
-                                    work_tile_coord=(
-                                        current.m,
-                                        current.n,
-                                        current.k_start,
-                                    ),
-                                    M=mnk[0],
-                                    N=mnk[1],
-                                    alpha=alpha,
-                                )
-
-                    tile_idx += 1
+                for tile_idx, current in enumerate(epi_iter):
+                    with MatmulProfilerType[3](workspace, UInt32(tile_idx)):
+                        with epi_ctx.output_pipeline.consumer() as output_stage:  # waits for MMA
+                            Self.epilogue(
+                                c_tiles,
+                                c_tma_op,
+                                output_stage,
+                                work_tile_coord=(
+                                    current.m,
+                                    current.n,
+                                    current.k_start,
+                                ),
+                                M=mnk[0],
+                                N=mnk[1],
+                                alpha=alpha,
+                            )

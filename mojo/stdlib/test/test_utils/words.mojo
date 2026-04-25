@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Provides word lists in multiple languages for use in string testing."""
 # RUN: %mojo %s
 
 # Most common words in different languages and the gen_words_pairs function

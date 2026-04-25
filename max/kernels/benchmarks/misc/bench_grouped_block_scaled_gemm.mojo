@@ -52,6 +52,7 @@ from linalg.fp4_utils import (
 )
 from linalg.matmul.gpu.sm100_structured.structured_kernels.config import (
     BlockScaledMatmulConfig,
+    GEMMKind,
 )
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled.grouped_block_scaled_matmul import (
     grouped_block_scaled_matmul,
@@ -124,7 +125,7 @@ def bench_grouped_block_scaled_gemm[
         m: M dimension.
         n: N dimension.
         k: K dimension.
-        m_override: Runtime M value. When > 0, overrides m.value() for
+        m_override: Runtime M value. When > 0, overrides Int(m.value()) for
             allocations and problem sizes. Used by kbench with dynamic M.
     """
     comptime SF_VECTOR_SIZE = sf_vector_size
@@ -140,32 +141,34 @@ def bench_grouped_block_scaled_gemm[
         1, 1, 1
     )
 
-    # Use m_override if provided, otherwise m.value() (compile-time)
-    var M = m_override if m_override > 0 else m.value()
+    # Use m_override if provided, otherwise Int(m.value()) (compile-time)
+    var M = m_override if m_override > 0 else Int(m.value())
 
     # For FP4, K dimension in arrays is halved (2 values packed per byte)
     comptime k_pack = 2 if is_fp4 else 1
     comptime K_ARRAY = KType.static_value // k_pack
-    var k_array_val = k.value() // k_pack
+    var k_array_val = Int(k.value()) // k_pack
 
     # Compute sizes (using packed K for FP4)
     var a_size = M * k_array_val
     var b_size = (
-        n.value() * k_array_val if transpose_b else k_array_val * n.value()
+        Int(n.value())
+        * k_array_val if transpose_b else k_array_val
+        * Int(n.value())
     )
-    var c_size = M * n.value()
+    var c_size = M * Int(n.value())
 
     # Scale factors always use logical K
     var a_scales_total = (
         ceildiv(M, SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
     var b_scales_total = (
-        ceildiv(n.value(), SF_MN_GROUP_SIZE)
-        * ceildiv(k.value(), SF_VECTOR_SIZE * SF_ATOM_K)
+        ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)
+        * ceildiv(Int(k.value()), SF_VECTOR_SIZE * SF_ATOM_K)
         * SF_ATOM_M[0]
         * SF_ATOM_M[1]
         * SF_ATOM_K
@@ -205,11 +208,11 @@ def bench_grouped_block_scaled_gemm[
 
     # Create TileTensors - 3D with batch=1
     var a_template = TileTensor(
-        a_device.unsafe_ptr(),
+        a_device,
         row_major(Coord(Idx[1](), Idx(M), Idx[K_ARRAY]())),
     )
     var b_template = TileTensor(
-        b_device.unsafe_ptr(),
+        b_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -219,13 +222,13 @@ def bench_grouped_block_scaled_gemm[
         ),
     )
     var c_template = TileTensor(
-        c_device.unsafe_ptr(),
+        c_device,
         row_major(Coord(Idx[1](), Idx(M), n)),
     )
 
     # Scale factor template tensors - 5D with batch=1 and merged last dims
     var sfa_template = TileTensor(
-        sfa_device.unsafe_ptr(),
+        sfa_device,
         row_major(
             Coord(
                 Idx[1](),
@@ -237,11 +240,11 @@ def bench_grouped_block_scaled_gemm[
         ),
     )
     var sfb_template = TileTensor(
-        sfb_device.unsafe_ptr(),
+        sfb_device,
         row_major(
             Coord(
                 Idx[1](),
-                Idx(ceildiv(n.value(), SF_MN_GROUP_SIZE)),
+                Idx(ceildiv(Int(n.value()), SF_MN_GROUP_SIZE)),
                 Idx[ceildiv(KType.static_value, SF_VECTOR_SIZE * SF_ATOM_K)](),
                 Idx[SF_ATOM_M[0]](),
                 Idx[SF_ATOM_M[1] * SF_ATOM_K](),
@@ -253,8 +256,8 @@ def bench_grouped_block_scaled_gemm[
     var problem_sizes_host = alloc[Int32](max_groups * 4)
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(M)
-        problem_sizes_host[g * 4 + 1] = Int32(n.value())
-        problem_sizes_host[g * 4 + 2] = Int32(k.value())
+        problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))
+        problem_sizes_host[g * 4 + 2] = Int32(Int(k.value()))
         problem_sizes_host[g * 4 + 3] = 1
 
     var problem_sizes_device = ctx.enqueue_create_buffer[DType.int32](
@@ -294,29 +297,29 @@ def bench_grouped_block_scaled_gemm[
     )
 
     var a_ptrs_tensor = TileTensor(
-        a_ptrs_device.unsafe_ptr(),
+        a_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var b_ptrs_tensor = TileTensor(
-        b_ptrs_device.unsafe_ptr(),
+        b_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var c_ptrs_tensor = TileTensor(
-        c_ptrs_device.unsafe_ptr(),
+        c_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var sfa_ptrs_tensor = TileTensor(
-        sfa_ptrs_device.unsafe_ptr(),
+        sfa_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
     var sfb_ptrs_tensor = TileTensor(
-        sfb_ptrs_device.unsafe_ptr(),
+        sfb_ptrs_device,
         row_major(Coord(Idx[max_groups](), Idx[1]())),
     )
 
     comptime BM = mma_shape[0] // cta_group
     comptime BN = mma_shape[1] // cta_group
-    var tiles_per_group = ceildiv(M, BM) * ceildiv(n.value(), BN)
+    var tiles_per_group = ceildiv(M, BM) * ceildiv(Int(n.value()), BN)
     var total_tiles = tiles_per_group * num_groups
 
     # Configuration matching production benchmark
@@ -330,10 +333,11 @@ def bench_grouped_block_scaled_gemm[
         cta_group=cta_group,
         k_group_size=k_group_size,
         num_accum_pipeline_stages=2,
+        gemm_kind=GEMMKind.GMM,
     )
 
     # Total FLOPs for all groups
-    var total_flops = 2 * M * n.value() * k.value() * num_groups
+    var total_flops = 2 * M * Int(n.value()) * Int(k.value()) * num_groups
 
     @parameter
     @__copy_capture(
@@ -381,7 +385,7 @@ def bench_grouped_block_scaled_gemm[
     bench.bench_function[bench_func](
         BenchId(
             _get_run_name[a_type, c_type](
-                num_groups, M, n.value(), k.value(), cta_group
+                num_groups, M, Int(n.value()), Int(k.value()), cta_group
             )
         ),
         [ThroughputMeasure(BenchMetric.flops, total_flops)],

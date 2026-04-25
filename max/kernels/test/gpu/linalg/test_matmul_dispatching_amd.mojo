@@ -80,10 +80,10 @@ def test_dispatch_dynamic_m[
     ctx.enqueue_copy(c_dev, c_host_ptr)
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
-    var a_tensor = TileTensor(a_dev.unsafe_ptr(), a_shape)
-    var b_tensor = TileTensor(b_dev.unsafe_ptr(), b_shape)
-    var c_tensor = TileTensor(c_dev.unsafe_ptr(), c_shape)
-    var c_ref_tensor = TileTensor(c_ref_dev.unsafe_ptr(), c_shape)
+    var a_tensor = TileTensor(a_dev, a_shape)
+    var b_tensor = TileTensor(b_dev, b_shape)
+    var c_tensor = TileTensor(c_dev, c_shape)
+    var c_ref_tensor = TileTensor(c_ref_dev, c_shape)
 
     _matmul_gpu[
         use_tensor_core=True,
@@ -217,17 +217,11 @@ def test_oob_diagnostic[
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
     # TileTensors: kernel sees [M, N/K] but backed by larger allocation
-    var a_tensor = TileTensor(
-        a_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
-    )
-    var b_tensor = TileTensor(
-        b_dev.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
-    )
-    var c_tensor = TileTensor(
-        c_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
-    )
+    var a_tensor = TileTensor(a_dev, row_major(Coord(Idx[M](), Idx[K]())))
+    var b_tensor = TileTensor(b_dev, row_major(Coord(Idx[N](), Idx[K]())))
+    var c_tensor = TileTensor(c_dev, row_major(Coord(Idx[M](), Idx[N]())))
     var c_ref_tensor = TileTensor(
-        c_ref_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
+        c_ref_dev, row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     # Run kernel under test
@@ -433,22 +427,16 @@ def test_oob_epilogue[
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
     # TileTensors: kernel sees [M, N, K]
-    var a_tensor = TileTensor(
-        a_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[K]()))
-    )
-    var b_tensor = TileTensor(
-        b_dev.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
-    )
-    var c_tensor = TileTensor(
-        c_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
-    )
+    var a_tensor = TileTensor(a_dev, row_major(Coord(Idx[M](), Idx[K]())))
+    var b_tensor = TileTensor(b_dev, row_major(Coord(Idx[N](), Idx[K]())))
+    var c_tensor = TileTensor(c_dev, row_major(Coord(Idx[M](), Idx[N]())))
     var c_ref_tensor = TileTensor(
-        c_ref_dev.unsafe_ptr(), row_major(Coord(Idx[M](), Idx[N]()))
+        c_ref_dev, row_major(Coord(Idx[M](), Idx[N]()))
     )
 
     # Output buffer: [alloc_M, alloc_N] so OOB writes in both dims are visible
     var out_tensor = TileTensor(
-        out_dev.unsafe_ptr(),
+        out_dev,
         row_major(Coord(Idx[alloc_M](), Idx[alloc_N]())),
     )
 
@@ -653,21 +641,15 @@ def test_oob_epilogue_dynamic_m[
     ctx.enqueue_copy(c_ref_dev, c_ref_host_ptr)
 
     # Dynamic M: TileTensors with runtime M dimension
-    var a_tensor = TileTensor(
-        a_dev.unsafe_ptr(), row_major(Coord(Idx(Int(m)), Idx[K]()))
-    )
-    var b_tensor = TileTensor(
-        b_dev.unsafe_ptr(), row_major(Coord(Idx[N](), Idx[K]()))
-    )
-    var c_tensor = TileTensor(
-        c_dev.unsafe_ptr(), row_major(Coord(Idx(Int(m)), Idx[N]()))
-    )
+    var a_tensor = TileTensor(a_dev, row_major(Coord(Idx(Int(m)), Idx[K]())))
+    var b_tensor = TileTensor(b_dev, row_major(Coord(Idx[N](), Idx[K]())))
+    var c_tensor = TileTensor(c_dev, row_major(Coord(Idx(Int(m)), Idx[N]())))
     var c_ref_tensor = TileTensor(
-        c_ref_dev.unsafe_ptr(), row_major(Coord(Idx(Int(m)), Idx[N]()))
+        c_ref_dev, row_major(Coord(Idx(Int(m)), Idx[N]()))
     )
 
     var out_tensor = TileTensor(
-        out_dev.unsafe_ptr(), row_major(Coord(Idx(Int(alloc_m)), Idx[N]()))
+        out_dev, row_major(Coord(Idx(Int(alloc_m)), Idx[N]()))
     )
 
     @parameter
@@ -790,6 +772,36 @@ def main() raises:
             test_dispatch_dynamic_m[DType.bfloat16, DType.bfloat16, 4096, 4096](
                 ctx, bf16_m[i]
             )
+
+        # ============================================================
+        # FP8 M=256, N=256, Test K % BK != 0
+        # ============================================================
+
+        print("\nFP8 M=256, N=256, Test K % BK != 0")
+        print("  K = 128,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 128](
+            ctx, 256
+        )
+
+        print("  K = 192,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 192](
+            ctx, 256
+        )
+
+        print("  K = 256,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 256](
+            ctx, 256
+        )
+
+        print("  K = 320,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 320](
+            ctx, 256
+        )
+
+        print("  K = 384,", end=" ")
+        test_dispatch_dynamic_m[DType.float8_e4m3fn, DType.float32, 256, 384](
+            ctx, 256
+        )
 
         # ============================================================
         # FP8 N=4096 K=4096 (covers standard GEMM, pingpong, skinny)

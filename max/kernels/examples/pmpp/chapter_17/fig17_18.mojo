@@ -15,7 +15,7 @@ from std.collections import List
 from spmv_utils import CSCMatrix, generate_sparse_matrix, spmv_cpu, verify
 from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
-from std.os import Atomic
+from std.atomic import Atomic
 
 
 @fieldwise_init
@@ -160,8 +160,8 @@ def main() raises:
 
     ctx.enqueue_function_experimental[spmv_csc_kernel](
         d_cscMatrix,
-        d_x_buf.unsafe_ptr(),
-        d_y_buf.unsafe_ptr(),
+        d_x_buf,
+        d_y_buf,
         grid_dim=numBlocks,
         block_dim=blockSize,
     )

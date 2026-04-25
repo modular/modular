@@ -37,7 +37,7 @@ def sum_op(a: Float32, b: Float32) -> Float32:
 # Robust Block Reduce using Shared Memory (No Shuffle)
 @always_inline
 def block_reduce[
-    op: def(Float32, Float32) -> Float32
+    op: def(Float32, Float32) thin -> Float32
 ](
     val: Float32,
     shared_mem: UnsafePointer[
@@ -198,9 +198,9 @@ def main() raises:
         device.enqueue_copy(d_S, h_S)
 
         device.enqueue_function_experimental[softmax_kernel](
-            d_S.unsafe_ptr(),
-            d_D.unsafe_ptr(),
-            d_P.unsafe_ptr(),
+            d_S,
+            d_D,
+            d_P,
             N,
             grid_dim=(N, 1, 1),
             block_dim=(BLOCK_SIZE, 1, 1),

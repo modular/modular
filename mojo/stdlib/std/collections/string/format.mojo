@@ -39,7 +39,7 @@ indicate whether the argument should be formatted using `repr()` or `String()`,
 respectively:
 
 ```mojo
-var s = "{!r}".format(myComplicatedObject)
+var s = "{!r}".format("test")
 ```
 
 Note that the following features from Python's `str.format()` are
@@ -71,7 +71,6 @@ methods.
 
 
 from std.builtin.globals import global_constant
-from std.builtin.variadics import Variadic
 from std.collections.string.string_slice import get_static_string
 from std.compile import get_type_name
 from std.utils import Variant
@@ -136,6 +135,7 @@ def _comptime_list_to_span[
 ]() -> Span[T, StaticConstantOrigin]:
     """Convert a comptime list to a runtime span of static constant origin."""
 
+    @parameter
     def list_to_array[list: List[T]]() -> InlineArray[T, len(list)]:
         var array = InlineArray[T, len(list)](uninitialized=True)
 
@@ -336,7 +336,7 @@ struct _FormatUtils:
         var raised_manual_index = Optional[Int](None)
         var raised_automatic_index = Optional[Int](None)
         var raised_kwarg_field = Optional[StringSlice[FormatOrigin]](None)
-        comptime n_args = Variadic.size(Ts)
+        comptime n_args = Ts.size
         comptime `}` = UInt8(ord("}"))
         comptime `{` = UInt8(ord("{"))
         comptime l_err = "there is a single curly { left unclosed or unescaped"
@@ -603,8 +603,8 @@ struct _FormatCurlyEntry[origin: ImmutOrigin](ImplicitlyCopyable):
         comptime s_value = UInt8(ord("s"))
         # alias a_value = UInt8(ord("a")) # TODO
 
-        def _format(idx: Int) unified {read self, read args, mut writer}:
-            comptime for i in range(Variadic.size(Ts)):
+        def _format(idx: Int) {read self, read args, mut writer}:
+            comptime for i in range(Ts.size):
                 if i == idx:
                     var flag = self.conversion_flag
                     var empty = flag == 0

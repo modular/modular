@@ -176,6 +176,9 @@ class Llama3Config(ArchConfigWithKVCache):
             num_layers=Llama3Config.get_num_layers(huggingface_config),
             devices=devices,
             data_parallel_degree=pipeline_config.model.data_parallel_degree,
+            num_eagle_speculative_tokens=pipeline_config.speculative.num_speculative_tokens
+            if pipeline_config.speculative
+            else 0,
         )
 
     @staticmethod
@@ -269,7 +272,7 @@ class Llama3Config(ArchConfigWithKVCache):
         )
         rope_scaling_params: Llama3RopeScalingParams | None = None
         longrope_scaling_params: LongRoPEScalingParams | None = None
-        rope_scaling = huggingface_config.rope_scaling
+        rope_scaling = getattr(huggingface_config, "rope_scaling", None)
 
         if rope_scaling is not None:
             # Since "rope_type" huggingface config is not standardized, we need

@@ -21,7 +21,7 @@ from internal_utils import assert_almost_equal
 from linalg.grouped_matmul_sm100_1d1d import (
     blackwell_block_scaled_matmul_tma_umma_warp_specialized,
 )
-from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig
+from linalg.matmul.gpu.sm100.config import BlockScaledMatmulConfig, GEMMKind
 from linalg.matmul.gpu.sm100_structured.grouped_block_scaled_1d1d import (
     grouped_matmul_block_scaled,
 )
@@ -132,12 +132,12 @@ def _test_kernel_impl[
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
-    var a_tensor = TileTensor(a_device.unsafe_ptr(), a_shape)
+    var a_tensor = TileTensor(a_device, a_shape)
     var a_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
         num_active_experts + 1
     )
     var a_offsets_tensor = TileTensor(
-        a_offsets_device.unsafe_ptr(),
+        a_offsets_device,
         row_major(
             Coord(
                 Idx(Int(num_active_experts + 1)),
@@ -145,12 +145,12 @@ def _test_kernel_impl[
         ),
     )
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
-    var b_tensor = TileTensor(b_device.unsafe_ptr(), b_shape)
+    var b_tensor = TileTensor(b_device, b_shape)
     var expert_ids_device = ctx.enqueue_create_buffer[DType.int32](
         num_active_experts
     )
     var expert_ids_tensor = TileTensor(
-        expert_ids_device.unsafe_ptr(),
+        expert_ids_device,
         row_major(
             Coord(
                 Idx(Int(num_active_experts)),
@@ -161,7 +161,7 @@ def _test_kernel_impl[
         num_active_experts
     )
     var a_scale_offsets_tensor = TileTensor(
-        a_scale_offsets_device.unsafe_ptr(),
+        a_scale_offsets_device,
         row_major(
             Coord(
                 Idx(Int(num_active_experts)),
@@ -169,14 +169,14 @@ def _test_kernel_impl[
         ),
     )
     var c_device = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_tensor = TileTensor(c_device.unsafe_ptr(), c_shape)
+    var c_tensor = TileTensor(c_device, c_shape)
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
-    var c_ref_tensor = TileTensor(c_device_ref.unsafe_ptr(), c_shape)
+    var c_ref_tensor = TileTensor(c_device_ref, c_shape)
     var expert_scales_device = ctx.enqueue_create_buffer[DType.float32](
         num_experts
     )
     var expert_scales_tensor = TileTensor(
-        expert_scales_device.unsafe_ptr(),
+        expert_scales_device,
         row_major(
             Coord(
                 Idx[num_experts](),
@@ -234,15 +234,11 @@ def _test_kernel_impl[
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
     )
-    var a_scales_tensor = TileTensor(
-        a_scales_device.unsafe_ptr(), a_scales_shape
-    )
+    var a_scales_tensor = TileTensor(a_scales_device, a_scales_shape)
     var b_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         b_scales_total
     )
-    var b_scales_tensor = TileTensor(
-        b_scales_device.unsafe_ptr(), b_scales_shape
-    )
+    var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize matmul operands
     if simple_init():
@@ -361,6 +357,7 @@ def _test_kernel_impl[
             AB_swapped=swapAB,
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
+            gemm_kind=GEMMKind.GMM,
         )
 
         blackwell_block_scaled_matmul_tma_umma_warp_specialized[
@@ -395,13 +392,14 @@ def _test_kernel_impl[
             k_group_size=k_group_size,
             num_accum_pipeline_stages=1 if mma_shape[1] == 256 else 2,
             is_gmm=True,
+            gemm_kind=GEMMKind.GMM,
         )
 
         # Construct scale TileTensors from raw pointers with explicit
         comptime k_groups = ceildiv(expert_shape[1], SF_VECTOR_SIZE * SF_ATOM_K)
         comptime n_groups = ceildiv(expert_shape[0], SF_MN_GROUP_SIZE)
         var a_scales_tt = TileTensor(
-            a_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+            a_scales_device,
             row_major(
                 Coord(
                     RuntimeInt[DType.int64](Scalar[DType.int64](a_scale_dim0)),
@@ -413,7 +411,7 @@ def _test_kernel_impl[
             ),
         ).as_any_origin()
         var b_scales_tt = TileTensor(
-            b_scales_device.unsafe_ptr().bitcast[Scalar[scales_dtype]](),
+            b_scales_device,
             row_major(
                 Coord(
                     Idx[num_experts](),
@@ -426,7 +424,7 @@ def _test_kernel_impl[
             ),
         ).as_any_origin()
         var expert_scales_tt = TileTensor(
-            expert_scales_device.unsafe_ptr().bitcast[Scalar[DType.float32]](),
+            expert_scales_device,
             row_major(
                 Coord(
                     RuntimeInt[DType.int64](Scalar[DType.int64](num_experts)),
@@ -1038,6 +1036,79 @@ def main() raises:
             ctx,
         )
 
+        # MMA_N=8: cp.async SFB (group_size < 128)
+        # Single token per expert
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [1, 2, 3, 4],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # MMA_N=8: Mixed cp.async (gs<128) + TMA (gs>=128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
+        # MMA_N=8: Boundary gs=127/128
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            test_rtol=0.08,
+        ](
+            4,
+            [127, 128, 64, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         # MMA_N=16 tests (new structured kernel only, small BN, MXFP8)
         print("\n========================================")
         print("Testing NEW kernel with MMA_N=16 (MXFP8)")
@@ -1092,6 +1163,29 @@ def main() raises:
             ctx,
         )
 
+        # MMA_N=16: cp.async SFB (group_size < 128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n16,
+            umma_shape_n16,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [1, 64, 4, 256],
+            [0, 1, 2, 3],
+            ctx,
+        )
+
         # MMA_N=32 tests (new structured kernel only, small BN, MXFP8)
         print("\n========================================")
         print("Testing NEW kernel with MMA_N=32 (MXFP8)")
@@ -1143,6 +1237,29 @@ def main() raises:
             3,
             [64 + 1, 1024 + 3, 128 * 3 + 2],
             [2, 0, 1],
+            ctx,
+        )
+
+        # MMA_N=32: cp.async SFB (group_size < 128)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n32,
+            umma_shape_n32,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+        ](
+            4,
+            [1, 64, 32, 256],
+            [0, 1, 2, 3],
             ctx,
         )
 
@@ -1223,6 +1340,31 @@ def main() raises:
             4,
             [512, 1000, 2000, 3000],
             [0, 3, 2, 4],
+            ctx,
+        )
+
+        # MMA_N=8 AB_swapped: cp.async SFB (mixed small/large)
+        _test_kernel_impl[
+            "new",
+            dtype,
+            dtype,
+            out_dtype,
+            scale_dtype,
+            block_tile_shape_n8,
+            umma_shape_n8,
+            cluster_shape=StaticTuple[Int32, 3](1, 1, 1),
+            cta_group=1,
+            a_swizzle=swizzle,
+            b_swizzle=swizzle,
+            block_swizzle_size=8,
+            num_experts=4,
+            expert_shape=Index(2048, 1024),
+            swapAB=True,
+            test_rtol=0.08,
+        ](
+            4,
+            [4, 256, 1, 200],
+            [0, 1, 2, 3],
             ctx,
         )
 

@@ -25,7 +25,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import Callable
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -33,7 +33,7 @@ import aiohttp
 from tqdm.asyncio import tqdm
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 
-from .config import BenchmarkTask
+from .config import PIXEL_GENERATION_TASKS, BenchmarkTask
 from .datasets.types import (
     OpenAIImage,
     PixelGenerationImageOptions,
@@ -102,6 +102,7 @@ class RequestFuncInput(BaseRequestFuncInput):
     prompt_len: int
     max_tokens: int | None
     ignore_eos: bool
+    response_format: dict[str, Any] | None = None
 
     def get_output_type(self) -> type[BaseRequestFuncOutput]:
         return RequestFuncOutput
@@ -155,6 +156,38 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def measured_window_duration(
+    outputs: Iterable[BaseRequestFuncOutput], fallback: float
+) -> float:
+    """Wall-clock seconds from the first submit to the last complete.
+
+    The window covers only requests with both a ``request_submit_time`` and a
+    ``request_complete_time``. If no such request exists, return ``fallback``.
+    Otherwise return ``max(last_complete - first_submit, 1e-9)`` so callers
+    can safely divide.
+
+    This is the same window math the steady-state block uses and is the
+    correct denominator for aggregate throughput / TPM over a sliced benchmark
+    region — warmup/tail wall time is excluded along with warmup/tail tokens.
+    """
+    first_submit: float | None = None
+    last_complete: float | None = None
+    for o in outputs:
+        submit = o.request_submit_time
+        if submit is None:
+            continue
+        complete = o.request_complete_time
+        if complete is None:
+            continue
+        if first_submit is None or submit < first_submit:
+            first_submit = submit
+        if last_complete is None or complete > last_complete:
+            last_complete = complete
+    if first_submit is None or last_complete is None:
+        return fallback
+    return max(last_complete - first_submit, 1e-9)
 
 
 # TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for
@@ -442,6 +475,70 @@ def _compute_chunk_tpot(
     return None
 
 
+def _extract_sse_payload(line: str) -> str | None:
+    """Extract a payload from an SSE line or a bare JSON line."""
+    stripped = line.strip()
+    if not stripped or stripped.startswith(":"):
+        return None
+
+    if stripped.startswith("data:"):
+        payload = stripped.removeprefix("data:").lstrip()
+        return payload or None
+
+    field, separator, _ = stripped.partition(":")
+    if separator and field.isalpha():
+        return None
+
+    return stripped
+
+
+def _is_complete_sse_payload(payload: str) -> bool:
+    """Return whether the payload is complete enough to parse independently."""
+    if payload == "[DONE]":
+        return True
+    try:
+        json.loads(payload)
+    except json.JSONDecodeError:
+        return False
+    return True
+
+
+async def _iter_sse_payloads(
+    content: AsyncIterable[bytes],
+) -> AsyncIterator[str]:
+    """Yield payload lines for the OpenAI-style SSE subset used by benchmarks.
+
+    This intentionally handles the stream shapes we consume in practice:
+    `data:` payload lines, SSE comment lines, and transport chunk splitting.
+    It does not attempt full SSE event assembly across multiple `data:` lines.
+    """
+    pending = ""
+    async for chunk_bytes in content:
+        if not chunk_bytes:
+            continue
+
+        pending += chunk_bytes.decode("utf-8")
+        while True:
+            newline_index = pending.find("\n")
+            if newline_index == -1:
+                break
+
+            line = pending[:newline_index].rstrip("\r")
+            pending = pending[newline_index + 1 :]
+            payload = _extract_sse_payload(line)
+            if payload is not None:
+                yield payload
+
+        payload = _extract_sse_payload(pending.rstrip("\r"))
+        if payload is not None and _is_complete_sse_payload(payload):
+            yield payload
+            pending = ""
+
+    payload = _extract_sse_payload(pending.rstrip("\r"))
+    if payload is not None:
+        yield payload
+
+
 async def _run_openai_stream_request(
     *,
     api_url: str,
@@ -468,14 +565,7 @@ async def _run_openai_stream_request(
                 url=api_url, json=payload, headers=headers
             ) as response:
                 if response.status == 200:
-                    async for chunk_bytes in response.content:
-                        chunk_bytes = chunk_bytes.strip()
-                        if not chunk_bytes:
-                            continue
-
-                        chunk = chunk_bytes.decode("utf-8").removeprefix(
-                            "data: "
-                        )
+                    async for chunk in _iter_sse_payloads(response.content):
                         latency = time.perf_counter() - st
                         if chunk == "[DONE]":
                             continue
@@ -602,7 +692,10 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
         else:  # conversation
             messages_data = request_func_input.prompt
 
-        payload: dict[str, bool | str | int | float | list[dict[str, Any]]] = {
+        payload: dict[
+            str,
+            bool | str | int | float | list[dict[str, Any]] | dict[str, Any],
+        ] = {
             "model": request_func_input.model,
             "messages": messages_data,
             "stream": True,
@@ -617,6 +710,8 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             payload["top_k"] = request_func_input.top_k
         if request_func_input.top_p is not None:
             payload["top_p"] = request_func_input.top_p
+        if request_func_input.response_format is not None:
+            payload["response_format"] = request_func_input.response_format
         for img in request_func_input.images:
             # TODO: Remove this type ignore
             # (error: Value of type "object" is not indexable)
@@ -795,6 +890,208 @@ class OpenResponsesRequestDriver(RequestDriver):
                 return output
 
 
+def _build_sglang_pixel_generation_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> dict[str, Any]:
+    """Build payload for sglang's /v1/images/generations endpoint."""
+    payload: dict[str, Any] = {
+        "model": request_func_input.model,
+        "prompt": request_func_input.prompt,
+        "n": 1,
+        "response_format": "b64_json",
+    }
+
+    if request_func_input.image_options is not None:
+        opts = request_func_input.image_options
+        if opts.width is not None and opts.height is not None:
+            payload["size"] = f"{opts.width}x{opts.height}"
+        if opts.steps is not None:
+            payload["num_inference_steps"] = opts.steps
+        if opts.guidance_scale is not None:
+            payload["guidance_scale"] = opts.guidance_scale
+        if opts.seed is not None:
+            payload["seed"] = opts.seed
+        # negative_prompt is not supported by sglang's images API.
+
+    return payload
+
+
+class SglangPixelGenerationRequestDriver(RequestDriver):
+    """Request driver for sglang's /v1/images/generations endpoint."""
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "SglangPixelGenerationRequestDriver requires"
+                " PixelGenerationRequestFuncInput."
+            )
+        api_url = request_func_input.api_url
+        if not api_url.endswith("images/generations"):
+            raise ValueError(
+                "Sglang pixel generation URL must end with"
+                " 'images/generations'."
+            )
+
+        payload = _build_sglang_pixel_generation_payload(request_func_input)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = PixelGenerationRequestFuncOutput()
+        start = time.perf_counter()
+        output.request_submit_time = start
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=api_url, json=payload, headers=headers
+                ) as response:
+                    output.latency = time.perf_counter() - start
+                    if response.status != 200:
+                        body = await response.text()
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    body = await response.json()
+                    # sglang returns {"data": [{"b64_json": "..."}, ...]}
+                    data = body.get("data", [])
+                    output.num_generated_outputs = len(data)
+                    if output.num_generated_outputs <= 0:
+                        output.error = (
+                            "No images found in sglang response body."
+                        )
+                        output.success = False
+                        return output
+
+                    output.success = True
+                    return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
+def _build_vllm_omni_pixel_generation_payload(
+    request_func_input: PixelGenerationRequestFuncInput,
+) -> dict[str, Any]:
+    """Build payload for vllm-omni's /v1/chat/completions endpoint."""
+    extra_body: dict[str, Any] = {}
+
+    if request_func_input.image_options is not None:
+        opts = request_func_input.image_options
+        if opts.height is not None:
+            extra_body["height"] = opts.height
+        if opts.width is not None:
+            extra_body["width"] = opts.width
+        if opts.steps is not None:
+            extra_body["num_inference_steps"] = opts.steps
+        if opts.guidance_scale is not None:
+            extra_body["guidance_scale"] = opts.guidance_scale
+        if opts.seed is not None:
+            extra_body["seed"] = opts.seed
+        # negative_prompt is not supported by vllm-omni's chat API.
+
+    payload: dict[str, Any] = {
+        "model": request_func_input.model,
+        "messages": [{"role": "user", "content": request_func_input.prompt}],
+    }
+    if extra_body:
+        payload["extra_body"] = extra_body
+
+    return payload
+
+
+class VllmOmniPixelGenerationRequestDriver(RequestDriver):
+    """Request driver for vllm-omni's /v1/chat/completions endpoint
+    (diffusion image generation)."""
+
+    async def request(
+        self, request_func_input: BaseRequestFuncInput
+    ) -> PixelGenerationRequestFuncOutput:
+        if not isinstance(request_func_input, PixelGenerationRequestFuncInput):
+            raise TypeError(
+                "VllmOmniPixelGenerationRequestDriver requires"
+                " PixelGenerationRequestFuncInput."
+            )
+        api_url = request_func_input.api_url
+        if not api_url.endswith("chat/completions"):
+            raise ValueError(
+                "vllm-omni pixel generation URL must end with"
+                " 'chat/completions'."
+            )
+
+        payload = _build_vllm_omni_pixel_generation_payload(request_func_input)
+
+        headers = {
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {os.environ.get('OPENAI_API_KEY')}",
+        }
+
+        output = PixelGenerationRequestFuncOutput()
+        start = time.perf_counter()
+        output.request_submit_time = start
+
+        async with aiohttp.ClientSession(timeout=AIOHTTP_TIMEOUT) as session:
+            try:
+                async with session.post(
+                    url=api_url, json=payload, headers=headers
+                ) as response:
+                    output.latency = time.perf_counter() - start
+                    if response.status != 200:
+                        body = await response.text()
+                        output.error = (
+                            f"HTTP {response.status}: {body}"
+                            if body
+                            else (response.reason or "")
+                        )
+                        output.success = False
+                        return output
+
+                    body = await response.json()
+                    # vllm-omni returns chat completions format with image
+                    # data in choices[].message.content[].image_url.url
+                    choices = body.get("choices", [])
+                    count = 0
+                    for choice in choices:
+                        message = choice.get("message", {})
+                        content = message.get("content", [])
+                        if isinstance(content, list):
+                            count += sum(
+                                1
+                                for item in content
+                                if isinstance(item, dict)
+                                and item.get("type") == "image_url"
+                            )
+
+                    output.num_generated_outputs = count
+                    if output.num_generated_outputs <= 0:
+                        output.error = (
+                            "No images found in vllm-omni response body."
+                        )
+                        output.success = False
+                        return output
+
+                    output.success = True
+                    return output
+            except Exception:
+                output.latency = time.perf_counter() - start
+                output.success = False
+                exc_info = sys.exc_info()
+                output.error = "".join(traceback.format_exception(*exc_info))
+                return output
+
+
 class RequestCounter:
     """Thread-safe counter for limiting the number of requests in benchmarks.
 
@@ -836,13 +1133,14 @@ class RequestCounter:
         """
         with self.req_counter_lock:
             if self.total_sent_requests >= self.max_requests:
-                logger.warning(
-                    f"Ending run: max requests {self.max_requests} have been"
-                    " sent"
-                )
                 return False
 
             self.total_sent_requests += 1
+            if self.total_sent_requests == self.max_requests:
+                logger.info(
+                    f"Ending run: max requests {self.max_requests} have been"
+                    " sent"
+                )
             return True
 
 
@@ -925,15 +1223,29 @@ async def async_request_lora_unload(
 
 def get_request_driver_class(
     api_url: str,
-    task: BenchmarkTask = BenchmarkTask.text_generation,
+    task: BenchmarkTask = "text-generation",
 ) -> type[RequestDriver]:
-    """Return the request driver based on endpoint and optional task."""
-    if task in BenchmarkTask.pixel_generation_tasks():
+    """Return the request driver based on endpoint and optional task.
+
+    For pixel generation, driver selection is based on URL suffix because
+    each backend uses a fundamentally different API format. The mapping is:
+      /v1/responses          -> OpenResponsesRequestDriver (modular)
+      /v1/images/generations -> SglangPixelGenerationRequestDriver
+      /v1/chat/completions   -> VllmOmniPixelGenerationRequestDriver
+    The correct endpoint is typically auto-selected by PIXEL_GEN_DEFAULT_ENDPOINT
+    in benchmark_serving.py based on the --backend flag.
+    """
+    if task in PIXEL_GENERATION_TASKS:
         if api_url.endswith("responses"):
             return OpenResponsesRequestDriver
+        if api_url.endswith("images/generations"):
+            return SglangPixelGenerationRequestDriver
+        if api_url.endswith("chat/completions"):
+            return VllmOmniPixelGenerationRequestDriver
         raise ValueError(
             "Unsupported API URL for pixel-generation driver selection: "
-            f"'{api_url}'. Expected an OpenResponses endpoint."
+            f"'{api_url}'. Expected /v1/responses, /v1/images/generations,"
+            " or /v1/chat/completions."
         )
 
     # for text generation task

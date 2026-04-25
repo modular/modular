@@ -20,7 +20,7 @@ from enum import Enum
 import numpy as np
 import pytest
 import torch
-from max.driver import CPU, Buffer
+from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
 from max.experimental.torch import max_dtype_to_torch
@@ -83,7 +83,7 @@ def _dump_k_or_v_cache_to_torch_tensor(
     """
     req_blocks = cache.get_req_blocks(ctx.request_id, replica_idx=0)
 
-    params = cache.params
+    params = cache.cache_params()
     torch_dtype = max_dtype_to_torch(params.dtype)
     page_size = params.page_size
 
@@ -170,7 +170,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
                 input_type,
                 input_row_offsets_type,
                 wqkv_type,
-                *kv_params.get_symbolic_inputs()[0],
+                *kv_params.get_symbolic_inputs().flatten(),
             ],
         ) as g:
             (
@@ -234,7 +234,7 @@ def test_fused_qkv_ragged_matmul(session: InferenceSession) -> None:
         },
         provided_inputs={
             1: input_row_offsets,
-            3: kv_runtime_inputs.blocks,
+            3: kv_runtime_inputs.kv_blocks,
             4: kv_runtime_inputs.cache_lengths,
             5: kv_runtime_inputs.lookup_table,
             6: kv_runtime_inputs.max_lengths,
@@ -354,7 +354,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wkv_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -377,7 +377,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         running_sum += prompt_lens[i]
     input_row_offsets[i] = running_sum
     kv_inputs = kv_manager.runtime_inputs([batch])
-    kv_blocks = kv_inputs.inputs[0].blocks
+    kv_blocks = kv_inputs.inputs[0].kv_blocks
     # First check that the KV cache was zeroed out on initialization.
     assert not kv_blocks.to_numpy().any()
 
@@ -386,7 +386,7 @@ def test_matmul_kv_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wkv = torch.randn(size=wkv_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wkv, *kv_inputs)
+    model(hidden_states, input_row_offsets, wkv, *kv_inputs.flatten())
 
     # Check that the matmul wrote output to the KV cache.
     assert kv_blocks.to_numpy().any()
@@ -486,7 +486,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wk_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
 
@@ -515,7 +515,7 @@ def test_matmul_k_ragged(session: InferenceSession, dtype: DType) -> None:
         dtype=torch_dtype,
     )
     wk = torch.randn(size=wk_type.shape.static_dims, dtype=torch_dtype)
-    model(hidden_states, input_row_offsets, wk, *kv_inputs)
+    model(hidden_states, input_row_offsets, wk, *kv_inputs.flatten())
 
     ref_results = hidden_states @ wk.T
 
@@ -576,12 +576,6 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
         device=DeviceRef.CPU(),
     )
 
-    kv_manager = PagedKVCacheManager(
-        kv_params,
-        total_num_pages=8,
-        session=InferenceSession(devices=[CPU()]),
-        max_batch_size=128,
-    )
     # Stage the fetch op + custom matmul KV cache ragged op graph.
     graph = Graph(
         "matmul_kv_cache_ragged",
@@ -590,7 +584,7 @@ def test_matmul_kv_cache_ragged_chains(dtype: DType) -> None:
             hidden_state_type,
             input_row_offsets_type,
             wkv_type,
-            *kv_params.get_symbolic_inputs()[0],
+            *kv_params.get_symbolic_inputs().flatten(),
         ],
     )
     matmul_kv_cache_op = [

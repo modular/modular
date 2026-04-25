@@ -30,7 +30,7 @@ from std.memory import Span, bitcast, memcpy
 
 
 def constrained_conforms_to_writable[*Ts: AnyType, Parent: AnyType]():
-    comptime for i in range(Variadic.size(Ts)):
+    comptime for i in range(Ts.size):
         comptime T = Ts[i]
         _constrained_conforms_to[
             conforms_to(T, Writable),
@@ -205,7 +205,7 @@ struct TypeNames[*Types: AnyType](ImplicitlyCopyable, Writable):
             writer.write_string(_unqualified_type_name[Self.Types[i]]())
 
         write_sequence_to[
-            size=Variadic.size(Self.Types),
+            size=Self.Types.size,
             ElementFn=elements,
         ](writer, open="", close="")
 
@@ -400,9 +400,9 @@ struct _WriteBufferHeap(Writable, Writer):
     def __init__(out self):
         comptime alignment: Int = align_of[Byte]()
         self._data = __mlir_op.`pop.stack_allocation`[
-            count=HEAP_BUFFER_BYTES._mlir_value,
+            count=HEAP_BUFFER_BYTES._int_mlir_index(),
             _type=type_of(self._data)._mlir_type,
-            alignment=alignment._mlir_value,
+            alignment=alignment._int_mlir_index(),
         ]()
         self._pos = 0
 
@@ -571,19 +571,21 @@ def _hex_digits_to_hex_chars(
     Examples:
 
     ```mojo
-    %# from std.memory import memset_zero
-    %# from std.testing import assert_equal
-    %# from std.utils import StringSlice
-    %# from std.io.write import _hex_digits_to_hex_chars
-    items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
-    comptime S = StringSlice[origin_of(items)]
-    ptr = items.unsafe_ptr()
-    ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
-    assert_equal("0001f525", S(ptr=ptr, length=8))
-    ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
-    assert_equal("4f60", S(ptr=ptr, length=4))
-    ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
-    assert_equal("d6", S(ptr=ptr, length=2))
+    from std.memory import memset_zero
+    from std.testing import assert_equal
+    from std.utils import StringSlice
+    from std.format._utils import _hex_digits_to_hex_chars
+
+    def main() raises:
+        var items: List[Byte] = [0, 0, 0, 0, 0, 0, 0, 0, 0]
+        comptime S = StringSlice[origin_of(items)]
+        var ptr = items.unsafe_ptr()
+        ptr.store(_hex_digits_to_hex_chars(UInt32(ord("🔥"))))
+        assert_equal("0001f525", S(ptr=ptr, length=8))
+        ptr.store(_hex_digits_to_hex_chars(UInt16(ord("你"))))
+        assert_equal("4f60", S(ptr=ptr, length=4))
+        ptr.store(_hex_digits_to_hex_chars(UInt8(ord("Ö"))))
+        assert_equal("d6", S(ptr=ptr, length=2))
     ```
     """
     comptime size = size_of[decimal.dtype]()
@@ -601,18 +603,18 @@ def _write_hex[
     Examples:
 
     ```mojo
-    %# from memory import memset_zero
-    %# from testing import assert_equal
-    %# from utils import StringSlice
-    %# from io.write import _write_hex
+    from std.memory import memset_zero
+    from std.testing import assert_equal
+    from std.utils import StringSlice
+    from std.format._utils import _write_hex
     var s = String()
-    _write_hex[amnt_hex_bytes=8](s, ord("🔥"))
+    _write_hex[amnt_hex_bytes=8](s, UInt32(ord("🔥")))
     assert_equal("\\U0001f525", s)
     s = ""
-    _write_hex[amnt_hex_bytes=4](s, ord("你"))
+    _write_hex[amnt_hex_bytes=4](s, UInt16(ord("你")))
     assert_equal("\\u4f60", s)
     s = ""
-    _write_hex[amnt_hex_bytes=2](s, ord("Ö"))
+    _write_hex[amnt_hex_bytes=2](s, UInt8(ord("Ö")))
     assert_equal("\\xd6", s)
     ```
     """

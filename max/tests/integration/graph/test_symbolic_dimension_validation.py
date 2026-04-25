@@ -115,6 +115,38 @@ def test_algebraic_dimension_meets_constraints() -> None:
     assert result_np.shape == (8, 4, 16)
 
 
+def test_rebind_failure_includes_shape_context() -> None:
+    """Test that rebind failures include the expected and actual shapes.
+
+    When a rebind shape check fails at runtime, the error message should
+    describe which shapes mismatched rather than just saying "rebind shape
+    check failed".
+    """
+    input_type = TensorType(
+        dtype=DType.float32, shape=("batch", "dim"), device=DeviceRef.CPU()
+    )
+
+    with Graph("shape_context", input_types=(input_type,)) as graph:
+        x = graph.inputs[0].tensor
+        x = x.rebind(["batch", 4 * (Dim("dim") // 4)])
+        reshaped = ops.reshape(x, (Dim("batch"), 4, Dim("dim") // 4))
+        graph.output(reshaped)
+
+    cpu = CPU()
+    session = InferenceSession(devices=[cpu])
+    model = session.load(graph)
+
+    # Create input with dim=63 (not divisible by 4)
+    input_data = Buffer.from_numpy(np.zeros((8, 63), dtype=np.float32)).to(cpu)
+
+    with pytest.raises(Exception, match="expected shape") as exc_info:
+        model(input_data)
+
+    error_msg = str(exc_info.value)
+    assert "expected shape" in error_msg
+    assert "but got" in error_msg
+
+
 def test_same_symbolic_dimension_matches() -> None:
     """Test that two inputs sharing the same symbolic dimension work when
     the concrete values match.

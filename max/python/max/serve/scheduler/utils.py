@@ -79,6 +79,18 @@ class BatchMetrics:
     draft_tokens_accepted: int
     avg_acceptance_length: float
     max_acceptance_length: int
+    acceptance_rate_per_position: list[float]
+
+    nixl_read_latency_avg_ms: float
+    nixl_write_latency_avg_ms: float
+    rpc_acquire_latency_avg_ms: float
+    rpc_read_latency_avg_ms: float
+    nixl_read_gib_per_s: float = 0.0
+    nixl_write_gib_per_s: float = 0.0
+
+    # When True, ``batch_execution_time_s`` is the execution time of the
+    # previous batch (i.e. the overlap scheduler is active).
+    batch_execution_time_is_previous: bool = False
 
     @classmethod
     def create(
@@ -92,6 +104,7 @@ class BatchMetrics:
         num_terminated_reqs: int,
         total_preemption_count: int,
         speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        batch_execution_time_is_previous: bool = False,
     ) -> BatchMetrics:
         num_input_tokens = inputs.input_tokens
         batch_size = len(inputs.flat_batch)
@@ -111,6 +124,12 @@ class BatchMetrics:
         d2h_blocks_copied = 0
         disk_blocks_written = 0
         disk_blocks_read = 0
+        nixl_read_latency_avg_ms = 0.0
+        nixl_write_latency_avg_ms = 0.0
+        rpc_acquire_latency_avg_ms = 0.0
+        rpc_read_latency_avg_ms = 0.0
+        nixl_read_gib_per_s = 0.0
+        nixl_write_gib_per_s = 0.0
         num_replicas = sch_config.data_parallel_degree
         if kv_cache is not None:
             # TODO SERVOPT-939: Add some sugar
@@ -162,12 +181,28 @@ class BatchMetrics:
                     for replica_idx in range(num_replicas)
                 )
 
+            # dKV latency metrics: sum across replicas then average.
+            agg = sum(
+                (
+                    kv_cache.get_metrics(replica_idx)
+                    for replica_idx in range(num_replicas)
+                ),
+                kv_cache.get_metrics(0).__class__(),
+            )
+            nixl_read_latency_avg_ms = agg.nixl_read_latency_avg_ms
+            nixl_write_latency_avg_ms = agg.nixl_write_latency_avg_ms
+            rpc_acquire_latency_avg_ms = agg.rpc_acquire_latency_avg_ms
+            rpc_read_latency_avg_ms = agg.rpc_read_latency_avg_ms
+            nixl_read_gib_per_s = agg.nixl_read_gib_per_s
+            nixl_write_gib_per_s = agg.nixl_write_gib_per_s
+
             kv_cache.reset_metrics()
 
         draft_tokens_generated = 0
         draft_tokens_accepted = 0
         avg_acceptance_length = 0.0
         max_acceptance_length = 0
+        acceptance_rate_per_position: list[float] = []
         if speculative_decoding_metrics is not None:
             draft_tokens_generated = (
                 speculative_decoding_metrics.draft_tokens_generated
@@ -180,6 +215,9 @@ class BatchMetrics:
             )
             max_acceptance_length = (
                 speculative_decoding_metrics.num_speculative_tokens
+            )
+            acceptance_rate_per_position = (
+                speculative_decoding_metrics.acceptance_rate_per_position
             )
 
         return cls(
@@ -213,6 +251,14 @@ class BatchMetrics:
             draft_tokens_accepted=draft_tokens_accepted,
             avg_acceptance_length=avg_acceptance_length,
             max_acceptance_length=max_acceptance_length,
+            acceptance_rate_per_position=acceptance_rate_per_position,
+            nixl_read_latency_avg_ms=nixl_read_latency_avg_ms,
+            nixl_write_latency_avg_ms=nixl_write_latency_avg_ms,
+            rpc_acquire_latency_avg_ms=rpc_acquire_latency_avg_ms,
+            rpc_read_latency_avg_ms=rpc_read_latency_avg_ms,
+            nixl_read_gib_per_s=nixl_read_gib_per_s,
+            nixl_write_gib_per_s=nixl_write_gib_per_s,
+            batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 
     def pretty_format(self) -> str:
@@ -244,9 +290,41 @@ class BatchMetrics:
             acceptance_rate = (
                 self.draft_tokens_accepted / self.draft_tokens_generated
             )
-            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks | "
+            # Format per-position acceptance rates
+            if self.acceptance_rate_per_position:
+                pos_rates_str = ", ".join(
+                    f"p{i}={rate:.0%}"
+                    for i, rate in enumerate(self.acceptance_rate_per_position)
+                )
+                per_pos_str = f", Per-Pos: [{pos_rates_str}]"
+            else:
+                per_pos_str = ""
+            spec_decode_str = f"Draft Tokens: {self.draft_tokens_accepted}/{self.draft_tokens_generated} ({acceptance_rate:.2%}) accepted, Acceptance Len: {self.avg_acceptance_length:.2f} / {self.max_acceptance_length} toks{per_pos_str} | "
         else:
             spec_decode_str = ""
+
+        dkv_str = ""
+        has_dkv = (
+            self.nixl_read_latency_avg_ms > 0
+            or self.nixl_write_latency_avg_ms > 0
+            or self.rpc_acquire_latency_avg_ms > 0
+            or self.rpc_read_latency_avg_ms > 0
+        )
+        if has_dkv:
+            dkv_str = (
+                f"dKV: read {self.nixl_read_latency_avg_ms:.1f}ms"
+                f" ({self.nixl_read_gib_per_s:.2f} GiB/s), "
+                f"write {self.nixl_write_latency_avg_ms:.1f}ms"
+                f" ({self.nixl_write_gib_per_s:.2f} GiB/s), "
+                f"acquire {self.rpc_acquire_latency_avg_ms:.1f}ms, "
+                f"pin {self.rpc_read_latency_avg_ms:.1f}ms | "
+            )
+
+        exec_label = (
+            "Previous Execution"
+            if self.batch_execution_time_is_previous
+            else "Execution"
+        )
 
         return (
             f"Executed {self.batch_type.value} batch with {self.batch_size} reqs | "
@@ -257,9 +335,10 @@ class BatchMetrics:
             f"Prompt Tput: {_to_human_readable_throughput(self.prompt_throughput)}, "
             f"Generation Tput: {_to_human_readable_throughput(self.generation_throughput)} | "
             f"Batch creation: {to_human_readable_latency(self.batch_creation_time_s)}, "
-            f"Execution: {to_human_readable_latency(self.batch_execution_time_s)} | "
+            f"{exec_label}: {to_human_readable_latency(self.batch_execution_time_s)} | "
             f"{kv_str}"
             f"{host_kv_str}"
+            f"{dkv_str}"
             f"{spec_decode_str}"
             f"All Preemptions: {self.total_preemption_count} reqs"
         )
@@ -275,9 +354,26 @@ class BatchMetrics:
             int(self.total_kv_blocks * self.used_kv_pct)
         )
         METRICS.cache_num_total_blocks(self.total_kv_blocks)
-        METRICS.cache_hit_rate(self.cache_hit_rate)
-        METRICS.cache_hits(self.cache_hit_tokens)
-        METRICS.cache_misses(self.cache_miss_tokens)
+        if self.batch_type == BatchType.CE:
+            METRICS.cache_hit_rate(self.cache_hit_rate)
+            METRICS.cache_hits(self.cache_hit_tokens)
+            METRICS.cache_misses(self.cache_miss_tokens)
+
+        if self.nixl_read_latency_avg_ms > 0:
+            METRICS.dkv_nixl_read_latency(self.nixl_read_latency_avg_ms)
+        if self.nixl_write_latency_avg_ms > 0:
+            METRICS.dkv_nixl_write_latency(self.nixl_write_latency_avg_ms)
+        if self.rpc_acquire_latency_avg_ms > 0:
+            METRICS.dkv_rpc_acquire_latency(self.rpc_acquire_latency_avg_ms)
+        if self.rpc_read_latency_avg_ms > 0:
+            METRICS.dkv_rpc_read_latency(self.rpc_read_latency_avg_ms)
+
+        # Emit per-position acceptance rate metrics for speculative decoding
+        for position, rate in enumerate(self.acceptance_rate_per_position):
+            METRICS.spec_decode_acceptance_rate_per_position(
+                position=position,
+                acceptance_rate=rate * 100,  # Convert to percentage
+            )
 
 
 class SchedulerLogger:
@@ -316,6 +412,7 @@ class SchedulerLogger:
         num_terminated_reqs: int,
         total_preemption_count: int,
         speculative_decoding_metrics: SpeculativeDecodingMetrics | None = None,
+        batch_execution_time_is_previous: bool = False,
     ) -> None:
         """Periodically logs batch-level metrics to console.
 
@@ -328,6 +425,10 @@ class SchedulerLogger:
             num_pending_reqs: The number of pending requests.
             total_preemption_count: The total number of preemptions.
             speculative_decoding_metrics: The speculative decoding metrics, if any.
+            batch_execution_time_is_previous: When True, ``batch_execution_time_s``
+                is the execution time of the previous batch (the overlap
+                scheduler is active); the log line will read
+                ``Previous Execution:`` instead of ``Execution:``.
 
         Returns:
             None
@@ -343,6 +444,7 @@ class SchedulerLogger:
             num_terminated_reqs=num_terminated_reqs,
             total_preemption_count=total_preemption_count,
             speculative_decoding_metrics=speculative_decoding_metrics,
+            batch_execution_time_is_previous=batch_execution_time_is_previous,
         )
 
         # Always publish metrics.

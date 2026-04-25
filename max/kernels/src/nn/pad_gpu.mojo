@@ -12,12 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.algorithm.functional import vectorize
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    grid_dim,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext, DeviceBuffer, DeviceAttribute
 from layout import Coord, TensorLayout, TileTensor
 from layout.tile_layout import Layout
@@ -83,7 +78,7 @@ def _vectorized_copy_row[
 
     if src_aligned and dst_aligned:
 
-        def _copy_aligned[n: Int](blk: Int) unified {mut}:
+        def _copy_aligned[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
                 output_ptr.store[width=simd_width, alignment=alignment](
@@ -94,7 +89,7 @@ def _vectorized_copy_row[
         vectorize[simd_width](num_blocks, _copy_aligned)
     else:
 
-        def _copy[n: Int](blk: Int) unified {mut}:
+        def _copy[n: Int](blk: Int) {input_ptr, output_ptr, mut}:
             for j in range(n):
                 var off = my_start + (blk + j) * stride
                 output_ptr.store[width=simd_width](
@@ -108,6 +103,7 @@ def _vectorized_copy_row[
         output_ptr[i] = input_ptr[i]
 
 
+@__name(t"padded_copy_{dtype}_w{simd_width}", mangle=True)
 def padded_copy_kernel[
     InputLayoutType: TensorLayout,
     input_origin: ImmutOrigin,
@@ -123,9 +119,9 @@ def padded_copy_kernel[
     row_length: Int,
 ):
     var start_row = block_idx.x * rows_per_sm
-    var threads_per_row = Int(block_dim.x)
+    var threads_per_row = block_dim.x
 
-    var rows_per_iter = Int(block_dim.y)
+    var rows_per_iter = block_dim.y
     var end_row = min(start_row + rows_per_sm, total_rows)
 
     start_row += thread_idx.y
@@ -186,7 +182,7 @@ def _pad_constant_impl[
         simd_width=simd_width,
     ]
 
-    ctx.enqueue_function_experimental[kernel](
+    ctx.enqueue_function[kernel, kernel](
         input_tensor.as_immut(),
         output_tensor,
         rows_per_block,

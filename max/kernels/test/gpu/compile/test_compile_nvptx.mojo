@@ -11,20 +11,22 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.math import exp2
 from std.pathlib import Path
 from std.sys._assembly import inlined_assembly
 
-from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext
 from std.gpu.host.compile import _compile_code
+from std.gpu.host.info import A100
 from std.memory import stack_allocation
 
 
 def kernel(x: Int) -> Int:
-    return Int(thread_idx.x)
+    return thread_idx.x
 
 
-def parametric[f: def(Int) -> Int]() -> Int:
+def parametric[f: def(Int) thin -> Int]() -> Int:
     return f(42)
 
 
@@ -48,7 +50,7 @@ def test_compile_function() raises:
     print("== test_compile_function")
 
     def kernel(x: UnsafePointer[Int, MutAnyOrigin]):
-        x[0] = Int(thread_idx.x)
+        x[0] = thread_idx.x
 
     # CHECK: tid.x
 
@@ -136,6 +138,34 @@ def test_short_nvptx_ptr() raises:
         ]()
 
 
+# CHECK-LABEL: test_exp2_compile
+def test_exp2_compile() raises:
+    print("== test_exp2_compile")
+
+    # https://godbolt.org/z/j9ecfjjP1
+    def exp_op(output: UnsafePointer[Float32, MutAnyOrigin], max_scaled: Int32):
+        output[] = exp2(
+            output[] * 1.44269504088896340736 - max_scaled.cast[DType.float32]()
+        )
+
+    # CHECK: "target-cpu"="sm_80" "target-features"="+ptx81,+sm_80" "tune-cpu"="sm_80"
+    print(
+        _compile_code[exp_op, target=A100.target(), emission_kind="llvm-opt"]()
+    )
+    # CHECK: fma.rn.f32
+    print(_compile_code[exp_op, target=A100.target(), emission_kind="asm"]())
+
+    # CHECK: fma.rn.ftz.f32
+    print(
+        _compile_code[
+            exp_op,
+            target=A100.target(),
+            emission_kind="asm",
+            compile_options="nvptx-short-ptr=true,denormal-fp-math-f32=preserve-sign",
+        ]()
+    )
+
+
 def main() raises:
     test_compile_code()
     test_compile_function()
@@ -143,3 +173,4 @@ def main() raises:
     test_compile_function_with_path()
     test_compile_function_with_path_func()
     test_short_nvptx_ptr()
+    test_exp2_compile()

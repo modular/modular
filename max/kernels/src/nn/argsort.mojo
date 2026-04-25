@@ -20,9 +20,9 @@ from std.bit import next_power_of_two
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
     barrier,
-    block_idx_uint as block_idx,
-    global_idx_uint as global_idx,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    global_idx,
+    thread_idx,
 )
 import std.gpu.primitives.warp as warp
 from std.gpu.host import DeviceContext, get_gpu_target
@@ -58,7 +58,7 @@ def _argsort_cpu[
     def fill_indices_iota[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(
+        indices.raw_store(
             offset[0],
             iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
         )
@@ -102,6 +102,9 @@ def _sentinel_val[dtype: DType, ascending: Bool]() -> Scalar[dtype]:
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
+@__name(
+    t"bitonic_local_sort_{input_dtype}_{indices_dtype}_{ascending}", mangle=True
+)
 def _bitonic_local_sort_kernel[
     input_dtype: DType,
     indices_dtype: DType,
@@ -122,7 +125,7 @@ def _bitonic_local_sort_kernel[
     """
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
-    var gid = Int(UInt(block_idx.x) * UInt(BLOCK_SIZE) + UInt(tid))
+    var gid: Int = block_idx.x * BLOCK_SIZE + tid
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
@@ -138,21 +141,21 @@ def _bitonic_local_sort_kernel[
     ]()
 
     if gid < n_arg:
-        shared_vals[Int(tid)] = vals[gid]
-        shared_idxs[Int(tid)] = idxs[gid]
+        shared_vals[tid] = vals[gid]
+        shared_idxs[tid] = idxs[gid]
     else:
-        shared_vals[Int(tid)] = _sentinel_val[input_dtype, ascending]()
-        shared_idxs[Int(tid)] = Scalar[indices_dtype](-1)
+        shared_vals[tid] = _sentinel_val[input_dtype, ascending]()
+        shared_idxs[tid] = Scalar[indices_dtype](-1)
 
     var k = 2
     while k <= BLOCK_SIZE:
         var j = k >> 1
         while j > 0:
             barrier()
-            var partner = UInt(tid) ^ UInt(j)
-            if partner > UInt(tid):
-                var vi = shared_vals[Int(tid)]
-                var vp = shared_vals[Int(partner)]
+            var partner = tid ^ j
+            if partner > tid:
+                var vi = shared_vals[tid]
+                var vp = shared_vals[partner]
 
                 var cmp_val: Bool
                 comptime if ascending:
@@ -160,23 +163,27 @@ def _bitonic_local_sort_kernel[
                 else:
                     cmp_val = vi < vp
 
-                var direction = (UInt(tid) & UInt(k)) == 0
+                var direction = (tid & k) == 0
                 if cmp_val == direction:
-                    shared_vals[Int(tid)] = vp
-                    shared_vals[Int(partner)] = vi
-                    var ii = shared_idxs[Int(tid)]
-                    shared_idxs[Int(tid)] = shared_idxs[Int(partner)]
-                    shared_idxs[Int(partner)] = ii
+                    shared_vals[tid] = vp
+                    shared_vals[partner] = vi
+                    var ii = shared_idxs[tid]
+                    shared_idxs[tid] = shared_idxs[partner]
+                    shared_idxs[partner] = ii
             j >>= 1
         k <<= 1
 
     barrier()
     if gid < n_arg:
-        vals[gid] = shared_vals[Int(tid)]
-        idxs[gid] = shared_idxs[Int(tid)]
+        vals[gid] = shared_vals[tid]
+        idxs[gid] = shared_idxs[tid]
 
 
 @__llvm_metadata(MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](256))
+@__name(
+    t"bitonic_merge_local_{input_dtype}_{indices_dtype}_{ascending}",
+    mangle=True,
+)
 def _bitonic_merge_local_kernel[
     input_dtype: DType,
     indices_dtype: DType,
@@ -199,7 +206,7 @@ def _bitonic_merge_local_kernel[
     """
     comptime BLOCK_SIZE = 256
     var tid = thread_idx.x
-    var gid = Int(UInt(block_idx.x) * UInt(BLOCK_SIZE) + UInt(tid))
+    var gid: Int = block_idx.x * BLOCK_SIZE + tid
     var vals = input_arg.ptr
     var idxs = indices_arg.ptr
 
@@ -214,16 +221,16 @@ def _bitonic_merge_local_kernel[
         address_space=AddressSpace.SHARED,
     ]()
 
-    shared_vals[Int(tid)] = vals[gid]
-    shared_idxs[Int(tid)] = idxs[gid]
+    shared_vals[tid] = vals[gid]
+    shared_idxs[tid] = idxs[gid]
 
     var j = BLOCK_SIZE >> 1
     while j > 0:
         barrier()
-        var partner = UInt(tid) ^ UInt(j)
-        if partner > UInt(tid):
-            var vi = shared_vals[Int(tid)]
-            var vp = shared_vals[Int(partner)]
+        var partner = tid ^ j
+        if partner > tid:
+            var vi = shared_vals[tid]
+            var vp = shared_vals[partner]
 
             var cmp_val: Bool
             comptime if ascending:
@@ -231,18 +238,18 @@ def _bitonic_merge_local_kernel[
             else:
                 cmp_val = vi < vp
 
-            var direction = (UInt(gid) & UInt(stage)) == 0
+            var direction = (gid & stage) == 0
             if cmp_val == direction:
-                shared_vals[Int(tid)] = vp
-                shared_vals[Int(partner)] = vi
-                var ii = shared_idxs[Int(tid)]
-                shared_idxs[Int(tid)] = shared_idxs[Int(partner)]
-                shared_idxs[Int(partner)] = ii
+                shared_vals[tid] = vp
+                shared_vals[partner] = vi
+                var ii = shared_idxs[tid]
+                shared_idxs[tid] = shared_idxs[partner]
+                shared_idxs[partner] = ii
         j >>= 1
 
     barrier()
-    vals[gid] = shared_vals[Int(tid)]
-    idxs[gid] = shared_idxs[Int(tid)]
+    vals[gid] = shared_vals[tid]
+    idxs[gid] = shared_idxs[tid]
 
 
 def _argsort_gpu_impl[
@@ -282,9 +289,11 @@ def _argsort_gpu_impl[
     comptime BLOCK_SIZE = 256
 
     # Global merge step kernel (nested: simple enough, no shared memory).
+    @parameter
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](BLOCK_SIZE)
     )
+    @__name(t"bitonic_global_step_{ascending}", mangle=True)
     def bitonic_global_step(
         indices_arg: TileTensor[
             indices.dtype, indices.LayoutType, indices.origin
@@ -295,18 +304,18 @@ def _argsort_gpu_impl[
         stage: Int,
     ):
         var i = global_idx.x
-        if i >= UInt(n_arg):
+        if i >= n_arg:
             return
 
-        var partner = i ^ UInt(step)
-        if partner > i and partner < UInt(n_arg):
+        var partner = i ^ step
+        if partner > i and partner < n_arg:
             var cmp_val: Bool
             comptime if ascending:
                 cmp_val = input_arg[i] > input_arg[partner]
             else:
                 cmp_val = input_arg[i] < input_arg[partner]
 
-            var bitonic_merge_direction = (i & UInt(stage)) == 0
+            var bitonic_merge_direction = (i & stage) == 0
             if cmp_val == bitonic_merge_direction:
                 swap(input_arg[i], input_arg[partner])
                 swap(indices_arg[i], indices_arg[partner])
@@ -372,7 +381,7 @@ def _argsort_gpu[
     ascending: Bool = True,
 ](
     indices: TileTensor[mut=True, ...],
-    input: TileTensor[mut=True, ...],
+    input: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """
@@ -392,24 +401,38 @@ def _argsort_gpu[
     var n = indices.num_elements()
 
     if n.is_power_of_two():
+        var input_copy_buffer = ctx.enqueue_create_buffer[input.dtype](n)
+        var input_copy = TileTensor(input_copy_buffer, row_major(Idx(n)))
+
         # Initialize indices with iota.
         @parameter
-        @__copy_capture(indices)
+        @__copy_capture(indices, input, input_copy)
         def fill_indices_iota_no_padding[
             width: Int, rank: Int, alignment: Int = 1
         ](offset: IndexList[rank]):
-            indices.ptr.store(
-                offset[0],
-                iota[indices.dtype, width](Scalar[indices.dtype](offset[0])),
+            var i = offset[0]
+
+            indices.raw_store(
+                i,
+                iota[indices.dtype, width](Scalar[indices.dtype](i)),
+            )
+            input_copy.raw_store[alignment=simd_width_of[input_copy.dtype]()](
+                i, input.ptr.load[width=width](i)
             )
 
         elementwise[
             fill_indices_iota_no_padding,
-            simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
+            simd_width=min(
+                simd_width_of[indices.dtype, target=get_gpu_target()](),
+                simd_width_of[input.dtype, target=get_gpu_target()](),
+            ),
             target="gpu",
+            _trace_description="argsort_fill_indices",
         ](n, ctx)
 
-        return _argsort_gpu_impl[ascending=ascending](indices, input, ctx)
+        _argsort_gpu_impl[ascending=ascending](indices, input_copy, ctx)
+        _ = input_copy_buffer^
+        return
 
     var pow_2_length = next_power_of_two(n)
 
@@ -438,20 +461,20 @@ def _argsort_gpu[
     ](offset: IndexList[rank]):
         var i = offset[0]
         if i < n:
-            padded_indices.ptr.store(
+            padded_indices.raw_store(
                 i, iota[padded_indices.dtype, width](Scalar[indices.dtype](i))
             )
-            padded_input.ptr.store[
+            padded_input.raw_store[
                 alignment=simd_width_of[padded_input.dtype]()
-            ](i, input.ptr.load[width=width](i))
+            ](i, input.raw_load[width=width](i))
             return
 
         # otherwise we pad with a sentinel value and the max/min value for the type.
         comptime UNKNOWN_VALUE = -1
-        padded_indices.ptr.store(
+        padded_indices.raw_store(
             i, SIMD[padded_indices.dtype, width](UNKNOWN_VALUE)
         )
-        padded_input.ptr.store(
+        padded_input.raw_store(
             i,
             SIMD[padded_input.dtype, width](
                 _sentinel_val[padded_input.dtype, ascending]()
@@ -460,9 +483,12 @@ def _argsort_gpu[
 
     # we want to fill one element at a time to handle the case where n is not a
     # power of 2, so we set the simdwidth to be 1.
-    elementwise[fill_indices_iota, simd_width=1, target="gpu"](
-        pow_2_length, ctx
-    )
+    elementwise[
+        fill_indices_iota,
+        simd_width=1,
+        target="gpu",
+        _trace_description="argsort_fill_indices_padded",
+    ](pow_2_length, ctx)
 
     # Run the argsort implementation with the padded input and indices.
     _argsort_gpu_impl[ascending=ascending](padded_indices, padded_input, ctx)
@@ -473,8 +499,8 @@ def _argsort_gpu[
     def extract_indices[
         width: Int, rank: Int, alignment: Int = 1
     ](offset: IndexList[rank]):
-        indices.ptr.store(
-            offset[0], padded_indices.ptr.load[width=width](offset[0])
+        indices.raw_store(
+            offset[0], padded_indices.raw_load[width=width](offset[0])
         )
 
     # Extract the unpadded indices from the padded indices.
@@ -482,6 +508,7 @@ def _argsort_gpu[
         extract_indices,
         simd_width=simd_width_of[indices.dtype, target=get_gpu_target()](),
         target="gpu",
+        _trace_description="argsort_extract_indices",
     ](n, ctx)
 
     # Free the temporary input buffer
@@ -511,7 +538,7 @@ def argsort[
     target: StaticString = "cpu",
 ](
     output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
-    input: TileTensor[mut=True, ...],
+    input: TileTensor,
     ctx: DeviceContext,
 ) raises:
     """

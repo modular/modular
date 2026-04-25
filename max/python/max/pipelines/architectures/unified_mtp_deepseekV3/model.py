@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 import numpy as np
@@ -30,10 +30,7 @@ from max.nn.comm.ep import EPCommInitializer
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams, PagedCacheValues
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
-from max.pipelines.lib import CompilationTimer, ModelInputs
-from max.pipelines.lib.speculative_decoding.unified_eagle import (
-    UnifiedEagleOutputs,
-)
+from max.pipelines.lib import CompilationTimer, ModelInputs, UnifiedEagleOutputs
 from typing_extensions import override
 
 from ..deepseekV3.model import DeepseekV3Inputs, DeepseekV3Model
@@ -44,32 +41,50 @@ logger = logging.getLogger("max.pipelines")
 
 
 @dataclass
-class UnifiedMTPDeepseekV3ModelInputs(DeepseekV3Inputs):
-    """Inputs for the with-MTP model, adding draft_tokens and draft KV."""
+class UnifiedMTPDeepseekV3Inputs(DeepseekV3Inputs):
+    """Inputs for the UnifiedMTPDeepseekV3 model."""
 
-    draft_tokens: Buffer = field(
-        default_factory=lambda: Buffer.from_numpy(
-            np.zeros((0, 0), dtype=np.int64)
-        )
-    )
+    draft_tokens: Buffer | None = None
+    draft_kv_blocks: list[Buffer] | None = None
+    seed: Buffer | None = None
+    """Per-execute int64 scalar seed consumed by the stochastic acceptance
+    sampler (and, when enabled, the synthetic benchmarking sampler)."""
 
-    draft_kv_cache_buffers: list[Buffer] = field(default_factory=list)
+    temperature: Buffer | None = None
+    top_k: Buffer | None = None
+    max_k: Buffer | None = None
+    top_p: Buffer | None = None
+    min_top_p: Buffer | None = None
+    """Per-batch sampling parameters consumed by the stochastic acceptance
+    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
+    ``[batch_size]`` tensors on the primary device."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
-        return (
-            self.tokens,
-            self.input_row_offsets,
-            self.host_input_row_offsets,
-            self.draft_tokens,
-            self.return_n_logits,
-            self.data_parallel_splits,
-            *self.signal_buffers,
-            *(self.kv_cache_inputs or ()),
-            *self.draft_kv_cache_buffers,
-            *self.batch_context_lengths,
-            *self.ep_inputs,
-        )
+        buffers = super().buffers
+        if self.draft_tokens is not None:
+            buffers += (self.draft_tokens,)
+        if self.draft_kv_blocks is not None:
+            buffers += tuple(self.draft_kv_blocks)
+        assert self.seed is not None
+        buffers += (self.seed,)
+        if self.draft_tokens is not None:
+            # Sampling params are only required when the spec-decode path
+            # is active (i.e. draft_tokens was bound). They mirror the
+            # graph's input signature exactly in that case.
+            assert self.temperature is not None
+            assert self.top_k is not None
+            assert self.max_k is not None
+            assert self.top_p is not None
+            assert self.min_top_p is not None
+            buffers += (
+                self.temperature,
+                self.top_k,
+                self.max_k,
+                self.top_p,
+                self.min_top_p,
+            )
+        return buffers
 
 
 class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
@@ -79,6 +94,12 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         kwargs["return_logits"] = ReturnLogits.VARIABLE
         kwargs["return_hidden_states"] = ReturnHiddenStates.ALL_NORMALIZED
         super().__init__(*args, **kwargs)
+        self._seed_counter = 0
+
+    def _next_seed(self) -> Buffer:
+        """Monotonically advancing int64 scalar seed, fresh per execute."""
+        self._seed_counter += 1
+        return Buffer.from_numpy(np.array(self._seed_counter, dtype=np.int64))
 
     @override
     def load_model(self, session: InferenceSession) -> Model:
@@ -169,11 +190,13 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
 
             draft_config.return_hidden_states = ReturnHiddenStates.LAST
 
-            logger.info(
-                f"[DEBUG] load_model: target config devices={config.devices}, "
-                f"draft config devices={draft_config.devices}"
+            assert self.pipeline_config.speculative is not None
+
+            nn_model = UnifiedMTPDeepseekV3(
+                config,
+                draft_config,
+                speculative_config=self.pipeline_config.speculative,
             )
-            nn_model = UnifiedMTPDeepseekV3(config, draft_config)
 
             # Share embed_tokens and lm_head BEFORE loading so state_dict()
             # deduplicates them — the adapter only emits target.* copies.
@@ -228,7 +251,6 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     tokens,
                     devices_input_row_offsets,
                     host_input_row_offsets,
-                    draft_tokens,
                     return_n_logits,
                     data_parallel_splits,
                     *variadic_args,
@@ -240,20 +262,27 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                     for _ in range(len(self.devices))
                 ]
 
-                fetch_types = self.kv_params.get_symbolic_inputs()[0]
+                fetch_types = (
+                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                )
                 len_of_kv_inputs = len(list(fetch_types)) * len(self.devices)
                 kv_caches_per_dev = self._unflatten_kv_inputs(
                     [next(variadic_args_iter) for _ in range(len_of_kv_inputs)]
                 )
 
-                logger.info(
-                    f"[DEBUG] load_model graph build: "
-                    f"n_devices={len(self.devices)}, "
-                    f"n_signal_buffers={len(signal_buffers)}, "
-                    f"n_kv_caches_per_dev={len(kv_caches_per_dev)}, "
-                    f"target_kv_params.n_devices={len(self.kv_params.get_symbolic_inputs())}, "
-                    f"draft_kv_params.n_devices={len(self._draft_kv_params.get_symbolic_inputs())}"
-                )
+                batch_context_lengths = [
+                    next(variadic_args_iter).tensor
+                    for _ in range(len(self.devices))
+                ]
+
+                target_ep_inputs: list[Value[Any]] | None = None
+                if nn_model.target.ep_manager is not None:
+                    n_target_ep = len(nn_model.target.ep_manager.input_types())
+                    target_ep_inputs = [
+                        next(variadic_args_iter) for _ in range(n_target_ep)
+                    ]
+
+                draft_tokens = next(variadic_args_iter).tensor
 
                 # Draft KV: only kv_blocks per device; cache_lengths, lookup_table,
                 # max_lengths, and dispatch_metadata are shared from target.
@@ -270,34 +299,38 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                                 dev_idx
                             ].lookup_table,
                             max_lengths=kv_caches_per_dev[dev_idx].max_lengths,
-                            dispatch_metadata=kv_caches_per_dev[
+                            attention_dispatch_metadata=kv_caches_per_dev[
                                 dev_idx
-                            ].dispatch_metadata,
+                            ].attention_dispatch_metadata,
+                            draft_attention_dispatch_metadata=kv_caches_per_dev[
+                                dev_idx
+                            ].draft_attention_dispatch_metadata,
                         )
                     )
 
-                batch_context_lengths = [
-                    next(variadic_args_iter).tensor
-                    for _ in range(len(self.devices))
-                ]
-
-                target_ep_inputs: list[Value[Any]] | None = None
-                if nn_model.target.ep_manager is not None:
-                    n_target_ep = len(nn_model.target.ep_manager.input_types())
-                    target_ep_inputs = [
-                        next(variadic_args_iter) for _ in range(n_target_ep)
-                    ]
+                seed = next(variadic_args_iter).tensor
+                temperature = next(variadic_args_iter).tensor
+                top_k = next(variadic_args_iter).tensor
+                max_k = next(variadic_args_iter).tensor
+                top_p = next(variadic_args_iter).tensor
+                min_top_p = next(variadic_args_iter).tensor
 
                 outputs = nn_model(
-                    tokens.tensor,
-                    devices_input_row_offsets.tensor,
-                    draft_tokens.tensor,
-                    signal_buffers,
-                    kv_caches_per_dev,
-                    return_n_logits.tensor,
-                    host_input_row_offsets.tensor,
-                    data_parallel_splits.tensor,
-                    batch_context_lengths,
+                    tokens=tokens.tensor,
+                    input_row_offsets=devices_input_row_offsets.tensor,
+                    draft_tokens=draft_tokens.tensor,
+                    signal_buffers=signal_buffers,
+                    kv_collections=kv_caches_per_dev,
+                    return_n_logits=return_n_logits.tensor,
+                    host_input_row_offsets=host_input_row_offsets.tensor,
+                    data_parallel_splits=data_parallel_splits.tensor,
+                    batch_context_lengths=batch_context_lengths,
+                    seed=seed,
+                    temperature=temperature,
+                    top_k=top_k,
+                    max_k=max_k,
+                    top_p=top_p,
+                    min_top_p=min_top_p,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
                 )
@@ -314,8 +347,7 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
         model_inputs: ModelInputs,
     ) -> UnifiedEagleOutputs:
         """Execute and return all 3 graph outputs for speculative decoding."""
-        assert isinstance(model_inputs, UnifiedMTPDeepseekV3ModelInputs)
-
+        assert isinstance(model_inputs, UnifiedMTPDeepseekV3Inputs)
         model_outputs = self.model.execute(*model_inputs.buffers)
         assert len(model_outputs) == 3, (
             f"Expected 3 outputs, got {len(model_outputs)}"
@@ -330,58 +362,37 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[TextContext]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
         draft_tokens: Buffer | None = None,
         draft_kv_cache_buffers: list[Buffer] | None = None,
-    ) -> UnifiedMTPDeepseekV3ModelInputs:
-        base = super().prepare_initial_token_inputs(
-            replica_batches=replica_batches,
-            kv_cache_inputs=kv_cache_inputs,
-            return_n_logits=return_n_logits,
+        **kwargs,
+    ) -> UnifiedMTPDeepseekV3Inputs:
+        base = DeepseekV3Model.prepare_initial_token_inputs(
+            self, replica_batches, kv_cache_inputs, return_n_logits
         )
 
-        if draft_tokens is None:
-            batch_size = sum(len(b) for b in replica_batches)
-            draft_tokens = Buffer.from_numpy(
-                np.zeros((batch_size, 0), dtype=np.int64)
-            ).to(self.devices[0])
-
-        return UnifiedMTPDeepseekV3ModelInputs(
+        return UnifiedMTPDeepseekV3Inputs(
             tokens=base.tokens,
             input_row_offsets=base.input_row_offsets,
             host_input_row_offsets=base.host_input_row_offsets,
-            draft_tokens=draft_tokens,
-            draft_kv_cache_buffers=draft_kv_cache_buffers or [],
             batch_context_lengths=base.batch_context_lengths,
             signal_buffers=base.signal_buffers,
             kv_cache_inputs=base.kv_cache_inputs,
             return_n_logits=base.return_n_logits,
             data_parallel_splits=base.data_parallel_splits,
             ep_inputs=base.ep_inputs,
+            draft_tokens=draft_tokens,
+            draft_kv_blocks=draft_kv_cache_buffers,
+            seed=self._next_seed(),
         )
 
     def prepare_next_token_inputs(
         self,
         next_tokens: Buffer,
         prev_model_inputs: ModelInputs,
-    ) -> UnifiedMTPDeepseekV3ModelInputs:
-        assert isinstance(prev_model_inputs, UnifiedMTPDeepseekV3ModelInputs)
-        base = super().prepare_next_token_inputs(next_tokens, prev_model_inputs)
-
-        return UnifiedMTPDeepseekV3ModelInputs(
-            tokens=base.tokens,
-            input_row_offsets=base.input_row_offsets,
-            host_input_row_offsets=base.host_input_row_offsets,
-            draft_tokens=prev_model_inputs.draft_tokens,
-            draft_kv_cache_buffers=prev_model_inputs.draft_kv_cache_buffers,
-            batch_context_lengths=base.batch_context_lengths,
-            signal_buffers=base.signal_buffers,
-            kv_cache_inputs=base.kv_cache_inputs,
-            return_n_logits=base.return_n_logits,
-            data_parallel_splits=base.data_parallel_splits,
-            ep_inputs=base.ep_inputs,
-        )
+    ) -> UnifiedMTPDeepseekV3Inputs:
+        raise NotImplementedError("MTP does not support Multistep execution")
 
     def _create_draft_config(
         self, draft_state_dict: dict[str, WeightData]
@@ -424,13 +435,5 @@ class UnifiedMTPDeepseekV3Model(DeepseekV3Model):
                 f.name: getattr(base_config, f.name)
                 for f in fields(base_config)
             }
-        )
-        logger.info(
-            f"[DEBUG] _create_draft_config: "
-            f"devices={draft_config.devices}, "
-            f"dp={draft_config.data_parallel_degree}, "
-            f"ep_config={draft_config.ep_config is not None}, "
-            f"num_hidden_layers={draft_config.num_hidden_layers}, "
-            f"dtype={draft_config.dtype}"
         )
         return draft_config

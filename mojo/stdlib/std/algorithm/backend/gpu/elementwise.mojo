@@ -18,10 +18,9 @@ from std.gpu import (
     PDLLevel,
     WARP_SIZE,
     barrier,
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-    thread_idx_uint as thread_idx,
+    block_idx,
+    grid_dim,
+    thread_idx,
 )
 from std.gpu.primitives.cluster import (
     cluster_sync_acquire,
@@ -38,6 +37,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import B200
 from std.gpu.sync import mbarrier_init, mbarrier_arrive_expect_tx_relaxed
 from std.math import ceildiv, clamp
+from std.math.uutils import ufloordiv, uceildiv, udivmod
 from std.memory import stack_allocation
 from std.sys._assembly import inlined_assembly
 from std.sys.defines import get_defined_bool, get_defined_int
@@ -46,6 +46,9 @@ from std.utils.index import IndexList
 from std.utils.static_tuple import StaticTuple
 
 from std.algorithm.functional import _get_start_indices_of_nth_subvolume
+
+
+comptime _PDL_LEVEL = PDLLevel(1)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -100,13 +103,15 @@ def _advance_indices[
 def _elementwise_impl_gpu_clc[
     rank: Int,
     //,
-    simd_width: UInt,
+    simd_width: Int,
     block_size: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
-    elems_per_thread: UInt,
-    pdl_level: PDLLevel,
+    ) register_passable -> None,
+    elems_per_thread: Int,
+    *,
+    pdl_level: PDLLevel = _PDL_LEVEL,
+    trace_description: StaticString = "",
 ](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` on SM100+ GPUs using Cluster Launch Control
     work-stealing.
@@ -126,6 +131,7 @@ def _elementwise_impl_gpu_clc[
             tile. Higher values increase instruction-level parallelism and
             reduce CLC cancel frequency.
         pdl_level: The PDL level controlling kernel overlap behavior.
+        trace_description: Description of the trace.
 
     Args:
         func: The closure carrying the captured state of the body function.
@@ -136,16 +142,14 @@ def _elementwise_impl_gpu_clc[
         If the GPU kernel launch fails.
     """
 
-    var length = UInt(shape.flattened_length())
-    var num_packed_elems, unpacked_tail_length = divmod(length, simd_width)
+    var length = shape.flattened_length()
+    var num_packed_elems, unpacked_tail_length = udivmod(length, simd_width)
     var packed_region_length = length - unpacked_tail_length
 
     if length == 0:
         return
 
-    var num_tiles = ceildiv(
-        num_packed_elems, UInt(block_size) * elems_per_thread
-    )
+    var num_tiles = uceildiv(num_packed_elems, block_size * elems_per_thread)
     if num_tiles == 0:
         num_tiles = 1
 
@@ -156,7 +160,11 @@ def _elementwise_impl_gpu_clc[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
-    def _kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
+    @__name(
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.clc.{handle_uneven_simd}",
+        mangle=True,
+    )
+    def _kernel[*, handle_uneven_simd: Bool]():
         var result = stack_allocation[
             1,
             UInt128,
@@ -181,23 +189,23 @@ def _elementwise_impl_gpu_clc[
             address_space=AddressSpace.SHARED,
         ]()
 
-        var tile_id = UInt(block_idx.x)
+        var tile_id = block_idx.x
         var phase: UInt32 = 0
 
-        with PDL():
-            # Initialize mbarrier and kick-start CLC pipeline.
-            if thread_idx.x == 0:
-                mbarrier_init(mbar, Int32(1))
-                if elect_one_sync_with_mask(mask=1):
-                    clusterlaunchcontrol_try_cancel(result, mbar)
-                _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
+        # Initialize mbarrier and kick-start CLC pipeline.
+        if thread_idx.x == 0:
+            mbarrier_init(mbar, Int32(1))
+            if elect_one_sync_with_mask(mask=1):
+                clusterlaunchcontrol_try_cancel(result, mbar)
+            _ = mbarrier_arrive_expect_tx_relaxed(mbar, Int32(16))
 
+        with PDL():
             # Work-stealing loop.
             while True:
                 # Process current tile — each thread handles multiple packed
                 # elements at stride block_size for coalesced access.
-                var base = tile_id * UInt(block_size * elems_per_thread) + UInt(
-                    thread_idx.x
+                var base = (
+                    tile_id * block_size * elems_per_thread + thread_idx.x
                 )
 
                 @parameter
@@ -205,29 +213,27 @@ def _elementwise_impl_gpu_clc[
                 def _process_elem(start_indices: IndexList[rank, ...]):
                     comptime if handle_uneven_simd:
                         if (
-                            start_indices[rank - 1] + Int(simd_width)
+                            start_indices[rank - 1] + simd_width
                             > shape[rank - 1]
                         ):
                             func[1, rank](start_indices.canonicalize())
                             var si = start_indices
-                            comptime for _off in range(1, Int(simd_width)):
+                            comptime for _off in range(1, simd_width):
                                 _advance_indices(si, shape)
                                 func[1, rank](si.canonicalize())
                         else:
-                            func[Int(simd_width), rank](
-                                start_indices.canonicalize()
-                            )
+                            func[simd_width, rank](start_indices.canonicalize())
                     else:
-                        func[Int(simd_width), rank, Int(simd_width)](
+                        func[simd_width, rank, simd_width](
                             start_indices.canonicalize()
                         )
 
                 comptime for e in range(elems_per_thread):
-                    var global_packed_idx = base + UInt(e * block_size)
+                    var global_packed_idx = base + e * block_size
                     if global_packed_idx < num_packed_elems:
                         _process_elem(
                             _get_start_indices_of_nth_subvolume[0](
-                                Int(global_packed_idx * simd_width), shape
+                                global_packed_idx * simd_width, shape
                             )
                         )
 
@@ -267,33 +273,27 @@ def _elementwise_impl_gpu_clc[
                 if canceled[0] == 0:
                     break
 
-                tile_id = UInt(next_tile[0])
+                tile_id = Int(next_tile[0])
 
             # Tail: only the first block handles remainder elements.
-            if UInt(block_idx.x) == 0 and UInt(thread_idx.x) < (
-                unpacked_tail_length
-            ):
+            if block_idx.x == 0 and thread_idx.x < unpacked_tail_length:
                 func[1, rank](
                     _get_start_indices_of_nth_subvolume[0](
-                        Int(packed_region_length + UInt(thread_idx.x)), shape
+                        packed_region_length + thread_idx.x, shape
                     ).canonicalize()
                 )
 
-    if shape[rank - 1] % Int(simd_width) == 0:
-        comptime kernel = _kernel[
-            block_size=UInt(block_size), handle_uneven_simd=False
-        ]
+    if shape[rank - 1] % simd_width == 0:
+        comptime kernel = _kernel[handle_uneven_simd=False]
         ctx.enqueue_function[kernel, kernel](
-            grid_dim=Int(num_tiles),
+            grid_dim=num_tiles,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
-        comptime kernel = _kernel[
-            block_size=UInt(block_size), handle_uneven_simd=True
-        ]
+        comptime kernel = _kernel[handle_uneven_simd=True]
         ctx.enqueue_function[kernel, kernel](
-            grid_dim=Int(num_tiles),
+            grid_dim=num_tiles,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
@@ -308,16 +308,18 @@ def _elementwise_impl_gpu_clc[
 def _elementwise_impl_gpu_grid_stride[
     rank: Int,
     //,
-    simd_width: UInt,
+    simd_width: Int,
     block_size: Int,
     num_waves: Int,
-    sm_count: UInt,
-    threads_per_multiprocessor: UInt,
+    sm_count: Int,
+    threads_per_multiprocessor: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
-    elems_per_thread: UInt,
-    pdl_level: PDLLevel,
+    ) register_passable -> None,
+    elems_per_thread: Int,
+    *,
+    pdl_level: PDLLevel = _PDL_LEVEL,
+    trace_description: StaticString = "",
 ](func: FuncType, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func` over `shape` using a grid-stride loop.
 
@@ -332,6 +334,7 @@ def _elementwise_impl_gpu_grid_stride[
         elems_per_thread: Number of packed elements each thread processes per
             stride iteration for instruction-level parallelism.
         pdl_level: The PDL level controlling kernel overlap behavior.
+        trace_description: Description of the trace.
 
     Args:
         func: The closure carrying the captured state of the body function.
@@ -344,8 +347,8 @@ def _elementwise_impl_gpu_grid_stride[
 
     # optimized implementation inspired by https://archive.md/Tye9y#selection-1101.2-1151.3
 
-    var length = UInt(shape.flattened_length())
-    var num_packed_elems, unpacked_tail_length = divmod(length, simd_width)
+    var length = shape.flattened_length()
+    var num_packed_elems, unpacked_tail_length = udivmod(length, simd_width)
     var packed_region_length = length - unpacked_tail_length
 
     if length == 0:
@@ -354,13 +357,12 @@ def _elementwise_impl_gpu_grid_stride[
     # Grid is sized to saturate SMs — do NOT divide by elems_per_thread
     # here, as that would reduce occupancy. The unrolling only helps when
     # threads have multiple grid-stride iterations to process.
-    var num_blocks = clamp(
-        ceildiv(num_packed_elems, UInt(block_size)),
+    var num_blocks: Int = clamp(
+        uceildiv(num_packed_elems, block_size),
         1,
         sm_count
-        * threads_per_multiprocessor
-        // UInt(block_size)
-        * UInt(num_waves),
+        * ufloordiv(threads_per_multiprocessor, block_size)
+        * num_waves,
     )
 
     @__copy_capture(
@@ -370,7 +372,11 @@ def _elementwise_impl_gpu_grid_stride[
     @__llvm_metadata(
         MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(block_size))
     )
-    def _kernel[*, block_size: UInt, handle_uneven_simd: Bool]():
+    @__name(
+        t"{trace_description}_r{rank}_w{simd_width}_b{block_size}.gs.{handle_uneven_simd}",
+        mangle=True,
+    )
+    def _kernel[*, handle_uneven_simd: Bool]():
         # process the packed region — each thread handles multiple packed
         # elements at stride block_size for coalesced access and ILP.
         var tid = thread_idx.x + block_size * block_idx.x
@@ -382,21 +388,16 @@ def _elementwise_impl_gpu_grid_stride[
             @always_inline
             def _process_elem(start_indices: IndexList[rank, ...]):
                 comptime if handle_uneven_simd:
-                    if (
-                        start_indices[rank - 1] + Int(simd_width)
-                        > shape[rank - 1]
-                    ):
+                    if start_indices[rank - 1] + simd_width > shape[rank - 1]:
                         func[1, rank](start_indices.canonicalize())
                         var si = start_indices
-                        comptime for _off in range(1, Int(simd_width)):
+                        comptime for _off in range(1, simd_width):
                             _advance_indices(si, shape)
                             func[1, rank](si.canonicalize())
                     else:
-                        func[Int(simd_width), rank](
-                            start_indices.canonicalize()
-                        )
+                        func[simd_width, rank](start_indices.canonicalize())
                 else:
-                    func[Int(simd_width), rank, Int(simd_width)](
+                    func[simd_width, rank, simd_width](
                         start_indices.canonicalize()
                     )
 
@@ -406,11 +407,11 @@ def _elementwise_impl_gpu_grid_stride[
                 stride * elems_per_thread,
             ):
                 comptime for e in range(elems_per_thread):
-                    var idx = base_idx + UInt(e) * stride
+                    var idx = base_idx + e * stride
                     if idx < num_packed_elems:
                         _process_elem(
                             _get_start_indices_of_nth_subvolume[0](
-                                Int(idx * simd_width), shape
+                                idx * simd_width, shape
                             )
                         )
 
@@ -422,21 +423,17 @@ def _elementwise_impl_gpu_grid_stride[
                     ).canonicalize()
                 )
 
-    if shape[rank - 1] % Int(simd_width) == 0:
-        comptime kernel = _kernel[
-            block_size=UInt(block_size), handle_uneven_simd=False
-        ]
+    if shape[rank - 1] % simd_width == 0:
+        comptime kernel = _kernel[handle_uneven_simd=False]
         ctx.enqueue_function[kernel, kernel](
-            grid_dim=Int(num_blocks),
+            grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
     else:
-        comptime kernel = _kernel[
-            block_size=UInt(block_size), handle_uneven_simd=True
-        ]
+        comptime kernel = _kernel[handle_uneven_simd=True]
         ctx.enqueue_function[kernel, kernel](
-            grid_dim=Int(num_blocks),
+            grid_dim=num_blocks,
             block_dim=block_size,
             attributes=pdl_launch_attributes(pdl_level),
         )
@@ -451,23 +448,26 @@ def _elementwise_impl_gpu_grid_stride[
 def _elementwise_impl_gpu[
     rank: Int,
     //,
-    *,
-    func: def[width: Int, rank: Int, alignment: Int = 1](
+    simd_width: Int,
+    FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) capturing[_] -> None,
-    simd_width: UInt,
+    ) register_passable -> None,
+    *,
     pdl_level: PDLLevel = PDLLevel(1),
-](*, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
+    trace_description: StaticString = "",
+](func: FuncType, *, shape: IndexList[rank, ...], ctx: DeviceContext) raises:
     """Executes `func[width, rank](indices)` as sub-tasks for a suitable
     combination of width and indices so as to cover shape on the GPU.
 
     Parameters:
         rank: The rank of the buffer.
-        func: The body function.
         simd_width: The SIMD vector width to use.
+        FuncType: The body function type.
         pdl_level: The PDL level controlling kernel overlap behavior.
+        trace_description: Description of the trace.
 
     Args:
+        func: The closure carrying the captured state of the body function.
         shape: The shape of the buffer.
         ctx: The pointer to DeviceContext.
 
@@ -475,20 +475,13 @@ def _elementwise_impl_gpu[
         If the GPU kernel launch fails.
     """
 
-    def func_unified[
-        width: Int, rank: Int, alignment: Int = 1
-    ](indices: IndexList[rank]) unified register_passable {}:
-        func[width, rank, alignment](indices)
-
     comptime hw_info = ctx.default_device_info
 
     comptime registers_per_thread = 255
     comptime num_waves = get_defined_int["MOJO_ELEMENTWISE_NUM_WAVES", 32]()
     comptime registers_per_block = hw_info.max_registers_per_block
-    comptime sm_count = UInt(hw_info.sm_count)
-    comptime threads_per_multiprocessor = UInt(
-        hw_info.threads_per_multiprocessor
-    )
+    comptime sm_count: Int = hw_info.sm_count
+    comptime threads_per_multiprocessor = hw_info.threads_per_multiprocessor
 
     comptime assert (
         sm_count > 0 and threads_per_multiprocessor > 0
@@ -510,16 +503,14 @@ def _elementwise_impl_gpu[
         "MOJO_ELEMENTWISE_SHORT_ROW_BLOCK_SIZE",
         64 if ctx.default_device_info == B200 else default_block_size,
     ]()
-    comptime elems_per_thread = UInt(
-        get_defined_int[
-            "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
-            4 if has_nvidia_gpu_accelerator() else 1,
-        ]()
-    )
-    comptime clc_min_packed_per_row = UInt(
-        get_defined_int["MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9]()
-    )
-    var packed_elems_per_row = UInt(shape[rank - 1]) // simd_width
+    comptime elems_per_thread = get_defined_int[
+        "MOJO_ELEMENTWISE_ELEMS_PER_THREAD",
+        4 if has_nvidia_gpu_accelerator() else 1,
+    ]()
+    comptime clc_min_packed_per_row = get_defined_int[
+        "MOJO_ELEMENTWISE_CLC_MIN_PACKED_PER_ROW", 9
+    ]()
+    var packed_elems_per_row = ufloordiv(shape[rank - 1], simd_width)
 
     var length = UInt(shape.flattened_length())
     var use_32bit = length <= UInt(UInt32.MAX)
@@ -528,8 +519,8 @@ def _elementwise_impl_gpu[
         return
 
     comptime if _is_sm_100x_or_newer() and _USE_CLC_WORK_STEALING:
-        var num_packed = length // simd_width
-        var num_tiles = ceildiv(num_packed, UInt(block_size) * elems_per_thread)
+        var num_packed = ufloordiv(Int(length), simd_width)
+        var num_tiles = uceildiv(num_packed, block_size * elems_per_thread)
 
         if packed_elems_per_row < clc_min_packed_per_row or num_tiles <= 1:
             # Short rows or single-tile workloads: use grid-stride to avoid
@@ -544,7 +535,8 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     pdl_level=pdl_level,
-                ](func=func_unified, shape=shape.cast[DType.uint32](), ctx=ctx)
+                    trace_description=trace_description,
+                ](func=func, shape=shape.cast[DType.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_grid_stride[
                     simd_width=simd_width,
@@ -554,7 +546,8 @@ def _elementwise_impl_gpu[
                     threads_per_multiprocessor=threads_per_multiprocessor,
                     elems_per_thread=elems_per_thread,
                     pdl_level=pdl_level,
-                ](func=func_unified, shape=shape.cast[DType.uint64](), ctx=ctx)
+                    trace_description=trace_description,
+                ](func=func, shape=shape.cast[DType.uint64](), ctx=ctx)
         else:
             if use_32bit:
                 _elementwise_impl_gpu_clc[
@@ -562,14 +555,16 @@ def _elementwise_impl_gpu[
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     pdl_level=pdl_level,
-                ](func=func_unified, shape=shape.cast[DType.uint32](), ctx=ctx)
+                    trace_description=trace_description,
+                ](func=func, shape=shape.cast[DType.uint32](), ctx=ctx)
             else:
                 _elementwise_impl_gpu_clc[
                     simd_width=simd_width,
                     block_size=block_size,
                     elems_per_thread=elems_per_thread,
                     pdl_level=pdl_level,
-                ](func=func_unified, shape=shape.cast[DType.uint64](), ctx=ctx)
+                    trace_description=trace_description,
+                ](func=func, shape=shape.cast[DType.uint64](), ctx=ctx)
     else:
         if use_32bit:
             _elementwise_impl_gpu_grid_stride[
@@ -580,7 +575,8 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 pdl_level=pdl_level,
-            ](func=func_unified, shape=shape.cast[DType.uint32](), ctx=ctx)
+                trace_description=trace_description,
+            ](func=func, shape=shape.cast[DType.uint32](), ctx=ctx)
         else:
             _elementwise_impl_gpu_grid_stride[
                 simd_width=simd_width,
@@ -590,4 +586,5 @@ def _elementwise_impl_gpu[
                 threads_per_multiprocessor=threads_per_multiprocessor,
                 elems_per_thread=elems_per_thread,
                 pdl_level=pdl_level,
-            ](func=func_unified, shape=shape.cast[DType.uint64](), ctx=ctx)
+                trace_description=trace_description,
+            ](func=func, shape=shape.cast[DType.uint64](), ctx=ctx)

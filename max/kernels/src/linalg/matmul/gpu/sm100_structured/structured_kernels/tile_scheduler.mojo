@@ -18,11 +18,7 @@ from std.gpu.primitives.cluster import (
     clusterlaunchcontrol_try_cancel,
     elect_one_sync,
 )
-from std.gpu import (
-    block_id_in_cluster,
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-)
+from std.gpu import block_id_in_cluster, block_idx, lane_id
 from std.gpu.memory import fence_async_view_proxy
 from layout.tma_async import PipelineState, SharedMemBarrier
 
@@ -70,85 +66,6 @@ struct WorkInfo(TrivialRegisterPassable, Writable):
         )
 
 
-# =============================================================================
-# Work Iteration Context Managers
-# =============================================================================
-#
-# Two patterns exist for iterating over work items in warp-specialized kernels:
-#
-# 1. ADVANCE AFTER WORK (Load/Scheduler/Epilogue warps):
-#    - Do work with current work_info
-#    - Then fetch next, assign, step
-#    Usage:
-#      with scheduler.advance_after_work(work_info, state) as current:
-#          do_work(current)
-#      # After: work_info updated, state stepped
-#
-# 2. PREFETCH BEFORE WORK (MMA warp - software pipelining):
-#    - Fetch next and step BEFORE doing work
-#    - Do work with current work_info
-#    - Then assign prefetched value
-#    Usage:
-#      with scheduler.prefetch_before_work(work_info, state) as current:
-#          do_mma(current)
-#      # After: work_info updated to prefetched value
-# =============================================================================
-
-
-struct AdvanceAfterWorkContext[
-    work_origin: MutOrigin,
-    state_origin: MutOrigin,
-    num_stages: Int,
-    cluster_shape: IndexList[3, element_type=DType.uint32],
-    rasterize_order: RasterOrder,
-    block_swizzle_size: Int,
-](TrivialRegisterPassable):
-    """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
-
-    - __enter__: Returns current work_info for use in the block
-    - __exit__: Fetches next work, assigns to work_info, steps state
-    """
-
-    comptime SchedulerType = TileScheduler[
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]
-
-    var scheduler: Self.SchedulerType
-    var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
-    var consumer_state_ptr: Pointer[
-        PipelineState[Self.num_stages], Self.state_origin
-    ]
-
-    @always_inline
-    def __init__(
-        out self,
-        scheduler: Self.SchedulerType,
-        work_info_ptr: Pointer[WorkInfo, Self.work_origin],
-        consumer_state_ptr: Pointer[
-            PipelineState[Self.num_stages], Self.state_origin
-        ],
-    ):
-        self.scheduler = scheduler
-        self.work_info_ptr = work_info_ptr
-        self.consumer_state_ptr = consumer_state_ptr
-
-    @always_inline
-    def __enter__(self) -> WorkInfo:
-        return self.work_info_ptr[]
-
-    @always_inline
-    def __exit__(mut self):
-        var next = self.scheduler.fetch_next_work(
-            self.work_info_ptr[],
-            self.consumer_state_ptr[],
-        )
-        self.work_info_ptr[] = next
-        self.consumer_state_ptr[].step()
-
-
 struct WaitAndAdvanceContext[
     work_origin: MutOrigin,
 ](TrivialRegisterPassable):
@@ -187,9 +104,40 @@ struct WaitAndAdvanceContext[
         self.work_info_ptr[] = self.next_work
 
 
-# =============================================================================
-# WorkIterator - Per-warp iterator encapsulating scheduler + pipeline state
-# =============================================================================
+struct WaitAndAdvanceHandle[
+    work_origin: MutOrigin,
+]:
+    """RAII handle for waiting on CLC barrier and advancing work iterator.
+
+    Uses the origin system (__init__/__del__) instead of context managers.
+    The current work_info is captured on construction. On destruction, the
+    prefetched next work is written back to the iterator's work_info.
+
+    Usage:
+        var handle = work_iter.wait_and_advance_linear()
+        process(handle.work_info)
+        handle^.release()
+        # After release, work_iter.work_info is the NEXT work item
+    """
+
+    var work_info: WorkInfo
+    var work_info_ptr: Pointer[WorkInfo, Self.work_origin]
+    var next_work: WorkInfo
+
+    @always_inline
+    def __init__(
+        out self,
+        work_info_ptr: Pointer[WorkInfo, Self.work_origin],
+        next_work: WorkInfo,
+    ):
+        self.work_info = work_info_ptr[]
+        self.work_info_ptr = work_info_ptr
+        self.next_work = next_work
+
+    @always_inline
+    def release(deinit self):
+        """Release the handle and advance to next work."""
+        self.work_info_ptr[] = self.next_work
 
 
 struct WorkIterator[
@@ -197,7 +145,7 @@ struct WorkIterator[
     cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterPassable):
+](Copyable, Iterable, Iterator, RegisterPassable):
     """Per-warp work iterator that owns work_info and pipeline state.
 
     Each warp creates its own WorkIterator which internally manages both
@@ -206,11 +154,12 @@ struct WorkIterator[
 
     Usage:
         var work_iter = scheduler.work_iterator()
-        while work_iter.has_work():
-            with work_iter.next() as current:
-                work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
-                do_work(current)
+        for current in work_iter:
+            scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
+            do_work(current)
     """
+
+    comptime Element = WorkInfo
 
     comptime SchedulerType = TileScheduler[
         Self.num_stages,
@@ -218,87 +167,50 @@ struct WorkIterator[
         Self.rasterize_order,
         Self.block_swizzle_size,
     ]
-    comptime ThrottlePipeline = Self.SchedulerType.ThrottlePipeline
 
     var scheduler: Self.SchedulerType
     var work_info: WorkInfo
     var consumer_state: PipelineState[Self.num_stages]
-    var throttle_pipeline: Self.ThrottlePipeline
+    var needs_fetch: Bool
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     @always_inline
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
-        """Create work iterator with initial work_info. Throttle from scheduler.
-        """
+        """Create work iterator with initial work_info."""
         self.scheduler = scheduler
         self.work_info = work_info
         self.consumer_state = PipelineState[Self.num_stages]()
-        self.throttle_pipeline = scheduler.throttle_pipeline
+        self.needs_fetch = False
 
     @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
     @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> AdvanceAfterWorkContext[
-        origin_of(self.work_info),
-        origin_of(self.consumer_state),
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]:
-        """Get next work item (advance AFTER work pattern)."""
-        return AdvanceAfterWorkContext(
-            self.scheduler,
-            Pointer(to=self.work_info),
-            Pointer(to=self.consumer_state),
-        )
+    def __next__(mut self) raises StopIteration -> WorkInfo:
+        """Return current work item, deferring fetch to next call.
 
-    @always_inline
-    def wait_and_advance[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> WaitAndAdvanceContext[
-        origin_of(self.work_info)
-    ]:
-        """Wait for next work from CLC and advance iterator.
+        On the first call, returns the initial work_info without fetching.
+        On subsequent calls, fetches next work (deferred from previous
+        iteration) before returning. This allows the caller to signal
+        throttle between iterations, avoiding deadlock with the scheduler
+        warp.
 
-        Encapsulates the CLC barrier wait:
-        - __enter__: Waits for CLC response, returns current work
-        - __exit__: Assigns fetched work as current
-
-        Usage:
-            with work_iter.wait_and_advance() as current:
-                # Process current work item
-            # After exit, work_iter points to next work
+        Raises:
+            StopIteration: When there is no more work to process.
         """
-        var next = self.scheduler.fetch_next_work(
-            self.work_info, self.consumer_state
-        )
-        self.consumer_state.step()
-        return WaitAndAdvanceContext(Pointer(to=self.work_info), next)
-
-    # ========== CLC Throttle (Producer Side) ==========
-
-    @always_inline
-    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
-        """Signal CLC throttle if this is the first CTA in cluster.
-
-        The Load warp acts as producer for CLC throttle, signaling that it has
-        started processing a new work item. This prevents the scheduler from
-        getting too far ahead.
-
-        Args:
-            is_first_cta_in_cluster: Only first CTA signals to avoid duplicates.
-        """
-        if is_first_cta_in_cluster:
-            self.throttle_pipeline.producer_signal_and_step()
+        if self.needs_fetch:
+            self.work_info = self.scheduler.fetch_next_work(
+                self.work_info, self.consumer_state
+            )
+            self.consumer_state.step()
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        self.needs_fetch = True
+        return self.work_info
 
 
 # =============================================================================
@@ -311,21 +223,22 @@ struct SchedulerWorkIterator[
     cluster_shape: IndexList[3, element_type=DType.uint32],
     rasterize_order: RasterOrder,
     block_swizzle_size: Int,
-](TrivialRegisterPassable):
+](Copyable, Iterable, Iterator, RegisterPassable):
     """Work iterator for Scheduler warp - owns work_info and both pipeline states.
 
     The Scheduler warp uniquely needs to:
-    1. Consume work responses (like other warps) via next()
+    1. Consume work responses (like other warps) via __next__
     2. Signal throttle and produce new work requests via signal_and_advance()
     3. Drain pending requests at exit via drain()
 
     Usage:
         var sched_iter = scheduler.scheduler_iterator()
-        while sched_iter.has_work():
-            with sched_iter.next():
-                sched_iter.signal_and_advance()
+        for _ in sched_iter:
+            sched_iter.signal_and_advance()
         sched_iter.drain()
     """
+
+    comptime Element = WorkInfo
 
     comptime SchedulerType = TileScheduler[
         Self.num_stages,
@@ -340,6 +253,11 @@ struct SchedulerWorkIterator[
     var consumer_state: PipelineState[Self.num_stages]
     var producer_state: PipelineState[Self.num_stages]
     var throttle_pipeline: Self.ThrottlePipeline
+    var needs_fetch: Bool
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     @always_inline
     def __init__(out self, scheduler: Self.SchedulerType, work_info: WorkInfo):
@@ -349,33 +267,28 @@ struct SchedulerWorkIterator[
         self.consumer_state = PipelineState[Self.num_stages]()
         self.producer_state = PipelineState[Self.num_stages](0, 1, 0)
         self.throttle_pipeline = scheduler.throttle_pipeline
+        self.needs_fetch = False
 
     @always_inline
-    def has_work(self) -> Bool:
-        """Check if there is more work to process."""
-        return self.work_info.is_valid()
-
-    # ========== Work Iteration (Consumer Side) ==========
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
 
     @always_inline
-    def next[
-        state_origin: MutOrigin, //
-    ](
-        ref[state_origin] self,
-    ) -> AdvanceAfterWorkContext[
-        origin_of(self.work_info),
-        origin_of(self.consumer_state),
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]:
-        """Get next work item."""
-        return AdvanceAfterWorkContext(
-            self.scheduler,
-            Pointer(to=self.work_info),
-            Pointer(to=self.consumer_state),
-        )
+    def __next__(mut self) raises StopIteration -> WorkInfo:
+        """Return current work item, deferring fetch to next call.
+
+        Raises:
+            StopIteration: When there is no more work to process.
+        """
+        if self.needs_fetch:
+            self.work_info = self.scheduler.fetch_next_work(
+                self.work_info, self.consumer_state
+            )
+            self.consumer_state.step()
+        if not self.work_info.is_valid():
+            raise StopIteration()
+        self.needs_fetch = True
+        return self.work_info
 
     # ========== CLC Throttle + Work Request ==========
 
@@ -573,11 +486,11 @@ struct TileScheduler[
         return WorkInfo(
             m=UInt32(
                 Int(new_m_global) * Self.cluster_shape[0]
-                + Int(block_id_in_cluster.x)
+                + block_id_in_cluster.x
             ),
             n=UInt32(
                 Int(new_n_global) * Self.cluster_shape[1]
-                + Int(block_id_in_cluster.y)
+                + block_id_in_cluster.y
             ),
             k_start=work_info.k_start,
             is_valid_tile=work_info.is_valid_tile,
@@ -622,37 +535,26 @@ struct TileScheduler[
         )
 
     # =========================================================================
-    # Work Iteration Context Managers
+    # CLC Throttle (Producer Side)
     # =========================================================================
 
     @always_inline
-    def advance_after_work[
-        work_origin: MutOrigin, state_origin: MutOrigin, //
-    ](
-        self,
-        ref[work_origin] work_info: WorkInfo,
-        ref[state_origin] consumer_state: PipelineState[Self.num_stages],
-    ) -> AdvanceAfterWorkContext[
-        work_origin,
-        state_origin,
-        Self.num_stages,
-        Self.cluster_shape,
-        Self.rasterize_order,
-        Self.block_swizzle_size,
-    ]:
-        """Context for warps that do work THEN advance (Load/Scheduler/Epilogue).
+    def throttle_signal(mut self, is_first_cta_in_cluster: Bool):
+        """Signal CLC throttle if this is the first CTA in cluster.
 
-        Usage:
-            with scheduler.advance_after_work(work_info, state) as current:
-                do_work(current)
-                syncwarp()
-            # After: work_info updated, state stepped
+        The Load warp acts as producer for CLC throttle, signaling that it has
+        started processing a new work item. This prevents the scheduler from
+        getting too far ahead.
+
+        Args:
+            is_first_cta_in_cluster: Only first CTA signals to avoid duplicates.
         """
-        return AdvanceAfterWorkContext(
-            self,
-            Pointer(to=work_info),
-            Pointer(to=consumer_state),
-        )
+        if is_first_cta_in_cluster:
+            self.throttle_pipeline.producer_signal_and_step()
+
+    # =========================================================================
+    # Work Iteration Context Managers
+    # =========================================================================
 
     @always_inline
     def wait_and_advance_work[
@@ -684,17 +586,16 @@ struct TileScheduler[
         Self.rasterize_order,
         Self.block_swizzle_size,
     ]:
-        """Create a per-warp work iterator with internally managed state.
+        """Create a per-warp work iterator using __next__-style iteration.
 
         Each warp should create its own work iterator. The iterator owns
-        work_info, pipeline state, and throttle internally.
+        work_info and pipeline state internally.
 
         Usage:
             var work_iter = scheduler.work_iterator()
-            while work_iter.has_work():
-                with work_iter.next() as current:
-                    work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
-                    do_work(current)
+            for current in work_iter:
+                scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
+                do_work(current)
         """
         return WorkIterator(self, self.initial_work_info())
 
@@ -714,9 +615,8 @@ struct TileScheduler[
 
         Usage:
             var sched_iter = scheduler.scheduler_iterator()
-            while sched_iter.has_work():
-                with sched_iter.next():
-                    sched_iter.signal_and_advance()
+            for _ in sched_iter:
+                sched_iter.signal_and_advance()
             sched_iter.drain()
         """
         return SchedulerWorkIterator(self, self.initial_work_info())

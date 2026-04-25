@@ -22,6 +22,7 @@ from max.serve.worker_interface.zmq_queue import generate_zmq_ipc_path
 from pydantic import Field, PrivateAttr
 
 from .config.config_enums import PipelineRole
+from .interfaces.cache_mixin import DenoisingCacheConfig
 
 # Default max batch input tokens for chunked prefill and memory estimation.
 DEFAULT_MAX_BATCH_INPUT_TOKENS = 8192
@@ -116,7 +117,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "The number of steps to run for multi-step scheduling. -1 specifies "
             "a default value based on configuration and platform. Ignored for "
-            "models which are not auto-regressive (e.g. embedding models)."
+            "models which are not auto-regressive (for example, embedding models)."
         ),
     )
 
@@ -149,14 +150,6 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Enables using vendor CCL libraries (NCCL/RCCL) for collective "
             "operations such as allreduce in multi-GPU inference."
-        ),
-    )
-
-    pdl_level: str = Field(
-        default=os.environ.get("PDL_LEVEL", "0"),
-        description=(
-            "Level of overlap of kernel launch via programmatic dependent grid "
-            "control."
         ),
     )
 
@@ -193,12 +186,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    device_graph_capture: bool = Field(
-        default=False,
+    device_graph_capture: bool | None = Field(
+        default=None,
         description=(
             "Enable device graph capture/replay for graph execution. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-device-graph-capture --force."
+            "If unset, automatically enabled for some selected architectures. "
+            "Set to False (--no-device-graph-capture) to explicitly disable."
         ),
     )
 
@@ -217,6 +210,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "considering current and incoming requests. CE is scheduled if "
             "either projected usage stays below this threshold or no active "
             "requests exist. Higher values can cause more preemptions."
+        ),
+    )
+
+    decode_stall_timeout_s: float | None = Field(
+        default=float(os.environ["MODULAR_DECODE_STALL_TIMEOUT_S"])
+        if "MODULAR_DECODE_STALL_TIMEOUT_S" in os.environ
+        else None,
+        description=(
+            "Seconds of no-batch-activity after which the decode worker exits "
+            "to trigger a pod restart. None (the default) disables the "
+            "watchdog. Set via MODULAR_DECODE_STALL_TIMEOUT_S env var or "
+            "directly in config."
         ),
     )
 
@@ -263,6 +268,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Each entry stores the vision encoder output for one image, "
             "avoiding re-encoding across chunks and requests. Set to 0 to "
             "disable caching. Only used by VLMs."
+        ),
+    )
+
+    denoising_cache: DenoisingCacheConfig = Field(
+        default_factory=DenoisingCacheConfig,
+        description=(
+            "Cache configuration for diffusion model denoising "
+            "(FBCache, TaylorSeer, TeaCache)."
         ),
     )
 

@@ -11,7 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from layout import Layout, LayoutTensor
 from layout.tile_layout import row_major
 from layout.tile_tensor import stack_allocation
 from linalg.transpose import (
@@ -517,11 +516,7 @@ def test_simplify_perm():
 def test_transpose_4x4():
     print("== test_transpose_4x4")
 
-    comptime layout = Layout.row_major(4, 4)
-    var stack = InlineArray[Scalar[DType.int], layout.size()](
-        uninitialized=True
-    )
-    var matrix = LayoutTensor[DType.int, layout](stack)
+    var matrix = stack_allocation[dtype=DType.int](row_major[4, 4]())
 
     matrix[0, 0] = 0
     matrix[0, 1] = 1
@@ -598,11 +593,9 @@ def test_transpose_8x8():
     comptime num_rows: Int = 8
     comptime num_cols: Int = 8
 
-    comptime layout = Layout.row_major(num_rows, num_cols)
-    var stack = InlineArray[Scalar[DType.int], layout.size()](
-        uninitialized=True
+    var matrix = stack_allocation[dtype=DType.int](
+        row_major[num_rows, num_cols]()
     )
-    var matrix = LayoutTensor[DType.int, layout](stack)
 
     for i in range(num_rows):
         for j in range(num_cols):
@@ -626,12 +619,10 @@ def test_transpose_16x16():
 
     comptime num_rows: Int = 16
     comptime num_cols: Int = 16
-    comptime layout = Layout.row_major(num_rows, num_cols)
-    var stack = InlineArray[Scalar[DType.int], layout.size()](
-        uninitialized=True
-    )
 
-    var matrix = LayoutTensor[DType.int, layout](stack)
+    var matrix = stack_allocation[dtype=DType.int](
+        row_major[num_rows, num_cols]()
+    )
 
     for i in range(num_rows):
         for j in range(num_cols):

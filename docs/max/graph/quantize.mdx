@@ -164,3 +164,7 @@ With this implementation, you can add quantized weights into your MAX models.
 The [`qmatmul`](/max/api/python/graph.ops#max.graph.ops.qmatmul) operation
 handles the dequantization process during inference, giving you the performance
 benefits of quantization without having to manage the low-level details.
+
+If you're building a custom architecture that loads FP8 or FP4 checkpoints, see
+[Map weight names](/max/develop/model-bringup-workflow#fp8-and-fp4-checkpoints)
+in the model bring-up workflow guide.

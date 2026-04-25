@@ -32,7 +32,6 @@ from std.sys._amdgpu import (
 from std.sys._build import is_debug_build
 from std.sys.intrinsics import assume
 from std.sys.defines import get_defined_string
-
 from std.collections.string.string_slice import _get_kgen_string
 from std.reflection import call_location, SourceLocation
 
@@ -92,7 +91,7 @@ def debug_assert[
     assert_mode: StaticString = "none",
     *Ts: Writable,
     cpu_only: Bool = False,
-](*messages: *Ts):
+](*messages: *Ts, location: Optional[SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -102,7 +101,7 @@ def debug_assert[
     message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
-    x = 0
+    var x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
@@ -111,6 +110,7 @@ def debug_assert[
     `safe` to create an assertion that's on by default:
 
     ```mojo
+    var x = 0
     debug_assert[assert_mode="safe"](
         x > 0, "expected x to be more than 0 but got: ", x
     )
@@ -135,8 +135,8 @@ def debug_assert[
     condition expressions. For example:
 
     ```mojo
-    person = "name: john, age: 50"
-    name = "john"
+    var person = "name: john, age: 50"
+    var name = "john"
     debug_assert(String("name: ", name) in person, "unexpected name")
     ```
 
@@ -146,17 +146,28 @@ def debug_assert[
     on:
 
     ```mojo
-    def check_name() capturing -> Bool:
-        return String("name: ", name) in person
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
 
-    debug_assert[check_name]("unexpected name")
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name]("unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
     you can set it to CPU only:
 
     ```mojo
-    debug_assert[check_name, cpu_only=True]("unexpected name")
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
+
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
     For compile-time assertions, see
@@ -173,6 +184,7 @@ def debug_assert[
     Args:
         messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
+        location: Source location to report on assertion failure.
     """
 
     comptime if _assert_enabled[assert_mode, cpu_only]():
@@ -188,7 +200,9 @@ def debug_assert[
 
         var slice = message.as_string_slice()
         _debug_assert_msg(
-            slice.unsafe_ptr(), slice.byte_length(), call_location()
+            slice.unsafe_ptr(),
+            slice.byte_length(),
+            location.value() if location else call_location(),
         )
 
 
@@ -198,7 +212,7 @@ def debug_assert[
     *Ts: Writable,
     cpu_only: Bool = False,
     _use_compiler_assume: Bool = False,
-](cond: Bool, *messages: *Ts):
+](cond: Bool, *messages: *Ts, location: Optional[SourceLocation] = None):
     """Asserts that the condition is true at run time.
 
     If the condition is false, the assertion displays the given message and
@@ -208,7 +222,7 @@ def debug_assert[
     message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
-    x = 0
+    var x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
@@ -217,6 +231,7 @@ def debug_assert[
     `safe` to create an assertion that's on by default:
 
     ```mojo
+    var x = 0
     debug_assert[assert_mode="safe"](
         x > 0, "expected x to be more than 0 but got: ", x
     )
@@ -241,8 +256,8 @@ def debug_assert[
     condition expressions. For example:
 
     ```mojo
-    person = "name: john, age: 50"
-    name = "john"
+    var person = "name: john, age: 50"
+    var name = "john"
     debug_assert(String("name: ", name) in person, "unexpected name")
     ```
 
@@ -252,17 +267,28 @@ def debug_assert[
     on:
 
     ```mojo
-    def check_name() capturing -> Bool:
-        return String("name: ", name) in person
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
 
-    debug_assert[check_name]("unexpected name")
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name]("unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
     you can set it to CPU only:
 
     ```mojo
-    debug_assert[check_name, cpu_only=True]("unexpected name")
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
+
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
     For compile-time assertions, see
@@ -282,6 +308,7 @@ def debug_assert[
         cond: The bool value to assert.
         messages: A set of [`Writable`](/mojo/std/format/Writable/)
             arguments to convert to a `String` message.
+        location: Source location to report on assertion failure.
     """
 
     comptime if _assert_enabled[assert_mode, cpu_only]():
@@ -296,8 +323,11 @@ def debug_assert[
         message.nul_terminate()
 
         var slice = message.as_string_slice()
+
         _debug_assert_msg(
-            slice.unsafe_ptr(), slice.byte_length(), call_location()
+            slice.unsafe_ptr(),
+            slice.byte_length(),
+            location.value() if location else call_location(),
         )
 
     elif _use_compiler_assume:
@@ -319,7 +349,7 @@ def debug_assert[
     message. No string allocation occurs unless the assertion is triggered.
 
     ```mojo
-    x = 0
+    var x = 0
     debug_assert(x > 0, "expected x to be more than 0 but got: ", x)
     ```
 
@@ -328,6 +358,7 @@ def debug_assert[
     `safe` to create an assertion that's on by default:
 
     ```mojo
+    var x = 0
     debug_assert[assert_mode="safe"](
         x > 0, "expected x to be more than 0 but got: ", x
     )
@@ -352,8 +383,8 @@ def debug_assert[
     condition expressions. For example:
 
     ```mojo
-    person = "name: john, age: 50"
-    name = "john"
+    var person = "name: john, age: 50"
+    var name = "john"
     debug_assert(String("name: ", name) in person, "unexpected name")
     ```
 
@@ -363,17 +394,28 @@ def debug_assert[
     on:
 
     ```mojo
-    def check_name() capturing -> Bool:
-        return String("name: ", name) in person
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
 
-    debug_assert[check_name]("unexpected name")
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name]("unexpected name")
     ```
 
     If you need to allocate, and so don't want the assert to ever run on GPU,
     you can set it to CPU only:
 
     ```mojo
-    debug_assert[check_name, cpu_only=True]("unexpected name")
+    def main():
+        var person = "name: john, age: 50"
+        var name = "john"
+
+        def check_name() capturing -> Bool:
+            return String("name: ", name) in person
+
+        debug_assert[check_name, cpu_only=True]("unexpected name")
     ```
 
     For compile-time assertions, see
@@ -395,9 +437,11 @@ def debug_assert[
     comptime if _assert_enabled[assert_mode, cpu_only]():
         if cond:
             return
+
         _debug_assert_msg(
             message.unsafe_ptr(),
-            len(message) + 1,  # include null terminator
+            # include StringLiteral null terminator for printf statements
+            message.byte_length() + 1,
             call_location(),
         )
     elif _use_compiler_assume:
@@ -430,29 +474,23 @@ def _debug_assert_msg(
     )
 
     comptime if is_nvidia_gpu():
-        from std.gpu.primitives.id import (
-            block_idx_uint as block_idx,
-            thread_idx_uint as thread_idx,
-        )
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         _printf[fmt](
             loc.file_name().unsafe_ptr(),
             loc.line(),
             loc.column(),
-            block_idx.x,
-            block_idx.y,
-            block_idx.z,
-            thread_idx.x,
-            thread_idx.y,
-            thread_idx.z,
+            UInt(block_idx.x),
+            UInt(block_idx.y),
+            UInt(block_idx.z),
+            UInt(thread_idx.x),
+            UInt(thread_idx.y),
+            UInt(thread_idx.z),
             message,
         )
     # TODO(MSTDL-1783): fix `_printf` not working on AMDGPU with %s args
     elif is_amd_gpu():
-        from std.gpu.primitives.id import (
-            block_idx_uint as block_idx,
-            thread_idx_uint as thread_idx,
-        )
+        from std.gpu.primitives.id import block_idx, thread_idx
 
         var fd = printf_begin()
         _ = printf_append_string_n(fd, fmt.as_bytes(), False)

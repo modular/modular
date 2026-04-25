@@ -15,6 +15,7 @@ Implements the `ManagedTensorSlice` type - a view of a tensor that doesn't own
 the underlying data. This type is used to build custom graph operations.
 """
 from std.collections import Optional
+from std.gpu.host import DeviceBuffer, DeviceContext
 from std.math import ceil, fma
 from std.sys import align_of, simd_width_of, size_of
 from std.sys.info import CompilationTarget, is_gpu
@@ -84,7 +85,7 @@ def _gcd_pow2[a: Int, b: Int]() -> Int:
 def simd_store_into_managed_tensor_slice[
     dtype: DType,
     rank: Int,
-    simd_width: Int,
+    simd_width: SIMDSize,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
     element_alignment: Int = 1,
@@ -158,7 +159,7 @@ def simd_store_into_tensor_pointer[
     rank: Int,
     //,
     static_spec: StaticTensorSpec[dtype, rank, ...],
-    simd_width: Int,
+    simd_width: SIMDSize,
     element_alignment: Int = 1,
 ](
     ptr: UnsafePointer[Scalar[dtype], MutAnyOrigin],
@@ -468,7 +469,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[mut=True, Scalar[Self.dtype], _],
         slices: InlineArray[Slice, Self.rank],
         slicer_spec: RuntimeTensorSpec[Self.dtype, Self.rank],
     ):
@@ -523,7 +524,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], origin=MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
         spec: RuntimeTensorSpec[Self.dtype, Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -543,7 +544,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
         shape: IndexList[Self.rank],
     ):
         """Initializes a ManagedTensorSlice from a pointer and shape.
@@ -561,7 +562,7 @@ struct ManagedTensorSlice[
 
     def __init__(
         out self,
-        ptr: UnsafePointer[Scalar[Self.dtype], MutAnyOrigin],
+        ptr: UnsafePointer[Scalar[Self.dtype], AnyOrigin[mut=True]],
         shape: IndexList[Self.rank],
         strides: IndexList[Self.rank],
     ):
@@ -610,7 +611,7 @@ struct ManagedTensorSlice[
         assert (
             len(indices) == Self.rank
         ), "mismatch between requested index and rank"
-        return self[IndexList[Self.rank](indices)]
+        return self[IndexList[Self.rank](*indices)]
 
     @always_inline
     def __setitem__(self, *indices: Int, val: Scalar[Self.dtype]):
@@ -627,7 +628,7 @@ struct ManagedTensorSlice[
         assert (
             len(indices) == Self.rank
         ), "mismatch between requested index and rank"
-        self[IndexList[Self.rank](indices)] = val
+        self[IndexList[Self.rank](*indices)] = val
 
     @always_inline
     def __setitem__(
@@ -701,6 +702,11 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
+        comptime assert 0 <= index < Self.rank, String(
+            t"dim_size index of {index} is out of bounds for tensor rank [0,"
+            t" {Self.rank}]"
+        )
+
         comptime if not Self.static_spec.static_layout._shape_types[
             index
         ].is_static_value:
@@ -756,6 +762,11 @@ struct ManagedTensorSlice[
             The size of the tensor slice in the given dimension.
         """
 
+        comptime assert 0 <= index < Self.rank, String(
+            t"stride_length index of {index} is out of bounds for tensor rank"
+            t" [0, {Self.rank}]"
+        )
+
         comptime if not Self.static_spec.static_layout._stride_types[
             index
         ].is_static_value:
@@ -805,6 +816,19 @@ struct ManagedTensorSlice[
             The `UnsafePointer` which contains the data for this tensor slice.
         """
         return rebind[UnsafePointer[Scalar[_dtype], MutAnyOrigin]](self._ptr)
+
+    @always_inline
+    def to_device_buffer(self, ctx: DeviceContext) -> DeviceBuffer[Self.dtype]:
+        var size = self.size()
+        if size > 0:
+            return DeviceBuffer[Self.dtype](
+                ctx,
+                self.unsafe_ptr(),
+                size,
+                owning=False,
+            )
+        else:
+            return DeviceBuffer[Self.dtype].empty(ctx)
 
     @always_inline
     def load[
@@ -925,7 +949,7 @@ struct ManagedTensorSlice[
 
     @always_inline
     def store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -956,7 +980,7 @@ struct ManagedTensorSlice[
     @__mogg_intrinsic_attr("mogg.tensor_fused_store")
     @always_inline
     def _fused_store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -980,7 +1004,7 @@ struct ManagedTensorSlice[
 
     @always_inline("nodebug")
     def _lambda_store[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
         element_alignment: Int = 1,
@@ -1004,9 +1028,10 @@ struct ManagedTensorSlice[
 
     @always_inline
     def _fused_compute_output_lambda[
-        width: Int,
+        width: SIMDSize,
         # Necessary to make it simpler on the call site.
         _rank: Int,
+        element_alignment: Int = 1,
     ](
         self: ManagedTensorSlice[mut=True, static_spec=Self.static_spec, ...],
         index: IndexList[_rank],
@@ -1016,9 +1041,9 @@ struct ManagedTensorSlice[
         var ridx = rebind[IndexList[Self.rank]](index)
 
         comptime if Self._has_compute_fusion:
-            return self.compute_fusion.compute[Self.dtype, Self.rank, width](
-                ridx, val
-            )
+            return self.compute_fusion.compute[
+                Self.dtype, Self.rank, width, element_alignment
+            ](ridx, val)
         else:
             return val
 
@@ -1298,11 +1323,11 @@ struct StaticTensorSpecList[
     dtype: DType,
     rank: Int,
     //,
-    internals_list: Variadic.ValuesOfType[
-        StaticTensorSpecInternal[dtype, rank]
+    internals_list: ParameterList[
+        type=StaticTensorSpecInternal[dtype, rank], ...
     ],
-    shapes_list: Variadic.ValuesOfType[IndexList[rank]],
-    strides_list: Variadic.ValuesOfType[IndexList[rank]],
+    shapes_list: ParameterList[type=IndexList[rank], ...],
+    strides_list: ParameterList[type=IndexList[rank], ...],
 ]:
     """A statically indexable list of data that can be assembled into a
     StaticTensorSpecList on demand. This handles the complexities that arise
@@ -1414,18 +1439,18 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     making it safe to pass across the host-device boundary via GPU closures.
     """
 
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts, `>`]
+    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts.values, `>`]
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
-    def __init__(out self, *args: * Self.Ts):
+    def __init__(out self, *args: *Self.Ts):
         self._mlir_value = __mlir_op.`kgen.rebind`[_type=Self._mlir_type](
             args.get_loaded_kgen_pack()
         )
 
     @always_inline("nodebug")
     def __getitem_param__[i: Int](self) -> Self.Ts[i]:
-        return __mlir_op.`kgen.pack.extract`[index=i.__mlir_index__()](
+        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 
@@ -1891,8 +1916,8 @@ def view_copy_impl[
 
 
 def _shape_types_compatible[
-    x_types: Variadic.TypesOfTrait[CoordLike],
-    y_types: Variadic.TypesOfTrait[CoordLike],
+    x_types: TypeList[Trait=CoordLike, ...],
+    y_types: TypeList[Trait=CoordLike, ...],
     rank: Int,
 ]() -> Bool:
     comptime for i in range(rank):

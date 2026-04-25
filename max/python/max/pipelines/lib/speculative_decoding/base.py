@@ -37,6 +37,7 @@ from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.core import TextContext
 from max.pipelines.lib.sampling import (
     RejectionRunner,
+    SyntheticRunner,
     rejection_runner_registry,
 )
 from max.pipelines.lib.sampling.sampling import TokenSampler
@@ -47,7 +48,6 @@ from ..interfaces import PipelineModel, PipelineModelWithKVCache
 from ..pipeline_variants.text_generation import (
     TextGenerationPipelineInterface,
     get_eos_tokens,
-    get_weight_paths,
 )
 from ..sampling import SamplingConfig
 from .ragged_token_merger import RaggedTokenMergerRunner
@@ -178,7 +178,7 @@ class SpeculativeDecodingPipelineBase(
         self._session = InferenceSession(devices=[*self.devices])
         self.pipeline_config.configure_session(self._session)
 
-        weight_paths = get_weight_paths(target_config)
+        weight_paths = target_config.resolved_weight_paths()
         self._target_model = pipeline_model(
             pipeline_config=self.pipeline_config,
             session=self._session,
@@ -200,7 +200,7 @@ class SpeculativeDecodingPipelineBase(
             self._target_model,
             actual_draft_pipeline_model,
         )
-        draft_weight_paths = get_weight_paths(draft_config)
+        draft_weight_paths = draft_config.resolved_weight_paths()
         self._draft_model = actual_draft_pipeline_model(
             pipeline_config=self.pipeline_config,
             session=self._session,
@@ -243,11 +243,27 @@ class SpeculativeDecodingPipelineBase(
                 " rejection sampling strategy. Use 'greedy',"
                 " 'typical-acceptance', or 'logit-comparison' instead."
             )
-        logger.info(f"Using '{strategy}' rejection sampling strategy")
-        rejection_runner_type = rejection_runner_registry(strategy)
-        self._rejection_runner: RejectionRunner = rejection_runner_type(
-            self._session, device_refs[0]
-        )
+        self._rejection_runner: RejectionRunner
+        if self._speculative_config.synthetic_acceptance_rate is not None:
+            logger.info(
+                "Synthetic acceptance rate is enabled (rate=%.2f). "
+                "Overriding '%s' rejection sampling strategy. "
+                "Results are for benchmarking only.",
+                self._speculative_config.synthetic_acceptance_rate,
+                strategy,
+            )
+            self._rejection_runner = SyntheticRunner(
+                self._session,
+                device_refs[0],
+                synthetic_acceptance_rate=self._speculative_config.synthetic_acceptance_rate,
+                num_speculative_tokens=self._speculative_config.num_speculative_tokens,
+            )
+        else:
+            logger.info(f"Using '{strategy}' rejection sampling strategy")
+            rejection_runner_type = rejection_runner_registry(strategy)
+            self._rejection_runner = rejection_runner_type(
+                self._session, device_refs[0]
+            )
         self._needs_all_draft_logits = strategy == "residual"
 
         # Track draft model replica assignments per request
@@ -273,7 +289,7 @@ class SpeculativeDecodingPipelineBase(
         self._num_draft_steps = self._speculative_config.num_speculative_tokens
 
         # Initialize metrics tracker
-        self.metrics = SpeculativeDecodingMetrics.empty(
+        self._metrics = SpeculativeDecodingMetrics.empty(
             num_speculative_tokens=self._num_draft_steps
         )
 
@@ -329,7 +345,7 @@ class SpeculativeDecodingPipelineBase(
             [[] for _ in range(multi_kv_params.data_parallel_degree)]
         )
         self._draft_kv_buffers = [
-            replica_input.blocks for replica_input in draft_kv_inputs.inputs
+            replica_input.kv_blocks for replica_input in draft_kv_inputs.inputs
         ]
 
     @property

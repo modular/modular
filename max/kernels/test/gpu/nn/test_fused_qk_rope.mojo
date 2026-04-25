@@ -263,13 +263,9 @@ def test_fused_qk_rope[dtype: DType](ctx: DeviceContext) raises -> None:
 
     # Compare output and expected query tensors.
     with q_out_device.map_to_host() as q_out_host:
-        var expected_q_out = TileTensor(
-            expected_q_out_buffer.unsafe_ptr(), q_tile_layout
-        )
         assert_almost_equal(
-            q_out_host.unsafe_ptr(),
-            expected_q_out.ptr,
-            q_shape.flattened_length(),
+            q_out_host.as_span(),
+            Span(expected_q_out_buffer)[: q_shape.flattened_length()],
         )
 
     # Compare output and expected key cache buffers.

@@ -116,11 +116,10 @@ def time_functions(some_value: Int) -> Int:
     var tmp = some_value
 
     @always_inline
-    @parameter
-    def something():
+    def something() {mut tmp}:
         tmp += 1
 
-    _ = time_function[something]()
+    _ = time_function(something)
 
     return tmp
 

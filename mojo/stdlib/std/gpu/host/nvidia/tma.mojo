@@ -78,7 +78,7 @@ struct TensorMapDataType(TrivialRegisterPassable):
 
         Parameters:
             dtype: The Mojo data type to convert. Must be one of `DType.float32`,
-                `DType.float16`, `DType.bfloat16`, `DType.uint8`,
+                `DType.float16`, `DType.bfloat16`, `DType.uint8`, `DType.uint16`,
                 `DType.int64`, `DType.uint64`,
                 `DType.float8_e4m3fn`, or `DType.float8_e8m0fnu`.
 
@@ -93,6 +93,7 @@ struct TensorMapDataType(TrivialRegisterPassable):
             DType.float16,
             DType.bfloat16,
             DType.uint8,
+            DType.uint16,
             DType.int64,
             DType.uint64,
             DType.float8_e4m3fn,
@@ -103,8 +104,12 @@ struct TensorMapDataType(TrivialRegisterPassable):
             return Self.FLOAT32
         elif dtype == DType.float16:
             return Self.FLOAT16
+        elif dtype == DType.uint16:
+            return Self.UINT16
         elif dtype in (DType.float8_e4m3fn, DType.float8_e8m0fnu, DType.uint8):
             return Self.UINT8
+        elif dtype == DType.uint16:
+            return Self.UINT16
         elif dtype == DType.int64:
             return Self.INT64
         elif dtype == DType.uint64:
@@ -327,6 +332,7 @@ def create_tma_descriptor[
     dtype: DType,
     rank: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
+    l2_promotion: TensorMapL2Promotion = TensorMapL2Promotion.NONE,
 ](
     global_buf: DeviceBuffer[dtype],
     global_shape: IndexList[rank],
@@ -347,6 +353,7 @@ def create_tma_descriptor[
         dtype: The element data type of the tensor.
         rank: The number of dimensions (1-5).
         swizzle_mode: The swizzle pattern to apply in shared memory.
+        l2_promotion: L2 cache promotion hint for TMA loads. Defaults to NONE.
 
     Args:
         global_buf: Device buffer containing the global memory tensor.
@@ -420,7 +427,7 @@ def create_tma_descriptor[
             element_stride_arg.unsafe_ptr(),
             TensorMapInterleave.INTERLEAVE_NONE._value,
             swizzle_mode._value,
-            TensorMapL2Promotion.NONE._value,
+            l2_promotion._value,
             TensorMapFloatOOBFill.NONE._value,
         )
     )

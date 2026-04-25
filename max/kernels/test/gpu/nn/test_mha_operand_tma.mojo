@@ -18,7 +18,7 @@ from std.sys import size_of
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import block_idx_uint as block_idx, thread_idx_uint as thread_idx
+from std.gpu import block_idx, thread_idx
 from std.gpu.memory import fence_async_view_proxy
 from kv_cache.types import (
     ContinuousBatchingKVCacheCollection,
@@ -164,12 +164,8 @@ def mha_operand_copy[
     comptime head_size = kv_params.head_size
 
     # Create TMA tiles
-    src_tma = src.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth=Int(head_size)
-    ](ctx)
-    dst_tma = dst.create_tma_tile[
-        swizzle_mode, BN=tile_m, depth=Int(head_size)
-    ](ctx)
+    src_tma = src.create_tma_tile[swizzle_mode, BN=tile_m, depth=head_size](ctx)
+    dst_tma = dst.create_tma_tile[swizzle_mode, BN=tile_m, depth=head_size](ctx)
 
     # Calculate grid dimensions
     # NOTE: In context encoding, we would have grid_x = ceildiv(max_prompt_len, BM)
@@ -186,7 +182,7 @@ def mha_operand_copy[
         Layout.row_major(type_of(src_tma).tile_shape),
         kv_t,
         swizzle_mode,
-        Int(head_size),
+        head_size,
     ]
 
     # Launch kernel with block_dim=32
@@ -209,13 +205,13 @@ def test_mha_host_operand[
     kv_params: KVCacheStaticParams,
 ](src: kv_t, dst: kv_t, batch_size: Int) raises:
     """Test function that compares two MHAOperands using block_paged_ptr."""
-    comptime kv_row_stride = Int(kv_params.head_size * kv_params.num_heads)
+    comptime kv_row_stride = kv_params.head_size * kv_params.num_heads
     # Iterate over all batch entries and tokens
     for b in range(batch_size):
         seq_len = src.cache_length(b)
         for s in range(0, seq_len, tile_m):
             actual_tokens = min(tile_m, seq_len - s)
-            for h in range(Int(kv_params.num_heads)):
+            for h in range(kv_params.num_heads):
                 # Get pointers using block_paged_ptr
                 src_ptr = src.block_paged_ptr[tile_m](
                     UInt32(b), UInt32(s), UInt32(h), UInt32(0)
@@ -226,7 +222,7 @@ def test_mha_host_operand[
 
                 # Compare values for the actual number of tokens
                 for tok in range(actual_tokens):
-                    for hd in range(Int(kv_params.head_size)):
+                    for hd in range(kv_params.head_size):
                         offset = tok * kv_row_stride + hd
                         src_val = src_ptr[offset]
                         dst_val = dst_ptr[offset]
@@ -254,8 +250,8 @@ def test_continuous_kv_cache[
         2,  # key and value
         num_layers,
         max_seq_len,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
 
     comptime kv_block_layout = Layout.row_major[6]()
@@ -423,8 +419,8 @@ def test_paged_kv_cache[
         2,  # key and value
         num_layers,
         page_size,
-        Int(kv_params.num_heads),
-        Int(kv_params.head_size),
+        kv_params.num_heads,
+        kv_params.head_size,
     )
 
     comptime kv_block_layout = Layout.row_major[6]()
@@ -594,8 +590,8 @@ def test_layout_tensor[
     print(msg)
 
     # Create source and destination buffers with BSHD layout
-    comptime num_heads = Int(kv_params.num_heads)
-    comptime head_size = Int(kv_params.head_size)
+    comptime num_heads = kv_params.num_heads
+    comptime head_size = kv_params.head_size
     total_elems = batch_size * max_seq_len * num_heads * head_size
 
     # Create device buffer for source
@@ -742,8 +738,8 @@ def test_ragged[
         offsets_host[batch_size] = UInt32(offset)
 
     # Create ragged buffers
-    comptime num_heads = Int(kv_params.num_heads)
-    comptime head_size = Int(kv_params.head_size)
+    comptime num_heads = kv_params.num_heads
+    comptime head_size = kv_params.head_size
     total_elems = total_tokens * num_heads * head_size
 
     # Create device buffer for source
@@ -877,7 +873,7 @@ def main() raises:
         comptime for i in range(6, 9):
             comptime head_size = 1 << i  # 64, 128, 256
             comptime kv_params = KVCacheStaticParams(
-                num_heads=8, head_size=UInt(head_size)
+                num_heads=8, head_size=head_size
             )
 
             comptime for j in range(6, 15 - i):

@@ -24,7 +24,9 @@ from std.gpu.host import DeviceContext
 import linalg.matmul.vendor.blas as vendor_blas
 from std.testing import assert_equal
 from std.random import random_float64
-from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
+from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
+    structured_ping_pong_matmul as ping_pong_matmul,
+)
 
 # Compile-time test configuration
 comptime TEST_SIZE = get_defined_int["test_size", 4 * 1024]()
@@ -79,9 +81,9 @@ def test_ping_pong_kernel_amd[
 
         # Run kernel under test
         ping_pong_matmul[enable_swizzle=enable_swizzle](
-            a_tt.to_layout_tensor(),
-            b_tt.to_layout_tensor(),
-            c_tt.to_layout_tensor(),
+            a_tt,
+            b_tt,
+            c_tt,
             ctx,
         )
 

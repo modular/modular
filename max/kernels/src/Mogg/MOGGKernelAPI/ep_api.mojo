@@ -21,20 +21,35 @@ from comm.sync import is_p2p_enabled
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import DeviceBuffer
 from std.gpu.host.info import is_gpu
-from layout import TileTensor, Idx
+from std.memory.unsafe_pointer import pointer_to_int
+from layout import Coord, TileTensor, Idx, coord_to_index_list
 from layout.tile_tensor import row_major
+from std.utils import StaticTuple
 from std.utils.index import IndexList
 
-from std.runtime.asyncrt import DeviceContextPtr
+from std.runtime.asyncrt import DeviceContextPtr, DeviceContextPtrList
 from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id
 from std.sys.info import size_of, has_amd_gpu_accelerator
-from tensor import InputTensor, OutputTensor
+from tensor import (
+    InputTensor,
+    InputVariadicTensors,
+    OutputTensor,
+    OutputVariadicTensors,
+)
 from tensor.managed_tensor_slice import (
     _MutableInputTensor as MutableInputTensor,
 )
 from tensor.managed_tensor_slice import (
+    _MutableInputVariadicTensors as MutableInputVariadicTensors,
+)
+from tensor.managed_tensor_slice import (
     _FusedOutputTensor as FusedOutputTensor,
 )
+from tensor.managed_tensor_slice import (
+    _FusedOutputVariadicTensors as FusedOutputVariadicTensors,
+)
+
+from .MOGGKernelAPI import _launch_device_collective
 
 from shmem import (
     shmem_init_thread_mpi,
@@ -54,10 +69,12 @@ from shmem.ep_comm import (
     BF16TokenFormat,
     BlockwiseFP8TokenFormat,
     EPLocalSyncCounters,
+    MXFP4TokenFormat,
     NVFP4TokenFormat,
     elementwise_epilogue_type,
     fused_silu_kernel,
     fused_silu_fp8_kernel,
+    fused_silu_mxfp4_kernel,
     fused_silu_nvfp4_kernel,
 )
 
@@ -141,8 +158,18 @@ struct Struct_ep_init:
                 fp4_dtype=dispatch_dtype,
                 scales_dtype=dispatch_scale_dtype,
                 output_layout=RT_LAYOUT_2D,
-                scales_layout=RT_LAYOUT_2D,
                 scales_offset_layout=RT_LAYOUT_2D,
+                hidden_size,
+                top_k,
+            ]
+            dispatch_msg_size = token_fmt_type.msg_size()
+
+        elif dispatch_fmt_str == "MXFP4":
+            comptime token_fmt_type = MXFP4TokenFormat[
+                fp4_dtype=dispatch_dtype,
+                scales_dtype=dispatch_scale_dtype,
+                output_layout=RT_LAYOUT_2D,
+                scales_layout=RT_LAYOUT_2D,
                 hidden_size,
                 top_k,
             ]
@@ -176,31 +203,21 @@ struct Struct_ep_init:
             atomic_counters_0.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 0 size doesn't match expected size."
-        var atomic_counters_0_buf = DeviceBuffer(
-            gpu_ctx,
-            atomic_counters_0._ptr,
-            atomic_counters_0.size(),
-            owning=False,
-        )
+        var atomic_counters_0_buf = atomic_counters_0.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_0_buf, Int32(0))
 
         comptime assert (
             atomic_counters_1.static_spec.static_size
             == EPLocalSyncCounters[n_experts].total_size()
         ), "Atomic counters 1 size doesn't match expected size."
-        var atomic_counters_1_buf = DeviceBuffer(
-            gpu_ctx,
-            atomic_counters_1._ptr,
-            atomic_counters_1.size(),
-            owning=False,
-        )
+        var atomic_counters_1_buf = atomic_counters_1.to_device_buffer(gpu_ctx)
         gpu_ctx.enqueue_memset(atomic_counters_1_buf, Int32(0))
 
         var dispatch_send_p: UnsafePointer[UInt8, MutAnyOrigin]
         var dispatch_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
         var dispatch_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
-        var combine_send_p: UnsafePointer[UInt8, MutAnyOrigin]
+        var combine_send_p: Optional[UnsafePointer[UInt8, MutAnyOrigin]]
         var combine_recv_p: UnsafePointer[UInt8, MutAnyOrigin]
         var combine_recv_count_p: UnsafePointer[UInt64, MutAnyOrigin]
 
@@ -212,18 +229,14 @@ struct Struct_ep_init:
                 shmem_init_thread_mpi(gpu_ctx, gpus_per_node=n_gpus_per_node)
 
             # Allocate SHMEM buffers for dispatch phase
-            dispatch_send_p = shmem_malloc[DType.uint8](
-                UInt(dispatch_send_size)
-            )
-            dispatch_recv_p = shmem_malloc[DType.uint8](
-                UInt(dispatch_recv_size)
-            )
-            dispatch_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+            dispatch_send_p = shmem_malloc[DType.uint8](dispatch_send_size)
+            dispatch_recv_p = shmem_malloc[DType.uint8](dispatch_recv_size)
+            dispatch_recv_count_p = shmem_malloc[DType.uint64](n_experts)
 
             # Allocate SHMEM buffers for combine phase
-            combine_send_p = shmem_malloc[DType.uint8](UInt(combine_send_size))
-            combine_recv_p = shmem_malloc[DType.uint8](UInt(combine_recv_size))
-            combine_recv_count_p = shmem_malloc[DType.uint64](UInt(n_experts))
+            combine_send_p = shmem_malloc[DType.uint8](combine_send_size)
+            combine_recv_p = shmem_malloc[DType.uint8](combine_recv_size)
+            combine_recv_count_p = shmem_malloc[DType.uint64](n_experts)
 
         else:
             if not is_p2p_enabled():
@@ -241,7 +254,7 @@ struct Struct_ep_init:
             # When all the devices are on the same node, we skip the combine
             # send buffer and directly send tokens to each device's recv buffer.
             # Hence, we don't need to allocate the combine send buffer.
-            combine_send_p = UnsafePointer[UInt8, MutAnyOrigin]()
+            combine_send_p = None
             combine_recv_p = gpu_ctx.enqueue_create_buffer[DType.uint8](
                 combine_recv_size
             ).take_ptr()
@@ -267,7 +280,7 @@ struct Struct_ep_init:
         dev_ptrs[0, 2] = UInt64(Int(dispatch_recv_count_p))
 
         # Group 1: Combine phase buffer pointers
-        dev_ptrs[1, 0] = UInt64(Int(combine_send_p))
+        dev_ptrs[1, 0] = UInt64(pointer_to_int(combine_send_p))
         dev_ptrs[1, 1] = UInt64(Int(combine_recv_p))
         dev_ptrs[1, 2] = UInt64(Int(combine_recv_count_p))
 
@@ -410,7 +423,6 @@ struct Struct_ep_dispatch_async_nvfp4:
             fp4_dtype=dispatch_dtype,
             scales_dtype=DType.float8_e4m3fn,
             output_layout=RT_LAYOUT_2D,
-            scales_layout=RT_LAYOUT_2D,
             scales_offset_layout=RT_LAYOUT_2D,
             hidden_size,
             top_k,
@@ -739,7 +751,10 @@ struct Struct_ep_dispatch_wait_nvfp4:
         ), "EP dispatch_wait: output tokens shape doesn't match hidden size."
 
         var format_handler = NVFP4TokenFormat[hidden_size, top_k](
-            output_tokens_tensor, output_scales_tensor, scales_offsets_tensor
+            output_tokens_tensor,
+            output_scales_tensor,
+            scales_offsets_tensor,
+            context[],
         )
 
         ep_dispatch_wait_kernel_api[
@@ -861,6 +876,7 @@ struct Struct_ep_dispatch_fp8:
         """
         var output_tokens_tensor = output_tokens.to_tile_tensor[DType.int64]()
         var output_scales_tensor = output_scales.to_tile_tensor[DType.int64]()
+
         var format_handler = BlockwiseFP8TokenFormat[hidden_size, top_k](
             output_tokens_tensor, output_scales_tensor
         )
@@ -938,7 +954,10 @@ struct Struct_ep_dispatch_nvfp4:
             return rebind[Scalar[dtype]](input_scales_tensor[0].cast[dtype]())
 
         var format_handler = NVFP4TokenFormat[hidden_size, top_k](
-            output_tokens_tensor, output_scales_tensor, scales_offsets_tensor
+            output_tokens_tensor,
+            output_scales_tensor,
+            scales_offsets_tensor,
+            context[],
         )
 
         ep_fused_dispatch_kernel_api[
@@ -962,6 +981,546 @@ struct Struct_ep_dispatch_nvfp4:
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
         )
+
+
+@compiler.register("mo.distributed.ep.dispatch.nvfp4")
+struct DistributedEPDispatchNVFP4:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputVariadicTensors[
+            dtype=dispatch_scale_dtype, rank=5, ...
+        ],
+        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        scales_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
+        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        input_scales: InputVariadicTensors[dtype=DType.float32, rank=1, ...],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextPtrList,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism NVFP4 dispatch.
+
+        Launches the EP dispatch kernel on all devices simultaneously via
+        _ep_launch_device_collective. Each device routes its tokens to experts
+        based on top-k IDs, quantizes them to NVFP4 format, and sends them
+        to the appropriate peer devices.
+        """
+        comptime num_devices = input_tokens.size
+
+        # Filter the dev_ctxs list to only GPU devices. The op also takes
+        # CPU host-pointer tensors (send_ptrs, recv_ptrs, recv_count_ptrs),
+        # so the DeviceContextPtrList may contain CPU contexts.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs.size):
+            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of GPU device contexts")
+        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        @always_inline
+        def launch_dispatch[
+            index: Int
+        ]() raises {
+            read output_tokens,
+            read output_scales,
+            read row_offsets,
+            read scales_offsets,
+            read expert_ids,
+            read src_info,
+            read atomic_counters,
+            read input_tokens,
+            read topk_ids,
+            read send_ptrs,
+            read recv_ptrs,
+            read recv_count_ptrs,
+            read input_scales,
+            read gpu_ctxs,
+        }:
+            var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
+            var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
+            var sc_offsets = scales_offsets[index].to_tile_tensor[DType.int64]()
+            var in_scales = input_scales[index].to_tile_tensor[DType.int64]()
+            comptime assert in_scales.flat_rank == 1
+
+            @parameter
+            @always_inline
+            @__copy_capture(in_scales)
+            def input_scales_fn[dtype: DType](expert_id: Int) -> Scalar[dtype]:
+                return rebind[Scalar[dtype]](in_scales[0].cast[dtype]())
+
+            var format_handler = NVFP4TokenFormat[hidden_size, top_k](
+                out_tokens,
+                out_scales,
+                sc_offsets,
+                gpu_ctxs[index],
+            )
+
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                fused_shared_expert,
+                target,
+                input_scales_wrapper=input_scales_fn,
+            ](
+                format_handler,
+                row_offsets[index].to_tile_tensor[DType.int64](),
+                expert_ids[index].to_tile_tensor[DType.int64](),
+                src_info[index].to_tile_tensor[DType.int64](),
+                atomic_counters[index].to_tile_tensor[DType.int64](),
+                input_tokens[index].to_tile_tensor[DType.int64](),
+                topk_ids[index].to_tile_tensor[DType.int64](),
+                send_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_count_ptrs[index].to_tile_tensor[DType.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+
+
+@compiler.register("mo.distributed.ep.dispatch.mxfp4")
+struct DistributedEPDispatchMXFP4:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputVariadicTensors[
+            dtype=dispatch_scale_dtype, rank=2, ...
+        ],
+        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
+        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextPtrList,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism NVFP4 dispatch.
+
+        Launches the EP dispatch kernel on all devices simultaneously via
+        _ep_launch_device_collective. Each device routes its tokens to experts
+        based on top-k IDs, quantizes them to MXFP4 format, and sends them
+        to the appropriate peer devices.
+        """
+        comptime num_devices = input_tokens.size
+
+        # Filter the dev_ctxs list to only GPU devices. The op also takes
+        # CPU host-pointer tensors (send_ptrs, recv_ptrs, recv_count_ptrs),
+        # so the DeviceContextPtrList may contain CPU contexts.
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs.size):
+            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of GPU device contexts")
+        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        @always_inline
+        def launch_dispatch[
+            index: Int
+        ]() raises {
+            read output_tokens,
+            read output_scales,
+            read row_offsets,
+            read expert_ids,
+            read src_info,
+            read atomic_counters,
+            read input_tokens,
+            read topk_ids,
+            read send_ptrs,
+            read recv_ptrs,
+            read recv_count_ptrs,
+            read gpu_ctxs,
+        }:
+            var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
+            var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
+
+            var format_handler = MXFP4TokenFormat[hidden_size, top_k](
+                out_tokens,
+                out_scales,
+            )
+
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                fused_shared_expert,
+                target,
+            ](
+                format_handler,
+                row_offsets[index].to_tile_tensor[DType.int64](),
+                expert_ids[index].to_tile_tensor[DType.int64](),
+                src_info[index].to_tile_tensor[DType.int64](),
+                atomic_counters[index].to_tile_tensor[DType.int64](),
+                input_tokens[index].to_tile_tensor[DType.int64](),
+                topk_ids[index].to_tile_tensor[DType.int64](),
+                send_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_count_ptrs[index].to_tile_tensor[DType.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+
+
+@compiler.register("mo.distributed.ep.dispatch")
+struct DistributedEPDispatch:
+    @staticmethod
+    def execute[
+        dispatch_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: OutputVariadicTensors[dtype=DType.bfloat16, rank=2, ...],
+        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
+        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        input_tokens: InputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
+        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextPtrList,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism BF16 dispatch."""
+        comptime num_devices = input_tokens.size
+        comptime assert dispatch_dtype == DType.bfloat16
+
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs.size):
+            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of GPU device contexts")
+        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        @always_inline
+        def launch_dispatch[
+            index: Int
+        ]() raises {
+            read output_tokens,
+            read row_offsets,
+            read expert_ids,
+            read src_info,
+            read atomic_counters,
+            read input_tokens,
+            read topk_ids,
+            read send_ptrs,
+            read recv_ptrs,
+            read recv_count_ptrs,
+            read gpu_ctxs,
+        }:
+            var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
+            var format_handler = BF16TokenFormat[hidden_size, top_k](out_tokens)
+
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                fused_shared_expert,
+                target,
+            ](
+                format_handler,
+                row_offsets[index].to_tile_tensor[DType.int64](),
+                expert_ids[index].to_tile_tensor[DType.int64](),
+                src_info[index].to_tile_tensor[DType.int64](),
+                atomic_counters[index].to_tile_tensor[DType.int64](),
+                input_tokens[index].to_tile_tensor[DType.int64](),
+                topk_ids[index].to_tile_tensor[DType.int64](),
+                send_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_count_ptrs[index].to_tile_tensor[DType.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+
+
+@compiler.register("mo.distributed.ep.dispatch.fp8")
+struct DistributedEPDispatchFP8:
+    @staticmethod
+    def execute[
+        input_dtype: DType,
+        dispatch_dtype: DType,
+        dispatch_scale_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        dispatch_scale_granularity: StaticString,
+        fused_shared_expert: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: OutputVariadicTensors[dtype=dispatch_dtype, rank=2, ...],
+        output_scales: OutputVariadicTensors[
+            dtype=dispatch_scale_dtype, rank=2, ...
+        ],
+        row_offsets: OutputVariadicTensors[dtype=DType.uint32, rank=1, ...],
+        expert_ids: OutputVariadicTensors[dtype=DType.int32, rank=1, ...],
+        src_info: OutputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        input_tokens: InputVariadicTensors[dtype=input_dtype, rank=2, ...],
+        topk_ids: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextPtrList,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism FP8 dispatch."""
+        comptime num_devices = input_tokens.size
+
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs.size):
+            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of GPU device contexts")
+        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        @always_inline
+        def launch_dispatch[
+            index: Int
+        ]() raises {
+            read output_tokens,
+            read output_scales,
+            read row_offsets,
+            read expert_ids,
+            read src_info,
+            read atomic_counters,
+            read input_tokens,
+            read topk_ids,
+            read send_ptrs,
+            read recv_ptrs,
+            read recv_count_ptrs,
+            read gpu_ctxs,
+        }:
+            var out_tokens = output_tokens[index].to_tile_tensor[DType.int64]()
+            var out_scales = output_scales[index].to_tile_tensor[DType.int64]()
+            var format_handler = BlockwiseFP8TokenFormat[hidden_size, top_k](
+                out_tokens, out_scales
+            )
+
+            ep_fused_dispatch_kernel_api[
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                fused_shared_expert,
+                target,
+            ](
+                format_handler,
+                row_offsets[index].to_tile_tensor[DType.int64](),
+                expert_ids[index].to_tile_tensor[DType.int64](),
+                src_info[index].to_tile_tensor[DType.int64](),
+                atomic_counters[index].to_tile_tensor[DType.int64](),
+                input_tokens[index].to_tile_tensor[DType.int64](),
+                topk_ids[index].to_tile_tensor[DType.int64](),
+                send_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_count_ptrs[index].to_tile_tensor[DType.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_dispatch, gpu_ctxs)
+
+
+@compiler.register("mo.distributed.ep.combine")
+struct DistributedEPCombine:
+    @staticmethod
+    def execute[
+        combine_dtype: DType,
+        router_weights_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        lambdas_have_fusion: Bool,
+        //,
+        target: StaticString,
+        _trace_name: StaticString,
+    ](
+        output_tokens: FusedOutputVariadicTensors[
+            dtype=combine_dtype, rank=2, ...
+        ],
+        input_tokens: InputVariadicTensors[dtype=combine_dtype, rank=2, ...],
+        src_info: InputVariadicTensors[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputVariadicTensors[dtype=DType.uint64, rank=1, ...],
+        router_weights: InputVariadicTensors[
+            dtype=router_weights_dtype, rank=2, ...
+        ],
+        atomic_counters: MutableInputVariadicTensors[
+            dtype=DType.int32, rank=1, ...
+        ],
+        dev_ctxs: DeviceContextPtrList,
+    ) capturing raises:
+        """Multi-device fused Expert Parallelism combine with output fusion."""
+        comptime num_devices = input_tokens.size
+
+        var gpu_ctxs_tuple = StaticTuple[DeviceContextPtr, num_devices]()
+        var dev_idx = 0
+        for i in range(dev_ctxs.size):
+            if dev_idx < num_devices and dev_ctxs[i].api() != "cpu":
+                gpu_ctxs_tuple[dev_idx] = dev_ctxs.ptrs[i]
+                dev_idx += 1
+        if dev_idx != num_devices:
+            raise Error("Invalid number of GPU device contexts")
+        var gpu_ctxs = DeviceContextPtrList[num_devices](gpu_ctxs_tuple)
+
+        @always_inline
+        @parameter
+        def output_lambda[
+            output_index: Int,
+            _dtype: DType,
+            _width: Int,
+            *,
+            _alignment: Int,
+        ](coords: Coord, val: SIMD[_dtype, _width]) -> None:
+            output_tokens[output_index]._lambda_store[
+                width=_width,
+                element_alignment=_alignment,
+            ](
+                rebind[IndexList[2]](coord_to_index_list(coords)),
+                rebind[SIMD[combine_dtype, _width]](val),
+            )
+
+        @always_inline
+        def launch_combine[
+            index: Int
+        ]() raises {
+            read output_tokens,
+            read input_tokens,
+            read src_info,
+            read send_ptrs,
+            read recv_ptrs,
+            read recv_count_ptrs,
+            read router_weights,
+            read atomic_counters,
+            read gpu_ctxs,
+        }:
+            var rw_tensor = router_weights[index].to_tile_tensor[DType.int64]()
+
+            @parameter
+            @always_inline
+            @__copy_capture(rw_tensor)
+            def router_weights_fn[
+                width: Int
+            ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+                return rw_tensor.load[width=width](
+                    (Idx(token_idx), Idx(topk_id))
+                ).cast[DType.float32]()
+
+            @parameter
+            @always_inline
+            def output_fn[
+                dtype: DType, width: Int, *, alignment: Int = 1
+            ](coords: IndexList[2], val: SIMD[dtype, width]):
+                output_tokens[index]._lambda_store[
+                    width=width, element_alignment=alignment
+                ](
+                    coords,
+                    rebind[SIMD[combine_dtype, width]](val),
+                )
+
+            ep_fused_combine_kernel_api[
+                hidden_size,
+                top_k,
+                n_experts,
+                max_token_per_rank,
+                n_gpus_per_node,
+                n_nodes,
+                target,
+                router_weights_wrapper=router_weights_fn,
+                epilogue_fn=Optional[elementwise_epilogue_type](
+                    output_fn
+                ) if lambdas_have_fusion else None,
+                fused_shared_expert=fused_shared_expert,
+            ](
+                output_tokens[index].to_tile_tensor[DType.int64](),
+                atomic_counters[index].to_tile_tensor[DType.int64](),
+                input_tokens[index].to_tile_tensor[DType.int64](),
+                src_info[index].to_tile_tensor[DType.int64](),
+                send_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_ptrs[index].to_tile_tensor[DType.int64](),
+                recv_count_ptrs[index].to_tile_tensor[DType.int64](),
+                gpu_ctxs[index],
+            )
+
+        _launch_device_collective[num_devices](launch_combine, gpu_ctxs)
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1120,7 +1679,7 @@ struct Struct_ep_combine_wait:
         @parameter
         @always_inline
         def output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
                 width=width, element_alignment=alignment
@@ -1197,7 +1756,7 @@ struct Struct_ep_combine:
         @parameter
         @always_inline
         def output_fn[
-            dtype: DType, width: Int, *, alignment: Int = 1
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
         ](coords: IndexList[2], val: SIMD[dtype, width]):
             output_tokens._lambda_store[
                 width=width, element_alignment=alignment
@@ -1383,6 +1942,85 @@ struct Struct_ep_fused_silu_fp8:
             task_id=get_safe_task_id(context),
         ):
             gpu_ctx.enqueue_function[fused_silu_fp8, fused_silu_fp8](
+                output_tensor,
+                scales_tensor,
+                input_tensor,
+                row_offsets_tensor,
+                grid_dim=hw_info.sm_count,
+                block_dim=hw_info.max_thread_block_size,
+                attributes=pdl_launch_attributes(PDLLevel(1)),
+            )
+
+
+@compiler.register("ep.fused_silu.mxfp4")
+struct Struct_ep_fused_silu_mxfp4:
+    @always_inline
+    @staticmethod
+    def execute[
+        fp4_dtype: DType,
+        scales_dtype: DType,
+        input_dtype: DType,
+        target: StaticString,
+    ](
+        output: OutputTensor[dtype=fp4_dtype, rank=2, ...],
+        scales: OutputTensor[dtype=scales_dtype, rank=2, ...],
+        input: InputTensor[dtype=input_dtype, rank=2, ...],
+        row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the Expert Parallelism fused SILU kernel with MXFP4
+        quantization.
+
+        This function launches the fused_silu_mxfp4 kernel to perform the SILU
+        operation for all the MLPs in the EP MoE module.
+
+        This kernel will read the row offsets to determine the actual number of
+        received tokens in the input tensor, and then only perform the SILU
+        operation on the received tokens. Once the SILU operation is performed,
+        the output will be quantized to the MXFP4 format.
+        """
+        # Ensure this kernel only runs on GPU targets
+        comptime assert is_gpu[target](), "EP is only supported on GPU."
+
+        var output_tensor = output.to_tile_tensor[DType.int64]()
+        var scales_tensor = scales.to_tile_tensor[DType.int64]()
+        var input_tensor = input.to_tile_tensor[DType.int64]().as_immut()
+        var row_offsets_tensor = row_offsets.to_tile_tensor[
+            DType.int64
+        ]().as_immut()
+
+        var gpu_ctx = context.get_device_context()
+        comptime hw_info = gpu_ctx.default_device_info
+
+        comptime fused_silu_mxfp4 = fused_silu_mxfp4_kernel[
+            fp4_dtype,
+            scales_dtype,
+            input_dtype,
+            output_tensor.LayoutType,
+            scales_tensor.LayoutType,
+            input_tensor.LayoutType,
+            row_offsets_tensor.LayoutType,
+            hw_info.max_thread_block_size,
+            hw_info.sm_count,
+        ]
+
+        @always_inline
+        @parameter
+        def description_fn() -> String:
+            # fmt: off
+            return String(
+                "fp4_dtype=", fp4_dtype,
+                ";scales_dtype=", scales_dtype,
+                ";input_dtype=", input_dtype,
+            )
+            # fmt: on
+
+        with Trace[TraceLevel.OP, target=target](
+            "ep.fused_silu.mxfp4",
+            Trace[TraceLevel.OP]._get_detail_str[description_fn](),
+            task_id=get_safe_task_id(context),
+        ):
+            gpu_ctx.enqueue_function[fused_silu_mxfp4, fused_silu_mxfp4](
                 output_tensor,
                 scales_tensor,
                 input_tensor,

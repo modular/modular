@@ -24,11 +24,9 @@ Key characteristics:
 """
 
 from std.math import ceildiv
+from std.math.uutils import ufloordiv
 
-from std.gpu import (
-    block_idx_uint as block_idx,
-    grid_dim_uint as grid_dim,
-)
+from std.gpu import block_idx, grid_dim
 from layout import TileTensor
 
 from structured_kernels.tile_types import GMEMLayout1D
@@ -108,46 +106,94 @@ struct GroupedWorkInfo1D1D(TrivialRegisterPassable, Writable):
 # ===----------------------------------------------------------------------=== #
 
 
-@fieldwise_init
 struct GroupedWorkContext1D1D(ImplicitlyCopyable, Movable):
     """Context for current work tile, used with context manager pattern.
 
     Provides access to work tile info and expert scale factor.
     """
 
-    var info: GroupedWorkInfo1D1D
+    var m_coord: UInt32
+    var n_coord: UInt32
+    var group_idx_val: UInt32
+    var expert_id_val: Int32
+    var m_start_coord: UInt32
     var expert_scale: Float32
     var m_end: UInt32  # End offset for bounds checking (exclusive upper bound)
+    var is_valid_tile: Bool
+    var terminate: Bool
+
+    @always_inline
+    def __init__(
+        out self,
+        info: GroupedWorkInfo1D1D,
+        expert_scale: Float32,
+        m_end: UInt32,
+    ):
+        self.m_coord = info.m
+        self.n_coord = info.n
+        self.group_idx_val = info.group_idx
+        self.expert_id_val = info.expert_id
+        self.m_start_coord = info.m_start
+        self.expert_scale = expert_scale
+        self.m_end = m_end
+        self.is_valid_tile = info.is_valid_tile
+        self.terminate = info.terminate
+
+    @always_inline
+    def __init__(
+        out self,
+        m: UInt32,
+        n: UInt32,
+        group_idx: UInt32,
+        expert_id: Int32,
+        m_start: UInt32,
+        expert_scale: Float32,
+        m_end: UInt32,
+    ):
+        self.m_coord = m
+        self.n_coord = n
+        self.group_idx_val = group_idx
+        self.expert_id_val = expert_id
+        self.m_start_coord = m_start
+        self.expert_scale = expert_scale
+        self.m_end = m_end
+        self.is_valid_tile = True
+        self.terminate = False
 
     @always_inline
     def m(self) -> UInt32:
         """M coordinate in contiguous token space."""
-        return self.info.m
+        return self.m_coord
 
     @always_inline
     def m_start(self) -> UInt32:
         """Expert's start token offset in contiguous token space."""
-        return self.info.m_start
+        return self.m_start_coord
 
     @always_inline
     def n(self) -> UInt32:
         """N coordinate in output space."""
-        return self.info.n
+        return self.n_coord
 
     @always_inline
     def group_idx(self) -> UInt32:
         """Index into active experts list."""
-        return self.info.group_idx
+        return self.group_idx_val
 
     @always_inline
     def expert_id(self) -> Int32:
         """Expert ID for B tensor indexing."""
-        return self.info.expert_id
+        return self.expert_id_val
 
     @always_inline
     def is_valid(self) -> Bool:
         """Whether this tile has valid work."""
-        return self.info.is_valid()
+        return self.is_valid_tile
+
+    @always_inline
+    def is_done(self) -> Bool:
+        """Whether the scheduler has no more work."""
+        return self.terminate
 
 
 # ===----------------------------------------------------------------------=== #
@@ -162,14 +208,26 @@ struct GroupedWorkIterator1D1D[
     cta_group: Int = 1,
     swizzle: Bool = False,
     AB_swapped: Bool = False,
-]:
+](Copyable, Iterable, Iterator):
     """Work iterator for 1D-1D grouped block-scaled matmul.
 
     Iterates through work tiles using offset-based addressing:
     - a_offsets: Prefix sum of token counts per active expert
     - expert_ids: Mapping from active expert index to actual expert ID
     - expert_scales: Per-expert output scaling factors
+
+    Yields only valid work tiles, skipping invalid ones internally.
+
+    Usage:
+        for ctx in work_iter:
+            process_tile(ctx)
     """
+
+    comptime Element = GroupedWorkContext1D1D
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
 
     # 1D TileTensor types: dynamic shape, stride 1 (flat arrays)
     comptime OffsetsTile = TileTensor[DType.uint32, GMEMLayout1D, MutAnyOrigin]
@@ -236,6 +294,24 @@ struct GroupedWorkIterator1D1D[
         self.block_idx_start = 0
 
     @always_inline
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        return self.copy()
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> GroupedWorkContext1D1D:
+        """Return next valid work tile, skipping invalid ones.
+
+        Raises:
+            StopIteration: When all work is done.
+        """
+        while True:
+            var ctx = self.next()
+            if ctx.is_done():
+                raise StopIteration()
+            if ctx.is_valid():
+                return ctx
+
+    @always_inline
     def next(mut self) -> GroupedWorkContext1D1D:
         """Fetch next work tile and return context with work info and scale."""
         var info, m_end = self._fetch_next_work()
@@ -253,8 +329,8 @@ struct GroupedWorkIterator1D1D[
         # Normalize by cta_group so all CTAs in a cluster get the same
         # work tile.  For cta_group==1 this is a no-op.
         var next_block_idx = UInt32(self.current_iter) * UInt32(
-            grid_dim.x // Scalar[DType.uint](Self.cta_group)
-        ) + UInt32(block_idx.x // Scalar[DType.uint](Self.cta_group))
+            ufloordiv(grid_dim.x, Self.cta_group)
+        ) + UInt32(ufloordiv(block_idx.x, Self.cta_group))
         var start_idx = rebind[Scalar[DType.uint32]](
             self.group_offsets[Int(self.current_group_idx)]
         )

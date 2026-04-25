@@ -23,7 +23,9 @@ from std.format._utils import (
 )
 from std.hashlib.hasher import Hasher
 from std.reflection.traits import (
+    AllComparable,
     AllCopyable,
+    AllDefaultable,
     AllEquatable,
     AllHashable,
     AllImplicitlyCopyable,
@@ -44,6 +46,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
     Copyable where AllCopyable[*element_types],
+    Defaultable where AllDefaultable[*element_types],
     Equatable where AllEquatable[*element_types],
     Hashable where AllHashable[*element_types],
     # TODO(MOCO-3421): AllImplicitlyCopyable implies AllCopyable since
@@ -71,43 +74,51 @@ struct Tuple[*element_types: Movable](
 
     comptime _mlir_type = __mlir_type[
         `!kgen.pack<:`,
-        Variadic.TypesOfTrait[Movable],
-        Self.element_types,
+        type_of(Self.element_types.values),
+        Self.element_types.values,
         `>`,
     ]
 
     var _mlir_value: Self._mlir_type
     """The underlying storage for the tuple."""
 
-    # Overload that crushes down IR generated on the caller side.
     @always_inline("nodebug")
-    def __init__(out self: Tuple[]):
-        """Construct an empty tuple."""
+    def __init__(out self):
+        """Construct a tuple with default-initialized elements.
+
+        Constraints:
+            All `element_types` must conform to `Defaultable`. The constraint
+            is enforced via a per-element `comptime assert` in the body
+            instead of an explicit `where` clause so that callers whose
+            element types come from a comptime reducer (which the solver
+            can't reduce through when checking `AllDefaultable[...]`) can
+            still default-construct.
+        """
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
         )
 
+        # TODO(MOCO-3791): Replace the per-element `comptime assert` below
+        # with `where AllDefaultable[*Self.element_types ]`
+        # once the solver can prove reducer-based `where` clauses for
+        # generic callers that forward parameter packs.
+        comptime for i in range(Self.__len__()):
+            comptime TUnknown = Self.element_types[i]
+            comptime assert conforms_to(TUnknown, Defaultable), (
+                "Tuple default-construction requires all element types to"
+                " conform to `Defaultable`"
+            )
+            UnsafePointer(
+                to=trait_downcast[Defaultable & Movable](self[i])
+            ).init_pointee_move({})
+
     @always_inline("nodebug")
-    def __init__(out self, var *args: * Self.element_types):
+    def __init__(out self, var *args: *Self.element_types):
         """Construct the tuple.
 
         Args:
             args: Initial values.
         """
-        self = Self(storage=args^)
-
-    @always_inline("nodebug")
-    def __init__(
-        out self,
-        *,
-        var storage: VariadicPack[_, Movable, *Self.element_types],
-    ):
-        """Construct the tuple from a low-level internal representation.
-
-        Args:
-            storage: The variadic pack storage to construct from.
-        """
-
         # Mark 'self._mlir_value' as being initialized so we can work on it.
         __mlir_op.`lit.ownership.mark_initialized`(
             __get_mvalue_as_litref(self._mlir_value)
@@ -118,7 +129,7 @@ struct Tuple[*element_types: Movable](
         def init_elt[idx: Int](var elt: Self.element_types[idx]):
             UnsafePointer(to=self[idx]).init_pointee_move(elt^)
 
-        storage^.consume_elements[init_elt]()
+        args^.consume_elements[init_elt]()
 
     def __del__(deinit self):
         """Destructor that destroys all of the elements."""
@@ -184,9 +195,7 @@ struct Tuple[*element_types: Movable](
         Returns:
             The tuple length.
         """
-
-        comptime result = Variadic.size(Self.element_types)
-        return result
+        return Self.element_types.size
 
     @always_inline("nodebug")
     def __len__(self) -> Int:
@@ -215,7 +224,7 @@ struct Tuple[*element_types: Movable](
 
         # KGenPointer to the element.
         var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index=idx.__mlir_index__()
+            index=idx._int_mlir_index()
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 
@@ -248,24 +257,6 @@ struct Tuple[*element_types: Movable](
 
         return False
 
-    @always_inline("nodebug")
-    def __init__[
-        *elt_types: Movable & Defaultable
-    ](out self: Tuple[*elt_types]):
-        """Construct a tuple with default-initialized elements.
-
-        Parameters:
-            elt_types: The types of the elements contained in the Tuple.
-        """
-
-        # Mark 'self._mlir_value' as being initialized so we can work on it.
-        __mlir_op.`lit.ownership.mark_initialized`(
-            __get_mvalue_as_litref(self._mlir_value)
-        )
-
-        comptime for i in range(type_of(self).__len__()):
-            UnsafePointer(to=self[i]).init_pointee_move(elt_types[i]())
-
     @always_inline
     def __eq__(
         self, other: Self
@@ -284,61 +275,6 @@ struct Tuple[*element_types: Movable](
             ):
                 return False
         return True
-
-    @always_inline
-    def __eq__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
-        """Compare this tuple to another tuple of a potentially different type.
-
-        This overload enables cross-type and cross-length comparisons such as
-        `(1, "a") == (1, "b")` or `(1, 2, 3) == (1, 2)`.
-
-        Parameters:
-            self_elt_types: The types of the elements in this tuple.
-            other_elt_types: The types of the elements in the other tuple.
-
-        Args:
-            other: The other tuple to compare against.
-
-        Returns:
-            True if the tuples are equal, False otherwise.
-        """
-        comptime self_len = type_of(self).__len__()
-        comptime other_len = type_of(other).__len__()
-
-        comptime if self_len != other_len:
-            return False
-
-        comptime for i in range(type_of(self).__len__()):
-            comptime self_type = type_of(self[i])
-            comptime other_type = type_of(other[i])
-            comptime assert _type_is_eq[
-                self_type, other_type
-            ](), "Tuple elements must be of the same type to compare."
-            if self[i] != rebind[self_type](other[i]):
-                return False
-        return True
-
-    @always_inline
-    def __ne__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Equatable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
-        """Compare this tuple to another tuple of a potentially different type.
-
-        Parameters:
-            self_elt_types: The types of the elements in this tuple.
-            other_elt_types: The types of the elements in the other tuple.
-
-        Args:
-            other: The other tuple to compare against.
-
-        Returns:
-            True if the tuples are not equal, False otherwise.
-        """
-        return not self == other
 
     def __hash__[
         H: Hasher
@@ -423,10 +359,9 @@ struct Tuple[*element_types: Movable](
         ]()
 
     @always_inline
-    def _compare[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Int:
+    def _compare(
+        self, other: Self
+    ) -> Int where AllComparable[*Self.element_types]:
         comptime self_len = type_of(self).__len__()
         comptime other_len = type_of(other).__len__()
 
@@ -436,16 +371,9 @@ struct Tuple[*element_types: Movable](
         comptime min_length = min(self_len, other_len)
 
         comptime for i in range(min_length):
-            comptime self_type = type_of(self[i])
-            comptime other_type = type_of(other[i])
-            comptime assert _type_is_eq[self_type, other_type](), String(
-                "Mismatch between tuple elements at index ",
-                i,
-                " must be of the same type to compare.",
-            )
-            if self[i] < rebind[self_type](other[i]):
+            if trait_downcast[Comparable](self[i]) < other[i]:
                 return -1
-            if rebind[self_type](other[i]) < self[i]:
+            if trait_downcast[Comparable](other[i]) < self[i]:
                 return 1
 
         comptime if self_len < other_len:
@@ -456,16 +384,10 @@ struct Tuple[*element_types: Movable](
             return 0
 
     @always_inline
-    def __lt__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __lt__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using less than comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -476,16 +398,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) < 0
 
     @always_inline
-    def __le__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __le__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using less than or equal to comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -496,17 +412,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) <= 0
 
     @always_inline
-    def __gt__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __gt__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using greater than comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other
-                Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -518,16 +427,10 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) > 0
 
     @always_inline
-    def __ge__[
-        self_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        other_elt_types: Variadic.TypesOfTrait[Movable & Comparable],
-        //,
-    ](self: Tuple[*self_elt_types], other: Tuple[*other_elt_types]) -> Bool:
+    def __ge__(
+        self, other: Self
+    ) -> Bool where AllComparable[*Self.element_types]:
         """Compare this tuple to another tuple using greater than or equal to comparison.
-
-        Parameters:
-            self_elt_types: The types of the elements contained in the Tuple.
-            other_elt_types: The types of the elements contained in the other Tuple.
 
         Args:
             other: The other tuple to compare against.
@@ -539,9 +442,7 @@ struct Tuple[*element_types: Movable](
         return self._compare(other) >= 0
 
     @always_inline("nodebug")
-    def reverse(
-        deinit self, out result: Tuple[*Variadic.reverse[*Self.element_types]]
-    ):
+    def reverse(deinit self, out result: Tuple[*Self.element_types.reverse()]):
         """Return a new tuple with the elements in reverse order.
 
         Returns:
@@ -563,9 +464,7 @@ struct Tuple[*element_types: Movable](
         comptime for i in range(type_of(result).__len__()):
             UnsafePointer(to=result[i]).init_pointee_move_from(
                 rebind[UnsafePointer[type_of(result[i]), origin_of(self)]](
-                    UnsafePointer(
-                        to=self[Variadic.size(Self.element_types) - 1 - i]
-                    )
+                    UnsafePointer(to=self[Self.element_types.size - 1 - i])
                 )
             )
 
@@ -576,7 +475,9 @@ struct Tuple[*element_types: Movable](
         deinit self,
         deinit other: Tuple[*other_element_types],
         out result: Tuple[
-            *Variadic.concat_types[Self.element_types, other_element_types]
+            *TypeList._concat[
+                Self.element_types.values, other_element_types.values
+            ]()
         ],
     ):
         """Return a new tuple that concatenates this tuple with another.
@@ -592,7 +493,7 @@ struct Tuple[*element_types: Movable](
 
         Usage:
 
-        ```
+        ```mojo
         var rgb = Tuple[Int, Int, Int](0xFF, 0xF0, 0x0)
         var rgba = rgb.concat(Tuple[Int](0xFF)) # Adds alpha channel
         print(rgba[0], rgba[1], rgba[2], rgba[3]) # 255 240 0 255

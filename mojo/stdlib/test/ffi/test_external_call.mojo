@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.ffi import external_call
+from std.ffi import _CPointer, external_call
 from std.testing import (
     TestSuite,
     assert_false,
@@ -19,7 +19,7 @@ from std.testing import (
 
 
 struct RegisterPassablePointer(RegisterPassable):
-    var pointer: OpaquePointer[ExternalOrigin[mut=True]]
+    var pointer: _CPointer[NoneType, ExternalOrigin[mut=True]]
 
 
 def test_external_call_handles_rp_return_types() raises:

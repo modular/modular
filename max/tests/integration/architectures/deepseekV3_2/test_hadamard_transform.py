@@ -139,7 +139,6 @@ def test_hadamard_transform(
     assert len(input_shape), "Need at least one dim."
 
     # Create random input tensor
-    dim = input_shape[-1]
     torch.manual_seed(42)
     input_tensor = torch.randn(*input_shape, dtype=torch_dtype, device="cuda")
 

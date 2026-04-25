@@ -24,7 +24,7 @@ Provides two paths for 2-D convolution on RDNA 3+:
 """
 
 from std.math import ceildiv
-from std.gpu import global_idx_uint as global_idx, WARP_SIZE
+from std.gpu import global_idx, WARP_SIZE
 from std.gpu.host import DeviceContext
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
@@ -39,6 +39,7 @@ from .conv2d_kernel import conv2d_kernel_rdna
 # =========================================================================
 
 
+@__name(t"rdna_im2col_nhwc_{dtype}", mangle=True)
 def _im2col_nhwc_kernel[
     dtype: DType,
 ](
@@ -61,7 +62,7 @@ def _im2col_nhwc_kernel[
     var HW_out = H_out * W_out
     var total = batch_size * HW_out * K
 
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= total:
         return
 
@@ -89,6 +90,7 @@ def _im2col_nhwc_kernel[
     output_ptr.store(tid, val)
 
 
+@__name(t"rdna_transpose_rscf_to_nk_{dtype}", mangle=True)
 def _transpose_rscf_to_nk[
     dtype: DType,
 ](
@@ -103,7 +105,7 @@ def _transpose_rscf_to_nk[
     """
     var K = R * S * C
     var total = K * F
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= total:
         return
     var f = tid // K
@@ -111,6 +113,7 @@ def _transpose_rscf_to_nk[
     dst_ptr.store(tid, src_ptr.load(k * F + f))
 
 
+@__name(t"rdna_transpose_fcrs_to_nk_{dtype}", mangle=True)
 def _transpose_fcrs_to_nk[
     dtype: DType,
 ](
@@ -124,7 +127,7 @@ def _transpose_fcrs_to_nk[
     """GPU kernel: transpose filter FCRS -> [N,K] for transpose_b matmul."""
     var K = R * S * C
     var total = K * F
-    var tid = Int(global_idx.x)
+    var tid = global_idx.x
     if tid >= total:
         return
     var f = tid // K
@@ -353,7 +356,7 @@ def dispatch_rdna_conv2d[
             @__copy_capture(hw, out_w)
             def _gemm_epilogue[
                 _dtype: DType,
-                _width: Int,
+                _width: SIMDSize,
                 *,
                 alignment: Int = 1,
             ](coords_2d: IndexList[2], val: SIMD[_dtype, _width]):

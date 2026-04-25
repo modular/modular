@@ -653,6 +653,10 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(act_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
+    @__name(
+        t"sm100_conv2d_fprop_{Self.act_type}_{Self.filter_type}_{Self.out_type}",
+        mangle=True,
+    )
     def run(
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
@@ -691,6 +695,10 @@ struct Conv2dFpropKernel[
     @__llvm_arg_metadata(filter_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(out_tma_op, `nvvm.grid_constant`)
     @__llvm_arg_metadata(src_tma_op, `nvvm.grid_constant`)
+    @__name(
+        t"sm100_conv2d_fprop_with_residual_{Self.act_type}_{Self.filter_type}_{Self.out_type}",
+        mangle=True,
+    )
     def run_with_residual(
         act_tma_op: Self.ActTmaOp,
         filter_tma_op: Self.FilterTmaOp,
@@ -825,8 +833,6 @@ struct Conv2dFpropKernel[
             smem.pipelines.clc_throttle(),
         )
 
-        var work_iter = scheduler.work_iterator()
-
         # Create tile loaders
         var act_loader = Self.ActTileLoaderTypeIm2col(
             Pointer(to=act_tma_op), ctx.a_multicast_mask
@@ -840,56 +846,57 @@ struct Conv2dFpropKernel[
         # ========== Warp-Specialized Execution ==========
 
         if WarpRole.is_main_load():
+            var load_iter = scheduler.work_iterator()
+
             with input_pipeline.producer() as producer:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        work_iter.throttle_signal(ctx.is_first_cta_in_cluster)
+                for current in load_iter:
+                    scheduler.throttle_signal(ctx.is_first_cta_in_cluster)
 
-                        # Prologue/steady-state split for LoadOrderBarrier
-                        var num_prologue = min(
-                            UInt32(Self.num_pipeline_stages),
-                            num_iters,
-                        )
+                    # Prologue/steady-state split for LoadOrderBarrier
+                    var num_prologue = min(
+                        UInt32(Self.num_pipeline_stages),
+                        num_iters,
+                    )
 
-                        # PROLOGUE: Fill pipeline stages
-                        for i in range(
-                            0, Int(num_prologue), Self.config.k_group_size
-                        ):
-                            with producer.acquire() as tiles:
-                                Self.load_input_tiles(
-                                    act_loader,
-                                    filter_loader,
-                                    tiles,
-                                    UInt32(i),
-                                    Int(current.m),
-                                    Int(current.n),
-                                    ctx.peer_cta_coord,
-                                    ctx.elect_one_cta,
-                                )
+                    # PROLOGUE: Fill pipeline stages
+                    for i in range(
+                        0, Int(num_prologue), Self.config.k_group_size
+                    ):
+                        with producer.acquire() as tiles:
+                            Self.load_input_tiles(
+                                act_loader,
+                                filter_loader,
+                                tiles,
+                                UInt32(i),
+                                Int(current.m),
+                                Int(current.n),
+                                ctx.peer_cta_coord,
+                                ctx.elect_one_cta,
+                            )
 
-                        # Signal LoadOrderBarrier after prologue
-                        if elect_one_sync():
-                            load_order_barrier.arrive_and_step()
+                    # Signal LoadOrderBarrier after prologue
+                    if elect_one_sync():
+                        load_order_barrier.arrive_and_step()
 
-                        # STEADY-STATE: Continue with remaining iterations
-                        for i in range(
-                            Int(num_prologue),
-                            Int(num_iters),
-                            Self.config.k_group_size,
-                        ):
-                            with producer.acquire() as tiles:
-                                Self.load_input_tiles(
-                                    act_loader,
-                                    filter_loader,
-                                    tiles,
-                                    UInt32(i),
-                                    Int(current.m),
-                                    Int(current.n),
-                                    ctx.peer_cta_coord,
-                                    ctx.elect_one_cta,
-                                )
+                    # STEADY-STATE: Continue with remaining iterations
+                    for i in range(
+                        Int(num_prologue),
+                        Int(num_iters),
+                        Self.config.k_group_size,
+                    ):
+                        with producer.acquire() as tiles:
+                            Self.load_input_tiles(
+                                act_loader,
+                                filter_loader,
+                                tiles,
+                                UInt32(i),
+                                Int(current.m),
+                                Int(current.n),
+                                ctx.peer_cta_coord,
+                                ctx.elect_one_cta,
+                            )
 
-                        syncwarp()
+                    syncwarp()
 
                 producer.drain()
 
@@ -899,40 +906,40 @@ struct Conv2dFpropKernel[
 
             var sched_iter = scheduler.scheduler_iterator()
 
-            while sched_iter.has_work():
-                with sched_iter.next():
-                    sched_iter.signal_and_advance()
+            for _ in sched_iter:
+                sched_iter.signal_and_advance()
 
             sched_iter.drain()
 
         if WarpRole.is_epilogue_load():
+            var epi_load_iter = scheduler.work_iterator()
+
             # Epilogue load warp: participates in work loop for CLC barrier
             # counts. When has_residual is True, pre-fetches source C via TMA.
-            while work_iter.has_work():
-                with work_iter.next() as current:
-                    load_order_barrier.wait_and_step()
+            for current in epi_load_iter:
+                load_order_barrier.wait_and_step()
 
-                    comptime if has_residual:
-                        # Produce C tile into SMEM via epi_load_pipeline
-                        epi_load_pipeline.wait_consumer()
-                        if elect_one_sync():
-                            var mbar = epi_load_pipeline.producer_mbar()
-                            mbar[0].expect_bytes(Int32(Self.src_expected_bytes))
-                            src_tma_op.async_copy[1](
-                                smem.src_tiles()[
-                                    Int(
-                                        epi_load_pipeline.pipeline.producer_stage()
-                                    )
-                                ],
-                                mbar[0],
-                                (
-                                    Int(current.m) * Self.OutputM,
-                                    Int(current.n) * Self.OutputN,
-                                ),
-                            )
-                        epi_load_pipeline.producer_step()
+                comptime if has_residual:
+                    # Produce C tile into SMEM via epi_load_pipeline
+                    epi_load_pipeline.wait_consumer()
+                    if elect_one_sync():
+                        var mbar = epi_load_pipeline.producer_mbar()
+                        mbar[0].expect_bytes(Int32(Self.src_expected_bytes))
+                        src_tma_op.async_copy[1](
+                            smem.src_tiles()[
+                                Int(epi_load_pipeline.pipeline.producer_stage())
+                            ],
+                            mbar[0],
+                            (
+                                Int(current.m) * Self.OutputM,
+                                Int(current.n) * Self.OutputN,
+                            ),
+                        )
+                    epi_load_pipeline.producer_step()
 
         if WarpRole.is_mma():
+            var mma_iter = scheduler.work_iterator()
+
             var tmem = Self.Tmem.allocate(smem.pipelines.tmem_addr())
             var mma_ctx = Self.MmaCtx(
                 tmem,
@@ -945,25 +952,24 @@ struct Conv2dFpropKernel[
             )
 
             with mma_ctx:
-                while work_iter.has_work():
-                    with work_iter.wait_and_advance():
-                        if ctx.elect_one_cta:
-                            with mma_ctx.output_pipeline.producer() as output_stage:
-                                with input_pipeline.consumer() as consumer:
-                                    for i in range(
-                                        0,
-                                        Int(num_iters),
-                                        Self.config.k_group_size,
-                                    ):
-                                        with consumer.acquire() as input_tiles:
-                                            Self.mma(
-                                                output_stage.tmem,
-                                                input_tiles,
-                                                mma_op,
-                                                ctx.elect_one_warp,
-                                                UInt32(i),
-                                                0,
-                                            )
+                for _ in mma_iter:
+                    if ctx.elect_one_cta:
+                        with mma_ctx.output_pipeline.producer() as output_stage:
+                            with input_pipeline.consumer() as consumer:
+                                for i in range(
+                                    0,
+                                    Int(num_iters),
+                                    Self.config.k_group_size,
+                                ):
+                                    with consumer.acquire() as input_tiles:
+                                        Self.mma(
+                                            output_stage.tmem,
+                                            input_tiles,
+                                            mma_op,
+                                            ctx.elect_one_warp,
+                                            UInt32(i),
+                                            0,
+                                        )
 
         if WarpRole.is_epilogue():
             Self.EpilogueCtx.Sync.wait()
@@ -981,45 +987,46 @@ struct Conv2dFpropKernel[
 
             var tile_writer = Self.TileWriterType(Pointer(to=out_tma_op))
 
+            var epi_iter = scheduler.work_iterator()
+
             with epi_ctx:
-                while work_iter.has_work():
-                    with work_iter.next() as current:
-                        with epi_ctx.output_pipeline.consumer() as output_stage:
-                            comptime if has_residual:
-                                # Wait for epilogue load warp to fill C tile
-                                epi_load_pipeline.wait_producer()
-                                var src_stage_idx = (
-                                    epi_load_pipeline.consumer_stage()
-                                )
+                for current in epi_iter:
+                    with epi_ctx.output_pipeline.consumer() as output_stage:
+                        comptime if has_residual:
+                            # Wait for epilogue load warp to fill C tile
+                            epi_load_pipeline.wait_producer()
+                            var src_stage_idx = (
+                                epi_load_pipeline.consumer_stage()
+                            )
 
-                                # TileTensor view over source C SMEM tiles
-                                # Construct with TileWriter-compatible stage count
-                                var src_tiles = Self.SrcCTileArray(
-                                    smem.src_tiles().ptr
-                                )
+                            # TileTensor view over source C SMEM tiles
+                            # Construct with TileWriter-compatible stage count
+                            var src_tiles = Self.SrcCTileArray(
+                                smem.src_tiles().ptr
+                            )
 
-                                # D = lambda(accum) + beta*C
-                                tile_writer.write_with_residual(
-                                    smem.out_tiles(),
-                                    output_stage,
-                                    src_tiles,
-                                    src_stage_idx,
-                                    Scalar[Self.out_type](beta),
-                                    (current.m, current.n),
-                                    (mnk[0], mnk[1]),
-                                    ctx.elect_one_warp,
-                                )
+                            # D = lambda(accum) + beta*C
+                            tile_writer.write_with_residual(
+                                smem.out_tiles(),
+                                output_stage,
+                                src_tiles,
+                                src_stage_idx,
+                                Scalar[Self.out_type](beta),
+                                (current.m, current.n),
+                                (mnk[0], mnk[1]),
+                                ctx.elect_one_warp,
+                            )
 
-                                # Signal C stage consumed
-                                _ = epi_load_pipeline.pipeline.consumer_mbar(
-                                    src_stage_idx
-                                )[0].arrive()
-                                epi_load_pipeline.consumer_step()
-                            else:
-                                tile_writer.write(
-                                    smem.out_tiles(),
-                                    output_stage,
-                                    (current.m, current.n),
-                                    (mnk[0], mnk[1]),
-                                    ctx.elect_one_warp,
-                                )
+                            # Signal C stage consumed
+                            _ = epi_load_pipeline.pipeline.consumer_mbar(
+                                src_stage_idx
+                            )[0].arrive()
+                            epi_load_pipeline.consumer_step()
+                        else:
+                            tile_writer.write(
+                                smem.out_tiles(),
+                                output_stage,
+                                (current.m, current.n),
+                                (mnk[0], mnk[1]),
+                                ctx.elect_one_warp,
+                            )

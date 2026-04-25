@@ -54,12 +54,7 @@ from std.gpu.memory import AddressSpace
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
-from std.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, thread_idx, warp_id
 from nn.attention.mha_utils import (
     MHAConfig,
     NoPartition,
@@ -130,7 +125,11 @@ __extension SM100MLA:
             Int32(Self.config.num_threads)
         )
     )
-    @__llvm_metadata(`nvvm.minctasm`=Int(1))
+    @__llvm_metadata(`nvvm.minctasm`=SIMDSize(1))
+    @__name(
+        t"sm100_mla_prefill_blockscale_{Self.qkv_dtype}_{Self.output_dtype}_{blockwise_scale}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def mla_prefill_kernel_blockscale[
         blockwise_scale: Int = 0,
     ](
@@ -165,6 +164,7 @@ __extension SM100MLA:
             Self.config.output_swizzle_mode,
             BM=Self.config.fa4_config.BM // 2,
             BN=Self.config.fa4_config.ov_depth,
+            group=config.fa4_config.group if config.fa4_config.fuse_gqa else 1,
         ],
         kv_lut: Self.KVLUTType,
         k_rope_lut: Self.KRopeType,
@@ -443,7 +443,7 @@ __extension SM100MLA:
                 - 1
             )
 
-            var local_thread_idx = UInt32(thread_idx.x - 14 * UInt(WARP_SIZE))
+            var local_thread_idx = UInt32(thread_idx.x - 14 * WARP_SIZE)
 
             Self.convert_fp8_to_bf16(
                 iter_count,
@@ -1346,7 +1346,7 @@ def mla_sm100_prefill_blockscale[
     comptime fa4_config = MLAConfig[
         q_type, rope_gmem_dtype=KRopeType.dtype, rope_mma_dtype=q_type
     ](
-        num_q_heads=Int(config.num_heads),
+        num_q_heads=config.num_heads,
         group=group,
         depth=q_depth,
         page_size=KVType.page_size,

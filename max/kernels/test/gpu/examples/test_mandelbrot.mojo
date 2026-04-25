@@ -16,7 +16,7 @@ from std.sys.info import simd_width_of
 
 from std.algorithm import vectorize
 from std.complex import ComplexSIMD
-from std.gpu import global_idx_uint as global_idx
+from std.gpu import global_idx
 from std.gpu.host import DeviceContext
 from std.testing import assert_equal
 
@@ -69,7 +69,7 @@ def mandelbrot(out_ptr: UnsafePointer[Scalar[int_type], MutAnyOrigin]):
     comptime scale_y = (max_y - min_y) / height
 
     @always_inline
-    def compute_vector[simd_width: Int](col: Int) unified {mut}:
+    def compute_vector[simd_width: Int](col: Int) {mut}:
         """Each time we operate on a `simd_width` vector of pixels."""
         if col >= width:
             return

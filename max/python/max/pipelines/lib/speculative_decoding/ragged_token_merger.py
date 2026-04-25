@@ -16,9 +16,34 @@
 from max.driver import Buffer
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+from max.graph import DeviceRef, Dim, Graph, TensorType, TensorValue, ops
 from max.nn.kernels import merge_ragged_tensors
 from max.nn.layer import Module
+
+
+def shape_to_scalar(
+    x: Dim, device: DeviceRef, dtype: DType = DType.int64
+) -> TensorValue:
+    """An especially cursed way to turn a shape into a scalar on the GPU.
+
+    Usage:
+    >>> my_scalar = shape_to_scalar(tensor.shape[3], DeviceRef.GPU())
+
+    We previously did `ops.shape_to_tensor([x]).to(DeviceRef.GPU())` but this
+    issues a h2d copy that is incompatible with CUDA Graphs.
+
+    TODO: Delete this method asap! We should really support a device placement
+    when using shape_to_tensor.
+    """
+    x_cpu = ops.shape_to_tensor([x])
+    x_gpu = ops.range(
+        start=x_cpu[0],
+        stop=x_cpu[0] + 1,
+        out_dim=1,
+        dtype=dtype,
+        device=device,
+    )[0]
+    return x_gpu
 
 
 def ragged_token_merger(device: DeviceRef) -> Graph:
@@ -63,29 +88,34 @@ class RaggedTokenMerger(Module):
         prompt_offsets: TensorValue,
         draft_tokens: TensorValue,
     ) -> tuple[TensorValue, TensorValue]:
-        """Merges prompt and draft tokens into a single ragged token sequence."""
-        num_steps = ops.cast(
-            ops.shape_to_tensor([draft_tokens.shape[1]]).reshape(()),
-            DType.uint32,
-        )
+        """Merges prompt and draft tokens into a single ragged token sequence.
+
+        Args:
+            prompt_tokens: The prompt tokens of shape [S].
+            prompt_offsets: The prompt offsets of shape [B+1].
+            draft_tokens: The draft tokens of shape [B, K].
+
+        Returns:
+            A tuple of two tensors:
+                - The merged tokens of shape [S+B*K].
+                - The merged offsets of shape [B+1].
+        """
+        device = prompt_tokens.device
+        K = shape_to_scalar(draft_tokens.shape[1], device, dtype=DType.uint32)
         draft_tokens_flattened = ops.reshape(draft_tokens, shape=(-1,))
 
         # Compute draft_offsets as [0, K, 2K, ..., N*K] where K=num_steps.
         # We use range(step=1) * num_steps instead of range(step=num_steps)
         # because step=0 (during prefill when draft_seq_len=0) is undefined.
-        batch_size_plus_1 = ops.cast(
-            ops.shape_to_tensor([prompt_offsets.shape[0]]).reshape(()),
-            DType.uint32,
-        )
+        batch_size_plus_1 = ops.shape_to_tensor([prompt_offsets.shape[0]])[0]
         indices = ops.range(
-            start=ops.constant(0, DType.uint32, device=DeviceRef.CPU()),
+            start=0,
             stop=batch_size_plus_1,
-            step=ops.constant(1, DType.uint32, device=DeviceRef.CPU()),
             out_dim=prompt_offsets.shape[0],
-            device=DeviceRef.CPU(),
+            device=device,
             dtype=DType.uint32,
         )
-        draft_offsets = ops.transfer_to(indices * num_steps, self.device)
+        draft_offsets = indices * K
         merged_tensor, merged_offsets = merge_ragged_tensors(
             prompt_tokens, prompt_offsets, draft_tokens_flattened, draft_offsets
         )

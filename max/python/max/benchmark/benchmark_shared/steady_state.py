@@ -13,34 +13,34 @@
 
 """Steady-state auto-detection for benchmark runs.
 
-Identifies the steady-state region within a benchmark run by computing
-rolling coefficient of variation (CV) on per-request metrics:
+Uses rolling MAD/median (median absolute deviation / median) on per-request
+TTFT and TPOT to find the steady-state region:
 
-- **TTFT CV** detects the ramp-up boundary. During warmup, TTFT is inflated
-  and variable due to queue buildup and cold caches. Once the system reaches
-  steady state, TTFT stabilizes and the rolling CV drops below the threshold.
+- TTFT MAD/median detects the ramp-up boundary.
+- TPOT MAD/median detects the ramp-down boundary.
 
-- **TPOT CV** detects the ramp-down boundary. During cooldown, batch sizes
-  shrink and TPOT becomes erratic. Scanning from the end of the run, we find
-  where TPOT was last stable.
-
-The window between these two boundaries is the steady-state region. Runs that
-never stabilize produce a descriptive warning instead.
+When TPOT is absent across the run (prefill-only workloads), ramp-down
+falls back to TTFT. Runs that never stabilize produce a descriptive
+warning instead.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Literal
 
 import numpy as np
 
-from .request import RequestFuncOutput
+from .request import RequestFuncOutput, TTSRequestFuncOutput
 
 DEFAULT_WINDOW_SIZE = 50
-DEFAULT_TTFT_CV_THRESHOLD = 0.5
-DEFAULT_TPOT_CV_THRESHOLD = 0.3
+DEFAULT_TTFT_THRESHOLD = 0.5
+DEFAULT_TPOT_THRESHOLD = 0.3
 DEFAULT_SUSTAINED_COUNT = DEFAULT_WINDOW_SIZE // 2
+
+
+DetectionMode = Literal["full", "ttft_only"]
 
 
 @dataclass
@@ -63,9 +63,12 @@ class SteadyStateWindow:
             (successful, non-cancelled, with timestamps and TPOT data).
         steady_state_count: Number of requests in the detected window.
         warning: Human-readable explanation when detection fails.
-        window_size: Rolling window size used for CV computation.
-        ttft_cv_threshold: CV threshold used for TTFT stabilization.
-        tpot_cv_threshold: CV threshold used for TPOT stabilization.
+        window_size: Rolling window size used for detection.
+        ttft_threshold: Threshold for TTFT stabilization.
+        tpot_threshold: Threshold for TPOT stabilization.
+        mode: ``"full"`` uses TTFT for ramp-up and TPOT for ramp-down.
+            ``"ttft_only"`` uses TTFT for both, when TPOT is absent
+            (e.g., prefill-only workloads).
     """
 
     detected: bool
@@ -76,50 +79,42 @@ class SteadyStateWindow:
     steady_state_count: int
     warning: str | None
     window_size: int
-    ttft_cv_threshold: float
-    tpot_cv_threshold: float
+    ttft_threshold: float
+    tpot_threshold: float
+    mode: DetectionMode = "full"
 
 
-def _rolling_cv(values: list[float], window: int) -> list[float]:
-    """Compute rolling coefficient of variation over a sliding window.
+def _rolling_mad_over_median(values: list[float], window: int) -> list[float]:
+    """Compute rolling MAD/median over a sliding window.
 
-    Returns one CV value per position starting at index (window - 1).
-    Uses vectorized cumulative sums for O(n) performance.
+    Returns one value per position starting at index (window - 1).
     """
     arr = np.array(values, dtype=np.float64)
     n = len(arr)
     if n < window:
         return []
 
-    cumsum = np.cumsum(arr)
-    rolling_sum = np.empty(n - window + 1)
-    rolling_sum[0] = cumsum[window - 1]
-    rolling_sum[1:] = cumsum[window:] - cumsum[: n - window]
-    rolling_mean = rolling_sum / window
+    # Create a (n - window + 1, window) view without copying data.
+    shape = (n - window + 1, window)
+    strides = (arr.strides[0], arr.strides[0])
+    windows = np.lib.stride_tricks.as_strided(arr, shape=shape, strides=strides)
 
-    cumsum_sq = np.cumsum(arr * arr)
-    rolling_sum_sq = np.empty(n - window + 1)
-    rolling_sum_sq[0] = cumsum_sq[window - 1]
-    rolling_sum_sq[1:] = cumsum_sq[window:] - cumsum_sq[: n - window]
-    rolling_var = rolling_sum_sq / window - rolling_mean**2
-    np.maximum(rolling_var, 0.0, out=rolling_var)
-    rolling_std = np.sqrt(rolling_var)
+    medians = np.median(windows, axis=1)
+    mad = np.median(np.abs(windows - medians[:, np.newaxis]), axis=1)
 
     with np.errstate(divide="ignore", invalid="ignore"):
-        cv = np.where(
-            rolling_mean == 0, np.inf, rolling_std / np.abs(rolling_mean)
-        )
+        result = np.where(medians == 0, np.inf, mad / medians)
 
-    return cv.tolist()
+    return result.tolist()
 
 
 def _find_first_stable_run(
-    cv_series: list[float], threshold: float, sustained_count: int
+    series: list[float], threshold: float, sustained_count: int
 ) -> int | None:
-    """Find the first index where CV stays below threshold for sustained_count points."""
+    """Find the first index where the series stays below threshold for sustained_count points."""
     run_length = 0
-    for idx, cv in enumerate(cv_series):
-        if cv <= threshold:
+    for idx, val in enumerate(series):
+        if val <= threshold:
             run_length += 1
             if run_length >= sustained_count:
                 return idx - sustained_count + 1
@@ -129,12 +124,12 @@ def _find_first_stable_run(
 
 
 def _find_last_stable_run(
-    cv_series: list[float], threshold: float, sustained_count: int
+    series: list[float], threshold: float, sustained_count: int
 ) -> int | None:
-    """Find the last index where CV stays below threshold for sustained_count points (scanning from end)."""
+    """Find the last index where the series stays below threshold for sustained_count points (scanning from end)."""
     run_length = 0
-    for idx in range(len(cv_series) - 1, -1, -1):
-        if cv_series[idx] <= threshold:
+    for idx in range(len(series) - 1, -1, -1):
+        if series[idx] <= threshold:
             run_length += 1
             if run_length >= sustained_count:
                 return idx + sustained_count - 1
@@ -143,99 +138,179 @@ def _find_last_stable_run(
     return None
 
 
+def _empty_result(
+    *,
+    total_requests: int,
+    warning: str | None,
+    window_size: int,
+    ttft_threshold: float,
+    tpot_threshold: float,
+    mode: DetectionMode = "full",
+) -> SteadyStateWindow:
+    return SteadyStateWindow(
+        detected=False,
+        start_index=None,
+        end_index=None,
+        steady_state_indices=[],
+        total_requests=total_requests,
+        steady_state_count=0,
+        warning=warning,
+        window_size=window_size,
+        ttft_threshold=ttft_threshold,
+        tpot_threshold=tpot_threshold,
+        mode=mode,
+    )
+
+
 def detect_steady_state(
-    outputs: Sequence[RequestFuncOutput],
+    outputs: Sequence[RequestFuncOutput | TTSRequestFuncOutput],
     window_size: int = DEFAULT_WINDOW_SIZE,
-    ttft_cv_threshold: float = DEFAULT_TTFT_CV_THRESHOLD,
-    tpot_cv_threshold: float = DEFAULT_TPOT_CV_THRESHOLD,
+    ttft_threshold: float = DEFAULT_TTFT_THRESHOLD,
+    tpot_threshold: float = DEFAULT_TPOT_THRESHOLD,
     sustained_count: int = DEFAULT_SUSTAINED_COUNT,
+    *,
+    max_concurrency: int | None = None,
 ) -> SteadyStateWindow:
     """Detect the steady-state region within a benchmark run.
 
-    Filters to valid requests (successful, non-cancelled, with timestamps,
-    positive TTFT, and non-empty TPOT), sorts by submit time, then uses
-    rolling CV to find where metrics stabilize.
+    Filters to valid requests (successful, non-cancelled, with timestamps
+    and positive TTFT; non-empty TPOT in full mode), sorts by submit time,
+    then uses rolling MAD/median to find where metrics stabilize.
+
+    Falls back to a TTFT-only path when no request populated TPOT (e.g.,
+    prefill-only workloads producing <=1 output token per request).
 
     Args:
         outputs: Request outputs in dispatch order.
         window_size: Number of requests in the rolling window.
-        ttft_cv_threshold: CV threshold for TTFT stabilization.
-        tpot_cv_threshold: CV threshold for TPOT stabilization.
-        sustained_count: Consecutive CV points below threshold required
+        ttft_threshold: Threshold for TTFT stabilization.
+        tpot_threshold: Threshold for TPOT stabilization.
+        sustained_count: Consecutive points below threshold required
             to confirm stabilization.
+        max_concurrency: Benchmark concurrency level. At ``1`` there is
+            no queueing and detection is skipped.
     """
-    # (original_index, output) pairs for valid requests
-    indexed: list[tuple[int, RequestFuncOutput]] = [
+    # At concurrency=1 there's no ramp; pass len(outputs) so telemetry
+    # doesn't misread the skip as zero valid requests.
+    if max_concurrency == 1:
+        return _empty_result(
+            total_requests=len(outputs),
+            warning=None,
+            window_size=window_size,
+            ttft_threshold=ttft_threshold,
+            tpot_threshold=tpot_threshold,
+        )
+
+    # Only skip TPOT when no request populated it; otherwise keep the
+    # full path so "too few valid" surfaces honestly instead of silently
+    # masking a TPOT detection failure.
+    min_required = window_size * 2
+    mode: DetectionMode = (
+        "full" if any(out.tpot for out in outputs) else "ttft_only"
+    )
+    require_tpot = mode == "full"
+    indexed = [
         (i, out)
         for i, out in enumerate(outputs)
         if (
             out.success
             and not out.cancelled
             and out.request_submit_time is not None
+            and out.ttft is not None
             and out.ttft > 0
-            and out.tpot
+            and (not require_tpot or out.tpot)
         )
     ]
-
     total = len(indexed)
-    result = SteadyStateWindow(
-        detected=False,
-        start_index=None,
-        end_index=None,
-        steady_state_indices=[],
+
+    if total < min_required:
+        if mode == "full":
+            reason = (
+                " Detection filters out requests that are cancelled, failed,"
+                " or have no TPOT data. Prefill-only or short-output"
+                " workloads (<=1 output token per request) will filter out"
+                " entirely."
+            )
+        else:
+            reason = (
+                " TPOT was absent across the run, so detection ran in"
+                " TTFT-only mode; the run has too few valid requests"
+                " (cancelled, failed, or missing timestamps/TTFT are"
+                " filtered out)."
+            )
+        return _empty_result(
+            total_requests=total,
+            warning=(
+                f"Too few valid requests ({total} of {len(outputs)} total)"
+                f" for steady-state detection (need at least {min_required})."
+                f"{reason}"
+            ),
+            window_size=window_size,
+            ttft_threshold=ttft_threshold,
+            tpot_threshold=tpot_threshold,
+            mode=mode,
+        )
+
+    result = _empty_result(
         total_requests=total,
-        steady_state_count=0,
         warning=None,
         window_size=window_size,
-        ttft_cv_threshold=ttft_cv_threshold,
-        tpot_cv_threshold=tpot_cv_threshold,
+        ttft_threshold=ttft_threshold,
+        tpot_threshold=tpot_threshold,
+        mode=mode,
     )
-
-    if total < window_size * 2:
-        result.warning = (
-            f"Too few valid requests ({total}) for steady-state detection"
-            f" (need at least {window_size * 2})."
-        )
-        return result
 
     indexed.sort(key=lambda x: x[1].request_submit_time or 0.0)
 
-    ttfts = [out.ttft for _, out in indexed]
-    tpots = [float(np.mean(out.tpot)) for _, out in indexed]
-
-    ttft_cvs = _rolling_cv(ttfts, window_size)
-    tpot_cvs = _rolling_cv(tpots, window_size)
-
-    if not ttft_cvs or not tpot_cvs:
+    # Redundant `is not None` check kept to narrow `float | None` to
+    # `float` for mypy; the filter above already guarantees ttft > 0.
+    ttfts = [out.ttft for _, out in indexed if out.ttft is not None]
+    ttft_mads = _rolling_mad_over_median(ttfts, window_size)
+    if not ttft_mads:
         result.warning = "Could not compute rolling statistics."
         return result
 
     ramp_up_idx = _find_first_stable_run(
-        ttft_cvs, ttft_cv_threshold, sustained_count
+        ttft_mads, ttft_threshold, sustained_count
     )
     if ramp_up_idx is None:
         result.warning = (
-            f"TTFT never stabilized below CV threshold"
-            f" {ttft_cv_threshold:.2f}. The system may have been"
+            f"TTFT never stabilized below MAD/median threshold"
+            f" {ttft_threshold:.2f}. The system may have been"
             f" overloaded for the entire run."
         )
         return result
 
     steady_start = ramp_up_idx
 
-    ramp_down_idx = _find_last_stable_run(
-        tpot_cvs, tpot_cv_threshold, sustained_count
-    )
-    if ramp_down_idx is None:
-        result.warning = (
-            f"TPOT never stabilized below CV threshold"
-            f" {tpot_cv_threshold:.2f}. The system may have been"
-            f" overloaded for the entire run."
-        )
-        return result
+    if mode == "full":
+        tpots = [float(np.mean(out.tpot)) for _, out in indexed]
+        tpot_mads = _rolling_mad_over_median(tpots, window_size)
+        if not tpot_mads:
+            result.warning = "Could not compute rolling statistics."
+            return result
 
-    # CV[i] covers requests [i .. i+window_size-1]
-    steady_end = ramp_down_idx + window_size
+        ramp_down_idx = _find_last_stable_run(
+            tpot_mads, tpot_threshold, sustained_count
+        )
+        if ramp_down_idx is None:
+            result.warning = (
+                f"TPOT never stabilized below MAD/median threshold"
+                f" {tpot_threshold:.2f}. The system may have been"
+                f" overloaded for the entire run."
+            )
+            return result
+        steady_end = ramp_down_idx + window_size
+    else:
+        # Reuse ttft_mads for ramp-down (TTFT can still destabilize at
+        # end-of-run). Fall back to end-of-valid-set if no ramp-down is
+        # found, so a stable run isn't rejected for lack of a ramp.
+        ramp_down_idx = _find_last_stable_run(
+            ttft_mads, ttft_threshold, sustained_count
+        )
+        steady_end = (
+            ramp_down_idx + window_size if ramp_down_idx is not None else total
+        )
 
     if steady_start >= steady_end:
         result.warning = (

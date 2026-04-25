@@ -19,6 +19,7 @@ MAX/diffusers parameter naming convention used by the FLUX2 model.
 from __future__ import annotations
 
 import numpy as np
+from max.driver import Buffer
 from max.dtype import DType
 from max.graph.weights import WeightData
 
@@ -63,14 +64,34 @@ def _swap_fp4_nibbles(value: WeightData) -> WeightData:
     high nibble second.  This function swaps each byte so the packed
     weights match the expected convention.
     """
-    raw = np.from_dlpack(
-        value.data  # type: ignore[arg-type]
-    ).view(np.uint8)
+    raw = np.from_dlpack(value.data).view(np.uint8)
     swapped = (
         ((raw & np.uint8(0x0F)) << np.uint8(4))
         | ((raw >> np.uint8(4)) & np.uint8(0x0F))
     ).astype(np.uint8)
     return WeightData(swapped, value.name, value.dtype, value.shape)
+
+
+def _swap_adaln_weight_halves(value: WeightData) -> WeightData:
+    """Swap the first and second halves of an AdaLN modulation weight.
+
+    BFL's ``LastLayer`` unpacks as ``shift, scale = chunk(2)`` (shift
+    first), but diffusers' ``AdaLayerNormContinuous`` — which our model
+    uses — unpacks as ``scale, shift = chunk(2)`` (scale first).  When
+    loading a BFL-format checkpoint we must swap the two halves of the
+    linear weight (and bias) so the output order matches our code.
+    """
+    buf = value.to_buffer()
+    # View bfloat16 as uint16 so numpy can handle it, as numpy doesn't
+    # support bfloat16.
+    buf_u16 = buf.view(DType.uint16)
+    arr = buf_u16.to_numpy()
+    half = arr.shape[0] // 2
+    swapped = np.ascontiguousarray(
+        np.concatenate([arr[half:], arr[:half]], axis=0)
+    )
+    swapped_buf = Buffer.from_numpy(swapped).view(value.dtype, buf.shape)
+    return WeightData(swapped_buf, value.name, value.dtype, value.shape)
 
 
 def convert_nvfp4_state_dict(
@@ -91,6 +112,12 @@ def convert_nvfp4_state_dict(
         # what cuBLAS / PTX expect.  Swap them at load time.
         if value.dtype == DType.uint8:
             value = _swap_fp4_nibbles(value)
+
+        # BFL's LastLayer uses ``shift, scale = chunk(2)`` but our
+        # AdaLayerNormContinuous uses ``scale, shift = chunk(2)``.
+        # Swap the weight halves so the linear output matches our code.
+        if max_name in ("norm_out.linear.weight", "norm_out.linear.bias"):
+            value = _swap_adaln_weight_halves(value)
 
         new_state_dict[max_name] = value
 

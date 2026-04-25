@@ -40,13 +40,19 @@ logger = logging.getLogger("max.pipelines")
 
 _DEFAULT_BATCH_SIZE = 512
 
+# Vision encoder cache and paged token KV share the same pre-KV memory pool
+# (see ``estimate_memory_footprint``). Without an explicit cap, reduction could
+# assign almost the entire pool to vision, leaving insufficient memory for even
+# one KV page. This bounds vision to a fraction so token KV always retains the rest.
+_VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET = 0.20
+
 
 class MemoryEstimator:
     """Estimates available memory for pipeline model allocation."""
 
     @classmethod
     def free_memory(cls, devices: list[Device]) -> int:
-        """Return the total free memory available across all provided devices."""
+        """Returns the total free memory available across all provided devices."""
         try:
             return int(sum(d.stats["free_memory"] for d in devices))
         except Exception as e:
@@ -133,9 +139,21 @@ class MemoryEstimator:
         arch_config = cast(ArchConfigWithKVCache, arch_config)
         params = arch_config.get_kv_params()
 
-        kvcache_mem = cls.available_kv_cache_memory(
-            model_weights_size, activation_memory_size, model_config, devices
-        )
+        # Prefer the KV byte budget committed in ``estimate_memory_footprint`` (after
+        # vision cache reservation and ``estimated_memory_size``). Using only
+        # ``available_kv_cache_memory()`` (pre-vision) can overcount blocks and clamp
+        # ``max_length`` above the physical paged KV capacity, causing runtime
+        # InsufficientBlocksError when ``len(tokens)`` reaches ``total_blocks * page_size + 1``.
+        allocated_kv = model_config.kv_cache._available_cache_memory
+        if allocated_kv is not None:
+            kvcache_mem = allocated_kv
+        else:
+            kvcache_mem = cls.available_kv_cache_memory(
+                model_weights_size,
+                activation_memory_size,
+                model_config,
+                devices,
+            )
         return compute_max_seq_len_fitting_in_cache(
             params=params,
             available_cache_memory=kvcache_mem,
@@ -151,7 +169,7 @@ class MemoryEstimator:
         model_weights_size: int,
         activation_memory_size: int,
     ) -> None:
-        """Estimates memory footprint and validates max_length/max_batch_size fit."""
+        """Estimates memory footprint and validates ``max_length``/``max_batch_size`` fit."""
         is_draft_model = (
             pipeline_config.draft_model is not None
             and model_config is pipeline_config.draft_model
@@ -735,8 +753,9 @@ class MemoryEstimator:
         per-entry size.  Non-VLM architectures that don't implement this
         method return 0 and no memory is reserved.
 
-        When the full reservation exceeds half the available memory,
-        ``max_vision_cache_entries`` is reduced (minimum 1 entry).
+        Vision cache is capped to at most a fraction of the shared KV+vision pool
+        (see ``_VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET``) so token KV cache retains
+        the remainder. Entries may also be reduced when the pool is small.
 
         Returns:
             Bytes to reserve for the vision encoder cache (0 for non-VLM
@@ -768,28 +787,43 @@ class MemoryEstimator:
             return 0
 
         n_devices = len(devices)
-        total_bytes = max_entries * per_entry_bytes * n_devices
+        per_replica_bytes = per_entry_bytes * n_devices
+        requested_bytes = max_entries * per_replica_bytes
 
-        # Reduce entries if the requested cache doesn't fit.
-        if total_bytes > available_memory > 0:
-            reduced_entries = available_memory // (per_entry_bytes * n_devices)
-            if reduced_entries == 0:
-                raise RuntimeError(
-                    f"Not enough memory for even one vision encoder cache "
-                    f"entry ({to_human_readable_bytes(per_entry_bytes * n_devices)} "
-                    f"needed, {to_human_readable_bytes(available_memory)} available)."
+        max_vision_bytes = int(
+            available_memory * _VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET
+        )
+        max_entries_budget = max_vision_bytes // per_replica_bytes
+        effective_max_entries = min(max_entries, max_entries_budget)
+
+        if effective_max_entries == 0:
+            if max_entries > 0:
+                logger.warning(
+                    "Disabling vision encoder cache (requested %d entries, %s); "
+                    "KV pool is too small to reserve vision entries within %.0f%% "
+                    "of the pool (%s cap per entry %s).",
+                    max_entries,
+                    to_human_readable_bytes(requested_bytes),
+                    _VISION_CACHE_MAX_FRACTION_OF_KV_BUDGET * 100,
+                    to_human_readable_bytes(max_vision_bytes),
+                    to_human_readable_bytes(per_replica_bytes),
                 )
+                pipeline_config.runtime.max_vision_cache_entries = 0
+            return 0
+
+        total_bytes = effective_max_entries * per_replica_bytes
+
+        if effective_max_entries < max_entries:
             logger.warning(
                 "Reduced vision encoder cache from %d (%s) to %d (%s) entries.",
                 max_entries,
+                to_human_readable_bytes(requested_bytes),
+                effective_max_entries,
                 to_human_readable_bytes(total_bytes),
-                reduced_entries,
-                to_human_readable_bytes(
-                    reduced_entries * per_entry_bytes * n_devices
-                ),
             )
-            pipeline_config.runtime.max_vision_cache_entries = reduced_entries
-            total_bytes = reduced_entries * per_entry_bytes * n_devices
+            pipeline_config.runtime.max_vision_cache_entries = (
+                effective_max_entries
+            )
 
         logger.info(
             "Vision encoder cache: %d entries, %s reserved.",

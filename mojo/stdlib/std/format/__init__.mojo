@@ -104,6 +104,7 @@ trait Writer(ImplicitlyDestructible):
     Example:
 
     ```mojo
+    @fieldwise_init
     struct StringBuilder(Writer):
         var s: String
 
@@ -207,18 +208,24 @@ trait Writable(ImplicitlyDestructible):
         Args:
             writer: The destination for formatted output.
 
-        ## Example
+        **Example:**
 
         ```mojo
-        def write_to(self, mut writer: Some[Writer]):
-            writer.write("(", self.x, ", ", self.y, ")")
+        @fieldwise_init
+        struct Point(Writable):
+            var x: Float64
+            var y: Float64
+
+            def write_to(self, mut writer: Some[Writer]):
+                writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
+        comptime WriterType = type_of(writer)
 
         @always_inline
         def call_write_to[
             FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
+        ](field: FieldType, mut writer: WriterType):
             field.write_to(writer)
 
         _reflection_write_to[f=call_write_to](self, writer)
@@ -237,11 +244,16 @@ trait Writable(ImplicitlyDestructible):
         Args:
             writer: The destination for formatted output.
 
-        ## Example
+        **Example:**
 
         ```mojo
-        def write_repr_to(self, mut writer: Some[Writer]):
-            writer.write("Point: x=", self.x, ", y=", self.y)
+        @fieldwise_init
+        struct Point(Writable):
+            var x: Float64
+            var y: Float64
+
+            def write_repr_to(self, mut writer: Some[Writer]):
+                writer.write("Point: x=", self.x, ", y=", self.y)
         ```
 
         Notes:
@@ -250,10 +262,12 @@ trait Writable(ImplicitlyDestructible):
             (`\\'`).
         """
 
+        comptime WriterType = type_of(writer)
+
         @always_inline
         def call_write_repr_to[
             FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
+        ](field: FieldType, mut writer: WriterType):
             field.write_repr_to(writer)
 
         _reflection_write_to[f=call_write_repr_to](self, writer)
@@ -264,7 +278,7 @@ def _reflection_write_to[
     T: Writable,
     W: Writer,
     //,
-    f: def[FieldType: Writable](field: FieldType, mut writer: W),
+    f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
     comptime names = struct_field_names[T]()
     comptime types = struct_field_types[T]()
@@ -286,7 +300,9 @@ def _reflection_write_to[
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](__struct_field_ref(i, this))
+        ref field = trait_downcast[Writable](
+            __struct_field_ref(i._int_mlir_index(), this)
+        )
         f(field, writer)
 
     writer.write_string(")")

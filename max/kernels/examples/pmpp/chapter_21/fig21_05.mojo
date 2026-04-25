@@ -22,7 +22,7 @@ atomic operations which can be a performance bottleneck.
 """
 
 from std.math import sqrt
-from std.os import Atomic
+from std.atomic import Atomic
 from std.gpu import block_idx, thread_idx, block_dim
 from std.gpu.host import DeviceContext
 
@@ -159,8 +159,8 @@ def main() raises:
     var num_blocks = (numatoms + block_size - 1) // block_size
 
     ctx.enqueue_function[cenergy_scatter_kernel, cenergy_scatter_kernel](
-        d_energygrid.unsafe_ptr(),
-        d_atoms.unsafe_ptr(),
+        d_energygrid,
+        d_atoms,
         vol_dim.x,
         vol_dim.y,
         gridspacing,

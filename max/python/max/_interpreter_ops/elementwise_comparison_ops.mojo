@@ -39,9 +39,9 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 
 # Binary comparison operations
-comptime BINARY_COMPARISON_OPS = Variadic.types[
-    T=ElementwiseBinaryComparisonOp, Equal, Greater, GreaterEqual, NotEqual
-]
+comptime BINARY_COMPARISON_OPS = TypeList.of[
+    Trait=ElementwiseBinaryComparisonOp, Equal, Greater, GreaterEqual, NotEqual
+]()
 
 # =============================================================================
 # GPU Support Configuration
@@ -72,7 +72,7 @@ def PyInit_elementwise_comparison_ops() -> PythonObject:
         var b = PythonModuleBuilder("elementwise_comparison_ops")
 
         # Binary comparison operations
-        comptime for i in range(Variadic.size(BINARY_COMPARISON_OPS)):
+        comptime for i in range(BINARY_COMPARISON_OPS.size):
             comptime op = BINARY_COMPARISON_OPS[i]
             comptime name = get_base_type_name[op]()
             comptime docstring = StaticString(
@@ -400,7 +400,7 @@ def bin_elementwise_comparison_op[
     lhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     rhs_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Elementwise comparison: out = lhs op rhs.
 
@@ -436,7 +436,7 @@ def bin_elementwise_comparison_op[
             comptime if _is_gpu_allowed_comparison_op[
                 op
             ]() and dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )
@@ -458,7 +458,7 @@ def select_elementwise_op[
     true_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     false_ptr: UnsafePointer[Scalar[dtype], MutExternalOrigin],
     size: Int,
-    ctx: OpaquePointer[MutExternalOrigin],
+    ctx: Optional[OpaquePointer[MutExternalOrigin]],
 ) raises:
     """Select elementwise operation: out = cond ? true_val : false_val.
 
@@ -492,7 +492,7 @@ def select_elementwise_op[
         # GPU execution
         comptime if has_accelerator():
             comptime if dtype != DType.float64:
-                var device_ctx = DeviceContextPtr(ctx)
+                var device_ctx = DeviceContextPtr(ctx.unsafe_value())
                 elementwise[func, simd_width=1, target="gpu"](
                     IndexList[1](size), device_ctx
                 )

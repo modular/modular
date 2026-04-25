@@ -22,6 +22,7 @@ import numpy.typing as npt
 import pytest
 from max.driver import Buffer
 from max.interfaces.context import GenerationStatus, SamplingParams
+from max.interfaces.eos_tracking import EOSTracker
 from max.interfaces.pipeline_variants.text_generation import (
     ImageMetadata,
     LogProbabilities,
@@ -78,6 +79,7 @@ class FakeContext:
         processed_length: int = 0,
         active_length: int = 0,
     ) -> None:
+        self._eos_tracker = EOSTracker()
         self._request_id = request_id
         self.images: list[ImageMetadata] = images or []
         self._needs_vision = needs_vision
@@ -112,8 +114,8 @@ class FakeContext:
         return idx
 
     @property
-    def eos_token_ids(self) -> set[int]:
-        return set()
+    def eos_tracker(self) -> EOSTracker:
+        return self._eos_tracker
 
     @property
     def max_length(self) -> int | None:
@@ -141,6 +143,17 @@ class FakeContext:
         self, num_steps: int
     ) -> list[npt.NDArray[np.int32]]:
         return []
+
+    def advance_token_buffer(
+        self,
+        new_token: int,
+        log_probabilities: LogProbabilities | None = None,
+        mark_previous_as_processed: bool = True,
+    ) -> None:
+        pass
+
+    def advance_fsm(self, token: int) -> bool:
+        return False
 
     def update(
         self,

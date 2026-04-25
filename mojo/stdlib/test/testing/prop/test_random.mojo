@@ -38,6 +38,7 @@ def test_rng_rand_bool() raises:
 
 
 def test_rng_rand_scalar() raises:
+    @parameter
     def test_dtype[dtype: DType](min: Scalar[dtype], max: Scalar[dtype]) raises:
         var rng = Rng(seed=1234)
         for _ in range(100):

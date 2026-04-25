@@ -240,9 +240,9 @@ def main() raises:
         )
 
         ctx.enqueue_function_experimental[mm_tiled_kernel](
-            d_A.unsafe_ptr(),
-            d_B.unsafe_ptr(),
-            d_C.unsafe_ptr(),
+            d_A,
+            d_B,
+            d_C,
             UInt32(M),
             UInt32(N),
             UInt32(K),

@@ -29,7 +29,6 @@ from max._core.driver import Device
 from max.driver import CPU, Accelerator, Buffer
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.experimental import functional as F
 from max.experimental.nn import Module
 from max.experimental.tensor import Tensor
 from max.graph import Graph, TensorType
@@ -37,6 +36,9 @@ from max.graph.weights import load_weights
 from max.interfaces import PixelGenerationContext
 from max.pipelines.lib.interfaces.component_model import ComponentModel
 from tqdm import tqdm
+
+from .first_block_cache import FirstBlockCache
+from .taylorseer import TaylorSeer, run_denoising_step
 
 if TYPE_CHECKING:
     from ..config import PipelineConfig
@@ -201,25 +203,19 @@ class DiffusionPipeline(ABC):
     def _load_sub_models(
         self, weight_paths: list[Path]
     ) -> dict[str, ComponentModel]:
-        """Load all ComponentModel sub-components defined in `components`."""
+        """Load all ComponentModel sub-components defined in `components`.
+
+        Uses per-component ``MAXModelConfig`` instances from the
+        ``ModelManifest`` to obtain each component's config, encoding,
+        and weight paths.
+        """
         if not self.components:
             raise ValueError(
                 f"{self.__class__.__name__}.components is not set."
             )
 
-        diffusers_config = self.pipeline_config.model.diffusers_config
-        if not diffusers_config:
-            raise ValueError(
-                "diffusers_config is required for DiffusionPipeline."
-            )
-
-        components_config = diffusers_config.get("components")
-        if not components_config:
-            raise ValueError("diffusers_config['components'] is missing.")
-
-        relative_paths = self._resolve_relative_component_paths()
+        models = self.pipeline_config.models
         loaded_sub_models: dict[str, ComponentModel] = {}
-        pipeline_encoding = self.pipeline_config.model.quantization_encoding
 
         for name, component_cls in tqdm(
             self.components.items(), desc="Loading sub models"
@@ -227,22 +223,16 @@ class DiffusionPipeline(ABC):
             if not issubclass(component_cls, ComponentModel):
                 continue
 
-            config_dict = self._get_component_config_dict(
-                components_config, name
-            )
-
-            if name in relative_paths:
-                abs_paths = self._resolve_absolute_paths(
-                    weight_paths, relative_paths[name]
+            component_config = models.get(name)
+            if component_config is None:
+                raise ValueError(
+                    f"Missing model config for component '{name}' "
+                    f"in manifest. Available: {list(models.keys())}"
                 )
-                encoding = pipeline_encoding
-            else:
-                # Component weights not provided — download from base model
-                # repo.  These components (e.g. VAE, text encoder) always use
-                # bfloat16 regardless of the quantization applied to the
-                # primary component.
-                abs_paths = self._download_component_weights(name)
-                encoding = "bfloat16"
+
+            config_dict = component_config.huggingface_config.to_dict()
+            encoding = component_config.quantization_encoding or "bfloat16"
+            abs_paths = self._get_component_weight_paths(component_config)
 
             init_params = inspect.signature(component_cls.__init__).parameters
             init_kwargs: dict[str, Any] = {
@@ -260,80 +250,21 @@ class DiffusionPipeline(ABC):
 
         return loaded_sub_models
 
-    def _get_component_config_dict(
-        self, components_config: dict[str, Any], name: str
-    ) -> dict[str, Any]:
-        """Extract config_dict for a named component."""
-        component = components_config.get(name)
-        if not component:
-            raise ValueError(f"Missing config for component '{name}'.")
+    def _get_component_weight_paths(self, component_config: Any) -> list[Path]:
+        """Resolve absolute weight paths for a single component.
 
-        config_dict = component.get("config_dict")
-        if not config_dict:
-            raise ValueError(f"Missing config_dict for component '{name}'.")
-
-        return config_dict
-
-    def _resolve_relative_component_paths(self) -> dict[str, list[str]]:
-        """Group weight paths by component name (first path segment).
-
-        Files without a ``/`` separator (i.e. flat filenames) are assigned to
-        :attr:`unprefixed_weight_component` when it is set.
+        Uses the component's own ``MAXModelConfig`` (which already has
+        ``weight_path`` and ``huggingface_weight_repo`` resolved after
+        ``ModelManifest.resolve()``).
         """
-        result: dict[str, list[str]] = {}
-
-        for path in self.pipeline_config.model.weight_path:
-            path_str = str(path)
-            parts = path_str.split("/")
-            if len(parts) >= 2:
-                component = parts[0]
-                result.setdefault(component, []).append(path_str)
-            elif self.unprefixed_weight_component:
-                result.setdefault(self.unprefixed_weight_component, []).append(
-                    path_str
-                )
-
-        if not result:
-            raise ValueError(
-                "No component weights found. Expected format:"
-                " <component>/<file>"
-            )
-        return result
-
-    def _download_component_weights(self, component_name: str) -> list[Path]:
-        """Download weight files for a component from the base model repo."""
-        from max.graph.weights import WeightsFormat
-
-        from ..hf_utils import download_weight_files
-
-        model_repo = self.pipeline_config.model.huggingface_model_repo
-        all_safetensors = model_repo.weight_files.get(
-            WeightsFormat.safetensors, []
-        )
-        component_files = [
-            f for f in all_safetensors if f.startswith(f"{component_name}/")
-        ]
-        if not component_files:
-            raise ValueError(
-                f"No weight files found for component '{component_name}' "
-                f"in base model repo '{model_repo.repo_id}'."
-            )
-        if model_repo.repo_type == "online":
-            return download_weight_files(
-                huggingface_model_id=model_repo.repo_id,
-                filenames=component_files,
-                revision=self.pipeline_config.model.huggingface_model_revision,
-                force_download=self.pipeline_config.model.force_download,
-            )
-        else:
-            local_path = Path(model_repo.repo_id)
-            return [local_path / f for f in component_files]
+        return component_config.resolved_weight_paths()
 
     # -----------------------------------------------------------------
     # Denoising cache support (FBCache + TaylorSeer)
     # -----------------------------------------------------------------
 
-    _cache_taylor_max_order_tensor: Tensor | None = None
+    _taylorseer: TaylorSeer | None = None
+    _fbc: FirstBlockCache | None = None
     _cache_dtype: DType
     _cache_device: Device
 
@@ -343,22 +274,21 @@ class DiffusionPipeline(ABC):
         Call once during ``init_remaining_components()``, after the
         transformer has been loaded and compiled.
         """
-        self._cache_taylor_max_order_tensor = None
+        self._taylorseer = None
         if self.cache_config.taylorseer:
-            self._cache_taylor_max_order_tensor = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.array(
-                        [self.cache_config.taylorseer_max_order],
-                        dtype=np.int32,
-                    )
-                ).to(device)
+            assert self.cache_config.taylorseer_max_order is not None
+            self._taylorseer = TaylorSeer(
+                max_order=self.cache_config.taylorseer_max_order,
+                dtype=dtype,
+                device=device,
             )
+
+        self._fbc = None
+        if self.cache_config.first_block_caching:
+            self._fbc = FirstBlockCache(dtype=dtype, device=device)
 
         self._cache_dtype = dtype
         self._cache_device = device
-
-        if self.cache_config.taylorseer:
-            self.build_taylorseer(dtype, device)
 
     def create_cache_state(
         self,
@@ -414,22 +344,21 @@ class DiffusionPipeline(ABC):
             )
 
         if self.cache_config.first_block_caching:
-            state.prev_residual = _device_zeros(
-                (batch_size, seq_len, residual_dim)
+            assert self._fbc is not None
+            fbc_state = self._fbc.create_state(
+                batch_size, seq_len, residual_dim, output_dim
             )
-            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
+            state.prev_residual = fbc_state.prev_residual
+            state.prev_output = fbc_state.prev_output
 
         if self.cache_config.taylorseer:
-            for attr in (
-                "taylor_factor_0",
-                "taylor_factor_1",
-                "taylor_factor_2",
-            ):
-                setattr(
-                    state,
-                    attr,
-                    _device_zeros((batch_size, seq_len, output_dim)),
-                )
+            assert self._taylorseer is not None
+            ts_state = self._taylorseer.create_state(
+                batch_size, seq_len, output_dim
+            )
+            state.taylor_factor_0 = ts_state.factor_0
+            state.taylor_factor_1 = ts_state.factor_1
+            state.taylor_factor_2 = ts_state.factor_2
 
         if self.cache_config.teacache:
             state.teacache_prev_modulated_input = _device_zeros(
@@ -445,97 +374,6 @@ class DiffusionPipeline(ABC):
             )
 
         return state
-
-    def build_taylorseer(self, dtype: DType, device: Device) -> None:
-        """Build compiled graphs for TaylorSeer predict and update."""
-        tensor_type = TensorType(
-            dtype, shape=["batch", "seq", "channels"], device=device
-        )
-        scalar_type = TensorType(DType.float32, shape=[1], device=device)
-        order_type = TensorType(DType.int32, shape=[1], device=device)
-
-        self.__dict__["taylor_predict"] = max_compile(
-            self.taylor_predict,
-            input_types=[
-                tensor_type,  # factor_0
-                tensor_type,  # factor_1
-                tensor_type,  # factor_2
-                scalar_type,  # step_offset
-                order_type,  # max_order
-            ],
-        )
-        self.__dict__["taylor_update"] = max_compile(
-            self.taylor_update,
-            input_types=[
-                tensor_type,  # new_output
-                tensor_type,  # old_factor_0
-                tensor_type,  # old_factor_1
-                scalar_type,  # delta_step
-                order_type,  # max_order
-            ],
-        )
-
-    @staticmethod
-    def taylor_predict(
-        factor_0: Tensor,
-        factor_1: Tensor,
-        factor_2: Tensor,
-        step_offset: Tensor,
-        max_order: Tensor,
-    ) -> Tensor:
-        """Taylor series prediction: f(t+dt) ~ f(t) + f'(t)*dt + f''(t)*dt^2/2."""
-        offset = F.cast(step_offset, factor_0.dtype)
-        result = factor_0 + factor_1 * offset
-        offset_sq_half = (
-            offset
-            * offset
-            * F.constant(0.5, factor_0.dtype, device=factor_0.device)
-        )
-        order2_term = factor_2 * offset_sq_half
-        use_order2 = max_order >= F.constant(
-            2, DType.int32, device=max_order.device
-        )
-        use_order2_cast = F.cast(
-            F.broadcast_to(use_order2, order2_term.shape), order2_term.dtype
-        )
-        result = result + order2_term * use_order2_cast
-        return result
-
-    @staticmethod
-    def taylor_update(
-        new_output: Tensor,
-        old_factor_0: Tensor,
-        old_factor_1: Tensor,
-        delta_step: Tensor,
-        max_order: Tensor,
-    ) -> tuple[Tensor, Tensor, Tensor]:
-        """Compute Taylor factors via divided differences."""
-        delta = F.cast(delta_step, new_output.dtype)
-        eps = F.constant(1e-9, new_output.dtype, device=new_output.device)
-        safe_delta = delta + eps
-
-        new_factor_0 = new_output
-        new_factor_1 = (new_output - old_factor_0) / safe_delta
-        new_factor_2 = (new_factor_1 - old_factor_1) / safe_delta
-        use_order2 = max_order >= F.constant(
-            2, DType.int32, device=max_order.device
-        )
-        use_order2_cast = F.cast(
-            F.broadcast_to(use_order2, new_factor_2.shape),
-            new_factor_2.dtype,
-        )
-        new_factor_2 = new_factor_2 * use_order2_cast
-
-        return new_factor_0, new_factor_1, new_factor_2
-
-    @staticmethod
-    def taylorseer_skip_transformer(
-        step: int, warmup_steps: int, cache_interval: int
-    ) -> bool:
-        """Return True when the full transformer pass can be skipped at *step*."""
-        if step < warmup_steps:
-            return False
-        return (step - warmup_steps - 1) % cache_interval != 0
 
     def run_transformer(
         self,
@@ -578,90 +416,14 @@ class DiffusionPipeline(ABC):
         Returns:
             noise_pred tensor for this step.
         """
-        cache_config = self.cache_config
-
-        # 1. TaylorSeer scheduling decision
-        skip_transformer = False
-        warmup_steps = cache_config.taylorseer_warmup_steps
-        cache_interval = cache_config.taylorseer_cache_interval
-        max_order_tensor = self._cache_taylor_max_order_tensor
-        if cache_config.taylorseer:
-            assert warmup_steps is not None
-            assert cache_interval is not None
-            skip_transformer = self.taylorseer_skip_transformer(
-                step,
-                warmup_steps,
-                cache_interval,
-            )
-
-        # 2. Compute TaylorSeer step delta
-        taylor_delta_tensor: Tensor | None = None
-        if cache_config.taylorseer:
-            assert max_order_tensor is not None
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            delta = (
-                float(step - cache_state.taylor_last_compute_step)
-                if cache_state.taylor_last_compute_step is not None
-                else 1.0
-            )
-            taylor_delta_tensor = Tensor(
-                storage=Buffer.from_dlpack(
-                    np.array([delta], dtype=np.float32)
-                ).to(device)
-            )
-
-        # 3. Predict path (skip transformer)
-        if cache_config.taylorseer and skip_transformer:
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert cache_state.taylor_factor_2 is not None
-            assert taylor_delta_tensor is not None
-            assert max_order_tensor is not None
-            return self.taylor_predict(
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                cache_state.taylor_factor_2,
-                taylor_delta_tensor,
-                max_order_tensor,
-            )
-
-        # 4. Full compute path
-        result = self.run_transformer(cache_state, **kwargs)
-        if cache_config.teacache:
-            (
-                cache_state.teacache_prev_modulated_input,
-                cache_state.teacache_cached_residual,
-                cache_state.teacache_accumulated_rel_l1,
-                noise_pred,
-            ) = result
-        elif cache_config.first_block_caching:
-            new_residual, noise_pred = result
-            cache_state.prev_residual = new_residual
-            cache_state.prev_output = noise_pred
-        else:
-            noise_pred = result[0]
-
-        # 5. TaylorSeer factor update
-        if cache_config.taylorseer:
-            assert cache_state.taylor_factor_0 is not None
-            assert cache_state.taylor_factor_1 is not None
-            assert taylor_delta_tensor is not None
-            assert max_order_tensor is not None
-            (
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                cache_state.taylor_factor_2,
-            ) = self.taylor_update(
-                noise_pred,
-                cache_state.taylor_factor_0,
-                cache_state.taylor_factor_1,
-                taylor_delta_tensor,
-                max_order_tensor,
-            )
-            cache_state.taylor_last_compute_step = step
-
-        return noise_pred
+        return run_denoising_step(
+            step=step,
+            cache_state=cache_state,
+            cache_config=self.cache_config,
+            device=device,
+            compute_fn=lambda: self.run_transformer(cache_state, **kwargs),
+            taylorseer=self._taylorseer,
+        )
 
     def _resolve_absolute_paths(
         self, weight_paths: list[Path], relative_paths: list[str]

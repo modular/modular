@@ -22,23 +22,21 @@ from max.dtype import DType
 from max.graph import (
     DeviceRef,
     ShardingStrategy,
+    TensorType,
     TensorValue,
     ops,
 )
 from max.nn.attention import MHAMaskVariant, num_heads_for_device
 from max.nn.kernels import (
     flash_attention_ragged,
-    fused_qk_ragged_rope,
-    fused_qkv_ragged_matmul,
-    quantize_static_scaled_float8,
-    rms_norm_key_cache,
+    rope_split_store_ragged,
 )
 from max.nn.kv_cache import KVCacheParams, PagedCacheValues
 from max.nn.layer import Module, Shardable
 from max.nn.linear import Linear
 from max.nn.quant_config import QuantConfig
-from max.nn.quant_ops import quantized_fused_qkv_matmul
 from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.stacked_linear import StackedLinear
 from max.pipelines.architectures.gemma3.layers.rms_norm import Gemma3RMSNorm
 
 
@@ -118,28 +116,19 @@ class Gemma3Attention(Module, Shardable):
         self.q_weight_dim = self.kv_params.head_dim * num_attention_heads
         self.kv_weight_dim = self.kv_params.head_dim * num_key_value_heads
 
-        self.q_proj = linear_cls(
+        self.qkv_proj = StackedLinear(
             in_dim=hidden_size,
-            out_dim=self.q_weight_dim,
+            out_dims=[
+                self.q_weight_dim,
+                self.kv_weight_dim,
+                self.kv_weight_dim,
+            ],
+            names=["q_proj", "k_proj", "v_proj"],
             dtype=dtype,
             device=devices[0],
+            stacked=False,
             has_bias=has_bias,
-            quant_config=quant_config,
-        )
-        self.k_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=self.kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
-            quant_config=quant_config,
-        )
-        self.v_proj = linear_cls(
-            in_dim=hidden_size,
-            out_dim=self.kv_weight_dim,
-            dtype=dtype,
-            device=devices[0],
-            has_bias=has_bias,
+            linear_cls=linear_cls,
             quant_config=quant_config,
         )
 
@@ -150,84 +139,6 @@ class Gemma3Attention(Module, Shardable):
             device=devices[0],
             quant_config=quant_config,
         )
-
-    @property
-    def wqkv(self) -> TensorValue:
-        """The concatenation of q, k, and v weight vectors."""
-        wq: TensorValue = self.q_proj.weight
-        wk: TensorValue = self.k_proj.weight
-        wv: TensorValue = self.v_proj.weight
-        wqkv = ops.concat((wq, wk, wv))
-        if self.quant_config and self.quant_config.is_static:
-            # Float8 always has a weight scale.
-            assert self.qkv_weight_scale is not None
-            wqkv = quantize_static_scaled_float8(
-                wqkv, self.qkv_weight_scale.to(DeviceRef.CPU())
-            )
-        return wqkv.to(self.devices[0])
-
-    @property
-    def wqkv_bias(self) -> TensorValue | None:
-        """The concatenation of q, k, and v bias weight vectors."""
-        if not self.has_bias:
-            return None
-
-        # Access bias from Linear layers
-        assert self.q_proj.bias is not None
-        assert self.k_proj.bias is not None
-        assert self.v_proj.bias is not None
-        return ops.concat(
-            (self.q_proj.bias, self.k_proj.bias, self.v_proj.bias)
-        )
-
-    @property
-    def qkv_input_scale(self) -> TensorValue | None:
-        """The max of q, k, and v scale input vectors."""
-        if not self.quant_config or self.quant_config.is_dynamic:
-            return None
-
-        assert self.q_proj.input_scale is not None
-        assert self.k_proj.input_scale is not None
-        assert self.v_proj.input_scale is not None
-
-        return ops.max(
-            ops.concat(
-                (
-                    self.q_proj.input_scale.reshape((1,)),
-                    self.k_proj.input_scale.reshape((1,)),
-                    self.v_proj.input_scale.reshape((1,)),
-                )
-            )
-        ).reshape(())
-
-    @property
-    def qkv_weight_scale(self) -> TensorValue:
-        """The max of q, k, and v scale weight vectors."""
-        assert self.quant_config
-
-        assert self.q_proj.weight_scale is not None
-        assert self.k_proj.weight_scale is not None
-        assert self.v_proj.weight_scale is not None
-
-        q_scale: TensorValue = self.q_proj.weight_scale
-        k_scale: TensorValue = self.k_proj.weight_scale
-        v_scale: TensorValue = self.v_proj.weight_scale
-        if len(q_scale.shape) == 0:
-            q_scale = q_scale.reshape((1,))
-        if len(k_scale.shape) == 0:
-            k_scale = k_scale.reshape((1,))
-        if len(v_scale.shape) == 0:
-            v_scale = v_scale.reshape((1,))
-
-        weight_scale = ops.concat((q_scale, k_scale, v_scale))
-
-        if self.quant_config.is_dynamic:
-            # In the dynamic scaling case, return the weight scales directly.
-            return weight_scale
-
-        assert self.quant_config.is_static
-        # Otherwise, return a scalar max QKV weight scale in the static case.
-        return ops.max(weight_scale).reshape([])
 
     def __call__(
         self,
@@ -242,81 +153,125 @@ class Gemma3Attention(Module, Shardable):
             self.layer_idx, DType.uint32, device=DeviceRef.CPU()
         )
 
-        if self.quant_config:
-            xq = quantized_fused_qkv_matmul(
-                kv_params=self.kv_params,
-                x=x,
-                wqkv=self.wqkv,
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                input_row_offsets=kwargs["input_row_offsets"],
-                n_heads=self.n_heads,
-                quant_config=self.quant_config,
-                weight_scale=self.qkv_weight_scale,
-                input_scale=self.qkv_input_scale,
-                bias=self.wqkv_bias,
-            )
-        else:
-            # Call into fused qkv ragged matmul.
-            xq = fused_qkv_ragged_matmul(
-                self.kv_params,
-                input=x,
-                wqkv=self.wqkv,
-                bias=self.wqkv_bias,
-                input_row_offsets=kwargs["input_row_offsets"],
-                kv_collection=kv_collection,
-                layer_idx=layer_idx,
-                n_heads=self.n_heads,
-            )
-        # Apply rope.
-        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
+        head_dim = self.kv_params.head_dim
+        q_dim = self.q_weight_dim
+        kv_dim = self.kv_weight_dim
+        num_kv_heads = kv_dim // head_dim
 
-        # Apply QK norm to query and key states.
-        xq = self.q_norm(xq)
-        rms_norm_key_cache(
-            self.kv_params,
-            kv_collection=kv_collection,
-            gamma=self.k_norm.weight.cast(self.kv_params.dtype).to(
-                self.devices[0]
-            ),
-            epsilon=self.qk_norm_eps,
-            layer_idx=layer_idx,
-            total_seq_len=total_seq_len,
-            input_row_offsets=kwargs["input_row_offsets"],
-            weight_offset=1.0,
+        # QKV projection
+        qkv = self.qkv_proj(x)
+
+        # Split into Q, K, V
+        x_q, x_k, x_v = ops.split(qkv, [q_dim, kv_dim, kv_dim], axis=-1)
+
+        # Per-head QK norm
+        x_q = self.q_norm(x_q.reshape((-1, self.n_heads, head_dim))).reshape(
+            (-1, q_dim)
+        )
+        x_k = self.k_norm(x_k.reshape((-1, num_kv_heads, head_dim))).reshape(
+            (-1, kv_dim)
         )
 
-        # Apply rotary embedding.
+        # Re-concat and apply RoPE + KV cache store
+        qkv = ops.concat((x_q, x_k, x_v), axis=-1)
+
         use_local = bool((self.layer_idx + 1) % self.sliding_window_pattern)
         rope = self.rope_local if use_local else self.rope_global
 
-        freqs_cis = ops.cast(rope.freqs_cis, xq.dtype).to(xq.device)
-        xq = fused_qk_ragged_rope(
+        freqs_cis = ops.cast(rope.freqs_cis, qkv.dtype).to(qkv.device)
+        xq = rope_split_store_ragged(
             self.kv_params,
-            xq,
+            qkv,
             kwargs["input_row_offsets"],
-            kv_collection,
             freqs_cis,
+            kv_collection,
             layer_idx,
+            n_heads=self.n_heads,
             interleaved=rope.interleaved,
         )
+        xq = xq.reshape((-1, self.n_heads, self.kv_params.head_dim))
 
         # Calculate Flash Attention.
-        mask_variant = (
-            MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK
-            if bool((self.layer_idx + 1) % self.sliding_window_pattern)
-            else MHAMaskVariant.CAUSAL_MASK
-        )
-        attn_out = flash_attention_ragged(
-            self.kv_params,
-            input=xq,
-            kv_collection=kv_collection,
-            layer_idx=layer_idx,
-            input_row_offsets=kwargs["input_row_offsets"],
-            mask_variant=mask_variant,
-            scale=self.scale,
-            local_window_size=self.local_window_size,
-        )
+        #
+        # For multimodal models, global (non-sliding) attention layers use
+        # bidirectional masking (NULL_MASK) when image tokens are present
+        # during prefill.  This matches the HuggingFace reference where
+        # image tokens attend to each other without causal constraints.
+        # For a single decode token NULL_MASK and CAUSAL_MASK are
+        # equivalent, so this is safe to apply unconditionally at runtime
+        # via ops.cond.
+        image_token_indices = kwargs.get("image_token_indices")
+
+        if use_local:
+            # Local (sliding-window) layers always use the sliding mask.
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=kwargs["input_row_offsets"],
+                mask_variant=MHAMaskVariant.SLIDING_WINDOW_CAUSAL_MASK,
+                scale=self.scale,
+                local_window_size=self.local_window_size,
+            )
+        elif image_token_indices is not None:
+            # Global layer in a multimodal model: switch mask at runtime.
+            # shape_to_tensor gives us the runtime dimension as a tensor so
+            # we can branch on it with ops.cond.
+            num_image_tokens = ops.shape_to_tensor(image_token_indices.shape)
+            has_images = num_image_tokens[0] > ops.constant(
+                0, DType.int64, device=DeviceRef.CPU()
+            )
+
+            out_type = TensorType(
+                dtype=xq.dtype,
+                shape=xq.shape,
+                device=xq.device,
+            )
+
+            def _bidirectional_attn() -> TensorValue:
+                return flash_attention_ragged(
+                    self.kv_params,
+                    input=xq,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    input_row_offsets=kwargs["input_row_offsets"],
+                    mask_variant=MHAMaskVariant.NULL_MASK,
+                    scale=self.scale,
+                    local_window_size=self.local_window_size,
+                )
+
+            def _causal_attn() -> TensorValue:
+                return flash_attention_ragged(
+                    self.kv_params,
+                    input=xq,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    input_row_offsets=kwargs["input_row_offsets"],
+                    mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                    scale=self.scale,
+                    local_window_size=self.local_window_size,
+                )
+
+            attn_out = ops.cond(
+                has_images,
+                [out_type],
+                _bidirectional_attn,
+                _causal_attn,
+            )[0].tensor
+        else:
+            # Text-only model: standard causal mask.
+            attn_out = flash_attention_ragged(
+                self.kv_params,
+                input=xq,
+                kv_collection=kv_collection,
+                layer_idx=layer_idx,
+                input_row_offsets=kwargs["input_row_offsets"],
+                mask_variant=MHAMaskVariant.CAUSAL_MASK,
+                scale=self.scale,
+                local_window_size=self.local_window_size,
+            )
+
         attn_out = ops.reshape(attn_out, shape=[total_seq_len, -1])
         ret = self.o_proj(attn_out)
         return ret
@@ -332,9 +287,7 @@ class Gemma3Attention(Module, Shardable):
         if sharding_strategy.is_replicate:
             self.q_norm.sharding_strategy = sharding_strategy
             self.k_norm.sharding_strategy = sharding_strategy
-            self.q_proj.sharding_strategy = sharding_strategy
-            self.k_proj.sharding_strategy = sharding_strategy
-            self.v_proj.sharding_strategy = sharding_strategy
+            self.qkv_proj.sharding_strategy = sharding_strategy
             self.o_proj.sharding_strategy = sharding_strategy
 
         elif sharding_strategy.is_tensor_parallel:
@@ -345,13 +298,7 @@ class Gemma3Attention(Module, Shardable):
                 num_devices
             )
 
-            self.q_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.k_proj.sharding_strategy = ShardingStrategy.rowwise(
-                num_devices
-            )
-            self.v_proj.sharding_strategy = ShardingStrategy.rowwise(
+            self.qkv_proj.sharding_strategy = ShardingStrategy.rowwise(
                 num_devices
             )
             self.o_proj.sharding_strategy = (
@@ -384,9 +331,7 @@ class Gemma3Attention(Module, Shardable):
             )
 
         # Get sharded weights
-        q_proj_shards = self.q_proj.shard(devices)
-        k_proj_shards = self.k_proj.shard(devices)
-        v_proj_shards = self.v_proj.shard(devices)
+        qkv_proj_shards = self.qkv_proj.shard(devices)
         o_proj_shards = self.o_proj.shard(devices)
 
         # Shard QK normalization weights
@@ -417,7 +362,7 @@ class Gemma3Attention(Module, Shardable):
                 kv_params=self.kv_params,
                 layer_idx=self.layer_idx,
                 sliding_window_pattern=self.sliding_window_pattern,
-                dtype=self.q_proj.weight.dtype,
+                dtype=self.o_proj.weight.dtype,
                 devices=[device],
                 linear_cls=self.o_proj.__class__,
                 scale=self.scale,
@@ -428,9 +373,7 @@ class Gemma3Attention(Module, Shardable):
             )
 
             # Assign sharded weights
-            sharded.q_proj = q_proj_shards[shard_idx]
-            sharded.k_proj = k_proj_shards[shard_idx]
-            sharded.v_proj = v_proj_shards[shard_idx]
+            sharded.qkv_proj = qkv_proj_shards[shard_idx]
             sharded.o_proj = o_proj_shards[shard_idx]
 
             # Assign QK normalization weights

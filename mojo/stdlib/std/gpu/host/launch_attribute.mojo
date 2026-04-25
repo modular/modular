@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 """
-GPU Launch Attributes for Kernel Execution Control
+GPU Launch Attributes for Kernel Execution Control.
 
 This module provides structures for configuring GPU kernel execution through launch attributes.
 It implements a Mojo interface to CUDA's launch attribute system, allowing fine-grained control
@@ -373,7 +373,9 @@ struct LaunchAttribute(Defaultable, TrivialRegisterPassable):
         return res
 
 
-struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
+struct AccessPolicyWindow(
+    Defaultable, ImplicitlyCopyable, RegisterPassable, Writable
+):
     """Specifies an access policy for a window of memory.
 
     This struct defines a contiguous extent of memory beginning at base_ptr and
@@ -390,7 +392,7 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
         The CUDA driver may align the `base_ptr` and restrict the maximum size.
     """
 
-    var base_ptr: OpaquePointer[MutAnyOrigin]
+    var base_ptr: Optional[OpaquePointer[MutAnyOrigin]]
     """Starting address of the access policy window. Driver may align it."""
 
     var num_bytes: Int
@@ -410,7 +412,7 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
 
     def __init__(out self):
         """Initializes a new AccessPolicyWindow with default values."""
-        self.base_ptr = {}
+        self.base_ptr = None
         self.num_bytes = 0
         self.hit_ratio = 0
         self.hit_prop = AccessProperty.NORMAL
@@ -441,8 +443,8 @@ struct AccessPolicyWindow(Defaultable, TrivialRegisterPassable, Writable):
         """
         self.base_ptr = (
             base_ptr.bitcast[NoneType]()
+            .unsafe_mut_cast[True]()
             .address_space_cast[AddressSpace.GENERIC]()
-            .address
         )
         self.num_bytes = count * size_of[T]()
         self.hit_ratio = hit_ratio

@@ -15,12 +15,13 @@ from std.sys import has_amd_gpu_accelerator, simd_width_of, size_of
 from std.pathlib import Path
 from std.algorithm import elementwise
 from std.utils import IndexList
-from std.ffi import _get_global_or_null, external_call
+from std.ffi import _CPointer, _get_global_or_null, external_call
 from std.ffi import _find_dylib
 from std.ffi import _get_dylib_function as _ffi_get_dylib_function
 from std.ffi import OwnedDLHandle, _Global
 from std.collections.optional import Optional
 from layout import TensorLayout, TileTensor
+from std.memory.unsafe_pointer import unsafe_cast
 from std.gpu.host import DeviceContext, DeviceBuffer, get_gpu_target
 from std.gpu.host._amdgpu_hip import HIP
 from std.gpu.host._nvidia_cuda import CUDA
@@ -31,7 +32,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 # Safety: don't use `ExternalOrigin` here as that will turn of extending the
 # lifetime of any Mojo structs that pass an internal pointer to the functions
 # below.
-comptime ncclComm_t = OpaquePointer[AnyOrigin[mut=True]]
+comptime ncclComm_t = _CPointer[NoneType, AnyOrigin[mut=True]]
 
 
 @fieldwise_init
@@ -110,12 +111,12 @@ struct _Group:
 
     def __enter__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupStart", def() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupStart", def() thin -> ncclResult_t]()()
         )
 
     def __exit__(self) raises:
         _check_ccl_ok(
-            _get_ccl_function["ncclGroupEnd", def() -> ncclResult_t]()()
+            _get_ccl_function["ncclGroupEnd", def() thin -> ncclResult_t]()()
         )
 
 
@@ -130,7 +131,7 @@ def ncclCommInitAll(
 ) raises -> ncclResult_t:
     return _get_ccl_function[
         "ncclCommInitAll",
-        def(type_of(comms), Int, type_of(devlist)) -> ncclResult_t,
+        def(type_of(comms), Int, type_of(devlist)) thin -> ncclResult_t,
     ]()(comms, ndev, devlist)
 
 
@@ -155,7 +156,7 @@ def _ccl_allreduce(
             ncclRedOp_t,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(sendbuff, recvbuff, count, datatype, op, comm, stream_ptr)
 
 
@@ -179,7 +180,7 @@ def _ccl_allgather(
             ncclDataType_t,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(sendbuff, recvbuff, count, datatype, comm, stream_ptr)
 
 
@@ -205,7 +206,7 @@ def _ccl_broadcast(
             Int,
             ncclComm_t,
             type_of(stream_ptr),
-        ) -> ncclResult_t,
+        ) thin -> ncclResult_t,
     ]()(
         sendbuff,
         recvbuff,
@@ -220,11 +221,11 @@ def _ccl_broadcast(
 @always_inline
 def _ccl_stream_ptr(
     ctx: DeviceContext,
-) raises -> OpaquePointer[ExternalOrigin[mut=True]]:
+) raises -> _CPointer[NoneType, ExternalOrigin[mut=True]]:
     comptime if has_amd_gpu_accelerator():
-        return HIP(ctx.stream()).bitcast[NoneType]()
+        return unsafe_cast[Type=NoneType](HIP(ctx.stream()))
     else:
-        return CUDA(ctx.stream()).bitcast[NoneType]()
+        return unsafe_cast[Type=NoneType](CUDA(ctx.stream()))
 
 
 @fieldwise_init
@@ -367,7 +368,7 @@ def allreduce[
             simd_width: Int, _rank: Int, alignment: Int = 1
         ](idx: IndexList[_rank]):
             var flat_idx = idx[0]
-            var val = output_tensor.ptr.load[
+            var val = output_tensor.raw_load[
                 width=simd_width,
                 alignment=alignment * size_of[dtype](),
             ](flat_idx)
@@ -376,9 +377,12 @@ def allreduce[
                 val,
             )
 
-        elementwise[epilogue_wrapper, simd_size, target="gpu"](
-            IndexList[1](output_tensor.num_elements()), ctx
-        )
+        elementwise[
+            epilogue_wrapper,
+            simd_size,
+            target="gpu",
+            _trace_description="ccl_epilogue",
+        ](IndexList[1](output_tensor.num_elements()), ctx)
 
 
 @parameter
@@ -386,7 +390,7 @@ def _is_ccl_symbol_available[name: StaticString]() -> Bool:
     # Resolve a CCL symbol by name from the appropriate vendor DSO.
     # We intentionally cast to a trivial signature and do not call it.
     try:
-        _ = _get_ccl_function[name, def() -> ncclResult_t]()
+        _ = _get_ccl_function[name, def() thin -> ncclResult_t]()
         return True
     except:
         return False

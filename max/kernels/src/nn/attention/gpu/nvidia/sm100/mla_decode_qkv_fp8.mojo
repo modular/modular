@@ -32,12 +32,7 @@ SMEM Layout (native FP8):
 
 from std.math import ceildiv
 from std.sys import size_of
-from std.gpu import (
-    MAX_THREADS_PER_BLOCK_METADATA,
-    barrier,
-    block_idx_int as block_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import MAX_THREADS_PER_BLOCK_METADATA, barrier, block_idx, warp_id
 from std.gpu.globals import WARPGROUP_SIZE
 from std.gpu.primitives.grid_controls import launch_dependent_grids
 from std.gpu.intrinsics import warpgroup_reg_alloc, warpgroup_reg_dealloc
@@ -51,7 +46,7 @@ from std.gpu.compute.arch.tcgen05 import (
 from layout.tma_async import (
     SharedMemBarrier,
 )
-from layout import ComptimeInt, Layout, RowMajorLayout, TileTensor
+from layout import ComptimeInt, CoordLike, Layout, RowMajorLayout, TileTensor
 from layout.tile_layout import row_major as tt_row_major
 from nn.attention.gpu.nvidia.sm90.attention import (
     OptionalPointer,
@@ -180,6 +175,10 @@ struct MLA_SM100_Decode_QKV_FP8[
             Int32(Self.config.num_threads)
         )
     )
+    @__name(
+        t"sm100_mla_decode_qkv_fp8_{Self.q_type}_{Self.kv_type}_{Self.output_type}_nqh{Self.config.num_q_heads}_nkvh{Self.config.num_kv_heads}",
+        mangle=True,
+    )
     def kernel(
         # Q TMA is FP8 with SWIZZLE_64B (same as KV)
         q_tma: QOTMATile[
@@ -209,13 +208,15 @@ struct MLA_SM100_Decode_QKV_FP8[
         ],
         scales_ptr: UnsafePointer[Scalar[DType.float32], origin=MutAnyOrigin],
         scalar_args: TileTensor[
-            DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
+            DType.int64,
+            RowMajorLayout[ComptimeInt[3]],
+            MutAnyOrigin,
         ],
     ):
         # Extract scalar launch args from the stable device buffer.
-        var batch_size = Int(scalar_args.ptr[0])
-        var q_max_seq_len = Int(scalar_args.ptr[1])
-        var num_partitions = Int(scalar_args.ptr[2])
+        var batch_size = Int(scalar_args.raw_load(0))
+        var q_max_seq_len = Int(scalar_args.raw_load(1))
+        var num_partitions = Int(scalar_args.raw_load(2))
 
         # Register allocation: same as BF16 kernel (3 WGs)
         comptime num_reg_softmax = 192
@@ -516,7 +517,7 @@ struct MLA_SM100_Decode_QKV_FP8[
         )
         var elect_mask = elect()
         var is_leader = elect_mask != 0
-        var row: UInt = UInt(offset_position.q_row_offset)
+        var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
@@ -544,7 +545,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                 MutAnyOrigin,
                 address_space=AddressSpace.SHARED,
             ](q_smem.bitcast[Scalar[Self.kv_type]](), q_tt_layout)
-            q_tma.async_copy(q_smem_tensor, mbar_q[], (Int(UInt(0)), Int(row)))
+            q_tma.async_copy(q_smem_tensor, mbar_q[], (0, row))
 
         # Load first KV tile (FP8)
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
@@ -558,7 +559,7 @@ struct MLA_SM100_Decode_QKV_FP8[
             )
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             Self.Common_MLA_Op.load_kv(
-                k_tma, stage_ptr, k0_bar, UInt(0), UInt(kv_gmem_row)
+                k_tma, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
             )
         kv_prod.commit_step()
         kv_row += UInt32(Self.config.BN)
@@ -586,7 +587,7 @@ struct MLA_SM100_Decode_QKV_FP8[
                     )
                 )
                 Self.Common_MLA_Op.load_kv(
-                    k_tma, stage_ptr, k_mbar, UInt(0), UInt(kv_gmem_row)
+                    k_tma, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
                 )
 
             kv_row += UInt32(Self.config.BN)

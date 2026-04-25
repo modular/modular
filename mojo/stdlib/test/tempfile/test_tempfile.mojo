@@ -34,7 +34,8 @@ def test_mkdtemp() raises:
 
     dir_name = mkdtemp(prefix="my_prefix", suffix="my_suffix")
     assert_true(exists(dir_name), "Failed to create temporary directory")
-    var name = dir_name.split(std.os.sep)[-1]
+    var parts = dir_name.split(std.os.sep)
+    var name = parts[len(parts) - 1]
     assert_true(name.startswith("my_prefix"))
     assert_true(name.endswith("my_suffix"))
 
@@ -43,8 +44,9 @@ def test_mkdtemp() raises:
 
     dir_name = mkdtemp(dir=Path().__fspath__())
     assert_true(exists(dir_name), "Failed to create temporary directory")
+    var dir_parts = dir_name.split(std.os.sep)
     assert_true(
-        exists(Path() / dir_name.split(std.os.sep)[-1]),
+        exists(Path() / dir_parts[len(dir_parts) - 1]),
         "Expected directory to be created in cwd",
     )
     std.os.rmdir(dir_name)
@@ -54,13 +56,13 @@ def test_mkdtemp() raises:
 struct TempEnvWithCleanup:
     var vars_to_set: Dict[String, String]
     var _vars_back: Dict[String, String]
-    var clean_up_function: def() raises -> None
+    var clean_up_function: def() thin raises -> None
     """Function called after the context manager exits if an error occurs."""
 
     def __init__(
         out self,
         vars_to_set: Dict[String, String],
-        clean_up_function: def() raises -> None,
+        clean_up_function: def() thin raises -> None,
     ):
         self.vars_to_set = vars_to_set.copy()
         self._vars_back = Dict[String, String]()
@@ -172,7 +174,8 @@ def test_temporary_directory() raises -> None:
     with TemporaryDirectory(suffix="my_suffix", prefix="my_prefix") as tmp_dir:
         assert_true(exists(tmp_dir), "Failed to create temp dir " + tmp_dir)
         assert_true(tmp_dir.endswith("my_suffix"))
-        assert_true(tmp_dir.split(std.os.sep)[-1].startswith("my_prefix"))
+        var tmp_parts = tmp_dir.split(std.os.sep)
+        assert_true(tmp_parts[len(tmp_parts) - 1].startswith("my_prefix"))
         tmp_dir2 = tmp_dir
     assert_false(exists(tmp_dir2), "Failed to delete temp dir " + tmp_dir2)
 
@@ -193,7 +196,8 @@ def test_named_temporary_file_deletion() raises:
         prefix="my_prefix", suffix="my_suffix", dir=Path().__fspath__()
     ) as my_tmp_file:
         file_path = my_tmp_file.name
-        var file_name = file_path.split(std.os.sep)[-1]
+        var file_parts = file_path.split(std.os.sep)
+        var file_name = file_parts[len(file_parts) - 1]
         assert_true(exists(file_path), "Failed to create file " + file_path)
         assert_true(file_name.startswith("my_prefix"))
         assert_true(file_name.endswith("my_suffix"))

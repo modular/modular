@@ -231,7 +231,7 @@ def test_conv_transposed[
             @always_inline
             def body0[
                 width: Int
-            ](offset: Int) unified {var output_ref_ptr, var bias_ptr}:
+            ](offset: Int) {var output_ref_ptr, var bias_ptr}:
                 output_ref_ptr.store(
                     offset,
                     10.0
@@ -252,15 +252,15 @@ def test_conv_transposed[
     @parameter
     def epilogue[_rank: Int](coords: IndexList[_rank], f_size: Int):
         @always_inline
-        def body1[width: Int](idx: Int) unified {var}:
+        def body1[width: Int](idx: Int) {var}:
             var curr_coords = rebind[IndexList[rank + 2]](coords)
             curr_coords[rank + 1] += idx
 
             var output_idx = output.layout(Coord(curr_coords))
 
-            var vec = output.ptr.load[width=width](output_idx)
+            var vec = output.raw_load[width=width](output_idx)
 
-            output.ptr.store(
+            output.raw_store(
                 output_idx,
                 10.0
                 * (vec + bias_ptr.load[width=width](curr_coords[rank + 1])),
@@ -293,8 +293,8 @@ def test_conv_transposed[
     for i in range(output_size):
         if not all(
             isclose(
-                output_ref.ptr.load[width=1](i),
-                output.ptr.load[width=1](i),
+                output_ref.raw_load[width=1](i),
+                output.raw_load[width=1](i),
                 atol=1e-4,  # absolute error tolerance
                 rtol=1e-4,  # relative error tolerance
             )
@@ -303,8 +303,8 @@ def test_conv_transposed[
             print("filter shape: ", filter_shape)
             print("num groups", num_groups)
             print("flat output index:", i)
-            print("Golden value: ", output_ref.ptr.load[width=1](i))
-            print("Actual value: ", output.ptr.load[width=1](i))
+            print("Golden value: ", output_ref.raw_load[width=1](i))
+            print("Actual value: ", output.raw_load[width=1](i))
             output_ptr.free()
             output_ref_ptr.free()
             return

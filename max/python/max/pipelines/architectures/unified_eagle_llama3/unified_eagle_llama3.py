@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from max.dtype import DType
@@ -28,21 +28,19 @@ from max.graph import (
     Value,
     ops,
 )
-from max.nn import PagedCacheValues, ReturnHiddenStates, ReturnLogits
+from max.nn import ReturnHiddenStates, ReturnLogits
 
 # TODO: rename the kernel at the source
-from max.nn.kernels import (
-    compute_mha_decode_num_partitions,
-    eagle_prefill_shift_tokens,
-)
-from max.nn.kv_cache import AttentionDispatchMetadata
+from max.nn.kernels import eagle_prefill_shift_tokens
+from max.nn.kv_cache import PagedCacheValues
 from max.nn.layer import Module
 from max.nn.sampling.rejection_sampler import (
+    AcceptanceSampler,
     _reshape_target_logits,
-    greedy_acceptance_sampler,
 )
 from max.pipelines.lib.speculative_decoding.ragged_token_merger import (
     RaggedTokenMerger,
+    shape_to_scalar,
 )
 
 from ..eagle_llama3.eagle_llama3 import EagleLlama3
@@ -58,6 +56,12 @@ class UnifiedEagleLlama3Values:
     return_n_logits: TensorValue
     kv_collection: PagedCacheValues
     draft_kv_blocks: BufferValue
+    seed: TensorValue
+    temperature: TensorValue
+    top_k: TensorValue
+    max_k: TensorValue
+    top_p: TensorValue
+    min_top_p: TensorValue
 
 
 class UnifiedEagleLlama3(Module):
@@ -67,6 +71,12 @@ class UnifiedEagleLlama3(Module):
         super().__init__()
 
         self.config = config
+        self.num_draft_steps = config.speculative_config.num_speculative_tokens
+        self.acceptance_sampler = AcceptanceSampler(
+            synthetic_acceptance_rate=config.speculative_config.synthetic_acceptance_rate,
+            num_draft_steps=self.num_draft_steps,
+            use_stochastic=True,
+        )
         self.num_devices = 1
 
         # TODO: support distributed llama3 model
@@ -84,7 +94,6 @@ class UnifiedEagleLlama3(Module):
         (
             tokens,
             input_row_offsets,
-            draft_tokens,
             return_n_logits,
             # target model kvcache inputs
             target_kv_blocks,
@@ -92,8 +101,19 @@ class UnifiedEagleLlama3(Module):
             lookup_table,
             max_lengths,
             dispatch_metadata,
-            # draft model kvcache inputs
+            draft_dispatch_metadata,
+            # draft model inputs
+            draft_tokens,
+            # draft kvcache
             draft_kv_blocks,
+            # stochastic acceptance seed (scalar int64 on CPU)
+            seed,
+            # sampling params for stochastic acceptance
+            temperature,
+            top_k,
+            max_k,
+            top_p,
+            min_top_p,
         ) = inputs
 
         target_kv_collection = PagedCacheValues(
@@ -101,9 +121,8 @@ class UnifiedEagleLlama3(Module):
             cache_lengths=cache_lengths.tensor,
             lookup_table=lookup_table.tensor,
             max_lengths=max_lengths.tensor,
-            dispatch_metadata=AttentionDispatchMetadata(
-                dispatch_metadata.tensor
-            ),
+            attention_dispatch_metadata=dispatch_metadata.tensor,
+            draft_attention_dispatch_metadata=draft_dispatch_metadata.tensor,
         )
 
         return UnifiedEagleLlama3Values(
@@ -113,9 +132,21 @@ class UnifiedEagleLlama3(Module):
             return_n_logits=return_n_logits.tensor,
             kv_collection=target_kv_collection,
             draft_kv_blocks=draft_kv_blocks.buffer,
+            seed=seed.tensor,
+            temperature=temperature.tensor,
+            top_k=top_k.tensor,
+            max_k=max_k.tensor,
+            top_p=top_p.tensor,
+            min_top_p=min_top_p.tensor,
         )
 
     def input_types(self) -> tuple[TensorType | BufferType, ...]:
+        """Input types for the unified graph.
+
+        Order: tokens, input_row_offsets, return_n_logits, target_kv_cache,
+               draft_tokens, draft_kv_blocks, seed, temperature, top_k,
+               max_k, top_p, min_top_p.
+        """
         device_ref = self.config.target.devices[0]
 
         tokens_type = TensorType(
@@ -132,20 +163,40 @@ class UnifiedEagleLlama3(Module):
         )
 
         target_kv_inputs = self.config.target.kv_params.get_symbolic_inputs()
-        assert len(target_kv_inputs) == 1
-        target_kv_flat = list(target_kv_inputs[0])
+        assert len(target_kv_inputs.inputs) == 1
+        target_kv_flat = list(target_kv_inputs.inputs[0].flatten())
 
         draft_kv_inputs = self.config.draft.kv_params.get_symbolic_inputs()
-        assert len(draft_kv_inputs) == 1
-        draft_kv_blocks = draft_kv_inputs[0].kv_blocks
+        assert len(draft_kv_inputs.inputs) == 1
+        draft_kv_blocks = draft_kv_inputs.inputs[0].kv_blocks
+
+        temperature_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        top_k_type = TensorType(
+            DType.int64, shape=["batch_size"], device=device_ref
+        )
+        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
+        top_p_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        min_top_p_type = TensorType(
+            DType.float32, shape=[], device=DeviceRef.CPU()
+        )
 
         return (
             tokens_type,
             input_row_offsets_type,
-            draft_tokens_type,
             return_n_logits_type,
             *target_kv_flat,
+            draft_tokens_type,
             draft_kv_blocks,
+            ops.random.SeedType,
+            temperature_type,
+            top_k_type,
+            max_k_type,
+            top_p_type,
+            min_top_p_type,
         )
 
     def __call__(
@@ -190,7 +241,9 @@ class UnifiedEagleLlama3(Module):
             merged_offsets,
         )
         # logits       : [B*(K+1), V] (K+1 logits per request)
-        # hidden_states: [S+B*K, H] (all-token hs)
+        # hidden_states: [S+B*K, H]. ``extract_hs`` flattens per-device
+        # hs into positional tuple elements; single-device here so the
+        # hs is at index 3.
         logits = target_outputs[1]
         hidden_states = target_outputs[3]
 
@@ -199,8 +252,15 @@ class UnifiedEagleLlama3(Module):
         # num_accepted_draft_tokens: [B]     (index of first rejected step, 0..K)
         # recovered                : [B, K]  (target argmax at each draft position)
         # bonus                    : [B, 1]  (target argmax at the +1 position)
-        num_accepted_draft_tokens, recovered, bonus = greedy_acceptance_sampler(
-            inputs.draft_tokens, logits
+        num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
+            draft_tokens,
+            logits,
+            seed=inputs.seed,
+            temperature=inputs.temperature,
+            top_k=inputs.top_k,
+            max_k=inputs.max_k,
+            top_p=inputs.top_p,
+            min_top_p=inputs.min_top_p,
         )
 
         # target_tokens: [B, K+1]
@@ -211,10 +271,7 @@ class UnifiedEagleLlama3(Module):
             batch_dims=1,
         )
 
-        num_draft_sentinel_cpu = ops.shape_to_tensor(
-            [inputs.draft_tokens.shape[1]]
-        ).cast(DType.int64)
-        num_draft_sentinel_gpu = num_draft_sentinel_cpu.to(device)
+        num_draft_sentinel_gpu = shape_to_scalar(draft_tokens.shape[1], device)
 
         # Build corrected merged tokens: replace draft tokens with target
         # argmax (recovered). For accepted positions draft == target argmax,
@@ -239,7 +296,8 @@ class UnifiedEagleLlama3(Module):
             cache_lengths=kv_collection.cache_lengths,
             lookup_table=kv_collection.lookup_table,
             max_lengths=kv_collection.max_lengths,
-            dispatch_metadata=kv_collection.dispatch_metadata,
+            attention_dispatch_metadata=kv_collection.attention_dispatch_metadata,
+            draft_attention_dispatch_metadata=kv_collection.draft_attention_dispatch_metadata,
         )
 
         # --- Draft step 0 ---
@@ -258,7 +316,7 @@ class UnifiedEagleLlama3(Module):
         self.draft.return_logits = ReturnLogits.LAST_TOKEN
 
         # logits       : [B*(K+1), V] (K+1 logits per request)
-        # hidden_states: [S+B*K, H] (all-token hs)
+        # hidden_states: [S+B*K, H] (single-device, single TensorValue).
         logits = draft_outputs[1]
         hs = draft_outputs[3]
 
@@ -307,62 +365,42 @@ class UnifiedEagleLlama3(Module):
         # Assume that all tokens are accepted in this calculation.
         # Confusingly max_cache_length != max(cache_lengths). Instead max_cache_length
         # is more like max_total_seq_len including cached and input tokens.
-        max_cache_length = (
+        orig_max_cache_length = (
             draft_kv_collection.max_lengths[0, 1]
             .cast(DType.uint32)
             .broadcast_to([1])
         )
-        max_cache_length = max_cache_length + 1
-
-        # Extract values from the original dispatch_metadata for reuse.
-        orig_metadata = draft_kv_collection.dispatch_metadata
-        assert orig_metadata is not None
-        orig_batch_size = orig_metadata.tensor[0]
-
-        n_kv_heads = self.config.draft.kv_params.n_kv_heads
+        max_cache_length = orig_max_cache_length + 1
 
         # draft_return_n_logits: [1] (CPU)
         draft_return_n_logits = ops.constant(
             1, DType.int64, DeviceRef.CPU()
         ).broadcast_to([1])
 
+        max_lengths = ops.concat(
+            [one, draft_kv_collection.max_lengths[0, 1].broadcast_to([1])],
+            axis=-1,
+        ).reshape([1, 2])
+
+        draft_kv_collection = replace(
+            draft_kv_collection,
+            max_lengths=max_lengths,
+            attention_dispatch_metadata=draft_kv_collection.draft_attention_dispatch_metadata,
+        )
+
         # --- Draft steps 1..N-1 ---
         all_draft_tokens = [next_draft_tokens]
-        for _ in range(1, self.config.num_draft_steps):
+        for _ in range(1, self.num_draft_steps):
             next_draft_tokens = next_draft_tokens.rebind(["batch_size"])
             draft_hs = draft_hs.rebind(["batch_size", hidden_dim])
 
-            max_lengths = ops.concat([one, max_cache_length], axis=-1)
-
-            max_cache_length_i64 = max_cache_length.cast(DType.int64)
-            num_partitions = compute_mha_decode_num_partitions(
-                orig_batch_size,
-                max_cache_length_i64,
-                n_kv_heads,
-                device,
-            )
-            metadata_tensor = ops.concat(
-                [
-                    orig_batch_size.reshape([1]),
-                    ops.constant(1, DType.int64, DeviceRef.CPU()).reshape([1]),
-                    num_partitions,
-                    max_cache_length_i64,
-                ],
-                axis=0,
-            )
-            dispatch_metadata = AttentionDispatchMetadata(metadata_tensor)
-
-            kv_collection = PagedCacheValues(
-                kv_blocks=draft_kv_blocks,
-                cache_lengths=cache_lengths,
-                lookup_table=draft_kv_collection.lookup_table,
-                max_lengths=max_lengths.broadcast_to([1, 2]),
-                dispatch_metadata=dispatch_metadata,
+            draft_kv_collection = replace(
+                draft_kv_collection, cache_lengths=cache_lengths
             )
 
             draft_outputs = self.draft(
                 next_draft_tokens,
-                kv_collection,
+                draft_kv_collection,
                 draft_return_n_logits,
                 input_row_offsets,
                 draft_hs,

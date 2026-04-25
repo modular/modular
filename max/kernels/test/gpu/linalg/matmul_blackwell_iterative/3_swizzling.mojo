@@ -16,12 +16,7 @@ from std.sys import argv, size_of
 
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu import WARP_SIZE, barrier
-from std.gpu import (
-    block_idx_uint as block_idx,
-    lane_id_int as lane_id,
-    thread_idx_uint as thread_idx,
-    warp_id_uint as warp_id,
-)
+from std.gpu import block_idx, lane_id, thread_idx, warp_id
 from std.gpu.primitives.cluster import block_rank_in_cluster
 from std.gpu.host import DeviceContext, FuncAttribute
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
@@ -76,7 +71,7 @@ def kernel_3[
     cluster_shape: StaticTuple[Int32, 3] = StaticTuple[Int32, 3](1, 1, 1),
     a_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
     b_swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
-    num_threads: UInt = 128,
+    num_threads: Int = 128,
 ](
     a_tma_op: TMATensorTile[a_type, a_tma_rank, a_tile_shape, a_desc_shape],
     b_tma_op: TMATensorTile[b_type, b_tma_rank, b_tile_shape, b_desc_shape],
@@ -174,9 +169,7 @@ def kernel_3[
 
     comptime accum_type = get_accum_type[a_type]()
 
-    comptime c_frag_size = MMA_M * MMA_N // Int(
-        num_threads
-    )  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
+    comptime c_frag_size = MMA_M * MMA_N // num_threads  # MMA_M * MMA_N is the size of the accumulator, num_threads is the number of threads in the warp, c_frag_size is the num of elements in the accumulator per thread
     var c_frag: InlineArray[
         Scalar[accum_type], c_frag_size
     ]  # array of accumulator elements
@@ -263,7 +256,7 @@ def kernel_3[
                 a_tma_op.async_copy(
                     sub_a_smem_tile,
                     tma_mbar[0],
-                    (i * BK + k, Int(block_idx.y) * BM),
+                    (i * BK + k, block_idx.y * BM),
                 )
                 sub_b_smem_tile = sub_b_smem_tile_t(b_smem + b_offset)
                 b_tma_op.async_copy(
@@ -271,9 +264,9 @@ def kernel_3[
                     tma_mbar[0],
                     (
                         i * BK + k,
-                        Int(block_idx.x) * BN,
+                        block_idx.x * BN,
                     ) if transpose_b else (
-                        Int(block_idx.x) * BN,
+                        block_idx.x * BN,
                         i * BK + k,
                     ),
                 )
@@ -323,16 +316,16 @@ def kernel_3[
         tcgen05_release_allocation_lock[1]()
         tcgen05_dealloc[1](tmem_addr, max_tmem_cols)
 
-    comptime num_warps = num_threads // UInt(WARP_SIZE)
+    comptime num_warps = num_threads // WARP_SIZE
 
-    ctile = c.tile[BM, BN](Int(block_idx.y), Int(block_idx.x))
+    ctile = c.tile[BM, BN](block_idx.y, block_idx.x)
 
     comptime for m_mma in range(num_m_mmas):
         comptime for n_mma in range(num_n_mmas):
             comptime mma_id = n_mma * num_m_mmas + m_mma
 
-            c_gmem_warp_tile = ctile.tile[MMA_M // Int(num_warps), MMA_N](
-                4 * m_mma + Int(warp_id()), n_mma
+            c_gmem_warp_tile = ctile.tile[MMA_M // num_warps, MMA_N](
+                4 * m_mma + warp_id(), n_mma
             )
 
             c_gmem_frag = c_gmem_warp_tile.vectorize[1, 2]().distribute[

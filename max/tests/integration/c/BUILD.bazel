@@ -114,6 +114,18 @@ mef(
     ],
 )
 
+mef(
+    name = "external_weights",
+    src = "gen_external_weights_mef.py",
+    deps = [
+        requirement("numpy"),
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+    ],
+)
+
 modular_cc_test(
     name = "CTest",
     srcs = ["CTest.c"],
@@ -130,6 +142,7 @@ modular_cc_test(
     tags = ["manual"],
     deps = [
         ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 
@@ -171,7 +184,12 @@ modular_cc_test(
     env = {
         "TEST_MEF_PATH": "$(rootpath :vector_add_gpu.mef)",
     },
-    gpu_constraints = ["//:has_gpu"],
+    # TODO(GEX-3548): ExecuteModelWithGPUTensors produces zeros instead of the
+    # expected vector-add result on Apple GPU (Metal) workers.
+    gpu_constraints = ["//:has_gpu"] + select({
+        "//:apple_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tags = ["gpu"],
     deps = [
         ":Utils",
@@ -226,6 +244,19 @@ modular_cc_test(
         ":Utils",
         "//max:CAPI.headers",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+modular_cc_test(
+    name = "WeightsRegistryTest",
+    srcs = ["WeightsRegistryTest.cpp"],
+    data = [":external_weights.mef"],
+    env = {
+        "EXTERNAL_WEIGHTS_MEF_PATH": "$(rootpath :external_weights.mef)",
+    },
+    deps = [
+        ":Utils",
+        "//max:CAPI.headers",
     ],
 )
 

@@ -11,15 +11,16 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.collections import OptionalReg
 from std.os import abort
 
 
 @fieldwise_init
 struct Handle(Defaultable, Equatable, TrivialRegisterPassable):
-    var _value: OpaquePointer[MutAnyOrigin]
+    var _value: OptionalReg[OpaquePointer[MutAnyOrigin]]
 
     def __init__(out self):
-        self._value = OpaquePointer[MutAnyOrigin]()
+        self._value = None
 
 
 @fieldwise_init

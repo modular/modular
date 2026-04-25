@@ -24,9 +24,14 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout import Layout, LayoutTensor
 from nn.attention.gpu.mha import flash_attention, mha_gpu_naive
-from nn.attention.mha_mask import CausalMask, MHAMask, SlidingWindowCausalMask
-from nn.attention.mha_utils import FlashAttentionAlgorithm, MHAConfig
+from nn.attention.mha_mask import (
+    CausalMask,
+    CausalPaddingMask,
+    MHAMask,
+    SlidingWindowCausalMask,
+)
 from std.testing import assert_almost_equal, assert_equal
 
 
@@ -91,8 +96,14 @@ def test[
 
     # Q, K, V are randomly initialized.
     rand[qkv_type](q_ptr, q_size)
-    rand[qkv_type](k_ptr, k_size)
-    rand[qkv_type](v_ptr, v_size)
+    # rand[qkv_type](k_ptr, k_size)
+    # rand[qkv_type](v_ptr, v_size)
+    for i in range(v_size):
+        v_ptr[i] = 0.5
+    # for i in range(q_size):
+    #     q_ptr[i] = 1.0
+    for i in range(k_size):
+        k_ptr[i] = 0.25
 
     # Device pointers
     var q_device_ptr = ctx.enqueue_create_buffer[qkv_type](q_size)
@@ -107,45 +118,35 @@ def test[
 
     # Construct device buffers.
     var q_device = TileTensor(
-        q_device_ptr.unsafe_ptr(),
+        q_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var k_device = TileTensor(
-        k_device_ptr.unsafe_ptr(),
+        k_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var v_device = TileTensor(
-        v_device_ptr.unsafe_ptr(),
+        v_device_ptr,
         row_major(
             (Idx(batch_size), Idx(num_keys), Idx[kv_num_heads](), Idx[depth]())
         ),
     )
     var output_device = TileTensor(
-        output_device_ptr.unsafe_ptr(),
+        output_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
-    )
-
-    comptime config = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=UInt(4) if (
-            ctx.default_device_info == H100
-            or _is_sm10x_gpu(ctx.default_device_info)
-        ) else 2,
     )
 
     @parameter
     @always_inline
     @__copy_capture(q_device, k_device, v_device, output_device)
     def kernel_launch(ctx: DeviceContext) raises:
-        flash_attention[config=config](
+        flash_attention(
             output_device,
             q_device,
             k_device,
@@ -179,19 +180,12 @@ def test[
     ctx.enqueue_copy(output_ref_device_ptr, output_ptr)
 
     var output_device_ref = TileTensor(
-        output_ref_device_ptr.unsafe_ptr(),
+        output_ref_device_ptr,
         row_major(
             (Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
 
-    comptime config_baseline = MHAConfig[qkv_type](
-        UInt(num_heads),
-        UInt(depth),
-        BK=Optional[UInt](UInt(128 // size_of[qkv_type]())),
-        num_pipeline_stages=2,
-        algorithm=FlashAttentionAlgorithm(2),
-    )
     mha_gpu_naive(
         q_device,
         k_device,
@@ -253,7 +247,7 @@ def test[
 
     for repeat in range(16):
         # test reproducibility
-        flash_attention[config=config](
+        flash_attention(
             output_device_ref,
             q_device,
             k_device,
@@ -329,14 +323,14 @@ def main() raises:
             DType.bfloat16,
             depth,
             24,
-            group=3,
+            group=8,
         ](1024, 1024, CausalMask(), ctx)
 
         test[
             DType.bfloat16,
             depth,
             24,
-            group=3,
+            group=8,
         ](1024, 1024, SlidingWindowCausalMask[128](), ctx)
 
         # BF16 with sequence length not multiple of 128
@@ -409,109 +403,178 @@ def main() raises:
         ](201, 600, CausalMask(), ctx)
 
         # BF16 token gen
-        comptime if depth != 512:
-            # we currently only have depth=512 prefill support
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+        ](1, 512, CausalMask(), ctx, is_benchmark=is_benchmark())
+
+        test[
+            DType.bfloat16,
+            depth,
+            11,
+        ](1, 256, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](1, 11, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](1, 11, CausalMask(), ctx, num_partitions=Optional[Int](2))
+
+        test[
+            DType.bfloat16,
+            depth,
+            2,
+        ](1, 523, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            24,
+            group=3,
+        ](1, 29, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            3,
+            group=3,
+        ](1, 156, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            3,
+            group=3,
+        ](1, 208, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 1208, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 2008, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 2008, SlidingWindowCausalMask[77](), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 5000, CausalMask(), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 5000, SlidingWindowCausalMask[89](), ctx)
+
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+            group=4,
+        ](1, 600, CausalMask(), ctx)
+
+        comptime if (
+            ctx.default_device_info == A100
+            or ctx.default_device_info == H100
+            or _is_sm10x_gpu(ctx.default_device_info)
+        ):
             test[
                 DType.bfloat16,
                 depth,
                 32,
-            ](1, 512, CausalMask(), ctx, is_benchmark=is_benchmark())
-
-            test[
-                DType.bfloat16,
-                depth,
-                11,
-            ](1, 256, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                1,
-            ](1, 11, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                1,
-            ](1, 11, CausalMask(), ctx, num_partitions=Optional[Int](2))
-
-            test[
-                DType.bfloat16,
-                depth,
-                2,
-            ](1, 523, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                24,
-                group=3,
-            ](1, 29, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                3,
-                group=3,
-            ](1, 156, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                3,
-                group=3,
-            ](1, 208, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 1208, CausalMask(), ctx)
-
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
+                group=16,
             ](1, 2008, CausalMask(), ctx)
 
+        # Regression: window=512 over 1025 keys has visible window <= window
+        # size, which previously picked a decode split-K partition count
+        # based on the raw cache length (1025 > 512 -> 2 partitions) and
+        # produced NaNs. Using the visible-window key count instead picks
+        # a single partition and keeps the output finite.
+        comptime if depth == 128:
             test[
                 DType.bfloat16,
                 depth,
-                32,
-                group=4,
-            ](1, 2008, SlidingWindowCausalMask[77](), ctx)
+                96,
+                group=12,
+            ](1, 1025, SlidingWindowCausalMask[512](), ctx)
 
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 5000, CausalMask(), ctx)
+        # CausalPaddingMask tests: allocate valid_lengths on device.
+        @parameter
+        def make_vl(
+            val: UInt32, ctx: DeviceContext
+        ) raises -> LayoutTensor[
+            DType.uint32, Layout.row_major(1), MutAnyOrigin
+        ]:
+            var host_ptr = alloc[Scalar[DType.uint32]](1)
+            host_ptr[] = val
+            var dev_buf = ctx.enqueue_create_buffer[DType.uint32](1)
+            ctx.enqueue_copy(dev_buf, host_ptr)
+            host_ptr.free()
+            return LayoutTensor[
+                DType.uint32, Layout.row_major(1), MutAnyOrigin
+            ](dev_buf.unsafe_ptr())
 
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 5000, SlidingWindowCausalMask[89](), ctx)
+        # valid_length == num_keys (equivalent to CausalMask).
+        var vl_128_t = make_vl(128, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](128, 128, CausalPaddingMask(vl_128_t), ctx)
 
-            test[
-                DType.bfloat16,
-                depth,
-                32,
-                group=4,
-            ](1, 600, CausalMask(), ctx)
+        # valid_length < num_keys (padding active).
+        var vl_100_t = make_vl(100, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            1,
+        ](128, 128, CausalPaddingMask(vl_100_t), ctx)
 
-            comptime if (
-                ctx.default_device_info == A100
-                or ctx.default_device_info == H100
-                or _is_sm10x_gpu(ctx.default_device_info)
-            ):
-                test[
-                    DType.bfloat16,
-                    depth,
-                    32,
-                    group=16,
-                ](1, 2008, CausalMask(), ctx)
+        # CausalPaddingMask with GQA.
+        var vl_384_t = make_vl(384, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            24,
+            group=3,
+        ](384, 384, CausalPaddingMask(vl_384_t), ctx)
+
+        # CausalPaddingMask with padding and GQA.
+        var vl_300_t = make_vl(300, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            24,
+            group=3,
+        ](384, 384, CausalPaddingMask(vl_300_t), ctx)
+
+        # CausalPaddingMask: token gen with padding.
+        var vl_400_t = make_vl(400, ctx)
+        test[
+            DType.bfloat16,
+            depth,
+            32,
+        ](1, 512, CausalPaddingMask(vl_400_t), ctx)

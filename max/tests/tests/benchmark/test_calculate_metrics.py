@@ -26,6 +26,11 @@ from max.benchmark.benchmark_shared.request import (
     PixelGenerationRequestFuncOutput,
     RequestFuncOutput,
 )
+from max.diagnostics.cpu import CPUMetrics
+
+_EMPTY_CPU_METRICS = CPUMetrics(
+    user=0.0, user_percent=0.0, system=0.0, system_percent=0.0, elapsed=0.0
+)
 
 
 def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
@@ -64,10 +69,11 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -108,10 +114,11 @@ def test_tpot_weighted_mean() -> None:
         dur_s=2.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -145,10 +152,11 @@ def test_tpot_zero_decode_tokens() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -165,10 +173,11 @@ def test_empty_outputs_no_crash() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -197,10 +206,11 @@ def test_itl_metrics_unchanged() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -234,10 +244,11 @@ def test_failed_requests_excluded() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -287,10 +298,11 @@ def test_skip_last_n_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
@@ -299,16 +311,18 @@ def test_skip_last_n_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
-    # All 3 requests are still counted as completed
-    assert metrics_skip_last.completed == 3
-    # But the last request's high TTFT (0.5s) is excluded from latency metrics
+    # completed reflects the measured slice (first two, third was skipped).
+    assert metrics_all.completed == 3
+    assert metrics_skip_last.completed == 2
+    # The last request's high TTFT (0.5s) is excluded from latency metrics.
     assert metrics_skip_last.ttft_ms.mean < metrics_all.ttft_ms.mean
 
 
@@ -351,15 +365,16 @@ def test_skip_first_and_last_n_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
-    # All 3 completed, but only middle request used for latency metrics
-    assert metrics.completed == 3
+    # Only the middle request is measured.
+    assert metrics.completed == 1
     # Only the middle request's TTFT (0.1s = 100ms) should be measured
     assert math.isclose(metrics.ttft_ms.mean, 100.0, rel_tol=1e-3)
 
@@ -407,14 +422,17 @@ def test_skip_last_with_cancelled_requests() -> None:
         dur_s=3.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=1,
         skip_last_n_requests=1,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
 
-    assert metrics.completed == 3
+    # skip_last is applied to successful (3), not to the padded cancelled
+    # entries, so only the middle successful request is measured.
+    assert metrics.completed == 1
     # Only the second request should be measured (skip first 1, last 1)
     assert math.isclose(metrics.ttft_ms.mean, 200.0, rel_tol=1e-3)
 
@@ -444,10 +462,11 @@ def test_skip_all_requests_warns() -> None:
             dur_s=1.0,
             tokenizer=tokenizer,
             gpu_metrics=None,
-            cpu_metrics={},
+            cpu_metrics=_EMPTY_CPU_METRICS,
             skip_first_n_requests=1,
             skip_last_n_requests=1,
             max_concurrency=None,
+            max_concurrent_conversations=None,
             collect_gpu_stats=False,
         )
         assert len(w) == 1
@@ -473,7 +492,7 @@ def test_calculate_pixel_generation_metrics() -> None:
         outputs=outputs,
         dur_s=5.0,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         max_concurrency=None,
         collect_gpu_stats=False,
     )
@@ -513,13 +532,180 @@ def test_request_submit_time_set_on_output() -> None:
         dur_s=1.0,
         tokenizer=tokenizer,
         gpu_metrics=None,
-        cpu_metrics={},
+        cpu_metrics=_EMPTY_CPU_METRICS,
         skip_first_n_requests=0,
         skip_last_n_requests=0,
         max_concurrency=None,
+        max_concurrent_conversations=None,
         collect_gpu_stats=False,
     )
     # Metrics are computed normally regardless of submit time
+    assert metrics.completed == 1
+
+
+def test_measured_duration_uses_measured_window() -> None:
+    """When skipping is applied, duration and throughput reflect the measured window only."""
+    # 10 warmup requests: submit every 1s starting at t=0, each takes 5s.
+    # 100 steady requests: submit every 0.1s starting at t=10, each takes 0.5s.
+    # 10 tail requests: submit every 2s starting at t=30, each takes 5s.
+    warmup = [
+        RequestFuncOutput(
+            success=True,
+            latency=5.0,
+            ttft=0.5,
+            prompt_len=100,
+            generated_text="warmup",
+            itl=[0.1] * 4,
+            tpot=[0.1] * 4,
+            request_submit_time=float(i),
+        )
+        for i in range(10)
+    ]
+    steady = [
+        RequestFuncOutput(
+            success=True,
+            latency=0.5,
+            ttft=0.05,
+            prompt_len=10,
+            generated_text="steady",
+            itl=[0.05] * 4,
+            tpot=[0.05] * 4,
+            request_submit_time=10.0 + i * 0.1,
+        )
+        for i in range(100)
+    ]
+    tail = [
+        RequestFuncOutput(
+            success=True,
+            latency=5.0,
+            ttft=0.5,
+            prompt_len=100,
+            generated_text="tail",
+            itl=[0.1] * 4,
+            tpot=[0.1] * 4,
+            request_submit_time=30.0 + i * 2.0,
+        )
+        for i in range(10)
+    ]
+    outputs = warmup + steady + tail
+
+    tokenizer = _make_mock_tokenizer({"warmup": 5, "steady": 5, "tail": 5})
+
+    # Full run wall clock passed as dur_s. 60s is much longer than the
+    # measured window should be.
+    full_run_duration = 60.0
+
+    metrics, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=full_run_duration,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=10,
+        skip_last_n_requests=10,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # Measured = the 100 steady requests.
+    assert metrics.completed == 100
+    # total_input / total_output are over the measured 100 only.
+    assert metrics.total_input == 100 * 10
+    assert metrics.total_output == 100 * 5
+    # Measured window: first steady submits at t=10.0; last steady
+    # completes at t = 10.0 + 99*0.1 + 0.5 = 20.4.
+    expected_window = 20.4 - 10.0
+    assert math.isclose(metrics.duration, expected_window, rel_tol=1e-6)
+    # Request throughput is over the measured window, not the full run.
+    assert math.isclose(
+        metrics.request_throughput, 100 / expected_window, rel_tol=1e-6
+    )
+    # Crucially, throughput does NOT use the full run duration.
+    assert metrics.request_throughput > 100 / full_run_duration
+
+
+def test_measured_duration_falls_back_when_no_timestamps() -> None:
+    """Without submit timestamps, duration falls back to dur_s."""
+    output = RequestFuncOutput(
+        success=True,
+        latency=1.0,
+        ttft=0.1,
+        prompt_len=10,
+        generated_text="hello",
+        itl=[0.1],
+        tpot=[0.1],
+    )
+    # No request_submit_time -> fallback to dur_s.
+    tokenizer = _make_mock_tokenizer({"hello": 2})
+    metrics, _ = calculate_metrics(
+        outputs=[output],
+        dur_s=3.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=0,
+        skip_last_n_requests=0,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+    assert math.isclose(metrics.duration, 3.0, rel_tol=1e-9)
+    assert math.isclose(metrics.request_throughput, 1.0 / 3.0, rel_tol=1e-9)
+
+
+def test_skipped_tokens_excluded_from_totals() -> None:
+    """Tokens from skipped warmup/tail requests don't inflate total_input/total_output."""
+    outputs = [
+        RequestFuncOutput(
+            success=True,
+            latency=5.0,
+            ttft=0.5,
+            prompt_len=10_000,  # huge warmup prompt
+            generated_text="warm",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=0.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="mid",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=6.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=5.0,
+            ttft=0.5,
+            prompt_len=10_000,  # huge tail prompt
+            generated_text="tail",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=8.0,
+        ),
+    ]
+    tokenizer = _make_mock_tokenizer({"warm": 999, "mid": 3, "tail": 999})
+
+    metrics, _ = calculate_metrics(
+        outputs=outputs,
+        dur_s=20.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # Only the middle request counts toward totals.
+    assert metrics.total_input == 10
+    assert metrics.total_output == 3
     assert metrics.completed == 1
 
 

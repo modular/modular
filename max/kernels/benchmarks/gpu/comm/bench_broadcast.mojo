@@ -114,11 +114,13 @@ def bench_broadcast[
     var signal_buf_size = size_of[Signal]() + chunk_bytes
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
     var rank_sigs = InlineArray[UnsafePointer[Signal, MutAnyOrigin], MAX_GPUS](
-        fill={}
+        uninitialized=True
     )
 
     # Multicast buffer for output (when use_multimem=True)
-    var out_multicast_ptr = UnsafePointer[Scalar[dtype], MutAnyOrigin]()
+    var out_multicast_ptr = Optional[
+        UnsafePointer[Scalar[dtype], MutAnyOrigin]
+    ]()
 
     # Initialize output and signal buffers for each GPU
     comptime if use_multimem:
@@ -177,16 +179,17 @@ def bench_broadcast[
     list_of_ctx[root].enqueue_copy(cb_in.device_buffer(), host_buffer)
 
     # Create TileTensor wrappers for outputs
-    comptime OutputTileType = type_of(
-        TileTensor(out_bufs_list[0].unsafe_ptr(), row_major(Idx(length)))
-    )
+    comptime OutputTileType = TileTensor[
+        dtype, type_of(row_major(Idx(length))), MutAnyOrigin
+    ]
     var out_tiles = InlineArray[OutputTileType, ngpus](uninitialized=True)
 
     comptime if use_multimem:
         # All GPUs use the same multicast pointer for output
         for i in range(ngpus):
+            # out_multicast_ptr is set when use_multimem == True
             out_tiles[i] = OutputTileType(
-                out_multicast_ptr, row_major(Idx(length))
+                out_multicast_ptr.unsafe_value(), row_major(Idx(length))
             )
             list_of_ctx[i].synchronize()
     else:
@@ -282,7 +285,7 @@ def bench_broadcast[
 
     # Create input tile for verification (no cache offset)
     var in_tile_verify = TileTensor(
-        cb_in.unsafe_ptr(), row_major(Idx(length))
+        cb_in.device_buffer(), row_major(Idx(length))
     ).as_immut()
 
     # Run one broadcast for verification

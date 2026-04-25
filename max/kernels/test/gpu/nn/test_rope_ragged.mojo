@@ -147,18 +147,18 @@ def _test_rope_ragged_gpu_impl[
     ctx.synchronize()
 
     # ===== Step 4: Create TileTensor views =====
-    var q_device_tensor = TileTensor(q_device_buffer.unsafe_ptr(), q_layout)
+    var q_device_tensor = TileTensor(q_device_buffer, q_layout)
     var input_row_offsets_device_tensor = TileTensor(
-        input_row_offsets_device_buffer.unsafe_ptr(), input_row_offsets_layout
+        input_row_offsets_device_buffer, input_row_offsets_layout
     )
     var start_pos_device_tensor = TileTensor(
-        start_pos_device_buffer.unsafe_ptr(), start_pos_layout
+        start_pos_device_buffer, start_pos_layout
     )
     var freqs_cis_device_tensor = TileTensor(
-        freqs_cis_device_buffer.unsafe_ptr(), freqs_cis_layout
+        freqs_cis_device_buffer, freqs_cis_layout
     )
     var position_ids_device_tensor_static = TileTensor(
-        position_ids_device_buffer.unsafe_ptr(), position_ids_layout
+        position_ids_device_buffer, position_ids_layout
     )
     var position_ids_device_tensor = TileTensor[
         DType.uint32,
@@ -173,9 +173,7 @@ def _test_rope_ragged_gpu_impl[
         DType.int64
     ]()
 
-    var q_out_device_tensor = TileTensor(
-        q_out_device_buffer.unsafe_ptr(), q_layout
-    )
+    var q_out_device_tensor = TileTensor(q_out_device_buffer, q_layout)
 
     @always_inline
     @__copy_capture(q_out_device_tensor)
@@ -247,27 +245,37 @@ def _test_rope_ragged_gpu_impl[
                 comptime if rope_dim == head_dim:
                     # Full RoPE case - compare entire output against golden
                     assert_almost_equal(
-                        q_out_host_buffer.unsafe_ptr() + base_offset,
-                        expected_q_out_host_buffer.unsafe_ptr() + base_offset,
-                        head_dim,
+                        q_out_host_buffer.as_span()[
+                            base_offset : base_offset + head_dim
+                        ],
+                        expected_q_out_host_buffer.as_span()[
+                            base_offset : base_offset + head_dim
+                        ],
                         atol=1e-4,
                     )
                 else:
                     # Partial RoPE case - use same logic as original test
                     # Verify unroped region: Should remain unchanged from input
+                    var unroped_len = head_dim - rope_dim
                     assert_almost_equal(
-                        q_out_host_buffer.unsafe_ptr() + base_offset,
-                        q_host_buffer.unsafe_ptr() + base_offset,
-                        head_dim - rope_dim,
+                        q_out_host_buffer.as_span()[
+                            base_offset : base_offset + unroped_len
+                        ],
+                        q_host_buffer.as_span()[
+                            base_offset : base_offset + unroped_len
+                        ],
                         atol=1e-4,
                     )
 
                     # Verify roped region: Should match expected output
-                    roped_offset = base_offset + (head_dim - rope_dim)
+                    var roped_offset = base_offset + (head_dim - rope_dim)
                     assert_almost_equal(
-                        q_out_host_buffer.unsafe_ptr() + roped_offset,
-                        expected_q_out_host_buffer.unsafe_ptr() + roped_offset,
-                        rope_dim,
+                        q_out_host_buffer.as_span()[
+                            roped_offset : roped_offset + rope_dim
+                        ],
+                        expected_q_out_host_buffer.as_span()[
+                            roped_offset : roped_offset + rope_dim
+                        ],
                         atol=1e-4,
                     )
 

@@ -17,6 +17,6 @@ This module provides diagnostic utilities for monitoring and analyzing
 system performance, including GPU utilization and memory usage.
 """
 
-from . import gpu
+from . import cpu, gpu
 
-__all__ = ["gpu"]
+__all__ = ["cpu", "gpu"]

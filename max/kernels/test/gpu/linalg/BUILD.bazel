@@ -42,9 +42,11 @@ _EXTRA_CONSTRAINTS = {
     "test_grouped_matmul.mojo": select({
         "//:h100_gpu": ["//:h100_gpu"],
         "//:b200_gpu": ["//:b200_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     "test_grouped_matmul_small_k.mojo": ["//:b200_gpu"],
+    "test_block_scaled_mma_amd.mojo": ["//:mi355_gpu"],
     "test_matmul_amd.mojo": ["//:amd_gpu"],  # TODO: Disabled FIXME: KERN-1377
     "test_ping_pong.mojo": ["//:amd_gpu"],
     "test_ping_pong_shapes.mojo": ["//:amd_gpu"],
@@ -61,7 +63,16 @@ _EXTRA_CONSTRAINTS = {
         "//:nvidia_gpu",
         "//:has_multi_gpu",
     ],
-    "test_mxfp4_dequant_smoke.mojo": ["//:h100_gpu"],
+    "test_mxfp4_dequant_smoke.mojo": select({
+        "//:h100_gpu": ["//:h100_gpu"],
+        "//:amd_gpu": ["//:amd_gpu"],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    "test_mxfp4_dequant_matmul_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_dequant_grouped_matmul_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_matmul_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_quant_amd.mojo": ["//:amd_gpu"],
+    "test_mxfp4_grouped_matmul_amd.mojo": ["//:amd_gpu"],
     "test_matmul_sm90_fp8.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_bf16_multicast.mojo": ["//:h100_gpu"],
     "test_matmul_sm90_hilbert.mojo": ["//:h100_gpu"],
@@ -108,6 +119,7 @@ _EXTRA_CONSTRAINTS = {
     }),
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
     "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
+    "test_hipblaslt_scaled_mxfp4_matmul.mojo": ["//:mi355_gpu"],
 } | {
     # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps
     src: ["//:nvidia_gpu"]
@@ -188,10 +200,13 @@ _B200_TESTS = [
 _GPU_MEMORY = {
     "test_batched_matmul.mojo": "4",
     "test_grouped_matmul.mojo": "16",
+    "test_block_scaled_mma_amd.mojo": "1",
     "test_gemv2.mojo": "2",
     "test_matmul.mojo": "3",
     "test_matmul_amd.mojo": "2",
     "test_matmul_dispatching_amd.mojo": "8",
+    "test_mxfp4_matmul_amd.mojo": "2",
+    "test_mxfp4_dequant_grouped_matmul_amd.mojo": "2",
     "test_matmul_custom.mojo": "4",
     "test_matmul_sm90_bf16_multicast.mojo": "2",
     "test_matmul_sm90_deepseek_scheduler.mojo": "1",

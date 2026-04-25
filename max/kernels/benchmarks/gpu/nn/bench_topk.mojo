@@ -93,10 +93,10 @@ def bench_topk_batched[
     )
 
     var device_in = TileTensor(
-        device_in_buffer.unsafe_ptr(), row_major(Idx(batch_size), Idx(N))
+        device_in_buffer, row_major(Idx(batch_size), Idx(N))
     )
     var device_out_vals = TileTensor(
-        device_out_vals_buffer.unsafe_ptr(),
+        device_out_vals_buffer,
         row_major(Idx(batch_size), Idx(K)),
     )
     var device_out_idxs = TileTensor(
@@ -115,11 +115,11 @@ def bench_topk_batched[
     )
 
     var device_local_topk_vals = TileTensor(
-        device_local_topk_vals_buffer.unsafe_ptr(),
+        device_local_topk_vals_buffer,
         row_major(Idx(batch_size), Idx(num_blocks_per_input * K)),
     )
     var device_local_topk_idxs = TileTensor(
-        device_local_topk_idxs_buffer.unsafe_ptr(),
+        device_local_topk_idxs_buffer,
         row_major(Idx(batch_size), Idx(num_blocks_per_input * K)),
     )
 
@@ -146,9 +146,7 @@ def bench_topk_batched[
     for i in range(batch_size):
         top_p_host_ptr[i] = top_p
     ctx.enqueue_copy(top_p_dev_buffer, top_p_host_ptr)
-    var top_p_tt = TileTensor(
-        top_p_dev_buffer.unsafe_ptr(), row_major(Idx(batch_size))
-    )
+    var top_p_tt = TileTensor(top_p_dev_buffer, row_major(Idx(batch_size)))
 
     ctx.synchronize()
 
@@ -296,14 +294,12 @@ def bench_topk_multi_rank[
         out_idxs_size
     )
 
-    var device_in = TileTensor(
-        device_in_buffer.unsafe_ptr(), row_major(Coord(input_shape))
-    )
+    var device_in = TileTensor(device_in_buffer, row_major(Coord(input_shape)))
     var device_out_vals = TileTensor(
-        device_out_vals_buffer.unsafe_ptr(), row_major(Coord(out_vals_shape))
+        device_out_vals_buffer, row_major(Coord(out_vals_shape))
     )
     var device_out_idxs = TileTensor(
-        device_out_idxs_buffer.unsafe_ptr(), row_major(Coord(out_idxs_shape))
+        device_out_idxs_buffer, row_major(Coord(out_idxs_shape))
     )
 
     ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
@@ -449,15 +445,13 @@ def bench_topk_fi[
     )
 
     var device_in = TileTensor(
-        device_in_buffer.unsafe_ptr(), row_major(Idx(batch_size), Idx(N))
+        device_in_buffer, row_major(Idx(batch_size), Idx(N))
     )
     var device_out_idxs = TileTensor(
-        device_out_idxs_buffer.unsafe_ptr(),
+        device_out_idxs_buffer,
         row_major(Idx(batch_size), Idx(1)),
     )
-    var temp_tt = TileTensor(
-        device_temp_buffer.unsafe_ptr(), row_major(Idx(batch_size))
-    )
+    var temp_tt = TileTensor(device_temp_buffer, row_major(Idx(batch_size)))
 
     ctx.enqueue_copy(device_in_buffer, in_buffer_ptr)
 
@@ -474,9 +468,7 @@ def bench_topk_fi[
         seed_host_ptr[i] = UInt64(42 + i)
     ctx.enqueue_copy(seed_device_buffer, seed_host_ptr)
     ctx.synchronize()
-    var seed_tt = TileTensor(
-        seed_device_buffer.unsafe_ptr(), row_major(Idx(batch_size))
-    )
+    var seed_tt = TileTensor(seed_device_buffer, row_major(Idx(batch_size)))
 
     @parameter
     @always_inline
@@ -532,7 +524,7 @@ def fill_random[
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         var random_value = random_float64(min_val, max_val)
-        buffer.ptr[i] = random_value.cast[dtype]()
+        buffer.raw_store(i, random_value.cast[dtype]())
 
 
 def fill_constant[
@@ -541,9 +533,9 @@ def fill_constant[
     var total_elements = buffer.num_elements()
     for i in range(total_elements):
         if i % 3 == 1:
-            buffer.ptr[i] = 1.0
+            buffer.raw_store(i, 1.0)
         else:
-            buffer.ptr[i] = 0.0
+            buffer.raw_store(i, 0.0)
 
 
 def fill_iota[

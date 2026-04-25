@@ -11,6 +11,11 @@ _MULTI_VERSION_TEST_SRCS = [
     "test_graph.py",
 ]
 
+# Uninit check e2e tests are tested separately (light deps, subprocess-based).
+_UNINIT_CHECK_TESTS = [
+    "test_uninit_check_e2e.py",
+]
+
 # Ops tests that are tested separately (with lighter deps than the main target).
 _SEPARATELY_TESTED_OPS = [
     "ops/test_argsort.py",
@@ -29,7 +34,7 @@ modular_py_test(
     size = "large",
     srcs = glob(
         ["**/*.py"],
-        exclude = _MULTI_VERSION_TEST_SRCS + _SEPARATELY_TESTED_OPS,
+        exclude = _MULTI_VERSION_TEST_SRCS + _SEPARATELY_TESTED_OPS + _UNINIT_CHECK_TESTS + ["uninit_check/**/*.py"],
     ),
     data = [
         "//max/tests/integration/Inputs/test_user_op",
@@ -46,7 +51,6 @@ modular_py_test(
     ],
     imports = ["."],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
         "//max/tests/integration/Inputs/test_user_op",
         "@mojo//:std",
     ],
@@ -77,7 +81,6 @@ modular_py_test(
     },
     imports = ["."],
     mojo_deps = [
-        "//max:MOGGKernelAPI",
         "@mojo//:std",
     ],
     deps = [
@@ -85,6 +88,7 @@ modular_py_test(
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/engine",
+        "//max/python/max/experimental",
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("hypothesis"),
@@ -108,6 +112,48 @@ modular_multi_py_version_test(
         "//max/python/max/graph",
         "//max/python/max/mlir",
         requirement("hypothesis"),
+        requirement("numpy"),
+    ],
+)
+
+# Uninitialized memory read detection end-to-end tests.
+# Subprocess-based: each test spawns a child process with/without the
+# MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK env var to exercise the full
+# pipeline.
+modular_py_test(
+    name = "test_uninit_check_e2e",
+    srcs = _UNINIT_CHECK_TESTS,
+    data = [
+        "//max/tests/tests/graph/uninit_check/read_uninit_op",
+    ] + glob(["uninit_check/*.py"]),
+    env = {
+        "MODULAR_PATH": ".",
+        "UNINIT_OPS_PATH": "$(rootpath //max/tests/tests/graph/uninit_check/read_uninit_op)",
+    },
+    ignore_extra_deps = [
+        # These deps are used by subprocess scripts in uninit_check/,
+        # not directly imported by the test file.
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
+        requirement("numpy"),
+    ],
+    mojo_deps = [
+        "//max:MOGGKernelAPI",
+        "//max/tests/tests/graph/uninit_check/read_uninit_op",
+        "@mojo//:std",
+    ],
+    # FIXME: GEX-3520 — max-engine crashes during shutdown on macOS
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
+    deps = [
+        "//max/python/max/driver",
+        "//max/python/max/dtype",
+        "//max/python/max/engine",
+        "//max/python/max/graph",
         requirement("numpy"),
     ],
 )

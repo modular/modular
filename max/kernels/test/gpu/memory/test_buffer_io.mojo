@@ -13,7 +13,7 @@
 
 from std.math import align_down
 
-from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.compile import _compile_code
 from std.gpu.host.info import MI355X
@@ -64,7 +64,7 @@ def kernel_lds[
 
 # Assembly test kernels for different cache policies
 def cache_policy_kernel_always():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.ALWAYS](
@@ -76,7 +76,7 @@ def cache_policy_kernel_always():
 
 
 def cache_policy_kernel_streaming():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[
@@ -88,7 +88,7 @@ def cache_policy_kernel_streaming():
 
 
 def cache_policy_kernel_global():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.GLOBAL](
@@ -100,7 +100,7 @@ def cache_policy_kernel_global():
 
 
 def cache_policy_kernel_volatile():
-    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin]()
+    var dummy_ptr = UnsafePointer[Float32, MutAnyOrigin].unsafe_dangling()
     var buffer = AMDBufferResource(dummy_ptr, 1024)
     var offset = Int32(thread_idx.x)  # Use dynamic offset to force offen mode
     var v = buffer.load[DType.float32, 4, cache_policy=CacheOperation.VOLATILE](

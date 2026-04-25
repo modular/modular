@@ -12,10 +12,12 @@
 # ===----------------------------------------------------------------------=== #
 """Mixture of Experts (MoE) module."""
 
+from .expert_parallel import forward_moe_sharded_layers
 from .moe import MoE, MoEGate
 from .moe_fp8 import MoEQuantized
 from .quant_strategy import (
     Fp8Strategy,
+    Mxfp4Strategy,
     Nvfp4Scales,
     Nvfp4Strategy,
     QuantStrategy,
@@ -33,6 +35,7 @@ __all__ = [
     "Nvfp4Strategy",
     "QuantStrategy",
     "StackedMoE",
+    "forward_moe_sharded_layers",
     "silu_activation",
     "silu_gate",
 ]

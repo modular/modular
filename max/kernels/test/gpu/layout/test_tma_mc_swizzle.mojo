@@ -17,7 +17,7 @@ from std.gpu import barrier
 from std.gpu.primitives.cluster import block_rank_in_cluster, cluster_sync
 from std.gpu.host import DeviceContext, Dim
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.gpu import cluster_dim, cluster_idx, thread_idx_uint as thread_idx
+from std.gpu import cluster_idx, thread_idx
 from std.gpu.memory import fence_mbarrier_init
 from layout import Layout, LayoutTensor
 from layout._fillers import arange, random
@@ -44,8 +44,8 @@ def tma_swizzle_multicast_load_kernel[
     subcluster_tile_rank: Int,
     subcluster_tile_shape: IndexList[subcluster_tile_rank],
     desc_shape: IndexList[subcluster_tile_rank],
-    CLUSTER_M: UInt,
-    CLUSTER_N: UInt,
+    CLUSTER_M: Int,
+    CLUSTER_N: Int,
 ](
     dst: LayoutTensor[dtype, layout, MutAnyOrigin],
     tma_tile: TMATensorTile[
@@ -60,10 +60,10 @@ def tma_swizzle_multicast_load_kernel[
     comptime subcluster_tileN = subcluster_tile_shape[1]
 
     var block_rank = block_rank_in_cluster()
-    var rank_m, rank_n = divmod(Int(block_rank), Int(CLUSTER_N))
+    var rank_m, rank_n = divmod(Int(block_rank), CLUSTER_N)
 
     comptime CLUSTER_SIZE = CLUSTER_M * CLUSTER_N
-    var tma_multicast_mask = (1 << Int(CLUSTER_SIZE)) - 1
+    var tma_multicast_mask = (1 << CLUSTER_SIZE) - 1
 
     tile = LayoutTensor[
         dtype,
@@ -92,10 +92,10 @@ def tma_swizzle_multicast_load_kernel[
 
     if thread_idx.x == 0:
         mbar[0].expect_bytes(Int32(expected_bytes))
-        var slice_cord_y = cluster_idx.y * UInt(cluster_tileM) + UInt(
+        var slice_cord_y = cluster_idx.y * cluster_tileM + (
             rank_m * subcluster_tileM
         )
-        var slice_cord_x = cluster_idx.x * UInt(cluster_tileN) + UInt(
+        var slice_cord_x = cluster_idx.x * cluster_tileN + (
             rank_n * subcluster_tileN
         )
         var copy_offset = (
@@ -105,7 +105,7 @@ def tma_swizzle_multicast_load_kernel[
         tma_tile.async_multicast_load(
             type_of(tile)(tile.ptr + copy_offset),
             mbar[0],
-            (Int(slice_cord_x), Int(slice_cord_y)),
+            (slice_cord_x, slice_cord_y),
             UInt16(tma_multicast_mask),
         )
 
@@ -119,7 +119,7 @@ def tma_swizzle_multicast_load_kernel[
 
     if block_rank == 0 and thread_idx.x == 0:
         dst_tile = dst.tile[cluster_tileM, cluster_tileN](
-            Int(cluster_idx.y), Int(cluster_idx.x)
+            cluster_idx.y, cluster_idx.x
         )
         dst_tile.copy_from(tile)
 
@@ -128,14 +128,14 @@ def test_tma_multicast_swizzle[
     dtype: DType,
     shape: IndexList[2],
     cluster_tile_shape: IndexList[2],
-    CLUSTER_M: UInt,
-    CLUSTER_N: UInt,
+    CLUSTER_M: Int,
+    CLUSTER_N: Int,
     swizzle_mode: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_NONE,
 ](ctx: DeviceContext) raises:
     comptime tileM = cluster_tile_shape[0]
     comptime tileN = cluster_tile_shape[1]
     comptime subcluster_tile_shape = Index(
-        tileM // Int(CLUSTER_M), tileN // Int(CLUSTER_N)
+        tileM // CLUSTER_M, tileN // CLUSTER_N
     )
 
     comptime layout = Layout.row_major(shape[0], shape[1])
@@ -180,8 +180,8 @@ def test_tma_multicast_swizzle[
         dst.device_tensor(),
         tma_tensor,
         grid_dim=(
-            (shape[1] // cluster_tile_shape[1]) * Int(CLUSTER_N),
-            (shape[0] // cluster_tile_shape[0]) * Int(CLUSTER_M),
+            (shape[1] // cluster_tile_shape[1]) * CLUSTER_N,
+            (shape[0] // cluster_tile_shape[0]) * CLUSTER_M,
         ),
         block_dim=(1),
         cluster_dim=Dim(CLUSTER_N, CLUSTER_M, 1),

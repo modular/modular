@@ -15,9 +15,9 @@
 
 from std.gpu import barrier
 from std.gpu.host.compile import _compile_code
-from std.gpu.host.info import MI300X
+from std.gpu.host.info import MI355X
 
-comptime MI300X_TARGET = MI300X.target()
+comptime MI355X_TARGET = MI355X.target()
 
 
 # CHECK-LABEL: test_barrier
@@ -35,7 +35,7 @@ def test_barrier() raises:
     # CHECK-BLOCK-SYNC: tail call void @llvm.amdgcn.s.barrier()
     print(
         _compile_code[
-            barrier_kernel, target=MI300X_TARGET, emission_kind="llvm-opt"
+            barrier_kernel, target=MI355X_TARGET, emission_kind="llvm-opt"
         ]()
     )
 

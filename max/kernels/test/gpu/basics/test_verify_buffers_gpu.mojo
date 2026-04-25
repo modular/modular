@@ -13,13 +13,7 @@
 """Tests for the GPU buffer verification kernel used in bench_matmul."""
 
 from std.math import ceildiv
-from std.gpu import (
-    global_idx_uint as global_idx,
-    grid_dim_uint as grid_dim,
-    block_dim_uint as block_dim,
-    thread_idx_uint as thread_idx,
-    block_idx_uint as block_idx,
-)
+from std.gpu import global_idx, grid_dim, block_dim, thread_idx, block_idx
 from std.gpu.primitives import block
 from std.gpu.host import DeviceBuffer, DeviceContext
 from std.testing import assert_equal, assert_true
@@ -54,9 +48,9 @@ def _verify_buffers_gpu[
     var out_nz: Float32 = 0
     var ref_nz: Float32 = 0
 
-    var i = UInt(global_idx.x)
-    var stride = UInt(grid_dim.x * block_dim.x)
-    while i < UInt(length):
+    var i = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+    while i < length:
         var x = output[i].cast[DType.float32]()
         var y = reference[i].cast[DType.float32]()
         abs_diff_sum += abs(x - y)
@@ -75,7 +69,7 @@ def _verify_buffers_gpu[
     ref_nz = block.max[block_size=BLOCK_SIZE](ref_nz)
 
     if thread_idx.x == 0:
-        var base = Int(block_idx.x) * 5
+        var base = block_idx.x * 5
         result[base + 0] = abs_diff_sum
         result[base + 1] = abs_ref_sum
         result[base + 2] = max_violation
@@ -93,9 +87,9 @@ def _fill_buffer[
     length: Int,
     val: Scalar[dtype],
 ):
-    var i = UInt(global_idx.x)
-    var stride = UInt(grid_dim.x * block_dim.x)
-    while i < UInt(length):
+    var i = global_idx.x
+    var stride = grid_dim.x * block_dim.x
+    while i < length:
         ptr[i] = val
         i += stride
 
@@ -132,12 +126,12 @@ def run_verify_kernel[
 
     comptime kernel = _verify_buffers_gpu[dtype, BLOCK_SIZE]
     ctx.enqueue_function_experimental[kernel](
-        output_buf.unsafe_ptr(),
-        reference_buf.unsafe_ptr(),
+        output_buf,
+        reference_buf,
         length,
         atol,
         rtol,
-        result_device.unsafe_ptr(),
+        result_device,
         grid_dim=NUM_BLOCKS,
         block_dim=BLOCK_SIZE,
     )
@@ -186,7 +180,7 @@ def fill_on_device[
     var fill_grid = ceildiv(length, FILL_BLOCK)
     comptime kernel = _fill_buffer[dtype]
     ctx.enqueue_function_experimental[kernel](
-        buf.unsafe_ptr(),
+        buf,
         length,
         val,
         grid_dim=fill_grid,

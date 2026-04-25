@@ -80,7 +80,8 @@ except ImportError as e:
 def bench_flashinfer(
     batch_size: int,
     qkv_len: int,
-    num_heads: int,
+    num_q_heads: int,
+    num_kv_heads: int,
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
@@ -107,13 +108,13 @@ def bench_flashinfer(
         return None
 
     q = torch.randn(
-        batch_size * qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size * qkv_len, num_q_heads, head_dim, dtype=dtype, device="cuda"
     )
     k = torch.randn(
-        batch_size * qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size * qkv_len, num_kv_heads, head_dim, dtype=dtype, device="cuda"
     )
     v = torch.randn(
-        batch_size * qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size * qkv_len, num_kv_heads, head_dim, dtype=dtype, device="cuda"
     )
 
     qo_segment_offsets = (
@@ -134,8 +135,8 @@ def bench_flashinfer(
     wrapper.plan(
         qo_segment_offsets,
         kv_segment_offsets,
-        num_heads,
-        num_heads,
+        num_q_heads,
+        num_kv_heads,
         head_dim,
         head_dim_vo=head_dim,
         causal=causal,
@@ -173,9 +174,9 @@ def bench_flashinfer(
 
     def flops() -> int:
         if causal:
-            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 2
+            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
         else:
-            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 4
+            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
 
     return time_s, flops()
 
@@ -183,7 +184,8 @@ def bench_flashinfer(
 def bench_max(
     batch_size: int,
     qkv_len: int,
-    num_heads: int,
+    num_q_heads: int,
+    num_kv_heads: int,
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
@@ -195,7 +197,8 @@ def bench_max(
     Args:
         batch_size: Batch size
         qkv_len: Sequence length for Q, K, V
-        num_heads: Number of attention heads
+        num_q_heads: Number of query heads
+        num_kv_heads: Number of KV heads
         head_dim: Dimension of each head
         causal: Whether to use causal masking
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
@@ -205,24 +208,24 @@ def bench_max(
 
     # Create input tensors in (batch, seq_len, num_heads, head_dim) format
     q = torch.randn(
-        batch_size, qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size, qkv_len, num_q_heads, head_dim, dtype=dtype, device="cuda"
     )
     k = torch.randn(
-        batch_size, qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size, qkv_len, num_kv_heads, head_dim, dtype=dtype, device="cuda"
     )
     v = torch.randn(
-        batch_size, qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size, qkv_len, num_kv_heads, head_dim, dtype=dtype, device="cuda"
     )
 
     # Define tensor types for MAX graph
     q_type = TensorType(
         max_dtype,
-        shape=["batch", "seq_len", num_heads, head_dim],
+        shape=["batch", "seq_len", num_q_heads, head_dim],
         device=DeviceRef.GPU(),
     )
     kv_type = TensorType(
         max_dtype,
-        shape=["batch", "seq_len", num_heads, head_dim],
+        shape=["batch", "seq_len", num_kv_heads, head_dim],
         device=DeviceRef.GPU(),
     )
 
@@ -255,10 +258,14 @@ def bench_max(
         torch.cuda.synchronize()
         return None
 
-    # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup
+    # Use bench_kineto_with_cupti_warmup to handle CUPTI warmup.
+    # Kernel names use the @__name decorator pattern, e.g.
+    # sm100_mha_2q_depth128_bfloat16_bfloat16_nqh32_nkvh32_<hash>.
+    # The substring "sm100_mha" matches all SM100 MHA prefill variants
+    # (1Q, 2Q, and depth-512).
     time_s = bench_kineto_with_cupti_warmup(
         run_kernel,
-        kernel_names="mha",
+        kernel_names="sm100_mha",
         num_tests=num_iters,
         suppress_kineto_output=True,
         flush_l2=True,
@@ -267,9 +274,9 @@ def bench_max(
 
     def flops() -> int:
         if causal:
-            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 2
+            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
         else:
-            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 4
+            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
 
     return time_s, flops()
 
@@ -277,7 +284,8 @@ def bench_max(
 def bench_tridao(
     batch_size: int,
     qkv_len: int,
-    num_heads: int,
+    num_q_heads: int,
+    num_kv_heads: int,
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
@@ -290,13 +298,13 @@ def bench_tridao(
 
     # Create input tensors in varlen format (similar to test_flash_attn_varlen_output)
     q = torch.randn(
-        batch_size * qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size * qkv_len, num_q_heads, head_dim, dtype=dtype, device="cuda"
     )
     k = torch.randn(
-        batch_size * qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size * qkv_len, num_kv_heads, head_dim, dtype=dtype, device="cuda"
     )
     v = torch.randn(
-        batch_size * qkv_len, num_heads, head_dim, dtype=dtype, device="cuda"
+        batch_size * qkv_len, num_kv_heads, head_dim, dtype=dtype, device="cuda"
     )
 
     # Create cumulative sequence length offsets
@@ -339,9 +347,9 @@ def bench_tridao(
 
     def flops() -> int:
         if causal:
-            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 2
+            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 2
         else:
-            return batch_size * qkv_len * qkv_len * num_heads * head_dim * 4
+            return batch_size * qkv_len * qkv_len * num_q_heads * head_dim * 4
 
     return time_s, flops()
 
@@ -349,7 +357,8 @@ def bench_tridao(
 def bench_prefill(
     batch_size: int,
     qkv_len: int,
-    num_heads: int,
+    num_q_heads: int,
+    num_kv_heads: int,
     head_dim: int,
     causal: bool,
     dtype: torch.dtype,
@@ -362,7 +371,8 @@ def bench_prefill(
     Args:
         batch_size: Batch size
         qkv_len: Sequence length for Q, K, V
-        num_heads: Number of attention heads
+        num_q_heads: Number of query heads
+        num_kv_heads: Number of KV heads
         head_dim: Dimension of each head
         causal: Whether to use causal masking
         dtype: torch dtype for inputs (e.g., torch.bfloat16)
@@ -372,7 +382,8 @@ def bench_prefill(
     print("=" * 80)
     print(
         f"MHA Prefill Benchmark (batch={batch_size}, seq_len={qkv_len},"
-        f" heads={num_heads}, head_dim={head_dim}, causal={causal})"
+        f" q_heads={num_q_heads}, kv_heads={num_kv_heads},"
+        f" head_dim={head_dim}, causal={causal})"
     )
     print("=" * 80)
 
@@ -385,7 +396,8 @@ def bench_prefill(
                 result = bench_flashinfer(
                     batch_size,
                     qkv_len,
-                    num_heads,
+                    num_q_heads,
+                    num_kv_heads,
                     head_dim,
                     causal,
                     dtype,
@@ -403,7 +415,8 @@ def bench_prefill(
                 result = bench_tridao(
                     batch_size,
                     qkv_len,
-                    num_heads,
+                    num_q_heads,
+                    num_kv_heads,
                     head_dim,
                     causal,
                     dtype,
@@ -419,7 +432,8 @@ def bench_prefill(
             result = bench_max(
                 batch_size,
                 qkv_len,
-                num_heads,
+                num_q_heads,
+                num_kv_heads,
                 head_dim,
                 causal,
                 dtype,
@@ -445,11 +459,18 @@ if __name__ == "__main__":
         help="QKV length",
     )
     parser.add_argument(
-        "--num_heads",
-        "--num-heads",
+        "--num_q_heads",
+        "--num-q-heads",
         type=int,
         default=32,
         help="Number of query heads",
+    )
+    parser.add_argument(
+        "--num_kv_heads",
+        "--num-kv-heads",
+        type=int,
+        default=None,
+        help="Number of KV heads (defaults to num_q_heads)",
     )
 
     parser.add_argument(
@@ -509,10 +530,15 @@ if __name__ == "__main__":
     if args.engine not in ["flashinfer", "tridao", "modular_max"]:
         raise ValueError(f"engine {args.engine} is not supported!")
 
+    num_kv_heads = (
+        args.num_kv_heads if args.num_kv_heads is not None else args.num_q_heads
+    )
+
     result = bench_prefill(
         batch_size=args.batch_size,
         qkv_len=args.qkv_len,
-        num_heads=args.num_heads,
+        num_q_heads=args.num_q_heads,
+        num_kv_heads=num_kv_heads,
         head_dim=args.head_dim,
         causal=args.causal,
         dtype=dtype_map[args.dtype],
@@ -526,7 +552,8 @@ if __name__ == "__main__":
         flops_per_sec = ThroughputMeasure(Bench.flops, flops)
         name = (
             f"MHA_Prefill/batch_size={args.batch_size}/qkv_len={args.qkv_len}/"
-            f"num_heads={args.num_heads}/head_dim={args.head_dim}/"
+            f"num_q_heads={args.num_q_heads}/num_kv_heads={num_kv_heads}/"
+            f"head_dim={args.head_dim}/"
             f"causal={args.causal}/dtype={dtype_map[args.dtype]}/"
             f"engine={args.engine}/"
         )

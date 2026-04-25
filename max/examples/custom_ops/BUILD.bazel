@@ -45,6 +45,11 @@ custom_op_example_py_binary(
     extra_deps = [
         "//max/python/max:tensor",
     ],
+    # FIXME: MOCO-3663 — consistently times out on remote macOS workers
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
 )
 
 custom_op_example_py_binary(
@@ -92,6 +97,7 @@ mojo_binary(
     deps = [
         ":kernels",
         "//max:compiler",
+        "//max:compiler_internal",
         "//max:layout",
         "//max:tensor",
         "@mojo//:std",
@@ -104,6 +110,7 @@ mojo_library(
     validate_missing_docs = False,
     deps = [
         "//max:compiler",
+        "//max:compiler_internal",
         "//max:layout",
         "//max:tensor",
         "@mojo//:std",

@@ -24,6 +24,7 @@ from std.sys.info import (
     _is_amd_rdna3,
     _is_amd_rdna4,
     is_amd_gpu,
+    is_apple_m5,
 )
 
 from std.gpu._utils import (
@@ -43,6 +44,7 @@ from std.utils.index import Index
 # Import architecture-specific MMA implementations
 from .arch.mma_nvidia import _mma_nvidia
 from .arch.mma_amd import _mma_amd
+from .arch.mma_apple import _mma_apple
 
 
 def get_amd_fp8_dtype() -> DType:
@@ -160,11 +162,11 @@ def _dtype_to_nvvm_wgmma_type[
 def _get_shape[m: Int, n: Int, k: Int]() -> __mlir_type.`!kgen.deferred`:
     return __mlir_deferred_attr[
         `#nvvm.shape<m =`,
-        +m._mlir_value,
+        +m._int_mlir_index(),
         `, n =`,
-        +n._mlir_value,
+        +n._int_mlir_index(),
         `, k =`,
-        +k._mlir_value,
+        +k._int_mlir_index(),
         `>`,
     ]
 
@@ -222,6 +224,9 @@ def mma[block_size: Int = 1](mut d: SIMD, a: SIMD, b: SIMD, c: SIMD):
         _mma_nvidia(d, a, b, c)
     elif is_amd_gpu():
         _mma_amd[block_size](d, a, b, c)
+    # MSTDL-2556: Compilation Target Check doesn't match above
+    elif is_apple_m5() and CompilationTarget._has_feature["metal4_0"]():
+        _mma_apple(d, a, b, c)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -266,12 +271,17 @@ def ld_matrix[
 
         ```mojo
         from std.gpu.compute.mma import ld_matrix
+        from std.memory import UnsafePointer, alloc
+
+        var ptr = alloc[Scalar[DType.float16]](8)
 
         # Load 8x8 matrix of float16 values
-        var data = ld_matrix[DType.float16, 8](ptr)
+        var data = ld_matrix[simd_width=8](ptr)
 
         # Load transposed matrix
-        var transposed = ld_matrix[DType.float16, 8, transpose=True](ptr)
+        var transposed = ld_matrix[simd_width=8, transpose=True](ptr)
+
+        ptr.free()
         ```
     """
 
@@ -733,10 +743,10 @@ def wgmma_async[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
-                width._mlir_value,
+                width._int_mlir_index(),
                 `>`,
             ],
             `)>`,
@@ -752,7 +762,7 @@ def wgmma_async[
     n: Int,
     k: Int,
     c_dtype: DType,
-    width: Int,
+    width: SIMDSize,
     /,
     *,
     a_type: DType,
@@ -860,7 +870,7 @@ def wgmma_async[
         _type=__mlir_type[
             `!llvm.struct<(`,
             __mlir_type[
-                `!kgen.variadic_splat<`,
+                `!kgen.param_list_splat<`,
                 dtype_to_llvm_type[c_dtype],
                 `, `,
                 width._mlir_value,
@@ -880,8 +890,8 @@ def wgmma_async[
     k: Int,
     a_dtype: DType,
     c_dtype: DType,
-    frag_a_width: Int,
-    frag_c_width: Int,
+    frag_a_width: SIMDSize,
+    frag_c_width: SIMDSize,
     /,
     *,
     a_type: DType,

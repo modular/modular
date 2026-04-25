@@ -79,7 +79,6 @@ Tokenizers
    :template: autosummary/class.rst
 
    IdentityPipelineTokenizer
-   PreTrainedPipelineTokenizer
    TextAndVisionTokenizer
    TextTokenizer
 
@@ -127,6 +126,7 @@ Submodules
 .. toctree::
    :maxdepth: 1
 
+   pipelines.architectures
    pipelines.core
    pipelines.lib
    pipelines.lib.interfaces

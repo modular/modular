@@ -32,7 +32,7 @@ def print_elements[dtype: DType](tensor: TileTensor[dtype, ...]) raises:
     ](coords: IndexList[rank]):
         var index = rebind[IndexList[tensor.rank]](coords)
         var idx = tensor.layout(Coord(index))
-        print(tensor.ptr[idx])
+        print(tensor.raw_load(idx))
 
     elementwise[print_elements_lambda, 1](shape)
 
@@ -55,7 +55,7 @@ def test_slice[
 
     var memory1 = InlineArray[Scalar[dtype], numelems](uninitialized=True)
     var in_tensor = TileTensor(
-        memory1.unsafe_ptr(),
+        memory1,
         row_major(Coord(dims)),
     )
 
@@ -68,7 +68,7 @@ def test_slice[
         uninitialized=True
     )
     var start_tensor = TileTensor(
-        start_tensor_mem.unsafe_ptr(),
+        start_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -76,7 +76,7 @@ def test_slice[
         uninitialized=True
     )
     var end_tensor = TileTensor(
-        end_tensor_mem.unsafe_ptr(),
+        end_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -84,7 +84,7 @@ def test_slice[
         uninitialized=True
     )
     var step_tensor = TileTensor(
-        step_tensor_mem.unsafe_ptr(),
+        step_tensor_mem,
         row_major(Coord(IndexList[1](outer_rank))),
     )
 
@@ -94,7 +94,7 @@ def test_slice[
         step_tensor[dim] = Scalar[DType.int](steps[dim])
 
     for i in range(numelems):
-        in_tensor.ptr[i] = Scalar[dtype](i)
+        in_tensor.raw_store(i, Scalar[dtype](i))
 
     # Perform the slice even if we are testing the copy so we get the target size.
     var sliced = slice_as_view(
@@ -111,7 +111,7 @@ def test_slice[
 
         var sliced_shape = coord_to_index_list(sliced.layout.shape_coord())
         var output_buffer = TileTensor(
-            output_mem.unsafe_ptr(),
+            output_mem,
             row_major(Coord(sliced_shape)),
         )
 

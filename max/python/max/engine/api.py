@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Literal, cast
 
 import numpy as np
+from max._core.engine import DebugConfig as DebugConfig
 from max._core.engine import InferenceSession as _InferenceSession
 from max._core.engine import Model as Model
 from max._core.engine import PrintStyle
@@ -304,21 +305,6 @@ class SplitKReductionPrecision(IntEnum):
     OUTPUT = auto()
 
 
-class PDLLevel(IntEnum):
-    """Internal use."""
-
-    # No PDL
-    OFF = auto()
-
-    # Start subsequent kernel at the end
-    # Apply to elementwise and reduction kernels
-    OVERLAP_AT_END = auto()
-
-    # Start subsequent kernel at the beginning
-    # Apply to elementwise and reduction kernels
-    OVERLAP_AT_BEGINNING = auto()
-
-
 class AssertLevel(str, Enum):
     """The AssertLevel specifies the assert level used by the Mojo Ops."""
 
@@ -356,10 +342,15 @@ class InferenceSession:
     _impl: _InferenceSession
     # This is shared across sessions. Compilation is currently not thread safe.
     _compilation_lock = threading.Lock()
+    # DebugConfig is a process-wide singleton. Assigning it as a class
+    # attribute at import time means both ``InferenceSession.debug`` and
+    # ``session.debug`` return the same underlying object, and any
+    # ``MODULAR_DEBUG`` env-var parsing happens exactly once (at import).
+    debug: DebugConfig = _InferenceSession.debug
 
     def __init__(
         self,
-        devices: Iterable[Device],
+        devices: Iterable[Device] = (),
         num_threads: int | None = None,
         *,
         custom_extensions: CustomExtensionsType | None = None,
@@ -412,15 +403,19 @@ class InferenceSession:
             # Ignore errors if SIGUSR2 is already registered or unavailable
             pass
 
-        if env_val := os.getenv("MOJO_LOGGING_LEVEL"):
-            self.set_mojo_log_level(env_val)
+        # Read the op log level from the max-debug.op-log-level config key
+        # (covers MODULAR_MAX_DEBUG_OP_LOG_LEVEL env var, modular.cfg, and
+        # InferenceSession.debug.op_log_level Python setter).
+        if log_level := _InferenceSession.debug.op_log_level:
+            self.set_mojo_log_level(log_level)
 
-        if env_val := os.getenv("MOJO_ASSERT_LEVEL"):
+        # Read the assert level from the max-debug.assert-level Config key.
+        if assert_level_str := _InferenceSession.debug.assert_level:
             try:
-                assert_level = AssertLevel[env_val.upper()]
+                assert_level = AssertLevel[assert_level_str.upper()]
             except KeyError as e:
                 raise TypeError(
-                    f"Invalid assert level ({env_val}). Please use one of: {[x.name for x in AssertLevel]}"
+                    f"Invalid assert level ({assert_level_str}). Please use one of: {[x.name for x in AssertLevel]}"
                 ) from e
             self.set_mojo_assert_level(assert_level)
 
@@ -431,8 +426,25 @@ class InferenceSession:
         if use_fi_topk := os.getenv("USE_FI_TOPK_KERNEL"):
             self.use_fi_topk_kernel(use_fi_topk)
 
-        if pdl_level := os.getenv("PDL_LEVEL"):
-            self._pdl_level(pdl_level)
+        if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
+            self.enable_per_tensor_fp8_quantize(val)
+
+        # Read the uninit-read check from the max-debug.uninitialized-read-check
+        # Config key.
+        if _InferenceSession.debug.uninitialized_read_check:
+            # Enable debug allocator poison
+            existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
+            if existing:
+                if "uninitialized-poison" not in existing:
+                    os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                        existing + ",uninitialized-poison"
+                    )
+            else:
+                os.environ["MODULAR_DEBUG_DEVICE_ALLOCATOR"] = (
+                    "uninitialized-poison"
+                )
+            # Enable compile-time checks
+            self._set_mojo_define("MOJO_STDLIB_SIMD_UNINIT_CHECK", "true")
 
     def __repr__(self) -> str:
         if self.num_threads:
@@ -455,13 +467,62 @@ class InferenceSession:
             custom_extensions: The extensions to load for the model.
               Supports paths to `.mojopkg` custom ops.
 
-            weights_registry: A mapping from names of model weights' names to
-              their values. The values are currently expected to be dlpack
-              arrays. If an array is a read-only numpy array, the user must
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
               ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
 
         Returns:
             The loaded model, compiled and ready to execute.
+
+        Raises:
+            RuntimeError: If the path provided is invalid.
+        """
+        models = self.load_all(
+            model,
+            custom_extensions=custom_extensions,
+            weights_registry=weights_registry,
+        )
+        if len(models) != 1:
+            raise ValueError(
+                f"Expected exactly one model in the compiled artifact, but "
+                f"got {len(models)}. Use load_all() to load multi-model artifacts."
+            )
+        return models[0]
+
+    def load_all(
+        self,
+        model: str | Path | Graph,
+        *,
+        custom_extensions: CustomExtensionsType | None = None,
+        weights_registry: Mapping[str, DLPackArray] | None = None,
+    ) -> list[Model]:
+        """Loads all trained models and compiles it for inference.
+
+        A compiled MEF artifact may contain more than one model (for example a
+        vision encoder and a language model compiled together).  This method
+        returns one :class:`Model` per model encoded in the artifact, in MEF
+        order.  For single-model artifacts the returned list has exactly one
+        element.
+
+        Args:
+            model: Path to a model.
+
+            custom_extensions: The extensions to load for the model.
+              Supports paths to `.mojopkg` custom ops.
+
+            weights_registry: Model weight names mapped to
+              their values. The values should be dlpack
+              arrays. If an array is a read-only numpy array, you must
+              ensure that its lifetime extends beyond the lifetime of the model.
+              Although ``weights_registry`` is technically optional, you'll always
+              need to load weights in practice.
+
+        Returns:
+            The loaded models, compiled and ready to execute, one per model
+            primitive encoded in the compiled artifact.
 
         Raises:
             RuntimeError: If the path provided is invalid.
@@ -520,8 +581,10 @@ class InferenceSession:
                         "Failed to compile the model. Please file an issue, "
                         "all models should be correct by construction and "
                         "this error should have been caught during construction.\n"
-                        "For more detailed failure information run with the "
-                        "environment variable `MODULAR_MAX_DEBUG=True`."
+                        "For more detailed failure information enable the "
+                        "`max-debug.source-tracebacks` config key (for example, "
+                        "`Graph.debug.source_tracebacks = True` or "
+                        "`MODULAR_DEBUG=source-tracebacks`)."
                     ) from e
         else:
             raise RuntimeError("The model is not a valid path or module.")
@@ -539,12 +602,25 @@ class InferenceSession:
         from max.driver import is_virtual_device_mode
 
         if is_virtual_device_mode():
-            # In compile-only mode with virtual devices, skip initialization
-            # Initialization requires device memory allocation which virtual devices don't support
-            return _model
+            # In compile-only mode with virtual devices, skip initialization.
+            # Initialization requires device memory allocation which virtual
+            # devices don't support. Return one handle per top-level graph in
+            # the module (skipping subgraphs, which are inlined callees) so
+            # callers that unpack per-model
+            # (e.g. ``vision, language = session.load_all(...)``) still work.
+            # The MLIR attribute for subgraph GraphOps is stored as
+            # ``isSubgraph`` (camelCase matches the tablegen ODS).
+            if isinstance(model, Graph):
+                num_models = sum(
+                    1
+                    for op in model._module.body.operations
+                    if "isSubgraph" not in op.attributes
+                )
+            else:
+                num_models = 1
+            return [_model] * num_models
 
-        _model._load(weights_registry_real)
-        return _model
+        return self._impl._load_all(_model, weights_registry_real)
 
     def set_debug_print_options(
         self,
@@ -734,6 +810,18 @@ class InferenceSession:
 
         self._set_mojo_define("USE_FI_TOPK_KERNEL", 1)
 
+    def enable_per_tensor_fp8_quantize(self, mode: str) -> None:
+        """Enables per-tensor FP8 quantization.
+
+        Args:
+            mode: String to enable/disable. Accepts "false", "off", "no", "0"
+                to disable, any other value to enable.
+        """
+        if mode.lower() in ("false", "off", "no", "0"):
+            return
+
+        self._set_mojo_define("ENABLE_PER_TENSOR_FP8_QUANTIZE", 1)
+
     def _use_experimental_kernels(self, mode: str) -> None:
         """Enables experimental kernels."""
         if mode.lower() in ("false", "off", "no", "0"):
@@ -754,16 +842,6 @@ class InferenceSession:
             return
 
         self._set_mojo_define("MODULAR_USE_VENDOR_CCL", 1)
-
-    def _pdl_level(self, level: str | PDLLevel) -> None:
-        """Level of overlap of kernel launch."""
-        if not isinstance(level, PDLLevel):
-            if level not in {"0", "1", "2"}:
-                raise TypeError(
-                    f"Invalid pdl level ({level}). Please use one of: {[0, 1, 2]} corresponding to {[x.name for x in PDLLevel]}"
-                )
-
-        self._set_mojo_define("PDL_LEVEL", int(level))
 
     def _dump_gpu_asm(self, option: bool | str | Path = True) -> None:
         """Enables dumping of gpu asm.

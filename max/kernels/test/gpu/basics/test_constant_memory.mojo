@@ -14,13 +14,13 @@
 
 from std.gpu.host import ConstantMemoryMapping, DeviceContext
 from std.gpu.host.compile import _compile_code
-from std.gpu import thread_idx_uint as thread_idx
+from std.gpu import thread_idx
 from std.memory import stack_allocation
 from std.testing import assert_equal, assert_true
 
 
 def test_constant_memory_compile(ctx: DeviceContext) raises:
-    def alloc[
+    def _alloc[
         n: Int
     ]() -> UnsafePointer[
         Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
@@ -29,10 +29,10 @@ def test_constant_memory_compile(ctx: DeviceContext) raises:
             n, Float32, address_space=AddressSpace.CONSTANT
         ]()
 
-    assert_true(".const .align 4 .b8 " in _compile_code[alloc[20]]())
+    assert_true(".const .align 4 .b8 " in _compile_code[_alloc[20]]())
     assert_true(
         "internal addrspace(4) global [20 x float]"
-        in _compile_code[alloc[20], emission_kind="llvm"]()
+        in _compile_code[_alloc[20], emission_kind="llvm"]()
     )
 
 
@@ -88,7 +88,7 @@ def test_constant_mem_via_func(ctx: DeviceContext) raises:
         return ptr
 
     def static_constant_kernel[
-        get_constant_memory: def() -> UnsafePointer[
+        get_constant_memory: def() thin -> UnsafePointer[
             Float32, MutAnyOrigin, address_space=AddressSpace.CONSTANT
         ]
     ](data: UnsafePointer[Float32, MutAnyOrigin]):

@@ -109,7 +109,7 @@ def _utf8_char_width(b: Byte) -> Int:
 
 @always_inline
 def _extract_vector[
-    width: Int, //, offset: Int
+    width: SIMDSize, //, offset: Int
 ](a: SIMD[DType.uint8, width], b: SIMD[DType.uint8, width]) -> SIMD[
     DType.uint8, width
 ]:
@@ -270,7 +270,7 @@ def _is_valid_utf8(span: Span[mut=False, Byte, ...]) -> Bool:
 @parameter
 @always_inline
 def _is_utf8_continuation_byte[
-    w: Int
+    w: SIMDSize
 ](vec: SIMD[DType.uint8, w]) -> SIMD[DType.bool, w]:
     return vec.cast[DType.int8]().lt(-(0b1000_0000 >> 1))
 
@@ -408,7 +408,7 @@ struct UTF8Chunks[origin: ImmutOrigin](ImplicitlyCopyable, Iterable, Iterator):
             raise StopIteration()
 
         @always_inline
-        def safe_get(i: Int) unified {read self} -> Byte:
+        def safe_get(i: Int) {read self} -> Byte:
             return self._bytes[i] if i < len(self._bytes) else Byte(0)
 
         @always_inline

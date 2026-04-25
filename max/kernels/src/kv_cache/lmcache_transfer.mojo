@@ -29,11 +29,7 @@ slot_mapping[token_idx] gives the physical slot in the paged cache:
     offset_in_block = slot % page_size
 """
 
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_int as block_idx,
-    thread_idx_int as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 from std.gpu.host import DeviceContext
 from layout import Layout, LayoutTensor
 from std.runtime.tracing import Trace, TraceLevel
@@ -44,6 +40,7 @@ from std.runtime.tracing import Trace, TraceLevel
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"lmcache_offload_{dtype}", mangle=True)
 def _lmcache_offload_kernel[
     dtype: DType,
     page_size: Int,
@@ -86,7 +83,7 @@ def _lmcache_offload_kernel[
     var block_id, offset_in_block = divmod(slot, page_size)
 
     var thread_id: Int = thread_idx.x
-    var num_threads = Int(block_dim.x)
+    var num_threads = block_dim.x
 
     for hidden_idx in range(thread_id, hidden_dim_total, num_threads):
         var head_idx, head_dim_idx = divmod(hidden_idx, head_dim)
@@ -105,6 +102,7 @@ def _lmcache_offload_kernel[
 # ===----------------------------------------------------------------------=== #
 
 
+@__name(t"lmcache_onload_{dtype}", mangle=True)
 def _lmcache_onload_kernel[
     dtype: DType,
     page_size: Int,
@@ -150,7 +148,7 @@ def _lmcache_onload_kernel[
     var block_id, offset_in_block = divmod(slot, page_size)
 
     var thread_id: Int = thread_idx.x
-    var num_threads = Int(block_dim.x)
+    var num_threads = block_dim.x
 
     for hidden_idx in range(thread_id, hidden_dim_total, num_threads):
         var head_idx, head_dim_idx = divmod(hidden_idx, head_dim)

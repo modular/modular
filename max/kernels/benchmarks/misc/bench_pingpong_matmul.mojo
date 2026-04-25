@@ -33,7 +33,9 @@ from internal_utils._utils import InitializationType
 from layout import CoordLike, Coord, Idx, TileTensor, row_major
 from linalg.matmul.gpu import _matmul_gpu
 from linalg.utils import elementwise_compute_lambda_type
-from linalg.matmul.gpu.amd.pingpong_kernel import ping_pong_matmul
+from linalg.matmul.gpu.amd.amd_ping_pong_matmul import (
+    structured_ping_pong_matmul as ping_pong_matmul,
+)
 from std.utils import IndexList
 
 
@@ -98,7 +100,7 @@ def bench_matmul[
     # update: using 512 to be 2x the infinity cache on MI300x
     @always_inline
     def get_size(shape: Coord) -> Int:
-        return shape[0].value() * shape[1].value()
+        return Int(shape[0].value()) * Int(shape[1].value())
 
     comptime simd_size = 4
 
@@ -168,9 +170,9 @@ def bench_matmul[
 
                 comptime if use_ping_pong_matmul:
                     ping_pong_matmul[enable_swizzle=enable_swizzle](
-                        tensor_a.to_layout_tensor(),
-                        tensor_b.to_layout_tensor(),
-                        tensor_c.to_layout_tensor(),
+                        tensor_a,
+                        tensor_b,
+                        tensor_c,
                         ctx,
                     )
                 else:
@@ -190,7 +192,10 @@ def bench_matmul[
     var flops = ThroughputMeasure(
         BenchMetric.flops,
         # Flop: 2*M*N*K. Use A and C shapes since they're not transposed.
-        2 * shape_c[0].value() * shape_c[1].value() * shape_a[1].value(),
+        2
+        * Int(shape_c[0].value())
+        * Int(shape_c[1].value())
+        * Int(shape_a[1].value()),
     )
     b.bench_function[bench_func](
         BenchId(

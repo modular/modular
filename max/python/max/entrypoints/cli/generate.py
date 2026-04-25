@@ -86,8 +86,10 @@ async def stream_text_to_console(
     messages = [
         TextGenerationRequestMessage(
             role="user",
-            content=[TextContentPart(text=prompt)]
-            + [ImageContentPart() for _ in images],
+            content=[
+                TextContentPart(text=prompt),
+                *(ImageContentPart() for _ in images),
+            ],
         )
     ]
     request = TextGenerationRequest(

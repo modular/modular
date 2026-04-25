@@ -84,6 +84,8 @@ def CanonicalizerPass(
     max_iterations: int = 10,
     max_num_rewrites: int = -1,
     test_convergence: bool = False,
+    cse_between_iterations: bool = False,
+    filter_dialects: Sequence[str] = [],
     disabled_patterns: Sequence[str] = [],
     enabled_patterns: Sequence[str] = [],
 ) -> max._core.Pass:
@@ -218,12 +220,7 @@ def RemoveDeadValuesPass(canonicalize: bool = True) -> max._core.Pass:
     (C) Removes unneccesary operands, results, region arguments, and region
     terminator operands of region branch ops, and,
     (D) Removes simple and region branch ops that have all non-live results and
-    don't affect memory in any way,
-
-    iff
-
-    the IR doesn't have any non-function symbol ops, non-call symbol user ops
-    and branch ops.
+    don't affect memory in any way.
 
     Here, a "simple op" refers to an op that isn't a symbol op, symbol-user op,
     region branch op, branch op, region branch terminator op, or return-like.

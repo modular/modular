@@ -102,19 +102,19 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     var output_shape = IndexList[rank](d0, d1, d2, d3, 4)
 
     var input_0_dyn = TileTensor(
-        input_0_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_0_device_buffer, row_major(Coord(input_shape))
     )
     var input_1_dyn = TileTensor(
-        input_1_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_1_device_buffer, row_major(Coord(input_shape))
     )
     var input_2_dyn = TileTensor(
-        input_2_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_2_device_buffer, row_major(Coord(input_shape))
     )
     var input_3_dyn = TileTensor(
-        input_3_device_buffer.unsafe_ptr(), row_major(Coord(input_shape))
+        input_3_device_buffer, row_major(Coord(input_shape))
     )
     var output_dyn = TileTensor(
-        output_device_buffer.unsafe_ptr(), row_major(Coord(output_shape))
+        output_device_buffer, row_major(Coord(output_shape))
     )
 
     comptime B_SIZE = 32
@@ -190,7 +190,7 @@ def test_concat_4_inputs_rank5[test_epilogue: Bool](ctx: DeviceContext) raises:
     ctx.enqueue_copy(output_host_buffer, output_device_buffer)
     ctx.synchronize()
 
-    def validate_results() raises:
+    def validate_results() raises {read}:
         for i in range(d0):
             for j in range(d1):
                 for k in range(d2):

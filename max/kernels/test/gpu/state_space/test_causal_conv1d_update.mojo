@@ -201,25 +201,25 @@ def run_causal_conv1d_update_gpu[
 
     # Create TileTensors for GPU kernel
     var input_device_tt = TileTensor(
-        input_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        input_device,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
     var conv_state_device_tt = TileTensor(
-        conv_state_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        conv_state_device,
         row_major(Idx(batch), Idx(dim), Idx(state_len)),
     )
     var weight_device_tt = TileTensor(
-        weight_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        weight_device,
         row_major(Idx(dim), Idx(width)),
     )
     var bias_device_tt = TileTensor(
-        bias_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        bias_device,
         row_major(
             Idx(dim),
         ),
     )
     var output_device_tt = TileTensor(
-        output_device.unsafe_ptr().bitcast[Scalar[dtype]](),
+        output_device,
         row_major(Idx(batch), Idx(dim), Idx(seqlen)),
     )
 

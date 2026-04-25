@@ -13,12 +13,10 @@
 """This module implements the low level concurrency library."""
 
 from std.os import abort
-from std.os.atomic import Atomic
-from std.ffi import external_call
+from std.atomic import Atomic
+from std.ffi import _CPointer, external_call
 from std.gpu.host.device_context import _DeviceContextPtr
-from std.memory import alloc
 
-from std.builtin._startup import _ensure_current_or_global_runtime_init
 from std.builtin.coroutine import (
     AnyCoroutine,
     _coro_resume_fn,
@@ -35,11 +33,11 @@ from std.utils import StaticTuple
 # ===-----------------------------------------------------------------------===#
 
 
-struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
+struct _Chain(Boolable, Defaultable, ImplicitlyCopyable, RegisterPassable):
     """A proxy for the C++ runtime's AsyncValueRef<_Chain> type."""
 
     # Actually an AsyncValueRef<_Chain>, which is just an AsyncValue*
-    var storage: UnsafePointer[Int, MutExternalOrigin]
+    var storage: _CPointer[Int, MutExternalOrigin]
 
     def __init__(out self):
         self.storage = {}
@@ -48,7 +46,7 @@ struct _Chain(Boolable, Defaultable, TrivialRegisterPassable):
         return Bool(self.storage)
 
 
-struct _AsyncContext(TrivialRegisterPassable):
+struct _AsyncContext(ImplicitlyCopyable, RegisterPassable):
     """This struct models the coroutine context contained in every coroutine
     instance. The struct consists of a unary callback function that accepts a
     pointer argument. It is invoked with the second struct field, which is an
@@ -60,7 +58,7 @@ struct _AsyncContext(TrivialRegisterPassable):
     to available.
     """
 
-    comptime callback_fn_type = def(_Chain) -> None
+    comptime callback_fn_type = def(_Chain) thin -> None
 
     var callback: Self.callback_fn_type
     var chain: _Chain
@@ -83,7 +81,6 @@ struct _AsyncContext(TrivialRegisterPassable):
 
 
 def _init_asyncrt_chain(chain: UnsafePointer[mut=True, _Chain, _]):
-    _ensure_current_or_global_runtime_init()
     external_call["KGEN_CompilerRT_AsyncRT_InitializeChain", NoneType](
         chain.address
     )
@@ -104,7 +101,6 @@ def _async_and_then(
 
 
 def _async_execute[type: AnyType](handle: AnyCoroutine, desired_worker_id: Int):
-    _ensure_current_or_global_runtime_init()
     external_call["KGEN_CompilerRT_AsyncRT_Execute", NoneType](
         _coro_resume_fn, handle, desired_worker_id
     )
@@ -138,13 +134,35 @@ def parallelism_level() -> Int:
     Returns:
         The number of worker threads available in the async runtime.
     """
-    _ensure_current_or_global_runtime_init()
     return Int(
         external_call[
             "KGEN_CompilerRT_AsyncRT_ParallelismLevel",
             Int32,
         ]()
     )
+
+
+def parallelism_level(ctx: Optional[DeviceContext]) -> Int:
+    """Gets the parallelism level from a DeviceContext.
+
+    For CPU contexts this returns the number of worker threads in the
+    runtime associated with that context. Falls back to the global
+    parallelism level if the context is None or the query fails.
+
+    Args:
+        ctx: The device context to query.
+
+    Returns:
+        The parallelism level of the context.
+    """
+    from std.gpu.host import DeviceAttribute
+
+    if ctx:
+        try:
+            return ctx.value().get_attribute(DeviceAttribute.PARALLELISM_LEVEL)
+        except:
+            pass
+    return parallelism_level()
 
 
 def create_task(
@@ -464,7 +482,7 @@ struct TaskGroupContext(TrivialRegisterPassable):
     when they complete.
     """
 
-    comptime tg_callback_fn_type = def(mut TaskGroup) -> None
+    comptime tg_callback_fn_type = def(mut TaskGroup) thin -> None
     """Type definition for callback functions that operate on TaskGroups."""
 
     var callback: Self.tg_callback_fn_type
@@ -608,7 +626,7 @@ struct TaskGroup(Defaultable):
 # ===-----------------------------------------------------------------------===#
 
 
-struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
+struct DeviceContextPtr(Defaultable, ImplicitlyCopyable, RegisterPassable):
     """Exposes a pointer to a C++ DeviceContext to Mojo.
 
     Note: When initializing a `DeviceContext` from a pointer, the refcount is not
@@ -617,7 +635,7 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
     by the graph compiler.
     """
 
-    var _handle: OpaquePointer[ExternalOrigin[mut=True]]
+    var _handle: Optional[UnsafePointer[NoneType, ExternalOrigin[mut=True]]]
     """The underlying pointer to the C++ `DeviceContext`."""
 
     @always_inline
@@ -679,6 +697,15 @@ struct DeviceContextPtr(Defaultable, TrivialRegisterPassable):
             The `DeviceContext` that this pointer points to.
         """
         return self[]
+
+    def get_optional_device_context(self) -> Optional[DeviceContext]:
+        """Get the `DeviceContext` that this pointer points to if it is non-null,
+        otherwise None.
+
+        Returns:
+            The `DeviceContext` that this pointer points to, or `None`.
+        """
+        return Optional(self[]) if self._handle else None
 
 
 struct DeviceContextPtrList[size: Int](Sized, TrivialRegisterPassable):

@@ -826,7 +826,7 @@ def pad_repeat[
     )
 
     comptime for i in range(output.rank):
-        loop_bounds[i] = IndexList[2](0, input.layout.shape[i]().value())
+        loop_bounds[i] = IndexList[2](0, Int(input.layout.shape[i]().value()))
 
     var non_pad_iter = _NestedLoopIter[output.rank](loop_bounds)
 
@@ -834,7 +834,7 @@ def pad_repeat[
         var output_idx = input_idx + pre_pads
         var in_idx = Int(input.layout(Coord(input_idx)))
         var out_idx = Int(output.layout(Coord(output_idx)))
-        output.ptr[out_idx] = input.ptr[in_idx]
+        output.raw_store(out_idx, input.raw_load(in_idx))
 
     for axis in reversed(range(comptime (output.rank))):
         for i in range(axis):
@@ -860,7 +860,7 @@ def pad_repeat[
             var in_idx = Int(output.layout(Coord(read_idx)))
 
             var out_idx = Int(output.layout(Coord(write_idx)))
-            output.ptr[out_idx] = output.ptr[in_idx]
+            output.raw_store(out_idx, output.raw_load(in_idx))
 
         # and now post-padding
         var post_lower = pre_pads[axis] + Int(input.dim(axis))
@@ -876,4 +876,4 @@ def pad_repeat[
 
             var in_idx = Int(output.layout(Coord(read_idx)))
             var out_idx = Int(output.layout(Coord(write_idx)))
-            output.ptr[out_idx] = output.ptr[in_idx]
+            output.raw_store(out_idx, output.raw_load(in_idx))

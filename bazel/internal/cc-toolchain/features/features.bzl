@@ -8,6 +8,7 @@ MARKER_FEATURES = [
     "modular_code",  # Differentiate between third and first party code
     "module_maps",
     "only_doth_headers_in_module_maps",
+    "set_soname",
     "supports_start_end_lib",
     "sysroot",  # Stop duplicate sysroot confusion until legacy features are disabled
 ]

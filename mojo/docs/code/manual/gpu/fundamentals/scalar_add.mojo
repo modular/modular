@@ -15,11 +15,7 @@ from std.math import iota
 from std.sys import exit, has_accelerator
 
 from std.gpu.host import DeviceContext
-from std.gpu import (
-    block_dim_uint as block_dim,
-    block_idx_uint as block_idx,
-    thread_idx_uint as thread_idx,
-)
+from std.gpu import block_dim, block_idx, thread_idx
 
 comptime num_elements = 20
 
@@ -51,7 +47,7 @@ def scalar_add(
     # Bounds checking: ensure we don't access memory beyond the vector size.
     # This is crucial when the number of threads doesn't exactly match vector
     # size.
-    if idx < UInt(size):
+    if idx < size:
         # Each thread adds the scalar to its corresponding vector element
         # This operation happens in parallel across all GPU threads
         vector[idx] += scalar
@@ -74,7 +70,7 @@ def main() raises:
         ctx.synchronize()
 
         # Fill the host buffer with sequential numbers (0, 1, 2, ..., size-1).
-        iota(host_buffer.unsafe_ptr(), num_elements)
+        iota(host_buffer.as_span())
         print("Original host buffer:", host_buffer)
 
         # Create a buffer in device (GPU) memory to store data for computation.

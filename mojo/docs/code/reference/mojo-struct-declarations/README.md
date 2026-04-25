@@ -1,0 +1,14 @@
+# Code examples and tests for struct reference
+
+This directory contains Code examples and tests for the
+[Mojo struct declarations
+reference](../../../../docs/reference/mojo-struct-declarations.mdx) section
+of the Mojo Manual.
+
+Contents:
+
+- Each `.mojo` file is a standalone Mojo application.
+- The `BUILD.bazel` file defines:
+  - A `mojo_binary` target for each `.mojo` file (using the file name without
+    extension).
+  - A `modular_run_binary_test` target for each binary (with a `_test` suffix).

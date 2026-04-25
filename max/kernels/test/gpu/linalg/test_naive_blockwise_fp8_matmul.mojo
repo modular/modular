@@ -35,9 +35,9 @@ def test_naive_blockwise_fp8_matmul[
     comptime BLOCK_SCALE_N = block_scales_sizes[1]
     comptime BLOCK_SCALE_K = block_scales_sizes[2]
 
-    var M = m.value()
-    var N = n.value()
-    var K = k.value()
+    var M = Int(m.value())
+    var N = Int(n.value())
+    var K = Int(k.value())
 
     print(
         "== test_naive_blockwise_fp8_matmul",
@@ -145,15 +145,11 @@ def test_naive_blockwise_fp8_matmul[
     ctx.enqueue_copy(a_device, a_host_ptr)
     ctx.enqueue_copy(b_device, b_host_ptr)
 
-    var c_dev = TileTensor(c_device.unsafe_ptr(), row_major(c_shape))
-    var a_dev = TileTensor(a_device.unsafe_ptr(), row_major(a_shape))
-    var b_dev = TileTensor(b_device.unsafe_ptr(), row_major(b_shape))
-    var a_scale_dev = TileTensor(
-        a_scale_device.unsafe_ptr(), row_major(a_scale_shape)
-    )
-    var b_scale_dev = TileTensor(
-        b_scale_device.unsafe_ptr(), row_major(b_scale_shape)
-    )
+    var c_dev = TileTensor(c_device, row_major(c_shape))
+    var a_dev = TileTensor(a_device, row_major(a_shape))
+    var b_dev = TileTensor(b_device, row_major(b_shape))
+    var a_scale_dev = TileTensor(a_scale_device, row_major(a_scale_shape))
+    var b_scale_dev = TileTensor(b_scale_device, row_major(b_scale_shape))
 
     if (
         M % BLOCK_SCALE_M != 0

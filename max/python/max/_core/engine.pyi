@@ -107,6 +107,16 @@ class Model:
         """
 
     @property
+    def kernel_summaries(self) -> list[str]:
+        """
+        Kernel fusion summaries from the compiled model.
+
+        Returns a list of strings, one per ``mgp.generic.execute`` kernel in
+        the compiled graph.  Each string describes the fused kernel composition,
+        e.g. ``"Epilogue(custom__kv_rope, custom__kv_cache_store)"``.
+        """
+
+    @property
     def signature(self) -> inspect.Signature:
         """Get input signature for model."""
 
@@ -275,7 +285,122 @@ class Model:
           path: The filename where the mef is exported to.
         """
 
-    def _load(self, weights_registry: Mapping[str, Any]) -> None: ...
+    def reload(self, weights_registry: Mapping[str, Any]) -> None: ...
+
+class DebugConfig:
+    """
+    Unified debug configuration for MAX inference.
+
+    ``DebugConfig`` is a process-wide singleton accessed through
+    :attr:`InferenceSession.debug`. It controls model debugging features
+    such as ``NaN`` checks, synchronous GPU execution, stack traces, and IR
+    dumping.
+
+    There are two ways to configure debugging options:
+
+    * Set the ``MODULAR_DEBUG`` environment variable to a list of
+      kebab-case property names separated by commas. Boolean properties
+      can be enabled with just the name; others use ``name=value`` form.
+      For example: ``MODULAR_DEBUG=nan-check,assert-level=all``.
+    * Set properties directly with the Python API, for example
+      ``InferenceSession.debug.<property> = <value>``. Options are
+      class-level on :class:`InferenceSession` because they affect
+      globally shared infrastructure.
+
+    For the environment variable and config file, the name ``sensible``
+    enables a curated default set defined in :attr:`sensible_mode`.
+    """
+
+    @property
+    def nan_check(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to insert runtime checks after each compiled op that abort if any output contains ``NaN``. Takes effect at model build time.
+        """
+
+    @nan_check.setter
+    def nan_check(self, arg: bool, /) -> None: ...
+    @property
+    def uninitialized_read_check(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to instrument buffer reads to detect reads of uninitialized memory. Takes effect at model build time.
+        """
+
+    @uninitialized_read_check.setter
+    def uninitialized_read_check(self, arg: bool, /) -> None: ...
+    @property
+    def device_sync_mode(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to force synchronous GPU execution so every device operation waits for completion. This surfaces async errors at their call site but serializes the pipeline. Takes effect at run time.
+        """
+
+    @device_sync_mode.setter
+    def device_sync_mode(self, arg: bool, /) -> None: ...
+    @property
+    def stack_trace_on_error(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to print a C++ stack trace whenever a runtime error is raised. Takes effect at run time.
+        """
+
+    @stack_trace_on_error.setter
+    def stack_trace_on_error(self, arg: bool, /) -> None: ...
+    @property
+    def stack_trace_on_crash(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to print a C++ stack trace on fatal signals such as ``SIGSEGV`` or ``SIGABRT``. Takes effect at run time.
+        """
+
+    @stack_trace_on_crash.setter
+    def stack_trace_on_crash(self, arg: bool, /) -> None: ...
+    @property
+    def source_tracebacks(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to capture Python source locations during graph construction so runtime errors can be traced back to user code. Takes effect at graph build time and is typically set using ``Graph.debug.source_tracebacks``.
+        """
+
+    @source_tracebacks.setter
+    def source_tracebacks(self, arg: bool, /) -> None: ...
+    @property
+    def op_log_level(self) -> str:
+        r"""
+        A string that sets the log level for per-op tracing. One of ``\'\'``, ``'notset'``, ``'trace'``, ``'debug'``, ``'info'``, ``'warning'``, ``'error'``, ``'critical'``. Takes effect at model build time.
+        """
+
+    @op_log_level.setter
+    def op_log_level(self, arg: str, /) -> None: ...
+    @property
+    def assert_level(self) -> str:
+        r"""
+        A string that sets the Mojo assertion level for compiled kernels. One of ``\'\'``, ``'none'``, ``'warn'``, ``'safe'``, ``'all'``. Higher levels enable more runtime checks (e.g. LayoutTensor bounds) at a performance cost. Takes effect at model build time.
+        """
+
+    @assert_level.setter
+    def assert_level(self, arg: str, /) -> None: ...
+    @property
+    def print_style(self) -> PrintStyle:
+        """
+        A :obj:`PrintStyle` value that sets the format for tensor debug printing. Takes effect at run time.
+        """
+
+    @print_style.setter
+    def print_style(self, arg: PrintStyle, /) -> None: ...
+    @property
+    def ir_output_dir(self) -> str:
+        """
+        A string path to the directory into which MAX dumps intermediate compiler IR for inspection. Empty string disables dumping. Takes effect at model build time.
+        """
+
+    @ir_output_dir.setter
+    def ir_output_dir(self, arg: str, /) -> None: ...
+    @property
+    def sensible_mode(self) -> bool:
+        """
+        A boolean that, when ``True``, triggers MAX to enable a curated default debugging set, including ``nan_check``, ``assert_level='all'``, ``device_sync_mode``, ``stack_trace_on_error``, ``stack_trace_on_crash``, and ``source_tracebacks``. You can override the defaults using individual properties.
+        """
+
+    @sensible_mode.setter
+    def sensible_mode(self, arg: bool, /) -> None: ...
+    def reset(self) -> None:
+        """Reset all debug options to their defaults."""
 
 class InferenceSession:
     """
@@ -311,6 +436,9 @@ class InferenceSession:
                 which lets the runtime choose automatically.
         """
 
+    def _load_all(
+        self, compiled: Model, weights_registry: Mapping[str, Any]
+    ) -> list[Model]: ...
     def compile_from_path(
         self,
         model_path: str | os.PathLike,
@@ -390,6 +518,8 @@ class InferenceSession:
     @property
     def devices(self) -> list[max._core.driver.Device]:
         """Returns the list of devices used by this session."""
+
+    debug: DebugConfig
 
 class PrintStyle(enum.Enum):
     """

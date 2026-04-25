@@ -626,8 +626,7 @@ class TextBatchConstructor:
         ):
             self.kv_cache.release(request_id, replica_idx=replica_idx)
 
-        # Pipeline release handles special cases (spec decoding draft model KV cache)
-        # For regular pipelines, release() is a no-op
+        # Pipeline release handles model-specific cleanup (e.g. vision encoder cache)
         self.pipeline.release(request_id)
 
         # _request_id_to_replica_idx is the source of truth for whether a request
@@ -775,13 +774,9 @@ class TextBatchConstructor:
                     self._return_to_request_queue(ctx, replica_idx)
                     break
 
-                # Try to allocate kv cache blocks
                 try:
                     self.kv_cache.alloc(
-                        ctx,
-                        replica_idx=replica_idx,
-                        num_steps=1,
-                        num_speculative_steps=self.scheduler_config.num_speculative_tokens,
+                        ctx, replica_idx=replica_idx, num_steps=1
                     )
                 except InsufficientBlocksError:
                     if len(replica_requests.tg_reqs) == 0 and len(batch) == 0:
@@ -871,7 +866,6 @@ class TextBatchConstructor:
                         candidate_context,
                         replica_idx=replica_idx,
                         num_steps=batch.num_steps,
-                        num_speculative_steps=self.scheduler_config.num_speculative_tokens,
                     )
                     break
                 except InsufficientBlocksError:

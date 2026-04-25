@@ -10,6 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
+"""Implements `TString`, a template string that captures interpolated values at compile-time."""
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
 from std.utils import Variant
 import std.format._utils as fmt
@@ -44,7 +45,7 @@ struct TString[
     """
 
     comptime _InjectedValues = VariadicPack[
-        origin=Self.origins, False, Writable, *Self.Ts
+        origin=Self.origins, element_trait=Writable, False, *Self.Ts
     ]
     var _values: Self._InjectedValues
 
@@ -60,9 +61,7 @@ struct TString[
         var offset = 0
 
         @always_inline
-        def write_string() unified {
-            read encoded_bytes, read offset, mut writer
-        } -> Int:
+        def write_string() {read encoded_bytes, read offset, mut writer} -> Int:
             var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
@@ -73,7 +72,7 @@ struct TString[
 
         # Alternate writing NUL terminated string-literal part, followed
         # by the interpolated replacement field.
-        comptime for i in range(Variadic.size(Self.Ts)):
+        comptime for i in range(Self.Ts.size):
             var length = write_string()
             offset += length + 1
             self._values[i].write_to(writer)
@@ -224,7 +223,7 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var i = 0
 
     @always_inline
-    def peek_next_is(byte: Byte) unified {read} -> Bool:
+    def peek_next_is(byte: Byte) {read} -> Bool:
         return i + 1 < len(bytes) and bytes[i + 1] == byte
 
     while i < len(bytes):

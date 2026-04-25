@@ -400,30 +400,22 @@ class ZImagePipeline(DiffusionPipeline):
         residual_dim, output_dim = cfg.fbcache_dims()
         state = DenoisingCacheState()
 
-        def _device_zeros(shape: tuple[int, ...]) -> Tensor:
-            return Tensor(
-                storage=Buffer.zeros(
-                    shape, self._cache_dtype, device=self._cache_device
-                )
-            )
-
         if self.cache_config.first_block_caching:
-            state.prev_residual = _device_zeros(
-                (batch_size, seq_len, residual_dim)
+            assert self._fbc is not None
+            fbc_state = self._fbc.create_state(
+                batch_size, seq_len, residual_dim, output_dim
             )
-            state.prev_output = _device_zeros((batch_size, seq_len, output_dim))
+            state.prev_residual = fbc_state.prev_residual
+            state.prev_output = fbc_state.prev_output
 
         if self.cache_config.taylorseer:
-            for attr in (
-                "taylor_factor_0",
-                "taylor_factor_1",
-                "taylor_factor_2",
-            ):
-                setattr(
-                    state,
-                    attr,
-                    _device_zeros((batch_size, seq_len, output_dim)),
-                )
+            assert self._taylorseer is not None
+            ts_state = self._taylorseer.create_state(
+                batch_size, seq_len, output_dim
+            )
+            state.taylor_factor_0 = ts_state.factor_0
+            state.taylor_factor_1 = ts_state.factor_1
+            state.taylor_factor_2 = ts_state.factor_2
 
         return state
 

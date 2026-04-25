@@ -54,6 +54,7 @@ from max.pipelines.lib import (
     PixelGenerationPipeline,
     PixelGenerationTokenizer,
 )
+from max.pipelines.lib.model_manifest import ModelManifest
 from peft.peft_model import PeftModel
 from qwen2_5vl import generate_utils as qwen2_5vl_utils
 from qwen3vl import generate_utils as qwen3vl_utils
@@ -279,7 +280,7 @@ def _create_vision_max_pipeline(
     else:
         runtime = PipelineRuntimeConfig(max_num_steps=1)
     config = pipelines.PipelineConfig(
-        model=model,
+        models=ModelManifest({"main": model}),
         runtime=runtime,
     )
     tokenizer, pipeline = pipelines.PIPELINE_REGISTRY.retrieve(config)
@@ -645,7 +646,7 @@ class Qwen3VLPipelineOracle(PipelineOracle):
 class PixtralPipelineOracle(PipelineOracle):
     def __init__(self) -> None:
         super().__init__()
-        self.model_path = "mistral-community/pixtral-12b"
+        self.model_path = "mistral-experimental/pixtral-12b"
         self.max_length = 8192
 
     @property
@@ -669,12 +670,16 @@ class PixtralPipelineOracle(PipelineOracle):
         revision = hf_repo_lock.revision_for_hf_repo(self.model_path)
         assert revision is not None
         config = pipelines.PipelineConfig(
-            model=pipelines.MAXModelConfig(
-                device_specs=device_specs,
-                quantization_encoding=encoding,
-                model_path=self.model_path,
-                huggingface_model_revision=revision,
-                max_length=self.max_length,
+            models=ModelManifest(
+                {
+                    "main": pipelines.MAXModelConfig(
+                        device_specs=device_specs,
+                        quantization_encoding=encoding,
+                        model_path=self.model_path,
+                        huggingface_model_revision=revision,
+                        max_length=self.max_length,
+                    )
+                }
             ),
             runtime=PipelineRuntimeConfig(max_num_steps=1),
         )
@@ -1129,17 +1134,22 @@ class ImageGenerationOracle(PipelineOracle):
     num_steps: int
     """Number of denoising steps."""
 
+    config_params: dict[str, Any]
+    """Additional config parameters (e.g. prefer_module_v3)."""
+
     def __init__(
         self,
         model_path: str = "black-forest-labs/FLUX.1-dev",
         num_steps: int = 50,
         requests: list[Any] = test_data.DEFAULT_PIXEL_GENERATION,
+        config_params: dict[str, Any] = {},  # noqa: B006
     ) -> None:
         super().__init__()
         self.model_path = model_path
         self.task = PipelineTask.PIXEL_GENERATION
         self.num_steps = num_steps
         self._inputs = requests
+        self.config_params = config_params
 
     @property
     def device_encoding_map(self) -> dict[str, list[str]]:
@@ -1160,12 +1170,18 @@ class ImageGenerationOracle(PipelineOracle):
     ) -> MaxPipelineAndTokenizer:
         """Create MAX FLUX pixel generation pipeline."""
 
+        prefer_module_v3 = self.config_params.get("prefer_module_v3", True)
+
+        models = ModelManifest.from_model_path(
+            self.model_path,
+            device_specs=device_specs,
+        )
+
         config = pipelines.PipelineConfig(
-            model=pipelines.MAXModelConfig(
-                model_path=self.model_path,
-                device_specs=device_specs,
+            models=models,
+            runtime=PipelineRuntimeConfig(
+                prefer_module_v3=prefer_module_v3,
             ),
-            runtime=PipelineRuntimeConfig(prefer_module_v3=True),
         )
 
         if self.model_path.startswith("black-forest-labs/FLUX.2"):
@@ -1252,6 +1268,24 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         model_path="allenai/OLMo-1B-hf",
         config_params={"max_length": 1024},
         device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
+    ),
+    "google/gemma-4-26B-A4B-it": GenericOracle(
+        model_path="google/gemma-4-26B-A4B-it",
+        config_params={
+            "max_vision_cache_entries": 256,
+            "max_batch_size": 128,
+            "max_num_steps": 1,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
+    "google/gemma-4-31B-it": GenericOracle(
+        model_path="google/gemma-4-31B-it",
+        config_params={
+            "max_vision_cache_entries": 256,
+            "max_batch_size": 128,
+            "max_num_steps": 1,
+        },
+        device_encoding_map={"gpu": ["bfloat16"]},
     ),
     "microsoft/Phi-3.5-mini-instruct": GenericOracle(
         model_path="microsoft/Phi-3.5-mini-instruct",
@@ -1340,6 +1374,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     ),
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": GenericOracle(
         model_path="RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic",
+        config_params={"max_length": 512},
+        device_encoding_map={
+            "gpu": ["float8_e4m3fn"],
+        },
+    ),
+    "modularai/Llama-3.1-405B-Instruct-autofp8": GenericOracle(
+        model_path="modularai/Llama-3.1-405B-Instruct-autofp8",
         config_params={"max_length": 512},
         device_encoding_map={
             "gpu": ["float8_e4m3fn"],
@@ -1509,7 +1550,7 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
     "HuggingFaceM4/Idefics3-8B-Llama3": Idefics3PipelineOracle(
         "HuggingFaceM4/Idefics3-8B-Llama3"
     ),
-    "mistral-community/pixtral-12b": PixtralPipelineOracle(),
+    "mistral-experimental/pixtral-12b": PixtralPipelineOracle(),
     "Qwen/Qwen2.5-7B-Instruct": GenericOracle(
         model_path="Qwen/Qwen2.5-7B-Instruct",
         config_params={"max_length": 512},
@@ -1736,6 +1777,17 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         device_encoding_map={"gpu": ["float4_e2m1fnx2"]},
     ),
     "nvidia/Kimi-K2.5-NVFP4": KimiK2_5PipelineOracle("nvidia/Kimi-K2.5-NVFP4"),
+    "MiniMaxAI/MiniMax-M2.7": GenericOracle(
+        model_path="MiniMaxAI/MiniMax-M2.7",
+        config_params={
+            "max_length": 516,
+            "trust_remote_code": True,
+            "max_batch_input_tokens": 512,
+            "ep_size": 8,
+            "data_parallel_degree": 8,
+        },
+        device_encoding_map={"gpu": ["float8_e4m3fn"]},
+    ),
     "HKUSTAudio/Llasa-8B": GenericOracle(
         model_path="HKUSTAudio/Llasa-8B",
         config_params={

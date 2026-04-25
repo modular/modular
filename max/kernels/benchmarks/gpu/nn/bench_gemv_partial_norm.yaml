@@ -1,0 +1,35 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+#
+# Two-row bench sweep for the fused GEMV + partial RMS norm kernel on
+# the Kimi M=1 shape (N=2112, K=7168, N_normed=1536): the unfused
+# matmul + rms_norm_gpu baseline and the fused single-kernel path.
+##===----------------------------------------------------------------------===##
+
+name: bench_gemv_partial_norm
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/profile_gemv_partial_norm.mojo
+
+common: &common
+  ASSERT: none
+
+params:
+
+# Unfused 2-launch baseline: vendor-BLAS matmul + rms_norm_gpu on a view
+# of the matmul output (no slice copy).
+- <<: *common
+
+# Fused single-kernel path: flat per-block fetch_add on finish_counter +
+# intra-block single-pass RMS reduce on normed_output in the global-last
+# arriver. Fastest on B200 at M=1.
+- <<: *common
+  fused: True

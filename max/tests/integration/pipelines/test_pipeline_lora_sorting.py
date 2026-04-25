@@ -35,6 +35,7 @@ from max.pipelines.core import TextContext, TTSContext
 from max.pipelines.lib import (
     KVCacheConfig,
     LoRAConfig,
+    MAXModelConfig,
     ModelInputs,
     ModelOutputs,
     PipelineConfig,
@@ -42,9 +43,11 @@ from max.pipelines.lib import (
     SamplingConfig,
 )
 from max.pipelines.lib.lora import LoRAManager, LoRAModel
+from max.pipelines.lib.model_manifest import ModelManifest
 from max.pipelines.lib.pipeline_variants.text_generation import (
     TextGenerationPipeline,
 )
+from max.pipelines.lib.pipeline_variants.utils import StructuredOutputHelper
 from max.pipelines.lib.speech_token_pipeline import (
     SpeechTokenGenerationPipeline,
 )
@@ -74,7 +77,7 @@ class MockModelInputs(ModelInputs):
     def __init__(
         self,
         batch_size: int,
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
     ) -> None:
         self._batch_size = batch_size
         self.kv_cache_inputs = MagicMock()
@@ -150,7 +153,7 @@ class MockPipelineModel(PipelineModelWithKVCache[ContextT]):
     def prepare_initial_token_inputs(
         self,
         replica_batches: Sequence[Sequence[ContextT]],
-        kv_cache_inputs: KVCacheInputs | None = None,
+        kv_cache_inputs: KVCacheInputs[Buffer, Buffer] | None = None,
         return_n_logits: int = 1,
     ) -> ModelInputs:
         if len(replica_batches) > 1:
@@ -272,8 +275,15 @@ def create_pipeline_with_lora(
         lora_manager=lora_manager
     )
 
-    mock_config = PipelineConfig.model_construct()
-    mock_config.model.quantization_encoding = "float32"
+    mock_config = PipelineConfig.model_construct(
+        models=ModelManifest(
+            {
+                "main": MAXModelConfig.model_construct(
+                    quantization_encoding="float32",
+                )
+            }
+        ),
+    )
     mock_config.sampling = SamplingConfig()
     mock_config.sampling.enable_structured_output = False
     mock_config.sampling.enable_variable_logits = False
@@ -297,6 +307,8 @@ def create_pipeline_with_lora(
             self._sampler_without_bitmask = MagicMock()
             self._sampler_with_bitmask = None
             self._kv_manager = MagicMock()
+            self._pinned_new_tokens = None
+            self._structured_output = StructuredOutputHelper(enabled=False)
 
         with patch.object(TextGenerationPipeline, "__init__", mock_text_init):
             return TextGenerationPipeline(
@@ -326,6 +338,8 @@ def create_pipeline_with_lora(
             self._sampler_with_bitmask = None
             self.d2h_stream = MagicMock()
             self._kv_manager = MagicMock()
+            self._pinned_new_tokens = None
+            self._structured_output = StructuredOutputHelper(enabled=False)
 
         with patch.object(
             SpeechTokenGenerationPipeline, "__init__", mock_speech_init

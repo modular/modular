@@ -94,6 +94,20 @@ PIPELINES = [
         "timeout": 120,  # 2 hours
     },
     {
+        "pipeline": "google/gemma-4-26B-A4B-it",
+        "runner": "modrunner-b200",
+        "gpu_flag": "--devices gpu:0",
+        "instance_type": "bm.gpu.b200.1",
+        "timeout": 120,  # 2 hours
+    },
+    {
+        "pipeline": "google/gemma-4-31B-it",
+        "runner": "modrunner-b200",
+        "gpu_flag": "--devices gpu:0",
+        "instance_type": "bm.gpu.b200.1",
+        "timeout": 120,  # 2 hours
+    },
+    {
         "pipeline": "deepseek-ai/DeepSeek-R1",
         "runner": "modrunner-b200-8x",
         "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
@@ -122,6 +136,13 @@ PIPELINES = [
         "timeout": 90,  # 1.5 hours
     },
     {
+        "pipeline": "MiniMaxAI/MiniMax-M2.7",
+        "runner": "modrunner-b200-4x",
+        "gpu_flag": "--devices gpu:0,1,2,3",
+        "instance_type": "bm.gpu.b200.4",
+        "timeout": 120,  # 2 hours
+    },
+    {
         "pipeline": "nvidia/DeepSeek-V3.1-NVFP4-longbench-v2",
         "runner": "modrunner-b200-8x",
         "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
@@ -130,6 +151,20 @@ PIPELINES = [
     },
     {
         "pipeline": "nvidia/DeepSeek-V3.1-NVFP4-fp8kv-longbench-v2",
+        "runner": "modrunner-b200-8x",
+        "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
+        "instance_type": "bm.gpu.b200.8",
+        "timeout": 390,  # 6.5 hours
+    },
+    {
+        "pipeline": "nvidia/Kimi-K2.5-NVFP4-ep-dp-longbench-v2",
+        "runner": "modrunner-b200-8x",
+        "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
+        "instance_type": "bm.gpu.b200.8",
+        "timeout": 390,  # 6.5 hours
+    },
+    {
+        "pipeline": "nvidia/Kimi-K2.5-NVFP4-ep-tp-longbench-v2",
         "runner": "modrunner-b200-8x",
         "gpu_flag": "--devices gpu:0,1,2,3,4,5,6,7",
         "instance_type": "bm.gpu.b200.8",

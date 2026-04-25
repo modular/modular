@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.compile import compile_info
-from std.gpu import barrier, thread_idx_uint as thread_idx
+from std.gpu import barrier, thread_idx
 from std.gpu.host import get_gpu_target
 from std.memory import stack_allocation
 from std.testing import *
@@ -81,6 +81,7 @@ def test_data_layout_llvm() raises:
 
 
 def test_data_layout_asm() raises:
+    @parameter
     def my_func(src: UnsafePointer[Int32, ImmutAnyOrigin]):
         var a = stack_allocation[20, Int32, address_space=AddressSpace.SHARED]()
         a[thread_idx.x] = src[0]
@@ -104,6 +105,7 @@ def test_cross_compile() raises:
 
     comptime MI355X_TARGET = get_gpu_target["mi355x"]()
 
+    @parameter
     def test_kernel():
         comptime assert (
             _cdna_4_or_newer()

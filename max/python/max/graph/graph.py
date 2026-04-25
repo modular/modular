@@ -17,18 +17,16 @@ from __future__ import annotations
 import contextlib
 import functools
 import inspect
-import io
 import itertools
-import os
 import traceback
 from collections import OrderedDict
 from collections.abc import Callable, Generator, Iterable, Sequence
 from contextvars import ContextVar
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, TypeGuard, TypeVar, cast
 
-import yaml
 from max import mlir
 from max._core import Attribute as _Attribute
 from max._core import Block, OpBuilder, Operation
@@ -38,6 +36,7 @@ from max._core import graph as _graph
 from max._core.dialects import builtin, kgen
 from max._core.dialects import kgen as _kgen
 from max._core.dialects import mo as _mo
+from max._core.engine import InferenceSession as _InferenceSession
 from max._mlir_context import default_mlir_context
 from max.mlir.dialects import mo
 from mojo.paths import (
@@ -57,12 +56,10 @@ from .type import (
 from .value import BufferValue, TensorValue, TensorValueLike, Value, _ChainValue
 from .weight import Weight
 
-
-def _yaml_parse_bool(config: str) -> bool:
-    return bool(yaml.safe_load(io.StringIO(config)))
-
-
-MODULAR_MAX_DEBUG = _yaml_parse_bool(os.environ.get("MODULAR_MAX_DEBUG", ""))
+# Read from the max-debug.source-tracebacks config key (covers the
+# MODULAR_DEBUG=source-tracebacks env var, modular.cfg, and the
+# Graph.debug.source_tracebacks Python setter via Config overrides).
+_SOURCE_TRACEBACKS_ENABLED = _InferenceSession.debug.source_tracebacks
 CURRENT_GRAPH: ContextVar[Graph] = ContextVar("CURRENT_GRAPH")
 _KERNEL_LIBRARY_PATHS_ATTR_NAME = "_kernel_library_paths"
 
@@ -146,6 +143,7 @@ class KernelLibrary:
     """
 
     _analysis: _graph.Analysis
+    _analysis_cache: dict[frozenset[str], _graph.Analysis] = {}
 
     def __init__(self, paths: Iterable[Path] = ()) -> None:
         context = default_mlir_context()
@@ -216,7 +214,38 @@ class KernelLibrary:
             custom_op: The :obj:`mlir.Operation` to be verified against the
                 current kernel library analysis.
         """
-        self._analysis.verify_custom_op(custom_op)
+        paths = self._analysis.library_paths
+        if paths:
+            cache_key = frozenset(str(p) for p in paths)
+            cached = KernelLibrary._analysis_cache.get(cache_key)
+            if cached is not None:
+                self._analysis = cached
+                self._analysis.verify_custom_op(custom_op)
+                return
+            self._analysis.verify_custom_op(custom_op)
+            KernelLibrary._analysis_cache[cache_key] = self._analysis
+        else:
+            self._analysis.verify_custom_op(custom_op)
+
+
+class DevicePlacementPolicy(Enum):
+    """Controls behavior when an op implicitly transfers a tensor to CPU.
+
+    Ops that only have CPU kernels must transfer non-CPU tensors before
+    executing. This policy controls how that situation is reported:
+
+    - ``Ignore``: transfer silently, no message.
+    - ``Warn`` (default): emit a ``UserWarning`` naming the op and the
+      tracking ticket for GPU support.
+    - ``Error``: raise ``ValueError``, making the implicit transfer a hard
+      build-time failure.
+
+    Pass via ``Graph(..., strict_device_placement=DevicePlacementPolicy.Error)``.
+    """
+
+    Ignore = "ignore"
+    Warn = "warn"
+    Error = "error"
 
 
 # From https://stackoverflow.com/a/76301341
@@ -239,7 +268,7 @@ def _location(ignore_frames: int = 1):  # noqa: ANN202
     if not mlir.Context.current:
         raise RuntimeError("Can't create location: No MLIR context active")
 
-    if not MODULAR_MAX_DEBUG:
+    if not _SOURCE_TRACEBACKS_ENABLED:
         return mlir.Location.unknown()
 
     # Extract the stack into summaries
@@ -303,51 +332,93 @@ def _set_output_param_decls(op: Operation, params: dict[str, None]) -> None:
         )
 
 
+Module = mlir.Module
+
+
+class GraphDebugConfig:
+    """Narrow view of :class:`max.engine.DebugConfig` exposed through :attr:`Graph.debug`.
+
+    The attribute :attr:`source_tracebacks` lives on ``Graph.debug`` because it is
+    consumed during graph construction, before an ``InferenceSession`` exists.
+    All other debug options are available on ``InferenceSession.debug`` and
+    share the same global state.
+    """
+
+    @property
+    def source_tracebacks(self) -> bool:
+        """See :attr:`max.engine.DebugConfig.source_tracebacks`."""
+        return _InferenceSession.debug.source_tracebacks
+
+    @source_tracebacks.setter
+    def source_tracebacks(self, value: bool) -> None:
+        _InferenceSession.debug.source_tracebacks = value
+
+
 class Graph:
     """Represents a single MAX graph.
 
-    A :class:`Graph` is a callable routine in MAX. Like functions, graphs have a
-    name and signature. Unlike a function, which follows an imperative
-    programming model, a :class:`Graph` follows a dataflow programming model, using
-    lazily-executed, parallel operations instead of sequential instructions.
+    A :class:`Graph` defines a model's computation. You build a graph by
+    composing operations that describe how input tensors are transformed into
+    outputs. Unlike imperative code that executes operations, a :class:`Graph`
+    captures the data flow between operations, which allows MAX to optimize and
+    parallelize execution at compile time. Operations run on the compiled object.
 
-    When you instantiate a graph, you must specify the input shapes as one or
-    more :class:`TensorType` values. Then, build a sequence of ops and set the
-    graph output with :meth:`output()`. For example:
+    The following code examples show two different strategies for constructing
+    graphs.
+
+    **Use the context manager:** Use :class:`Graph` as a context manager to
+    define the active graph. Inside the ``with`` block, retrieve inputs from
+    :attr:`inputs`, call ops to build nodes, and set the graph output with
+    :meth:`output()`. Ops called inside the block find the active graph
+    automatically. Ops called outside the block fail because there is no active
+    graph.
 
     .. code-block:: python
 
-        from dataclasses import dataclass
-
-        import numpy as np
         from max.dtype import DType
-        from max.graph import DeviceRef, Graph, TensorType, TensorValue, ops
+        from max.graph import DeviceRef, Graph, TensorType, Weight
 
-        @dataclass
+        W = Weight("W", DType.float32, [3, 2], DeviceRef.CPU())
+        b = Weight("b", DType.float32, [2], DeviceRef.CPU())
+
+        with Graph(
+            "linear_relu",
+            input_types=[TensorType(DType.float32, ["batch", 3], device=DeviceRef.CPU())],
+        ) as graph:
+            x = graph.inputs[0].tensor
+            y = x @ W + b
+            graph.output(y)
+
+    **Use the graph constructor:** Pass a callable as the ``forward`` argument.
+    The graph automatically passes the input :class:`TensorValue` to the
+    callable and records the return value as the graph output. Under the hood,
+    this still opens and closes a graph context.
+
+    .. code-block:: python
+
+        from max.dtype import DType
+        from max.graph import DeviceRef, Graph, TensorType, TensorValue, Weight, ops
+
         class Linear:
-            weight: np.ndarray
-            bias: np.ndarray
+            def __init__(self, in_dim: int, out_dim: int):
+                self.weight = Weight("W", DType.float32, [in_dim, out_dim], DeviceRef.CPU())
+                self.bias = Weight("b", DType.float32, [out_dim], DeviceRef.CPU())
 
             def __call__(self, x: TensorValue) -> TensorValue:
-                weight_tensor = ops.constant(self.weight, dtype=DType.float32, device=DeviceRef.CPU())
-                bias_tensor = ops.constant(self.bias, dtype=DType.float32, device=DeviceRef.CPU())
-                return ops.matmul(x, weight_tensor) + bias_tensor
+                return ops.matmul(x, self.weight) + self.bias
 
-        linear_graph = Graph(
+        linear_layer = Linear(2, 2)
+
+        graph = Graph(
             "linear",
-            Linear(np.ones((2, 2), dtype=np.float32), np.ones((2,), dtype=np.float32)),
-            input_types=[TensorType(DType.float32, (2,), DeviceRef.CPU())]
+            linear_layer,
+            input_types=[TensorType(DType.float32, (2,), DeviceRef.CPU())],
         )
 
-    You can't call a :class:`Graph` directly from Python. You must compile it and
-    execute it with MAX. For more detail, see the
-    `build a graph with MAX Graph tutorial </max/develop/get-started-with-max-graph-in-python>`_.
-
-    When creating a graph, a global sequence of chains is initialized to
-    sequence side-effecting ops. Every side-effecting op, such as
-    ``buffer_load()``, ``buffer_store()``, and
-    ``buffer_store_slice()``, consumes the current chain and produces a new
-    one. Each chain can be used at most once, which prevents data races.
+    These examples only use the :obj:`max.graph` package, but most models also
+    use :class:`~max.nn.Module` and other building blocks from :obj:`max.nn`.
+    To learn more, see `Build a model graph with Module
+    </max/develop/modules>`_.
 
     Args:
         name: A name for the graph.
@@ -365,6 +436,8 @@ class Graph:
         module: Optional existing MLIR module (internal use only). Defaults to
             ``None``.
     """
+
+    debug = GraphDebugConfig()
 
     # Use a dict rather than a set to keep params ordered.
     # This is to make IR generation deterministic for model IR cache hits.
@@ -399,9 +472,11 @@ class Graph:
         custom_extensions: Iterable[Path] = [],
         kernel_library: KernelLibrary | None = None,
         module: mlir.Module | None = None,
+        strict_device_placement: DevicePlacementPolicy = DevicePlacementPolicy.Warn,
         **kwargs,
     ) -> None:
         self.name = name
+        self.strict_device_placement = strict_device_placement
         if path is not None:
             self._load_mlir(path)
             return
@@ -804,6 +879,12 @@ class Graph:
             raise LookupError("No graph found") from exc
         assert current
         return current
+
+    @staticmethod
+    def empty_module() -> mlir.Module:
+        """Create a new module to hold one or more graphs."""
+        with _location():
+            return mlir.Module.create()
 
     @property
     def _body(self) -> mlir.Block:

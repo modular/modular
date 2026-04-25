@@ -29,13 +29,7 @@ from max.graph import BufferType, DeviceRef, TensorType
 from max.support.human_readable_formatter import to_human_readable_bytes
 
 from .data_parallelism_utils import split_into_groups
-from .input_types import (
-    AttentionDispatchMetadata,
-    FlattenableInputSymbols,
-    MultiKVCacheInputSymbols,
-    PagedCacheInputSymbols,
-    PagedCacheInputSymbolsByReplica,
-)
+from .input_types import KVCacheInputs, KVCacheInputsPerDevice
 
 logger = logging.getLogger("max.pipelines")
 
@@ -47,6 +41,7 @@ class KVConnectorType(str, Enum):
     local = "local"
     tiered = "tiered"
     lmcache = "lmcache"
+    dkv = "dkv"
 
 
 @dataclass
@@ -164,13 +159,16 @@ class KVCacheParamInterface(Protocol):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
+    num_eagle_speculative_tokens: int = 0
 
     @property
     def bytes_per_block(self) -> int:
         """Number of bytes per cache block."""
         ...
 
-    def get_symbolic_inputs(self) -> FlattenableInputSymbols:
+    def get_symbolic_inputs(
+        self, prefix: str = ""
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for the KV cache."""
         ...
 
@@ -238,6 +236,9 @@ class KVCacheParams(KVCacheParamInterface):
 
     kvcache_quant_config: KVCacheQuantizationConfig | None = None
     """KVCache quantization config. Currently only FP8 quantization supported."""
+
+    num_eagle_speculative_tokens: int = 0
+    """Number of draft tokens to generate for EAGLE speculative decoding."""
 
     def __post_init__(self):
         """Validates configuration and computes derived fields after initialization.
@@ -503,20 +504,20 @@ class KVCacheParams(KVCacheParamInterface):
         )
 
     def _get_symbolic_inputs_for_replica(
-        self, devices: Sequence[DeviceRef], replica_idx: int
-    ) -> list[PagedCacheInputSymbols]:
+        self, devices: Sequence[DeviceRef], replica_idx: int, prefix: str = ""
+    ) -> list[KVCacheInputsPerDevice[TensorType, BufferType]]:
         """Computes the symbolic inputs for a single replica.
 
         Returns:
             The symbolic inputs for the KV cache.
         """
-        dynamic_dim_prefix = f"replica_{replica_idx}_"
+        dynamic_dim_prefix = f"{prefix}replica_{replica_idx}_"
 
         kv_cache_scale_dtype = DType.float32
         if self.quantized_kv_cache and self.kvcache_quant_config is not None:
             kv_cache_scale_dtype = self.kvcache_quant_config.scale_dtype
         return [
-            PagedCacheInputSymbols(
+            KVCacheInputsPerDevice(
                 kv_blocks=BufferType(
                     self.dtype,
                     shape=[
@@ -550,23 +551,30 @@ class KVCacheParams(KVCacheParamInterface):
                 )
                 if self.quantized_kv_cache
                 else None,
-                dispatch_metadata=AttentionDispatchMetadata(
-                    TensorType(
-                        DType.int64,
-                        shape=[3] if self.is_mla else [4],
-                        # MLA kernels consume 3-value dispatch metadata on GPU;
-                        # MHA reads 4-value metadata on CPU.
-                        device=device if self.is_mla else DeviceRef.CPU(),
-                    )
+                attention_dispatch_metadata=TensorType(
+                    DType.int64,
+                    shape=[3] if self.is_mla else [4],
+                    # MLA kernels consume 3-value dispatch metadata on GPU;
+                    # MHA reads 4-value metadata on CPU.
+                    device=device if self.is_mla else DeviceRef.CPU(),
                 ),
+                draft_attention_dispatch_metadata=TensorType(
+                    DType.int64,
+                    shape=[3] if self.is_mla else [4],
+                    device=device if self.is_mla else DeviceRef.CPU(),
+                )
+                if self.num_eagle_speculative_tokens > 0
+                else None,
             )
             for device in devices
         ]
 
-    def get_symbolic_inputs(self) -> PagedCacheInputSymbolsByReplica:
+    def get_symbolic_inputs(
+        self, prefix: str = ""
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Computes the symbolic inputs for the KV cache.
 
-        This method returns a list of PagedCacheInputSymbols for each replica.
+        This method returns a list of KVCacheInputs for each replica.
         This is used when constructing the model graph.
 
         Returns:
@@ -575,14 +583,15 @@ class KVCacheParams(KVCacheParamInterface):
         devices_per_replica = split_into_groups(
             self.devices, self.data_parallel_degree
         )
-        input_symbols: list[PagedCacheInputSymbols] = []
+        input_symbols: list[KVCacheInputsPerDevice[TensorType, BufferType]] = []
         for replica_idx, devices in enumerate(devices_per_replica):
             symbols = self._get_symbolic_inputs_for_replica(
                 devices,
                 replica_idx,
+                prefix,
             )
             input_symbols.extend(symbols)
-        return PagedCacheInputSymbolsByReplica(values=input_symbols)
+        return KVCacheInputs(inputs=input_symbols)
 
     def allocate_buffers(self, total_num_pages: int) -> list[KVCacheBuffer]:
         """Allocates the buffers for the KV cache."""
@@ -638,6 +647,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
     n_devices: int
     kv_connector: KVConnectorType | None
     host_kvcache_swap_space_gb: float | None
+    num_eagle_speculative_tokens: int = 0
 
     @classmethod
     def from_params(cls, *params: KVCacheParams) -> MultiKVCacheParams:
@@ -665,6 +675,7 @@ class MultiKVCacheParams(KVCacheParamInterface):
             n_devices=params[0].n_devices,
             kv_connector=params[0].kv_connector,
             host_kvcache_swap_space_gb=params[0].host_kvcache_swap_space_gb,
+            num_eagle_speculative_tokens=params[0].num_eagle_speculative_tokens,
         )
 
     def __post_init__(self) -> None:
@@ -706,6 +717,14 @@ class MultiKVCacheParams(KVCacheParamInterface):
                 f"All params must use the same host_kvcache_swap_space_gb, got: {host_kvcache_swap_space_gb}"
             )
 
+        num_eagle_speculative_tokens = {
+            p.num_eagle_speculative_tokens for p in self.params
+        }
+        if len(num_eagle_speculative_tokens) > 1:
+            raise ValueError(
+                f"All params must use the same num_eagle_speculative_tokens, got: {num_eagle_speculative_tokens}"
+            )
+
     @property
     def bytes_per_block(self) -> int:
         """Total bytes per block across all KV caches.
@@ -715,11 +734,14 @@ class MultiKVCacheParams(KVCacheParamInterface):
         """
         return sum(p.bytes_per_block for p in self.params)
 
-    def get_symbolic_inputs(self) -> MultiKVCacheInputSymbols:
+    def get_symbolic_inputs(
+        self, prefix: str = ""
+    ) -> KVCacheInputs[TensorType, BufferType]:
         """Returns the symbolic inputs for the KV cache."""
-        return MultiKVCacheInputSymbols(
-            [p.get_symbolic_inputs() for p in self.params]
-        )
+        inputs: list[KVCacheInputsPerDevice[TensorType, BufferType]] = []
+        for i, p in enumerate(self.params):
+            inputs.extend(p.get_symbolic_inputs(f"{prefix}cache{i}_").inputs)
+        return KVCacheInputs(inputs=inputs)
 
 
 def compute_num_device_blocks(

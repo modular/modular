@@ -17,5 +17,5 @@ def repeat[count: Int](msg: String):
         print(msg)
 
 
-def main() raises:
+def main():
     repeat[3]("Hello")

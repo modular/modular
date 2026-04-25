@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue
+from max.graph import DeviceRef, TensorValue, ops
 
 from .kernels import (
     _fused_qkv_ragged_matmul_scaled_float4,
@@ -20,17 +20,26 @@ from .kernels import (
     block_scales_interleave,
     convert_weights_to_fp8_fnuz_if_needed,
     dynamic_block_scaled_matmul_fp4,
+    dynamic_block_scaled_matmul_mxfp4,
     dynamic_scaled_matmul,
     grouped_dynamic_scaled_fp8_matmul,
     grouped_matmul_ragged,
     matmul_static_scaled_float8,
     mxfp4_dequant,
     quantize_dynamic_block_scaled_fp4,
+    quantize_dynamic_block_scaled_mxfp4,
     quantize_dynamic_scaled_float8,
     quantize_static_scaled_float8,
+    quantize_tensor_dynamic_scaled_float8,
 )
 from .kv_cache import KVCacheParams, PagedCacheValues
-from .quant_config import QuantConfig, QuantFormat
+from .quant_config import (
+    InputScaleSpec,
+    QuantConfig,
+    QuantFormat,
+    ScaleGranularity,
+    WeightScaleSpec,
+)
 
 
 def _reshape_pre_interleaved_scales(
@@ -105,6 +114,39 @@ def _matmul_float4(
     return res
 
 
+def _matmul_float4_mxfp4(
+    x: TensorValue,
+    weight: TensorValue,
+    weight_scale: TensorValue,
+) -> TensorValue:
+    """Computes x @ weight.T with MXFP4 quantization.
+
+    Args:
+        x: The input tensor in bf16.
+        weight: The weight tensor in uint8 (float4-e2m1x2).
+        weight_scale: The weight scale tensor in float8_e8m0fnu.
+
+    Returns:
+        The output tensor in bf16.
+    """
+    x, x_scales = quantize_dynamic_block_scaled_mxfp4(
+        x,
+        scales_type=DType.float8_e8m0fnu,
+        out_type=DType.uint8,  # fp4-e2m1fnX2
+    )
+
+    weight_scale = weight_scale.to(x.device)
+
+    res = dynamic_block_scaled_matmul_mxfp4(
+        x,
+        weight,
+        x_scales,
+        weight_scale,
+        out_type=DType.bfloat16,
+    )
+    return res
+
+
 def _matmul_float8(
     x: TensorValue,
     weight: TensorValue,
@@ -130,11 +172,85 @@ def _matmul_float8(
     )
 
     if input_scale is not None:
+        # Static quantization: input scale was pre-computed.
         x = quantize_static_scaled_float8(x, input_scale, out_type=weight.dtype)
-
+        if quant_config.weight_scale.is_tensor and weight_scale.rank >= 2:
+            # Fused QKV: per-projection weight scales were broadcast to
+            # rowwise [N, 1] in qkv_weight_scale. Route through
+            # dynamic_scaled_matmul (colwise/rowwise) because
+            # matmul_static_scaled_float8 requires scalar scales.
+            weight_scale = weight_scale.to(x.device)
+            # Broadcast scalar input_scale to [1, M] to match the
+            # per-token layout that the colwise/rowwise kernel expects.
+            a_scales = ops.broadcast_to(
+                input_scale.reshape([1, 1]).to(x.device), [1, x.shape[0]]
+            )
+            colwise_input_spec = InputScaleSpec(
+                granularity=ScaleGranularity.COLWISE,
+                origin=quant_config.input_scale.origin,
+                dtype=weight_scale.dtype,
+            )
+            rowwise_weight_spec = WeightScaleSpec(
+                granularity=ScaleGranularity.ROWWISE,
+                dtype=weight_scale.dtype,
+            )
+            return dynamic_scaled_matmul(
+                x,
+                weight,
+                a_scales,
+                weight_scale,
+                colwise_input_spec,
+                rowwise_weight_spec,
+                out_type=DType.bfloat16,
+            )
         return matmul_static_scaled_float8(x, weight, input_scale, weight_scale)
-    else:
+    elif (
+        quant_config.input_scale.is_tensor
+        and quant_config.weight_scale.is_tensor
+    ):
+        # GEX-3496 workaround for dynamic tensor-wise FP8: force
+        # tensor-scale into row-scale format so we hit the
+        # rowwise/colwise kernel path.
+        n_out = weight.shape[0]
+        if quant_config.weight_scale.is_tensor and weight_scale.rank < 2:
+            weight_scale = ops.broadcast_to(
+                weight_scale.reshape([1, 1]), [n_out, 1]
+            )
+        elif weight_scale.rank < 2:
+            weight_scale = weight_scale.reshape([1, 1])
+        weight_scale = weight_scale.to(x.device)
+
+        colwise_input_spec = InputScaleSpec(
+            granularity=ScaleGranularity.COLWISE,
+            origin=quant_config.input_scale.origin,
+            dtype=weight_scale.dtype,
+        )
+        rowwise_weight_spec = WeightScaleSpec(
+            granularity=ScaleGranularity.ROWWISE,
+            dtype=weight_scale.dtype,
+        )
+
         x, x_scales = quantize_dynamic_scaled_float8(
+            x,
+            colwise_input_spec,
+            rowwise_weight_spec,
+            scales_type=weight_scale.dtype,
+            out_type=weight.dtype,
+        )
+
+        # activation scales are [1xm] which but in the dynamic scaled matmul we expect just use x_scale[0,0]
+        return dynamic_scaled_matmul(
+            x,
+            weight,
+            x_scales,
+            weight_scale,
+            colwise_input_spec,
+            rowwise_weight_spec,
+            out_type=DType.bfloat16,
+        )
+    else:
+        # Dynamic non-per-tensor (per-row/block).
+        x, x_scale = quantize_dynamic_scaled_float8(
             x,
             quant_config.input_scale,
             quant_config.weight_scale,
@@ -143,15 +259,15 @@ def _matmul_float8(
         )
         weight_scale = weight_scale.to(x.device)
 
-        return dynamic_scaled_matmul(
-            x,
-            weight,
-            x_scales,
-            weight_scale,
-            quant_config.input_scale,
-            quant_config.weight_scale,
-            out_type=DType.bfloat16,
-        )
+    return dynamic_scaled_matmul(
+        x,
+        weight,
+        x_scale,
+        weight_scale,
+        quant_config.input_scale,
+        quant_config.weight_scale,
+        out_type=DType.bfloat16,
+    )
 
 
 def quantized_matmul(
@@ -161,7 +277,6 @@ def quantized_matmul(
     input_scale: TensorValue | None,
     quant_config: QuantConfig,
     weight_scale_2: TensorValue | None = None,
-    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Single entry point for all quantized dense matmuls.
 
@@ -176,8 +291,6 @@ def quantized_matmul(
             static FP8).
         quant_config: The quantization configuration.
         weight_scale_2: Additional weight scale factor (NVFP4 only).
-        scales_pre_interleaved: If True, weight_scale is already in 5D
-            TCGEN interleaved layout (NVFP4 only).
 
     Returns:
         The output tensor.
@@ -192,7 +305,13 @@ def quantized_matmul(
                 weight_scale,
                 input_scale,
                 weight_scale_2,
-                scales_pre_interleaved=scales_pre_interleaved,
+                scales_pre_interleaved=quant_config.scales_pre_interleaved,
+            )
+        case QuantFormat.MXFP4:
+            return _matmul_float4_mxfp4(
+                x,
+                weight,
+                weight_scale,
             )
         case (
             QuantFormat.COMPRESSED_TENSORS_FP8
@@ -226,7 +345,6 @@ def quantized_fused_qkv_matmul(
     weight_scale_2: TensorValue | None = None,
     bias: TensorValue | None = None,
     _output_dim: int | None = None,
-    scales_pre_interleaved: bool = False,
 ) -> TensorValue:
     """Single entry point for quantized fused QKV matmuls.
 
@@ -249,8 +367,6 @@ def quantized_fused_qkv_matmul(
         _output_dim: Optional output dimension override for the FP8
             kernel. If not provided, defaults to
             ``n_heads * head_dim``.
-        scales_pre_interleaved: If True, weight_scale is already in 5D
-            TCGEN interleaved layout (NVFP4 only).
 
     Returns:
         The query projection output tensor.
@@ -268,7 +384,7 @@ def quantized_fused_qkv_matmul(
             )
 
             weight_scale = weight_scale.to(x.device)
-            if scales_pre_interleaved:
+            if quant_config.scales_pre_interleaved:
                 weight_scale = _reshape_pre_interleaved_scales(weight_scale)
             else:
                 weight_scale = block_scales_interleave(weight_scale)
@@ -297,6 +413,37 @@ def quantized_fused_qkv_matmul(
                     x, input_scale.to(DeviceRef.CPU())
                 )
                 x_scales = input_scale
+            elif (
+                quant_config.input_scale.is_tensor
+                and quant_config.weight_scale.is_tensor
+            ):
+                # Workaround for GEX-3496: force tensor-scale into
+                # row-scale format. Input: per-tensor dynamic quantization.
+                # Weight: rowwise [total_dim, 1] from qkv_weight_scale.
+                x, x_scales = quantize_tensor_dynamic_scaled_float8(
+                    x,
+                    quant_config.input_scale,
+                    quant_config.weight_scale,
+                    out_type=wqkv.dtype,
+                    scales_type=weight_scale.dtype,
+                )
+                # x_scales = x_scales.reshape([1, 1])
+                # Don't pass quant_config so the kernel infers
+                # per-channel (1,1,-1) from [1,1] + [N,1] shapes.
+                return _fused_qkv_ragged_matmul_scaled_float8(
+                    kv_params,
+                    input=x,
+                    wqkv=wqkv,
+                    bias=bias,
+                    input_row_offsets=input_row_offsets,
+                    kv_collection=kv_collection,
+                    layer_idx=layer_idx,
+                    n_heads=n_heads,
+                    input_scale=x_scales.to(x.device),
+                    weight_scale=weight_scale.to(x.device),
+                    quant_config=None,
+                    _output_dim=_output_dim,
+                )
             else:
                 x, x_scales = quantize_dynamic_scaled_float8(
                     x,
