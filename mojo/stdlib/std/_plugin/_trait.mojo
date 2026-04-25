@@ -11,6 +11,8 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
+from std.sys.info import _TargetType, _current_target
+
 
 trait PluginHooks:
     """Compile-time hook interface for pluggable stdlib behavior.
@@ -38,6 +40,18 @@ trait PluginHooks:
         Elementwise `exp(x)` computed on the vendor backend.
     """
 
+    comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
+        def[
+            count: Int,
+            type: AnyType,
+            /,
+            name: Optional[StaticString],
+            alignment: Int,
+        ]() thin -> UnsafePointer[
+            type, MutExternalOrigin, address_space=address_space
+        ]
+    ]
+
 
 # ===-----------------------------------------------------------------------===#
 # DefaultPlugin
@@ -51,4 +65,16 @@ struct DefaultPlugin(PluginHooks):
         def[
             dtype: DType, width: Int, //
         ](SIMD[dtype, width]) thin -> SIMD[dtype, width]
+    ] = None
+
+    comptime stack_allocation_fn[address_space: AddressSpace]: Optional[
+        def[
+            count: Int,
+            type: AnyType,
+            /,
+            name: Optional[StaticString],
+            alignment: Int,
+        ]() thin -> UnsafePointer[
+            type, MutExternalOrigin, address_space=address_space
+        ]
     ] = None
