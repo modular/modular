@@ -52,11 +52,12 @@ def test_metric_to_string() -> None:
         nixl_write_latency_avg_ms=0.0,
         rpc_acquire_latency_avg_ms=0.0,
         rpc_read_latency_avg_ms=0.0,
+        num_new_admissions=1,
     )
 
     assert (
         metrics.pretty_format()
-        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks, Cache hit rate: 17.0% | Host KVCache Usage: 20.0% of 21 blocks, Blocks copied: 22 H2D, 23 D2H | All Preemptions: 14 reqs"
+        == r"Executed CE batch with 1 reqs | Terminated: 4 reqs, Pending: 5 reqs | Input Tokens: 6/7 toks | Context Tokens: 8/9 toks | Prompt Tput: 12.0 tok/s, Generation Tput: 13.0 tok/s | Batch creation: 10.00s, Execution: 11.00s | KVCache usage: 15.0% of 16 blocks, Cache hit rate: 17.0% (18 hit, 19 miss) | Host KVCache Usage: 20.0% of 21 blocks, Blocks copied: 22 H2D, 23 D2H | All Preemptions: 14 reqs"
     )
 
     metrics.total_kv_blocks = 0
@@ -138,3 +139,54 @@ def test_metric_to_string_overlap_scheduler() -> None:
     formatted = metrics.pretty_format()
     assert "Previous Execution:" not in formatted
     assert ", Execution: 11.00s" in formatted
+
+
+def test_metric_to_string_continuation_only_ce_batch() -> None:
+    # A CE batch with only chunked-prefill continuations of already-admitted
+    # requests has num_new_admissions=0. In that case the cache-hit clause
+    # would otherwise be a misleading "0.0% (0 hit, N miss)" reading and is
+    # suppressed; the KVCache usage clause is still shown.
+    metrics = BatchMetrics(
+        batch_type=BatchType.CE,
+        batch_size=1,
+        max_batch_size=2,
+        num_steps=1,
+        terminated_reqs=0,
+        num_pending_reqs=0,
+        num_input_tokens=1862,
+        max_batch_input_tokens=4096,
+        num_context_tokens=50545,
+        max_batch_total_tokens=262144,
+        batch_creation_time_s=0.001,
+        batch_execution_time_s=0.2,
+        prompt_throughput=9100.0,
+        generation_throughput=4.9,
+        total_preemption_count=0,
+        used_kv_pct=0.101,
+        total_kv_blocks=13359,
+        cache_hit_rate=0.0,
+        cache_hit_tokens=0,
+        cache_miss_tokens=0,
+        used_host_kv_pct=0.0,
+        total_host_kv_blocks=0,
+        h2d_blocks_copied=0,
+        d2h_blocks_copied=0,
+        disk_blocks_written=0,
+        disk_blocks_read=0,
+        draft_tokens_generated=0,
+        draft_tokens_accepted=0,
+        avg_acceptance_length=0.0,
+        max_acceptance_length=0,
+        acceptance_rate_per_position=[],
+        nixl_read_latency_avg_ms=0.0,
+        nixl_write_latency_avg_ms=0.0,
+        rpc_acquire_latency_avg_ms=0.0,
+        rpc_read_latency_avg_ms=0.0,
+        num_new_admissions=0,
+    )
+
+    formatted = metrics.pretty_format()
+    assert "KVCache usage: 10.1% of 13359 blocks |" in formatted
+    assert "Cache hit rate" not in formatted
+    assert "hit," not in formatted
+    assert "miss)" not in formatted

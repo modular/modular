@@ -93,6 +93,7 @@ class FakeContext:
         self.tokens: TokenBuffer = _make_token_buffer(
             max(total_length, 1), processed_length
         )
+        self.cached_prefix_length: int | None = None
 
     @property
     def request_id(self) -> RequestID:

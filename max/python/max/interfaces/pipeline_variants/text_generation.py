@@ -758,6 +758,16 @@ class TextGenerationContext(BaseContext, Protocol):
         """Returns the speculative decoding state."""
         ...
 
+    cached_prefix_length: int | None
+    """Prompt tokens served from the KV prefix cache on first admission.
+
+    Set by the block manager when a request is admitted to a CE batch (0
+    if the cache had no matching prefix). ``BatchMetrics.create`` consumes
+    the value to emit a per-request cache hit rate observation, then
+    resets it to ``None`` so chunked-prefill follow-up calls do not
+    re-emit.
+    """
+
 
 @dataclass
 class SpecDecodingState:

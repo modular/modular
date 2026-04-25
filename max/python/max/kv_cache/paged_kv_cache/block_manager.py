@@ -195,6 +195,10 @@ class BlockManager:
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
             return 0
 
+        # Identify a request's first admission so we record one cache-hit
+        # observation per request, not one per chunked-prefill chunk.
+        is_first_admission = ctx.tokens.processed_length == 0
+
         req_blocks = self.req_to_blocks[ctx.request_id]
 
         # Compute block hashes. These hashes are used by the subsequent methods.
@@ -228,8 +232,12 @@ class BlockManager:
                     "We should never get 100% prefix cache hit rate. "
                     "Something went wrong!"
                 )
+            if is_first_admission:
+                ctx.cached_prefix_length = skip_amount
             return skip_amount
 
+        if is_first_admission:
+            ctx.cached_prefix_length = 0
         return 0
 
     @traced
