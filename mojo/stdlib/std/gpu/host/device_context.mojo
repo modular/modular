@@ -1651,6 +1651,39 @@ struct DeviceStream(ImplicitlyCopyable):
         )
 
     @always_inline
+    def enqueue_host_func(
+        self,
+        func: def(OpaquePointer[MutAnyOrigin]) thin -> None,
+        user_data: OpaquePointer[MutAnyOrigin],
+    ) raises:
+        """Enqueues a host callback to run on this stream.
+
+        This corresponds to CUDA's `cuLaunchHostFunc`. The callback `func`
+        runs on a driver thread once all preceding work on this stream has
+        completed, and receives `user_data` as its only argument. Per the
+        CUDA contract, the callback must not call any device APIs.
+
+        Currently only implemented for CUDA streams; other backends raise.
+
+        Args:
+            func: A `thin` C-compatible function pointer that accepts a
+                single `void*` argument.
+            user_data: An opaque pointer passed through to `func` when it
+                runs.
+
+        Raises:
+            If the underlying device does not support host callbacks, or if
+            the driver rejects the enqueue.
+        """
+        # const char *AsyncRT_DeviceStream_enqueueHostFunc(const DeviceStream *stream, void (*fn)(void *), void *userData)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_enqueueHostFunc",
+                _CString[],
+            ](self._handle, func, user_data)
+        )
+
+    @always_inline
     def enqueue_function[
         *Ts: DevicePassable
     ](
