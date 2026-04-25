@@ -100,9 +100,9 @@ int main(int argc, char **argv) {
   switch (firstArg->getOption().getID()) {
   case options::OPT_version: {
     // Print the version and exit.
-    ModularVersion version = getModularVersion();
-    const char *versionStr = getModularVersionString();
-    llvm::outs() << llvm::formatv("Mojo 0.{0} ({1})\n", versionStr,
+    ProjectVersion version = getMojoVersion();
+    const char *versionStr = getMojoVersionString();
+    llvm::outs() << llvm::formatv("Mojo {0} ({1})\n", versionStr,
                                   version.revision);
     return 0;
   }

@@ -46,10 +46,10 @@ bool M::generateMojoDocJSON(const std::filesystem::path &resolvedPath,
     return false;
 
   llvm::json::OStream jsonOS(os, /*IndentSize=*/2);
-  const char *version = getModularVersionString();
+  const char *version = getMojoVersionString();
   jsonOS.value(llvm::json::Object({
       {"decl", publicDecl->toJSON(parserContext)},
-      {"version", llvm::formatv("0.{0}", version).str()},
+      {"version", llvm::formatv("{0}", version).str()},
   }));
 
   return true;

@@ -1219,7 +1219,7 @@ modular_cc_library(
     hdrs = glob(["include/KGEN/MojoTooling/*.h"]),
     deps = [
         ":MojoParser",
-        # DocGen.cpp uses getModularVersionString() for the JSON version wrapper.
+        # DocGen.cpp uses getMojoVersionString() for the JSON version wrapper.
         "//Config",
         # DocGen.h exposes DiagnosticFormat in the DocGenConfig struct.
         "//Support:Driver",
