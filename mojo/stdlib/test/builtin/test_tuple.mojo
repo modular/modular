@@ -374,5 +374,16 @@ def test_tuple_conditional_register_passable() raises:
     assert_false(conforms_to(Tuple[Bool, List[Int], Int], RegisterPassable))
 
 
+def test_tuple_comparable_trait_conformance() raises:
+    """Verify Tuple conforms to Comparable so it can be used as a Comparable."""
+
+    def min_comparable[T: Comparable & ImplicitlyCopyable](a: T, b: T) -> T:
+        return a if a < b else b
+
+    assert_equal(min_comparable((1, 2), (1, 3)), (1, 2))
+    assert_equal(min_comparable((2, 0), (1, 9)), (1, 9))
+    assert_equal(min_comparable((1, 1), (1, 1)), (1, 1))
+
+
 def main() raises:
     TestSuite.discover_tests[__functions_in_module()]().run()

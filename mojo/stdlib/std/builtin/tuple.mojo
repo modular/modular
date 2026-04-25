@@ -45,6 +45,7 @@ from std.utils._visualizers import lldb_formatter_wrapping_type
 
 @lldb_formatter_wrapping_type
 struct Tuple[*element_types: Movable](
+    Comparable where AllComparable[*element_types],
     Copyable where AllCopyable[*element_types],
     Defaultable where AllDefaultable[*element_types],
     Equatable where AllEquatable[*element_types],
@@ -99,7 +100,7 @@ struct Tuple[*element_types: Movable](
         )
 
         # TODO(MOCO-3791): Replace the per-element `comptime assert` below
-        # with `where AllDefaultable[*Self.element_types ]`
+        # with `where AllDefaultable[*Self.element_types]`
         # once the solver can prove reducer-based `where` clauses for
         # generic callers that forward parameter packs.
         comptime for i in range(Self.__len__()):
