@@ -65,9 +65,7 @@ genrule(
   rm -rf internal_tmp
   mv mojosite/redirects.js mojosite/docs/redirects.js
   rm mojosite/docs/lib.mdx
-  rm -rf mojosite/docs/changelog
   rm -f mojosite/docs/nightly-changelog.md
-  rm -f mojosite/docs/redirects.js
   rm -f mojosite/docs/sidebars.js
   mv mojosite/docs/build_version.js mojosite/build_version.js
 
