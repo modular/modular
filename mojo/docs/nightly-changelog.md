@@ -505,6 +505,9 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- `FileDescriptor.write_bytes()`: Fixed silent data loss on partial writes by
+  looping until all bytes are written, matching `FileHandle.write_bytes()`.
+
 - Fixed pack inference failing with `could not infer type of parameter pack ...
   given value with unresolved type` when passing list, dict, set, or slice
   literals to a `*Ts`-bound variadic pack parameter (e.g.
