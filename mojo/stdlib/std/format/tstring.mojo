@@ -13,6 +13,7 @@
 """Implements `TString`, a template string that captures interpolated values at compile-time."""
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
 from std.utils import Variant
+from std.reflection.traits import AllWritable
 import std.format._utils as fmt
 
 
@@ -110,6 +111,8 @@ struct TString[
         Args:
             writer: The writer to output the debug representation to.
         """
+
+        comptime assert AllWritable[*Self.Ts]  # satisfy where clause.
 
         @parameter
         def fields(mut writer: Some[Writer]):

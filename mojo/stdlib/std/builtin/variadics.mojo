@@ -20,6 +20,7 @@ from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
+from std.reflection.traits import AllWritable
 
 
 struct _MLIR:
@@ -1655,12 +1656,12 @@ struct VariadicPack[
         *,
         is_repr: Bool = False,
     ](
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1687,16 +1688,16 @@ struct VariadicPack[
                 writer.write_string(sep)
 
             comptime if is_repr:
-                self[i].write_repr_to(writer)
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
             else:
-                self[i].write_to(writer)
+                trait_downcast[Writable](self[i]).write_to(writer)
         writer.write_string(end)
 
     @no_inline
     def write_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1710,9 +1711,9 @@ struct VariadicPack[
 
     @no_inline
     def write_repr_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes the repr of the elements of this pack to a writer.
 
         Args:

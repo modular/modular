@@ -14,6 +14,7 @@
 from std.sys.intrinsics import _type_is_eq
 from std.testing import assert_equal, assert_false, assert_true, TestSuite
 from test_utils import ExplicitDelOnly
+from std.reflection.traits import AllWritable
 
 
 def test_variadic_iterator() raises:
@@ -410,6 +411,7 @@ def test_variadic_list_mem_write_repr_to() raises:
 
 def test_variadic_pack_write_to() raises:
     def helper[*Ts: Writable](*args: *Ts) raises:
+        comptime assert AllWritable[*Ts]
         var s = String()
         args.write_to(s)
         assert_equal(s, "(1, hello, True)")
@@ -419,6 +421,7 @@ def test_variadic_pack_write_to() raises:
 
 def test_variadic_pack_write_repr_to() raises:
     def helper[*Ts: Writable](*args: *Ts) raises:
+        comptime assert AllWritable[*Ts]
         var s = String()
         args.write_repr_to(s)
         assert_equal(s, "(Int(1), 'hello', True)")
@@ -430,6 +433,7 @@ def test_variadic_pack_forwarding() raises:
     """Test that variadic packs can be forwarded with *pack syntax."""
 
     def callee[*Ts: Writable](*args: *Ts) raises:
+        comptime assert AllWritable[*Ts]
         var s = String()
         args.write_to(s)
         assert_equal(s, "(1, hello, 3.14)")
@@ -444,6 +448,7 @@ def test_variadic_pack_forwarding_single_element() raises:
     """Test forwarding a single-element variadic pack."""
 
     def callee[*Ts: Writable](*args: *Ts) raises:
+        comptime assert AllWritable[*Ts]
         var s = String()
         args.write_to(s)
         assert_equal(s, "(42)")
@@ -458,6 +463,7 @@ def test_variadic_pack_forwarding_empty() raises:
     """Test forwarding an empty variadic pack."""
 
     def callee[*Ts: Writable](*args: *Ts) raises:
+        comptime assert AllWritable[*Ts]
         var s = String()
         args.write_to(s)
         assert_equal(s, "()")
@@ -472,6 +478,7 @@ def test_variadic_pack_forwarding_through_two_levels() raises:
     """Test forwarding a variadic pack through two levels of indirection."""
 
     def callee[*Ts: Writable](*args: *Ts) raises:
+        comptime assert AllWritable[*Ts]
         var s = String()
         args.write_to(s)
         assert_equal(s, "(a, True)")
@@ -489,6 +496,7 @@ def test_variadic_pack_some() raises:
     """Test using SomeTypeList in a variadic pack."""
 
     def foo(*args: *SomeTypeList[Writable]) raises:
+        comptime assert AllWritable[*args.element_types]
         var s = String()
         args.write_to(s)
         assert_equal(s, "(a, True)")
