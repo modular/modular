@@ -9123,11 +9123,10 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
-        lambdas_have_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
+        c: OutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -9140,49 +9139,10 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
-        @parameter
-        @always_inline
-        def epilogue_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[c.dtype, _width]](val),
-            )
-
-        @parameter
-        @always_inline
-        def output_compute_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
-            _dtype, _width
-        ]:
-            return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda[element_alignment=alignment](
-                    coords, rebind[SIMD[c.dtype, _width]](val)
-                )
-            )
-
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
-
-        comptime elementwise_lambda = Optional[
-            matmul_elementwise_epilogue_type
-        ](
-            epilogue_fn
-        ) if lambdas_have_fusion and not has_compute_lambda else None
-
-        comptime compute_lambda = Optional[
-            matmul_elementwise_compute_lambda_type
-        ](
-            output_compute_fn
-        ) if lambdas_have_fusion and has_compute_lambda else None
-
         cuda_ctx = context.get_device_context()
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda,
-            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),
