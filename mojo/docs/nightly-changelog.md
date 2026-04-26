@@ -430,8 +430,18 @@ This version is still a work in progress.
   providing a safer alternative to raw `UnsafePointer` for host-device memory
   transfers.
 
-- `String.__len__()` has been deprecated. Prefer to use `String.byte_length()`
-  or `String.count_codepoints()`.
+- Added `take()` and `drop()` iterator adapters to `std.itertools`.
+  `take(iter, n)` yields the first `n` elements, and
+  `drop(iter, n)` drops the first `n` elements. They compose
+  naturally to select sub-ranges of any iterable:
+
+  ```mojo
+  from std.itertools import take, drop
+
+  var nums = [1, 2, 3, 4, 5]
+  for x in take(drop(nums, 1), 3):
+      print(x)  # 2, 3, 4
+  ```
 
 - Added `map()` and `and_then()` methods to `Optional`. `map()` transforms
   the contained value by applying a function, returning `Optional[To]`.
