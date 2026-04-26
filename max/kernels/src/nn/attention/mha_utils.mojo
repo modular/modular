@@ -75,6 +75,15 @@ def as_dynamic_row_major_1d[
 
 
 struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
+    """Configuration for Flash Attention algorithm versions.
+
+    Supports different versions of the Flash Attention algorithm optimized
+    for various hardware architectures and data types:
+    - FA1: Original Flash Attention
+    - FA2: Improved parallelization and reduced shared memory usage
+    - FA3: TMA-based implementation for NVIDIA Hopper (SM90+) architecture
+    """
+
     var _value: Int32
 
     comptime NAIVE = Self(0)
@@ -125,6 +134,14 @@ struct FlashAttentionAlgorithm(Defaultable, TrivialRegisterPassable, Writable):
 
 
 struct MHAConfig[dtype: DType](TrivialRegisterPassable, Writable):
+    """Configuration parameters for Multi-Head Attention (MHA) kernels.
+
+    Defines tile sizes, thread configurations, and algorithm parameters
+    for optimized MHA computation on GPU architectures. Tile sizes are
+    automatically tuned based on hardware capabilities, data type, and
+    selected algorithm to maximize performance and memory efficiency.
+    """
+
     # Q, K, V, output should have the same type.
     var num_heads: Int
     var depth: Int
@@ -699,6 +716,14 @@ def dispatch_materialized_mask[
 # That is, we want different specializations of a function to have
 # different numbers of arguments post-compilation.
 trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterPassable):
+    """Trait for integers that may be compile-time constants or runtime values.
+
+    Used to avoid generating code for unused arguments in kernel specializations.
+    When a value is known at compile time (StaticInt), no runtime argument is
+    passed, reducing kernel launch overhead. When the value is dynamic (DynamicInt),
+    it is passed as a runtime argument.
+    """
+
     comptime static_value: Optional[Int]
 
     def as_uint32(self) -> UInt32:
@@ -710,6 +735,11 @@ trait OptionallyStaticInt(Copyable, Intable, TrivialRegisterPassable):
 struct StaticInt[value: Int](
     Defaultable, OptionallyStaticInt, TrivialRegisterPassable
 ):
+    """Compile-time constant integer value.
+
+    Represents a static integer known at compile time, avoiding runtime argument passing.
+    """
+
     comptime static_value: Optional[Int] = Optional[Int](Self.value)
 
     @always_inline("nodebug")
@@ -726,6 +756,11 @@ struct StaticInt[value: Int](
 
 
 struct DynamicInt(OptionallyStaticInt, TrivialRegisterPassable):
+    """Runtime integer value.
+
+    Represents a dynamic integer value that must be passed as a runtime argument.
+    """
+
     var value: UInt32
     comptime static_value: Optional[Int] = None
 
@@ -748,6 +783,15 @@ def _is_decoding[int_t: OptionallyStaticInt]() -> Bool:
 
 
 trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
+    """Partitioning scheme for Multi-Head Attention computation.
+
+    Defines how attention computation is split across multiple partitions
+    for memory efficiency and parallelization. Partitioning enables split-K
+    parallelization where the K/V sequence dimension is divided across multiple
+    thread blocks, with results combined via reduction. This is particularly
+    useful for decoding with long context lengths.
+    """
+
     comptime do_partition: Bool
     comptime accum_dtype: DType
 
@@ -765,6 +809,11 @@ trait MHAPartitionScheme(Copyable, TrivialRegisterPassable):
 struct NoPartition[dtype: DType](
     Defaultable, MHAPartitionScheme, TrivialRegisterPassable
 ):
+    """No partitioning scheme for MHA computation.
+
+    Performs attention computation without splitting across partitions.
+    """
+
     comptime do_partition: Bool = False
     comptime accum_dtype: DType = Self.dtype
 
@@ -788,6 +837,12 @@ struct NoPartition[dtype: DType](
 struct SplitKPartition[dtype: DType](
     MHAPartitionScheme, TrivialRegisterPassable
 ):
+    """Split-K partitioning scheme for MHA computation.
+
+    Splits attention computation across multiple partitions along the K dimension
+    for improved memory efficiency and parallelization.
+    """
+
     comptime do_partition: Bool = True
     comptime accum_dtype: DType = Self.dtype
     var ptr: UnsafePointer[Scalar[Self.accum_dtype], MutAnyOrigin]
