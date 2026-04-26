@@ -240,7 +240,7 @@ struct PyObjectPtr(
 
 
 @fieldwise_init
-struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
+struct PythonVersion(Comparable, ImplicitlyCopyable, RegisterPassable):
     """Represents a Python version with major, minor, and patch numbers."""
 
     var major: Int
@@ -249,6 +249,28 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
     """The minor version number."""
     var patch: Int
     """The patch version number."""
+
+    @implicit
+    def __init__(out self, version: Tuple[Int, Int, Int]):
+        """Construct a version with a Tuple.
+
+        Args:
+            version: The version values.
+        """
+        self.major = version[0]
+        self.minor = version[1]
+        self.patch = version[2]
+
+    @implicit
+    def __init__(out self, version: Tuple[Int, Int]):
+        """Construct a version with a Tuple.
+
+        Args:
+            version: The version values.
+        """
+        self.major = version[0]
+        self.minor = version[1]
+        self.patch = 0
 
     def __init__(out self, version: StringSlice):
         """Initialize a PythonVersion object from a version string.
@@ -276,6 +298,22 @@ struct PythonVersion(ImplicitlyCopyable, RegisterPassable):
                 start = next_idx + 1
             next_idx += 1
         self = PythonVersion(components[0], components[1], components[2])
+
+    @always_inline
+    def __lt__(self, other: Self) -> Bool:
+        """Compare self to a full version.
+
+        Args:
+            other: The other version.
+
+        Returns:
+            The result.
+        """
+        return (self.major, self.minor, self.patch) < (
+            other.major,
+            other.minor,
+            other.patch,
+        )
 
 
 def _py_get_version(lib: _DLHandle) -> StaticString:
@@ -961,6 +999,11 @@ comptime PyIter_Check = ExternalFunction[
     # int PyIter_Check(PyObject *o)
     def(PyObjectPtr) thin -> c_int,
 ]
+comptime PyIter_NextItem = ExternalFunction[
+    "PyIter_NextItem",
+    # int PyIter_NextItem(PyObject *iter, PyObject **item)
+    def(PyObjectPtr, _CPointer[PyObjectPtr, MutAnyOrigin]) thin -> c_int,
+]
 comptime PyIter_Next = ExternalFunction[
     "PyIter_Next",
     # PyObject *PyIter_Next(PyObject *o)
@@ -1202,6 +1245,12 @@ def _PyType_GetName_dummy(type: PyTypeObjectPtr) -> PyObjectPtr:
     abort("PyType_GetName is not available in this Python version")
 
 
+def _PyIter_NextItem_dummy(
+    iter: PyObjectPtr, obj: _CPointer[PyObjectPtr, MutAnyOrigin]
+) -> c_int:
+    abort("PyIter_NextItem is not available in this Python version")
+
+
 # ===-------------------------------------------------------------------===#
 # Context Managers for Python GIL and Threading
 # ===-------------------------------------------------------------------===#
@@ -1365,6 +1414,7 @@ struct CPython(Defaultable, Movable):
     var _PyNumber_Float: PyNumber_Float.type
     # Iterator Protocol
     var _PyIter_Check: PyIter_Check.type
+    var _PyIter_NextItem: PyIter_NextItem.type
     var _PyIter_Next: PyIter_Next.type
     # Concrete Objects Layer
     # Type Objects
@@ -1492,7 +1542,7 @@ struct CPython(Defaultable, Movable):
         self._PyErr_SetString = PyErr_SetString.load(self.lib.borrow())
         self._PyErr_SetNone = PyErr_SetNone.load(self.lib.borrow())
         self._PyErr_Occurred = PyErr_Occurred.load(self.lib.borrow())
-        if self.version.minor >= 12:
+        if self.version >= (3, 12):
             self._PyErr_GetRaisedException = PyErr_GetRaisedException.load(
                 self.lib.borrow()
             )
@@ -1538,19 +1588,23 @@ struct CPython(Defaultable, Movable):
         self._PyNumber_Float = PyNumber_Float.load(self.lib.borrow())
         # Iterator Protocol
         self._PyIter_Check = PyIter_Check.load(self.lib.borrow())
+        if self.version >= (3, 14):
+            self._PyIter_NextItem = PyIter_NextItem.load(self.lib.borrow())
+        else:
+            self._PyIter_NextItem = _PyIter_NextItem_dummy
         self._PyIter_Next = PyIter_Next.load(self.lib.borrow())
         # Concrete Objects Layer
         # Type Objects
         self._PyType_GetFlags = PyType_GetFlags.load(self.lib.borrow())
         self._PyType_IsSubtype = PyType_IsSubtype.load(self.lib.borrow())
         self._PyType_GenericAlloc = PyType_GenericAlloc.load(self.lib.borrow())
-        if self.version.minor >= 11:
+        if self.version >= (3, 11):
             self._PyType_GetName = PyType_GetName.load(self.lib.borrow())
         else:
             self._PyType_GetName = _PyType_GetName_dummy
         self._PyType_FromSpec = PyType_FromSpec.load(self.lib.borrow())
         # The None Object
-        if self.version.minor >= 13:
+        if self.version >= (3, 13):
             # Py_GetConstantBorrowed is part of the Stable ABI since version 3.13
             # References:
             # - https://docs.python.org/3/c-api/object.html#c.Py_GetConstantBorrowed
@@ -1692,7 +1746,7 @@ struct CPython(Defaultable, Movable):
 
         var err_ptr: PyObjectPtr
         # NOTE: PyErr_Fetch is deprecated since Python 3.12.
-        var old_python = self.version.minor < 12
+        var old_python = self.version < (3, 12)
         if old_python:
             err_ptr = self.PyErr_Fetch()
         else:
@@ -2276,6 +2330,19 @@ struct CPython(Defaultable, Movable):
         """
         return self._PyIter_Check(obj)
 
+    def PyIter_NextItem(
+        self, iter: PyObjectPtr, item: _CPointer[PyObjectPtr, MutAnyOrigin]
+    ) -> c_int:
+        """Return 1 and set item to a strong reference of the next value of the
+        iterator iter on success. Return 0 and set item to NULL if there are no
+        remaining values. Return -1, set item to NULL and set an exception on
+        error.
+
+        References:
+        - https://docs.python.org/3/c-api/iter.html#c.PyIter_NextItem
+        """
+        return self._PyIter_NextItem(iter, item)
+
     def PyIter_Next(self, obj: PyObjectPtr) -> PyObjectPtr:
         """Return the next value from the iterator `obj`. The object must be an
         iterator according to `PyIter_Check()`. If there are no remaining values,
@@ -2359,7 +2426,7 @@ struct CPython(Defaultable, Movable):
         References:
         - https://docs.python.org/3/c-api/type.html#c.PyType_GetName
         """
-        if self.version.minor < 11:
+        if self.version < (3, 11):
             return self.PyObject_GetAttrString(
                 PyObjectPtr(upcast_from=type), "__name__"
             )

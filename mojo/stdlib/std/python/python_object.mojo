@@ -46,8 +46,6 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
 
     var iterator: PythonObject
     """The iterator object that stores location."""
-    var next_item: PyObjectPtr
-    """The next item to vend or zero if there are no items."""
 
     # ===-------------------------------------------------------------------===#
     # Life cycle methods
@@ -60,8 +58,10 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
             iter: A Python iterator instance.
         """
         ref cpy = Python().cpython()
+        assert (
+            cpy.PyIter_Check(iter._obj_ptr) != 0
+        ), "object is not a valid sync iterator"
         self.iterator = iter
-        self.next_item = cpy.PyIter_Next(iter._obj_ptr)
 
     # ===-------------------------------------------------------------------===#
     # Trait implementations
@@ -75,15 +75,26 @@ struct _PyIter(ImplicitlyCopyable, Iterable, Iterator):
             The next item in the traversable object that this iterator
             points to.
         """
-        if not self.next_item:
-            raise StopIteration()
         ref cpy = Python().cpython()
-        var curr_item = self.next_item
-        self.next_item = cpy.PyIter_Next(self.iterator._obj_ptr)
-        return PythonObject(from_owned=curr_item)
+        if cpy.version >= (3, 14):
+            var elem = PythonObject()
+            var err = cpy.PyIter_NextItem(
+                self.iterator._obj_ptr, UnsafePointer(to=elem._obj_ptr)
+            )
+            # FIXME: a return of -1 is an error, we should deal with it
+            # but we currently don't have a way to propagate it from here and
+            # still conform to the Iterator trait.
+            if err < 1:
+                raise StopIteration()
+            return elem^
+        else:
+            var curr_ptr = cpy.PyIter_Next(self.iterator._obj_ptr)
+            if not curr_ptr:
+                raise StopIteration()
+            return PythonObject(from_owned=curr_ptr)
 
     def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
-        return self
+        return self.copy()
 
 
 struct PythonObject(
@@ -347,13 +358,15 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
         var set_ptr = cpy.PySet_New({})
-
+        if not set_ptr:
+            raise cpy.unsafe_get_error()
+        var set_obj = PythonObject(from_owned=set_ptr)
         comptime for i in range(Ts.size):
             var obj = values[i].copy().to_python_object()
-            var errno = cpy.PySet_Add(set_ptr, obj.steal_data())
+            var errno = cpy.PySet_Add(set_obj._obj_ptr, obj.steal_data())
             if errno == -1:
                 raise cpy.unsafe_get_error()
-        return PythonObject(from_owned=set_ptr)
+        return set_obj^
 
     def __init__(
         out self,
@@ -373,11 +386,16 @@ struct PythonObject(
         """
         ref cpy = Python().cpython()
         var dict_ptr = cpy.PyDict_New()
-        for key, val in zip(keys, values):
-            var errno = cpy.PyDict_SetItem(dict_ptr, key._obj_ptr, val._obj_ptr)
+        if not dict_ptr:
+            raise cpy.unsafe_get_error()
+        var dict_obj = PythonObject(from_owned=dict_ptr)
+        for var key, val in zip(keys^, values^):
+            var errno = cpy.PyDict_SetItem(
+                dict_obj._obj_ptr, key._obj_ptr, val._obj_ptr
+            )
             if errno == -1:
                 raise cpy.unsafe_get_error()
-        return PythonObject(from_owned=dict_ptr)
+        return dict_obj^
 
     def __init__(out self, *, copy: Self):
         """Copy the object.
