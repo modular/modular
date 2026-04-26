@@ -51,7 +51,6 @@ from .vae import (
     VAEEncoderFirstChunk,
     VAEEncoderRestChunk,
     VAEPostQuantConv,
-    _use_nvidia_fcrs_conv3d,
 )
 
 logger = logging.getLogger(__name__)
@@ -141,47 +140,31 @@ class AutoencoderKLWanModel(ComponentModel):
 
                 # -- 5D conv weights: PyTorch FCQRS -> MAX native QRSCF --
                 if key.endswith(".weight") and len(weight_data.shape) == 5:
-                    use_native_layout = not _use_nvidia_fcrs_conv3d(
-                        self.config.device
+                    buf = (
+                        weight_data.to_buffer()
+                        if hasattr(weight_data, "to_buffer")
+                        else weight_data
                     )
-                    if "time_conv" in key and (
-                        key.startswith("encoder.")
-                        or key.startswith("quant_conv.")
-                    ):
-                        use_native_layout = True
-                    if use_native_layout:
-                        buf = (
-                            weight_data.to_buffer()
-                            if hasattr(weight_data, "to_buffer")
-                            else weight_data
-                        )
-                        t_f32 = cast_dlpack_to(
-                            buf, weight_data.dtype, DType.float32, CPU()
-                        )
-                        weight_data = np.ascontiguousarray(
-                            np.from_dlpack(t_f32).transpose(2, 3, 4, 1, 0)
-                        )
+                    t_f32 = cast_dlpack_to(
+                        buf, weight_data.dtype, DType.float32, CPU()
+                    )
+                    weight_data = np.ascontiguousarray(
+                        np.from_dlpack(t_f32).transpose(2, 3, 4, 1, 0)
+                    )
 
-                # -- 4D conv weights --
+                # -- 4D conv weights: PyTorch FCRS -> MAX native RSCF --
                 if key.endswith(".weight") and len(weight_data.shape) == 4:
-                    is_resample_conv = "resample" in key
-                    # Resample convs use Conv2dPermuted, which keeps FCRS only
-                    # when cuDNN is the target. Otherwise transpose to RSCF.
-                    keep_fcrs = is_resample_conv and _use_nvidia_fcrs_conv3d(
-                        self.config.device
+                    buf = (
+                        weight_data.to_buffer()
+                        if hasattr(weight_data, "to_buffer")
+                        else weight_data
                     )
-                    if not keep_fcrs:
-                        buf = (
-                            weight_data.to_buffer()
-                            if hasattr(weight_data, "to_buffer")
-                            else weight_data
-                        )
-                        t_f32 = cast_dlpack_to(
-                            buf, weight_data.dtype, DType.float32, CPU()
-                        )
-                        weight_data = np.ascontiguousarray(
-                            np.from_dlpack(t_f32).transpose(2, 3, 1, 0)
-                        )
+                    t_f32 = cast_dlpack_to(
+                        buf, weight_data.dtype, DType.float32, CPU()
+                    )
+                    weight_data = np.ascontiguousarray(
+                        np.from_dlpack(t_f32).transpose(2, 3, 1, 0)
+                    )
 
                 if is_decoder:
                     decoder_state_dict[key] = weight_data

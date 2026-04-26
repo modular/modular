@@ -67,8 +67,8 @@ modular_py_binary(
 )
 
 modular_py_binary(
-    name = "vae_decode_compare",
-    srcs = ["vae_decode_compare.py"],
+    name = "vae_decode_timing",
+    srcs = ["vae_decode_timing.py"],
     tags = ["no-pydeps"],
     deps = [
         "//max/python/max/driver",

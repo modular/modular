@@ -1138,11 +1138,10 @@ def main() raises:
 
         # ---------------------------------------------------------------
         # Stride > 1 coverage: the encoder's `downsample3d.time_conv`
-        # uses stride=(2,1,1) with a 3x1x1 filter and is pinned to the
-        # Mojo native path (prefer_nvidia_fcrs=False), so it hits
-        # `dispatch_im2col_matmul_conv3d` even without the env var. The
-        # WAN bench and decoder-only tests only use stride=(1,1,1), so
-        # stride > 1 would not be caught by existing coverage.
+        # uses stride=(2,1,1) with a 3x1x1 filter and hits
+        # `dispatch_im2col_matmul_conv3d`. The WAN bench and decoder-
+        # only tests only use stride=(1,1,1), so stride > 1 would not
+        # be caught by existing coverage.
         # ---------------------------------------------------------------
         # Stride (2,1,1) via conv_gpu dispatch + epilogue.
         test_conv3d_gpu_dispatch[
