@@ -35,6 +35,9 @@ Coverage:
   (`vectorize[1, 2]`), and 16 bytes (`vectorize[1, 4]`); a 16-byte
   bf16 case (`vectorize[1, 8]`) covers the realistic
   half-precision matmul prologue shape.
+- GENERIC -> SHARED (async cp.async, swizzled) -> GENERIC (swizzled)
+  (exercises the swizzled write path of GenericToSharedAsyncTileCopier
+  against the existing swizzled SharedToGeneric reader).
 """
 
 from std.gpu import barrier
@@ -290,6 +293,36 @@ def async_generic_to_shared_to_generic_16b_bf16_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
+def swizzled_async_generic_to_shared_to_generic_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+):
+    """Swizzled async roundtrip: GENERIC -> SHARED (cp.async, swizzled) ->
+    GENERIC (swizzled).
+
+    Exercises the swizzled write path of `GenericToSharedAsyncTileCopier`.
+    The destination tile is read back with `SharedToGenericTileCopier`
+    using the same swizzle, so any disagreement between the two
+    swizzled-address calculations would surface as a mismatched roundtrip.
+    """
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime swizzle = Swizzle(1, 0, 2)
+
+    var src = TileTensor(src_ptr, row_major[_N, _N]())
+    var dst = TileTensor(dst_ptr, row_major[_N, _N]())
+    var smem = stack_allocation[
+        dtype=DType.float32, address_space=AddressSpace.SHARED
+    ](row_major[_N, _N]())
+
+    GenericToSharedAsyncTileCopier[thread_layout, swizzle=swizzle]().copy(
+        smem, src
+    )
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout, swizzle=swizzle]().copy(dst, smem)
+
+
 def _run_roundtrip[
     kernel_fn: def(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -390,6 +423,14 @@ def test_async_generic_to_shared_to_generic_16b_bf16(
         assert_equal(dst_host[i], src_host[i])
 
 
+def test_swizzled_async_generic_to_shared_to_generic(
+    ctx: DeviceContext,
+) raises:
+    _run_roundtrip[swizzled_async_generic_to_shared_to_generic_kernel](
+        "test_swizzled_async_generic_to_shared_to_generic", ctx
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_generic_to_shared_to_generic(ctx)
@@ -400,3 +441,4 @@ def main() raises:
         test_async_generic_to_shared_to_generic_8b(ctx)
         test_async_generic_to_shared_to_generic_16b(ctx)
         test_async_generic_to_shared_to_generic_16b_bf16(ctx)
+        test_swizzled_async_generic_to_shared_to_generic(ctx)

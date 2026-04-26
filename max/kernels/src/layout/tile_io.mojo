@@ -615,6 +615,7 @@ struct LocalToSharedTileCopier[
 struct GenericToSharedAsyncTileCopier[
     thread_layout: Layout,
     *,
+    swizzle: Optional[Swizzle] = None,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
@@ -632,14 +633,14 @@ struct GenericToSharedAsyncTileCopier[
     or `async_copy_wait_group()` before reading the destination tile.
 
     The vector size in bytes (`size_of[dtype]() * element_size`) must be
-    4, 8, or 16. Swizzle, masked bounds-checking, and fill are not yet
-    supported; these are planned follow-ups so this copier can feed
-    matmul-style prologues that write to a swizzled SMEM tile and need
-    out-of-range fragments zero-filled.
+    4, 8, or 16. Masked bounds-checking and fill are not yet supported.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over
             the copy.
+        swizzle: Optional swizzle applied to the shared-memory destination
+            for bank-conflict mitigation. `None` produces a straight copy.
+            Subsequent readers of the tile must use the same swizzle.
         eviction_policy: Cache eviction policy for the source data.
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
@@ -728,13 +729,44 @@ struct GenericToSharedAsyncTileCopier[
         # 1`) this degenerates to one scalar-sized async copy per element.
         comptime num_issues = src_fragments.LayoutType.static_product
 
-        comptime for i in range(num_issues):
-            var src_idx = Int(src_fragments.layout(Idx[i]()))
-            var dst_idx = Int(dst_fragments.layout(Idx[i]()))
-            async_copy[
-                element_size_bytes,
-                eviction_policy=Self.eviction_policy,
-            ](
-                src_global_ptr + src_idx,
-                dst_shared_ptr + dst_idx,
+        # When swizzling, the destination address is computed in absolute
+        # tile coordinates (relative to `dst.ptr`), then rebased back to the
+        # fragment by subtracting `dst_frag_offset`. The unswizzled path uses
+        # the per-fragment offset directly.
+        comptime if Self.swizzle:
+            comptime swizzle_fn = Self.swizzle.value()
+            var dst_frag_offset = dst_fragments._distance(dst.ptr)
+            var dst_frag_offset_typed = Scalar[dst.linear_idx_type](
+                dst_frag_offset
             )
+            comptime for i in range(num_issues):
+                var src_idx = Int(src_fragments.layout(Idx[i]()))
+                var dst_idx_raw = dst_fragments.layout(Idx[i]())
+                var dst_idx_base = dst_idx_raw % Int64(swizzle_fn.size())
+                var dst_idx_diff = dst_idx_raw - dst_idx_base
+                var swizzled_idx = (
+                    swizzle_fn(
+                        dst_frag_offset_typed
+                        + Scalar[dst.linear_idx_type](dst_idx_base)
+                    )
+                    + Scalar[dst.linear_idx_type](dst_idx_diff)
+                    - dst_frag_offset_typed
+                )
+                async_copy[
+                    element_size_bytes,
+                    eviction_policy=Self.eviction_policy,
+                ](
+                    src_global_ptr + src_idx,
+                    dst_shared_ptr + Int(swizzled_idx),
+                )
+        else:
+            comptime for i in range(num_issues):
+                var src_idx = Int(src_fragments.layout(Idx[i]()))
+                var dst_idx = Int(dst_fragments.layout(Idx[i]()))
+                async_copy[
+                    element_size_bytes,
+                    eviction_policy=Self.eviction_policy,
+                ](
+                    src_global_ptr + src_idx,
+                    dst_shared_ptr + dst_idx,
+                )
