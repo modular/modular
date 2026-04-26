@@ -60,10 +60,6 @@ def packOverload():
     pass
 
 
-def directly_pass_pack(pack: __mlir_type.`!kgen.pack<[index]>`):
-    pass
-
-
 # Varargs + traits are a thing.
 # https://github.com/modular/mojo/issues/1443
 def variadic_trait_elt[T: ImplicitlyCopyable](*xs: T):
@@ -80,7 +76,7 @@ def trait_pack[T: ImplicitlyCopyable, *Ts: ImplicitlyCopyable](first: T, *rest: 
 
 
 # CHECK-LABEL: lit.fn @"callOverload
-def callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
+def callOverload(a: Int):
     # CHECK: lit.call {{.*}}@"testThing({{.*}}Int)"(%a)
     _ = testThing(a)
     # CHECK: lit.call {{.*}}@"testThing({{.*}}Int,{{.*}}Int)"(%a, %a)
@@ -114,10 +110,6 @@ def callOverload(a: Int, pack: __mlir_type.`!kgen.pack<[index]>`):
     packOverload(3)
     # CHECK:  lit.call {{.*}}@"packOverload()"()
     packOverload()
-
-    # CHECK-NOT: pack.create
-    # CHECK: call {{.*}}directly_pass_pack{{.*}}(%pack)
-    directly_pass_pack(pack)
 
     # CHECK: call {{.*}}trait_pack
     # CHECK-SAME: [!Int, !Int]

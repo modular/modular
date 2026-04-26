@@ -1635,7 +1635,8 @@ void StructGEPOp::build(OpBuilder &builder, OperationState &result,
   auto pointerType = cast<PointerType>(container.getType());
   auto structType = cast<StructType>(pointerType.getElementType());
   auto elementTypes = structType.getElementTypes();
-  assert(elementTypes && "build requires concrete struct type");
+  assert(elementTypes &&
+         "TODO: build requires concrete struct type for no reason");
   Type resultEltType = (*elementTypes)[index];
   Type resultType =
       PointerType::get(resultEltType, pointerType.getAddressSpace());
