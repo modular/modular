@@ -2233,6 +2233,21 @@ std::optional<int64_t> DeferredType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
+// MLIRDeferredType
+//===----------------------------------------------------------------------===//
+
+// Placeholder sizes — must be resolved to a concrete type before code gen.
+std::optional<int64_t>
+MLIRDeferredType::getTypeSize(TargetInfoAttr target) const {
+  return 0;
+}
+
+std::optional<int64_t>
+MLIRDeferredType::getTypeAlign(TargetInfoAttr target) const {
+  return 1;
+}
+
+//===----------------------------------------------------------------------===//
 // ParamListSplatType
 //===----------------------------------------------------------------------===//
 

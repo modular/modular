@@ -2444,9 +2444,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     // operation has to be deferred.
     // TODO: Try to avoid this if possible. For example, if operation has no
     // InferTypeOpInterface, this is probably not needed.
+    // A result type of `!kgen.deferred_type` also requires a deferred op since
+    // the concrete type is not yet known; verification must be deferred.
     if (llvm::any_of(state.types, [&](Type type) {
           assert(!sugarIsa<DeferredType>(type) &&
                  "Deferred type is not allowed in return");
+          if (sugarIsa<MLIRDeferredType>(type))
+            return true;
           return walker.walk(type).wasInterrupted();
         })) {
       return true;
@@ -2931,6 +2935,32 @@ auto SubscriptNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
         return {};
       ASTType type = parseMLIRType(result, this, emitter.shared);
       return emitter.emitResult(type, this, dest);
+    }
+    if (sugarIsa<MagicMLIRDeferredTypeType>(typeValue)) {
+      std::string str = substituteMLIRMagic(*this, emitter);
+      if (str.empty())
+        return {};
+      // Silently try to parse the type immediately; if it succeeds the user
+      // can be told that __mlir_type suffices.
+      MLIRContext *ctx = emitter.getContext();
+      Type parsed;
+      {
+        mlir::ScopedDiagnosticHandler suppress(ctx, [](Diagnostic &) {});
+        parsed = mlir::parseType(str, ctx);
+      }
+      if (parsed) {
+        emitter.emitWarning(getLoc())
+            << "trivially constructable type. Use `__mlir_type` instead.";
+        return emitter.emitResult(ASTType(parsed), this, dest);
+      }
+      // Type cannot be parsed now (parameters not yet concrete); wrap in
+      // !kgen.deferred_type so the elaborator can resolve it after inlining.
+      AttrCtorDeferredAttr deferredAttr =
+          buildAttrCtorDeferredAttrFromMLIRAttr(*this, emitter);
+      if (!deferredAttr)
+        return {};
+      Type deferredType = MLIRDeferredType::get(ctx, deferredAttr);
+      return emitter.emitResult(ASTType(deferredType), this, dest);
     }
     if (sugarIsa<MagicMLIRAttrType, MagicMLIRDeferredAttrType>(typeValue)) {
       std::string result = substituteMLIRMagic(*this, emitter);

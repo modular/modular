@@ -12,6 +12,7 @@
 #include "KGEN/KGENDialect/KGENUtils.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "Support/ErrorOr.h"
+#include "mlir/AsmParser/AsmParser.h"
 #include "mlir/Dialect/LLVMIR/LLVMDialect.h"
 #include "mlir/IR/BuiltinTypes.h"
 #include "mlir/IR/Diagnostics.h"
@@ -68,6 +69,70 @@ static Type tryReplaceParamListSplat(Type type) {
     return mlir::LLVM::LLVMStructType::getLiteral(context, newTypes);
   }
   llvm_unreachable("unhandled type");
+}
+
+/// If `type` is a `!kgen.deferred_type`, attempt to concretize it by building
+/// the resolved type string from the wrapped `AttrCtorDeferredAttr` and
+/// parsing it as an MLIR type. Returns the concrete type on success, or
+/// `type` unchanged if parameters are still unresolved.
+static Type
+tryConcretizeDeferredType(Type type,
+                          ParameterEvaluationContext *evaluationContext) {
+  auto deferredType = dyn_cast<MLIRDeferredType>(type);
+  if (!deferredType)
+    return type;
+  auto attrCtor = dyn_cast<AttrCtorDeferredAttr>(deferredType.getAttr());
+  if (!attrCtor)
+    return type;
+
+  std::string typeStr;
+  llvm::raw_string_ostream os(typeStr);
+  for (Attribute str : attrCtor.getStrings()) {
+    if (auto strAttr = dyn_cast<StringAttr>(str)) {
+      os << strAttr.str();
+      continue;
+    }
+    auto toStrAttr = dyn_cast<ToStringDeferredAttr>(str);
+    if (!toStrAttr)
+      llvm_unreachable("unexpected attribute type in AttrCtorDeferredAttr");
+
+    // Strip sugar wrapping before printing to get the canonical value.
+    Attribute val = SugarAttr::strip(toStrAttr.getAttr());
+    bool elideType = toStrAttr.getNeedElideType() != nullptr;
+    // Evaluate !kgen.string attrs (e.g. data_to_str) before printing.
+    bool evaluatedToString = false;
+    if (evaluationContext) {
+      if (auto evalAttr = dyn_cast<ContextuallyEvaluatedAttrInterface>(val)) {
+        FailureOr<TypedAttr> evaluated =
+            evaluationContext->evaluateExpression(evalAttr);
+        if (succeeded(evaluated)) {
+          val = *evaluated;
+          evaluatedToString = isa<StringAttr>(val);
+        }
+      }
+    }
+    if (evaluatedToString)
+      os << cast<StringAttr>(val).str();
+    else if (auto strAttr = dyn_cast<StringAttr>(val); strAttr && elideType)
+      os << strAttr.str();
+    else
+      val.print(os, elideType);
+  }
+
+  MLIRContext *ctx = type.getContext();
+  Type parsedType;
+  {
+    mlir::ScopedDiagnosticHandler suppress(ctx, [](Diagnostic &) {});
+    parsedType = mlir::parseType(typeStr, ctx);
+  }
+  if (parsedType)
+    return parsedType;
+  // Parsing failed: parameters may still be unresolved. Report an error only
+  // in a materialization context where all parameters must be concrete.
+  if (evaluationContext && evaluationContext->isMaterializationContext())
+    evaluationContext->emitMaterializationError(
+        "invalid MLIR type in deferred_type: " + typeStr);
+  return type;
 }
 
 //===----------------------------------------------------------------------===//
@@ -442,6 +507,8 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
   if (auto newType = tryReplaceParamListSplat(result))
     result = newType;
+
+  result = tryConcretizeDeferredType(result, evaluationContext);
 
   // If an evaluatable type persists, try to simplify it with additional
   // context.

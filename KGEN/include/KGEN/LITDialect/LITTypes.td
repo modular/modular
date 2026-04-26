@@ -754,6 +754,11 @@ def LIT_MagicMLIRDeferredAttrType : LITType<"MagicMLIRDeferredAttr",
   let summary = "Type of the __mlir_deferred_attr declaration";
 }
 
+def LIT_MagicMLIRDeferredTypeType : LITType<"MagicMLIRDeferredType",
+    "magic.__mlir_deferred_type"> {
+  let summary = "Type of the __mlir_deferred_type declaration";
+}
+
 def LIT_MagicMLIROpType : LITType<"MagicMLIROp", "magic.__mlir_op"> {
   let summary = "Type of the __mlir_op declaration";
 }
