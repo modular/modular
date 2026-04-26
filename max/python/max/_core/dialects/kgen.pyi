@@ -4890,6 +4890,7 @@ class StructType(max._core.Type):
         variadic: max._core.dialects.builtin.TypedAttr,
         is_memory_only: max._core.dialects.builtin.TypedAttr = ...,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+        is_param_pack: bool = False,
     ) -> None: ...
     @overload
     def __init__(
@@ -4897,6 +4898,7 @@ class StructType(max._core.Type):
         variadic: max._core.dialects.builtin.TypedAttr,
         is_memory_only: bool,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+        is_param_pack: bool = False,
     ) -> None: ...
     @property
     def element_types_variadic(
@@ -4906,6 +4908,8 @@ class StructType(max._core.Type):
     def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def is_param_pack(self) -> bool: ...
 
 class TargetType(max._core.Type):
     """
