@@ -38,6 +38,10 @@ Coverage:
 - GENERIC -> SHARED (async cp.async, swizzled) -> GENERIC (swizzled)
   (exercises the swizzled write path of GenericToSharedAsyncTileCopier
   against the existing swizzled SharedToGeneric reader).
+- GENERIC -> SHARED (async cp.async, masked=True with full src) ->
+  GENERIC (smoke-tests the masked write path of
+  GenericToSharedAsyncTileCopier; runtime-shape zero-fill verification
+  is a follow-up — see the kernel's docstring).
 """
 
 from std.gpu import barrier
@@ -293,6 +297,40 @@ def async_generic_to_shared_to_generic_16b_bf16_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
+def masked_async_generic_to_shared_to_generic_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+):
+    """Smoke-test the masked async write path with a fully in-bounds src.
+
+    `masked=True` makes the copier compute a per-vector bound using
+    `src.dim[0]() * row_stride - src_frag_offset` and skip vectors that
+    fall past it. With a 4x4 static src that matches the smem layout,
+    the bound covers every vector, so this test proves the masked code
+    path compiles end-to-end and does not false-trigger zero-fills when
+    the source is fully in bounds.
+
+    Verifying the actual zero-fill behavior requires a runtime-shaped
+    src (e.g. `Coord(RuntimeInt(num_rows), Idx[_N]())`) so `src.dim[0]()`
+    can be smaller than the distribute layout's row count. That follow-up
+    test is tracked alongside the production attention adopters that will
+    exercise this path.
+    """
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+
+    var src = TileTensor(src_ptr, row_major[_N, _N]())
+    var dst = TileTensor(dst_ptr, row_major[_N, _N]())
+    var smem = stack_allocation[
+        dtype=DType.float32, address_space=AddressSpace.SHARED
+    ](row_major[_N, _N]())
+
+    GenericToSharedAsyncTileCopier[thread_layout, masked=True]().copy(smem, src)
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
+
+
 def swizzled_async_generic_to_shared_to_generic_kernel(
     src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -431,6 +469,14 @@ def test_swizzled_async_generic_to_shared_to_generic(
     )
 
 
+def test_masked_async_generic_to_shared_to_generic(
+    ctx: DeviceContext,
+) raises:
+    _run_roundtrip[masked_async_generic_to_shared_to_generic_kernel](
+        "test_masked_async_generic_to_shared_to_generic", ctx
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_generic_to_shared_to_generic(ctx)
@@ -442,3 +488,4 @@ def main() raises:
         test_async_generic_to_shared_to_generic_16b(ctx)
         test_async_generic_to_shared_to_generic_16b_bf16(ctx)
         test_swizzled_async_generic_to_shared_to_generic(ctx)
+        test_masked_async_generic_to_shared_to_generic(ctx)

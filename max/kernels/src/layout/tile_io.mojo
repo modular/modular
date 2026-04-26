@@ -616,6 +616,7 @@ struct GenericToSharedAsyncTileCopier[
     thread_layout: Layout,
     *,
     swizzle: Optional[Swizzle] = None,
+    masked: Bool = False,
     eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     num_threads: Int = thread_layout.size(),
     thread_scope: ThreadScope = ThreadScope.BLOCK,
@@ -633,7 +634,7 @@ struct GenericToSharedAsyncTileCopier[
     or `async_copy_wait_group()` before reading the destination tile.
 
     The vector size in bytes (`size_of[dtype]() * element_size`) must be
-    4, 8, or 16. Masked bounds-checking and fill are not yet supported.
+    4, 8, or 16.
 
     Parameters:
         thread_layout: Layout describing how threads are organized over
@@ -641,6 +642,12 @@ struct GenericToSharedAsyncTileCopier[
         swizzle: Optional swizzle applied to the shared-memory destination
             for bank-conflict mitigation. `None` produces a straight copy.
             Subsequent readers of the tile must use the same swizzle.
+        masked: When `True`, performs per-vector bounds-checking against
+            `src.dim[0]() * row_stride`. Vectors that fall past the bound
+            issue zero-byte `cp.async` operations with `fill=0`, which the
+            hardware fulfills by zeroing the destination bytes. Intended
+            for source tiles whose row count is dynamic (e.g. attention
+            prefill loading the tail of a sequence).
         eviction_policy: Cache eviction policy for the source data.
         num_threads: Total number of threads in the thread block. Threads
             beyond `thread_layout.size()` do not participate.
@@ -729,6 +736,17 @@ struct GenericToSharedAsyncTileCopier[
         # 1`) this degenerates to one scalar-sized async copy per element.
         comptime num_issues = src_fragments.LayoutType.static_product
 
+        # For masked copies we bound `src_idx` by the absolute end of the
+        # valid src region: `src.dim[0]() * row_stride - src_frag_offset`.
+        # `row_stride` is the leading-dim stride; for row-major tiles this
+        # equals the column count. The bound is computed in `Int` to keep
+        # the comparison free of scalar-dtype unification fights.
+        comptime row_stride_static = src.LayoutType.static_stride[0]
+        var src_frag_offset = Int(src_fragments._distance(src.ptr))
+        var src_idx_bound = (
+            Int(src.dim[0]()) * Int(row_stride_static) - src_frag_offset
+        )
+
         # When swizzling, the destination address is computed in absolute
         # tile coordinates (relative to `dst.ptr`), then rebased back to the
         # fragment by subtracting `dst_frag_offset`. The unswizzled path uses
@@ -752,21 +770,51 @@ struct GenericToSharedAsyncTileCopier[
                     + Scalar[dst.linear_idx_type](dst_idx_diff)
                     - dst_frag_offset_typed
                 )
-                async_copy[
-                    element_size_bytes,
-                    eviction_policy=Self.eviction_policy,
-                ](
-                    src_global_ptr + src_idx,
-                    dst_shared_ptr + Int(swizzled_idx),
-                )
+
+                comptime if Self.masked:
+                    var src_copy_size = Int32(element_size_bytes) if (
+                        src_idx < src_idx_bound
+                    ) else Int32(0)
+                    async_copy[
+                        element_size_bytes,
+                        fill=Scalar[src.dtype](0),
+                        eviction_policy=Self.eviction_policy,
+                    ](
+                        src_global_ptr + src_idx,
+                        dst_shared_ptr + Int(swizzled_idx),
+                        src_copy_size,
+                    )
+                else:
+                    async_copy[
+                        element_size_bytes,
+                        eviction_policy=Self.eviction_policy,
+                    ](
+                        src_global_ptr + src_idx,
+                        dst_shared_ptr + Int(swizzled_idx),
+                    )
         else:
             comptime for i in range(num_issues):
                 var src_idx = Int(src_fragments.layout(Idx[i]()))
                 var dst_idx = Int(dst_fragments.layout(Idx[i]()))
-                async_copy[
-                    element_size_bytes,
-                    eviction_policy=Self.eviction_policy,
-                ](
-                    src_global_ptr + src_idx,
-                    dst_shared_ptr + dst_idx,
-                )
+
+                comptime if Self.masked:
+                    var src_copy_size = Int32(element_size_bytes) if (
+                        src_idx < src_idx_bound
+                    ) else Int32(0)
+                    async_copy[
+                        element_size_bytes,
+                        fill=Scalar[src.dtype](0),
+                        eviction_policy=Self.eviction_policy,
+                    ](
+                        src_global_ptr + src_idx,
+                        dst_shared_ptr + dst_idx,
+                        src_copy_size,
+                    )
+                else:
+                    async_copy[
+                        element_size_bytes,
+                        eviction_policy=Self.eviction_policy,
+                    ](
+                        src_global_ptr + src_idx,
+                        dst_shared_ptr + dst_idx,
+                    )
