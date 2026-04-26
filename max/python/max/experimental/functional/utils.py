@@ -23,6 +23,7 @@ from __future__ import annotations
 import contextlib
 from collections.abc import Callable, Generator
 
+from max._mlir_context import ensure_default_mlir_context
 from max.driver import Accelerator, Buffer
 from max.experimental import realization_context as rc
 from max.experimental import tensor
@@ -69,16 +70,17 @@ def ensure_context() -> Generator[None]:
 
     If a context of *any* kind already exists, it is re-used as-is.
     """
-    if tensor.current_realization_context(None) is not None:
-        yield
-        return
-    ctx: rc.EagerRealizationContext | rc.GraphRealizationContext = (
-        rc.GraphRealizationContext(Graph.current)
-        if in_graph_context()
-        else rc.EagerRealizationContext()
-    )
-    with ctx, tensor.realization_context(ctx):
-        yield
+    with ensure_default_mlir_context():
+        if tensor.current_realization_context(None) is not None:
+            yield
+            return
+        ctx: rc.EagerRealizationContext | rc.GraphRealizationContext = (
+            rc.GraphRealizationContext(Graph.current)
+            if in_graph_context()
+            else rc.EagerRealizationContext()
+        )
+        with ctx, tensor.realization_context(ctx):
+            yield
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -257,5 +259,9 @@ def lazy() -> Generator[None]:
         # b is unrealized — no compilation has happened yet
         await b.realize
     """
-    with rc.LazyRealizationContext() as ctx, tensor.realization_context(ctx):
+    with (
+        ensure_default_mlir_context(),
+        rc.LazyRealizationContext() as ctx,
+        tensor.realization_context(ctx),
+    ):
         yield
