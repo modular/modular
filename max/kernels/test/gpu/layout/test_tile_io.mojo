@@ -53,7 +53,7 @@ from std.gpu.memory import (
 )
 
 from layout import Idx, TileTensor, row_major
-from layout.swizzle import Swizzle
+from layout.swizzle import Swizzle, make_swizzle
 from layout.tile_io import (
     GenericToLocalTileCopier,
     GenericToSharedAsyncTileCopier,
@@ -331,6 +331,43 @@ def masked_async_generic_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
 
 
+def access_size_swizzled_vectorized_async_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+):
+    """Production-shaped swizzle + vectorize on the async path.
+
+    Uses `make_swizzle[..., access_size=simd_size]` so the swizzle
+    `base = log2(simd_size)`, guaranteeing bits below `simd_size`
+    are never permuted (and therefore cp.async destination offsets
+    stay naturally aligned to `simd_size * size_of[dtype]()`).
+    This is the shape mha/mla/qmatmul use in production.
+    """
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+    comptime simd_size = 2
+    comptime swizzle = make_swizzle[
+        num_rows=2, row_size=_N, access_size=simd_size
+    ]()
+
+    var src = TileTensor(src_ptr, row_major[_N, _N]())
+    var dst = TileTensor(dst_ptr, row_major[_N, _N]())
+    var smem = stack_allocation[
+        dtype=DType.float32, address_space=AddressSpace.SHARED
+    ](row_major[_N, _N]())
+
+    GenericToSharedAsyncTileCopier[thread_layout, swizzle=swizzle]().copy(
+        smem.vectorize[1, simd_size](),
+        src.vectorize[1, simd_size](),
+    )
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout, swizzle=swizzle]().copy(
+        dst.vectorize[1, simd_size](),
+        smem.vectorize[1, simd_size](),
+    )
+
+
 def swizzled_async_generic_to_shared_to_generic_kernel(
     src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
     dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -477,6 +514,12 @@ def test_masked_async_generic_to_shared_to_generic(
     )
 
 
+def test_access_size_swizzled_vectorized_async(ctx: DeviceContext) raises:
+    _run_roundtrip[access_size_swizzled_vectorized_async_kernel](
+        "test_access_size_swizzled_vectorized_async", ctx
+    )
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_generic_to_shared_to_generic(ctx)
@@ -489,3 +532,4 @@ def main() raises:
         test_async_generic_to_shared_to_generic_16b_bf16(ctx)
         test_swizzled_async_generic_to_shared_to_generic(ctx)
         test_masked_async_generic_to_shared_to_generic(ctx)
+        test_access_size_swizzled_vectorized_async(ctx)

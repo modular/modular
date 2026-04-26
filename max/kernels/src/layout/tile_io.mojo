@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Trait and utilities for copying data between `TileTensor`s."""
 
+from std.bit import log2_floor
 from std.collections import Optional
 from std.gpu import block_dim, lane_id, thread_idx
 from std.gpu.memory import AddressSpace, CacheEviction, async_copy
@@ -700,6 +701,26 @@ struct GenericToSharedAsyncTileCopier[
             8,
             16,
         ), "async copy only supports 4, 8, or 16 byte vector elements."
+
+        # The swizzle's `base` parameter sets how many least-significant
+        # bits of the offset are kept constant. cp.async requires the
+        # destination address to be aligned to `element_size` scalars,
+        # so the swizzle must not permute bits below `log2(element_size)`.
+        # `make_swizzle[..., access_size=element_size]` constructs a
+        # swizzle that satisfies this (it sets `base = log2_floor(access_size)`);
+        # a hand-rolled `Swizzle(bits, base, shift)` with
+        # `base < log2_floor(element_size)` would silently produce
+        # misaligned offsets and trigger CUDA_ERROR_MISALIGNED_ADDRESS.
+        comptime if Self.swizzle:
+            comptime assert Self.swizzle.value().base >= log2_floor(
+                element_size
+            ), (
+                "swizzle.base is too small for the requested element_size:"
+                " cp.async would receive misaligned offsets. Construct the"
+                " swizzle with `make_swizzle[..., access_size=element_size]`"
+                " (or a hand-rolled `Swizzle(bits, base, shift)` with"
+                " `base >= log2_floor(element_size)`)."
+            )
 
         comptime num_busy_threads = Self.thread_layout.size()
         var worker_idx = _get_worker_idx[Self.thread_scope]()
