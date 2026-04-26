@@ -1854,6 +1854,7 @@ struct TileTensor[
             ],
         ],
         address_space=Self.address_space,
+        linear_idx_type=Self.linear_idx_type,
         element_size=Coord[*_IntToComptimeInt[*vector_shape]].static_product,
     ]
     """Type alias for vectorized tensor types.
@@ -3269,6 +3270,7 @@ def _vectorize[
     ],
     data_layout_tensor.origin,
     address_space=data_layout_tensor.address_space,
+    linear_idx_type=data_layout_tensor.linear_idx_type,
     element_size=Coord[*vector_shape_types].static_product,
 ]:
     """Create a vectorized view of a TileTensor.
@@ -3350,6 +3352,7 @@ def _vectorize[
         ResultLayout,
         data_layout_tensor.origin,
         address_space=data_layout_tensor.address_space,
+        linear_idx_type=data_layout_tensor.linear_idx_type,
         element_size=Coord[*vector_shape_types].static_product,
     ](data_layout_tensor.ptr, new_layout)
 
