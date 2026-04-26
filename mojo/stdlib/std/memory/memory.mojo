@@ -648,6 +648,8 @@ def forget_deinit[T: AnyType](var value: T):
     Example:
 
     ```mojo
+    from std.memory import forget_deinit
+
     @fieldwise_init
     struct Noisy:
         def __del__(deinit self):
@@ -664,6 +666,8 @@ def forget_deinit[T: AnyType](var value: T):
     it's fields, recursively. Example:
 
     ```mojo
+    from std.memory import forget_deinit
+
     @fieldwise_init
     struct Parent:
         var child: Child

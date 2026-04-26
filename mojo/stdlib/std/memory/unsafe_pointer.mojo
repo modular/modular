@@ -452,11 +452,13 @@ struct UnsafePointer[
     is no overhead compared to a raw pointer.
 
     ```mojo
+    from std.random import random_float64
+
     # A field that may or may not point to a heap-allocated Int.
     var maybe_ptr: Optional[UnsafePointer[Int, MutExternalOrigin]] = None
 
     # Maybe populate it later.
-    if some_condition():
+    if random_float64() > 0.5:
         maybe_ptr = alloc[Int](1)
 
     # Check for absence, then unwrap to use the pointer.
