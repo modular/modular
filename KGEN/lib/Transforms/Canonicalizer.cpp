@@ -12,7 +12,6 @@
 #include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/POPDialect/POPOps.h"
 #include "KGEN/POPDialect/POPTypes.h"
-#include "KGEN/TransformUtils/StructUtils.h"
 #include "Support/Compiler/BytecodeReaderWriter.h"
 #include "mlir/CAPI/IR.h"
 #include "mlir/CAPI/Rewrite.h"

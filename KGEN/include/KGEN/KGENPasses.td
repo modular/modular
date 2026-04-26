@@ -860,19 +860,6 @@ def ArgPromotion : Pass<"arg-promotion", "ModuleOp"> {
 }
 
 //===----------------------------------------------------------------------===//
-// ExpandStructs
-//===----------------------------------------------------------------------===//
-
-def ExpandStructs : Pass<"expand-structs", "FuncOp"> {
-  let summary = "expand structs across control flow boundaries";
-  let description = [{
-    The `expand-structs` pass removes `!kgen.struct` recursively across
-    control-flow boundaries, including functions and function calls. This
-    results in less IR bloat but is also part of the Mojo function ABI.
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // SROA
 //===----------------------------------------------------------------------===//
 
