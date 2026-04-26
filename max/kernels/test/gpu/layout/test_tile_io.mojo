@@ -28,16 +28,28 @@ Coverage:
   correctness-critical swizzled paths of LocalToShared and
   SharedToGeneric, which must use identical swizzled addresses for
   writes and reads to round-trip).
+- GENERIC -> SHARED (async cp.async) -> GENERIC (exercises
+  GenericToSharedAsyncTileCopier on NVIDIA, falling back to a
+  synchronous load/store on AMD/Apple). Covered for all three legal
+  vector widths: 4 bytes (`element_size=1`, float32), 8 bytes
+  (`vectorize[1, 2]`), and 16 bytes (`vectorize[1, 4]`); a 16-byte
+  bf16 case (`vectorize[1, 8]`) covers the realistic
+  half-precision matmul prologue shape.
 """
 
 from std.gpu import barrier
 from std.gpu.host import DeviceContext
-from std.gpu.memory import AddressSpace
+from std.gpu.memory import (
+    AddressSpace,
+    async_copy_commit_group,
+    async_copy_wait_all,
+)
 
 from layout import Idx, TileTensor, row_major
 from layout.swizzle import Swizzle
 from layout.tile_io import (
     GenericToLocalTileCopier,
+    GenericToSharedAsyncTileCopier,
     GenericToSharedTileCopier,
     LocalToGenericTileCopier,
     LocalToSharedTileCopier,
@@ -161,6 +173,123 @@ def swizzled_local_to_shared_to_generic_kernel(
     SharedToGenericTileCopier[thread_layout, swizzle=swizzle]().copy(dst, smem)
 
 
+def async_generic_to_shared_to_generic_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+):
+    """Roundtrip a tile through shared memory using `cp.async` for the
+    DRAM->SMEM leg: GENERIC -> SHARED (async) -> GENERIC.
+
+    The async copy must be committed and waited on before the destination
+    tile can be read back; on AMD / Apple the underlying intrinsic falls
+    back to synchronous loads, but the commit/wait calls remain valid
+    no-ops.
+    """
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+
+    var src = TileTensor(src_ptr, row_major[_N, _N]())
+    var dst = TileTensor(dst_ptr, row_major[_N, _N]())
+    var smem = stack_allocation[
+        dtype=DType.float32, address_space=AddressSpace.SHARED
+    ](row_major[_N, _N]())
+
+    GenericToSharedAsyncTileCopier[thread_layout]().copy(smem, src)
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
+
+
+def async_generic_to_shared_to_generic_8b_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+):
+    """Roundtrip with 8-byte (2x f32) async copies.
+
+    Vectorizing the 4x4 tile by [1, 2] gives a 4x2 logical layout with
+    `element_size=2`; under a 2x2 thread layout each thread issues two
+    8-byte `cp.async` operations.
+    """
+    comptime thread_layout = row_major(Idx[2](), Idx[2]())
+
+    var src = TileTensor(src_ptr, row_major[_N, _N]())
+    var dst = TileTensor(dst_ptr, row_major[_N, _N]())
+    var smem = stack_allocation[
+        dtype=DType.float32, address_space=AddressSpace.SHARED
+    ](row_major[_N, _N]())
+
+    GenericToSharedAsyncTileCopier[thread_layout]().copy(
+        smem.vectorize[1, 2](), src.vectorize[1, 2]()
+    )
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
+
+
+def async_generic_to_shared_to_generic_16b_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
+):
+    """Roundtrip with 16-byte (4x f32) async copies.
+
+    Vectorizing the 4x4 tile by [1, 4] gives a 4x1 logical layout with
+    `element_size=4`; under a 4x1 thread layout each thread issues a
+    single 16-byte `cp.async` covering one row.
+    """
+    comptime thread_layout = row_major(Idx[4](), Idx[1]())
+
+    var src = TileTensor(src_ptr, row_major[_N, _N]())
+    var dst = TileTensor(dst_ptr, row_major[_N, _N]())
+    var smem = stack_allocation[
+        dtype=DType.float32, address_space=AddressSpace.SHARED
+    ](row_major[_N, _N]())
+
+    GenericToSharedAsyncTileCopier[thread_layout]().copy(
+        smem.vectorize[1, 4](), src.vectorize[1, 4]()
+    )
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
+
+
+# 4x8 bf16 tile: vectorize[1, 8] yields 16-byte (8x bf16) cp.async issues, the
+# realistic prologue shape for half-precision matmul kernels.
+comptime _BF16_ROWS = 4
+comptime _BF16_COLS = 8
+comptime _BF16_NUM_ELEMENTS = _BF16_ROWS * _BF16_COLS
+
+
+def async_generic_to_shared_to_generic_16b_bf16_kernel(
+    src_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+    dst_ptr: UnsafePointer[Scalar[DType.bfloat16], MutAnyOrigin],
+):
+    """Roundtrip with 16-byte (8x bf16) async copies.
+
+    Vectorizing the 4x8 bf16 tile by [1, 8] gives a 4x1 logical layout
+    with `element_size=8`; under a 4x1 thread layout each thread issues
+    a single 16-byte `cp.async` covering one row of bf16 values. This is
+    the byte width and dtype the copier is most likely to see in real
+    matmul prologues.
+    """
+    comptime thread_layout = row_major(Idx[4](), Idx[1]())
+
+    var src = TileTensor(src_ptr, row_major[_BF16_ROWS, _BF16_COLS]())
+    var dst = TileTensor(dst_ptr, row_major[_BF16_ROWS, _BF16_COLS]())
+    var smem = stack_allocation[
+        dtype=DType.bfloat16, address_space=AddressSpace.SHARED
+    ](row_major[_BF16_ROWS, _BF16_COLS]())
+
+    GenericToSharedAsyncTileCopier[thread_layout]().copy(
+        smem.vectorize[1, 8](), src.vectorize[1, 8]()
+    )
+    async_copy_commit_group()
+    async_copy_wait_all()
+    barrier()
+    SharedToGenericTileCopier[thread_layout]().copy(dst, smem)
+
+
 def _run_roundtrip[
     kernel_fn: def(
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin],
@@ -213,9 +342,61 @@ def test_swizzled_local_to_shared_to_generic(ctx: DeviceContext) raises:
     )
 
 
+def test_async_generic_to_shared_to_generic(ctx: DeviceContext) raises:
+    _run_roundtrip[async_generic_to_shared_to_generic_kernel](
+        "test_async_generic_to_shared_to_generic", ctx
+    )
+
+
+def test_async_generic_to_shared_to_generic_8b(ctx: DeviceContext) raises:
+    _run_roundtrip[async_generic_to_shared_to_generic_8b_kernel](
+        "test_async_generic_to_shared_to_generic_8b", ctx
+    )
+
+
+def test_async_generic_to_shared_to_generic_16b(ctx: DeviceContext) raises:
+    _run_roundtrip[async_generic_to_shared_to_generic_16b_kernel](
+        "test_async_generic_to_shared_to_generic_16b", ctx
+    )
+
+
+def test_async_generic_to_shared_to_generic_16b_bf16(
+    ctx: DeviceContext,
+) raises:
+    var name = "test_async_generic_to_shared_to_generic_16b_bf16"
+    print("==", name)
+
+    var src_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        _BF16_NUM_ELEMENTS
+    )
+    for i in range(_BF16_NUM_ELEMENTS):
+        src_host[i] = BFloat16(i + 1)
+
+    var src_dev = ctx.enqueue_create_buffer[DType.bfloat16](_BF16_NUM_ELEMENTS)
+    var dst_dev = ctx.enqueue_create_buffer[DType.bfloat16](_BF16_NUM_ELEMENTS)
+    ctx.enqueue_copy(src_dev, src_host)
+
+    ctx.enqueue_function_experimental[
+        async_generic_to_shared_to_generic_16b_bf16_kernel
+    ](src_dev, dst_dev, grid_dim=(1), block_dim=(_BF16_ROWS))
+
+    var dst_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        _BF16_NUM_ELEMENTS
+    )
+    ctx.enqueue_copy(dst_host, dst_dev)
+    ctx.synchronize()
+
+    for i in range(_BF16_NUM_ELEMENTS):
+        assert_equal(dst_host[i], src_host[i])
+
+
 def main() raises:
     with DeviceContext() as ctx:
         test_generic_to_shared_to_generic(ctx)
         test_generic_to_local_to_generic(ctx)
         test_shared_local_shared_roundtrip(ctx)
         test_swizzled_local_to_shared_to_generic(ctx)
+        test_async_generic_to_shared_to_generic(ctx)
+        test_async_generic_to_shared_to_generic_8b(ctx)
+        test_async_generic_to_shared_to_generic_16b(ctx)
+        test_async_generic_to_shared_to_generic_16b_bf16(ctx)

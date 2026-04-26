@@ -14,8 +14,8 @@
 
 from std.collections import Optional
 from std.gpu import block_dim, lane_id, thread_idx
-from std.gpu.memory import AddressSpace
-from std.sys import align_of
+from std.gpu.memory import AddressSpace, CacheEviction, async_copy
+from std.sys import align_of, size_of
 
 from .coord import Idx
 from .layout_tensor import ThreadScope
@@ -89,6 +89,58 @@ trait TileCopier:
 
         Both tensors must share the same `element_size` so the copy
         operates on matching logical element widths.
+
+        Parameters:
+            element_size: Number of scalar elements per logical element.
+
+        Args:
+            dst: Destination tile in `dst_address_space`.
+            src: Source tile in `src_address_space`.
+        """
+        ...
+
+
+trait AsyncTileCopier:
+    """Trait for asynchronously copying a `TileTensor` between address spaces.
+
+    Distinct from `TileCopier` because async copies have semantics the
+    synchronous trait cannot express: on NVIDIA the `copy` call only
+    issues the transfer, and callers must commit it via
+    `async_copy_commit_group()` and synchronize via
+    `async_copy_wait_all()` or `async_copy_wait_group()` before reading
+    the destination tile. Keeping the trait separate prevents code
+    generic over `TileCopier` from silently accepting an async copier
+    and producing reads that race the in-flight transfer, and gives the
+    async path room to grow (e.g., explicit commit/wait members or
+    multi-stage pipelining) as the async story is fleshed out.
+    """
+
+    comptime src_address_space: AddressSpace
+    """Source `AddressSpace` the copier reads from."""
+
+    comptime dst_address_space: AddressSpace
+    """Destination `AddressSpace` the copier writes to."""
+
+    def copy[
+        element_size: Int
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            address_space=Self.dst_address_space,
+            element_size=element_size,
+            ...,
+        ],
+        src: TileTensor[
+            address_space=Self.src_address_space,
+            element_size=element_size,
+            ...,
+        ],
+    ):
+        """Asynchronously copies `src` into `dst`.
+
+        The copy may not be complete when this call returns; callers
+        must commit and synchronize before reading `dst`.
 
         Parameters:
             element_size: Number of scalar elements per logical element.
@@ -557,3 +609,132 @@ struct LocalToSharedTileCopier[
                 dst.ptr.mut_cast[True]().store[alignment=dst_align](
                     swizzled_idx, src_vec
                 )
+
+
+@fieldwise_init
+struct GenericToSharedAsyncTileCopier[
+    thread_layout: Layout,
+    *,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    num_threads: Int = thread_layout.size(),
+    thread_scope: ThreadScope = ThreadScope.BLOCK,
+](AsyncTileCopier, ImplicitlyCopyable, Movable):
+    """An `AsyncTileCopier` that asynchronously moves a tile from generic
+    memory into shared memory using NVIDIA's `cp.async` instruction.
+
+    On NVIDIA GPUs (compute capability 8.0+), the copy issues `cp.async`
+    instructions, allowing the transfer to overlap with subsequent compute.
+    On AMD and Apple GPUs the underlying `async_copy` intrinsic falls back
+    to synchronous loads and stores.
+
+    The copy is asynchronous on NVIDIA: callers must commit it via
+    `async_copy_commit_group()` and synchronize via `async_copy_wait_all()`
+    or `async_copy_wait_group()` before reading the destination tile.
+
+    The vector size in bytes (`size_of[dtype]() * element_size`) must be
+    4, 8, or 16. Swizzle, masked bounds-checking, and fill are not yet
+    supported; these are planned follow-ups so this copier can feed
+    matmul-style prologues that write to a swizzled SMEM tile and need
+    out-of-range fragments zero-filled.
+
+    Parameters:
+        thread_layout: Layout describing how threads are organized over
+            the copy.
+        eviction_policy: Cache eviction policy for the source data.
+        num_threads: Total number of threads in the thread block. Threads
+            beyond `thread_layout.size()` do not participate.
+        thread_scope: Scope at which thread operations are performed
+            (`BLOCK` or `WARP`). Defaults to `ThreadScope.BLOCK`.
+    """
+
+    comptime src_address_space = AddressSpace.GENERIC
+    """Source `AddressSpace` this copier reads from."""
+    comptime dst_address_space = AddressSpace.SHARED
+    """Destination `AddressSpace` this copier writes to."""
+
+    @always_inline("nodebug")
+    def copy[
+        element_size: Int
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            address_space=Self.dst_address_space,
+            element_size=element_size,
+            ...,
+        ],
+        src: TileTensor[
+            address_space=Self.src_address_space,
+            element_size=element_size,
+            ...,
+        ],
+    ):
+        """Asynchronously copies `src` in generic memory into `dst` in shared
+        memory.
+
+        The copy is issued via `cp.async` on NVIDIA. Callers must commit
+        and wait on the copy before using the destination tile.
+
+        Parameters:
+            element_size: Number of scalar elements per logical element.
+
+        Args:
+            dst: Destination tile in shared memory.
+            src: Source tile in generic memory.
+        """
+        comptime assert (
+            src.dtype == dst.dtype
+        ), "src dtype and dst dtype must be the same."
+
+        comptime element_size_bytes = size_of[src.dtype]() * element_size
+        comptime assert element_size_bytes in (
+            4,
+            8,
+            16,
+        ), "async copy only supports 4, 8, or 16 byte vector elements."
+
+        comptime num_busy_threads = Self.thread_layout.size()
+        var worker_idx = _get_worker_idx[Self.thread_scope]()
+
+        comptime if Self.num_threads > num_busy_threads:
+            if worker_idx >= num_busy_threads:
+                return
+
+        var src_fragments = src.distribute[Self.thread_layout](worker_idx)
+        var dst_fragments = dst.distribute[Self.thread_layout](worker_idx)
+
+        # The trailing `bitcast` materializes the pointee type to a concrete
+        # `Scalar[src.dtype]` so `async_copy`'s `dtype` parameter infers
+        # cleanly; without it the inferred dtype is a comptime expression
+        # that fails to unify across the two pointer arguments.
+        comptime dtype = src.dtype
+        var src_global_ptr = (
+            src_fragments.ptr.address_space_cast[AddressSpace.GLOBAL]()
+            .mut_cast[False]()
+            .unsafe_origin_cast[ImmutAnyOrigin]()
+            .bitcast[Scalar[dtype]]()
+        )
+        var dst_shared_ptr = (
+            dst_fragments.ptr.mut_cast[True]()
+            .address_space_cast[AddressSpace.SHARED]()
+            .unsafe_origin_cast[MutAnyOrigin]()
+            .bitcast[Scalar[dtype]]()
+        )
+
+        # Per-thread fragments are sized in logical (post-vectorize) elements,
+        # so `static_product` already counts cp.async issues, not scalars: each
+        # iteration issues one `element_size_bytes`-wide async copy covering
+        # `element_size` scalars. For non-vectorized inputs (`element_size ==
+        # 1`) this degenerates to one scalar-sized async copy per element.
+        comptime num_issues = src_fragments.LayoutType.static_product
+
+        comptime for i in range(num_issues):
+            var src_idx = Int(src_fragments.layout(Idx[i]()))
+            var dst_idx = Int(dst_fragments.layout(Idx[i]()))
+            async_copy[
+                element_size_bytes,
+                eviction_policy=Self.eviction_policy,
+            ](
+                src_global_ptr + src_idx,
+                dst_shared_ptr + dst_idx,
+            )
