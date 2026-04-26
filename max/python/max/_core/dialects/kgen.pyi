@@ -4561,6 +4561,27 @@ class GeneratorType(max._core.Type):
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
 
+class MLIRDeferredType(max._core.Type):
+    """
+    A `!kgen.deferred_type` wraps an `#kgen.attr_ctor_deferred` attribute that,
+    once all parameters are concrete, is concatenated into a type string and
+    parsed by the elaborator to produce the actual MLIR type.
+
+    This type is produced by the Mojo parser when `__mlir_deferred_type[...]`
+    is used as a function return type and the type string cannot be parsed at
+    parse time (because it references not-yet-concrete parameters).
+
+    Example:
+
+    ```mlir
+    !kgen.deferred_type<#kgen.attr_ctor_deferred("llvm.array<", ...)>
+    ```
+    """
+
+    def __init__(self, attr: max._core.Attribute) -> None: ...
+    @property
+    def attr(self) -> max._core.Attribute | None: ...
+
 class NeverType(max._core.Type):
     """
     A `!kgen.never` type represents a type that cannot be
