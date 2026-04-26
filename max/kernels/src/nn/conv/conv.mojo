@@ -4530,6 +4530,32 @@ def conv_gpu[
                     _sm100_dispatch[]()
                 return
 
+        # SM100 im2col+matmul: route non-128-aligned channels through
+        # `_matmul_gpu` (UMMA-on-Blackwell for bf16) instead of the naive
+        # thread-per-pixel fallback.
+        comptime if _is_sm100:
+            from nn.conv.gpu.im2col_matmul_2d import (
+                dispatch_im2col_matmul_conv2d,
+            )
+
+            if dispatch_im2col_matmul_conv2d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
         # AMD RDNA 3+ dispatch: im2col + WMMA matmul for supported shapes.
         comptime if has_amd_rdna_gpu_accelerator() and input_type in (
             DType.bfloat16,

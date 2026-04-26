@@ -30,6 +30,7 @@ from nn.conv.conv import (
     conv_gpu,
 )
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
+from nn.conv.gpu.im2col_matmul_2d import dispatch_im2col_matmul_conv2d
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from std.testing import assert_almost_equal
@@ -497,6 +498,187 @@ def test_conv3d_im2col_multi_tile[
             _ = filter_dev^
             _ = output_dev^
             return
+
+    ctx.synchronize()
+    ctx.enqueue_copy(output_gpu_host, output_dev)
+    ctx.synchronize()
+
+    try:
+        for i in range(output_size):
+            assert_almost_equal(
+                output_ref_host[i], output_gpu_host[i], rtol=rtol, atol=atol
+            )
+        print("RESULT: PASS - All elements match within tolerance")
+    except e:
+        print("RESULT: FAIL - ", String(e))
+        raise e^
+    finally:
+        input_host.free()
+        filter_host.free()
+        output_gpu_host.free()
+        output_ref_host.free()
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_dev^
+
+
+def test_conv2d_im2col_multi_tile[
+    input_layout: Layout,
+    filter_layout: Layout,
+    dtype: DType,
+    stride: IndexList[2],
+    dilation: IndexList[2],
+    pad: IndexList[2],
+    m_tile_byte_budget: Int,
+    with_epilogue: Bool,
+    rtol: Float64 = 1e-2,
+    atol: Float64 = 1e-2,
+](ctx: DeviceContext) raises:
+    """Directly drive `dispatch_im2col_matmul_conv2d` with a tiny M-tile
+    byte budget to force multi-tile execution on modest 2-D shapes.
+    Validates both the no-epilogue and epilogue branches; the epilogue
+    closure captures `m_offset` across iterations and reconstructs 4-D
+    NHWC coordinates, which is the key source of drift if the M-tile
+    boundary logic is wrong.
+    """
+    print(
+        "test_conv2d_im2col_multi_tile: budget=",
+        m_tile_byte_budget,
+        " with_epilogue=",
+        with_epilogue,
+    )
+    comptime N = Int(input_layout.shape[0])
+    comptime H = Int(input_layout.shape[1])
+    comptime W = Int(input_layout.shape[2])
+    comptime C = Int(input_layout.shape[3])
+
+    comptime R = Int(filter_layout.shape[0])
+    comptime S = Int(filter_layout.shape[1])
+    comptime F = Int(filter_layout.shape[3])
+
+    comptime pad_h = IndexList[2](pad[0], pad[0])
+    comptime pad_w = IndexList[2](pad[1], pad[1])
+
+    comptime H_out = (
+        H + pad_h[0] + pad_h[1] - dilation[0] * (R - 1) - 1
+    ) // stride[0] + 1
+    comptime W_out = (
+        W + pad_w[0] + pad_w[1] - dilation[1] * (S - 1) - 1
+    ) // stride[1] + 1
+
+    var input_size = comptime (input_layout.size())
+    var filter_size = comptime (filter_layout.size())
+    var output_size = comptime (Layout.row_major(N, H_out, W_out, F).size())
+
+    var input_host = alloc[Scalar[dtype]](input_size)
+    var filter_host = alloc[Scalar[dtype]](filter_size)
+    var output_gpu_host = alloc[Scalar[dtype]](output_size)
+    var output_ref_host = alloc[Scalar[dtype]](output_size)
+
+    rand[dtype](input_host, input_size)
+    rand[dtype](filter_host, filter_size)
+
+    # Naive2dConvolution internally uses 5-D NDHWC shapes with D=Q=1 for 2-D.
+    comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
+    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    Naive2dConvolution[accum_dtype, dtype, dtype].run(
+        output_ref_accum_host,
+        input_host,
+        filter_host,
+        Index(N, 1, H_out, W_out, F),
+        Index(N, 1, H, W, C),
+        Index(1, R, S, C, F),
+        IndexList[2](0, 0),
+        pad_h,
+        pad_w,
+        IndexList[3](1, stride[0], stride[1]),
+        IndexList[3](1, dilation[0], dilation[1]),
+        1,
+    )
+    var scale = Scalar[accum_dtype](2.0) if with_epilogue else Scalar[
+        accum_dtype
+    ](1.0)
+    for i in range(output_size):
+        output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
+    output_ref_accum_host.free()
+
+    var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
+    var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+
+    ctx.enqueue_copy(input_dev, input_host)
+    ctx.enqueue_copy(filter_dev, filter_host)
+
+    comptime output_layout_ = Layout.row_major(N, H_out, W_out, F)
+    var input_lt = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
+    var filter_lt = LayoutTensor[dtype, filter_layout](filter_dev.unsafe_ptr())
+    var output_lt = LayoutTensor[dtype, output_layout_](output_dev.unsafe_ptr())
+    var input_tt = lt_to_tt(input_lt)
+    var filter_tt = lt_to_tt(filter_lt)
+    var output_tt = lt_to_tt(output_lt)
+
+    var handled: Bool
+    comptime if with_epilogue:
+
+        @parameter
+        @always_inline
+        @__copy_capture(output_lt)
+        def scale_epilogue[
+            _dtype: DType, _rank: Int, _width: Int
+        ](coords: IndexList[_rank], val: SIMD[_dtype, _width]):
+            var scaled = (val.cast[DType.float32]() * 2.0).cast[dtype]()
+            output_lt.store[width=_width](
+                rebind[IndexList[4]](coords),
+                rebind[SIMD[dtype, _width]](scaled),
+            )
+
+        handled = dispatch_im2col_matmul_conv2d[
+            dtype,
+            dtype,
+            dtype,
+            filter_is_fcrs=False,
+            maybe_epilogue_func=Optional[elementwise_simd_epilogue_type](
+                scale_epilogue
+            ),
+            m_tile_byte_budget=m_tile_byte_budget,
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride,
+            dilation,
+            pad,
+            1,
+            ctx,
+        )
+    else:
+        handled = dispatch_im2col_matmul_conv2d[
+            dtype,
+            dtype,
+            dtype,
+            filter_is_fcrs=False,
+            m_tile_byte_budget=m_tile_byte_budget,
+        ](
+            input_tt,
+            filter_tt,
+            output_tt,
+            stride,
+            dilation,
+            pad,
+            1,
+            ctx,
+        )
+
+    if not handled:
+        print("SKIP: dispatcher declined this shape (likely 1x1 or K<16)")
+        input_host.free()
+        filter_host.free()
+        output_gpu_host.free()
+        output_ref_host.free()
+        _ = input_dev^
+        _ = filter_dev^
+        _ = output_dev^
+        return
 
     ctx.synchronize()
     ctx.enqueue_copy(output_gpu_host, output_dev)
@@ -1000,6 +1182,82 @@ def main() raises:
             IndexList[3](0, 0, 0),
             m_tile_byte_budget=64 * 1024,
             with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # 2D im2col+matmul coverage: shapes where the SM100 fast path
+        # declines (non-128-aligned channels).
+        # Single M-tile, no epilogue.
+        test_conv2d_im2col_multi_tile[
+            Layout.row_major(1, 32, 32, 96),
+            Layout.row_major(3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            m_tile_byte_budget=256 * 1024 * 1024,
+            with_epilogue=False,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Same shape with scale-by-2 epilogue: exercises the 4-D
+        # coord-unpack closure inside the M-tile loop.
+        test_conv2d_im2col_multi_tile[
+            Layout.row_major(1, 32, 32, 96),
+            Layout.row_major(3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            m_tile_byte_budget=256 * 1024 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # Force multi-tile execution: M=256, K=864, bytes/row=1728;
+        # budget 32 KiB -> ~18 rows/tile.
+        test_conv2d_im2col_multi_tile[
+            Layout.row_major(1, 16, 16, 96),
+            Layout.row_major(3, 3, 96, 96),
+            DType.bfloat16,
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            m_tile_byte_budget=32 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # batch>1, asymmetric filter (3x1 — spatial-only row conv),
+        # covers non-square kernel geometry and batch outer dim.
+        test_conv2d_im2col_multi_tile[
+            Layout.row_major(2, 16, 16, 192),
+            Layout.row_major(3, 1, 192, 96),
+            DType.bfloat16,
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            IndexList[2](1, 0),
+            m_tile_byte_budget=256 * 1024 * 1024,
+            with_epilogue=True,
+            rtol=2e-2,
+            atol=2e-2,
+        ](ctx)
+
+        # stride=2 case — the `h_in/w_in` stride math needs exercising
+        # separately from stride=1.
+        test_conv2d_im2col_multi_tile[
+            Layout.row_major(1, 16, 16, 64),
+            Layout.row_major(3, 3, 64, 128),
+            DType.bfloat16,
+            IndexList[2](2, 2),
+            IndexList[2](1, 1),
+            IndexList[2](1, 1),
+            m_tile_byte_budget=256 * 1024 * 1024,
+            with_epilogue=False,
             rtol=2e-2,
             atol=2e-2,
         ](ctx)

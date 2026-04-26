@@ -787,6 +787,29 @@ def main() raises:
             pad_w=1,
         ](ctx, label="WAN_upsampled_res_192to192", num_iters=10, warmup_iters=2)
 
+        # WAN decoder's final UpBlock (level i=3 in dim_mult=(1,2,4,4)):
+        # C_in=96, C_out=96 at the FULL output spatial 240x416 after
+        # the last temporal/spatial upsamples. Fails the current qslice
+        # gate on `C_in % 64 == 0` (96 % 64 = 32) AND on
+        # `C_out % 64 == 0` — falls through to im2col at the largest
+        # spatial resolution in the decoder. Likely the dominant Mojo
+        # wall-time contributor on the end-to-end VAE path.
+        bench_conv3d[
+            DType.bfloat16,
+            batch=1,
+            in_depth=19,
+            in_height=240,
+            in_width=416,
+            in_channels=96,
+            out_channels=96,
+            filter_q=3,
+            filter_r=3,
+            filter_s=3,
+            pad_d=0,
+            pad_h=1,
+            pad_w=1,
+        ](ctx, label="WAN_level3_res_96to96", num_iters=5, warmup_iters=1)
+
     print("=" * 70)
     print("BENCHMARK COMPLETE")
     print("=" * 70)

@@ -175,7 +175,10 @@ _CPU_TESTS = glob(
     )
     for src in glob(
         ["gpu/**/*.mojo"],
-        exclude = ["gpu/nn/bench_conv3d.mojo"],
+        exclude = [
+            "gpu/nn/bench_conv2d.mojo",
+            "gpu/nn/bench_conv3d.mojo",
+        ],
     )
 ]
 
@@ -187,7 +190,10 @@ _CPU_TESTS = glob(
     )
     for src in glob(
         ["gpu/**/*.mojo"],
-        exclude = ["gpu/nn/bench_conv3d.mojo"],
+        exclude = [
+            "gpu/nn/bench_conv2d.mojo",
+            "gpu/nn/bench_conv3d.mojo",
+        ],
     )
 ]
 
@@ -197,6 +203,27 @@ mojo_test(
     name = "gpu/nn/bench_conv3d.mojo.run",
     size = "enormous",
     srcs = ["gpu/nn/bench_conv3d.mojo"],
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "6",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:b200_gpu"],
+    deps = [
+        "//max:internal_utils",
+        "//max:layout",
+        "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "gpu/nn/bench_conv2d.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/nn/bench_conv2d.mojo"],
     enable_assertions = False,
     exec_properties = {
         "test.resources:gpu-memory": "6",
