@@ -144,6 +144,10 @@ def create_di_scheduler(
     overlap_decode: bool = False,
     spec_decode_prefill: bool = False,
     num_speculative_tokens: int = 2,
+    prefill_is_mla: bool = False,
+    prefill_tp_per_replica: int = 1,
+    prefill_dp: int | None = None,
+    decode_dp: int | None = None,
 ) -> tuple[DecodeScheduler, PrefillScheduler, str, DIQueues]:
     """Creates a DecodeScheduler and PrefillScheduler pair for testing.
 
@@ -157,9 +161,22 @@ def create_di_scheduler(
             path (disable_overlap=True), matching num_speculative_tokens > 1.
         num_speculative_tokens: Number of draft tokens per step when
             spec_decode_prefill is True.
+        prefill_is_mla: When True, the prefill KV cache uses ``is_mla=True``
+            (num_kv_heads=1 replicated across TP) so PrefillScheduler flattens
+            the engine shape from [dp][tp] to [dp*tp][1].
+        prefill_tp_per_replica: Number of simulated TP shards per prefill
+            model replica.
+        prefill_dp: Override ``dp`` for the prefill worker only (defaults to
+            ``dp``). Lets the test set prefill and decode to asymmetric
+            topologies while keeping the same total device count.
+        decode_dp: Override ``dp`` for the decode worker only (defaults to
+            ``dp``).
     """
 
-    def _create_kv_cache() -> PagedKVCacheManager:
+    effective_prefill_dp = prefill_dp if prefill_dp is not None else dp
+    effective_decode_dp = decode_dp if decode_dp is not None else dp
+
+    def _create_prefill_kv_cache() -> PagedKVCacheManager:
         return create_kv_cache(
             num_blocks=num_blocks,
             max_batch_size=max_batch_size,
@@ -167,23 +184,49 @@ def create_di_scheduler(
             page_size=page_size,
             enable_prefix_caching=enable_prefix_caching,
             kv_connector=kv_connector,
-            dp=dp,
+            dp=effective_prefill_dp,
             device=device,
+            is_mla=prefill_is_mla,
+            tp_per_replica=prefill_tp_per_replica,
         )
 
-    # Create a scheduler with a paged manager
-    scheduler_config = TokenGenerationSchedulerConfig(
-        max_batch_size=max_batch_size,
-        max_forward_steps_tg=max_forward_steps_tg,
-        target_tokens_per_batch_ce=target_tokens_per_batch_ce,
-        max_seq_len=max_seq_len,
-        enable_chunked_prefill=enable_chunked_prefill,
-        enable_in_flight_batching=enable_in_flight_batching,
-        data_parallel_degree=dp,
-        num_speculative_tokens=num_speculative_tokens
-        if spec_decode_prefill
-        else 0,
-    )
+    def _create_decode_kv_cache() -> PagedKVCacheManager:
+        return create_kv_cache(
+            num_blocks=num_blocks,
+            max_batch_size=max_batch_size,
+            max_seq_len=max_seq_len,
+            page_size=page_size,
+            enable_prefix_caching=enable_prefix_caching,
+            kv_connector=kv_connector,
+            dp=effective_decode_dp,
+            device=device,
+            # Decode must use the same KV layout as prefill so bytes_per_page
+            # matches at connect() time. For heterogeneous MLA DI the model
+            # is MLA on both sides; decode's TP=1 naturally so no flatten.
+            is_mla=prefill_is_mla,
+        )
+
+    def _make_scheduler_config(
+        dp_value: int,
+    ) -> TokenGenerationSchedulerConfig:
+        return TokenGenerationSchedulerConfig(
+            max_batch_size=max_batch_size,
+            max_forward_steps_tg=max_forward_steps_tg,
+            target_tokens_per_batch_ce=target_tokens_per_batch_ce,
+            max_seq_len=max_seq_len,
+            enable_chunked_prefill=enable_chunked_prefill,
+            enable_in_flight_batching=enable_in_flight_batching,
+            data_parallel_degree=dp_value,
+            num_speculative_tokens=num_speculative_tokens
+            if spec_decode_prefill
+            else 0,
+        )
+
+    # For heterogeneous-MLA DI (prefill DP=1/TP>1, decode DP=N/TP=1), the
+    # engine auto-detects the shape mismatch via replicate_kv_across_tp on
+    # both sides' metadata at connect() time — no config flag needed.
+    prefill_scheduler_config = _make_scheduler_config(effective_prefill_dp)
+    decode_scheduler_config = _make_scheduler_config(effective_decode_dp)
 
     # Use queue.Queue to simulate the ZMQ queues.
     request_queue: queue.Queue[TextContext] = queue.Queue()
@@ -192,8 +235,8 @@ def create_di_scheduler(
     ] = queue.Queue()
     cancel_queue: queue.Queue[list[RequestID]] = queue.Queue()
 
-    kv_cache_prefill = _create_kv_cache()
-    kv_cache_decode = _create_kv_cache()
+    kv_cache_prefill = _create_prefill_kv_cache()
+    kv_cache_decode = _create_decode_kv_cache()
     server_addr = generate_zmq_ipc_path()
     client_addr = generate_zmq_ipc_path()
     dispatcher_server = BasicDispatcherServer(bind_addr=server_addr)
@@ -211,7 +254,7 @@ def create_di_scheduler(
 
     decode_scheduler = DecodeScheduler(
         pipeline=decode_pipeline,
-        scheduler_config=scheduler_config,
+        scheduler_config=decode_scheduler_config,
         kv_cache=kv_cache_decode,
         request_queue=request_queue,
         response_queue=response_queue,
@@ -237,7 +280,7 @@ def create_di_scheduler(
 
     prefill_scheduler = PrefillScheduler(
         pipeline=prefill_pipeline,
-        scheduler_config=scheduler_config,
+        scheduler_config=prefill_scheduler_config,
         kv_cache=kv_cache_prefill,
         dispatcher=dispatcher_server,
     )
@@ -343,6 +386,105 @@ def test_one_req_end_to_end() -> None:
     assert isinstance(rest_of_tokens, TextGenerationOutput)
     assert rest_of_tokens.request_id == req_id
     assert rest_of_tokens.tokens == [42, 43, 44, 45]
+
+
+def test_heterogeneous_mla_prefill_tp2_to_decode_dp2_end_to_end() -> None:
+    """
+    Both engines are constructed with their natural ``[dp][tp]`` layout.
+    At connect(), ``resolve_peer_view`` picks ``flatten_local=True`` on
+    the prefill side so the KVTransferEngine's effective view matches
+    the decode side's DP=2/TP=1 shape. This test drives a full request
+    through the pair and asserts the KV transfer completes and tokens
+    land on the decode side.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler(
+        prefill_is_mla=True,
+        prefill_tp_per_replica=2,
+        prefill_dp=1,
+        decode_dp=2,
+    )
+
+    # Prefill engine keeps its natural DP=1/TP=2 shape and advertises
+    # replicate_kv_across_tp so peers can flatten at connect() time.
+    assert prefill.transfer_engine.dp == 1
+    assert prefill.transfer_engine.tp == 2
+    assert prefill.transfer_engine.replicate_kv_across_tp is True
+    # Decode engine is natural DP=2/TP=1; replicate is coerced off by TP=1.
+    assert decode.transfer_engine.dp == 2
+    assert decode.transfer_engine.tp == 1
+    assert decode.transfer_engine.replicate_kv_across_tp is False
+
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+    req_id = ctx.request_id
+
+    # decode → prefill (exchanges transfer-engine metadata + request).
+    decode.run_iteration()
+    # prefill executes CE, initiates NIXL transfer to decode, and replies.
+    prefill.run_iteration()
+    # decode picks up the transferred KV + the first generated token, then
+    # runs token generation.
+    decode.run_iteration()
+
+    # First response: prefill-generated token.
+    output1 = q.response_queue.get()
+    sch_output1 = output1[req_id]
+    assert not sch_output1.is_done
+    single_token = sch_output1.result
+    assert isinstance(single_token, TextGenerationOutput)
+    assert single_token.tokens == [99]
+
+    # Second response: decode-generated tokens.
+    output2 = q.response_queue.get()
+    sch_output2 = output2[req_id]
+    assert sch_output2.is_done
+    rest_of_tokens = sch_output2.result
+    assert isinstance(rest_of_tokens, TextGenerationOutput)
+    assert rest_of_tokens.tokens == [42, 43, 44, 45]
+
+    # One more prefill iteration drains cleanup_active_transfers — verify the
+    # flattened-engine send transfer was released symmetrically.
+    prefill.run_iteration()
+    assert prefill.active_transfers == {}
+    assert prefill.transfer_engine.inflight_send_transfers == {}
+
+
+def test_heterogeneous_mla_prefill_src_replica_maps_to_first_shard() -> None:
+    """
+    With prefill DP=1/TP=2 (MLA), the PrefillScheduler should translate the
+    model src_replica_idx=0 (only one model replica) to engine replica idx 0
+    (the first of the 2 flattened TP shards). We check this by inspecting
+    the TransferReqData produced by initiating a transfer.
+    """
+    decode, prefill, server_addr, q = create_di_scheduler(
+        prefill_is_mla=True,
+        prefill_tp_per_replica=2,
+        prefill_dp=1,
+        decode_dp=2,
+    )
+
+    ctx = create_text_context(
+        target_endpoint=server_addr, prompt_len=100, output_len=5
+    )
+    q.request_queue.put(ctx)
+
+    # Drive decode → prefill message exchange.
+    decode.run_iteration()
+    prefill.run_iteration()
+
+    # After prefill.run_iteration(), the transfer request is recorded in
+    # active_transfers. Grab it and assert src_replica_idx was translated.
+    assert len(prefill.active_transfers) == 1
+    _context, model_src_replica_idx, transfer_req = next(
+        iter(prefill.active_transfers.values())
+    )
+    # Scheduler-level (model) replica is always 0 for DP=1 prefill.
+    assert model_src_replica_idx == 0
+    # Engine-level src_replica_idx is the RR-selected flattened index.
+    # For the first request (counter=0 → offset 0), it's the first TP shard.
+    assert transfer_req.src_replica_idx == 0
 
 
 def test_di_with_dp2_requests_distributed_to_different_replicas() -> None:
