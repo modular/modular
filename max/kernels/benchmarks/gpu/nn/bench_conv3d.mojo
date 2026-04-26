@@ -10,21 +10,48 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Benchmark the naive Mojo 3D conv kernel against cuDNN.
+"""Benchmark the native Mojo 3D conv paths against cuDNN.
 
-Targets the WAN VAE shape profile (bf16, NDHWC input, QRSCF filter) so we
-can track progression of the native conv3d path toward cuDNN parity.
+Driven by `kbench` via a YAML shape sweep; one CSV row per `(impl, shape)`.
+`impl` selects among `naive`, `im2col`, `1x1x1`, `qslice`, and `cudnn`.
+Dispatchers that decline a shape raise an `Error` so kbench records the
+(impl, shape) as failed rather than timing a no-op that misleadingly
+looks fastest.
 
-Usage:
-    bazel run --config=remote-b200 \
+Usage (standalone):
+    bazel run --config=remote-b200 \\
         //max/kernels/benchmarks/gpu/nn:bench_conv3d
+
+Usage (kbench):
+    ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \\
+        max/kernels/benchmarks/gpu/nn/bench_conv3d.yaml \\
+        --target-accelerator cuda:b200 -c
 """
 
 from std.math import ceildiv
 from std.random import rand
+from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 
+from std.benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from internal_utils import arg_parse
+from layout import (
+    UNKNOWN_VALUE,
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from nn.conv.conv import conv3d_gpu_naive_ndhwc_qrscf, conv3d_cudnn
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
@@ -60,21 +87,22 @@ def bench_conv3d[
     filter_q: Int,
     filter_r: Int,
     filter_s: Int,
+    impl: StaticString,
+](
+    ctx: DeviceContext,
+    mut b: Bench,
+    label: String,
+    verify: Bool,
     pad_d: Int,
     pad_h: Int,
     pad_w: Int,
-    stride_d: Int = 1,
-    stride_h: Int = 1,
-    stride_w: Int = 1,
-](
-    ctx: DeviceContext,
-    label: StringLiteral,
-    num_iters: Int = 50,
-    warmup_iters: Int = 5,
+    stride_d: Int,
+    stride_h: Int,
+    stride_w: Int,
 ) raises:
-    comptime d_out = (in_depth + 2 * pad_d - filter_q) // stride_d + 1
-    comptime h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
-    comptime w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
+    var d_out = (in_depth + 2 * pad_d - filter_q) // stride_d + 1
+    var h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
+    var w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
 
     comptime input_layout = Layout.row_major(
         batch, in_depth, in_height, in_width, in_channels
@@ -85,13 +113,16 @@ def bench_conv3d[
     comptime filter_fcqrs_layout = Layout.row_major(
         out_channels, in_channels, filter_q, filter_r, filter_s
     )
+    # Output spatial dims depend on runtime pad / stride, so leave them as
+    # UNKNOWN_VALUE in the static layout and supply concrete sizes via a
+    # RuntimeLayout below.
     comptime output_layout = Layout.row_major(
-        batch, d_out, h_out, w_out, out_channels
+        batch, UNKNOWN_VALUE, UNKNOWN_VALUE, UNKNOWN_VALUE, out_channels
     )
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_qrscf_layout.size())
-    var output_size = comptime (output_layout.size())
+    var output_size = batch * d_out * h_out * w_out * out_channels
 
     var flops = compute_conv3d_flops(
         batch,
@@ -105,41 +136,43 @@ def bench_conv3d[
         filter_s,
     )
 
-    print(
+    var bench_input_id = String(
         label,
-        ": NDHWC=(",
+        "/impl=",
+        impl,
+        "/dtype=",
+        dtype,
+        "/NDHWC=(",
         batch,
-        ",",
+        "x",
         in_depth,
-        ",",
+        "x",
         in_height,
-        ",",
+        "x",
         in_width,
-        ",",
+        "x",
         in_channels,
-        ") filter=(",
+        ")/filter=(",
         filter_q,
         "x",
         filter_r,
         "x",
         filter_s,
-        ") C_out=",
+        ")/Cout=",
         out_channels,
-        " pad=(",
+        "/pad=(",
         pad_d,
-        ",",
+        "x",
         pad_h,
-        ",",
+        "x",
         pad_w,
-        ") stride=(",
+        ")/stride=(",
         stride_d,
-        ",",
+        "x",
         stride_h,
-        ",",
+        "x",
         stride_w,
-        ") GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        ")",
     )
 
     # Host buffers.
@@ -149,7 +182,7 @@ def bench_conv3d[
     rand[dtype](input_host, input_size)
     rand[dtype](filter_qrscf_host, filter_size)
 
-    # Convert QRSCF [Q,R,S,C,F] -> FCQRS [F,C,Q,R,S] for cuDNN.
+    # QRSCF [Q,R,S,C,F] -> FCQRS [F,C,Q,R,S] for cuDNN.
     for f in range(out_channels):
         for c in range(in_channels):
             for q in range(filter_q):
@@ -177,18 +210,17 @@ def bench_conv3d[
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_qrscf_dev = ctx.enqueue_create_buffer[dtype](filter_size)
     var filter_fcqrs_dev = ctx.enqueue_create_buffer[dtype](filter_size)
-    var output_naive_dev = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_im2col_dev = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_1x1x1_dev = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_qslice_dev = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_cudnn_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_ref_dev = ctx.enqueue_create_buffer[dtype](
+        output_size if verify else 1
+    )
 
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_qrscf_dev, filter_qrscf_host)
     ctx.enqueue_copy(filter_fcqrs_dev, filter_fcqrs_host)
     ctx.synchronize()
 
-    # LayoutTensor views.
+    # LayoutTensor views (used by naive + cudnn 5D paths).
     var input_buf = LayoutTensor[dtype, input_layout](input_dev.unsafe_ptr())
     var filter_qrscf_buf = LayoutTensor[dtype, filter_qrscf_layout](
         filter_qrscf_dev.unsafe_ptr()
@@ -196,14 +228,14 @@ def bench_conv3d[
     var filter_fcqrs_buf = LayoutTensor[dtype, filter_fcqrs_layout](
         filter_fcqrs_dev.unsafe_ptr()
     )
-    var output_naive_buf = LayoutTensor[dtype, output_layout](
-        output_naive_dev.unsafe_ptr()
+    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
+        IndexList[5](batch, d_out, h_out, w_out, out_channels)
     )
-    var output_cudnn_buf = LayoutTensor[dtype, output_layout](
-        output_cudnn_dev.unsafe_ptr()
+    var output_buf = LayoutTensor[dtype, output_layout](
+        output_dev.unsafe_ptr(), output_runtime_layout
     )
 
-    # TileTensor views for the im2col+matmul dispatcher.
+    # TileTensor views (used by dispatcher-based paths).
     var input_tt = TileTensor(
         input_dev.unsafe_ptr(),
         row_major(
@@ -222,442 +254,260 @@ def bench_conv3d[
             )
         ),
     )
-    var output_im2col_tt = TileTensor(
-        output_im2col_dev.unsafe_ptr(),
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(),
         row_major(
             Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
         ),
     )
-    var output_1x1x1_tt = TileTensor(
-        output_1x1x1_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
-        ),
-    )
-    var output_qslice_tt = TileTensor(
-        output_qslice_dev.unsafe_ptr(),
-        row_major(
-            Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
-        ),
-    )
-
-    # Naive kernel launch config.
-    comptime block_size = 16
-    var grid_dim_x = ceildiv(w_out * h_out, block_size)
-    var grid_dim_y = ceildiv(d_out, block_size)
-    var grid_dim_z = batch
-
-    comptime naive_kernel = conv3d_gpu_naive_ndhwc_qrscf[
-        input_layout,
-        filter_qrscf_layout,
-        output_layout,
-        dtype,
-        dtype,
-        dtype,
-        block_size,
-        None,
-    ]
 
     var stride_idx = IndexList[3](stride_d, stride_h, stride_w)
     var dilation_idx = IndexList[3](1, 1, 1)
     var pad_idx = IndexList[3](pad_d, pad_h, pad_w)
 
-    # Warmup.
-    for _ in range(warmup_iters):
-        ctx.enqueue_function_experimental[naive_kernel](
-            input_buf,
-            filter_qrscf_buf,
-            output_naive_buf,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            Int(1),
-            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-            block_dim=(block_size, block_size, 1),
-        )
-        _ = dispatch_im2col_matmul_conv3d[
+    comptime block_size = 16
+
+    # Probe dispatcher-based impls once. On decline, raise so kbench logs
+    # this (impl, shape) as failed instead of timing a no-op (which would
+    # otherwise look fastest in the CSV).
+    comptime if impl == "im2col":
+        var accepted = dispatch_im2col_matmul_conv3d[
             dtype, dtype, dtype, filter_is_fcrs=False
         ](
             input_tt,
             filter_qrscf_tt,
-            output_im2col_tt,
+            output_tt,
             stride_idx,
             dilation_idx,
             pad_idx,
             1,
             ctx,
         )
-        _ = dispatch_1x1x1_matmul_conv3d[
+        ctx.synchronize()
+        if not accepted:
+            raise Error(
+                "dispatch_im2col_matmul_conv3d declined: " + bench_input_id
+            )
+    elif impl == "1x1x1":
+        var accepted = dispatch_1x1x1_matmul_conv3d[
             dtype, dtype, dtype, filter_is_fcrs=False
         ](
             input_tt,
             filter_qrscf_tt,
-            output_1x1x1_tt,
+            output_tt,
             stride_idx,
             dilation_idx,
             pad_idx,
             1,
             ctx,
         )
-        _ = dispatch_qslice_conv3d_sm100[
+        ctx.synchronize()
+        if not accepted:
+            raise Error(
+                "dispatch_1x1x1_matmul_conv3d declined: " + bench_input_id
+            )
+    elif impl == "qslice":
+        var accepted = dispatch_qslice_conv3d_sm100[
             dtype, dtype, dtype, filter_is_fcrs=False
         ](
             input_tt,
             filter_qrscf_tt,
-            output_qslice_tt,
+            output_tt,
             stride_idx,
             dilation_idx,
             pad_idx,
             1,
             ctx,
+        )
+        ctx.synchronize()
+        if not accepted:
+            raise Error(
+                "dispatch_qslice_conv3d_sm100 declined: " + bench_input_id
+            )
+
+    comptime if impl == "im2col":
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
+        def im2col_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                _ = dispatch_im2col_matmul_conv3d[
+                    dtype, dtype, dtype, filter_is_fcrs=False
+                ](
+                    input_tt,
+                    filter_qrscf_tt,
+                    output_tt,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[im2col_bench](
+            BenchId("conv3d_im2col", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+    elif impl == "1x1x1":
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
+        def p1x1x1_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                _ = dispatch_1x1x1_matmul_conv3d[
+                    dtype, dtype, dtype, filter_is_fcrs=False
+                ](
+                    input_tt,
+                    filter_qrscf_tt,
+                    output_tt,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[p1x1x1_bench](
+            BenchId("conv3d_1x1x1", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+    elif impl == "qslice":
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_tt, filter_qrscf_tt, output_tt)
+        def qslice_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                _ = dispatch_qslice_conv3d_sm100[
+                    dtype, dtype, dtype, filter_is_fcrs=False
+                ](
+                    input_tt,
+                    filter_qrscf_tt,
+                    output_tt,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[qslice_bench](
+            BenchId("conv3d_qslice", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+    elif impl == "cudnn":
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_buf, filter_fcqrs_buf, output_buf)
+        def cudnn_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                conv3d_cudnn[dtype, dtype, dtype](
+                    input_buf,
+                    filter_fcqrs_buf,
+                    output_buf,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[cudnn_bench](
+            BenchId("conv3d_cudnn", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+    else:
+        # Naive Mojo NDHWC-QRSCF kernel.
+        comptime naive_kernel = conv3d_gpu_naive_ndhwc_qrscf[
+            input_layout,
+            filter_qrscf_layout,
+            output_layout,
+            dtype,
+            dtype,
+            dtype,
+            block_size,
+            None,
+        ]
+        var grid_dim_x = ceildiv(w_out * h_out, block_size)
+        var grid_dim_y = ceildiv(d_out, block_size)
+        var grid_dim_z = batch
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_buf, filter_qrscf_buf, output_buf)
+        def naive_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                ctx.enqueue_function_experimental[naive_kernel](
+                    input_buf,
+                    filter_qrscf_buf,
+                    output_buf,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    Int(1),
+                    grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
+                    block_dim=(block_size, block_size, 1),
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[naive_bench](
+            BenchId("conv3d_naive", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+
+    # Optional correctness cross-check against cuDNN.
+    if verify:
+        var output_ref_buf = LayoutTensor[dtype, output_layout](
+            output_ref_dev.unsafe_ptr(), output_runtime_layout
         )
         conv3d_cudnn[dtype, dtype, dtype](
             input_buf,
             filter_fcqrs_buf,
-            output_cudnn_buf,
+            output_ref_buf,
             stride_idx,
             dilation_idx,
             pad_idx,
             1,
             ctx,
         )
-    ctx.synchronize()
-
-    @parameter
-    @__copy_capture(input_buf, filter_qrscf_buf, output_naive_buf)
-    def naive_bench() raises:
-        ctx.enqueue_function_experimental[naive_kernel](
-            input_buf,
-            filter_qrscf_buf,
-            output_naive_buf,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            Int(1),
-            grid_dim=(grid_dim_x, grid_dim_y, grid_dim_z),
-            block_dim=(block_size, block_size, 1),
-        )
-
-    var naive_ns = ctx.execution_time[naive_bench](num_iters)
-    var naive_ms = Float64(naive_ns) / 1e6 / Float64(num_iters)
-    var naive_tflops = Float64(flops) / (naive_ms / 1000) / 1e12
-
-    # Probe once outside the timing loop: if the dispatcher declines the
-    # shape (e.g. 1x1x1, grouped), we skip Phase 2 numbers entirely rather
-    # than timing a no-op returning False.
-    var im2col_handled = dispatch_im2col_matmul_conv3d[
-        dtype, dtype, dtype, filter_is_fcrs=False
-    ](
-        input_tt,
-        filter_qrscf_tt,
-        output_im2col_tt,
-        stride_idx,
-        dilation_idx,
-        pad_idx,
-        1,
-        ctx,
-    )
-    ctx.synchronize()
-
-    var im2col_ms: Float64 = 0.0
-    var im2col_tflops: Float64 = 0.0
-    if im2col_handled:
-
-        @parameter
-        @__copy_capture(input_tt, filter_qrscf_tt, output_im2col_tt)
-        def im2col_bench() raises:
-            _ = dispatch_im2col_matmul_conv3d[
-                dtype, dtype, dtype, filter_is_fcrs=False
-            ](
-                input_tt,
-                filter_qrscf_tt,
-                output_im2col_tt,
-                stride_idx,
-                dilation_idx,
-                pad_idx,
-                1,
-                ctx,
-            )
-
-        var im2col_ns = ctx.execution_time[im2col_bench](num_iters)
-        im2col_ms = Float64(im2col_ns) / 1e6 / Float64(num_iters)
-        im2col_tflops = Float64(flops) / (im2col_ms / 1000) / 1e12
-
-    # Probe once for the 1x1x1 matmul fast path. Declines on anything
-    # that isn't a 1x1x1 / stride=1 / zero-padding shape.
-    var p1x1x1_handled = dispatch_1x1x1_matmul_conv3d[
-        dtype, dtype, dtype, filter_is_fcrs=False
-    ](
-        input_tt,
-        filter_qrscf_tt,
-        output_1x1x1_tt,
-        stride_idx,
-        dilation_idx,
-        pad_idx,
-        1,
-        ctx,
-    )
-    ctx.synchronize()
-
-    var p1x1x1_ms: Float64 = 0.0
-    var p1x1x1_tflops: Float64 = 0.0
-    if p1x1x1_handled:
-
-        @parameter
-        @__copy_capture(input_tt, filter_qrscf_tt, output_1x1x1_tt)
-        def p1x1x1_bench() raises:
-            _ = dispatch_1x1x1_matmul_conv3d[
-                dtype, dtype, dtype, filter_is_fcrs=False
-            ](
-                input_tt,
-                filter_qrscf_tt,
-                output_1x1x1_tt,
-                stride_idx,
-                dilation_idx,
-                pad_idx,
-                1,
-                ctx,
-            )
-
-        var p1x1x1_ns = ctx.execution_time[p1x1x1_bench](num_iters)
-        p1x1x1_ms = Float64(p1x1x1_ns) / 1e6 / Float64(num_iters)
-        p1x1x1_tflops = Float64(flops) / (p1x1x1_ms / 1000) / 1e12
-
-    # Probe once for the Q-slice SM100 path. Declines unless C_in%64==0,
-    # C_out%128==0, Q>1, stride=1, dilation=1, pad_q=0, bf16.
-    var qslice_handled = dispatch_qslice_conv3d_sm100[
-        dtype, dtype, dtype, filter_is_fcrs=False
-    ](
-        input_tt,
-        filter_qrscf_tt,
-        output_qslice_tt,
-        stride_idx,
-        dilation_idx,
-        pad_idx,
-        1,
-        ctx,
-    )
-    ctx.synchronize()
-
-    var qslice_ms: Float64 = 0.0
-    var qslice_tflops: Float64 = 0.0
-    if qslice_handled:
-
-        @parameter
-        @__copy_capture(input_tt, filter_qrscf_tt, output_qslice_tt)
-        def qslice_bench() raises:
-            _ = dispatch_qslice_conv3d_sm100[
-                dtype, dtype, dtype, filter_is_fcrs=False
-            ](
-                input_tt,
-                filter_qrscf_tt,
-                output_qslice_tt,
-                stride_idx,
-                dilation_idx,
-                pad_idx,
-                1,
-                ctx,
-            )
-
-        var qslice_ns = ctx.execution_time[qslice_bench](num_iters)
-        qslice_ms = Float64(qslice_ns) / 1e6 / Float64(num_iters)
-        qslice_tflops = Float64(flops) / (qslice_ms / 1000) / 1e12
-
-    @parameter
-    @__copy_capture(input_buf, filter_fcqrs_buf, output_cudnn_buf)
-    def cudnn_bench() raises:
-        conv3d_cudnn[dtype, dtype, dtype](
-            input_buf,
-            filter_fcqrs_buf,
-            output_cudnn_buf,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            1,
-            ctx,
-        )
-
-    var cudnn_ns = ctx.execution_time[cudnn_bench](num_iters)
-    var cudnn_ms = Float64(cudnn_ns) / 1e6 / Float64(num_iters)
-    var cudnn_tflops = Float64(flops) / (cudnn_ms / 1000) / 1e12
-
-    # Cross-validate outputs as a correctness sanity check.
-    var output_naive_host = alloc[Scalar[dtype]](output_size)
-    var output_cudnn_host = alloc[Scalar[dtype]](output_size)
-    ctx.enqueue_copy(output_naive_host, output_naive_dev)
-    ctx.enqueue_copy(output_cudnn_host, output_cudnn_dev)
-    ctx.synchronize()
-
-    var max_diff_naive_vs_cudnn: Float32 = 0.0
-    for i in range(output_size):
-        var b = output_cudnn_host[i].cast[DType.float32]()
-        var c = output_naive_host[i].cast[DType.float32]()
-        var d2 = abs(c - b)
-        if d2 > max_diff_naive_vs_cudnn:
-            max_diff_naive_vs_cudnn = d2
-
-    output_naive_host.free()
-    output_cudnn_host.free()
-
-    var max_diff_im2col_vs_cudnn: Float32 = 0.0
-    if im2col_handled:
-        var output_im2col_host = alloc[Scalar[dtype]](output_size)
-        var output_cudnn_host2 = alloc[Scalar[dtype]](output_size)
-        ctx.enqueue_copy(output_im2col_host, output_im2col_dev)
-        ctx.enqueue_copy(output_cudnn_host2, output_cudnn_dev)
         ctx.synchronize()
-        for i in range(output_size):
-            var a = output_im2col_host[i].cast[DType.float32]()
-            var b = output_cudnn_host2[i].cast[DType.float32]()
-            var d1 = abs(a - b)
-            if d1 > max_diff_im2col_vs_cudnn:
-                max_diff_im2col_vs_cudnn = d1
-        output_im2col_host.free()
-        output_cudnn_host2.free()
-
-    var max_diff_1x1x1_vs_cudnn: Float32 = 0.0
-    if p1x1x1_handled:
-        var output_1x1x1_host = alloc[Scalar[dtype]](output_size)
-        var output_cudnn_host3 = alloc[Scalar[dtype]](output_size)
-        ctx.enqueue_copy(output_1x1x1_host, output_1x1x1_dev)
-        ctx.enqueue_copy(output_cudnn_host3, output_cudnn_dev)
+        var output_host = alloc[Scalar[dtype]](output_size)
+        var output_ref_host = alloc[Scalar[dtype]](output_size)
+        ctx.enqueue_copy(output_host, output_dev)
+        ctx.enqueue_copy(output_ref_host, output_ref_dev)
         ctx.synchronize()
+        var max_diff: Float32 = 0.0
         for i in range(output_size):
-            var a = output_1x1x1_host[i].cast[DType.float32]()
-            var b = output_cudnn_host3[i].cast[DType.float32]()
-            var d1 = abs(a - b)
-            if d1 > max_diff_1x1x1_vs_cudnn:
-                max_diff_1x1x1_vs_cudnn = d1
-        output_1x1x1_host.free()
-        output_cudnn_host3.free()
-
-    var max_diff_qslice_vs_cudnn: Float32 = 0.0
-    if qslice_handled:
-        var output_qslice_host = alloc[Scalar[dtype]](output_size)
-        var output_cudnn_host4 = alloc[Scalar[dtype]](output_size)
-        ctx.enqueue_copy(output_qslice_host, output_qslice_dev)
-        ctx.enqueue_copy(output_cudnn_host4, output_cudnn_dev)
-        ctx.synchronize()
-        for i in range(output_size):
-            var a = output_qslice_host[i].cast[DType.float32]()
-            var b = output_cudnn_host4[i].cast[DType.float32]()
-            var d1 = abs(a - b)
-            if d1 > max_diff_qslice_vs_cudnn:
-                max_diff_qslice_vs_cudnn = d1
-        output_qslice_host.free()
-        output_cudnn_host4.free()
-
-    print(
-        "  Naive Mojo : ",
-        naive_ms,
-        " ms  (",
-        naive_tflops,
-        " TFLOPS)",
-        sep="",
-    )
-    if im2col_handled:
-        print(
-            "  im2col+gemm: ",
-            im2col_ms,
-            " ms  (",
-            im2col_tflops,
-            " TFLOPS)",
-            sep="",
-        )
-    else:
-        print("  im2col+gemm: (dispatcher declined; naive handles this shape)")
-    if p1x1x1_handled:
-        print(
-            "  1x1x1 mm   : ",
-            p1x1x1_ms,
-            " ms  (",
-            p1x1x1_tflops,
-            " TFLOPS)",
-            sep="",
-        )
-    else:
-        print(
-            "  1x1x1 mm   : (dispatcher declined; not a 1x1x1 / s=1 / p=0"
-            " shape)"
-        )
-    if qslice_handled:
-        print(
-            "  qslice sm100: ",
-            qslice_ms,
-            " ms  (",
-            qslice_tflops,
-            " TFLOPS)",
-            sep="",
-        )
-    else:
-        print(
-            "  qslice sm100: (dispatcher declined; Q<=1 / !SM100 /"
-            " C_in%64 or C_out%64 misalign / R=S=1)"
-        )
-    print(
-        "  cuDNN      : ", cudnn_ms, " ms  (", cudnn_tflops, " TFLOPS)", sep=""
-    )
-    if im2col_handled:
-        print(
-            "  im2col / cuDNN: ",
-            im2col_ms / cudnn_ms,
-            "x  (lower is better)",
-            sep="",
-        )
-    if p1x1x1_handled:
-        print(
-            "  1x1x1 / cuDNN: ",
-            p1x1x1_ms / cudnn_ms,
-            "x  (lower is better)",
-            sep="",
-        )
-    if qslice_handled:
-        print(
-            "  qslice / cuDNN: ",
-            qslice_ms / cudnn_ms,
-            "x  (lower is better)",
-            sep="",
-        )
-    if qslice_handled:
-        print(
-            "  max |qslice - cuDNN|: ",
-            max_diff_qslice_vs_cudnn,
-            sep="",
-        )
-    # Combined max-diff line.
-    if p1x1x1_handled and im2col_handled:
-        print(
-            "  max |1x1x1 - cuDNN|: ",
-            max_diff_1x1x1_vs_cudnn,
-            "    max |im2col - cuDNN|: ",
-            max_diff_im2col_vs_cudnn,
-            "    max |naive - cuDNN|: ",
-            max_diff_naive_vs_cudnn,
-            sep="",
-        )
-    elif p1x1x1_handled:
-        print(
-            "  max |1x1x1 - cuDNN|: ",
-            max_diff_1x1x1_vs_cudnn,
-            "    max |naive - cuDNN|: ",
-            max_diff_naive_vs_cudnn,
-            sep="",
-        )
-    elif im2col_handled:
-        print(
-            "  max |im2col - cuDNN|: ",
-            max_diff_im2col_vs_cudnn,
-            "    max |naive - cuDNN|: ",
-            max_diff_naive_vs_cudnn,
-            sep="",
-        )
-    else:
-        print(
-            "  max |naive - cuDNN|: ",
-            max_diff_naive_vs_cudnn,
-            sep="",
-        )
-    print()
+            var a = output_host[i].cast[DType.float32]()
+            var c = output_ref_host[i].cast[DType.float32]()
+            var d = abs(a - c)
+            if d > max_diff:
+                max_diff = d
+        print("verify max |", impl, " - cuDNN| = ", max_diff, sep="")
+        output_host.free()
+        output_ref_host.free()
 
     input_host.free()
     filter_qrscf_host.free()
@@ -665,151 +515,69 @@ def bench_conv3d[
     _ = input_dev^
     _ = filter_qrscf_dev^
     _ = filter_fcqrs_dev^
-    _ = output_naive_dev^
-    _ = output_im2col_dev^
-    _ = output_1x1x1_dev^
-    _ = output_qslice_dev^
-    _ = output_cudnn_dev^
+    _ = output_dev^
+    _ = output_ref_dev^
 
 
 def main() raises:
-    print("=" * 70)
-    print("WAN VAE 3D CONV BENCHMARK: Naive Mojo (QRSCF) vs cuDNN")
-    print("=" * 70)
-    print()
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime N = get_defined_int["N", 1]()
+    comptime D = get_defined_int["D", 21]()
+    comptime H = get_defined_int["H", 30]()
+    comptime W = get_defined_int["W", 52]()
+    comptime C_in = get_defined_int["C_in", 16]()
+    comptime C_out = get_defined_int["C_out", 384]()
+    comptime Q = get_defined_int["Q", 3]()
+    comptime R = get_defined_int["R", 3]()
+    comptime S = get_defined_int["S", 3]()
+    comptime impl = get_defined_string["impl", "naive"]()
 
+    var label = arg_parse("label", String("conv3d"))
+    var verify = arg_parse("verify", False)
+    # pad / stride flow into the kernels as runtime IndexLists, so reading
+    # them via arg_parse instead of get_defined_int avoids spinning up a
+    # fresh compiled binary per (pad, stride) combination.
+    var pad_d = arg_parse("pad_d", 1)
+    var pad_h = arg_parse("pad_h", 1)
+    var pad_w = arg_parse("pad_w", 1)
+    var stride_d = arg_parse("stride_d", 1)
+    var stride_h = arg_parse("stride_h", 1)
+    var stride_w = arg_parse("stride_w", 1)
+    var warmup_iters = arg_parse("warmup_iters", 1)
+    var max_iters = arg_parse("max_iters", 5)
+    var max_runtime_secs = arg_parse("max_runtime_secs", 5.0)
+
+    var m = Bench(
+        BenchConfig(
+            num_repetitions=1,
+            num_warmup_iters=warmup_iters,
+            max_iters=max_iters,
+            max_runtime_secs=max_runtime_secs,
+        )
+    )
     with DeviceContext() as ctx:
-        # Tiny sanity shape, stays in L2.
         bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=8,
-            in_height=16,
-            in_width=16,
-            in_channels=16,
-            out_channels=16,
-            filter_q=1,
-            filter_r=1,
-            filter_s=1,
-            pad_d=0,
-            pad_h=0,
-            pad_w=0,
-        ](ctx, label="sanity_1x1x1_16->16", num_iters=200, warmup_iters=10)
-
-        # WAN post_quant_conv @ latent resolution (1x1x1, 16->16).
-        bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=21,
-            in_height=30,
-            in_width=52,
-            in_channels=16,
-            out_channels=16,
-            filter_q=1,
-            filter_r=1,
-            filter_s=1,
-            pad_d=0,
-            pad_h=0,
-            pad_w=0,
-        ](ctx, label="WAN_post_quant_conv", num_iters=100, warmup_iters=5)
-
-        # WAN conv_in: 3x3x3, 16->384 at latent resolution.
-        bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=21,
-            in_height=30,
-            in_width=52,
-            in_channels=16,
-            out_channels=384,
-            filter_q=3,
-            filter_r=3,
-            filter_s=3,
-            pad_d=1,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_conv_in_16to384", num_iters=50, warmup_iters=5)
-
-        # WAN mid ResidualBlock: 3x3x3, 384->384.
-        # pad_d=0 with in_depth expanded to match production (the
-        # pipeline externally pre-pads the temporal axis for causal
-        # convs, so by the time the kernel runs pad_d=0 and d=T+2).
-        # Same D_out as before, qualifies for qslice dispatch.
-        bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=23,
-            in_height=30,
-            in_width=52,
-            in_channels=384,
-            out_channels=384,
-            filter_q=3,
-            filter_r=3,
-            filter_s=3,
-            pad_d=0,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_mid_res_384to384", num_iters=20, warmup_iters=3)
-
-        # WAN time_conv upsample: 3x1x1, 192->384 at 60x104 spatial.
-        bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=23,
-            in_height=60,
-            in_width=104,
-            in_channels=192,
-            out_channels=384,
-            filter_q=3,
-            filter_r=1,
-            filter_s=1,
-            pad_d=0,
-            pad_h=0,
-            pad_w=0,
-        ](ctx, label="WAN_time_conv_192to384", num_iters=20, warmup_iters=3)
-
-        # WAN upsampled residual: 3x3x3, 192->192 at 42x120x208.
-        # (Same pad_d=0 expansion; doesn't qualify for qslice due to
-        # C_out=192 not being 128-aligned, stays on im2col.)
-        bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=44,
-            in_height=120,
-            in_width=208,
-            in_channels=192,
-            out_channels=192,
-            filter_q=3,
-            filter_r=3,
-            filter_s=3,
-            pad_d=0,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_upsampled_res_192to192", num_iters=10, warmup_iters=2)
-
-        # WAN decoder's final UpBlock (level i=3 in dim_mult=(1,2,4,4)):
-        # C_in=96, C_out=96 at the FULL output spatial 240x416 after
-        # the last temporal/spatial upsamples. Fails the current qslice
-        # gate on `C_in % 64 == 0` (96 % 64 = 32) AND on
-        # `C_out % 64 == 0` — falls through to im2col at the largest
-        # spatial resolution in the decoder. Likely the dominant Mojo
-        # wall-time contributor on the end-to-end VAE path.
-        bench_conv3d[
-            DType.bfloat16,
-            batch=1,
-            in_depth=19,
-            in_height=240,
-            in_width=416,
-            in_channels=96,
-            out_channels=96,
-            filter_q=3,
-            filter_r=3,
-            filter_s=3,
-            pad_d=0,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_level3_res_96to96", num_iters=5, warmup_iters=1)
-
-    print("=" * 70)
-    print("BENCHMARK COMPLETE")
-    print("=" * 70)
+            dtype,
+            N,
+            D,
+            H,
+            W,
+            C_in,
+            C_out,
+            Q,
+            R,
+            S,
+            impl,
+        ](
+            ctx,
+            m,
+            label,
+            verify,
+            pad_d,
+            pad_h,
+            pad_w,
+            stride_d,
+            stride_h,
+            stride_w,
+        )
+    m.dump_report()

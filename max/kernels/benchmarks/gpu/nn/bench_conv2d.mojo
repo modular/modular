@@ -12,20 +12,46 @@
 # ===----------------------------------------------------------------------=== #
 """Benchmark the native Mojo 2D conv paths against cuDNN.
 
-Compares `conv2d_gpu_naive_nhwc_rscf`, `dispatch_im2col_matmul_conv2d`,
-and cuDNN on WAN VAE 2-D conv shapes where the SM100 fast path declines
-on non-128-aligned channels.
+Driven by `kbench` via a YAML shape sweep; one CSV row per `(impl, shape)`.
+`impl` selects among `naive`, `im2col`, and `cudnn`. If the im2col
+dispatcher declines a shape (R=S=1, K<16, N<16, non-bf16, grouped, etc.),
+the bench raises an `Error` so kbench records the (impl, shape) as
+failed rather than timing a no-op that misleadingly looks fastest.
 
-Usage:
-    bazel test --config=remote-b200 \
+Usage (standalone):
+    bazel test --config=remote-b200 \\
         //max/kernels/benchmarks:gpu/nn/bench_conv2d.mojo.run
+
+Usage (kbench):
+    ./bazelw run //max/kernels/benchmarks/autotune:kbench -- \\
+        max/kernels/benchmarks/gpu/nn/bench_conv2d.yaml \\
+        --target-accelerator cuda:b200 -c
 """
 
 from std.math import ceildiv
 from std.random import rand
+from std.sys import get_defined_dtype, get_defined_int, get_defined_string
 
+from std.benchmark import (
+    Bench,
+    BenchConfig,
+    Bencher,
+    BenchId,
+    BenchMetric,
+    ThroughputMeasure,
+)
 from std.gpu.host import DeviceContext
-from layout import Coord, Idx, Layout, LayoutTensor, TileTensor, row_major
+from internal_utils import arg_parse
+from layout import (
+    UNKNOWN_VALUE,
+    Coord,
+    Idx,
+    Layout,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    row_major,
+)
 from nn.conv.conv import conv2d_gpu_naive_nhwc_rscf, conv_cudnn
 from nn.conv.gpu.im2col_matmul_2d import dispatch_im2col_matmul_conv2d
 
@@ -53,18 +79,19 @@ def bench_conv2d[
     out_channels: Int,
     filter_r: Int,
     filter_s: Int,
-    pad_h: Int,
-    pad_w: Int,
-    stride_h: Int = 1,
-    stride_w: Int = 1,
+    impl: StaticString,
 ](
     ctx: DeviceContext,
-    label: StringLiteral,
-    num_iters: Int = 20,
-    warmup_iters: Int = 3,
+    mut b: Bench,
+    label: String,
+    verify: Bool,
+    pad_h: Int,
+    pad_w: Int,
+    stride_h: Int,
+    stride_w: Int,
 ) raises:
-    comptime h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
-    comptime w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
+    var h_out = (in_height + 2 * pad_h - filter_r) // stride_h + 1
+    var w_out = (in_width + 2 * pad_w - filter_s) // stride_w + 1
 
     comptime input_layout = Layout.row_major(
         batch, in_height, in_width, in_channels
@@ -72,14 +99,16 @@ def bench_conv2d[
     comptime filter_rscf_layout = Layout.row_major(
         filter_r, filter_s, in_channels, out_channels
     )
-    comptime filter_fcrs_layout = Layout.row_major(
-        out_channels, in_channels, filter_r, filter_s
+    # Output spatial dims depend on runtime pad / stride, so leave them as
+    # UNKNOWN_VALUE in the static layout and supply concrete sizes via a
+    # RuntimeLayout below.
+    comptime output_layout = Layout.row_major(
+        batch, UNKNOWN_VALUE, UNKNOWN_VALUE, out_channels
     )
-    comptime output_layout = Layout.row_major(batch, h_out, w_out, out_channels)
 
     var input_size = comptime (input_layout.size())
     var filter_size = comptime (filter_rscf_layout.size())
-    var output_size = comptime (output_layout.size())
+    var output_size = batch * h_out * w_out * out_channels
 
     var flops = compute_conv2d_flops(
         batch,
@@ -91,39 +120,40 @@ def bench_conv2d[
         filter_s,
     )
 
-    print(
+    var bench_input_id = String(
         label,
-        ": NHWC=(",
+        "/impl=",
+        impl,
+        "/dtype=",
+        dtype,
+        "/NHWC=(",
         batch,
-        ",",
+        "x",
         in_height,
-        ",",
+        "x",
         in_width,
-        ",",
+        "x",
         in_channels,
-        ") filter=(",
+        ")/filter=(",
         filter_r,
         "x",
         filter_s,
-        ") C_out=",
+        ")/Cout=",
         out_channels,
-        " pad=(",
+        "/pad=(",
         pad_h,
-        ",",
+        "x",
         pad_w,
-        ") stride=(",
+        ")/stride=(",
         stride_h,
-        ",",
+        "x",
         stride_w,
-        ") GFLOPS=",
-        Float64(flops) / 1e9,
-        sep="",
+        ")",
     )
 
     var input_host = alloc[Scalar[dtype]](input_size)
     var filter_rscf_host = alloc[Scalar[dtype]](filter_size)
     var filter_fcrs_host = alloc[Scalar[dtype]](filter_size)
-
     rand[dtype](input_host, input_size)
     rand[dtype](filter_rscf_host, filter_size)
 
@@ -149,9 +179,10 @@ def bench_conv2d[
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_rscf_dev = ctx.enqueue_create_buffer[dtype](filter_size)
     var filter_fcrs_dev = ctx.enqueue_create_buffer[dtype](filter_size)
-    var output_naive_dev = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_im2col_dev = ctx.enqueue_create_buffer[dtype](output_size)
-    var output_cudnn_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_dev = ctx.enqueue_create_buffer[dtype](output_size)
+    var output_ref_dev = ctx.enqueue_create_buffer[dtype](
+        output_size if verify else 1
+    )
 
     ctx.enqueue_copy(input_dev, input_host)
     ctx.enqueue_copy(filter_rscf_dev, filter_rscf_host)
@@ -162,8 +193,11 @@ def bench_conv2d[
     var filter_rscf_buf = LayoutTensor[dtype, filter_rscf_layout](
         filter_rscf_dev.unsafe_ptr()
     )
-    var output_naive_buf = LayoutTensor[dtype, output_layout](
-        output_naive_dev.unsafe_ptr()
+    var output_runtime_layout = RuntimeLayout[output_layout].row_major(
+        IndexList[4](batch, h_out, w_out, out_channels)
+    )
+    var output_buf = LayoutTensor[dtype, output_layout](
+        output_dev.unsafe_ptr(), output_runtime_layout
     )
 
     var input_tt = TileTensor(
@@ -182,12 +216,8 @@ def bench_conv2d[
             Coord(IndexList[4](out_channels, in_channels, filter_r, filter_s))
         ),
     )
-    var output_im2col_tt = TileTensor(
-        output_im2col_dev.unsafe_ptr(),
-        row_major(Coord(IndexList[4](batch, h_out, w_out, out_channels))),
-    )
-    var output_cudnn_tt = TileTensor(
-        output_cudnn_dev.unsafe_ptr(),
+    var output_tt = TileTensor(
+        output_dev.unsafe_ptr(),
         row_major(Coord(IndexList[4](batch, h_out, w_out, out_channels))),
     )
 
@@ -197,222 +227,155 @@ def bench_conv2d[
 
     comptime block_size = 16
 
-    # Warmup all paths.
-    for _ in range(warmup_iters):
-        var grid_dim_x = ceildiv(w_out * h_out, block_size)
-        var grid_dim_y = batch
-        ctx.enqueue_function[
-            conv2d_gpu_naive_nhwc_rscf[
-                input_layout,
-                filter_rscf_layout,
-                output_layout,
-                dtype,
-                dtype,
-                dtype,
-                block_size,
-                None,
-            ],
-            conv2d_gpu_naive_nhwc_rscf[
-                input_layout,
-                filter_rscf_layout,
-                output_layout,
-                dtype,
-                dtype,
-                dtype,
-                block_size,
-                None,
-            ],
-        ](
-            input_buf,
-            filter_rscf_buf,
-            output_naive_buf,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            1,
-            grid_dim=(grid_dim_x, grid_dim_y, 1),
-            block_dim=(block_size, block_size, 1),
-        )
-        _ = dispatch_im2col_matmul_conv2d[
+    # Probe the im2col dispatcher once. On decline, raise so kbench logs
+    # this (impl, shape) as failed instead of timing a no-op (which would
+    # otherwise look fastest in the CSV).
+    comptime if impl == "im2col":
+        var accepted = dispatch_im2col_matmul_conv2d[
             dtype, dtype, dtype, filter_is_fcrs=False
         ](
             input_tt,
             filter_rscf_tt,
-            output_im2col_tt,
+            output_tt,
             stride_idx,
             dilation_idx,
             pad_idx,
             1,
             ctx,
         )
-        conv_cudnn[dtype, dtype, dtype](
-            input_tt,
-            filter_fcrs_tt,
-            output_cudnn_tt,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            1,
-            ctx,
-        )
-    ctx.synchronize()
-
-    # Timed: naive.
-    @parameter
-    @__copy_capture(input_buf, filter_rscf_buf, output_naive_buf)
-    def naive_bench() raises:
-        var grid_dim_x = ceildiv(w_out * h_out, block_size)
-        var grid_dim_y = batch
-        ctx.enqueue_function[
-            conv2d_gpu_naive_nhwc_rscf[
-                input_layout,
-                filter_rscf_layout,
-                output_layout,
-                dtype,
-                dtype,
-                dtype,
-                block_size,
-                None,
-            ],
-            conv2d_gpu_naive_nhwc_rscf[
-                input_layout,
-                filter_rscf_layout,
-                output_layout,
-                dtype,
-                dtype,
-                dtype,
-                block_size,
-                None,
-            ],
-        ](
-            input_buf,
-            filter_rscf_buf,
-            output_naive_buf,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            1,
-            grid_dim=(grid_dim_x, grid_dim_y, 1),
-            block_dim=(block_size, block_size, 1),
-        )
-
-    var naive_ns = ctx.execution_time[naive_bench](num_iters)
-    var naive_ms = Float64(naive_ns) / 1e6 / Float64(num_iters)
-    var naive_tflops = Float64(flops) / (naive_ms / 1000) / 1e12
-
-    # Probe once to see if the im2col dispatcher accepts this shape;
-    # a `False` return means we should skip the timed loop below
-    # (otherwise we'd be measuring a no-op return).
-    var im2col_handled = dispatch_im2col_matmul_conv2d[
-        dtype, dtype, dtype, filter_is_fcrs=False
-    ](
-        input_tt,
-        filter_rscf_tt,
-        output_im2col_tt,
-        stride_idx,
-        dilation_idx,
-        pad_idx,
-        1,
-        ctx,
-    )
-    ctx.synchronize()
-
-    # Timed: im2col+matmul (skipped if dispatcher declined).
-    var im2col_ms: Float64 = 0.0
-    var im2col_tflops: Float64 = 0.0
-    if im2col_handled:
-
-        @parameter
-        @__copy_capture(input_tt, filter_rscf_tt, output_im2col_tt)
-        def im2col_bench() raises:
-            _ = dispatch_im2col_matmul_conv2d[
-                dtype, dtype, dtype, filter_is_fcrs=False
-            ](
-                input_tt,
-                filter_rscf_tt,
-                output_im2col_tt,
-                stride_idx,
-                dilation_idx,
-                pad_idx,
-                1,
-                ctx,
+        ctx.synchronize()
+        if not accepted:
+            raise Error(
+                "dispatch_im2col_matmul_conv2d declined: " + bench_input_id
             )
 
-        var im2col_ns = ctx.execution_time[im2col_bench](num_iters)
-        im2col_ms = Float64(im2col_ns) / 1e6 / Float64(num_iters)
-        im2col_tflops = Float64(flops) / (im2col_ms / 1000) / 1e12
+    comptime if impl == "im2col":
 
-    # Timed: cuDNN.
-    @parameter
-    @__copy_capture(input_tt, filter_fcrs_tt, output_cudnn_tt)
-    def cudnn_bench() raises:
+        @parameter
+        @always_inline
+        @__copy_capture(input_tt, filter_rscf_tt, output_tt)
+        def im2col_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                _ = dispatch_im2col_matmul_conv2d[
+                    dtype, dtype, dtype, filter_is_fcrs=False
+                ](
+                    input_tt,
+                    filter_rscf_tt,
+                    output_tt,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[im2col_bench](
+            BenchId("conv2d_im2col", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+    elif impl == "cudnn":
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_tt, filter_fcrs_tt, output_tt)
+        def cudnn_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                conv_cudnn[dtype, dtype, dtype](
+                    input_tt,
+                    filter_fcrs_tt,
+                    output_tt,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    ctx,
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[cudnn_bench](
+            BenchId("conv2d_cudnn", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+    else:
+        # Naive Mojo NHWC-RSCF kernel.
+        comptime naive_kernel = conv2d_gpu_naive_nhwc_rscf[
+            input_layout,
+            filter_rscf_layout,
+            output_layout,
+            dtype,
+            dtype,
+            dtype,
+            block_size,
+            None,
+        ]
+        var grid_dim_x = ceildiv(w_out * h_out, block_size)
+        var grid_dim_y = batch
+
+        @parameter
+        @always_inline
+        @__copy_capture(input_buf, filter_rscf_buf, output_buf)
+        def naive_bench(mut bencher: Bencher) raises:
+            @parameter
+            @always_inline
+            def kernel(ctx: DeviceContext) raises:
+                ctx.enqueue_function[naive_kernel, naive_kernel](
+                    input_buf,
+                    filter_rscf_buf,
+                    output_buf,
+                    stride_idx,
+                    dilation_idx,
+                    pad_idx,
+                    1,
+                    grid_dim=(grid_dim_x, grid_dim_y, 1),
+                    block_dim=(block_size, block_size, 1),
+                )
+
+            bencher.iter_custom[kernel](ctx)
+
+        b.bench_function[naive_bench](
+            BenchId("conv2d_naive", input_id=bench_input_id),
+            [ThroughputMeasure(BenchMetric.flops, flops)],
+        )
+
+    # Optional correctness cross-check against cuDNN.
+    if verify:
+        var output_ref_tt = TileTensor(
+            output_ref_dev.unsafe_ptr(),
+            row_major(Coord(IndexList[4](batch, h_out, w_out, out_channels))),
+        )
         conv_cudnn[dtype, dtype, dtype](
             input_tt,
             filter_fcrs_tt,
-            output_cudnn_tt,
+            output_ref_tt,
             stride_idx,
             dilation_idx,
             pad_idx,
             1,
             ctx,
         )
-
-    var cudnn_ns = ctx.execution_time[cudnn_bench](num_iters)
-    var cudnn_ms = Float64(cudnn_ns) / 1e6 / Float64(num_iters)
-    var cudnn_tflops = Float64(flops) / (cudnn_ms / 1000) / 1e12
-
-    # Cross-validate im2col vs cuDNN, but only when im2col actually ran.
-    var max_diff: Float32 = 0.0
-    if im2col_handled:
-        var output_im2col_host = alloc[Scalar[dtype]](output_size)
-        var output_cudnn_host = alloc[Scalar[dtype]](output_size)
-        ctx.enqueue_copy(output_im2col_host, output_im2col_dev)
-        ctx.enqueue_copy(output_cudnn_host, output_cudnn_dev)
         ctx.synchronize()
+        var output_host = alloc[Scalar[dtype]](output_size)
+        var output_ref_host = alloc[Scalar[dtype]](output_size)
+        ctx.enqueue_copy(output_host, output_dev)
+        ctx.enqueue_copy(output_ref_host, output_ref_dev)
+        ctx.synchronize()
+        var max_diff: Float32 = 0.0
         for i in range(output_size):
-            var a = output_im2col_host[i].cast[DType.float32]()
-            var b = output_cudnn_host[i].cast[DType.float32]()
-            var d = abs(a - b)
+            var a = output_host[i].cast[DType.float32]()
+            var c = output_ref_host[i].cast[DType.float32]()
+            var d = abs(a - c)
             if d > max_diff:
                 max_diff = d
-        output_im2col_host.free()
-        output_cudnn_host.free()
-
-    print(
-        "  Naive Mojo : ", naive_ms, " ms  (", naive_tflops, " TFLOPS)", sep=""
-    )
-    if im2col_handled:
-        print(
-            "  im2col+gemm: ",
-            im2col_ms,
-            " ms  (",
-            im2col_tflops,
-            " TFLOPS)",
-            sep="",
-        )
-    else:
-        print(
-            "  im2col+gemm: (dispatcher declined; R=S=1 / K<16 / N<16 /"
-            " non-bf16)"
-        )
-    print(
-        "  cuDNN      : ", cudnn_ms, " ms  (", cudnn_tflops, " TFLOPS)", sep=""
-    )
-    print(
-        "  naive / cuDNN : ",
-        naive_ms / cudnn_ms,
-        "x  (lower is better)",
-        sep="",
-    )
-    if im2col_handled:
-        print(
-            "  im2col / cuDNN: ",
-            im2col_ms / cudnn_ms,
-            "x  (lower is better)",
-            sep="",
-        )
-        print("  max |im2col - cuDNN|: ", max_diff, sep="")
-    print()
+        print("verify max |", impl, " - cuDNN| = ", max_diff, sep="")
+        output_host.free()
+        output_ref_host.free()
 
     input_host.free()
     filter_rscf_host.free()
@@ -420,78 +383,52 @@ def bench_conv2d[
     _ = input_dev^
     _ = filter_rscf_dev^
     _ = filter_fcrs_dev^
-    _ = output_naive_dev^
-    _ = output_im2col_dev^
-    _ = output_cudnn_dev^
+    _ = output_dev^
+    _ = output_ref_dev^
 
 
 def main() raises:
+    comptime dtype = get_defined_dtype["dtype", DType.bfloat16]()
+    comptime N = get_defined_int["N", 1]()
+    comptime H = get_defined_int["H", 240]()
+    comptime W = get_defined_int["W", 416]()
+    comptime C_in = get_defined_int["C_in", 96]()
+    comptime C_out = get_defined_int["C_out", 96]()
+    comptime R = get_defined_int["R", 3]()
+    comptime S = get_defined_int["S", 3]()
+    comptime impl = get_defined_string["impl", "naive"]()
+
+    var label = arg_parse("label", String("conv2d"))
+    var verify = arg_parse("verify", False)
+    # pad / stride flow into the kernels as runtime IndexLists, so reading
+    # them via arg_parse instead of get_defined_int avoids spinning up a
+    # fresh compiled binary per (pad, stride) combination.
+    var pad_h = arg_parse("pad_h", 1)
+    var pad_w = arg_parse("pad_w", 1)
+    var stride_h = arg_parse("stride_h", 1)
+    var stride_w = arg_parse("stride_w", 1)
+    var warmup_iters = arg_parse("warmup_iters", 2)
+    var max_iters = arg_parse("max_iters", 20)
+    var max_runtime_secs = arg_parse("max_runtime_secs", 3.0)
+
+    var m = Bench(
+        BenchConfig(
+            num_repetitions=1,
+            num_warmup_iters=warmup_iters,
+            max_iters=max_iters,
+            max_runtime_secs=max_runtime_secs,
+        )
+    )
     with DeviceContext() as ctx:
-        print("=" * 70)
-        print("WAN VAE 2D CONV BENCHMARK: naive vs im2col+matmul vs cuDNN")
-        print("=" * 70)
-        print()
-
-        # WAN level-3 residual: the hottest Mojo VAE 2-D shape per nsys
-        # (3x3, 96->96 at 240x416 full output spatial). Dominant
-        # contributor to the ~3.2s Mojo VAE decode before Phase F.
         bench_conv2d[
-            DType.bfloat16,
-            batch=1,
-            in_height=240,
-            in_width=416,
-            in_channels=96,
-            out_channels=96,
-            filter_r=3,
-            filter_s=3,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_level3_res_96to96")
-
-        # WAN level-2 -> level-3 transition (3x3, 192->96 at 240x416).
-        # Non-aligned C_out -> declines SM100, hits Phase F.
-        bench_conv2d[
-            DType.bfloat16,
-            batch=1,
-            in_height=240,
-            in_width=416,
-            in_channels=192,
-            out_channels=96,
-            filter_r=3,
-            filter_s=3,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_level3_transition_192to96")
-
-        # WAN level-2 residual upsample 2D (3x3, 192->192 at 120x208).
-        bench_conv2d[
-            DType.bfloat16,
-            batch=1,
-            in_height=120,
-            in_width=208,
-            in_channels=192,
-            out_channels=192,
-            filter_r=3,
-            filter_s=3,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_level2_res_192to192")
-
-        # conv_out-ish shape (3x3, 96->3 at 240x416). C_out=3 is the
-        # final RGB reduction; K>=16 and R*S > 1 so im2col qualifies.
-        bench_conv2d[
-            DType.bfloat16,
-            batch=1,
-            in_height=240,
-            in_width=416,
-            in_channels=96,
-            out_channels=3,
-            filter_r=3,
-            filter_s=3,
-            pad_h=1,
-            pad_w=1,
-        ](ctx, label="WAN_conv_out_96to3")
-
-        print("=" * 70)
-        print("BENCHMARK COMPLETE")
-        print("=" * 70)
+            dtype,
+            N,
+            H,
+            W,
+            C_in,
+            C_out,
+            R,
+            S,
+            impl,
+        ](ctx, m, label, verify, pad_h, pad_w, stride_h, stride_w)
+    m.dump_report()
