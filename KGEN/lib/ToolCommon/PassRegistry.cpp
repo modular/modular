@@ -32,7 +32,6 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerEliminateDeadSymbols();
   KGEN::registerEliminateDuplicateFunctions();
   KGEN::registerEnsureNoParameters();
-  KGEN::registerExpandStructs();
   KGEN::registerFunctionStats();
   KGEN::registerHoistTrivialInvariants();
   KGEN::registerLiftAndFoldApply();
