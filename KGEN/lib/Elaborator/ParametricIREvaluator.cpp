@@ -547,6 +547,30 @@ FailureOr<TypedAttr> ParametricIREvaluator::evaluateContextSpecific(
                             StringType::get(op.getContext()))};
   case POC::DataToStr:
     return evaluateDataToStr(op, /*reset=*/false);
+  // Evaluate str_concat to support recursive string chains in deferred types.
+  case POC::StrConcat: {
+    auto evalToString = [&](TypedAttr attr) -> FailureOr<StringAttr> {
+      attr = SugarAttr::strip(attr);
+      if (auto strAttr = dyn_cast<StringAttr>(attr))
+        return strAttr;
+      if (auto evalAttr = dyn_cast<ContextuallyEvaluatedAttrInterface>(attr)) {
+        FailureOr<TypedAttr> result = evaluateExpression(evalAttr);
+        if (succeeded(result)) {
+          if (auto strAttr = dyn_cast<StringAttr>(*result))
+            return strAttr;
+        }
+      }
+      return failure();
+    };
+    FailureOr<StringAttr> lhs = evalToString(op.getOperands()[0]);
+    FailureOr<StringAttr> rhs = evalToString(op.getOperands()[1]);
+    if (failed(lhs) || failed(rhs))
+      return failure();
+    SmallString<64> buf;
+    buf.append(lhs->strref());
+    buf.append(rhs->strref());
+    return TypedAttr{StringAttr::get(buf, StringType::get(op.getContext()))};
+  }
   case POC::StringAddress:
     return evaluateStringAddress(op);
   case POC::Rebind:

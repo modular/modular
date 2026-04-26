@@ -1020,6 +1020,32 @@ def KGEN_DeferredType : KGENType<"Deferred", "deferred",
 
 
 //===----------------------------------------------------------------------===//
+// MLIRDeferredType
+//===----------------------------------------------------------------------===//
+
+def KGEN_MLIRDeferredType : KGENType<"MLIRDeferred", "deferred_type",
+    [DeclareTypeInterfaceMethods<DataLayoutInterface>]> {
+  let summary = "Represents a type whose MLIR form is deferred until elaboration";
+  let description = [{
+    A `!kgen.deferred_type` wraps an `#kgen.attr_ctor_deferred` attribute that,
+    once all parameters are concrete, is concatenated into a type string and
+    parsed by the elaborator to produce the actual MLIR type.
+
+    This type is produced by the Mojo parser when `__mlir_deferred_type[...]`
+    is used as a function return type and the type string cannot be parsed at
+    parse time (because it references not-yet-concrete parameters).
+
+    Example:
+
+    ```mlir
+    !kgen.deferred_type<#kgen.attr_ctor_deferred("llvm.array<", ...)>
+    ```
+  }];
+  let parameters = (ins "Attribute":$attr);
+  let assemblyFormat = "`<` $attr `>`";
+}
+
+//===----------------------------------------------------------------------===//
 // NeverType
 //===----------------------------------------------------------------------===//
 
