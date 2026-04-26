@@ -478,6 +478,28 @@ class DeviceStream:
 def accelerator_count() -> int:
     """Returns number of accelerator devices available."""
 
+def __unsafe_pack_py_host_func(fn: Callable) -> tuple[int, int]:
+    """
+    Packs a Python callable into a `(trampoline_ptr, user_data_ptr)` pair.
+
+    The returned integers are suitable for passing to
+    ``MLRT::DeviceStream::enqueueHostFunc`` (and, by extension, to the
+    ``mo.launch_host_func`` custom op). The trampoline is a C ABI
+    ``void(void*)`` function; ``user_data_ptr`` owns a heap allocation
+    holding the Python callable.
+
+    Ownership transfers to the caller: the user-data pointer MUST be
+    consumed by exactly one ``enqueue_host_func`` invocation, which
+    causes the trampoline to free it after calling the callable.
+    Discarding the pair without enqueueing leaks the callable.
+
+    Args:
+        fn (Callable[[], None]): A zero-argument callable.
+
+    Returns:
+        tuple[int, int]: ``(trampoline_ptr, user_data_ptr)`` as integers.
+    """
+
 def set_virtual_device_count(count: int) -> None:
     """
     Sets the number of virtual devices for device creation.

@@ -12516,3 +12516,41 @@ struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
         else:
             # Cross-device memcpy are unsupported since stream is ambiguous.
             raise Error("InplaceMemcpy does not support cross-gpu memcpy")
+
+
+# ===-----------------------------------------------------------------------===#
+# Host function launch kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.launch_host_func")
+struct LaunchHostFunc:
+    """Enqueues a pre-packed host callback on the device's default stream.
+
+    Corresponds to CUDA's `cuLaunchHostFunc`. Accepts a 1-D int64 buffer of
+    shape `[2]` whose elements are raw pointer-sized integers:
+
+    - `payload[0]`: address of a `void (*)(void *)` trampoline function.
+    - `payload[1]`: address of an opaque user-data block owned by the
+      trampoline (freed after the callback runs).
+
+    Both values are produced by `max._core.driver._pack_host_func(fn)` on
+    the Python side. Currently only CUDA streams support host callbacks;
+    non-CUDA backends raise at runtime.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        # A mutable input buffer prevents the op from being DCE'd (see
+        # `mo.sleep` above; tracked in GEX-3080).
+        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime _HostFuncTy = def(OpaquePointer[MutAnyOrigin]) thin -> None
+        var tr_addr = Int(payload[0])
+        var ud_addr = Int(payload[1])
+        var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
+        var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
+        ctx[].stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)
