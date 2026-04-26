@@ -27,14 +27,16 @@ kgen.func @float_literal(%arg0: !pop.float_literal) {
 // CHECK-SAME: %arg2: !kgen.struct<(index, index)>,
 // CHECK-SAME: %arg3: !kgen.struct<(index, index) memoryOnly>,
 // CHECK-SAME: %arg4: !kgen.struct<((index, index) -> index)>,
-// CHECK-SAME: %arg5: !kgen.struct<((index, index) -> index) memoryOnly>
+// CHECK-SAME: %arg5: !kgen.struct<((index, index) -> index) memoryOnly>,
+// CHECK-SAME: %arg6: !kgen.struct<(index, index) isParamPack>
 kgen.func @memory_only_struct(
   %arg0: !kgen.struct<()>,
   %arg1: !kgen.struct<() memoryOnly>,
   %arg2: !kgen.struct<(index, index)>,
   %arg3: !kgen.struct<(index, index) memoryOnly>,
   %arg4: !kgen.struct<((index, index) -> index)>,
-  %arg5: !kgen.struct<((index, index) -> index) memoryOnly>
+  %arg5: !kgen.struct<((index, index) -> index) memoryOnly>,
+  %arg6: !kgen.struct<(index, index) isParamPack>
 ) {
   kgen.return
 }

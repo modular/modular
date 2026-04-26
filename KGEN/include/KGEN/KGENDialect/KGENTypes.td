@@ -637,12 +637,17 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     // proposition (e.g., NOT(conforms_to(T, RegisterPassable))) for
     // conditional RegisterPassable conformance that folds per-instantiation.
     "TypedAttr":$isMemoryOnly,
+
     // Explicit minimum alignment specified via @align(N). A value of 1 means
     // no explicit alignment (the default). Uses TypedAttr to support future
     // parametric alignment (e.g., @align(n) where n is a struct parameter).
     // For now, this will always be an IntegerAttr with index type.
     DefaultValuedParameter<"TypedAttr",
-                           "$_builder.getIndexAttr(1)">:$minAlignment
+                           "$_builder.getIndexAttr(1)">:$minAlignment,
+
+    // This is true when this corresponds to a variadic parameter pack. This is
+    // looked at by ArgConvention lowering to know when it can flatten a pack.
+    "bool":$isParamPack
   );
   // Use hasCustomAssemblyFormat since we need to handle empty struct specially.
   let hasCustomAssemblyFormat = 1;
@@ -655,13 +660,16 @@ def KGEN_StructType : KGENType<"Struct", "struct", [
     // minAlignment defaults to 1 (no explicit alignment) when TypedAttr{} is passed.
     TypeBuilder<(ins "TypedAttr":$variadic,
                      CArg<"TypedAttr", "{}">:$isMemoryOnly,
-                     CArg<"TypedAttr", "{}">:$minAlignment), [{}]>,
+                     CArg<"TypedAttr", "{}">:$minAlignment,
+                     CArg<"bool", "false">:$isParamPack), [{}]>,
     // Convenience builder with bool isMemoryOnly (wraps in BoolAttr).
     TypeBuilder<(ins "TypedAttr":$variadic,
                      "bool":$isMemoryOnly,
-                     CArg<"TypedAttr", "{}">:$minAlignment), [{
+                     CArg<"TypedAttr", "{}">:$minAlignment,
+                     CArg<"bool", "false">:$isParamPack), [{
       return get($_ctxt, variadic,
-                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment);
+                 BoolAttr::get($_ctxt, isMemoryOnly), minAlignment,
+                 isParamPack);
     }]>,
     // Builder with TypedAttr variadic (infers context from variadic).
     TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic,

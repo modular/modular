@@ -1313,6 +1313,8 @@ Type StructType::parse(AsmParser &p) {
   if (failed(KGEN::parseIsMemoryOnly(p, isMemoryOnly)))
     return {};
 
+  bool isParamPack = succeeded(p.parseOptionalKeyword("isParamPack"));
+
   // Parse optional `align(N)` for minAlignment.
   TypedAttr minAlignment;
   if (succeeded(p.parseOptionalKeyword("align"))) {
@@ -1324,7 +1326,8 @@ Type StructType::parse(AsmParser &p) {
   if (p.parseGreater())
     return {};
 
-  return StructType::get(p.getContext(), variadic, isMemoryOnly, minAlignment);
+  return StructType::get(p.getContext(), variadic, isMemoryOnly, minAlignment,
+                         isParamPack);
 }
 
 /// Print the StructType.
@@ -1355,6 +1358,9 @@ void StructType::print(AsmPrinter &p) const {
 
   KGEN::printIsMemoryOnly(p, getIsMemoryOnly());
 
+  if (getIsParamPack())
+    p << " isParamPack";
+
   // Print alignment if not the default (1).
   TypedAttr minAlign = getMinAlignment();
   if (auto intAttr = dyn_cast<IntegerAttr>(minAlign)) {
@@ -1376,7 +1382,7 @@ void StructType::print(AsmPrinter &p) const {
 /// expression.
 LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
                                  TypedAttr variadic, TypedAttr isMemoryOnly,
-                                 TypedAttr minAlignment) {
+                                 TypedAttr minAlignment, bool isParamPack) {
   // isMemoryOnly must be an i1-typed attribute (BoolAttr or constraint
   // proposition).
   if (auto intTy = dyn_cast<IntegerType>(isMemoryOnly.getType());
@@ -1387,6 +1393,12 @@ LogicalResult StructType::verify(function_ref<InFlightDiagnostic()> emitError,
   if (!sugarIsa<IndexType>(minAlignment.getType()))
     return emitError() << "alignment must have index type, but got "
                        << minAlignment.getType();
+  if (isParamPack) {
+    if (!isa<IntegerAttr>(isMemoryOnly) ||
+        cast<IntegerAttr>(isMemoryOnly).getInt() != 0)
+      return emitError() << "packs must not be memory-only";
+  }
+
   // Accept any ParamListType (for concrete cases).
   if (llvm::isa<ParamListType>(variadic.getType()))
     return success();
@@ -1621,14 +1633,15 @@ static TypedAttr normalizeVariadicForUniquing(MLIRContext *context,
 /// If minAlignment is null, uses the default value of 1.
 /// If isMemoryOnly is null, uses BoolAttr(false).
 StructType StructType::get(MLIRContext *context, TypedAttr variadic,
-                           TypedAttr isMemoryOnly, TypedAttr minAlignment) {
+                           TypedAttr isMemoryOnly, TypedAttr minAlignment,
+                           bool isParamPack) {
   if (!isMemoryOnly)
     isMemoryOnly = BoolAttr::get(context, false);
   if (!minAlignment)
     minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  TypedAttr normalizedVariadic =
-      normalizeVariadicForUniquing(context, variadic);
-  return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
+  if (!isParamPack)
+    variadic = normalizeVariadicForUniquing(context, variadic);
+  return Base::get(context, variadic, isMemoryOnly, minAlignment, isParamPack);
 }
 
 StructType StructType::get(ArrayRef<Type> types, bool isMemoryOnly) {
@@ -1668,7 +1681,7 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
   TypedAttr variadic = convertTypesToVariadicAttr(context, types);
   TypedAttr isMemOnlyAttr = BoolAttr::get(context, isMemoryOnly);
   TypedAttr minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  if (failed(verify(emitError, variadic, isMemOnlyAttr, minAlignment)))
+  if (failed(verify(emitError, variadic, isMemOnlyAttr, minAlignment, false)))
     return {};
   return get(context, variadic, isMemOnlyAttr, minAlignment);
 }
@@ -1676,16 +1689,17 @@ StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
 StructType StructType::getChecked(function_ref<InFlightDiagnostic()> emitError,
                                   MLIRContext *context, TypedAttr variadic,
                                   TypedAttr isMemoryOnly,
-                                  TypedAttr minAlignment) {
+                                  TypedAttr minAlignment, bool isParamPack) {
   if (!isMemoryOnly)
     isMemoryOnly = BoolAttr::get(context, false);
   if (!minAlignment)
     minAlignment = IntegerAttr::get(IndexType::get(context), 1);
-  TypedAttr normalizedVariadic =
-      normalizeVariadicForUniquing(context, variadic);
-  if (failed(verify(emitError, normalizedVariadic, isMemoryOnly, minAlignment)))
+  if (!isParamPack)
+    variadic = normalizeVariadicForUniquing(context, variadic);
+  if (failed(
+          verify(emitError, variadic, isMemoryOnly, minAlignment, isParamPack)))
     return {};
-  return Base::get(context, normalizedVariadic, isMemoryOnly, minAlignment);
+  return Base::get(context, variadic, isMemoryOnly, minAlignment, isParamPack);
 }
 
 FailureOr<Type>
