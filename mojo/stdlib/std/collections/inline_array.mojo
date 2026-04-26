@@ -558,8 +558,27 @@ struct InlineArray[ElementType: Copyable, size: Int](
             This method provides array-style indexing access to elements in the
             InlineArray. The index is bounds-checked at runtime.
         """
-        check_bounds(idx, len(self))
-        return self._unchecked_get(idx)
+        if __is_run_in_comptime_interpreter:
+            var comptime_idx = index(idx)
+            debug_assert[assert_mode="safe", cpu_only=True](
+                -Self.size <= comptime_idx < Self.size,
+                (
+                    "InlineArray index out of bounds during compile-time"
+                    " evaluation: index ("
+                ),
+                comptime_idx,
+                ") valid range: -",
+                Self.size,
+                " <= index < ",
+                Self.size,
+            )
+
+            if comptime_idx < 0:
+                comptime_idx += Self.size
+            return self.unsafe_get(comptime_idx)
+
+        var normalized_index = normalize_index["InlineArray"](idx, len(self))
+        return self.unsafe_get(normalized_index)
 
     @always_inline
     def __getitem_param__[
@@ -587,21 +606,12 @@ struct InlineArray[ElementType: Copyable, size: Int](
             This overload provides array-style indexing with compile-time bounds
             checking. The index must be a compile-time constant value.
         """
-        # Can't construct a String here with the index for the error message, as
-        # it causes infinite cycles in gpu compilation tests
-        comptime assert (
-            index(idx) >= 0
-        ), "negative indexing is not supported, use e.g. `x[len(x) - 1]`"
-        comptime assert index(idx) < Self.size, "index is out of bounds"
-        return self._unchecked_get(materialize[idx]())
-
-    @always_inline
-    def _unchecked_get(
-        ref self, idx: Some[Indexer]
-    ) -> ref[self] Self.ElementType:
-        var ptr = __mlir_op.`pop.array.gep`(
-            UnsafePointer(to=self._array).address,
-            index(idx)._mlir_value,
+        comptime assert -Self.size <= index(idx) < Self.size, (
+            "InlineArray index out of bounds: index must satisfy -size <= index"
+            " < size."
+        )
+        comptime normalized_index = normalize_index["InlineArray"](
+            idx, Self.size
         )
         return UnsafePointer[_, origin_of(self)](ptr)[]
 
