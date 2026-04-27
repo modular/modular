@@ -4710,35 +4710,6 @@ class ParamClosureType(max._core.Type):
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
 
-class ParamListSplatType(max._core.Type):
-    """
-    The `!kgen.param_list_splat` type represents deferred type that splats
-    element type specified number of times. The type cannot be used standalone
-    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
-
-    ```mlir
-    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
-    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
-    ```
-
-    will be concretized to
-
-    ```mlir
-    !kgen.struct<(index, index, index)>
-    !llvm.struct<(index, index, index, index, index)>
-    ```
-    """
-
-    def __init__(
-        self,
-        element_type: max._core.Type,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-    @property
-    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
-
 class ParamListType(max._core.Type):
     """
     The `!kgen.param_list` type represents a homogeneously typed list
