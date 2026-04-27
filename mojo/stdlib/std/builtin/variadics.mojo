@@ -1221,8 +1221,7 @@ struct VariadicList[
                 Int(0)._int_mlir_index(),
             )
         ).bitcast[Self._EltPointerType]()
-        var size_tmp = size  # FIXME: Weird MLIR syntax error?
-        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size_tmp))
+        self._value = Span(ptr=elt_ptr, length=Int(mlir_value=size))
 
     # The destructor for this type is trivial if not an "owned" list.
     comptime __del__is_trivial: Bool = not Self.is_owned
