@@ -1690,66 +1690,116 @@ def mla_decode_sm100_sink_split_k[
             depth=mla_config.q_depth,
         ](ctx, q_ptr_fp8, num_rows_q)
 
+        # when `num_q_heads * q_max_seq_len <= BM(64)` and `q_max_seq_len > 1`,
+        # BM=64 packs q_len q_tokens into the M tile and grid.y collapses to 1.
+        # Outside this range or with q_max_seq_len==1 we dispatch to the
+        # original (fold_q=False) kernel.
+        # num_q_heads is comptime (config.num_q_heads), so the set of
+        # eligible q_len values is fixed at comptime.  q_max_seq_len is
+        # runtime — a runtime unswitch routes to comptime q_len_fold.
+        comptime _bm = mla_config.BM
+        comptime _max_q_fold = _bm // mla_config.num_q_heads
+
         if ragged:
             comptime ValidLengthType = NonNullPointer[DType.uint32]
             var valid_len: ValidLengthType = {valid_length.ptr}
-            launch_mla_sm100_decode_native_fp8[
-                q_type=q_type,
-                KVLUTType=k_t,
-                output_type=output_type,
-                SplitAccumType=SplitAccumType,
-                MaskType=mask_t,
-                config=mla_config,
-                ValidLengthType=ValidLengthType,
-                ragged=True,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-            ](
-                q_tma_fp8,
-                k_tma_op,
-                o_tma_op,
-                k,
-                lse_accum_split_ptr,
-                scale,
-                batch_size,
-                block_z,
-                num_partitions,
-                q_max_seq_len,
-                valid_len,
-                mask,
-                scales_ptr,
-                scalar_args_buf,
-                ctx,
-            )
+
+            @parameter
+            @always_inline
+            def _launch_r[_fold_q: Bool, _q_len_fold: Int]() raises:
+                launch_mla_sm100_decode_native_fp8[
+                    q_type=q_type,
+                    KVLUTType=k_t,
+                    output_type=output_type,
+                    SplitAccumType=SplitAccumType,
+                    MaskType=mask_t,
+                    config=mla_config,
+                    ValidLengthType=ValidLengthType,
+                    ragged=True,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    fold_q=_fold_q,
+                    q_len_fold=_q_len_fold,
+                ](
+                    q_tma_fp8,
+                    k_tma_op,
+                    o_tma_op,
+                    k,
+                    lse_accum_split_ptr,
+                    scale,
+                    batch_size,
+                    block_z,
+                    num_partitions,
+                    q_max_seq_len,
+                    valid_len,
+                    mask,
+                    scales_ptr,
+                    scalar_args_buf,
+                    ctx,
+                )
+
+            comptime if _max_q_fold >= 8:
+                if q_max_seq_len == 8:
+                    _launch_r[True, 8]()
+                    return
+            comptime if _max_q_fold >= 4:
+                if q_max_seq_len == 4:
+                    _launch_r[True, 4]()
+                    return
+            comptime if _max_q_fold >= 2:
+                if q_max_seq_len == 2:
+                    _launch_r[True, 2]()
+                    return
+            _launch_r[False, 1]()
         else:
             comptime ValidLengthType = NullPointer[DType.uint32]
             var valid_len: ValidLengthType = {}
-            launch_mla_sm100_decode_native_fp8[
-                q_type=q_type,
-                KVLUTType=k_t,
-                output_type=output_type,
-                SplitAccumType=SplitAccumType,
-                MaskType=mask_t,
-                config=mla_config,
-                ValidLengthType=ValidLengthType,
-                ragged=False,
-                _is_cache_length_accurate=_is_cache_length_accurate,
-            ](
-                q_tma_fp8,
-                k_tma_op,
-                o_tma_op,
-                k,
-                lse_accum_split_ptr,
-                scale,
-                batch_size,
-                block_z,
-                num_partitions,
-                q_max_seq_len,
-                valid_len,
-                mask,
-                scales_ptr,
-                scalar_args_buf,
-                ctx,
-            )
+
+            @parameter
+            @always_inline
+            def _launch_n[_fold_q: Bool, _q_len_fold: Int]() raises:
+                launch_mla_sm100_decode_native_fp8[
+                    q_type=q_type,
+                    KVLUTType=k_t,
+                    output_type=output_type,
+                    SplitAccumType=SplitAccumType,
+                    MaskType=mask_t,
+                    config=mla_config,
+                    ValidLengthType=ValidLengthType,
+                    ragged=False,
+                    _is_cache_length_accurate=_is_cache_length_accurate,
+                    fold_q=_fold_q,
+                    q_len_fold=_q_len_fold,
+                ](
+                    q_tma_fp8,
+                    k_tma_op,
+                    o_tma_op,
+                    k,
+                    lse_accum_split_ptr,
+                    scale,
+                    batch_size,
+                    block_z,
+                    num_partitions,
+                    q_max_seq_len,
+                    valid_len,
+                    mask,
+                    scales_ptr,
+                    scalar_args_buf,
+                    ctx,
+                )
+
+            comptime if _max_q_fold >= 8:
+                if q_max_seq_len == 8:
+                    _launch_n[True, 8]()
+                    return
+            comptime if _max_q_fold >= 4:
+                if q_max_seq_len == 4:
+                    _launch_n[True, 4]()
+                    return
+            comptime if _max_q_fold >= 2:
+                if q_max_seq_len == 2:
+                    _launch_n[True, 2]()
+                    return
+            _launch_n[False, 1]()
     else:
         # BF16 / old FP8 converter path: Q is BF16, create BF16 Q TMA.
         q_ptr = rebind[UnsafePointer[Scalar[q_type], origin=MutAnyOrigin]](
@@ -2003,6 +2053,12 @@ def launch_mla_sm100_decode_native_fp8[
     ValidLengthType: OptionalPointer,
     _is_cache_length_accurate: Bool = False,
     ragged: Bool = False,
+    # when True, the kernel packs
+    # q_len_fold q_tokens into the BM=64 M tile and grid.y collapses to 1.
+    fold_q: Bool = False,
+    # comptime number of q_tokens to fold.  Must satisfy
+    # `num_q_heads * q_len_fold <= BM` (caller-enforced) and `q_len_fold > 1`.
+    q_len_fold: Int = 1,
 ](
     q_tma: QOTMATile[
         dtype=KVLUTType.dtype,  # FP8 Q TMA
@@ -2041,6 +2097,11 @@ def launch_mla_sm100_decode_native_fp8[
 
     This is a dedicated launch function for the native FP8 path because
     the Q TMA has FP8 dtype (SWIZZLE_64B) instead of BF16 (SWIZZLE_128B).
+
+    Under `fold_q=True`, BM=64 packs `q_len_fold * num_q_heads` M-rows of
+    the same batch element and grid.y collapses to 1 (all q_tokens live in
+    one CTA).  This avoids spawning `q_max_seq_len` CTAs and lets the
+    softmax/correction WGs amortize the QK setup.
     """
     var mla_decode_pack = MLA_Decode_Pack[
         ValidLengthType=ValidLengthType,
@@ -2048,7 +2109,9 @@ def launch_mla_sm100_decode_native_fp8[
         SplitAccumType=SplitAccumType,
     ](mask, valid_len, lse_accum_split_ptr)
     var block_x = ceildiv(config.num_q_heads, config.BM)
-    var grid_dim = (block_x, q_max_seq_len, block_z)
+    # fold collapses grid.y to 1 since BM packs all q_tokens.
+    var grid_y = 1 if fold_q else q_max_seq_len
+    var grid_dim = (block_x, grid_y, block_z)
     var block_dim = (config.num_threads, 1, 1)
 
     logger.info("------ Dispatching to SM100 Native FP8 MLA-DECODE ------")
@@ -2063,6 +2126,8 @@ def launch_mla_sm100_decode_native_fp8[
         ValidLengthType=ValidLengthType,
         _is_cache_length_accurate=_is_cache_length_accurate,
         ragged=ragged,
+        fold_q=fold_q,
+        q_len_fold=q_len_fold,
     ].kernel
     comptime pdl_level = PDLLevel.OVERLAP_AT_END if config.decoding_warp_split_k else PDLLevel.OFF
     ctx.enqueue_function[kernel, kernel](

@@ -794,6 +794,34 @@ struct OffsetPosition[
         # start_pos is the base absolute Q index for this chunk (plus any external base)
         return UInt32(self.cache_len()) + cache_start_pos
 
+    @always_inline
+    def q_row_offset_at(self, q_local: Int) -> Int:
+        # Per-q_token Q-row offset for TMA load coord (Option A q_len fold,
+        # stored q_row_offset bakes in block_idx.y as the q-local term in
+        # both ragged and fixed modes, so we swap block_idx.y for q_local.
+        return (
+            self.q_row_offset
+            + (q_local - Int(block_idx.y)) * Self.config.num_q_heads
+        )
+
+    @always_inline
+    def out_row_offset_at(self, q_local: Int) -> Int:
+        # Per-q_token output-row offset for TMA store coord (q_len
+        # fold. the stored out_row_offset has
+        # exactly one (block_idx.y * num_q_heads) term in every
+        # ragged/fixed x split/no-split mode.
+        return (
+            self.out_row_offset
+            + (q_local - Int(block_idx.y)) * Self.config.num_q_heads
+        )
+
+    @always_inline
+    def q_token_idx_at(self, q_local: Int) -> Int:
+        # Global Q-token index for the q_local-th q_token in this CTA's
+        # batch. Stored q_token_idx bakes in block_idx.y; swaps
+        # block_idx.y for q_local in both ragged and fixed modes.
+        return self.q_token_idx + (q_local - Int(block_idx.y))
+
 
 # ------------------------------------------------------------------------------
 # MLA decoding Load fp8 to bf16 ProducerKVPipeline
@@ -2915,7 +2943,11 @@ struct MLA_SM100_Decode_Common[
     # --------------------------------------------------------------------------
     @staticmethod
     @always_inline
-    def pdl_early_exit(
+    def pdl_early_exit[
+        # When True, the fold caller owns all q_max_seq_len LSE
+        # slots and must emit -inf to each.
+        fold_q: Bool = False,
+    ](
         split_idx: Int,
         batch_idx: Int,
         max_seq_len: Int,
@@ -2928,6 +2960,14 @@ struct MLA_SM100_Decode_Common[
             BK=Self.config.BN,
             swizzle_mode=Self.config.swizzle_mode,
         ],
+        # explicit seq_idx for fold callers that iterate
+        # q_local 0..q_len_fold-1 and must write -inf to ALL seq slots.
+        # Under fold grid.y=1 (block_idx.y always 0), so reusing block_idx.y
+        # would leave q_local >= 1 LSE slots uninitialized, poisoning the
+        # combine sum. Only consumed when fold_q=True (comptime-gated);
+        # under fold_q=False this arg is dead code and PTX is byte-identical
+        # to the pre-fix version.
+        seq_idx_fold: UInt32 = 0,
     ):
         var tid = thread_idx.x
 
@@ -2936,7 +2976,11 @@ struct MLA_SM100_Decode_Common[
         # Use max_seq_len (not per-batch seq_len) for strides to match
         # the PADDED buffer layout and the combine kernel's read pattern.
         var head_start = block_idx.x * Self.config.BM
-        var seq_idx = block_idx.y
+        var seq_idx: Int
+        comptime if fold_q:
+            seq_idx = Int(seq_idx_fold)
+        else:
+            seq_idx = block_idx.y
         var stride_seq = Self.config.num_q_heads
         var stride_batch = max_seq_len * stride_seq
         var stride_split = batch_size * stride_batch
@@ -3021,7 +3065,13 @@ struct MLA_SM100_Decode_Common[
     @staticmethod
     @always_inline
     def apply_mask[
-        half_load: Int, NonCausalMask: Bool, CausalMask: Bool
+        half_load: Int,
+        NonCausalMask: Bool,
+        CausalMask: Bool,
+        # when > 0, causal_limit is per-row
+        # and derived from (score_row // fold_q_num_heads) + cache_len + 1,
+        # treating score_row as the fold tile's per-thread row index.
+        fold_q_num_heads: Int = 0,
     ](
         tiles_done: Int,
         col0: Int,
@@ -3049,7 +3099,14 @@ struct MLA_SM100_Decode_Common[
         var causal_limit: Int
 
         comptime if CausalMask:
-            causal_limit = cache_len + Int(score_row) + 1
+            comptime if fold_q_num_heads > 0:
+                # Fold: score_row is the fold tile row index; q_local =
+                # score_row // num_q_heads selects the causal horizon.
+                causal_limit = (
+                    cache_len + (Int(score_row) // fold_q_num_heads) + 1
+                )
+            else:
+                causal_limit = cache_len + Int(score_row) + 1
         else:
             causal_limit = num_keys
         var keys_remaining = causal_limit - col_base
@@ -3103,6 +3160,13 @@ struct MLA_SM100_Decode_Common[
         _op_sparse: Bool = False,
         _op_has_extra_kv: Bool = False,
         _op_has_variable_topk: Bool = False,
+        # When True, per-row score_row decomposes via integer
+        # division by num_q_heads to select the causal horizon per q_token.
+        fold_q: Bool = False,
+        # comptime number of q_tokens packed
+        # into BM=64 under fold_q=True. Needed for the ragged LSE -inf fill
+        # loop. Only consumed inside `comptime if fold_q` branches.
+        q_len_fold: Int = 1,
     ](
         tmem_addr: UInt32,
         s_bars: DecodeSM100MiscMBars[
@@ -3218,7 +3282,15 @@ struct MLA_SM100_Decode_Common[
         var q_head_idx: UInt32 = UInt32(block_idx.x) * UInt32(
             Self.config.BM
         ) + UInt32(row)
-        var score_row = UInt32(block_idx.y)  # decode: single token per batch
+        # Per-row score_row under fold BM=64 packs q_len_fold *
+        # num_q_heads rows; `row` identifies (q_local, head_local) and
+        # apply_mask derives the causal horizon via row // num_q_heads.
+        # Non-fold: single token per batch, block_idx.y is the q-token index.
+        var score_row: UInt32
+        comptime if fold_q:
+            score_row = UInt32(row)
+        else:
+            score_row = UInt32(block_idx.y)
 
         var mi: Scalar[Self.AccumType] = min_or_neg_inf[Self.AccumType]()
         var li: Scalar[Self.AccumType] = 0.0
@@ -3339,9 +3411,18 @@ struct MLA_SM100_Decode_Common[
                         s_row_val_vectorized[_vi] * scale_log2e
                     )
 
+            # under fold, pass num_q_heads so apply_mask's causal
+            # branch can derive per-row horizon via `row // num_q_heads`.
+            # fold_q_num_heads=0 (default)
+            comptime _fold_q_num_heads: Int = (
+                Self.config.num_q_heads if fold_q else 0
+            )
             comptime if NoMask or CausalMask:
                 current_max = Self.apply_mask[
-                    half_load, NonCausalMask=False, CausalMask=CausalMask
+                    half_load,
+                    NonCausalMask=False,
+                    CausalMask=CausalMask,
+                    fold_q_num_heads=_fold_q_num_heads,
                 ](
                     tiles_done,
                     col0,
@@ -3522,44 +3603,83 @@ struct MLA_SM100_Decode_Common[
             # row = lane_id & 0x3F gives 0-63 for both halves
             # half = lane_id >> 6 gives 0 or 1
             # We only need one write per head, so half=0 threads write
-            var head_idx = block_idx.x * Self.config.BM + row
             var half_idx = lane_id >> 6  # 0 for first half, 1 for second half
 
-            if half_idx == 0 and head_idx < Self.config.num_q_heads:
-                # Compute LSE in log2 format: log2(li) + mi
-                # li is the running sum of exp2 values; mi is the running max
-                # in log2 scale.  When all scores in this split are causally
-                # masked, the online softmax produces NaN via exp2(-inf+inf),
-                # poisoning li.  Clamping li to 0 makes log2(0)=-inf, and
-                # -inf + mi(-inf) = -inf, giving this split zero weight in
-                # the combine kernel (same as pdl_early_exit for empty splits).
-                # On NVIDIA GPUs, max(NaN, 0) = 0 per PTX semantics.
-                var partial_lse = (
-                    log2(max(li[0], Scalar[Self.AccumType](0))) + mi
-                )
+            # Under fold, BM=64 packs q_len_fold * num_q_heads rows
+            # and THIS CTA owns all q_max_seq_len LSE slots for the batch. So
+            # rows where q_local >= seq_len (ragged) must explicitly write
+            # -inf into their LSE slots (the accum buffer is uninitialized
+            # for those slots, unlike the non-fold path where ragged CTAs
+            # take pdl_early_exit and never reach Softmax).
+            comptime if fold_q:
+                var q_local = row // Self.config.num_q_heads
+                var head_local = row % Self.config.num_q_heads
+                if half_idx == 0 and row < (
+                    q_len_fold * Self.config.num_q_heads
+                ):
+                    var partial_lse: Scalar[Self.AccumType]
+                    if q_local >= offset_position.seq_len:
+                        partial_lse = min_or_neg_inf[Self.AccumType]()
+                    else:
+                        partial_lse = (
+                            log2(max(li[0], Scalar[Self.AccumType](0))) + mi
+                        )
+                    var stride_batch = (
+                        offset_position.max_seq_len * Self.config.num_q_heads
+                    )
+                    var stride_split = batch_size * stride_batch
+                    var stride_seq = Self.config.num_q_heads
+                    var lse_offset = (
+                        offset_position.split_idx * stride_split
+                        + offset_position.batch_idx * stride_batch
+                        + q_local * stride_seq
+                        + head_local
+                    )
+                    var lse_ptr = rebind[
+                        UnsafePointer[
+                            Scalar[Self.AccumType], origin=MutAnyOrigin
+                        ]
+                    ](lse_accum_split_ptr.value())
+                    lse_ptr[lse_offset] = partial_lse
+            else:
+                var head_idx = block_idx.x * Self.config.BM + row
+                if half_idx == 0 and head_idx < Self.config.num_q_heads:
+                    # Compute LSE in log2 format: log2(li) + mi
+                    # li is the running sum of exp2 values; mi is the running max
+                    # in log2 scale.  When all scores in this split are causally
+                    # masked, the online softmax produces NaN via exp2(-inf+inf),
+                    # poisoning li.  Clamping li to 0 makes log2(0)=-inf, and
+                    # -inf + mi(-inf) = -inf, giving this split zero weight in
+                    # the combine kernel (same as pdl_early_exit for empty splits).
+                    # On NVIDIA GPUs, max(NaN, 0) = 0 per PTX semantics.
+                    var partial_lse = (
+                        log2(max(li[0], Scalar[Self.AccumType](0))) + mi
+                    )
 
-                # LSE offset calculation:
-                # lse_accum_split shape: (num_splits, batch_size, max_seq_len, num_heads)
-                # Use max_seq_len (not per-batch seq_len) for strides to match
-                # the PADDED buffer layout and the combine kernel's read pattern.
-                var seq_idx = block_idx.y
-                var stride_batch = (
-                    offset_position.max_seq_len * Self.config.num_q_heads
-                )
-                var stride_split = batch_size * stride_batch
-                var stride_seq = Self.config.num_q_heads
+                    # LSE offset calculation:
+                    # lse_accum_split shape: (num_splits, batch_size, max_seq_len, num_heads)
+                    # Use max_seq_len (not per-batch seq_len) for strides to match
+                    # the PADDED buffer layout and the combine kernel's read pattern.
+                    var seq_idx = block_idx.y
+                    var stride_batch = (
+                        offset_position.max_seq_len * Self.config.num_q_heads
+                    )
+                    var stride_split = batch_size * stride_batch
+                    var stride_seq = Self.config.num_q_heads
 
-                var lse_offset = (
-                    offset_position.split_idx * stride_split
-                    + offset_position.batch_idx * stride_batch
-                    + seq_idx * stride_seq
-                    + head_idx
-                )
-                # need to rebind the pointer to mutable pointer for write access
-                var lse_ptr = rebind[
-                    UnsafePointer[Scalar[Self.AccumType], origin=MutAnyOrigin]
-                ](lse_accum_split_ptr.value())
-                lse_ptr[lse_offset] = partial_lse
+                    var lse_offset = (
+                        offset_position.split_idx * stride_split
+                        + offset_position.batch_idx * stride_batch
+                        + seq_idx * stride_seq
+                        + head_idx
+                    )
+                    # need to rebind the pointer to mutable pointer for write access
+                    var lse_ptr = rebind[
+                        UnsafePointer[
+                            Scalar[Self.AccumType], origin=MutAnyOrigin
+                        ]
+                    ](lse_accum_split_ptr.value())
+                    lse_ptr[lse_offset] = partial_lse
 
         # --------------------------------------------------------------------------
         # Epilogue: scale output by recip(li) and write to shared memory as bf16
@@ -3829,6 +3949,13 @@ struct MLA_SM100_Decode_Common[
         _op_sparse: Bool = False,
         _op_has_extra_kv: Bool = False,
         _op_has_variable_topk: Bool = False,
+        # When True, the fold caller strides the output-store
+        # TMA per-q_token via a dedicated out_row_offset_at(q_local) accessor.
+        fold_q: Bool = False,
+        # comptime number of q_tokens packed
+        # into BM=64 under fold_q=True. Only consumed inside the
+        # `comptime if fold_q` branch; when fold_q=False, ignored.
+        q_len_fold: Int = 1,
     ](
         out_pipeline: OutPipeline[
             num_out_stages=DecodeOutProducer[
@@ -3888,15 +4015,44 @@ struct MLA_SM100_Decode_Common[
                     )
                     comptime o_elements = Self.config.out_rows * Self.config.BN
                     comptime o_tt_layout = tt_row_major[o_elements]()
-                    var smem_tensor = TileTensor[
-                        Self.output_dtype,
-                        type_of(o_tt_layout),
-                        MutAnyOrigin,
-                        address_space=AddressSpace.SHARED,
-                    ](stage_ptr, o_tt_layout)
-                    if is_leader:
-                        fence_async_view_proxy()
-                        o_tma.async_store(smem_tensor, (col, row))
+                    comptime if fold_q:
+                        # Fold path: BM=64 TMEM packs q_len_fold q_tokens x
+                        # num_q_heads. Emit one TMA store per q_token, shifting
+                        # the SMEM row-base by q_local * num_q_heads rows and
+                        # striding the gmem write via out_row_offset_at(q_local).
+                        comptime for q_local in range(q_len_fold):
+                            var q_stage_ptr = stage_ptr + (
+                                q_local
+                                * Self.config.num_q_heads
+                                * Self.config.BN
+                            )
+                            var smem_tensor = TileTensor[
+                                Self.output_dtype,
+                                type_of(o_tt_layout),
+                                MutAnyOrigin,
+                                address_space=AddressSpace.SHARED,
+                            ](q_stage_ptr, o_tt_layout)
+                            if is_leader:
+                                fence_async_view_proxy()
+                                o_tma.async_store(
+                                    smem_tensor,
+                                    (
+                                        col,
+                                        offset_position.out_row_offset_at(
+                                            q_local
+                                        ),
+                                    ),
+                                )
+                    else:
+                        var smem_tensor = TileTensor[
+                            Self.output_dtype,
+                            type_of(o_tt_layout),
+                            MutAnyOrigin,
+                            address_space=AddressSpace.SHARED,
+                        ](stage_ptr, o_tt_layout)
+                        if is_leader:
+                            fence_async_view_proxy()
+                            o_tma.async_store(smem_tensor, (col, row))
                 out_cons.release(elect_mask)
         if is_leader:
             o_tma.commit_group()

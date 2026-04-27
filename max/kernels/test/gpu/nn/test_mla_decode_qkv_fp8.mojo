@@ -637,6 +637,28 @@ def test_decoding[
     ](seq_len, num_keys, ctx)
 
 
+# fold-triggering configurations.
+# The dispatcher enables fold_q when num_q_heads * q_len <= BM(64) and q_len > 1.
+# Small head groups (num_heads in {8, 16}) at seq_len in {2, 4, 8} exercise the
+# M-dimension fold: BM=64 packs q_len_fold * num_q_heads rows of the same
+# batch element, collapsing grid.y to 1.
+def test_decoding_fold[
+    batch_size: Int,
+    num_heads: Int,
+    mla_mask_type: MLAMaskType,
+](ctx: DeviceContext, seq_len: Int, num_keys: Int) raises:
+    test[
+        mla_mask_type,
+        DType.float8_e4m3fn,  # q_type (FP8)
+        DType.float8_e4m3fn,  # kv_type (FP8)
+        DType.bfloat16,  # output_type
+        576,
+        num_heads,
+        group=num_heads,
+        batch_size=batch_size,
+    ](seq_len, num_keys, ctx)
+
+
 def main() raises:
     print("Starting test_mla_decode_qkv_fp8...")
     with DeviceContext() as ctx:
@@ -665,6 +687,74 @@ def main() raises:
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 9600)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 32768)
             test_decoding[1, MLAMaskType.NO_MASK](ctx, 1, 65536)
+
+            # fold-path configs.  num_q_heads * q_len <= BM(64) and
+            # q_len > 1 triggers fold_q=True in the dispatcher.  BM=64 packs
+            # q_len_fold * num_q_heads M-rows into a single tile, so grid.y=1.
+            #
+            # Fold path is implemented for NVIDIA SM10x only (mla_decode_qkv_fp8
+            # struct fold_q comptime branch).  AMD backend does not yet support
+            # the fold path — gate this block to NVIDIA SM10x at comptime so AMD
+            # skips it cleanly.
+            comptime if has_nvidia_gpu_accelerator() and _is_sm10x_gpu(
+                ctx.default_device_info
+            ):
+                print(
+                    "=== Fold-path tests (num_heads*q_len <= BM, q_len > 1) ==="
+                )
+
+                # num_heads=16, q_len=2: 16*2=32 <= 64  (half-pack)
+                test_decoding_fold[1, 16, MLAMaskType.NO_MASK](ctx, 2, 256)
+                test_decoding_fold[1, 16, MLAMaskType.CAUSAL](ctx, 2, 256)
+                test_decoding_fold[2, 16, MLAMaskType.NO_MASK](ctx, 2, 1024)
+                test_decoding_fold[4, 16, MLAMaskType.CAUSAL](ctx, 2, 1024)
+                # Narrowing probes for A4 bug: vary bs and cl independently.
+                print("  probe: bs=1 cl=4096")
+                test_decoding_fold[1, 16, MLAMaskType.NO_MASK](ctx, 2, 4096)
+                print("  probe: bs=8 cl=256")
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 2, 256)
+                print("  probe: bs=8 cl=1024")
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 2, 1024)
+                print("  probe: bs=8 cl=2048")
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 2, 2048)
+                print("  probe: bs=8 cl=3072")
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 2, 3072)
+                print("  probe: bs=8 cl=3328")
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 2, 3328)
+                print("  probe: bs=4 cl=4096")
+                test_decoding_fold[4, 16, MLAMaskType.NO_MASK](ctx, 2, 4096)
+                print("  probe: bs=16 cl=4096")
+                test_decoding_fold[16, 16, MLAMaskType.NO_MASK](ctx, 2, 4096)
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 2, 4096)
+
+                # num_heads=16, q_len=4: 16*4=64  (exactly fills BM)
+                test_decoding_fold[1, 16, MLAMaskType.NO_MASK](ctx, 4, 256)
+                test_decoding_fold[1, 16, MLAMaskType.CAUSAL](ctx, 4, 256)
+                test_decoding_fold[2, 16, MLAMaskType.NO_MASK](ctx, 4, 1024)
+                test_decoding_fold[4, 16, MLAMaskType.CAUSAL](ctx, 4, 1024)
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 4, 4096)
+                test_decoding_fold[16, 16, MLAMaskType.CAUSAL](ctx, 4, 4096)
+
+                # num_heads=8, q_len=4: 8*4=32 <= 64  (half-pack)
+                test_decoding_fold[1, 8, MLAMaskType.NO_MASK](ctx, 4, 256)
+                test_decoding_fold[2, 8, MLAMaskType.CAUSAL](ctx, 4, 1024)
+                test_decoding_fold[8, 8, MLAMaskType.NO_MASK](ctx, 4, 4096)
+                test_decoding_fold[8, 8, MLAMaskType.NO_MASK](ctx, 4, 65536)
+
+                # num_heads=8, q_len=8: 8*8=64  (exactly fills BM)
+                test_decoding_fold[1, 8, MLAMaskType.NO_MASK](ctx, 8, 256)
+                test_decoding_fold[2, 8, MLAMaskType.CAUSAL](ctx, 8, 1024)
+
+                # Odd/corner q_len values (A4 corner-case coverage):
+                # num_heads=8, q_len=3: M=24 (40 padding rows)
+                test_decoding_fold[8, 8, MLAMaskType.NO_MASK](ctx, 3, 4096)
+                # num_heads=8, q_len=5: M=40 (24 padding rows)
+                test_decoding_fold[8, 8, MLAMaskType.NO_MASK](ctx, 5, 4096)
+                # num_heads=8, q_len=7: M=56 (8 padding rows — near BM edge)
+                test_decoding_fold[8, 8, MLAMaskType.CAUSAL](ctx, 7, 4096)
+                # num_heads=16, q_len=3: M=48 (16 padding rows)
+                test_decoding_fold[8, 16, MLAMaskType.NO_MASK](ctx, 3, 4096)
+                test_decoding_fold[4, 16, MLAMaskType.CAUSAL](ctx, 3, 1024)
 
             print("All tests passed!")
 
