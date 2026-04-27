@@ -864,64 +864,6 @@ kgen.generator @array_ops<idx, N, T: type, dtype: dtype>(%arg0: !kgen.param<T>)
   kgen.return %2, %7 : !pop.array<2, T>, !kgen.pointer<T>
 }
 
-// CHECK-LABEL: kgen.generator @pack
-kgen.generator @pack<Ts: param_list<!kgen.type>, T: type, I: index>(
-  %arg0: !kgen.pack<Ts>,
-  %arg1: !kgen.pack<[i32, T]>,
-  %arg2: f32,
-  %arg3: i8
-) -> i32 {
-  // CHECK: kgen.pack.size %arg0 : <Ts>
-  %0 = kgen.pack.size %arg0 : <Ts>
-  // CHECK: kgen.pack.extract %arg0[3] : <Ts>
-  %1 = kgen.pack.extract %arg0[3] : <Ts>
-
-  // CHECK: kgen.pack.size %arg1 : <[i32, T]>
-  %2 = kgen.pack.size %arg1 : <[i32, T]>
-  // CHECK: kgen.pack.extract %arg1[0] : <[i32, T]>
-  %3 = kgen.pack.extract %arg1[0] : <[i32, T]>
-  // CHECK: kgen.pack.extract %arg1[1] : <[i32, T]>
-  %4 = kgen.pack.extract %arg1[1] : <[i32, T]>
-  // CHECK: kgen.pack.extract %arg1[add(I, 1)] : <[i32, T]>
-  %5 = kgen.pack.extract %arg1[add(I, 1)] : <[i32, T]>
-
-  // CHECK: %[[PACK:.*]] = kgen.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
-  %6 = kgen.pack.create(%arg2, %arg2, %arg3) : !kgen.pack<[f32, f32, i8]>
-  // CHECK: kgen.pack.size %[[PACK]] : <[f32, f32, i8]>
-  %7 = kgen.pack.size %6 : <[f32, f32, i8]>
-  // CHECK: kgen.pack.create() : !kgen.pack<[]>
-  %8 = kgen.pack.create() : !kgen.pack<[]>
-
-  kgen.return %3 : i32
-}
-
-
-// CHECK-LABEL: kgen.generator @pack
-kgen.generator @pack_ptr<Ts: param_list<!kgen.type>, T: type, I: index>(
-  %arg0: !kgen.pointer<!kgen.pack<Ts>>,
-  %arg1: !kgen.pointer<!kgen.pack<[i32, T]>>
-)  {
-  // CHECK: kgen.pack.gep %arg0[3] : <!kgen.pack<Ts>>
-  %1 = kgen.pack.gep %arg0[3] : <!kgen.pack<Ts>>
-
-  // CHECK: kgen.pack.gep %arg1[0] : <!kgen.pack<[i32, T]>>
-  %2 = kgen.pack.gep %arg1[0] : <!kgen.pack<[i32, T]>>
-  // CHECK: kgen.pack.gep %arg1[1] : <!kgen.pack<[i32, T]>>
-  %3 = kgen.pack.gep %arg1[1] : <!kgen.pack<[i32, T]>>
-  // CHECK: kgen.pack.gep %arg1[add(I, 1)] : <!kgen.pack<[i32, T]>>
-  %4 = kgen.pack.gep %arg1[add(I, 1)] : <!kgen.pack<[i32, T]>>
-
-  kgen.return
-}
-
-
-// CHECK-LABEL: @parametric_pack
-kgen.generator @parametric_pack<N, T: type>(%arg0: !pop.simd<N, bool>, %arg1: !kgen.param<T>) {
-  // CHECK-NEXT: kgen.pack.create(%arg0, %arg1) : !kgen.pack<[simd<N, bool>, T]>
-  %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[!pop.simd<N, bool>, T]>
-  kgen.return
-}
-
 // CHECK-LABEL: @call_intrinsic
 kgen.generator @call_intrinsic<intrin: string>(%arg0: !pop.scalar<f32>) {
   // CHECK-NEXT: %{{.*}} = pop.call_llvm_intrinsic "llvm.round", (%arg0) : (!pop.scalar<f32>) -> !pop.scalar<f32>

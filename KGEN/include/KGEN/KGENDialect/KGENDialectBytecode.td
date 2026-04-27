@@ -83,12 +83,6 @@ def StructInstanceType : DialectType<(type
   let cBuilder = "get<$_resultType>(context, $_args)";
 }
 
-def PackType : DialectType<(type
-  TypedAttr:$variadic
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
-
 def WrappedVariantType : DialectType<(type
   TypedAttr:$variadic
 )>;
@@ -130,7 +124,6 @@ def KGENDialectTypes : DialectTypes<"kgen"> {
     BuildInfoType,
     StructType,
     StructInstanceType,
-    PackType,
     WrappedVariantType,
     ClosureType,
     ParamClosureType,
@@ -318,13 +311,6 @@ def WrappedStructExtractAttr : DialectAttribute<(attr
   TypedAttr:$fieldNo,
   Type:$type
 )>;
-
-def PackAttr : DialectAttribute<(attr
-  TypedAttrArray:$values,
-  ConcreteType<"PackType">:$type
-)> {
-  let cBuilder = "get<$_resultType>(context, $_args)";
-}
 
 def UpcastAttr : DialectAttribute<(attr
   Type:$type,
@@ -545,7 +531,6 @@ def KGENDialectAttributes : DialectAttributes<"kgen"> {
     StructDefFieldAttr,
     StructAttr,
     WrappedStructExtractAttr,
-    PackAttr,
     UpcastAttr,
     GetWitnessAttr,
     VariantAttr,

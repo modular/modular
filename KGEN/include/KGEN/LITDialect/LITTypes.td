@@ -643,7 +643,7 @@ def LIT_RefPackType : LITType<"RefPack", "ref.pack",
     parser, the "variadic" will be a parametric list of types (e.g.
     `[f32, String]`) that is only expandable after elaboration, and this pack's
     runtime representation is semantically
-    `!kgen.pack<[!lit.ref<f32, lt>, !lit.ref<String, lt>]>`.
+    `!kgen.struct<[!lit.ref<f32, lt>, !lit.ref<String, lt>]> isParamPack>`.
 
     In addition to the variadic, this also takes the origin of the references,
     which indicates mutability of the references.

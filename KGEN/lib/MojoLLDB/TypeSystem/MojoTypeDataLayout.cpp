@@ -33,10 +33,6 @@ struct MojoTypeDataLayoutContext::Impl {
   std::optional<MojoTypeDataLayout>
   calculateForStruct(MojoASTTypeRef type, LIT::StructDeclOp structOp);
 
-  /// Calculate the data layout of the given pack.
-  std::optional<MojoTypeDataLayout> calculateForPack(MojoASTTypeRef typeRef,
-                                                     PackType packType);
-
   /// Calculate the data layout of the given struct.
   std::optional<MojoTypeDataLayout>
   calculateForStruct(MojoASTTypeRef typeRef, KGEN::StructType structType);
@@ -100,18 +96,6 @@ MojoTypeDataLayoutContext::Impl::calculateForStruct(
                                              fieldType);
         }
         return fieldType;
-      }));
-}
-
-std::optional<MojoTypeDataLayout>
-MojoTypeDataLayoutContext::Impl::calculateForPack(MojoASTTypeRef typeRef,
-                                                  PackType packType) {
-  auto attr = sugarCast<ParamListAttr>(packType.getVariadic());
-  if (!attr)
-    return {};
-  return calculateForStructLike(
-      llvm::map_to_vector(attr.getValues(), [&](TypedAttr value) {
-        return MojoASTTypeRef(value);
       }));
 }
 
@@ -208,9 +192,6 @@ MojoTypeDataLayoutContext::Impl::calculate(MojoASTTypeRef type) {
       return calculateForStruct(type, structDeclOp);
     }
   }
-
-  if (auto packType = dyn_cast<KGEN::PackType>(type))
-    return calculateForPack(type, packType);
 
   if (auto structType = dyn_cast<KGEN::StructType>(type))
     return calculateForStruct(type, structType);

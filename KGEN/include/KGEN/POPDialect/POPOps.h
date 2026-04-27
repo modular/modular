@@ -31,7 +31,6 @@
 
 namespace M::KGEN {
 class DTypeType;
-class PackType;
 class PointerType;
 class StringType;
 class StructType;
