@@ -1,4 +1,4 @@
-// RUN: kgen-opt %s -lower-to-llvm | kgen-translate -mlir-to-llvmir | FileCheck %s
+// RUN: kgen-opt %s -split-input-file -lower-to-llvm | kgen-translate -split-input-file -mlir-to-llvmir | FileCheck %s
 
 // CHECK: declare noalias ptr @KGEN_CompilerRT_AlignedAlloc(i64 allocalign, i64) [[ALLOC_ATTRS:#[0-9]+]]
 // CHECK: declare void @KGEN_CompilerRT_AlignedFree(ptr allocptr) [[FREE_ATTRS:#[0-9]+]]
@@ -19,5 +19,14 @@ module attributes {M.target_info = #M.target<triple="", arch="", features="", da
     %0 = pop.aligned_alloc %align, %size : <index>
     pop.aligned_free %0 : <index>
     kgen.return
+  }
+}
+
+// -----
+
+// CHECK: define void @empty
+module attributes {M.target_info = #M.target<triple = "hexagon", arch = "", index_bit_width = 32>} {
+  llvm.func @empty() {
+    llvm.return
   }
 }
