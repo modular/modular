@@ -1176,11 +1176,37 @@ def _fused_concat_gpu_elementwise[
             in_index[axis] -= input_shape[axis]
 
     # When axis != rank-1, the SIMD group spans the innermost (non-concat)
-    # dimension, so we can safely use vectorized loads/stores.
+    # dimension, so we can safely use vectorized loads/stores. Target 128-bit
+    # (16-byte) transactions per thread for full HBM utilization, falling back
+    # to a narrower width if the inner extent isn't divisible.
     comptime if axis != rank - 1:
-        elementwise[
-            per_output_elem, 4, target="gpu", _trace_description="concat_fused"
-        ](coord_to_index_list(output.layout.shape_coord()), ctx)
+        # 16 bytes per thread = full 128-bit coalesced transaction.
+        comptime _vec_width = simd_width_of[dtype, target=get_gpu_target()]()
+        var inner_size = 1
+        comptime for dim_idx in range(axis + 1, rank):
+            inner_size *= Int(input_shapes[0][dim_idx])
+
+        if _vec_width > 1 and inner_size % _vec_width == 0:
+            elementwise[
+                per_output_elem,
+                _vec_width,
+                target="gpu",
+                _trace_description="concat_fused",
+            ](coord_to_index_list(output.layout.shape_coord()), ctx)
+        elif inner_size % 4 == 0:
+            elementwise[
+                per_output_elem,
+                4,
+                target="gpu",
+                _trace_description="concat_fused",
+            ](coord_to_index_list(output.layout.shape_coord()), ctx)
+        else:
+            elementwise[
+                per_output_elem,
+                1,
+                target="gpu",
+                _trace_description="concat_fused",
+            ](coord_to_index_list(output.layout.shape_coord()), ctx)
     else:
         comptime simd_width = simd_width_of[dtype, target=get_gpu_target()]()
 
