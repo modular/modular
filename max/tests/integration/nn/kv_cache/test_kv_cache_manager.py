@@ -248,7 +248,7 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
 
     kv_manager.release(ctx.request_id, replica_idx=0)
 
-    # With speculative steps: 3 + 0 draft + 4 spec + 1 - 1 = 7 → 2 blocks
+    # With speculative steps: 3 + 0 maybe_accepted + 2*4 spec_steps + 1 - 1 = 11 → 3 blocks
     ctx2 = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     kv_manager_spec.claim(ctx2.request_id, replica_idx=0)
     kv_manager_spec.alloc(ctx2, replica_idx=0, num_steps=1)
@@ -260,8 +260,54 @@ async def test_alloc_num_speculative_steps_allocates_extra_blocks() -> None:
 
 
 @pytest.mark.asyncio
+async def test_alloc_spec_decoding_empty_draft_tokens_allocates_same_as_dummy() -> (
+    None
+):
+    """Block count must not depend on whether draft_tokens_to_verify is populated."""
+    page_size = 4
+    num_speculative_tokens = 4
+    kv_manager = _make_kv_manager(
+        page_size=page_size,
+        total_num_pages=16,
+        num_eagle_speculative_tokens=num_speculative_tokens,
+    )
+
+    tokens = np.array([1, 2, 3], dtype=np.int64)
+
+    # Case 1: draft_tokens_to_verify is empty.
+    ctx_empty = create_text_context(tokens)
+    assert ctx_empty.spec_decoding_state.draft_tokens_to_verify == []
+    kv_manager.claim(ctx_empty.request_id, replica_idx=0)
+    kv_manager.alloc(ctx_empty, replica_idx=0, num_steps=1)
+    blocks_empty = len(
+        kv_manager._replica[0].block_manager.req_to_blocks[ctx_empty.request_id]
+    )
+    kv_manager.release(ctx_empty.request_id, replica_idx=0)
+
+    # Case 2: draft_tokens_to_verify is populated with dummy _MAGIC_DRAFT_TOKEN_ID.
+    ctx_dummy = create_text_context(tokens)
+    _MAGIC_DRAFT_TOKEN_ID = 42
+    ctx_dummy.spec_decoding_state.draft_tokens_to_verify = [
+        _MAGIC_DRAFT_TOKEN_ID
+    ] * num_speculative_tokens
+    kv_manager.claim(ctx_dummy.request_id, replica_idx=0)
+    kv_manager.alloc(ctx_dummy, replica_idx=0, num_steps=1)
+    blocks_dummy = len(
+        kv_manager._replica[0].block_manager.req_to_blocks[ctx_dummy.request_id]
+    )
+    kv_manager.release(ctx_dummy.request_id, replica_idx=0)
+
+    assert blocks_empty == blocks_dummy, (
+        f"Empty draft_tokens_to_verify allocated {blocks_empty} blocks but "
+        f"dummy-populated draft_tokens_to_verify allocated {blocks_dummy} blocks. "
+        "The scheduler must reserve the same capacity regardless of whether "
+        "draft_tokens_to_verify has been populated yet."
+    )
+
+
+@pytest.mark.asyncio
 async def test_alloc_with_draft_tokens_to_verify_reserves_more_blocks() -> None:
-    """alloc accounts for draft_tokens_to_verify in the context."""
+    """alloc with speculative tokens reserves more blocks than without."""
     page_size = 4
     kv_manager = _make_kv_manager(
         page_size=page_size, total_num_pages=16, num_eagle_speculative_tokens=4
@@ -270,7 +316,7 @@ async def test_alloc_with_draft_tokens_to_verify_reserves_more_blocks() -> None:
     ctx = create_text_context(np.array([1, 2, 3], dtype=np.int64))
     ctx.spec_decoding_state.draft_tokens_to_verify = [10, 20, 30]
     kv_manager.claim(ctx.request_id, replica_idx=0)
-    # seq_len = 3 tokens + 3 draft + 4 spec + 1 - 1 = 10 → 3 blocks
+    # seq_len = 3 tokens + 0 maybe_accepted + 2*4 spec_steps + 1 - 1 = 11 → 3 blocks
     kv_manager.alloc(ctx, replica_idx=0, num_steps=1)
     blocks = len(
         kv_manager._replica[0].block_manager.req_to_blocks[ctx.request_id]

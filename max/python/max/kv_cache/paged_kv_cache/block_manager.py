@@ -52,11 +52,25 @@ logger = logging.getLogger("max.pipelines")
 def _compute_seq_len(
     ctx: TextGenerationContext, num_steps: int, num_speculative_steps: int
 ) -> int:
+    # Each term accounts for one category of tokens that need a KV slot:
+    #
+    #   ctx.tokens                    : prompt + tokens generated so far
+    #   maybe_accepted_draft_tokens   : draft tokens being verified in the
+    #                                   *previous* batch (overlap scheduler);
+    #                                   conservative: assume all are accepted
+    #   num_speculative_steps (x1)    : draft tokens to verify in the *next* batch
+    #   num_speculative_steps (x1)    : draft tokens generated *during* that batch
+    #   num_steps                     : regular decode steps
+    #   -1                            : the last generated token has no KV entry
+    #
+    # NOTE: `draft_tokens_to_verify` is intentionally excluded. Using
+    # `2 * num_speculative_steps` unconditionally is always correct and
+    # avoids an under-allocation when `draft_tokens_to_verify` is empty but
+    # the pipeline populates it with dummy draft tokens (_MAGIC_DRAFT_TOKEN_ID).
     seq_len = (
         len(ctx.tokens)
-        + len(ctx.spec_decoding_state.draft_tokens_to_verify)
         + len(ctx.spec_decoding_state.maybe_accepted_draft_tokens)
-        + num_speculative_steps
+        + 2 * num_speculative_steps
         + num_steps
         - 1
     )

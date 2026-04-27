@@ -952,13 +952,16 @@ def test_paged_scheduler_speculative_tokens_allocates_extra_pages() -> None:
 
     # fmt: off
     expected = [
-        # CE encodes all 3 requests (2 pages each due to speculative headroom).
-        BatchInfo(CE, batch_size=3, terminated=0, steps=1, preempted=0, input_toks=30, cached_toks=0),
-        # For TG each req needs 4 pages (seqlen = 11 + 2*7 + 10 - 1 = 34). Need to preempt 1 req to fit.
-        # The reason we have 2*7 is because we have 7 draft tokens to verify and will generate 7 more.
+        # CE: seq_len = 10 + 2*7 + 1 - 1 = 24 -> 3 pages/req. Only 2 fit in 6 pages.
+        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=20, cached_toks=0),
+        # TG needs more pages, preempt 1 of the 2 encoded requests.
         BatchInfo(TG, batch_size=1, terminated=1, steps=10, preempted=1, input_toks=1, cached_toks=10),
+        # Encode the preempted request (11 toks) + the waiting request (10 toks).
+        BatchInfo(CE, batch_size=2, terminated=0, steps=1, preempted=0, input_toks=21, cached_toks=0),
+        # Again preempt 1 to fit TG.
+        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=1, input_toks=1, cached_toks=11),
+        # Re-encode the preempted request.
         BatchInfo(CE, batch_size=1, terminated=0, steps=1, preempted=0, input_toks=11, cached_toks=0),
-        BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=10),
         BatchInfo(TG, batch_size=1, terminated=1, steps=9, preempted=0, input_toks=1, cached_toks=11),
         BatchInfo(TG, batch_size=0, terminated=0, steps=0, preempted=0, input_toks=0, cached_toks=0),
     ]
