@@ -781,15 +781,14 @@ class WanExecutor(
     def _make_zero_buffer(
         shape: tuple[int, ...], *, dtype: DType, device: Device
     ) -> Buffer:
-        """Create a zero-filled buffer with the given shape and dtype."""
-        if dtype == DType.bfloat16:
-            return (
-                Buffer.from_numpy(np.zeros(shape, dtype=np.uint16))
-                .to(device)
-                .view(dtype=DType.bfloat16, shape=list(shape))
-            )
-        np_dtype = np.float32
-        return Buffer.from_numpy(np.zeros(shape, dtype=np_dtype)).to(device)
+        """Create a zero-filled buffer allocated directly on ``device``.
+
+        Uses :meth:`Buffer.zeros` so no host memory is allocated and no
+        ``cuMemcpyHtoDAsync`` is issued. The previous
+        ``Buffer.from_numpy(np.zeros(...)).to(device)`` implementation
+        blocked the compute stream for ~290 ms on latent-sized buffers.
+        """
+        return Buffer.zeros(shape, dtype, device=device)
 
     @staticmethod
     def _buffer_to_scalar_f32(buf: Buffer) -> float:
