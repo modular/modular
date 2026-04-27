@@ -24,6 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import DeviceRef, Graph
 from max.graph.weights import WeightData
 from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.kv_cache import KVCacheParamInterface, MultiKVCacheParams
 from max.pipelines.lib import CompilationTimer, KVCacheConfig, PipelineConfig
 from max.pipelines.lib.quant import parse_quant_config
@@ -97,13 +98,10 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
             n_nodes = ep_size // len(self.devices)
 
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = ep_size // data_parallel_degree
-            ep_max_rank_send_tokens = (
-                self.pipeline_config.runtime.max_batch_input_tokens
-                // attn_tp_size
+            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
+                ep_size=ep_size,
+                data_parallel_degree=data_parallel_degree,
             )
 
             ep_kwargs: dict[str, Any] = dict(

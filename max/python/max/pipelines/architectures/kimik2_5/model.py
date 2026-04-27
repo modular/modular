@@ -37,7 +37,10 @@ from max.graph.weights import WeightData, Weights, WeightsAdapter
 from max.interfaces.request import RequestID
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPCommInitializer, EPConfig
-from max.nn.comm.ep.ep_config import estimate_ep_memory_usage
+from max.nn.comm.ep.ep_config import (
+    calculate_ep_max_tokens_per_rank,
+    estimate_ep_memory_usage,
+)
 from max.nn.kv_cache import KVCacheInputs, KVCacheParamInterface
 from max.nn.transformer import ReturnHiddenStates, ReturnLogits
 from max.pipelines.lib import (
@@ -280,17 +283,12 @@ class KimiK2_5Model(
                 )
             n_nodes = ep_size // len(self.devices)
 
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = ep_size // data_parallel_degree
-            ep_max_rank_send_tokens = (
-                self.pipeline_config.runtime.max_batch_input_tokens
+            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
+                ep_size=ep_size,
+                data_parallel_degree=data_parallel_degree,
+                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
             )
-            if not self.pipeline_config.runtime.ep_use_allreduce:
-                ep_max_rank_send_tokens = (
-                    ep_max_rank_send_tokens // attn_tp_size
-                )
 
             is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
             ep_dispatch_dtype = DType.uint8 if is_mxfp4 else dtype
@@ -501,20 +499,12 @@ class KimiK2_5Model(
         if pipeline_config.runtime.ep_size > 1:
             n_gpus_per_node = len(pipeline_config.model.device_specs)
 
-            # With a mixed TP-attention + EP-MoE strategy, the attention output
-            # will be scattered across ranks, so each rank will only send a
-            # subset of the tokens.
-            attn_tp_size = (
-                pipeline_config.runtime.ep_size
-                // pipeline_config.model.data_parallel_degree
+            ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
+                max_batch_input_tokens=pipeline_config.runtime.max_batch_input_tokens,
+                ep_size=pipeline_config.runtime.ep_size,
+                data_parallel_degree=pipeline_config.model.data_parallel_degree,
+                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
             )
-            ep_max_rank_send_tokens = (
-                pipeline_config.runtime.max_batch_input_tokens
-            )
-            if not pipeline_config.runtime.ep_use_allreduce:
-                ep_max_rank_send_tokens = (
-                    ep_max_rank_send_tokens // attn_tp_size
-                )
 
             # Calculate the maximum number of tokens a rank may receive during
             # all-to-all routing. Each token selects top_k experts, and in the

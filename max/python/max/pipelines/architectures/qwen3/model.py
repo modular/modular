@@ -26,6 +26,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef, Graph
 from max.graph.weights import Weights, WeightsAdapter
 from max.nn.comm.ep import EPCommInitializer, EPConfig
+from max.nn.comm.ep.ep_config import calculate_ep_max_tokens_per_rank
 from max.nn.comm.ep.ep_manager import EPBatchManager
 from max.nn.kv_cache import KVCacheInputs, KVCacheParams
 from max.pipelines.core import TextContext
@@ -146,10 +147,11 @@ class Qwen3Model(AlwaysSignalBuffersMixin, LlamaModelBase):
         config = self.huggingface_config
         n_nodes = ep_size // n_devices
         data_parallel_degree = self.pipeline_config.model.data_parallel_degree
-        attn_tp_size = ep_size // data_parallel_degree
 
-        ep_max_rank_send_tokens = (
-            self.pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
+        ep_max_rank_send_tokens = calculate_ep_max_tokens_per_rank(
+            max_batch_input_tokens=self.pipeline_config.runtime.max_batch_input_tokens,
+            ep_size=ep_size,
+            data_parallel_degree=data_parallel_degree,
         )
 
         encoding = self.pipeline_config.model.quantization_encoding

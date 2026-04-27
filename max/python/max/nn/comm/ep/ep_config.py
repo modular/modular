@@ -223,3 +223,32 @@ def estimate_ep_memory_usage(
         + combine_send_buf_size
         + combine_recv_buf_size
     )
+
+
+def calculate_ep_max_tokens_per_rank(
+    *,
+    max_batch_input_tokens: int,
+    ep_size: int,
+    data_parallel_degree: int,
+    use_allreduce: bool = False,
+) -> int:
+    """Calculate the maximum number of tokens per rank for EP communication.
+
+    Derives the tensor parallelism degree from ``ep_size`` and
+    ``data_parallel_degree``, then divides the batch tokens accordingly.
+    When TP > 1, attention scatters tokens across ranks so each rank
+    holds fewer tokens for the subsequent EP dispatch/combine phases.
+
+    Args:
+        max_batch_input_tokens: Maximum number of input tokens per batch.
+        ep_size: Expert parallelism size (total number of GPUs across nodes).
+        data_parallel_degree: Degree of data parallelism.
+        use_allreduce: Is allreduce-backed expert parallelism enabled.
+
+    Returns:
+        Maximum tokens per rank for EP communication buffers.
+    """
+    if use_allreduce:
+        return max_batch_input_tokens
+    tp_size = ep_size // data_parallel_degree
+    return max_batch_input_tokens // tp_size

@@ -11,11 +11,12 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from .ep_config import EPConfig
+from .ep_config import EPConfig, calculate_ep_max_tokens_per_rank
 from .ep_manager import EPBatchManager, EPCommInitializer
 
 __all__ = [
     "EPBatchManager",
     "EPCommInitializer",
     "EPConfig",
+    "calculate_ep_max_tokens_per_rank",
 ]
