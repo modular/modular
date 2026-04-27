@@ -10,8 +10,10 @@
 #include "Support/Telemetry/Logs.h"
 #include "llvm/Support/MemoryBuffer.h"
 
+#include <condition_variable>
 #include <cstdlib>
 #include <fstream>
+#include <mutex>
 #include <thread>
 
 #include <stdlib.h>
@@ -556,6 +558,107 @@ TEST(Telemetry, ProgramInvocation) {
             << "expected to find program.sub_command event attribute";
       });
   EXPECT_FALSE(err.isError()) << err.getError();
+}
+
+/// Recording exporter for the SDLC-3618 regression test below. Captures
+/// the thread ID that Export was called on and signals completion.
+class RecordingLogRecordExporter
+    : public opentelemetry::sdk::logs::LogRecordExporter {
+public:
+  std::unique_ptr<opentelemetry::sdk::logs::Recordable>
+  MakeRecordable() noexcept override {
+    // Not invoked by this test — the wrapper is exercised with an empty
+    // record span, which is sufficient to verify the dispatch path.
+    return nullptr;
+  }
+
+  opentelemetry::sdk::common::ExportResult
+  Export(const opentelemetry::nostd::span<
+         std::unique_ptr<opentelemetry::sdk::logs::Recordable>> &) noexcept
+      override {
+    {
+      std::lock_guard<std::mutex> lock(mu);
+      exportThreadId = std::this_thread::get_id();
+      exportCalls += 1;
+    }
+    cv.notify_all();
+    return opentelemetry::sdk::common::ExportResult::kSuccess;
+  }
+
+  bool ForceFlush(std::chrono::microseconds) noexcept override { return true; }
+  bool Shutdown(std::chrono::microseconds) noexcept override { return true; }
+
+  std::mutex mu;
+  std::condition_variable cv;
+  int exportCalls = 0;
+  std::thread::id exportThreadId{};
+};
+
+/// SDLC-3618 regression test: FireAndForgetLogRecordExporter must run the
+/// delegate's Export on a different thread than the caller, and its own
+/// Export / Shutdown must return without waiting on that work. Before
+/// this wrapper existed, the program invocation event was pushed
+/// synchronously through the OTel curl HTTP exporter, whose 3 s
+/// `CURLOPT_TIMEOUT_MS` does not cap DNS resolution or TCP SYN retries;
+/// with an unreachable endpoint (e.g. the Mac CI runners, which can't
+/// reach telemetry.modular.com) each emit stalled for tens of seconds,
+/// blocking every mojo invocation until the caller's test-harness
+/// timeout fired.
+///
+/// We verify the non-blocking property structurally (delegate's thread
+/// ID differs from the caller's) rather than via a long-sleep delegate:
+/// a hung detached thread lingering into subsequent tests is both
+/// wasteful and risks amplifying unrelated failures when the gtest
+/// process is already under resource pressure.
+TEST(Telemetry, FireAndForgetLogRecordExporterDispatchesOnDetachedThread) {
+  auto recording = std::make_unique<RecordingLogRecordExporter>();
+  auto *recordingPtr = recording.get();
+  FireAndForgetLogRecordExporter async(std::move(recording));
+
+  // An empty record span is enough — the wrapper only cares that Export
+  // is invoked and dispatched, not what's in the span.
+  std::vector<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> records;
+  opentelemetry::nostd::span<
+      std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
+      span{records.data(), records.size()};
+
+  const auto callerThreadId = std::this_thread::get_id();
+  auto start = std::chrono::steady_clock::now();
+  auto result = async.Export(span);
+  auto exportElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start);
+
+  EXPECT_EQ(result, opentelemetry::sdk::common::ExportResult::kSuccess);
+  EXPECT_LT(exportElapsed.count(), 1000)
+      << "FireAndForgetLogRecordExporter::Export took " << exportElapsed.count()
+      << " ms — it must not wait for the delegate's Export to complete "
+         "(SDLC-3618 regression).";
+
+  // Shutdown must not wait on the detached work either.
+  start = std::chrono::steady_clock::now();
+  EXPECT_TRUE(async.Shutdown(std::chrono::microseconds::max()));
+  auto shutdownElapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+      std::chrono::steady_clock::now() - start);
+  EXPECT_LT(shutdownElapsed.count(), 1000)
+      << "FireAndForgetLogRecordExporter::Shutdown took "
+      << shutdownElapsed.count()
+      << " ms — it must not wait for the delegate's Shutdown to "
+         "complete (SDLC-3618 regression).";
+
+  // Wait for the detached thread to actually invoke the delegate, so we
+  // can inspect which thread ran it and so the test doesn't leave work
+  // in flight after the body returns.
+  {
+    std::unique_lock<std::mutex> lock(recordingPtr->mu);
+    ASSERT_TRUE(recordingPtr->cv.wait_for(lock, std::chrono::seconds(5), [&] {
+      return recordingPtr->exportCalls > 0;
+    })) << "Detached thread never invoked the delegate's Export";
+    EXPECT_EQ(recordingPtr->exportCalls, 1)
+        << "Delegate's Export should have been dispatched exactly once";
+    EXPECT_NE(recordingPtr->exportThreadId, callerThreadId)
+        << "Delegate's Export ran on the caller's thread — the wrapper "
+           "is no longer fire-and-forget (SDLC-3618 regression).";
+  }
 }
 
 /// This test verifies that the invocation event is NOT emitted when crash

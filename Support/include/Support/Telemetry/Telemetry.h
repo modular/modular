@@ -23,8 +23,10 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <thread>
 #include <utility>
 #include <variant>
+#include <vector>
 
 #include "opentelemetry/logs/event_logger_provider.h"
 #include "opentelemetry/logs/logger_provider.h"
@@ -149,6 +151,84 @@ private:
   std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate_;
   std::string endpoint_;
   std::shared_ptr<std::atomic<bool>> warned_;
+};
+
+/// Fire-and-forget log record exporter wrapper: dispatches the delegate's
+/// Export call on a detached thread so emit never blocks on the delegate's
+/// HTTP/network I/O, at the cost of losing visibility into whether the
+/// export eventually succeeded. Intended for low-volume diagnostic events
+/// (e.g. `program.crash_reporting_enabled_invocation`) where emit-time
+/// latency is the primary concern and per-record delivery guarantees are
+/// not; do NOT route high-volume or delivery-critical telemetry through
+/// this wrapper — pair the synchronous delegate with a
+/// `BatchLogRecordProcessor` instead.
+///
+/// Background: OTel's curl HTTP exporter uses the synchronous system name
+/// resolver, so its nominal 3s `CURLOPT_TIMEOUT_MS` does not cap DNS
+/// resolution or TCP SYN retries. In environments where the OTel endpoint
+/// is unreachable, every synchronous `Export` can stall for tens of
+/// seconds, blocking `emitL0Event` on the emit path. See SDLC-3618.
+///
+/// Deliberate semantic deviations from the base `LogRecordExporter`
+/// contract, all in service of never blocking the caller:
+///
+///   - `Export` always returns `kSuccess`. The caller has no signal about
+///     whether the detached HTTP call eventually succeeded or failed.
+///   - `ForceFlush` always returns `true` without actually waiting. We do
+///     not track detached threads, so we cannot report honest completion.
+///     Do NOT use this wrapper in any call chain where the `ForceFlush`
+///     return value drives retry logic.
+///   - `Shutdown` does not forward to the delegate. Propagating the call
+///     would try to drain any in-flight curl requests in the delegate's
+///     HTTP client and can block beyond our timeout budget.
+///   - Detached threads are terminated abruptly when the process exits;
+///     in-flight HTTP requests at that moment are dropped.
+class FireAndForgetLogRecordExporter
+    : public opentelemetry::sdk::logs::LogRecordExporter {
+public:
+  explicit FireAndForgetLogRecordExporter(
+      std::unique_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate)
+      : delegate_(std::move(delegate)) {}
+
+  std::unique_ptr<opentelemetry::sdk::logs::Recordable>
+  MakeRecordable() noexcept override {
+    return delegate_->MakeRecordable();
+  }
+
+  opentelemetry::sdk::common::ExportResult
+  Export(const opentelemetry::nostd::span<
+         std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
+             &records) noexcept override {
+    // Take ownership of the records so the detached thread can own them.
+    // Our only caller, `SimpleLogRecordProcessor::OnEmit`, does not touch
+    // the span after `Export` returns — it destroys the local `unique_ptr`
+    // at scope exit — so moving out is safe. Do NOT use this wrapper
+    // behind a processor that reuses records post-Export.
+    std::vector<std::unique_ptr<opentelemetry::sdk::logs::Recordable>> owned;
+    owned.reserve(records.size());
+    for (auto &record : records)
+      owned.push_back(std::move(record));
+    std::thread([delegate = delegate_, owned = std::move(owned)]() mutable {
+      opentelemetry::nostd::span<
+          std::unique_ptr<opentelemetry::sdk::logs::Recordable>>
+          span{owned.data(), owned.size()};
+      (void)delegate->Export(span);
+    }).detach();
+    return opentelemetry::sdk::common::ExportResult::kSuccess;
+  }
+
+  bool ForceFlush(std::chrono::microseconds /*timeout*/) noexcept override {
+    return true;
+  }
+
+  bool Shutdown(std::chrono::microseconds /*timeout*/) noexcept override {
+    return true;
+  }
+
+private:
+  // `shared_ptr` so detached threads can keep the delegate alive past this
+  // wrapper's own destruction.
+  std::shared_ptr<opentelemetry::sdk::logs::LogRecordExporter> delegate_;
 };
 
 // TODO: Add ways to organize instruments (e.g. Meters/instrumentation scope)
