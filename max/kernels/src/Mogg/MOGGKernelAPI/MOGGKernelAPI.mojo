@@ -245,6 +245,7 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
 )
 from nn.moe import moe_create_indices, router_group_limited, single_group_router
 from nn.nms import non_max_suppression, non_max_suppression_shape_func
+from nn.gemv_partial_norm import gemv_and_partial_norm
 from nn.normalization import (
     group_norm,
     layer_norm,
@@ -3464,6 +3465,71 @@ struct ReduceRMSNormRoPE:
         cos_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
         sin_vals: InputTensor[dtype=cos_sin_dtype, rank=rank, ...],
     ) -> IndexList[rank]:
+        return input.shape()
+
+
+@compiler.register("mo.matmul_fused_partial_rms_norm")
+struct MatmulFusedPartialRMSNorm:
+    """Fuses GEMV (M=1 matmul) with partial RMS normalization.
+
+    Computes y = x @ W.T, then applies RMS normalization to the first N_normed
+    columns while passing the remaining columns through unchanged.
+    """
+
+    @staticmethod
+    def execute[
+        dtype: DType,
+        rank: Int,
+        target: StaticString,
+        transpose_b: Bool = True,
+    ](
+        normed_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        unnormed_output: OutputTensor[dtype=dtype, rank=rank, ...],
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+        ctx: DeviceContextPtr,
+    ) capturing raises:
+        """Execute fused GEMV + partial RMS norm.
+
+        Calls `gemv_and_partial_norm` from `nn.gemv_partial_norm` which
+        computes y = x @ W.T, then partitions y into normed and unnormed
+        outputs.
+        """
+        # weight_offset is passed but not used in this kernel - it's kept
+        # for API consistency with other RMS norm ops.
+        _ = weight_offset
+
+        gemv_and_partial_norm[
+            c_type=dtype,
+            a_type=dtype,
+            transpose_b=transpose_b,
+            fused=True,
+        ](
+            normed_output.to_tile_tensor[DType.int64](),
+            unnormed_output.to_tile_tensor[DType.int64](),
+            input.to_tile_tensor[DType.int64](),
+            weight.to_tile_tensor[DType.int64](),
+            gamma.to_tile_tensor[DType.int64](),
+            epsilon,
+            ctx.get_device_context(),
+        )
+
+    @staticmethod
+    def shape[
+        dtype: DType,
+        rank: Int,
+    ](
+        input: InputTensor[dtype=dtype, rank=rank, ...],
+        weight: InputTensor[dtype=dtype, rank=2, ...],
+        gamma: InputTensor[dtype=dtype, rank=1, ...],
+        epsilon: Scalar[dtype=dtype],
+        weight_offset: Scalar[dtype=dtype],
+    ) -> IndexList[rank]:
+        # Return the input shape for normed output
+        # The actual shape split is handled by the op semantics
         return input.shape()
 
 
