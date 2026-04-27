@@ -2513,14 +2513,23 @@ struct DeviceFunction[
         var dense_args_addrs: UnsafePointer[
             OpaquePointer[MutAnyOrigin], MutAnyOrigin
         ]
+        var dense_args_sizes: UnsafePointer[UInt64, MutAnyOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
                 num_captures + num_args
             )
+            dense_args_sizes = alloc[UInt64](num_captures + num_args)
+            for i in range(num_captures + num_args):
+                dense_args_sizes[i] = 0
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt64
+            ]()
+            for i in range(num_captures_static + num_args):
+                dense_args_sizes[i] = 0
 
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
@@ -2530,6 +2539,16 @@ struct DeviceFunction[
                 .unsafe_mut_cast[True]()
             )
 
+        @parameter
+        def _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+        comptime for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        for i in range(num_captures):
+            dense_args_sizes[num_args + i] = self._func_impl.capture_sizes[i]
+
         if cluster_dim:
             attributes.append(
                 LaunchAttribute.from_cluster_dim(cluster_dim.value())
@@ -2538,12 +2557,12 @@ struct DeviceFunction[
         for i in range(len(constant_memory)):
             self._copy_to_constant_memory(constant_memory[i])
 
-        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(
-        #     const DeviceContext *ctx, const DeviceFunction *func,
+        # const char *AsyncRT_DeviceStream_enqueueFunctionDirect(
+        #     DeviceStream *stream, const DeviceFunction *func,
         #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #     void **args)
+        #     void **args, uint32_t argCount, const size_t *argSizes)
 
         if num_captures > 0:
             # Call the populate function to initialize the captured values in the arguments array.
@@ -2573,6 +2592,8 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    UInt32(num_args + num_captures),
+                    dense_args_sizes,
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -2595,6 +2616,8 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    UInt32(num_args),
+                    dense_args_sizes,
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -2602,6 +2625,7 @@ struct DeviceFunction[
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
+            dense_args_sizes.free()
 
     @always_inline
     @staticmethod
@@ -2718,14 +2742,23 @@ struct DeviceFunction[
         var dense_args_addrs: UnsafePointer[
             OpaquePointer[MutAnyOrigin], MutAnyOrigin
         ]
+        var dense_args_sizes: UnsafePointer[UInt64, MutAnyOrigin]
         if num_captures > num_captures_static:
             dense_args_addrs = alloc[OpaquePointer[MutAnyOrigin]](
                 num_captures + num_args
             )
+            dense_args_sizes = alloc[UInt64](num_captures + num_args)
+            for i in range(num_captures + num_args):
+                dense_args_sizes[i] = 0
         else:
             dense_args_addrs = stack_allocation[
                 num_captures_static + num_args, OpaquePointer[MutAnyOrigin]
             ]()
+            dense_args_sizes = stack_allocation[
+                num_captures_static + num_args, UInt64
+            ]()
+            for i in range(num_captures_static + num_args):
+                dense_args_sizes[i] = 0
 
         comptime for i in range(num_args):
             # TODO(MSTDL-1904): Validate the safety of this.
@@ -2735,6 +2768,16 @@ struct DeviceFunction[
                 .unsafe_mut_cast[True]()
             )
 
+        @parameter
+        def _populate_arg_sizes[i: Int]():
+            dense_args_sizes[i] = UInt64(size_of[Ts[i]]())
+
+        comptime for i in range(num_args):
+            _populate_arg_sizes[i]()
+
+        for i in range(num_captures):
+            dense_args_sizes[num_args + i] = self._func_impl.capture_sizes[i]
+
         if cluster_dim:
             attributes.append(
                 LaunchAttribute.from_cluster_dim(cluster_dim.value())
@@ -2743,12 +2786,12 @@ struct DeviceFunction[
         for i in range(len(constant_memory)):
             self._copy_to_constant_memory(constant_memory[i])
 
-        # const char *AsyncRT_DeviceContext_enqueueFunctionDirect(
-        #     const DeviceContext *ctx, const DeviceFunction *func,
+        # const char *AsyncRT_DeviceStream_enqueueFunctionDirect(
+        #     DeviceStream *stream, const DeviceFunction *func,
         #     uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #     uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #     uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #     void **args)
+        #     void **args, uint32_t argCount, const size_t *argSizes)
 
         if num_captures > 0:
             # Call the populate function to initialize the captured values in the arguments array.
@@ -2778,6 +2821,8 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    UInt32(num_args + num_captures),
+                    dense_args_sizes,
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -2800,6 +2845,8 @@ struct DeviceFunction[
                     attributes.unsafe_ptr(),
                     len(attributes),
                     dense_args_addrs,
+                    UInt32(num_args),
+                    dense_args_sizes,
                 ),
                 device_context=self._context,
                 location=location.or_else(call_location()),
@@ -2807,6 +2854,7 @@ struct DeviceFunction[
 
         if num_captures > num_captures_static:
             dense_args_addrs.free()
+            dense_args_sizes.free()
 
     @always_inline
     @parameter
@@ -2932,7 +2980,7 @@ struct DeviceFunction[
         #                                                         uint32_t gridX, uint32_t gridY, uint32_t gridZ,
         #                                                         uint32_t blockX, uint32_t blockY, uint32_t blockZ,
         #                                                         uint32_t sharedMemBytes, void *attrs, uint32_t num_attrs,
-        #                                                         void **args)
+        #                                                         void **args, uint32_t argCount, const size_t *argSizes)
 
         if num_captures > 0:
             # Call the populate function to initialize the captured values in the arguments array.
