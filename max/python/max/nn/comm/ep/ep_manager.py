@@ -882,6 +882,8 @@ class EPCommInitializer:
         self.config.node_id = my_node_id[0]
 
         logger.info(f"Initialized EP for node {self.config.node_id}")
+        if self.config.use_allreduce:
+            logger.info("Using allreduce as the EP communication backend.")
 
     def model_inputs(self) -> list[Buffer]:
         """Get the model inputs for the MoE model.

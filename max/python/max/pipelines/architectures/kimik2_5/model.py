@@ -286,8 +286,11 @@ class KimiK2_5Model(
             attn_tp_size = ep_size // data_parallel_degree
             ep_max_rank_send_tokens = (
                 self.pipeline_config.runtime.max_batch_input_tokens
-                // attn_tp_size
             )
+            if not self.pipeline_config.runtime.ep_use_allreduce:
+                ep_max_rank_send_tokens = (
+                    ep_max_rank_send_tokens // attn_tp_size
+                )
 
             is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
             ep_dispatch_dtype = DType.uint8 if is_mxfp4 else dtype
@@ -302,6 +305,7 @@ class KimiK2_5Model(
                 n_gpus_per_node=len(self.devices),
                 n_nodes=n_nodes,
                 dispatch_quant_config=None,
+                use_allreduce=self.pipeline_config.runtime.ep_use_allreduce,
             )
 
             if config.n_shared_experts == 1 and not is_mxfp4:
@@ -505,8 +509,12 @@ class KimiK2_5Model(
                 // pipeline_config.model.data_parallel_degree
             )
             ep_max_rank_send_tokens = (
-                pipeline_config.runtime.max_batch_input_tokens // attn_tp_size
+                pipeline_config.runtime.max_batch_input_tokens
             )
+            if not pipeline_config.runtime.ep_use_allreduce:
+                ep_max_rank_send_tokens = (
+                    ep_max_rank_send_tokens // attn_tp_size
+                )
 
             # Calculate the maximum number of tokens a rank may receive during
             # all-to-all routing. Each token selects top_k experts, and in the
@@ -516,6 +524,16 @@ class KimiK2_5Model(
                 pipeline_config.runtime.ep_size
                 * huggingface_config.text_config.num_experts_per_tok,
             )
+
+            if pipeline_config.runtime.ep_use_allreduce:
+                max_recv_tokens_per_rank = (
+                    pipeline_config.runtime.max_batch_input_tokens
+                    * min(
+                        huggingface_config.text_config.n_routed_experts
+                        // n_gpus_per_node,
+                        huggingface_config.text_config.num_experts_per_tok,
+                    )
+                )
 
             # The maximal activation memory usage happens at the second
             # grouped_matmul in the MoE layer. The input for that matmul would
@@ -550,6 +568,7 @@ class KimiK2_5Model(
                 n_nodes=n_nodes,
                 n_gpus_per_node=n_gpus_per_node,
                 top_k=huggingface_config.text_config.num_experts_per_tok,
+                use_allreduce=pipeline_config.runtime.ep_use_allreduce,
             )
             ep_buffer_memory = per_device_ep_memory * n_gpus_per_node
 

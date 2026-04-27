@@ -491,7 +491,10 @@ class DeepseekV3DecoderLayer(Module):
                 devices=config.devices,
                 quant_config=config.quant_config,
             )
-            if self.mode == ParallelismMode.TP_TP:
+            if self.mode == ParallelismMode.TP_TP or (
+                self.config.ep_config is not None
+                and self.config.ep_config.use_allreduce
+            ):
                 mlp.sharding_strategy = ShardingStrategy.tensor_parallel(
                     len(config.devices)
                 )
@@ -589,11 +592,19 @@ class DeepseekV3DecoderLayer(Module):
         """Residual connection and collective after attention."""
         match self.mode:
             case ParallelismMode.TP_EP:
-                # attn_outs[i] is device i's partial sum (allreduce was
-                # skipped).  Add the residual only on device 0 so it isn't
-                # counted P times after the reduce-scatter.
-                hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
-                return ops.reducescatter.sum(hs, signal_buffers, axis=0)
+                assert self.config.ep_config is not None
+                if self.config.ep_config.use_allreduce:
+                    attn_outs = ops.allreduce.sum(attn_outs, signal_buffers)
+                    return [
+                        x + attn_out
+                        for x, attn_out in zip(xs, attn_outs, strict=True)
+                    ]
+                else:
+                    # attn_outs[i] is device i's partial sum (allreduce was
+                    # skipped).  Add the residual only on device 0 so it isn't
+                    # counted P times after the reduce-scatter.
+                    hs = [xs[0] + attn_outs[0], *attn_outs[1:]]
+                    return ops.reducescatter.sum(hs, signal_buffers, axis=0)
             case ParallelismMode.DP_EP | ParallelismMode.TP_TP:
                 return [
                     x + attn_out
@@ -611,11 +622,19 @@ class DeepseekV3DecoderLayer(Module):
         """Collective after MoE/MLP to restore the expected hidden-state layout."""
         match self.mode:
             case ParallelismMode.TP_EP:
-                hs = [
-                    h + mlp_out for h, mlp_out in zip(hs, mlp_outs, strict=True)
-                ]
-                hs = ops.allgather(hs, signal_buffers, axis=0)
-                return hs
+                assert self.config.ep_config is not None
+                if self.config.ep_config.use_allreduce:
+                    mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)
+                    return [
+                        h + mlp_out
+                        for h, mlp_out in zip(hs, mlp_outs, strict=True)
+                    ]
+                else:
+                    hs = [
+                        h + mlp_out
+                        for h, mlp_out in zip(hs, mlp_outs, strict=True)
+                    ]
+                    return ops.allgather(hs, signal_buffers, axis=0)
             case ParallelismMode.TP_TP:
                 if len(self.config.devices) > 1:
                     mlp_outs = ops.allreduce.sum(mlp_outs, signal_buffers)

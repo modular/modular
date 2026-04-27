@@ -79,6 +79,14 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
+    ep_use_allreduce: bool = Field(
+        default=False,
+        description=(
+            "Whether to use allreduce for the cross-device communication in "
+            "expert parallelism."
+        ),
+    )
+
     ce_delay_ms: float = Field(
         default=0.0,
         description=(

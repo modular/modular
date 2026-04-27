@@ -108,6 +108,9 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "nvidia/DeepSeek-V3.1-NVFP4__tpep": {
         "max_serve_args": "--data-parallel-degree 1",
     },
+    "nvidia/DeepSeek-V3.1-NVFP4__tpep_ar": {
+        "max_serve_args": "--data-parallel-degree 1 --ep-use-allreduce",
+    },
     "nvidia/DeepSeek-V3.1-NVFP4__tptp": {
         "max_serve_args": "--ep-size 1 --data-parallel-degree 1",
     },
