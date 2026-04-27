@@ -333,15 +333,15 @@ def _get_kgen_struct_fields[n: Int, dtype: DType]() -> StaticString:
         ]()
 
 
-# `!kgen.pack` of N copies of `Scalar[dtype]`, built natively via
+# `!kgen.struct` of N copies of `Scalar[dtype]`, built natively via
 # `TypeList.splat`; extracts work through `kgen.pack.extract` without a
 # deferred type.
 comptime _kgen_pack_splat_type[dtype: DType, n: Int] = __mlir_type[
-    `!kgen.pack<`,
+    `!kgen.struct<`,
     ~TypeList.splat[
         Trait=TrivialRegisterPassable, count=n, type=Scalar[dtype]
     ]().values,
-    `>`,
+    ` isParamPack>`,
 ]
 
 
@@ -367,7 +367,7 @@ def llvm_struct_to_simd[
         # unrealized_conversion_cast retypes it to `!pop.scalar<dtype>`.
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
-        ](__mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](pack))
+        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
         simd[i] = Scalar[dtype](mlir_value=e)
     return simd
 
@@ -446,6 +446,6 @@ def llvm_struct_to_array[
     comptime for i in range(n):
         var e = __mlir_op.`builtin.unrealized_conversion_cast`[
             _type=Scalar[dtype]._mlir_type
-        ](__mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](pack))
+        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
         array[i] = Scalar[dtype](mlir_value=e)
     return array
