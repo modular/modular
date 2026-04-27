@@ -1299,32 +1299,6 @@ Type CreateRegStubOp::getCalleeArgType(unsigned index) {
 }
 
 //===----------------------------------------------------------------------===//
-// PackLoadOp
-//===----------------------------------------------------------------------===//
-
-LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
-                                           std::optional<Location> loc,
-                                           Adaptor adaptor,
-                                           SmallVectorImpl<Type> &types) {
-  if (!isa<StructType>(adaptor.getPack().getType()))
-    return mlir::emitError(loc.value_or(adaptor.getPack().getLoc()),
-                           "expected one !kgen.struct operand, not ")
-           << adaptor.getPack().getType();
-  auto structType = cast<StructType>(adaptor.getPack().getType());
-  if (!structType.getIsParamPack())
-    return mlir::emitError(loc.value_or(adaptor.getPack().getLoc()),
-                           "expected a parametric struct type");
-  // The result type is the same as the input type, but with a layer of pointers
-  // stripped off.
-  auto mappedTypes = ParamOperatorAttr::get(
-      POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
-  types.push_back(StructType::get(ctx, mappedTypes, /*memOnly*/ {},
-                                  /*minAlign*/ {},
-                                  /*isPack*/ true));
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // StructExtractOp
 //===----------------------------------------------------------------------===//
 
@@ -1635,11 +1609,15 @@ LogicalResult StructLoadIndirectOp::inferReturnTypes(
                            "expected !kgen.struct operand, not ")
            << adaptor.getStructValue().getType();
   // The result type is the same as the input type, but with a layer of pointers
-  // stripped off. The struct type is parametric, so we need to use the
-  // ParamOperatorAttr to remove the pointer layer.
+  // stripped off. The struct type may be parametric, so we need to use the
+  // ParamOperatorAttr to remove the pointer layer. Preserve `isParamPack` on
+  // the result when the operand is a variadic pack (same as former
+  // `kgen.pack.load`).
   auto mappedTypes = ParamOperatorAttr::get(
       POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
-  types.push_back(StructType::get(mappedTypes));
+  types.push_back(StructType::get(ctx, mappedTypes, /*memOnly*/ {},
+                                  /*minAlign*/ {},
+                                  structType.getIsParamPack()));
   return success();
 }
 

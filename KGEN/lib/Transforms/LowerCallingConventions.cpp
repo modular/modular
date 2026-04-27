@@ -231,13 +231,13 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   // Handle pack operations. Be mindful here of the ODS methods because the
   // operand and result types will have already been lowered to `!kgen.struct`.
   IRRewriter b{OpBuilder(op)};
-  if (auto load = dyn_cast<PackLoadOp>(op)) {
+  if (auto load = dyn_cast<StructLoadIndirectOp>(op)) {
     SmallVector<Value> elements;
     auto types =
-        *cast<StructType>(load->getOperand(0).getType()).getElementTypes();
+        *cast<StructType>(load.getStructValue().getType()).getElementTypes();
     elements.reserve(types.size());
     for (auto [i, _] : llvm::enumerate(types)) {
-      auto ptr = StructExtractOp::create(b, op->getLoc(), load->getOperand(0),
+      auto ptr = StructExtractOp::create(b, op->getLoc(), load.getStructValue(),
                                          b.getIndexAttr(i));
       elements.push_back(POP::LoadOp::create(b, op->getLoc(), ptr));
     }
