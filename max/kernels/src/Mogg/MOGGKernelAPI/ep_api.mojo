@@ -793,6 +793,8 @@ struct Struct_ep_dispatch:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
         //,
         target: StaticString,
     ](
@@ -824,6 +826,8 @@ struct Struct_ep_dispatch:
             n_nodes,
             fused_shared_expert,
             target,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
         ](
             format_handler,
             row_offsets.to_tile_tensor[DType.int64](),
@@ -855,6 +859,8 @@ struct Struct_ep_dispatch_fp8:
         n_nodes: Int,
         dispatch_scale_granularity: StaticString,
         fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
         //,
         target: StaticString,
     ](
@@ -888,6 +894,8 @@ struct Struct_ep_dispatch_fp8:
             n_nodes,
             fused_shared_expert,
             target,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
         ](
             format_handler,
             row_offsets.to_tile_tensor[DType.int64](),
@@ -919,6 +927,8 @@ struct Struct_ep_dispatch_nvfp4:
         n_gpus_per_node: Int,
         n_nodes: Int,
         fused_shared_expert: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
         //,
         target: StaticString,
     ](
@@ -968,6 +978,8 @@ struct Struct_ep_dispatch_nvfp4:
             fused_shared_expert,
             target,
             input_scales_wrapper=input_scales_fn,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
         ](
             format_handler,
             row_offsets.to_tile_tensor[DType.int64](),
@@ -1725,6 +1737,7 @@ struct Struct_ep_combine:
         n_nodes: Int,
         fused_shared_expert: Bool,
         lambdas_have_fusion: Bool,
+        skip_a2a: Bool,
         //,
         target: StaticString,
     ](
@@ -1778,6 +1791,7 @@ struct Struct_ep_combine:
                 output_fn
             ) if lambdas_have_fusion else None,
             fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
         ](
             output_tokens.to_tile_tensor[DType.int64](),
             atomic_counters.to_tile_tensor[DType.int64](),
@@ -1787,6 +1801,95 @@ struct Struct_ep_combine:
             recv_ptrs.to_tile_tensor[DType.int64](),
             recv_count_ptrs.to_tile_tensor[DType.int64](),
             context,
+        )
+
+
+@compiler.register("ep.combine.skip_a2a")
+struct Struct_ep_combine_skip_a2a:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        combine_dtype: DType,
+        router_weights_dtype: DType,
+        hidden_size: Int,
+        top_k: Int,
+        n_experts: Int,
+        max_token_per_rank: Int,
+        n_gpus_per_node: Int,
+        n_nodes: Int,
+        fused_shared_expert: Bool,
+        lambdas_have_fusion: Bool,
+        skip_a2a: Bool,
+        allreduce_world_size: Int,
+        //,
+        target: StaticString,
+    ](
+        output_tokens: FusedOutputTensor[dtype=combine_dtype, rank=2, ...],
+        atomic_counters: MutableInputTensor[dtype=DType.int32, rank=1, ...],
+        input_tokens: InputTensor[dtype=combine_dtype, rank=2, ...],
+        src_info: InputTensor[dtype=DType.int32, rank=2, ...],
+        send_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        recv_count_ptrs: InputTensor[dtype=DType.uint64, rank=1, ...],
+        router_weights: InputTensor[dtype=router_weights_dtype, rank=2, ...],
+        topk_ids: InputTensor[dtype=DType.int32, rank=2, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        """Execute the fused Expert Parallelism combine kernel."""
+        var router_weights_tensor = router_weights.to_tile_tensor[DType.int64]()
+        comptime assert router_weights_tensor.flat_rank == 2
+        comptime assert router_weights_tensor.flat_rank >= 2
+
+        @parameter
+        @always_inline
+        @__copy_capture(router_weights_tensor)
+        def router_weights_fn[
+            width: Int
+        ](token_idx: Int, topk_id: Int) -> SIMD[DType.float32, width]:
+            return router_weights_tensor.load[width=width](
+                (Idx(token_idx), Idx(topk_id))
+            ).cast[DType.float32]()
+
+        @parameter
+        @always_inline
+        def output_fn[
+            dtype: DType, width: SIMDSize, *, alignment: Int = 1
+        ](coords: IndexList[2], val: SIMD[dtype, width]):
+            output_tokens._lambda_store[
+                width=width, element_alignment=alignment
+            ](
+                coords,
+                rebind[SIMD[combine_dtype, width]](val),
+            )
+
+        ep_fused_combine_kernel_api[
+            hidden_size,
+            top_k,
+            n_experts,
+            max_token_per_rank,
+            n_gpus_per_node,
+            n_nodes,
+            target,
+            router_weights_wrapper=router_weights_fn,
+            epilogue_fn=Optional[elementwise_epilogue_type](
+                output_fn
+            ) if lambdas_have_fusion else None,
+            fused_shared_expert=fused_shared_expert,
+            skip_a2a=skip_a2a,
+            allreduce_world_size=allreduce_world_size,
+        ](
+            output_tokens.to_tile_tensor[DType.int64](),
+            atomic_counters.to_tile_tensor[DType.int64](),
+            input_tokens.to_tile_tensor[DType.int64](),
+            src_info.to_tile_tensor[DType.int64](),
+            send_ptrs.to_tile_tensor[DType.int64](),
+            recv_ptrs.to_tile_tensor[DType.int64](),
+            recv_count_ptrs.to_tile_tensor[DType.int64](),
+            context,
+            topk_ids._ptr.as_immutable().unsafe_origin_cast[
+                ImmutExternalOrigin
+            ](),
         )
 
 

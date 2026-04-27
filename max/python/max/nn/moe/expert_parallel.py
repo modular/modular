@@ -67,10 +67,24 @@ def _ep_forward(
 
     batch_mgr = moe_shards[0].ep_batch_manager
 
-    # Multi-device dispatch (single op).
-    all_dispatch_results = batch_mgr.ep_dispatch_all(
-        xs, all_topk_ids, device_ids, input_scales=scales
-    )
+    if batch_mgr.config.use_allreduce:
+        # launch per-device dispatch since they don't need to do cross-device
+        # communication.
+        all_dispatch_results = []
+        for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):
+            shard_mgr = shard.ep_batch_manager
+            dispatch_result = shard_mgr.ep_dispatch(
+                x,
+                all_topk_ids[i],
+                device_ids[i],
+                input_scales=scales[i] if scales is not None else None,
+            )
+            all_dispatch_results.append(dispatch_result)
+    else:
+        # Multi-device dispatch (single op).
+        all_dispatch_results = batch_mgr.ep_dispatch_all(
+            xs, all_topk_ids, device_ids, input_scales=scales
+        )
 
     # Estimated total token-expert pairs across all devices.
     total_tokens = ops.shape_to_tensor(xs[0].shape)[0]
@@ -89,10 +103,24 @@ def _ep_forward(
         down = shard._local_ep_compute(expert_inputs, x, estimated_total_m)
         all_down_projs.append(down)
 
-    # Multi-device combine (single op).
-    combine_results = batch_mgr.ep_combine_all(
-        all_down_projs, all_router_weights, device_ids
-    )
+    if batch_mgr.config.use_allreduce:
+        # launch per-device combine since they don't need to do cross-device
+        # communication.
+        combine_results: list[TensorValue] = []
+        for i, shard in enumerate(moe_shards):
+            shard_mgr = shard.ep_batch_manager
+            combine_result = shard_mgr.ep_combine(
+                all_down_projs[i],
+                all_router_weights[i],
+                device_ids[i],
+                all_topk_ids[i],
+            )
+            combine_results.append(combine_result)
+    else:
+        # Multi-device combine (single op).
+        combine_results = batch_mgr.ep_combine_all(
+            all_down_projs, all_router_weights, device_ids
+        )
 
     outputs: list[TensorValue] = []
     for i, (shard, x) in enumerate(zip(moe_shards, xs, strict=True)):

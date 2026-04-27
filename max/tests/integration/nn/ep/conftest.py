@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 import pytest
 import torch
-from max.driver import Accelerator, accelerator_count
+from max.driver import Accelerator, Buffer, accelerator_count
 from max.dtype import DType
 from max.engine import InferenceSession, Model
 from max.graph import (
@@ -27,7 +27,9 @@ from max.graph import (
     ShardingStrategy,
     TensorType,
     TensorValue,
+    ops,
 )
+from max.nn import Signals
 from max.nn.comm.ep import EPBatchManager, EPCommInitializer, EPConfig
 from max.nn.moe import MoE, MoEGate
 from max.nn.moe.expert_parallel import forward_moe_sharded_layers
@@ -53,6 +55,22 @@ class CompiledEPModels:
     ep_comm_init: EPCommInitializer
     devices: list[Accelerator]
     swiglu_limit: float = 0.0
+
+
+@dataclass
+class CompiledAllreduceEPModels:
+    """Pre-compiled MoE and MoEGate models for allreduce EP integration tests.
+
+    Unlike ``CompiledEPModels``, the graph takes a single input on device 0,
+    broadcasts it to all devices, runs EP MoE with ``use_allreduce=True``,
+    and collects partial results via allreduce sum.
+    """
+
+    moe_model: Model
+    gate_model: Model
+    ep_comm_init: EPCommInitializer
+    signal_buffers: list[Buffer]
+    devices: list[Accelerator]
 
 
 @pytest.fixture
@@ -582,3 +600,148 @@ def compiled_ep_models_swiglu(
     Returns None when hardware requirements are not met.
     """
     return _build_compiled_ep_models(moe_weights, swiglu_limit=10.0)
+
+
+def _build_compiled_allreduce_ep_models(
+    moe_weights: dict[str, torch.Tensor],
+) -> CompiledAllreduceEPModels | None:
+    """Compile MoE and MoEGate graphs with ``use_allreduce=True``.
+
+    The graph takes a single input on device 0, broadcasts it to all devices,
+    runs per-device EP dispatch/combine, and collects results via allreduce.
+
+    Returns None when hardware requirements are not met.
+    """
+    if accelerator_count() < N_DEVICES:
+        return None
+
+    n_devices = N_DEVICES
+    max_tokens_per_rank = 128
+    dtype = DType.bfloat16
+
+    devices = [Accelerator(id) for id in range(n_devices)]
+    devices_ref = [DeviceRef(d.label, d.id) for d in devices]
+    session = InferenceSession(devices=devices)
+
+    ep_config = EPConfig(
+        dispatch_dtype=dtype,
+        combine_dtype=dtype,
+        hidden_size=HIDDEN_DIM,
+        top_k=TOP_K,
+        n_experts=NUM_EXPERTS,
+        max_tokens_per_rank=max_tokens_per_rank,
+        n_gpus_per_node=n_devices,
+        n_nodes=1,
+        fused_shared_expert=True,
+        use_allreduce=True,
+    )
+
+    ep_comm_init = EPCommInitializer(ep_config)
+    ep_batch_manager = EPBatchManager(ep_config)
+
+    signals = Signals(devices=devices_ref)
+
+    moe = MoE(
+        devices=devices_ref,
+        hidden_dim=HIDDEN_DIM,
+        num_experts=NUM_EXPERTS,
+        num_experts_per_token=TOP_K,
+        moe_dim=MOE_DIM,
+        has_shared_experts=True,
+        shared_experts_dim=MOE_DIM,
+        ep_size=n_devices,
+        dtype=dtype,
+        apply_router_weight_first=False,
+        ep_batch_manager=ep_batch_manager,
+    )
+    moe.sharding_strategy = ShardingStrategy.expert_parallel(n_devices)
+    moe_shards = moe.shard(devices_ref)
+    moe_weights_cpu = {k: v.cpu() for k, v in moe_weights.items()}
+    moe.load_state_dict(moe_weights_cpu)
+
+    ep_comm_init.ep_init(session)
+
+    # Single input on device 0.
+    input_type = TensorType(
+        DType.bfloat16, ("input_len", HIDDEN_DIM), DeviceRef.GPU(0)
+    )
+    ep_input_types = ep_batch_manager.input_types()
+    signal_input_types = signals.input_types()
+
+    with Graph(
+        "EPMoEAllreduce",
+        input_types=[input_type, *ep_input_types, *signal_input_types],
+    ) as graph:
+        input_tensor = graph.inputs[0].tensor
+
+        ep_offset = 1
+        ep_batch_manager.fetch_buffers(
+            graph.inputs[ep_offset : ep_offset + len(ep_input_types)]
+        )
+
+        signal_offset = ep_offset + len(ep_input_types)
+        signal_bufs = [inp.buffer for inp in graph.inputs[signal_offset:]]
+
+        broadcast_outputs = ops.distributed_broadcast(input_tensor, signal_bufs)
+        moe_outputs = forward_moe_sharded_layers(moe_shards, broadcast_outputs)
+        allreduce_outputs = ops.allreduce.sum(moe_outputs, signal_bufs)
+
+        graph.output(*allreduce_outputs)
+
+    moe_model = session.load(graph, weights_registry=moe.state_dict())
+
+    # Gate graph: single input on device 0 -> broadcast -> per-device gate.
+    moe_gate = MoEGate(
+        devices=devices_ref,
+        hidden_dim=HIDDEN_DIM,
+        num_experts=NUM_EXPERTS,
+        num_experts_per_token=TOP_K,
+        dtype=dtype,
+    )
+    moe_gate.sharding_strategy = ShardingStrategy.replicate(n_devices)
+    moe_gate_shards = moe_gate.shard(devices_ref)
+
+    gate_weight_dict = {
+        "gate_score.weight": moe_weights_cpu["gate.gate_score.weight"]
+    }
+    moe_gate.load_state_dict(gate_weight_dict)
+
+    with Graph(
+        "MoEGateAllreduce",
+        input_types=[input_type, *signal_input_types],
+    ) as gate_graph:
+        gate_input = gate_graph.inputs[0].tensor
+        gate_signal_bufs = [inp.buffer for inp in gate_graph.inputs[1:]]
+
+        gate_broadcasts = ops.distributed_broadcast(
+            gate_input, gate_signal_bufs
+        )
+        gate_outputs: list[TensorValue] = []
+        for moe_gate_shard, inp in zip(
+            moe_gate_shards, gate_broadcasts, strict=False
+        ):
+            gate_outputs.extend(moe_gate_shard(inp))
+        gate_graph.output(*gate_outputs)
+
+    gate_model = session.load(
+        gate_graph, weights_registry=moe_gate.state_dict()
+    )
+
+    return CompiledAllreduceEPModels(
+        moe_model=moe_model,
+        gate_model=gate_model,
+        ep_comm_init=ep_comm_init,
+        signal_buffers=signals.buffers(),
+        devices=devices,
+    )
+
+
+@pytest.fixture(scope="module")
+def compiled_allreduce_ep_models(
+    moe_weights: dict[str, torch.Tensor],
+) -> CompiledAllreduceEPModels | None:
+    """Compile allreduce EP MoE and MoEGate graphs once.
+
+    Returns None when hardware requirements are not met.
+    """
+    return _build_compiled_allreduce_ep_models(moe_weights)

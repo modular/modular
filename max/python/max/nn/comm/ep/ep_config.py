@@ -80,22 +80,45 @@ class EPConfig:
     fused_shared_expert: bool = False
     """Whether to fuse the shared expert computation with the routed experts."""
 
+    use_allreduce: bool = False
+    """Whether to use allreduce for the cross-device communication."""
+
     def estimate_memory_usage(self) -> int:
         """Estimate the EP communication memory usage per device per buffer group.
 
         Returns:
             Estimated memory usage in bytes per device per buffer group.
         """
+        # If we use allreduce as communication backend, the EP kernels are only
+        # used to route token within the current device. Hence, we only need to
+        # allocate the memory for the local experts.
+        _n_experts = (
+            self.n_experts // self.n_nodes
+            if self.use_allreduce
+            else self.n_experts
+        )
         return estimate_ep_memory_usage(
             hidden_size=self.hidden_size,
             dispatch_dtype=self.dispatch_dtype,
             combine_dtype=self.combine_dtype,
             max_tokens_per_rank=self.max_tokens_per_rank,
-            n_experts=self.n_experts,
+            n_experts=_n_experts,
             n_nodes=self.n_nodes,
             n_gpus_per_node=self.n_gpus_per_node,
             top_k=self.top_k,
+            use_allreduce=self.use_allreduce,
         )
+
+    def get_max_recv_tokens(self) -> int:
+        """Get the maximum number of tokens that can be received by a single device."""
+        n_ranks = self.n_gpus_per_node * self.n_nodes
+        n_local_experts = self.n_experts // n_ranks
+        if self.use_allreduce:
+            return self.max_tokens_per_rank * min(n_local_experts, self.top_k)
+        else:
+            return self.max_tokens_per_rank * min(
+                self.n_experts, n_ranks * self.top_k
+            )
 
     def __post_init__(self):
         if self.dispatch_dtype != DType.bfloat16:
@@ -121,6 +144,11 @@ class EPConfig:
                     f"Unsupported dispatch dtype: {self.dispatch_dtype}"
                 )
 
+        if self.use_allreduce and self.n_nodes > 1:
+            raise ValueError(
+                "Using allreduce as communication backend is not supported when n_nodes > 1"
+            )
+
 
 def estimate_ep_memory_usage(
     *,
@@ -132,6 +160,7 @@ def estimate_ep_memory_usage(
     n_nodes: int,
     n_gpus_per_node: int,
     top_k: int,
+    use_allreduce: bool = False,
 ) -> int:
     """Estimate the EP communication memory usage per device per buffer group.
 
@@ -148,6 +177,8 @@ def estimate_ep_memory_usage(
         n_nodes: Total number of nodes in the distributed setup.
         n_gpus_per_node: Number of GPUs available per node.
         top_k: Number of experts each token is routed to.
+        use_allreduce: Whether allreduce is used for cross-device communication.
+            When True, dispatch/combine buffers are sized for local experts only.
 
     Returns:
         Total estimated memory usage in bytes per device per buffer group.
@@ -162,9 +193,16 @@ def estimate_ep_memory_usage(
         else:
             return n_elems * dtype.size_in_bytes
 
+    n_local_experts = n_experts // (n_gpus_per_node * n_nodes)
     d_token_size = _n_elems_to_bytes(dispatch_dtype, hidden_size)
     dispatch_send_buf_size = max_tokens_per_rank * d_token_size
-    dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
+    dispatch_recv_buf_size: int
+    if not use_allreduce:
+        dispatch_recv_buf_size = n_experts * max_tokens_per_rank * d_token_size
+    else:
+        dispatch_recv_buf_size = (
+            n_local_experts * max_tokens_per_rank * d_token_size
+        )
 
     c_token_size = hidden_size * combine_dtype.size_in_bytes
     # When all the devices are on the same node, we skip the combine send buffer

@@ -204,10 +204,15 @@ class EPBatchManager:
         Returns:
             list[BufferType]: List of buffer types for atomic counters.
         """
+        n_experts = (
+            self.config.n_experts // self.config.n_gpus_per_node
+            if self.config.use_allreduce
+            else self.config.n_experts
+        )
         return [
             BufferType(
                 DType.int32,
-                [get_ep_local_sync_counters_size(self.config.n_experts)],
+                [get_ep_local_sync_counters_size(n_experts)],
                 device=DeviceRef.GPU(i % self.config.n_gpus_per_node),
             )
             for i in range(NUM_GROUPS * self.config.n_gpus_per_node)
@@ -622,6 +627,7 @@ class EPBatchManager:
         input_tokens: TensorValue,
         router_weight: TensorValue,
         device_id: int,
+        topk_ids: TensorValue | None = None,
     ) -> TensorValue:
         """Execute fused Expert Parallelism token combine (async + wait).
 
@@ -643,6 +649,8 @@ class EPBatchManager:
             router_weight: Router weights for the current device.
                 A TensorValue with shape (num_local_tokens, top_k).
             device_id: Device ID for the current device.
+            topk_ids: Top-k expert IDs for the current device. Need to be
+                provided for allreduce mode.
 
         Returns:
             Final output tensor with shape (num_local_tokens, hidden_size).
@@ -671,6 +679,7 @@ class EPBatchManager:
             self.config,
             dispatch_dim,
             router_weight,
+            topk_ids=topk_ids,
         )
 
         # Reset src_info to None to avoid reusing it for the next batch
@@ -714,10 +723,13 @@ class EPCommInitializer:
             config: EP configuration.
         """
         self.config = config
-        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
-        self.atomic_counter_size = get_ep_local_sync_counters_size(
-            self.config.n_experts
+        n_experts = (
+            config.n_experts // config.n_gpus_per_node
+            if config.use_allreduce
+            else config.n_experts
         )
+        # Allocated based on the EPLocalSyncCounters struct in ep_comm.mojo
+        self.atomic_counter_size = get_ep_local_sync_counters_size(n_experts)
 
         # Create atomic counters for each GPU in each buffer group
         self.atomic_counters = [

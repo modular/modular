@@ -42,13 +42,26 @@ NVFP4_MN_GROUP_SIZE = 128
 
 
 def _ep_dispatch_output_types(
-    max_recv_tokens: int,
-    token_last_dim: int,
-    n_local_experts: int,
     config: EPConfig,
     device_ref: DeviceRef,
 ) -> list[TensorType]:
     """Returns the output types for the EP dispatch kernel."""
+    n_ranks = config.n_gpus_per_node * config.n_nodes
+    n_local_experts = config.n_experts // n_ranks
+
+    max_recv_tokens = config.get_max_recv_tokens()
+
+    if config.fused_shared_expert:
+        max_recv_tokens += config.max_tokens_per_rank
+        n_local_experts += 1
+
+    token_last_dim = config.hidden_size
+    if (
+        config.dispatch_quant_config is not None
+        and config.dispatch_quant_config.is_fp4
+    ):
+        token_last_dim //= 2
+
     output_tokens_type = TensorType(
         dtype=config.dispatch_dtype,
         shape=[max_recv_tokens, token_last_dim],
@@ -121,6 +134,32 @@ def _ep_dispatch_output_types(
     ]
 
 
+def _ep_common_parameters(
+    config: EPConfig,
+) -> dict[str, bool | int | str | DType]:
+    """Returns the common parameters for the EP kernels."""
+    if config.use_allreduce:
+        # When using allreduce as communication backend, the EP kernels are only
+        # used to route token within the current device. Hence, It will only see
+        # the local experts.
+        return {
+            "hidden_size": config.hidden_size,
+            "top_k": config.top_k,
+            "n_experts": config.n_experts // config.n_gpus_per_node,
+            "max_token_per_rank": config.max_tokens_per_rank,
+            "n_gpus_per_node": 1,
+            "n_nodes": 1,
+        }
+    return {
+        "hidden_size": config.hidden_size,
+        "top_k": config.top_k,
+        "n_experts": config.n_experts,
+        "max_token_per_rank": config.max_tokens_per_rank,
+        "n_gpus_per_node": config.n_gpus_per_node,
+        "n_nodes": config.n_nodes,
+    }
+
+
 def call_ep_init(
     atomic_counter_group_0: BufferValue,
     atomic_counter_group_1: BufferValue,
@@ -147,16 +186,10 @@ def call_ep_init(
         - my_rank: TensorValue containing the rank of the current GPU. The
             tensor has shape [1,].
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "dispatch_dtype": config.dispatch_dtype,
-        "combine_dtype": config.combine_dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-    }
+    parameters = _ep_common_parameters(config)
+    parameters["dispatch_dtype"] = config.dispatch_dtype
+    parameters["combine_dtype"] = config.combine_dtype
+
     if config.dispatch_quant_config is not None:
         if config.dispatch_quant_config.is_nvfp4:
             parameters["dispatch_fmt_str"] = "NVFP4"
@@ -232,15 +265,9 @@ def call_ep_dispatch_async(
         This is a non-blocking operation. Call call_ep_dispatch_wait() to wait
         for completion and collect the dispatched tokens.
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "dispatch_dtype": config.dispatch_dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-    }
+    parameters = _ep_common_parameters(config)
+    parameters["dispatch_dtype"] = config.dispatch_dtype
+
     op_name = "ep.dispatch_async"
     input_vals: list[Value[Any]] = [
         atomic_counter,
@@ -327,20 +354,7 @@ def call_ep_dispatch_wait(
         remote devices. For Quantized dispatch format, the output will also
         include the aggregated scales as the second element of the tuple.
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-    }
-
-    max_recv_tokens = config.max_tokens_per_rank * min(
-        config.n_experts, config.n_gpus_per_node * config.n_nodes * config.top_k
-    )
-    n_ranks = config.n_gpus_per_node * config.n_nodes
-    n_local_experts = config.n_experts // n_ranks
+    parameters = _ep_common_parameters(config)
     device_ref = atomic_counter.device
 
     op_name = "ep.dispatch_wait"
@@ -356,23 +370,8 @@ def call_ep_dispatch_wait(
         )
         op_name += ".fused_shared_expert"
         input_vals.append(input_tokens)
-        max_recv_tokens += config.max_tokens_per_rank
-        n_local_experts += 1
 
-    output_last_dim = config.hidden_size
-    if (
-        config.dispatch_quant_config is not None
-        and config.dispatch_quant_config.is_fp4
-    ):
-        output_last_dim //= 2
-
-    output_vals = _ep_dispatch_output_types(
-        max_recv_tokens,
-        output_last_dim,
-        n_local_experts,
-        config,
-        device_ref,
-    )
+    output_vals = _ep_dispatch_output_types(config, device_ref)
 
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
@@ -452,15 +451,8 @@ def call_ep_combine_async(
         This is a non-blocking operation. Call call_ep_combine_wait() to wait
         for completion and collect the final outputs.
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "combine_dtype": config.combine_dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-    }
+    parameters = _ep_common_parameters(config)
+    parameters["combine_dtype"] = config.combine_dtype
 
     op_name = "ep.combine_async"
     out_types: list[TensorType] = []
@@ -539,15 +531,8 @@ def call_ep_combine_wait(
         This function blocks until all expected expert outputs have been
         received from remote devices.
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "combine_dtype": config.combine_dtype,
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-    }
+    parameters = _ep_common_parameters(config)
+    parameters["combine_dtype"] = config.combine_dtype
 
     device_ref = atomic_counter.device
 
@@ -628,27 +613,13 @@ def call_ep_dispatch(
         For Quantized dispatch format, the output will also include the
         aggregated scales as the second element of the tuple.
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-        "fused_shared_expert": config.fused_shared_expert,
-    }
+    parameters = _ep_common_parameters(config)
+    parameters["fused_shared_expert"] = config.fused_shared_expert
+    parameters["skip_a2a"] = config.use_allreduce
+    parameters["allreduce_world_size"] = config.n_gpus_per_node
 
     device_ref = atomic_counter.device
     op_name = "ep.dispatch"
-    max_recv_tokens = config.max_tokens_per_rank * min(
-        config.n_experts, config.n_gpus_per_node * config.n_nodes * config.top_k
-    )
-    n_ranks = config.n_gpus_per_node * config.n_nodes
-    n_local_experts = config.n_experts // n_ranks
-
-    if config.fused_shared_expert:
-        max_recv_tokens += config.max_tokens_per_rank
-        n_local_experts += 1
 
     input_vals: list[Value[Any]] = [
         atomic_counter,
@@ -659,20 +630,7 @@ def call_ep_dispatch(
         recv_count_ptrs,
     ]
 
-    token_last_dim = config.hidden_size
-    if (
-        config.dispatch_quant_config is not None
-        and config.dispatch_quant_config.is_fp4
-    ):
-        token_last_dim //= 2
-
-    output_vals = _ep_dispatch_output_types(
-        max_recv_tokens,
-        token_last_dim,
-        n_local_experts,
-        config,
-        device_ref,
-    )
+    output_vals = _ep_dispatch_output_types(config, device_ref)
 
     if config.dispatch_quant_config is not None:
         quant_config = config.dispatch_quant_config
@@ -725,37 +683,16 @@ def call_distributed_ep_dispatch(
         the quantization format (4 for BF16, 5 for FP8/MXFP4, 6 for NVFP4).
     """
     num_devices = len(input_tokens)
-    max_recv_tokens = config.max_tokens_per_rank * min(
-        config.n_experts,
-        config.n_gpus_per_node * config.n_nodes * config.top_k,
-    )
-    n_ranks = config.n_gpus_per_node * config.n_nodes
-    n_local_experts = config.n_experts // n_ranks
-
-    if config.fused_shared_expert:
-        max_recv_tokens += config.max_tokens_per_rank
-        n_local_experts += 1
 
     quant_config = config.dispatch_quant_config
     is_nvfp4 = quant_config is not None and quant_config.is_nvfp4
     is_mxfp4 = quant_config is not None and quant_config.is_mxfp4
-    is_fp4 = quant_config is not None and quant_config.is_fp4
     is_fp8 = quant_config is not None and config.dispatch_dtype.is_float8()
-
-    token_last_dim = config.hidden_size
-    if is_fp4:
-        token_last_dim //= 2
 
     output_types_per_device: list[list[TensorType]] = []
     for i in range(num_devices):
         device_ref = atomic_counters[i].device
-        types = _ep_dispatch_output_types(
-            max_recv_tokens,
-            token_last_dim,
-            n_local_experts,
-            config,
-            device_ref,
-        )
+        types = _ep_dispatch_output_types(config, device_ref)
         output_types_per_device.append(types)
 
     if is_nvfp4:
@@ -896,6 +833,7 @@ def call_ep_combine(
     config: EPConfig,
     num_tokens: Dim,
     router_weights: TensorValue,
+    topk_ids: TensorValue | None = None,
 ) -> TensorValue:
     """Execute fused Expert Parallelism token combine (async + wait).
 
@@ -939,30 +877,35 @@ def call_ep_combine(
             Shape: (num_tokens, hidden_size)
             Expert outputs arranged back in original token order.
     """
-    parameters: dict[str, bool | int | str | DType] = {
-        "hidden_size": config.hidden_size,
-        "top_k": config.top_k,
-        "n_experts": config.n_experts,
-        "max_token_per_rank": config.max_tokens_per_rank,
-        "n_gpus_per_node": config.n_gpus_per_node,
-        "n_nodes": config.n_nodes,
-        "fused_shared_expert": config.fused_shared_expert,
-    }
+    parameters = _ep_common_parameters(config)
+    parameters["fused_shared_expert"] = config.fused_shared_expert
+    parameters["skip_a2a"] = config.use_allreduce
+
+    op_name = "ep.combine"
+    vals: list[Value[Any]] = [
+        atomic_counter,
+        input_tokens,
+        src_info,
+        send_buf_ptrs,
+        recv_buf_ptrs,
+        recv_count_ptrs,
+        router_weights,
+    ]
+
+    if config.use_allreduce:
+        assert topk_ids is not None, (
+            "Top-k expert IDs are not provided for allreduce mode."
+        )
+        parameters["allreduce_world_size"] = config.n_gpus_per_node
+        op_name += ".skip_a2a"
+        vals.append(topk_ids)
 
     device_ref = atomic_counter.device
 
     result = ops.inplace_custom(
-        "ep.combine",
+        op_name,
         device=device_ref,
-        values=[
-            atomic_counter,
-            input_tokens,
-            src_info,
-            send_buf_ptrs,
-            recv_buf_ptrs,
-            recv_count_ptrs,
-            router_weights,
-        ],
+        values=vals,
         out_types=[
             TensorType(
                 dtype=config.combine_dtype,
