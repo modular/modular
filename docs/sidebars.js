@@ -74,25 +74,12 @@ const maxSidebars = {
           label: 'Overview',
         },
         {
-          label: "Fundamentals",
-          type: "category",
-          collapsed: true,
-          items: [
-            "max/develop/tensors",
-            "max/develop/dtypes",
-            "max/develop/basic-ops",
-            "max/develop/broadcasting",
-            "max/develop/indexing",
-          ],
-        },
-        {
           label: "Graphs",
           type: "category",
           collapsed: true,
           items: [
             "max/develop/graph",
             "max/develop/modules",
-            "max/develop/eager-execution",
           ],
         },
         {
@@ -136,6 +123,19 @@ const maxSidebars = {
               id: "max/develop/custom-kernels-pytorch",
               className: "tutorial-link",
             },
+          ],
+        },
+        {
+          label: "Eager fundamentals",
+          type: "category",
+          collapsed: true,
+          items: [
+            "max/develop/eager-execution",
+            "max/develop/tensors",
+            "max/develop/dtypes",
+            "max/develop/basic-ops",
+            "max/develop/broadcasting",
+            "max/develop/indexing",
           ],
         },
         "max/develop/debugging",
