@@ -42,6 +42,7 @@ from layout import (
     row_major,
 )
 from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from internal_utils import assert_almost_equal
 from nn.conv.conv import conv_gpu
 from nn.conv.conv_utils import elementwise_simd_epilogue_type
@@ -244,6 +245,8 @@ def test_conv2d_1sm[
     act_type: DType,
     filter_type: DType,
     out_type: DType,
+    swizzle: TensorMapSwizzle = TensorMapSwizzle.SWIZZLE_128B,
+    num_pipeline_stages_override: Int = 0,
 ](
     ctx: DeviceContext,
     batch: Int,
@@ -260,6 +263,19 @@ def test_conv2d_1sm[
 
     This uses the same logic as test_conv2d_implicit_im2col but with
     the 1-SM configuration matching the CUTLASS example.
+
+    Parameters:
+        act_type: Activation dtype.
+        filter_type: Filter dtype.
+        out_type: Output dtype.
+        swizzle: Activation/filter TMA swizzle. SWIZZLE_128B requires
+            C*sizeof(dtype) to be 128B-aligned (e.g. bf16 C=64/128).
+            SWIZZLE_64B only requires 64B alignment (e.g. bf16 C=96).
+        num_pipeline_stages_override: If > 0, pin num_pipeline_stages to
+            this value instead of the config's auto-sizer. Needed for the
+            SWIZZLE_64B path (BK=32) because the auto-sizer over-estimates
+            the stage budget there (doesn't account for conv-specific
+            SMEM like SourceTiles). Default 0 = use auto-sizer.
     """
     var problem = Conv2dProblemShape(
         batch=batch,
@@ -283,7 +299,10 @@ def test_conv2d_1sm[
     # The config uses the dtype template parameters, so it works for both BF16 and FP16
     comptime config = Conv2dConfig[
         act_type, filter_type, out_type
-    ].default_bf16_1sm()
+    ].default_bf16_1sm[
+        swizzle=swizzle,
+        num_pipeline_stages_override=num_pipeline_stages_override,
+    ]()
 
     print(
         "[1-SM MODE] batch=",
@@ -1635,6 +1654,168 @@ def main() raises:
         )
 
         # ============================================================
+        # Test 3b: 1-SM mode with SWIZZLE_64B, C_in=96 (bf16)
+        # C_in=96 * 2 bytes = 192 B per row: 64B-aligned but not 128B-aligned.
+        # SWIZZLE_128B cannot represent this row; SWIZZLE_64B can.
+        # BK=32 halves per-stage SMEM, but the auto-sizer currently ignores
+        # conv-specific fixed overhead (SourceTiles) so we pin stages=6.
+        # ============================================================
+        print("--- Test 3b: 1-SM mode, SWIZZLE_64B, C_in=96 (3x3) ---")
+        test_conv2d_1sm[
+            dtype,
+            dtype,
+            DType.bfloat16,
+            swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            num_pipeline_stages_override=6,
+        ](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=96,
+            out_c=128,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # 1x1 pointwise variant at C_in=96 (also routes via SWIZZLE_64B).
+        print("--- Test 3c: 1-SM mode, SWIZZLE_64B, C_in=96 (1x1) ---")
+        test_conv2d_1sm[
+            dtype,
+            dtype,
+            DType.bfloat16,
+            swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            num_pipeline_stages_override=6,
+        ](
+            ctx,
+            batch=1,
+            in_h=32,
+            in_w=32,
+            in_c=96,
+            out_c=128,
+            filter_h=1,
+            filter_w=1,
+            pad_h=0,
+            pad_w=0,
+        )
+
+        # ============================================================
+        # Test 3d: 1-SM, out_c=96 (N-tail), C_in=128 (SWIZZLE_128B)
+        # Exercises TMA OOB handling on the output side:
+        #   - filter TMA zero-fills rows 96..127 on load,
+        #   - output TMA drops stores to cols 96..127.
+        # Grid_y = ceildiv(96, MMA_N=128) = 1; one block handles the tail.
+        # ============================================================
+        print("--- Test 3d: 1-SM mode, out_c=96, C_in=128 (3x3) ---")
+        test_conv2d_1sm[dtype, dtype, DType.bfloat16](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=128,
+            out_c=96,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
+        # Test 3e: 1-SM, out_c=96 AND C_in=96 (both-dim tail on SWIZZLE_64B)
+        # Worst-case shape for the native path: both N and K dims are non-128
+        # aligned. Confirms C_in tail (via SWIZZLE_64B / BK=32) and N tail
+        # (via TMA OOB) compose cleanly.
+        # ============================================================
+        print(
+            "--- Test 3e: 1-SM mode, SWIZZLE_64B, C_in=96, out_c=96 (3x3) ---"
+        )
+        test_conv2d_1sm[
+            dtype,
+            dtype,
+            DType.bfloat16,
+            swizzle=TensorMapSwizzle.SWIZZLE_64B,
+            num_pipeline_stages_override=6,
+        ](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=96,
+            out_c=96,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
+        # Test 3f: 2-SM, out_c=96, C_in=128 via implicit_im2col
+        # MMA_N=256 in 2-SM mode: even more aggressive N-tail (96/256 block)
+        # Tests TMA OOB on the 2-SM dispatch path.
+        # ============================================================
+        print("--- Test 3f: 2-SM mode, out_c=96, C_in=128 (3x3) ---")
+        test_conv2d_implicit_im2col[
+            dtype,
+            dtype,
+            DType.bfloat16,
+        ](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=128,
+            out_c=96,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
+        # Test 3g: 1-SM, C_in=192, out_c=96 (SWIZZLE_128B)
+        # in_c=192 is 128B-aligned but non-power-of-two; K = 192*9 = 1728
+        # is still a multiple of BK=64 (1728/64=27 iterations). Combines
+        # with out_c=96 to cover "larger non-standard in_c with N-tail".
+        # ============================================================
+        print("--- Test 3g: 1-SM mode, C_in=192, out_c=96 (3x3) ---")
+        test_conv2d_1sm[dtype, dtype, DType.bfloat16](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=192,
+            out_c=96,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
+        # Test 3h: 1-SM, C_in=192, out_c=192 (SWIZZLE_128B)
+        # out_c=192 spans >1 MMA_N block in 1-SM mode:
+        #   grid_y = ceildiv(192, MMA_N=128) = 2.
+        # Block 0 covers N=[0, 128); block 1 covers N=[128, 256) with cols
+        # 192..255 being TMA-dropped tail (64 cols of OOB per output tile).
+        # Validates that multi-block N with a per-block-partial tail works.
+        # ============================================================
+        print("--- Test 3h: 1-SM mode, C_in=192, out_c=192 (3x3) ---")
+        test_conv2d_1sm[dtype, dtype, DType.bfloat16](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=192,
+            out_c=192,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
         # Test 4: Epilogue lambda (bias addition)
         # Tests the epilogue fusion infrastructure
         # ============================================================
@@ -1689,6 +1870,28 @@ def main() raises:
         )
 
         # ============================================================
+        # Test 6b: Conv2d + bias fusion at out_c=96 (1-SM)
+        # Exercises the TileWriter's compute-lambda path with a
+        # non-MMA_N-aligned bias tensor. Bias has exactly out_c=96
+        # elements; safety relies on the TMA-store dropping OOB cols
+        # (the compute-lambda store goes through the TMA path, not the
+        # direct-store path).
+        # ============================================================
+        print("--- Test 6b: Conv2d + bias fusion, out_c=96 (1-SM) ---")
+        test_conv2d_bias_fusion[dtype, use_1sm=True](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=128,
+            out_c=96,
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
         # Test 7: Conv2d with residual API
         # Tests the conv2d_fprop_with_residual API
         # ============================================================
@@ -1700,6 +1903,26 @@ def main() raises:
             in_w=16,
             in_c=128,  # Must be multiple of 128 for 1-SM
             out_c=128,  # Must be multiple of 128 for 1-SM
+            filter_h=3,
+            filter_w=3,
+            pad_h=1,
+            pad_w=1,
+        )
+
+        # ============================================================
+        # Test 7b: Conv2d residual API at out_c=96
+        # Source-C TMA load zero-fills cols 96..127; add to accumulator;
+        # output TMA drops the tail. Validates residual add semantics
+        # when the residual tensor is itself non-MMA_N-aligned.
+        # ============================================================
+        print("--- Test 7b: Conv2d with residual API, out_c=96 ---")
+        test_conv2d_residual_api[dtype](
+            ctx,
+            batch=1,
+            in_h=16,
+            in_w=16,
+            in_c=128,
+            out_c=96,
             filter_h=3,
             filter_w=3,
             pad_h=1,
@@ -1729,6 +1952,30 @@ def main() raises:
         ](ctx)
         test_conv_gpu_scale_epilogue[
             1, 16, 32, 512, 3, 3, 512, 1, "3x3_nonsquare"
+        ](ctx)
+        # out_c=96 via the high-level conv_gpu entry point. This is the
+        # end-to-end check that the relaxed gate in conv.mojo (previously
+        # `out_c % 128 == 0`, now `out_c * sizeof % 4 == 0`) actually routes
+        # the non-MMA_N-aligned N through the SM100 path rather than the
+        # im2col_matmul fallback.
+        test_conv_gpu_scale_epilogue[
+            1, 16, 16, 128, 3, 3, 96, 1, "3x3_128to96"
+        ](ctx)
+        test_conv_gpu_scale_epilogue[1, 16, 16, 96, 3, 3, 96, 1, "3x3_96to96"](
+            ctx
+        )
+        # in_c=192 is 128B-aligned (192*2=384B = 3*128) so uses SWIZZLE_128B
+        # with BK=64. K=192*9=1728 is a multiple of BK. Combined with
+        # out_c=96 this exercises an in_c > 128 non-power-of-two case.
+        test_conv_gpu_scale_epilogue[
+            1, 16, 16, 192, 3, 3, 96, 1, "3x3_192to96"
+        ](ctx)
+        # in_c=192, out_c=192: out_c > MMA_N=128 so grid_y spans 2 blocks
+        # in 1-SM mode, the second of which has a 64-col N-tail dropped by
+        # TMA. Exercises the multi-N-block partial-tail path through the
+        # full conv_gpu dispatch.
+        test_conv_gpu_scale_epilogue[
+            1, 16, 16, 192, 3, 3, 192, 1, "3x3_192to192"
         ](ctx)
 
         # ============================================================

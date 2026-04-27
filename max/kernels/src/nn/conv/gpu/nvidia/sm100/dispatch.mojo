@@ -21,8 +21,10 @@ dtype inside a @parameter if guard.
 
 from std.collections import OptionalReg
 from std.math import ceildiv
+from std.sys import size_of
 from std.gpu import global_idx
 from std.gpu.host import DeviceContext
+from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from layout import Idx, TileTensor, row_major
 from std.utils.index import IndexList
 from linalg.utils import elementwise_epilogue_type
@@ -225,26 +227,53 @@ def dispatch_sm100_conv2d[
             row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
         )
 
-        comptime config = Conv2dConfig[
-            input_type, filter_type, output_type
-        ].default_bf16_1sm()
+        # Pick activation/filter swizzle based on C_in alignment. SWIZZLE_128B
+        # requires the inner C-row to be 128B-aligned; SWIZZLE_64B relaxes that
+        # to 64B (e.g. covers bf16 C_in=96 → 192 B per row). Each path
+        # compiles a separately-instantiated kernel.
+        var in_c_bytes = in_c * size_of[input_type]()
 
-        comptime if has_residual:
-            var src_tt = TileTensor(
-                # SAFETY: set when has_residual == True
-                source_ptr.unsafe_value(),
-                row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
-            )
-            conv2d_fprop_with_residual[
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-                has_residual=True,
-            ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
+        @parameter
+        @always_inline
+        def _launch[
+            swizzle: TensorMapSwizzle,
+            num_pipeline_stages_override: Int = 0,
+        ]() raises:
+            comptime config = Conv2dConfig[
+                input_type, filter_type, output_type
+            ].default_bf16_1sm[
+                swizzle=swizzle,
+                num_pipeline_stages_override=num_pipeline_stages_override,
+            ]()
+
+            comptime if has_residual:
+                var src_tt = TileTensor(
+                    # SAFETY: set when has_residual == True
+                    source_ptr.unsafe_value(),
+                    row_major(Idx(batch), Idx(out_h), Idx(out_w), Idx(out_c)),
+                )
+                conv2d_fprop_with_residual[
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                    has_residual=True,
+                ](out_tt, act_tt, filter_tt, src_tt, beta, problem, ctx)
+            else:
+                conv2d_fprop[
+                    config=config,
+                    elementwise_lambda_fn=elementwise_lambda_fn,
+                ](out_tt, act_tt, filter_tt, problem, ctx)
+
+        if in_c_bytes % 128 == 0:
+            _launch[TensorMapSwizzle.SWIZZLE_128B]()
         else:
-            conv2d_fprop[
-                config=config,
-                elementwise_lambda_fn=elementwise_lambda_fn,
-            ](out_tt, act_tt, filter_tt, problem, ctx)
+            # Dispatch gate guarantees in_c_bytes % 64 == 0 when we reach here.
+            # BK=32 (half of BK=64) makes the auto-sizer over-estimate stages
+            # (e.g. bf16: predicts 13 where <=6 fit). Pin to 6 as a safe
+            # override matching what the SMEM budget actually allows.
+            _launch[
+                TensorMapSwizzle.SWIZZLE_64B,
+                num_pipeline_stages_override=6,
+            ]()
 
         # Synchronize before freeing the transposed filter buffer to
         # ensure the async conv2d kernel has finished reading from it.

@@ -869,7 +869,11 @@ def test_tma_umma[
 def main() raises:
     with DeviceContext() as ctx:
         comptime for dtype in [DType.bfloat16, DType.float8_e4m3fn]:
-            comptime for swizzle in [TensorMapSwizzle.SWIZZLE_128B]:
+            comptime for swizzle in [
+                TensorMapSwizzle.SWIZZLE_32B,
+                TensorMapSwizzle.SWIZZLE_64B,
+                TensorMapSwizzle.SWIZZLE_128B,
+            ]:
                 comptime for BK_scale in range(0, 2):
                     comptime BK = (swizzle.bytes() // size_of[dtype]()) * (
                         1 + BK_scale
