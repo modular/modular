@@ -148,10 +148,10 @@ lit.fn @ref_kgen_ptr<life: origin<1>, ilife: origin<0>>
 
 // CHECK-LABEL: @ref_pack_from_pointer_pack
 kgen.generator @ref_pack_from_pointer_pack(
-    %pack: !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>) {
-  // CHECK: %0 = lit.ref.pack.from_pointer_pack %arg0 : <[pointer<index, 4>, pointer<f32, 4>]> -> <:param_list<type> [index, f32], imm #lit.any.origin, 4>
+    %pack: !kgen.struct<(pointer<index, 4>, pointer<f32, 4>) isParamPack>) {
+  // CHECK: %0 = lit.ref.pack.from_pointer_pack %arg0 : <(pointer<index, 4>, pointer<f32, 4>) isParamPack> -> <:param_list<type> [index, f32], imm #lit.any.origin, 4>
   %0 = lit.ref.pack.from_pointer_pack %pack
-    : !kgen.pack<[!kgen.pointer<index, 4>, !kgen.pointer<f32, 4>]>
+    : !kgen.struct<(pointer<index, 4>, pointer<f32, 4>) isParamPack>
    -> !lit.ref.pack<:param_list<!kgen.type> [index, f32], imm #lit.any.origin, 4>
   kgen.return
 }

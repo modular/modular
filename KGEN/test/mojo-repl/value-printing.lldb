@@ -82,7 +82,7 @@ z.append(2)
 z.append(3)
 
 
-# CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = ([0] = 1, [1] = [1, 2, 3, 0]) {
+# CHECK: (Tuple[Int, SIMD[DType.int8, 4]]) a = {
 # CHECK:   (Int) [0] = 1
 # CHECK:   (SIMD[DType.int8, 4]) [1] = [1, 2, 3, 0]
 # CHECK: }

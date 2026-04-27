@@ -35,6 +35,13 @@ namespace M::KGEN {
 #include "KGEN/KGENPasses.h.inc"
 } // namespace M::KGEN
 
+static StructType getIfParamPack(Type type) {
+  if (auto packStruct = ::dyn_cast<StructType>(type))
+    if (packStruct.getIsParamPack())
+      return packStruct;
+  return {};
+}
+
 /// If the specified value has uses, replace them with a dummy value.
 static void replaceUsesWithDummy(Value v, ImplicitLocOpBuilder &b,
                                  TypedAttr value = {}) {
@@ -74,7 +81,8 @@ static Type lowerPointerType(Type type) {
 /// Return the pointer to the given type. For now, only support struct types
 /// with a pointer, but it can be extended if needed.
 static Type lowerTypeForGPU(Type type) {
-  if (!isa<StructType>(type))
+  auto structType = dyn_cast<StructType>(type);
+  if (!structType || structType.getIsParamPack())
     return nullptr;
 
   bool hasPointer = false;
@@ -121,7 +129,7 @@ public:
   virtual void applyPointerTransform(unsigned operandIndex, Type elType) = 0;
   /// respond to a transform from PACK<X,Y> to X,Y
   virtual void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
-                                  PackType type) = 0;
+                                  StructType packStruct) = 0;
   /// respond to a transform from X to PTR<X>
   virtual void applyValueTransform(unsigned operandIndex, Type ptrType) = 0;
   Location addDI(Location loc);
@@ -140,7 +148,7 @@ public:
 
   void applyPointerTransform(unsigned operandIndex, Type elType) override;
   void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
-                          PackType type) override;
+                          StructType packStruct) override;
   void applyValueTransform(unsigned operandIndex, Type ptrType) override;
   ImplicitLocOpBuilder &b;
   Operation *callOp;
@@ -161,7 +169,7 @@ public:
   void performThrowNeverElimination(unsigned operandIndex) override;
   void applyPointerTransform(unsigned operandIndex, Type elType) override;
   void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
-                          PackType type) override;
+                          StructType packStruct) override;
   void applyValueTransform(unsigned operandIndex, Type ptrType) override;
   FuncType oldSig;
   SmallVector<Type> newInputs;
@@ -176,7 +184,7 @@ public:
   Type typeOfValueAt(unsigned operandIndex) override;
   void applyPointerTransform(unsigned operandIndex, Type elType) override;
   void applyPackTransform(unsigned operandIndex, ArrayRef<Type> types,
-                          PackType type) override;
+                          StructType packStruct) override;
   void applyValueTransform(unsigned operandIndex, Type ptrType) override;
   ImplicitLocOpBuilder &b;
 
@@ -264,14 +272,14 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
                             argConventionIndex, ++depth);
   }
 
-  /// LOWER PACK
-  auto packType = dyn_cast<PackType>(type);
-  if (packType && !(convention == ArgConvention::OwnedReg ||
-                    convention == ArgConvention::ReadReg))
-    return;
+  /// LOWER PACK. Look for a kgen.struct with the "isParamPack" attribute.
+  if (auto packStruct = getIfParamPack(type)) {
+    if (convention != ArgConvention::OwnedReg &&
+        convention != ArgConvention::ReadReg)
+      return;
 
-  if (packType) {
-    auto variadic = cast_or_null<ParamListAttr>(packType.getVariadic());
+    auto variadic =
+        cast_or_null<ParamListAttr>(packStruct.getElementTypesVariadic());
     assert(variadic && "expected variadic pack type");
     SmallVector<Type> types;
     for (auto member : variadic.getValues()) {
@@ -280,7 +288,7 @@ static void transformNonResultValue(Transform *transform, unsigned operandIndex,
         memberType = typeValue.getMlirType();
       types.push_back(memberType);
     }
-    transform->applyPackTransform(operandIndex, types, packType);
+    transform->applyPackTransform(operandIndex, types, packStruct);
     insertAndUpdateConventions(conventions, argConventionIndex, types, depth);
     transformNonResultValue(transform, operandIndex, conventions,
                             argConventionIndex, ++depth);
@@ -363,7 +371,7 @@ void FuncTransform::applyValueTransform(unsigned operandIndex, Type ptrType) {
 }
 
 void FuncTransform::applyPackTransform(unsigned operandIndex,
-                                       ArrayRef<Type> types, PackType type) {
+                                       ArrayRef<Type> types, StructType type) {
   auto point = b.saveInsertionPoint();
   auto resetState = llvm::scope_exit([&] { b.restoreInsertionPoint(point); });
   Location originalLocation = block.getArgument(operandIndex).getLoc();
@@ -373,7 +381,7 @@ void FuncTransform::applyPackTransform(unsigned operandIndex,
   for (auto member : types)
     newArgs.push_back(block.insertArgument(++curr, member, originalLocation));
   auto pack =
-      KGEN::PackCreateOp::create(b, addDI(originalLocation), type, newArgs);
+      KGEN::StructCreateOp::create(b, addDI(originalLocation), type, newArgs);
   block.getArgument(operandIndex).replaceAllUsesWith(pack);
   if (newArgs.empty())
     block.insertArgument(++curr, KGEN::NoneType::get(type.getContext()),
@@ -435,19 +443,19 @@ void CallsiteTransform::applyValueTransform(unsigned operandIndex,
   callOp->setOperand(operandIndex, newArg);
 }
 
-/// Emit PackExtractOp for each element of a pack-typed value.
+/// Emit StructExtractOp for each element of a pack-typed value.
 static SmallVector<Value> emitPackExtracts(OpBuilder &builder, Location loc,
                                            Value pack, ArrayRef<Type> types) {
   SmallVector<Value> results;
   for (auto [i, type] : llvm::enumerate(types))
-    results.push_back(PackExtractOp::create(
+    results.push_back(StructExtractOp::create(
         builder, loc, type, pack, IntegerAttr::get(builder.getIndexType(), i)));
   return results;
 }
 
 void CallsiteTransform::applyPackTransform(unsigned operandIndex,
                                            ArrayRef<Type> types,
-                                           PackType type) {
+                                           StructType packStruct) {
   b.setInsertionPoint(callOp);
   Value operand = callOp->getOperands()[operandIndex];
   SmallVector<Value> newArgs =
@@ -492,9 +500,9 @@ void SignatureTransform::applyValueTransform(unsigned operandIndex,
 
 void SignatureTransform::applyPackTransform(unsigned operandIndex,
                                             ArrayRef<Type> types,
-                                            PackType type) {
+                                            StructType packStruct) {
   if (types.empty()) {
-    newInputs[operandIndex] = KGEN::NoneType::get(type.getContext());
+    newInputs[operandIndex] = KGEN::NoneType::get(packStruct.getContext());
     return;
   }
   auto eraseIt = newInputs.begin() + operandIndex;
@@ -829,19 +837,19 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
 /// pack(*args))`) are fully expanded so that every operand passed to the
 /// external call is a non-pack value.
 static void flattenPackOperand(OpBuilder &builder, Location loc, Value pack,
-                               PackType packTy,
+                               StructType packStruct,
                                SmallVectorImpl<Value> &results) {
-  ParamListAttr variadic = packTy.getVariadicIfResolved();
+  ParamListAttr variadic = packStruct.getVariadicIfResolved();
   assert(variadic && "unresolved variadic pack on pop.external_call");
 
   for (auto [i, typeExpr] : llvm::enumerate(variadic.getValues())) {
     Type elemTy = cast<TypeParamAttr>(typeExpr).getMlirType();
     Value extracted =
-        PackExtractOp::create(builder, loc, elemTy, pack,
-                              IntegerAttr::get(builder.getIndexType(), i));
+        StructExtractOp::create(builder, loc, elemTy, pack,
+                                IntegerAttr::get(builder.getIndexType(), i));
 
-    if (auto nestedPackTy = dyn_cast<PackType>(elemTy))
-      flattenPackOperand(builder, loc, extracted, nestedPackTy, results);
+    if (auto nestedPackStruct = getIfParamPack(elemTy))
+      flattenPackOperand(builder, loc, extracted, nestedPackStruct, results);
     else
       results.push_back(extracted);
   }
@@ -854,14 +862,13 @@ static void lowerExternalCallOpImpl(POP::ExternalCallOp op) {
   OpBuilder builder(op);
 
   for (Value operand : op.getOperands()) {
-    auto packTy = dyn_cast<PackType>(operand.getType());
-    if (!packTy) {
+    if (auto packTy = getIfParamPack(operand.getType())) {
+      changed = true;
+      flattenPackOperand(builder, op.getLoc(), operand, packTy, newOperands);
+    } else {
       newOperands.push_back(operand);
       continue;
     }
-
-    changed = true;
-    flattenPackOperand(builder, op.getLoc(), operand, packTy, newOperands);
   }
 
   if (changed)

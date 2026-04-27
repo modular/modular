@@ -1227,21 +1227,21 @@ PackGEPOp::parametric_interpret(ArrayRef<Attribute> operands,
 
 ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
                                          InterpreterState &state) {
-  if (auto pack = dyn_cast<PackAttr>(operands[0])) {
+  if (auto structAttr = dyn_cast<StructAttr>(operands[0])) {
     auto variadic = getType().getVariadicIfResolved();
     if (!variadic)
       return ErrorTree(getLoc(), "unknown type list");
     ArrayRef<TypedAttr> typeElts = variadic.getValues();
 
     SmallVector<TypedAttr> values;
-    for (auto [ptr, type] : llvm::zip(pack.getValues(), typeElts)) {
+    for (auto [ptr, type] : llvm::zip(structAttr.getValues(), typeElts)) {
       ErrorOr<Attribute> result = state.readAttributeFromPointer(
           ptr, cast<TypeParamAttr>(type).getMlirType());
       if (result.isError())
         return ErrorTree(getLoc(), result.takeError());
       values.push_back(cast<TypedAttr>(result.takeValue()));
     }
-    state.mapResults(PackAttr::get(values, getType()));
+    state.mapResults(StructAttr::get(values, getType()));
     return success();
   }
   return ErrorTree(getLoc(), "non-constant inputs");
@@ -1250,23 +1250,23 @@ ErrorTreeOrSuccess PackLoadOp::interpret(ArrayRef<Attribute> operands,
 ErrorTreeOrSuccess
 PackLoadOp::parametric_interpret(ArrayRef<Attribute> operands,
                                  ParametricInterpreterState &state) {
-  if (auto pack = dyn_cast<PackAttr>(operands[0])) {
-    auto packType = cast<PackType>(state.getReboundType(getType()));
-    auto variadic = packType.getVariadicIfResolved();
+  if (auto structAttr = dyn_cast<StructAttr>(operands[0])) {
+    auto structType = cast<StructType>(state.getReboundType(getType()));
+    auto variadic = structType.getVariadicIfResolved();
 
     if (!variadic)
       return ErrorTree(getLoc(), "unknown type list");
     ArrayRef<TypedAttr> typeElts = variadic.getValues();
 
     SmallVector<TypedAttr> values;
-    for (auto [ptr, type] : llvm::zip(pack.getValues(), typeElts)) {
+    for (auto [ptr, type] : llvm::zip(structAttr.getValues(), typeElts)) {
       ErrorOr<Attribute> result = state.readAttributeFromPointer(
           ptr, cast<TypeParamAttr>(type).getMlirType());
       if (result.isError())
         return ErrorTree(getLoc(), result.takeError());
       values.push_back(cast<TypedAttr>(result.takeValue()));
     }
-    state.mapResults(PackAttr::get(values, packType));
+    state.mapResults(StructAttr::get(values, structType));
     return success();
   }
   return ErrorTree(getLoc(), "non-constant inputs");

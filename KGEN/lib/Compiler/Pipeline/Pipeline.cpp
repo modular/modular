@@ -199,8 +199,6 @@ void KGEN::buildFirstOptPipeline(mlir::PassManager &pm,
     pm.addPass(createSimplifyCF());
     pm.addPass(createSROA());
     pm.addPass(createMem2Reg());
-    // NOTE: Super important that ConditionPropagation pattern runs before
-    // HoistTrivialInvariants, or else structural conditionals are lost.
     pm.addPass(createCanonicalizer());
     pm.addPass(mlir::createCSEPass());
     pm.addPass(createHoistTrivialInvariants());

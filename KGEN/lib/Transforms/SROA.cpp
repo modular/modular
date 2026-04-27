@@ -657,7 +657,7 @@ void SROAPass::runOnOperation() {
       } else if (auto structTy =
                      dyn_cast<StructType>(ptrType.getElementType())) {
         auto elementTypes = structTy.getElementTypes();
-        if (!elementTypes)
+        if (!elementTypes || structTy.getIsParamPack())
           return;
         ReplaceStructs replacer{builder,        alloc,        structTy,
                                 maxNumElements, leafReplacer, valueMemCache};

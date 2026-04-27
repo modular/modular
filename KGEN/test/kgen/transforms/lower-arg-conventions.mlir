@@ -304,8 +304,8 @@ kgen.func @two_call_indirect(%arg0: !kgen.generator<(!kgen.pointer<index> byref_
 // CHECK-LABEL: kgen.func @lower_args1
 // CHECK-SAME: (%arg0: index, %arg1: i1, %arg2: index, %arg3: i1)
 kgen.func @lower_args1(
- %arg0: !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> read_mem
-) -> !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> {
+ %arg0: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> read_mem
+) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> {
     // CHECK: [[V0:%.*]] = pop.stack_allocation 1 x i1
     // CHECK-NEXT: pop.store %arg3, [[V0]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V1:%.*]] = pop.stack_allocation 1 x index
@@ -314,57 +314,57 @@ kgen.func @lower_args1(
     // CHECK-NEXT: pop.store %arg1, [[V2]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V3:%.*]] = pop.stack_allocation 1 x index
     // CHECK-NEXT: pop.store %arg0, [[V3]] : !kgen.pointer<index>
-    // CHECK-NEXT: [[V4:%.*]] = kgen.pack.create([[V3]], [[V2]], [[V1]], [[V0]]) : !kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
-    // CHECK-NEXT: [[V5:%.*]] = pop.stack_allocation 1 x !kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
-    // CHECK-NEXT: pop.store [[V4]], [[V5]] : !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
-    // CHECK-NEXT: kgen.return [[V5]] : !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
- kgen.return %arg0 : !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
+    // CHECK-NEXT: [[V4:%.*]] = kgen.struct.create([[V3]], [[V2]], [[V1]], [[V0]]) : !kgen.struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: [[V5:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: pop.store [[V4]], [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
+    // CHECK-NEXT: kgen.return [[V5]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
+ kgen.return %arg0 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
 }
 // CHECK-LABEL: kgen.func @main
 kgen.func @main() {
-    // CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x !kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
-    // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
-    // CHECK-NEXT: [[V2:%.*]] = kgen.pack.extract [[V1]][0] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
-    // CHECK-NEXT: [[V3:%.*]] = kgen.pack.extract [[V1]][1] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
-    // CHECK-NEXT: [[V4:%.*]] = kgen.pack.extract [[V1]][2] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
-    // CHECK-NEXT: [[V5:%.*]] = kgen.pack.extract [[V1]][3] : <[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>
+    // CHECK-NEXT: [[V0:%.*]] = pop.stack_allocation 1 x struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: [[V1:%.*]] = pop.load [[V0]] : !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
+    // CHECK-NEXT: [[V2:%.*]] = kgen.struct.extract [[V1]][0] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: [[V3:%.*]] = kgen.struct.extract [[V1]][1] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: [[V4:%.*]] = kgen.struct.extract [[V1]][2] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
+    // CHECK-NEXT: [[V5:%.*]] = kgen.struct.extract [[V1]][3] : <(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>
     // CHECK-NEXT: [[V6:%.*]] = pop.load [[V2]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V7:%.*]] = pop.load [[V3]] : !kgen.pointer<i1>
     // CHECK-NEXT: [[V8:%.*]] = pop.load [[V4]] : !kgen.pointer<index>
     // CHECK-NEXT: [[V9:%.*]] = pop.load [[V5]] : !kgen.pointer<i1>
-    // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, pointer<index>, pointer<i1>]>>
-    %0 = pop.stack_allocation 1 x !kgen.pack<[pointer<index>, pointer<i1>, #type_value2, #type_value3]>
-    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<!kgen.pack<[pointer<index>, pointer<i1>, #type_value2, #type_value3]>> read_mem) -> !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
+    // CHECK-NEXT: [[V10:%.*]] = kgen.call @lower_args1([[V6]], [[V7]], [[V8]], [[V9]]) : (index, i1, index, i1) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, pointer<index>, pointer<i1>) isParamPack>>
+    %0 = pop.stack_allocation 1 x !kgen.struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>
+    %1 = kgen.call @lower_args1(%0) : (!kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> read_mem) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
     kgen.return
 }
 
 // CHECK-LABEL: kgen.func @lower_empty
-// CHECK-SAME: (%arg0: !kgen.none) -> !kgen.pointer<!kgen.pack<[]>>
+// CHECK-SAME: (%arg0: !kgen.none) -> !kgen.pointer<struct<() isParamPack>>
 kgen.func @lower_empty(
- %arg0: !kgen.pointer<!kgen.pack<[]>> read_mem
-) -> !kgen.pointer<!kgen.pack<[]>> {
- kgen.return %arg0 : !kgen.pointer<!kgen.pack<[]>>
+ %arg0: !kgen.pointer<struct<() isParamPack>> read_mem
+) -> !kgen.pointer<struct<() isParamPack>> {
+ kgen.return %arg0 : !kgen.pointer<struct<() isParamPack>>
 }
 // CHECK-LABEL: kgen.func @main_empty
 kgen.func @main_empty() {
-    %0 = pop.stack_allocation 1 x !kgen.pack<[]>
-    // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<!kgen.pack<[]>>
-    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<!kgen.pack<[]>> read_mem) -> !kgen.pointer<!kgen.pack<[]>>
+    %0 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
+    // CHECK: kgen.call @lower_empty(%none) : (!kgen.none) -> !kgen.pointer<struct<() isParamPack>>
+    %1 = kgen.call @lower_empty(%0) : (!kgen.pointer<struct<() isParamPack>> read_mem) -> !kgen.pointer<struct<() isParamPack>>
     kgen.return
 }
 
 // CHECK-LABEL: kgen.func @none_with_res
-// CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none
-kgen.func @none_with_res(%arg0: !kgen.pointer<!kgen.pack<[]>> owned_in_mem, %arg1: !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none {
+// CHECK-SAME: (%arg0: !kgen.none, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
+kgen.func @none_with_res(%arg0: !kgen.pointer<struct<() isParamPack>> owned_in_mem, %arg1: !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none {
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
 }
 // CHECK-LABEL: kgen.func @call_none_with_res
 kgen.func @call_none_with_res(%arg0: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> read_mem, %arg1: !kgen.pointer<struct<(variant<struct<() memoryOnly>, index>) memoryOnly>> byref_result) -> !kgen.none {
-    %2 = pop.stack_allocation 1 x !kgen.pack<[]>
-    %3 = pop.stack_allocation 1 x struct<(!kgen.pack<[]>) memoryOnly>
-    // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none
-    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<!kgen.pack<[]>> owned_in_mem, !kgen.pointer<struct<(!kgen.pack<[]>) memoryOnly>> byref_result) -> !kgen.none
+    %2 = pop.stack_allocation 1 x !kgen.struct<() isParamPack>
+    %3 = pop.stack_allocation 1 x struct<(struct<() isParamPack>) memoryOnly>
+    // CHECK: kgen.call @none_with_res(%none, %{{.*}}) : (!kgen.none, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
+    %4 = kgen.call @none_with_res(%2, %3) : (!kgen.pointer<struct<() isParamPack>> owned_in_mem, !kgen.pointer<struct<(struct<() isParamPack>) memoryOnly>> byref_result) -> !kgen.none
     %none = kgen.param.constant: none = <#kgen.none>
     kgen.return %none : !kgen.none
 }
@@ -386,21 +386,21 @@ kgen.func @call_recursive_ptr(%arg0: !kgen.pointer<pointer<none>> read_mem){
 // CHECK-LABEL: kgen.func @lower_args_no_ptr
 // CHECK-SAME: (%arg0: !kgen.pointer<index> mut)
 kgen.func @lower_args_no_ptr(
- %arg0: !kgen.pack<[!kgen.pointer<index>]>
-) -> !kgen.pack<[!kgen.pointer<index>]> {
-    %0 = kgen.pack.extract %arg0[0] : !kgen.pack<[!kgen.pointer<index>]>
+ %arg0: !kgen.struct<(pointer<index>) isParamPack>
+) -> !kgen.struct<(pointer<index>) isParamPack> {
+    %0 = kgen.struct.extract %arg0[0] : !kgen.struct<(pointer<index>) isParamPack>
     %1 = kgen.param.constant:index = <9>
     pop.store %1, %0 : !kgen.pointer<index>
- kgen.return %arg0 : !kgen.pack<[!kgen.pointer<index>]>
+ kgen.return %arg0 : !kgen.struct<(pointer<index>) isParamPack>
 }
 
 // CHECK-LABEL: kgen.func @callIt
 kgen.func @callIt() -> index {
     %0 = pop.stack_allocation 1 x index
-    %1 = kgen.pack.create(%0) : !kgen.pack<[!kgen.pointer<index>]>
-    // CHECK: kgen.call @lower_args_no_ptr(%{{.*}}) : (!kgen.pointer<index> mut) -> !kgen.pack<[pointer<index>]>
-    %2 = kgen.call @lower_args_no_ptr(%1) : (!kgen.pack<[pointer<index>]>) -> !kgen.pack<[!kgen.pointer<index>]>
-    %3 = kgen.pack.extract %2[0] : !kgen.pack<[!kgen.pointer<index>]>
+    %1 = kgen.struct.create(%0) : !kgen.struct<(pointer<index>) isParamPack>
+    // CHECK: kgen.call @lower_args_no_ptr(%{{.*}}) : (!kgen.pointer<index> mut) -> !kgen.struct<(pointer<index>) isParamPack>
+    %2 = kgen.call @lower_args_no_ptr(%1) : (!kgen.struct<(pointer<index>) isParamPack>) -> !kgen.struct<(pointer<index>) isParamPack>
+    %3 = kgen.struct.extract %2[0] : !kgen.struct<(pointer<index>) isParamPack>
     %4 = pop.load %3 : !kgen.pointer<index>
     kgen.return %4 : index
 }
@@ -410,14 +410,14 @@ kgen.func @callIt() -> index {
 // CHECK-SAME: LLVMArgMetadata = [{nvvm.grid_constant}, {}, {}, {}, {}, {nvvm.grid_constant}, {}, {nvvm.grid_constant}]
 kgen.func @lower_args_with_arg_metadata(
  %arg0: !kgen.pointer<i8> read_mem,
- %arg1: !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> read_mem,
+ %arg1: !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> read_mem,
  %arg2: !kgen.pointer<i16> read_mem,
- %arg3: !kgen.pointer<!kgen.pack<[]>> read_mem,
+ %arg3: !kgen.pointer<struct<() isParamPack>> read_mem,
  %arg4: !kgen.pointer<i32> read_mem
-) -> !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>> attributes {
+) -> !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>> attributes {
   LLVMArgMetadata = [{nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}, {}, {nvvm.grid_constant = unit}]
 } {
-    kgen.return %arg1 : !kgen.pointer<!kgen.pack<[!kgen.pointer<index>, !kgen.pointer<i1>, #type_value2, #type_value3]>>
+    kgen.return %arg1 : !kgen.pointer<struct<(pointer<index>, pointer<i1>, #type_value2, #type_value3) isParamPack>>
 }
 
 //===----------------------------------------------------------------------===//
@@ -426,13 +426,13 @@ kgen.func @lower_args_with_arg_metadata(
 
 // CHECK-LABEL: @external_call_pack_expand
 kgen.func @external_call_pack_expand(%a: !pop.scalar<si32>, %b: !pop.scalar<f32>) {
-  // CHECK: [[PACK:%.*]] = kgen.pack.create
-  %pack = kgen.pack.create(%a, %b) : !kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>
-  // CHECK: [[V0:%.*]] = kgen.pack.extract [[PACK]][0]
-  // CHECK: [[V1:%.*]] = kgen.pack.extract [[PACK]][1]
+  // CHECK: [[PACK:%.*]] = kgen.struct.create
+  %pack = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
+  // CHECK: [[V0:%.*]] = kgen.struct.extract [[PACK]][0]
+  // CHECK: [[V1:%.*]] = kgen.struct.extract [[PACK]][1]
   // CHECK: pop.external_call @my_extern([[V0]], [[V1]]) : (!pop.scalar<si32>, !pop.scalar<f32>) -> ()
   pop.external_call @my_extern(%pack)
-    : (!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>) -> ()
+    : (!kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>) -> ()
   kgen.return
 }
 
@@ -441,19 +441,19 @@ kgen.func @external_call_pack_expand(%a: !pop.scalar<si32>, %b: !pop.scalar<f32>
 // CHECK-LABEL: @external_call_nested_pack
 kgen.func @external_call_nested_pack(
     %a: !pop.scalar<si32>, %b: !pop.scalar<f32>, %c: !pop.scalar<f64>) {
-  %inner = kgen.pack.create(%a, %b) : !kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>
-  %outer = kgen.pack.create(%inner, %c)
-    : !kgen.pack<[!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>, !pop.scalar<f64>]>
+  %inner = kgen.struct.create(%a, %b) : !kgen.struct<(scalar<si32>, scalar<f32>) isParamPack>
+  %outer = kgen.struct.create(%inner, %c)
+    : !kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>
   // The outer pack is expanded, and the inner pack extracted from it is
   // recursively expanded as well, yielding three individual arguments.
-  // CHECK: [[INNER:%.*]] = kgen.pack.extract %{{.*}}[0]
-  // CHECK: [[A:%.*]] = kgen.pack.extract [[INNER]][0]
-  // CHECK: [[B:%.*]] = kgen.pack.extract [[INNER]][1]
-  // CHECK: [[C:%.*]] = kgen.pack.extract %{{.*}}[1]
+  // CHECK: [[INNER:%.*]] = kgen.struct.extract %{{.*}}[0]
+  // CHECK: [[A:%.*]] = kgen.struct.extract [[INNER]][0]
+  // CHECK: [[B:%.*]] = kgen.struct.extract [[INNER]][1]
+  // CHECK: [[C:%.*]] = kgen.struct.extract %{{.*}}[1]
   // CHECK: pop.external_call @my_extern([[A]], [[B]], [[C]])
   // CHECK-SAME: (!pop.scalar<si32>, !pop.scalar<f32>, !pop.scalar<f64>) -> ()
   pop.external_call @my_extern(%outer)
-    : (!kgen.pack<[!kgen.pack<[!pop.scalar<si32>, !pop.scalar<f32>]>, !pop.scalar<f64>]>) -> ()
+    : (!kgen.struct<(struct<(scalar<si32>, scalar<f32>) isParamPack>, scalar<f64>) isParamPack>) -> ()
   kgen.return
 }
 

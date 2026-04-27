@@ -2039,8 +2039,7 @@ static SmallVector<Value> expandOperands(ConversionPatternRewriter &rewriter,
     // Check if the original type is a KGEN struct type.
     if (auto kgenStructTy = dyn_cast<StructType>(origType)) {
       // Get the element types - should be resolved at this point.
-      auto elemTypes = kgenStructTy.getElementTypes();
-      if (elemTypes) {
+      if (auto elemTypes = kgenStructTy.getElementTypes()) {
         // Iterate over KGEN logical field indices and extract using remapped
         // LLVM indices to account for any padding fields.
         for (size_t i = 0, e = elemTypes->size(); i != e; ++i) {
