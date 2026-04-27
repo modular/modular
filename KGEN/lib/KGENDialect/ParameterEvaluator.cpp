@@ -20,57 +20,6 @@
 using namespace M;
 using namespace M::KGEN;
 
-static Type tryReplaceParamListSplat(Type type) {
-  if (!isa<mlir::LLVM::LLVMStructType, StructType>(type)) {
-    return nullptr;
-  }
-
-  auto processParamListSplatType = [&](ArrayRef<Type> types) {
-    SmallVector<Type> newTypes;
-    bool changed = false;
-    for (Type type : types) {
-      auto splatType = dyn_cast<ParamListSplatType>(type);
-      if (!splatType) {
-        newTypes.push_back(type);
-        continue;
-      }
-      std::optional<uint64_t> count = splatType.getResolvedCount();
-      if (!count) {
-        newTypes.push_back(type);
-        continue;
-      }
-      changed = true;
-      for (unsigned i = 0, e = *count; i < e; ++i)
-        newTypes.push_back(splatType.getElementType());
-    }
-    return changed ? newTypes : SmallVector<Type>();
-  };
-
-  MLIRContext *context = type.getContext();
-
-  // Handle `!kgen.struct`.
-  if (auto structType = dyn_cast<StructType>(type)) {
-    std::optional<SmallVector<Type>> elementTypes =
-        structType.getElementTypes();
-    if (!elementTypes)
-      return type;
-    SmallVector<Type> newTypes = processParamListSplatType(*elementTypes);
-    if (newTypes.empty())
-      return type;
-    return StructType::get(context, newTypes);
-  }
-
-  // Handle `!llvm.struct`.
-  if (auto llvmStructType = dyn_cast<mlir::LLVM::LLVMStructType>(type)) {
-    SmallVector<Type> newTypes =
-        processParamListSplatType(llvmStructType.getBody());
-    if (newTypes.empty())
-      return type;
-    return mlir::LLVM::LLVMStructType::getLiteral(context, newTypes);
-  }
-  llvm_unreachable("unhandled type");
-}
-
 /// If `type` is a `!kgen.deferred_type`, attempt to concretize it by building
 /// the resolved type string from the wrapped `AttrCtorDeferredAttr` and
 /// parsing it as an MLIR type. Returns the concrete type on success, or
@@ -505,8 +454,6 @@ Type ParameterEvaluator::doReplace(Type type, size_t rootDepth) {
     return nullptr;
   if (changed)
     result = type.replaceImmediateSubElements(newAttrs, newTypes);
-  if (auto newType = tryReplaceParamListSplat(result))
-    result = newType;
 
   result = tryConcretizeDeferredType(result, evaluationContext);
 

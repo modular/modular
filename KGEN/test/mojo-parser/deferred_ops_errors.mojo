@@ -17,21 +17,6 @@ struct DType:
     var value: Self.type
 
 
-def test3[
-    n: Int, dtype: DType
-](
-    x: __mlir_type[
-        `!kgen.struct<(`,
-        __mlir_type[
-            `!kgen.param_list_splat<`,
-            __mlir_type[`!pop.scalar<`, dtype.value, `>`],
-            `, `,
-            n._mlir_value,
-            `>`,
-        ],
-        `)>`,
-    ]
-):
-    # expected-error @below {{unable to infer result type from MLIR operation 'kgen.struct.extract'}}
-    # expected-error @below {{expected an index attribute}}
-    _ = __mlir_op.`kgen.struct.extract`[index=__mlir_attr.`1:index`](x)
+def test3(x: __mlir_type.`!kgen.struct<(!pop.scalar<f32>)>`):
+    # expected-error @+1 {{element index 1 out of bounds (>=1)}}
+    _ = __mlir_op.`kgen.struct.extract`[_type = __mlir_type.`!pop.scalar<f32>`, index=__mlir_attr.`1:index`](x)

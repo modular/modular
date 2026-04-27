@@ -1451,9 +1451,8 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
 ///
 /// This uses ParamListGetAttr to extract from the struct's type list, which
 /// automatically folds when both the struct and index are constant. For
-/// parametric cases (including structs with ParamListSplatType elements or
-/// parametric indices), it returns a ParamType that will be resolved during
-/// elaboration.
+/// parametric cases (e.g. parametric indices), it returns a ParamType that
+/// will be resolved during elaboration.
 static Type getStructFieldTypeAtIndex(StructType structType, TypedAttr index) {
   // The result type is the type extracted from the type list.  Extract the
   // element from the type list.  This automatically folds if constant.
@@ -1481,17 +1480,6 @@ static LogicalResult verifyStructValueType(Operation *op, StructType container,
     if (!elementTypesOpt)
       return success(); // Cannot verify without resolved element types.
     SmallVector<Type> elementTypes = *elementTypesOpt;
-    if (llvm::any_of(elementTypes,
-                     [](Type type) { return isa<ParamListSplatType>(type); })) {
-      if (elementTypes.size() != 1) {
-        // TODO: Support multiple types within `!kgen.struct`.
-        return op->emitOpError(
-            "only single `!kgen.param_list_splat` type allowed");
-      }
-      // `!kgen.param_list_splat` type is not yet concretized, therefore we
-      // cannot verify correctness of this operation
-      return success();
-    }
     // If the index is concrete then we can verify it and the result type.
     if (auto intAttr = dyn_cast_if_present<IntegerAttr>(indexAttr)) {
       size_t index = intAttr.getInt();
