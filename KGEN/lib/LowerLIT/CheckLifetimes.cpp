@@ -2994,28 +2994,29 @@ void DestructorInsertion::scanFunction(FunctionLikeOp func) {
   Block &funcBody = func.getBodyRegion().front();
   scanBlock(funcBody);
 
-  // The sentinel tracks reachability.
-  assert(consumedValues[0] && "function entry should be reachable");
+  // The sentinel tracks reachability. The function entry may not be reachable
+  // if the function has a global "comptime assert False".
+  if (consumedValues[0]) {
+    // If any argument values are unconsumed then they must be unused.
+    // Emit their destructor calls at the start of the function by acting as
+    // though there is a use.
+    for (auto [argValue, conv] :
+         llvm::zip(func.getBodyRegion().front().getArguments(),
+                   func.getFuncTypeGenerator().getArgConventions())) {
+      // Ignore undef-on-input values.
+      if (isResultSlot(conv))
+        continue;
 
-  // If any argument values are unconsumed then they must be unused.
-  // Emit their destructor calls at the start of the function by acting as
-  // though there is a use.
-  for (auto [argValue, conv] :
-       llvm::zip(func.getBodyRegion().front().getArguments(),
-                 func.getFuncTypeGenerator().getArgConventions())) {
-    // Ignore undef-on-input values.
-    if (isResultSlot(conv))
-      continue;
+      bool isIndirect = hasAddress(conv);
+      Location loc = argValue.getLoc();
+      if (DebugInfo::DISubprogramAttr scope = func.getSubprogramScope())
+        loc = FusedLoc::get(loc.getContext(), {loc}, scope);
 
-    bool isIndirect = hasAddress(conv);
-    Location loc = argValue.getLoc();
-    if (DebugInfo::DISubprogramAttr scope = func.getSubprogramScope())
-      loc = FusedLoc::get(loc.getContext(), {loc}, scope);
-
-    ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
-    DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
-    checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
-    dtorInserter.emitDestructors();
+      ImplicitLocOpBuilder builder(loc, &funcBody, funcBody.begin());
+      DestructorInserter dtorInserter(builder, valueSet, diagsToEmit);
+      checkUse(argValue, /*isDeref=*/isIndirect, dtorInserter);
+      dtorInserter.emitDestructors();
+    }
   }
 
   // Emit any diagnostics that were queued up in a top-down order.
@@ -4007,7 +4008,9 @@ void DestructorInsertion::destroyValuesAtEntryIfNeeded(
   // If we are in a dry run or the two sets match, or the block is unreachable,
   // don't actually insert anything.
   if (dryRun || currentConsumeSet == fullSetToDestroy ||
-      isa<UnreachableOp>(block.front()))
+      // Don't do anything if the entry to this block is unreachable. This will
+      // be false for reachable blocks and blocks that contain no-return calls.
+      !currentConsumeSet[0])
     return;
 
   // entriesToDestroy = fullSetToDestroy & ~currentConsumeSet.

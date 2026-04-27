@@ -38,3 +38,17 @@ def dead_code_after_assert(mut x: Int) -> Int:
     comptime assert False
     # CHECK: kgen.param.assert <0>
     # CHECK-NEXT: kgen.unreachable
+
+# A completely uncallable function is also fine.
+def uncallable():
+    comptime assert False
+
+# MOCO-3667: Should not get an error about "value" being undestroyable.
+def destructors1[T: AnyType, a: Int](value: T):
+    comptime if a != 4:
+        comptime assert False
+    else:
+        pass
+
+def destructors2[T: AnyType, a: Int](value: T):
+    comptime assert False
