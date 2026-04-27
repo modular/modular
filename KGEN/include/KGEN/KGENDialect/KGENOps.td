@@ -1548,25 +1548,6 @@ def KGEN_SourceLocOp : KGENOp<"source_loc", [Pure,
 }
 
 //===----------------------------------------------------------------------===//
-// PackLoadOp
-//===----------------------------------------------------------------------===//
-
-def KGEN_PackLoadOp : KGENOp<"pack.load", [Pure,
-    InferTypeOpAdaptor,
-    DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
-  let summary = "load all pack elements";
-  let description = [{
-    The `kgen.pack.load` operation takes a struct of !kgen.pointer values and
-    loads each one into a struct without the pointer type.  This requires
-    elements with trivially loadable types supported by pop.load.
-  }];
-
-  let arguments = (ins KGEN_StructType:$pack);
-  let results = (outs KGEN_StructType:$result);
-  let assemblyFormat = "$pack attr-dict `:` type($pack)";
-}
-
-//===----------------------------------------------------------------------===//
 // StructCreateOp
 //===----------------------------------------------------------------------===//
 
@@ -1755,6 +1736,10 @@ def KGEN_StructLoadIndirectOp : KGENOp<"struct.load_indirect", [Pure,
     The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
     values and loads each one into a struct without the pointer type.  This
     requires elements with trivially loadable types supported by pop.load.
+
+    When the operand struct is a variadic parameter pack (`isParamPack`), the
+    result struct is also marked `isParamPack` so downstream ABI lowering can
+    still recognize a pack.
   }];
 
   let arguments = (ins KGEN_StructType:$structValue);

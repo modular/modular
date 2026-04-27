@@ -472,7 +472,7 @@ kgen.func @pack_load() -> !kgen.struct<(si4, ui8) isParamPack> {
   pop.store %i0, %p0 : !kgen.pointer<si4>
   pop.store %i1, %p1 : !kgen.pointer<ui8>
   %pack = kgen.struct.create(%p0, %p1) : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
-  %loaded_pack = kgen.pack.load %pack : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
+  %loaded_pack = kgen.struct.load_indirect %pack : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
   kgen.return %loaded_pack : !kgen.struct<(si4, ui8) isParamPack>
 }
 

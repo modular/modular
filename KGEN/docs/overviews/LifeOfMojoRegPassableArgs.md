@@ -705,7 +705,7 @@ non-pack stuff.
 ```mlir
 kgen.generator @ex17(%args: !kgen.pack<[Int*, Float*, Bool*]>) {
   ...
-  %0 = kgen.pack.load %args
+  %0 = kgen.struct.load_indirect %args
 
   kgen.call @Tuple(%args)
 

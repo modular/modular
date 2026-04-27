@@ -147,7 +147,7 @@ kgen.func @pack_load(%arg0: !kgen.struct<(pointer<i32>, pointer<i64>) isParamPac
   // CHECK-NEXT: [[PTR1:%.*]] = kgen.struct.extract %arg0[1] : <(pointer<i32>, pointer<i64>)>
   // CHECK-NEXT: [[EL1:%.*]] = pop.load [[PTR1]]
   // CHECK-NEXT: [[RESULT:%.*]] = kgen.struct.create([[EL0]], [[EL1]]) : !kgen.struct<(i32, i64)>
-  %0 = kgen.pack.load %arg0 : !kgen.struct<(pointer<i32>, pointer<i64>) isParamPack>
+  %0 = kgen.struct.load_indirect %arg0 : !kgen.struct<(pointer<i32>, pointer<i64>) isParamPack>
   // CHECK-NEXT: return [[RESULT]]
   kgen.return %0 : !kgen.struct<(i32, i64) isParamPack>
 }
