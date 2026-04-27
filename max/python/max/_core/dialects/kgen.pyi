@@ -3310,8 +3310,8 @@ class PackGepOp(max._core.Operation):
 
 class PackLoadOp(max._core.Operation):
     """
-    The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
-    loads each one into a pack without the pointer type.  This requires
+    The `kgen.pack.load` operation takes a struct of !kgen.pointer values and
+    loads each one into a struct without the pointer type.  This requires
     elements with trivially loadable types supported by pop.load.
     """
 
@@ -3320,18 +3320,18 @@ class PackLoadOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: PackType,
-        pack: max._core.Value[PackType],
+        result: StructType,
+        pack: max._core.Value[StructType],
     ) -> None: ...
     @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        pack: max._core.Value[PackType],
+        pack: max._core.Value[StructType],
     ) -> None: ...
     @property
-    def pack(self) -> max._core.Value[PackType]: ...
+    def pack(self) -> max._core.Value[StructType]: ...
 
 class PackSizeOp(max._core.Operation):
     """

@@ -1435,11 +1435,13 @@ struct VariadicTensors[
 struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
     """TrivialRegisterPassable heterogeneous pack for fusion structs.
 
-    Unlike Tuple, this uses a value-based `!kgen.pack` (not reference-based),
+    Unlike Tuple, this uses a value-based `!kgen.struct` (not reference-based),
     making it safe to pass across the host-device boundary via GPU closures.
     """
 
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.Ts.values, `>`]
+    comptime _mlir_type = __mlir_type[
+        `!kgen.struct<`, ~Self.Ts.values, ` isParamPack>`
+    ]
     var _mlir_value: Self._mlir_type
 
     @always_inline("nodebug")
@@ -1450,7 +1452,7 @@ struct _FusionPack[*Ts: TrivialRegisterPassable](TrivialRegisterPassable):
 
     @always_inline("nodebug")
     def __getitem_param__[i: Int](self) -> Self.Ts[i]:
-        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
+        return __mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 
