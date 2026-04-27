@@ -208,7 +208,7 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   if (clOptions.enableMLIRCrashReproducer || KGEN::debugFlag) {
     // If the reproducer is enable, turn off all threading.
     ctx->disableMultithreading();
-    clOptions.useSingleThreadedWorkqueue();
+    clOptions.withSingleThreaded();
   }
 
   // Register MLIR stuff
@@ -216,10 +216,6 @@ static LogicalResult runToolPipeline(MLIRContext *ctx, llvm::SourceMgr &mgr,
   registerKGENToLLVMTranslation(registry);
 
   // Create our context, with a runtime; this should not fail.
-  MLRT::RuntimeOptions &runtimeOpts = clOptions.parser.options;
-  if (runtimeOpts.workQueueType ==
-      MLRT::RuntimeOptions::WorkQueueType::kSingleThread)
-    runtimeOpts.singleThreaded = true;
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "kgen", Init::Options().withRuntimeOptions(
                   clOptions.parser.options.withCPUAffinity(false)));

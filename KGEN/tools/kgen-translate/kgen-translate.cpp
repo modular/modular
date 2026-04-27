@@ -113,7 +113,7 @@ int main(int argc, char *argv[]) {
         }
         sourceMgr.setDiagHandler(getDiagHandler(diagnosticFormat));
 
-        clOptions.useSingleThreadedWorkqueue();
+        clOptions.withSingleThreaded();
         TraceProfiler profiler(clOptions.timeTrace,
                                clOptions.timeTraceGranularity);
 
