@@ -167,6 +167,7 @@ const mojoSidebars = {
         'mojo/reference/index',
         'mojo/reference/mojo-keywords',
         'mojo/reference/mojo-literals',
+        'mojo/reference/types/mojo-numeric-types',
         'mojo/reference/mojo-operators',
         'mojo/reference/mojo-expressions',
         'mojo/reference/mojo-simple-statements',
