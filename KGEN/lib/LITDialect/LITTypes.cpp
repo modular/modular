@@ -190,6 +190,19 @@ OptionalParseResult LIT::StructType::parseValue(AsmParser &p,
     return p.parseRBrace();
   }
 
+  // `parseOptionalKeywordOrString` consumed `name` as a potential field name,
+  // but if the next token is `}` it is actually a bare ParamDeclRefAttr in the
+  // `{<value>}` shorthand. This happens when the value has index type: the
+  // printer omits the `:index` prefix (index is the default), leaving a bare
+  // identifier indistinguishable from a field name without this lookahead.
+  if (succeeded(p.parseOptionalRBrace())) {
+    value = LITStructAttr::get(
+        {{StringAttr::get(p.getContext(), "_mlir_value"),
+          ParamDeclRefAttr::get(name, p.getBuilder().getIndexType())}},
+        *this);
+    return mlir::success();
+  }
+
   // Parse `{(<name-type> = <value>)+}`.
   Type type;
   TypedAttr element;

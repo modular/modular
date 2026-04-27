@@ -16,5 +16,10 @@ kgen.generator @declref_sugar() {
   // GENERIC-NEXT: #lit.struct<{a = 1, b: dtype = f32}>
   // CHECK-NEXT: <{a = 1, b: dtype = f32}>
   kgen.param.constant: @S = <{a = 1, b: dtype = f32}>
+  // A bare ParamDeclRefAttr with index type in the {<value>} shorthand: the
+  // parser must not mistake `n` for a field name.
+  // CHECK-NEXT: <{n}>
+  // GENERIC-NEXT: #lit.struct<{_mlir_value = n}>
+  kgen.param.constant: @S = <{n}>
   kgen.return
 }
