@@ -520,6 +520,17 @@ This version is still a work in progress.
   to the next candidate.
   ([Issue #6412](https://github.com/modular/modular/issues/6412))
 
+- `mojo run` and `mojo debug` now honor `-Xlinker` flags by loading the
+  referenced shared libraries into the in-process JIT. Previously the flags
+  were dropped (with a `-Xlinker argument unused` warning), leaving programs
+  that called into external shared libraries via `external_call` unable to
+  resolve those symbols at runtime (so `mojo build` worked but `mojo run` did
+  not). The supported forms mirror what the system linker accepts: `-Xlinker
+  -L<dir>`, `-Xlinker -l<name>`, `-Xlinker -rpath <dir>`, and `-Xlinker
+  <absolute-path-to-shared-library>`. Flags that have no meaning under JIT
+  are reported as a warning and ignored.
+  ([Issue #6155](https://github.com/modular/modular/issues/6155))
+
 - Fixed `libpython` auto-discovery failing for Python 3.14 free-threaded builds.
   The discovery script constructed the library filename without the ABI flags
   suffix (e.g. looked for `libpython3.14.dylib` instead of
