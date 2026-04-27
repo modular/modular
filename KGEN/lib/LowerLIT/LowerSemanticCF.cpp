@@ -610,7 +610,7 @@ void LowerSemanticCF::lowerBlock(Block &block, bool &doesRaise, bool &doesBreak,
           cond && cond.getValue().isZero()) {
         auto b =
             handleSemanticTerminatorOp(op, "compile-time assertion failure");
-        UnreachableOp::create(b, op.getLoc(), /*isAfterUnreachableCall=*/true);
+        UnreachableOp::create(b, op.getLoc(), /*isAfterUnreachableCall=*/false);
         return;
       }
       continue;
