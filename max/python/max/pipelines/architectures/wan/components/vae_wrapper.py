@@ -21,7 +21,7 @@ import numpy as np
 from max.driver import Buffer, load_devices
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import Graph, TensorType, ops
+from max.graph import DeviceRef, Graph, TensorType, ops
 from max.graph.weights import load_weights
 from max.pipelines.lib.model_manifest import ModelManifest
 from max.profiler import Tracer, traced
@@ -87,6 +87,11 @@ class VaeWrapper:
         # Compile denormalization graph.
         self._denorm_model = self._compile_denorm(z_dim)
 
+        # Compile GPU postprocess graph (scale, clip, cast uint8, permute).
+        self._postprocess_model = self._compile_postprocess(
+            int(self._vae.config.out_channels)
+        )
+
         # VAE scale factors.
         self.scale_factor_temporal = int(
             getattr(self._vae.config, "scale_factor_temporal", 4) or 4
@@ -126,19 +131,17 @@ class VaeWrapper:
         with Tracer("vae_decode_5d"):
             decoded_video = self._vae.decode_5d(denorm_latents)
 
-        # CPU post-processing: layout, clip and uint8 conversion.
+        # GPU post-processing: scale to [0, 1], clip, scale to [0, 255], cast
+        # to uint8, permute to (B, T, H, W, C), and transfer to CPU. Running
+        # these on device means the DtoH DMA moves uint8 (1 byte/elem)
+        # instead of bf16 (2 bytes/elem).
         with Tracer("vae_decode_postprocess"):
-            decoded_np = _buffer_to_numpy_f32(decoded_video)
-            target_num_frames = min(decoded_np.shape[2], num_frames)
-            decoded_np = decoded_np[:, :, :target_num_frames, :height, :width]
-
-            # (B, C, T, H, W) -> (B*T, H, W, C) and [-1, 1] -> uint8.
-            b, c, t, h, w = decoded_np.shape
-            decoded_np = np.transpose(decoded_np, (0, 2, 3, 4, 1))
+            decoded_u8_buf = self._postprocess_model.execute(decoded_video)[0]
+            decoded_np = np.from_dlpack(decoded_u8_buf)
+            target_num_frames = min(decoded_np.shape[1], num_frames)
+            decoded_np = decoded_np[:, :target_num_frames, :height, :width, :]
+            b, t, h, w, c = decoded_np.shape
             decoded_np = decoded_np.reshape(b * t, h, w, c)
-            decoded_np = (
-                (decoded_np * 0.5 + 0.5).clip(0.0, 1.0) * 255.0
-            ).astype(np.uint8)
         return decoded_np
 
     @traced(message="VaeWrapper.encode_i2v_condition")
@@ -277,4 +280,36 @@ class VaeWrapper:
             latents, std, mean = (v.tensor for v in g.inputs)
             result = ops.cast(latents * std + mean, model_dtype)
             g.output(result)
+        return self._session.load(g)
+
+    def _compile_postprocess(self, out_channels: int) -> Model:
+        """Compile the VAE decoder postprocess graph.
+
+        Takes a decoded ``(B, C, T, H, W)`` tensor in the VAE dtype and
+        produces a host-side ``(B, T, H, W, C)`` uint8 tensor: upcast to
+        f32 for precision, scale from ``[-1, 1]`` to ``[0, 255]``, clip,
+        cast to uint8, permute, and transfer to CPU. Fusing the transfer
+        into the graph means the DtoH DMA moves 1 byte/elem instead of 2.
+        """
+        input_types = [
+            TensorType(
+                self._dtype,
+                ["batch", out_channels, "t", "h", "w"],
+                device=self._device,
+            ),
+        ]
+        with Graph("wan_vae_postprocess", input_types=input_types) as g:
+            x = g.inputs[0].tensor
+            # Upcast to f32 before the *255 so bf16 rounding doesn't shift
+            # pixel values; matches the flux2 VAE decoder precision path.
+            x = ops.cast(x, DType.float32)
+            x = x * 0.5 + 0.5
+            x = ops.max(x, 0.0)
+            x = ops.min(x, 1.0)
+            x = x * 255.0
+            x = ops.cast(x, DType.uint8)
+            # (B, C, T, H, W) -> (B, T, H, W, C).
+            x = ops.permute(x, [0, 2, 3, 4, 1])
+            x = ops.transfer_to(x, DeviceRef.CPU())
+            g.output(x)
         return self._session.load(g)
