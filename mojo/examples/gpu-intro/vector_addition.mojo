@@ -18,12 +18,12 @@ from std.sys import has_accelerator
 
 from std.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 
 # Vector data type and size
 comptime float_dtype = DType.float32
 comptime vector_size = 1000
-comptime layout = Layout.row_major(vector_size)
+comptime layout = row_major[vector_size]()
 
 # Calculate the number of thread blocks needed by dividing the vector size
 # by the block size and rounding up.
@@ -32,9 +32,9 @@ comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 def vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 
@@ -83,10 +83,10 @@ def main() raises:
             vector_size
         )
 
-        # Wrap the DeviceBuffers in LayoutTensors
-        lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)
-        rhs_tensor = LayoutTensor[float_dtype, layout](rhs_device_buffer)
-        result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
+        # Wrap the DeviceBuffers in TileTensors
+        lhs_tensor = TileTensor(lhs_device_buffer, layout)
+        rhs_tensor = TileTensor(rhs_device_buffer, layout)
+        result_tensor = TileTensor(result_device_buffer, layout)
 
         # Compile and enqueue the kernel
         ctx.enqueue_function[vector_addition, vector_addition](

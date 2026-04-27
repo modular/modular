@@ -618,43 +618,43 @@ the copy operations in the previous example with the following equivalent code:
 
 :::
 
-## 8. Create `LayoutTensor` views
+## 8. Create `TileTensor` views
 
 One last step before writing the kernel function is that we're going to create a
-[`LayoutTensor`](/mojo/layout/layout_tensor/LayoutTensor) view for each
-of the vectors. `LayoutTensor` provides a powerful abstraction for
+[`TileTensor`](/mojo/layout/tile_tensor/TileTensor/) view for each
+of the vectors. `TileTensor` provides a powerful abstraction for
 multi-dimensional data with precise control over memory organization. It
 supports various memory layouts (row-major, column-major, tiled),
 hardware-specific optimizations, and efficient parallel access patterns.
 We don't need all of these features for this tutorial, but in more
 complex kernels, it's a useful tool for manipulating data. Even though it
-isn't strictly necessary for this example, we'll use `LayoutTensor` so that
+isn't strictly necessary for this example, we'll use `TileTensor` so that
 you can get familiar with it.
 
 First, add the following import to the top of the file:
 
 ```mojo title="vector_addition.mojo"
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 ```
 
-A [`Layout`](/mojo/layout/layout/Layout) is a representation of memory
+A [`Layout`](/mojo/layout/tile_layout/Layout/) is a representation of memory
 layouts using shape and stride information, and it maps between logical
 coordinates and linear memory indices. We'll need to use the same `Layout`
 definition multiple times, so add the following `comptime` value to the top of
 the file after the other `comptime` declarations:
 
 ```mojo title="vector_addition.mojo"
-comptime layout = Layout.row_major(vector_size)
+comptime layout = row_major[vector_size]()
 ```
 
 Finally, add the following code to the end of the `main()` function
-to create `LayoutTensor` views for each of the vectors:
+to create `TileTensor` views for each of the vectors:
 
 ```mojo title="vector_addition.mojo"
-        # Wrap the DeviceBuffers in LayoutTensors
-        lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)
-        rhs_tensor = LayoutTensor[float_dtype, layout](rhs_device_buffer)
-        result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
+        # Wrap the DeviceBuffers in TileTensors
+        lhs_tensor = TileTensor(lhs_device_buffer, layout)
+        rhs_tensor = TileTensor(rhs_device_buffer, layout)
+        result_tensor = TileTensor(result_device_buffer, layout)
 ```
 
 ## 9. Define the vector addition kernel function
@@ -678,9 +678,9 @@ comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 def vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 
@@ -768,12 +768,12 @@ from std.sys import has_accelerator
 
 from std.gpu.host import DeviceContext
 from std.gpu import block_dim, block_idx, thread_idx
-from layout import Layout, LayoutTensor
+from layout import TileTensor, row_major
 
 # Vector data type and size
 comptime float_dtype = DType.float32
 comptime vector_size = 1000
-comptime layout = Layout.row_major(vector_size)
+comptime layout = row_major[vector_size]()
 
 # Calculate the number of thread blocks needed by dividing the vector size
 # by the block size and rounding up.
@@ -782,9 +782,9 @@ comptime num_blocks = ceildiv(vector_size, block_size)
 
 
 def vector_addition(
-    lhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    rhs_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
-    out_tensor: LayoutTensor[float_dtype, layout, MutAnyOrigin],
+    lhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    rhs_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
+    out_tensor: TileTensor[float_dtype, type_of(layout), MutAnyOrigin],
 ):
     """Calculate the element-wise sum of two vectors on the GPU."""
 
@@ -833,10 +833,10 @@ def main() raises:
             vector_size
         )
 
-        # Wrap the DeviceBuffers in LayoutTensors
-        lhs_tensor = LayoutTensor[float_dtype, layout](lhs_device_buffer)
-        rhs_tensor = LayoutTensor[float_dtype, layout](rhs_device_buffer)
-        result_tensor = LayoutTensor[float_dtype, layout](result_device_buffer)
+        # Wrap the DeviceBuffers in TileTensors
+        lhs_tensor = TileTensor(lhs_device_buffer, layout)
+        rhs_tensor = TileTensor(rhs_device_buffer, layout)
+        result_tensor = TileTensor(result_device_buffer, layout)
 
         # Compile and enqueue the kernel
         ctx.enqueue_function[vector_addition, vector_addition](
@@ -877,7 +877,7 @@ to run all enqueued operations. After synchronizing, we can print the result
 vector to the console.
 
 At this point, the Mojo compiler determines that the `DeviceContext`, the
-`DeviceBuffer`s, the `HostBuffer`s, and the `LayoutTensor`s are no longer used
+`DeviceBuffer`s, the `HostBuffer`s, and the `TileTensor`s are no longer used
 and so it automatically invokes their destructors to free their allocated
 memory. (For a detailed explanation of object lifetime and destruction in Mojo,
 see the [Death of a value](/mojo/manual/lifecycle/death) section of the Mojo
@@ -924,9 +924,9 @@ import ListingCard from '@site/src/components/Listing/ListingCard';
 import ListingCards from '@site/src/components/Listing/ListingCards';
 
 <ListingCards>
-  <ListingCard title="Introduction to layouts"
-    url="/mojo/manual/layout/layouts"
-    description="Using layouts to describe multidimensional data." />
+  <ListingCard title="GPU programming fundamentals"
+    url="/mojo/manual/gpu/fundamentals"
+    description="Explore Mojo's core GPU APIs: <code>DeviceContext</code>, memory buffers, and kernel execution." />
   <ListingCard title="GPU Puzzles"
     url="https://puzzles.modular.com/introduction.html"
     description="Learn to program GPUs in Mojo by solving increasingly complex challenges" />
