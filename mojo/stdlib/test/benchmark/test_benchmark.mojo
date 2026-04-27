@@ -13,7 +13,7 @@
 
 from std.time import sleep, time_function
 
-from std.benchmark import Batch, Report, clobber_memory, keep, run
+from std.benchmark import Batch, Report, Unit, clobber_memory, keep, run
 from std.benchmark.bencher import (
     Bench,
     BenchConfig,
@@ -315,6 +315,74 @@ def test_bench_function_no_arg_unified() raises:
 
     bench.bench_function(my_func, BenchId("test_noarg_unified"))
     assert_true(count > 0)
+
+
+def _make_report(*durations_ns: Int) -> Report:
+    """Build a Report with one significant batch per duration (1 iteration each).
+    """
+    var runs = List[Batch]()
+    for d in durations_ns:
+        runs.append(Batch(duration=d, iterations=1, _is_significant=True))
+    return Report(warmup_duration=0, runs=runs^)
+
+
+def test_percentile_empty_report() raises:
+    """Returns 0 for a report with no runs."""
+    var report = Report()
+    assert_equal(report.percentile(50, Unit.ns), 0.0)
+
+
+def test_percentile_single_batch() raises:
+    """Any percentile on a single batch returns that batch's mean."""
+    var report = _make_report(42)
+    assert_equal(report.percentile(0, Unit.ns), 42.0)
+    assert_equal(report.percentile(50, Unit.ns), 42.0)
+    assert_equal(report.percentile(100, Unit.ns), 42.0)
+
+
+def test_percentile_odd_count() raises:
+    """Median (p50) of [1,2,3,4,5] ns is the middle value (3 ns)."""
+    var report = _make_report(3, 1, 5, 2, 4)  # unsorted to verify sort
+    assert_equal(report.percentile(0, Unit.ns), 1.0)
+    assert_equal(report.percentile(50, Unit.ns), 3.0)
+    assert_equal(report.percentile(100, Unit.ns), 5.0)
+
+
+def test_percentile_even_count() raises:
+    """Median (p50) of [1,2,3,4] ns is the average of the two middle values (2.5 ns).
+    """
+    var report = _make_report(4, 1, 3, 2)
+    assert_equal(report.percentile(0, Unit.ns), 1.0)
+    assert_equal(report.percentile(50, Unit.ns), 2.5)
+    assert_equal(report.percentile(100, Unit.ns), 4.0)
+
+
+def test_percentile_p25_p75() raises:
+    """Quartiles (p25, p75) of [1,2,3,4,5] ns use linear interpolation."""
+    var report = _make_report(1, 2, 3, 4, 5)
+    # index = 0.25 * 4 = 1.0 -> values[1] = 2, frac = 0 -> 2.0
+    assert_equal(report.percentile(25, Unit.ns), 2.0)
+    # index = 0.75 * 4 = 3.0 -> values[3] = 4, frac = 0 -> 4.0
+    assert_equal(report.percentile(75, Unit.ns), 4.0)
+
+
+def test_percentile_clamps_bounds() raises:
+    """Clamps: p<=0 returns min, p>=100 returns max."""
+    var report = _make_report(10, 20, 30)
+    assert_equal(report.percentile(-1, Unit.ns), 10.0)
+    assert_equal(report.percentile(101, Unit.ns), 30.0)
+
+
+def test_percentile_ignores_non_significant_batches() raises:
+    """Non-significant batches are excluded from percentile computation."""
+    var runs: List[Batch] = [
+        Batch(duration=1, iterations=1, _is_significant=True),
+        Batch(duration=1000, iterations=1, _is_significant=False),
+        Batch(duration=3, iterations=1, _is_significant=True),
+        Batch(duration=2, iterations=1, _is_significant=True),
+    ]
+    var report = Report(warmup_duration=0, runs=runs^)
+    assert_equal(report.percentile(100, Unit.ns), 3.0)
 
 
 def main() raises:
