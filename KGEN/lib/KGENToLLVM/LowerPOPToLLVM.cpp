@@ -3373,7 +3373,9 @@ struct LowerPOPToLLVMPass
       : passLocalPlugin(std::make_unique<Plugin>()),
         plugin(passLocalPlugin.get()) {}
 
-  LowerPOPToLLVMPass(const Plugin *plugin) : plugin(plugin) {}
+  LowerPOPToLLVMPass(const Plugin *plugin)
+      : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
+        plugin(plugin ? plugin : passLocalPlugin.get()) {}
 
   LowerPOPToLLVMPass(const LowerPOPToLLVMPass &other)
       : passLocalPlugin(std::make_unique<Plugin>()),
@@ -3901,7 +3903,9 @@ struct LowerGlobalPOPToLLVMPass
       : passLocalPlugin(std::move(other.passLocalPlugin)),
         plugin(passLocalPlugin.get()) {}
 
-  LowerGlobalPOPToLLVMPass(const Plugin *plugin) : plugin(plugin) {}
+  LowerGlobalPOPToLLVMPass(const Plugin *plugin)
+      : passLocalPlugin(plugin ? nullptr : std::make_unique<Plugin>()),
+        plugin(plugin ? plugin : passLocalPlugin.get()) {}
 
   void runOnOperation() override;
 
