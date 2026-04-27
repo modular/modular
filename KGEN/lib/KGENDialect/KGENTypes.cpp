@@ -2248,26 +2248,6 @@ MLIRDeferredType::getTypeAlign(TargetInfoAttr target) const {
 }
 
 //===----------------------------------------------------------------------===//
-// ParamListSplatType
-//===----------------------------------------------------------------------===//
-
-std::optional<uint64_t> ParamListSplatType::getResolvedCount() const {
-  if (auto intAttr = dyn_cast<IntegerAttr>(getCount()))
-    return intAttr.getInt();
-  return {};
-}
-
-LogicalResult
-ParamListSplatType::verify(function_ref<InFlightDiagnostic()> emitError,
-                           Type elementType, TypedAttr count) {
-  if (auto intAttr = dyn_cast<IntegerAttr>(count);
-      intAttr && intAttr.getInt() <= 0)
-    return emitError() << "expected count > 0, but got " << intAttr.getInt();
-
-  return success();
-}
-
-//===----------------------------------------------------------------------===//
 // ODS-Generated Definitions
 //===----------------------------------------------------------------------===//
 

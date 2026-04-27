@@ -1061,40 +1061,4 @@ def KGEN_NeverType : KGENType<"Never", "never"> {
   let assemblyFormat = "";
 }
 
-//===----------------------------------------------------------------------===//
-// ParamListSplatType
-//===----------------------------------------------------------------------===//
-
-def KGEN_ParamListSplatType : KGENType<"ParamListSplat", "param_list_splat"> {
-  let summary = "Spalt the element type specified number of times";
-  let description = [{
-    The `!kgen.param_list_splat` type represents deferred type that splats
-    element type specified number of times. The type cannot be used standalone
-    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
-
-    ```mlir
-    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
-    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
-    ```
-
-    will be concretized to
-
-    ```mlir
-    !kgen.struct<(index, index, index)>
-    !llvm.struct<(index, index, index, index, index)>
-    ```
-  }];
-
-  let parameters = (ins "Type":$elementType, "TypedAttr":$count);
-  let assemblyFormat = [{
-    `<` $elementType `,` $count `>`
-  }];
-  let extraClassDeclaration = [{
-    /// Return the count of the elementType or nullptr if count is not resolved
-    std::optional<uint64_t> getResolvedCount() const;
-  }];
-
-  let genVerifyDecl = 1;
-}
-
 #endif // KGEN_KGENDIALECT_KGENTYPES_TD

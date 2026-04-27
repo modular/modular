@@ -2420,10 +2420,7 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
     }
   }
 
-  // Return true if any attribute or type is deferred. If type is
-  // `!kgen.param_list_splat`, the operation has to be deferred, because it's
-  // expected it's used in struct type and operation is expecting fully valid
-  // struct type.
+  // Return true if any attribute or result type is deferred.
   auto useDeferredOp = [&]() {
     // If any attribute of the operation is deferred, the operation is deferred
     // too.
@@ -2434,29 +2431,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
         })) {
       return true;
     }
-    mlir::AttrTypeWalker walker;
-    walker.addWalk([](Type type) {
-      return sugarIsa<ParamListSplatType>(type) ? WalkResult::interrupt()
-                                                : WalkResult::advance();
-    });
 
-    // If either result type or operands have `!kgen.param_list_splat` type, the
-    // operation has to be deferred.
-    // TODO: Try to avoid this if possible. For example, if operation has no
-    // InferTypeOpInterface, this is probably not needed.
-    // A result type of `!kgen.deferred_type` also requires a deferred op since
+    // A result type of `!kgen.deferred_type` requires a deferred op since
     // the concrete type is not yet known; verification must be deferred.
     if (llvm::any_of(state.types, [&](Type type) {
           assert(!sugarIsa<DeferredType>(type) &&
                  "Deferred type is not allowed in return");
-          if (sugarIsa<MLIRDeferredType>(type))
-            return true;
-          return walker.walk(type).wasInterrupted();
-        })) {
-      return true;
-    }
-    if (llvm::any_of(opOperands, [&](Value operand) {
-          return walker.walk(operand.getType()).wasInterrupted();
+          return sugarIsa<MLIRDeferredType>(type);
         })) {
       return true;
     }

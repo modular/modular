@@ -659,12 +659,6 @@ void SROAPass::runOnOperation() {
         auto elementTypes = structTy.getElementTypes();
         if (!elementTypes)
           return;
-        if (llvm::any_of(*elementTypes,
-                         [](Type t) { return isa<ParamListSplatType>(t); })) {
-          // TODO: Support variadic splat type. For now just disable it and
-          // expect post-elaborated SROA to handle that struct.
-          return;
-        }
         ReplaceStructs replacer{builder,        alloc,        structTy,
                                 maxNumElements, leafReplacer, valueMemCache};
         changed |= replacer.run(toDelete);

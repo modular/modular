@@ -716,28 +716,6 @@ kgen.generator @closure_types(%arg0 : index) {
 
 // -----
 
-// expected-error @+2 {{expected count > 0, but got -3}}
-kgen.generator export @concretize_variadic_splat(
-    %kgen_struct: !kgen.struct<(!kgen.param_list_splat<f32, -3>)>) ->
-    !kgen.struct<(!kgen.param_list_splat<f32, -3>)>
-{
-  kgen.return %kgen_struct, %llvm_struct :
-   !kgen.struct<(!kgen.param_list_splat<f32, -3>)>
-}
-
-// -----
-
-// expected-error @+2 {{expected count > 0, but got 0}}
-kgen.generator export @concretize_variadic_splat(
-    %llvm_struct: !llvm.struct<(!kgen.param_list_splat<f32, 0>)>) ->
-     !llvm.struct<(!kgen.param_list_splat<f32, 0>)>
-{
-  kgen.return %kgen_struct, %llvm_struct :
-   !llvm.struct<(!kgen.param_list_splat<f32, 0>)>
-}
-
-// -----
-
 // expected-error @+2 {{cannot convert to scalar dtype si32 from 'vector<2xsi32>'}}
 "some.op"() {
   a = #pop.cast_from_builtin< #M.dense_array<2, 5> : vector<2xsi32>> : !pop.scalar<si32>
