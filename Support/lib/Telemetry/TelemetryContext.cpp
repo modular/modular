@@ -459,9 +459,17 @@ TelemetryContext::TelemetryContext(Config &settings, StringRef programName,
     // Wrap to detect and report export failures.
     auto warningExporter = std::make_unique<WarningLogRecordExporter>(
         std::move(logExporter), httpEndpoint.str(), exportWarned);
+    // Run the HTTP export on a detached thread so emit is not blocked by
+    // the delegate's network I/O. OTel's curl HTTP exporter relies on the
+    // system's synchronous name resolver, so its 3s CURLOPT_TIMEOUT_MS does
+    // not cap DNS resolution or TCP SYN retries, and synchronous emit can
+    // stall for tens of seconds when the endpoint is unreachable — see
+    // SDLC-3618.
+    auto asyncExporter = std::make_unique<FireAndForgetLogRecordExporter>(
+        std::move(warningExporter));
     processors.emplace_back(
         opentelemetry::sdk::logs::SimpleLogRecordProcessorFactory::Create(
-            std::move(warningExporter)));
+            std::move(asyncExporter)));
   }
 
   loggerProvider = opentelemetry::sdk::logs::LoggerProviderFactory::Create(
