@@ -314,9 +314,7 @@ class TextGenerationPipeline(
             ValueError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
-        self._structured_output.update_context(
-            context, bitmask, index, support_jump_ahead=True
-        )
+        self._structured_output.update_context(context, bitmask, index)
 
     def initialize_bitmask(
         self, batch: list[TextGenerationContextType]
@@ -459,14 +457,6 @@ class TextGenerationPipeline(
                         f"FSM rejected token {token} during multi-step update. "
                         f"This indicates a mismatch between the bitmask and FSM state."
                     )
-
-            # Handle jump-ahead (forced) tokens from the grammar.
-            # NOTE: We intentionally do NOT call compute_ff_tokens() or jump_ahead()
-            # here during multi-step execution. When the FSM forces tokens, the model's
-            # context and FSM state would become desynchronized since the model input
-            # doesn't include the forced tokens. Instead, we let update_context_and_prepare_responses
-            # handle jump-ahead tokens after the multi-step loop completes, which ensures
-            # proper synchronization before the next execute() call.
 
             # Fill the updated bitmask for this context
             with Tracer("fill_next_token_bitmask"):

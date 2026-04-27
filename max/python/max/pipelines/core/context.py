@@ -253,7 +253,6 @@ class TextContext:
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
-        mark_previous_as_processed: bool = True,
     ) -> None:
         """Advance the token buffer without touching FSM state.
 
@@ -270,9 +269,6 @@ class TextContext:
         Args:
             new_token: The token to append to the buffer.
             log_probabilities: Optional log probabilities for this token.
-            mark_previous_as_processed: If True, mark previous tokens as
-                processed (standard behavior). If False, keep them unprocessed
-                so they're returned to the user (used for jump-ahead tokens).
         """
         if self.tokens.actively_chunked:
             self.tokens.advance_chunk()
@@ -286,9 +282,7 @@ class TextContext:
         if self.tokens.all[-1] == FUTURE_TOKEN:
             raise ValueError("Cannot append a token after a future token.")
 
-        self.tokens.advance_with_token(
-            new_token, mark_previous_as_processed=mark_previous_as_processed
-        )
+        self.tokens.advance_with_token(new_token)
 
         if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
@@ -389,24 +383,6 @@ class TextContext:
 
         if self.eos_tracker.is_eos_from_tokens(self.tokens.generated):
             self.status = GenerationStatus.END_OF_SEQUENCE
-
-    def jump_ahead(self, new_token: int) -> None:
-        """Advance both token buffer and FSM, keeping token visible to user.
-
-        Unlike ``update()``, this method does not mark previous tokens as
-        processed, so the new token will be included in the output returned
-        to the user. This is used for grammar-forced tokens that the model
-        didn't generate but need to be part of the response.
-
-        Args:
-            new_token: The forced token to append and consume.
-        """
-        self.advance_token_buffer(
-            new_token,
-            log_probabilities=None,
-            mark_previous_as_processed=False,
-        )
-        self.advance_fsm(new_token)
 
     def reset(self) -> None:
         """Resets the context's state by combining all tokens into a new prompt."""

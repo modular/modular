@@ -556,25 +556,17 @@ class TokenBuffer:
     # Token Addition and Management
     # ============================================================================
 
-    def advance_with_token(
-        self, token: int, mark_previous_as_processed: bool = True
-    ) -> None:
+    def advance_with_token(self, token: int) -> None:
         """Add a new token to the buffer.
 
         Args:
             token: The token ID to add.
-            mark_previous_as_processed: If False, expands the set of active tokens instead of
-                shifting forward. This is useful for speculative execution
-                scenarios where multiple tokens may be generated.
         """
         if self.actively_chunked:
             raise ValueError("Cannot add a token while actively chunked.")
 
         # Update processing ranges
-        if mark_previous_as_processed:
-            # If we are not jumping ahead, we need to advance the processing range.
-            self._processing_range.advance()
-
+        self._processing_range.advance()
         self._processing_range.bump_end(1)
 
         # Update completion ranges

@@ -38,6 +38,9 @@ This version is still a work in progress.
 - Added `--model-override` CLI flag for per-component `ModelManifest` overrides
   (e.g. `--model-override transformer.quantization_encoding=float4_e2m1fnx2`),
   enabling mixed quantization in diffusion pipelines.
+- Removed jump forward decoding (`compute_ff_tokens`) from structured output.
+  The bitmask constraint alone ensures valid structured output, matching the
+  approach used by vLLM and SGLang.
 
 ### `max` CLI {#26-3-max-cli}
 

@@ -587,7 +587,6 @@ class TextGenerationContext(BaseContext, Protocol):
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
-        mark_previous_as_processed: bool = True,
     ) -> None:
         """Advance the token buffer without touching FSM state.
 
@@ -601,9 +600,6 @@ class TextGenerationContext(BaseContext, Protocol):
         Args:
             new_token: The token to append to the buffer.
             log_probabilities: Optional log probabilities for this token.
-            mark_previous_as_processed: If True, mark previous tokens as
-                processed. If False, keep them unprocessed so they're
-                returned to the user (used for jump-ahead tokens).
         """
         ...
 
@@ -658,17 +654,6 @@ class TextGenerationContext(BaseContext, Protocol):
         """Overwrite the placeholder future token with the actual token.
 
         This is primarily used for overlap scheduling.
-        """
-        ...
-
-    def jump_ahead(self, new_token: int) -> None:
-        """Jump ahead in generation by adding a token and updating indices.
-
-        This method is used in speculative decoding scenarios to quickly
-        advance the generation state when draft tokens are accepted.
-
-        Args:
-            new_token: The token ID to add when jumping ahead in the sequence.
         """
         ...
 

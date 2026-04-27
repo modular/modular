@@ -1419,12 +1419,6 @@ class OverlapTextGenerationPipeline(
         grammar matcher and installs it on the context, then fills the per-request
         token bitmask used to constrain the next-token distribution.
 
-        Note: Unlike TextGenerationPipeline, this does NOT support jump-ahead
-        tokens. Jump-ahead would require re-allocating KV cache blocks after the
-        scheduler's alloc() call and would break CUDA graph capture (which only
-        supports active_length=1). The bitmask constraint alone ensures valid
-        structured output.
-
         Args:
             context: Request context to update.
             bitmask: Optional preallocated bitmask buffer; updated in-place.
@@ -1434,10 +1428,7 @@ class OverlapTextGenerationPipeline(
             ValueError: If a JSON schema is provided but structured output is not
                 enabled via sampling configuration.
         """
-        # Overlap pipeline does not support jump-ahead tokens.
-        self._structured_output.update_context(
-            context, bitmask, index, support_jump_ahead=False
-        )
+        self._structured_output.update_context(context, bitmask, index)
 
     def initialize_bitmask(
         self, batch: list[TextGenerationContextType]

@@ -396,21 +396,17 @@ class StructuredOutputHelper:
         context: TextGenerationContextType,
         bitmask: npt.NDArray[np.int32],
         index: int,
-        support_jump_ahead: bool = True,
     ) -> None:
         """Update context and bitmask for structured output.
 
         If a json_schema is present and no matcher is set, this compiles a
-        grammar matcher and installs it on the context. Optionally applies
-        jump-ahead tokens, then fills the per-request token bitmask.
+        grammar matcher and installs it on the context, then fills the
+        per-request token bitmask.
 
         Args:
             context: Request context to update.
             bitmask: Preallocated bitmask buffer; updated in-place.
             index: Position in the bitmask for this request.
-            support_jump_ahead: Whether to apply jump-ahead tokens. Set to
-                False for overlap scheduling where jump-ahead would break
-                CUDA graph capture.
 
         Raises:
             ValueError: If a JSON schema is provided but structured output
@@ -439,12 +435,6 @@ class StructuredOutputHelper:
                 context.json_schema = None  # type: ignore
 
         if context.matcher:
-            if support_jump_ahead:
-                # Jump ahead in generation if possible.
-                jump_forward_tokens = context.matcher.compute_ff_tokens()
-                for token in jump_forward_tokens:
-                    context.jump_ahead(token)
-
             # Fill the bitmask for this context.
             self.fill_bitmask(context, bitmask, index)
 

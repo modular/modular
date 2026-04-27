@@ -149,7 +149,6 @@ class FakeContext:
         self,
         new_token: int,
         log_probabilities: LogProbabilities | None = None,
-        mark_previous_as_processed: bool = True,
     ) -> None:
         pass
 
@@ -169,9 +168,6 @@ class FakeContext:
     def realize_future_token(
         self, new_token: int, log_probabilities: LogProbabilities | None = None
     ) -> None:
-        pass
-
-    def jump_ahead(self, new_token: int) -> None:
         pass
 
     @property
