@@ -2866,8 +2866,8 @@ class BenchmarkSession:
     samples: Samples
     lora_manager: LoRABenchmarkManager | None
     trace_path: str | None
-    orig_skip_first: int | None
-    orig_skip_last: int | None
+    skip_first: int
+    skip_last: int
 
 
 def _execute_benchmark(
@@ -2876,39 +2876,10 @@ def _execute_benchmark(
     max_concurrency: int | None,
     request_rate: float,
 ) -> tuple[dict[str, Any], ServingBenchmarkMetrics]:
-    """Run a single benchmark invocation and return *(result_dict, metrics)*.
-
-    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
-    user-supplied values (``None`` = auto-derive from *max_concurrency*).
-    """
+    """Run a single benchmark invocation and return *(result_dict, metrics)*."""
     backend: Backend = args.backend
-
-    skip_first = session.orig_skip_first
-    skip_last = session.orig_skip_last
-    if request_rate != float("inf"):
-        # Finite rate → steady drip with no ramp-up / ramp-down artifacts,
-        # so skip nothing (PERF-878).
-        if skip_first is None:
-            skip_first = 0
-        if skip_last is None:
-            skip_last = 0
-    elif max_concurrency is not None:
-        if skip_first is None:
-            skip_first = max_concurrency
-            logger.info(
-                f"Auto-setting skip_first_n_requests={skip_first}"
-                f" (max_concurrency={max_concurrency})"
-            )
-        if skip_last is None:
-            skip_last = max_concurrency
-            logger.info(
-                f"Auto-setting skip_last_n_requests={skip_last}"
-                f" (max_concurrency={max_concurrency})"
-            )
-    if skip_first is None:
-        skip_first = 0
-    if skip_last is None:
-        skip_last = 0
+    skip_first = session.skip_first
+    skip_last = session.skip_last
 
     if args.warm_shared_prefix:
         if args.dataset_name not in ("random", "synthetic"):
@@ -3581,8 +3552,8 @@ def main_with_parsed_args(
         samples=samples,
         lora_manager=lora_manager,
         trace_path=trace_path,
-        orig_skip_first=args.skip_first_n_requests,
-        orig_skip_last=args.skip_last_n_requests,
+        skip_first=args.skip_first_n_requests,
+        skip_last=args.skip_last_n_requests,
     )
 
     # ---- Sweep loop ----
