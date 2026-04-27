@@ -36,6 +36,7 @@ import json
 import logging
 import os
 import random
+import shlex
 import shutil
 import statistics
 import subprocess
@@ -1410,6 +1411,259 @@ def _print_per_iteration(
             success_idx += 1
 
 
+def _write_prompts_manifest(
+    path: str,
+    args: argparse.Namespace,
+    requests: list[BenchmarkRequest],
+) -> None:
+    """Write a full manifest documenting every parameter fed into both the
+    diffusers (PyTorch) backend and the MAX backend for this run.
+
+    The goal is end-to-end reproducibility from this file alone: it records
+    resolved CLI values (overridden and default), per-iteration shapes and
+    prompts, and the concrete kwargs / request-body fields each backend
+    receives — including MAX/diffusers provider-option defaults we do *not*
+    override.
+    """
+    vae_dtype = _get_vae_dtype(args)
+    # torch.compile settings applied in `_load_diffusers_pipeline`.
+    torch_compile_modes = {
+        "text_encoder": ("max-autotune", False),
+        "transformer": ("max-autotune-no-cudagraphs", True),
+        "vae": ("max-autotune", True),
+    }
+
+    def _fmt(v: Any) -> str:
+        if v is None:
+            return "None"
+        if isinstance(v, str) and not v:
+            return "'' (empty)"
+        return repr(v) if isinstance(v, str) else str(v)
+
+    with open(path, "w") as f:
+        f.write("=" * 72 + "\n")
+        f.write("Wan T2V comparison — run manifest\n")
+        f.write(f"written: {datetime.now():%Y-%m-%d %H:%M:%S}\n")
+        f.write("=" * 72 + "\n\n")
+
+        # --- Reproducibility -------------------------------------------
+        f.write("[Reproducibility]\n")
+        f.write(f"  command          : {shlex.join(sys.argv)}\n")
+        f.write(f"  seed             : {args.seed}\n")
+        f.write(f"  reproduce with   : --seed {args.seed}\n\n")
+
+        # --- CLI args (all, resolved) ----------------------------------
+        f.write("[CLI args — resolved values]\n")
+        cli_fields: list[tuple[str, Any]] = [
+            ("--model", args.model),
+            ("--guidance-scale", args.guidance_scale),
+            ("--guidance-scale-2", args.guidance_scale_2),
+            ("--num-warmups", args.num_warmups),
+            ("--num-iterations", args.num_iterations),
+            ("--seed", args.seed),
+            ("--torch-compile", args.torch_compile),
+            ("--skip-diffusers", args.skip_diffusers),
+            ("--skip-max", args.skip_max),
+            ("--height (shape override)", args.height),
+            ("--width (shape override)", args.width),
+            ("--num-frames (shape override)", args.num_frames),
+            ("--num-inference-steps (override)", args.num_inference_steps),
+            ("--negative-prompt (CLI default)", args.negative_prompt),
+            ("--shift (scheduler flow_shift)", args.shift),
+            ("--weight-path", args.weight_path),
+            ("--quantization-encoding", args.quantization_encoding),
+            ("--no-output", args.no_output),
+            ("--model-override", args.model_override),
+            ("--single-prompt", args.single_prompt),
+        ]
+        for name, value in cli_fields:
+            if (
+                isinstance(value, str)
+                and name == "--negative-prompt (CLI default)"
+                and len(value) > 80
+            ):
+                f.write(
+                    f"  {name:36s}: {_truncate_prompt(value, 80)}"
+                    f"  (len={len(value)})\n"
+                )
+            else:
+                f.write(f"  {name:36s}: {_fmt(value)}\n")
+        f.write("\n")
+
+        # --- PyTorch / diffusers ---------------------------------------
+        f.write("[diffusers (PyTorch) — WanPipeline]\n")
+        f.write("  Pipeline load (_load_diffusers_pipeline):\n")
+        f.write("    AutoencoderKLWan.from_pretrained(\n")
+        f.write(f"      {args.model!r},\n")
+        f.write("      subfolder='vae',\n")
+        f.write(f"      torch_dtype={vae_dtype},\n")
+        f.write("    )\n")
+        f.write("    diffusers.WanPipeline.from_pretrained(\n")
+        f.write(f"      {args.model!r},\n")
+        f.write("      vae=<loaded above>,\n")
+        f.write("      torch_dtype=torch.bfloat16,  # hardcoded\n")
+        f.write("      low_cpu_mem_usage=True,       # hardcoded\n")
+        f.write("    ).to('cuda')\n")
+        f.write("  Post-load patches:\n")
+        f.write(
+            "    text_encoder.encoder.embed_tokens.weight"
+            " = text_encoder.shared.weight\n"
+        )
+        f.write(
+            "      (HF UMT5 tie hack — checkpoint only ships `shared.weight`"
+            " but config has tie_word_embeddings=false)\n"
+        )
+        if args.shift is not None:
+            f.write(
+                f"    scheduler = scheduler.from_config("
+                f"flow_shift={args.shift})\n"
+            )
+        else:
+            f.write(
+                "    scheduler flow_shift: (HF config default, unchanged)\n"
+            )
+        f.write("  torch.compile:\n")
+        if args.torch_compile:
+            for name, (mode, fullgraph) in torch_compile_modes.items():
+                f.write(
+                    f"    {name:13s}: mode={mode!r}, fullgraph={fullgraph}\n"
+                )
+        else:
+            f.write("    disabled (eager mode, --no-torch-compile)\n")
+        f.write("  Per-call kwargs passed to pipe(**kwargs):\n")
+        f.write("    prompt               : <per-iter>\n")
+        f.write("    negative_prompt      : <per-iter, or None if empty>\n")
+        f.write("    height               : <per-iter>\n")
+        f.write("    width                : <per-iter>\n")
+        f.write("    num_frames           : <per-iter>\n")
+        f.write("    num_inference_steps  : <per-iter>\n")
+        f.write(f"    guidance_scale       : {args.guidance_scale}\n")
+        if args.guidance_scale_2 is not None:
+            f.write(f"    guidance_scale_2     : {args.guidance_scale_2}\n")
+        else:
+            f.write(
+                "    guidance_scale_2     : (not forwarded — raises on"
+                " single-expert Wan2.1)\n"
+            )
+        f.write(
+            "    generator            :"
+            f" torch.Generator('cpu').manual_seed({args.seed})\n"
+        )
+        f.write(
+            "  WanPipeline.__call__ args NOT passed (diffusers defaults used):\n"
+        )
+        f.write(
+            "    num_videos_per_prompt, max_sequence_length, output_type,\n"
+            "    return_dict, callback_on_step_end,"
+            " callback_on_step_end_tensor_inputs,\n"
+            "    attention_kwargs, latents, prompt_embeds,"
+            " negative_prompt_embeds\n"
+        )
+        f.write("\n")
+
+        # --- MAX --------------------------------------------------------
+        f.write("[MAX — PixelGenerationPipeline]\n")
+        f.write("  Pipeline load (_load_max_pipeline):\n")
+        f.write(
+            "    ModelManifest.from_model_path("
+            f"{args.model!r}, device_specs=[DeviceSpec.accelerator()])\n"
+        )
+        f.write(f"    weight_path override      : {_fmt(args.weight_path)}\n")
+        f.write(
+            "    quantization_encoding ovr :"
+            f" {_fmt(args.quantization_encoding)}\n"
+        )
+        f.write(
+            f"    model_override list       : {_fmt(args.model_override)}\n"
+        )
+        f.write(
+            "    PipelineConfig(models=manifest,"
+            " runtime=PipelineRuntimeConfig())\n"
+        )
+        f.write("    WanTokenizer:\n")
+        f.write(f"      model_path     : {args.model!r}\n")
+        f.write("      subfolder      : 'tokenizer'\n")
+        f.write("      max_length     : 512\n")
+        f.write(
+            "  MAX-side scheduler shift (WanTokenizer._select_wan_flow_shift):\n"
+        )
+        f.write(
+            "    if scheduler.flow_shift is set and != 1.0 → use it verbatim\n"
+        )
+        f.write("    else linearly interpolate by pixel count:\n")
+        f.write("      480p (480*832 = 399_360 px) → flow_shift = 3.0\n")
+        f.write("      720p (720*1280 = 921_600 px) → flow_shift = 5.0\n")
+        f.write("  Per-call OpenResponsesRequestBody:\n")
+        f.write(f"    model                : {args.model}\n")
+        f.write("    input (=prompt)      : <per-iter>\n")
+        f.write(f"    seed                 : {args.seed}\n")
+        f.write("    provider_options.image (ImageProviderOptions):\n")
+        f.write("      height             : <per-iter>\n")
+        f.write("      width              : <per-iter>\n")
+        f.write("      steps              : <per-iter>\n")
+        f.write(f"      guidance_scale     : {args.guidance_scale}\n")
+        f.write("      negative_prompt    : <per-iter, or None if empty>\n")
+        f.write("    provider_options.video (VideoProviderOptions):\n")
+        f.write("      height             : <per-iter>\n")
+        f.write("      width              : <per-iter>\n")
+        f.write("      num_frames         : <per-iter>\n")
+        f.write("      steps              : <per-iter>\n")
+        f.write(f"      guidance_scale_2   : {_fmt(args.guidance_scale_2)}\n")
+        f.write("      negative_prompt    : <per-iter, or None if empty>\n")
+        f.write(
+            "  Provider-option defaults we do NOT override (used as shipped):\n"
+        )
+        f.write("    ImageProviderOptions:\n")
+        f.write("      secondary_prompt          : None\n")
+        f.write("      secondary_negative_prompt : None\n")
+        f.write("      true_cfg_scale            : 1.0\n")
+        f.write("      num_images                : 1\n")
+        f.write("      residual_threshold        : None\n")
+        f.write("      strength                  : 0.6  (unused for t2v)\n")
+        f.write("      cfg_normalization         : False\n")
+        f.write("      cfg_truncation            : 1.0\n")
+        f.write("      output_format             : 'jpeg'\n")
+        f.write("    VideoProviderOptions:\n")
+        f.write("      frames_per_second         : None\n")
+        f.write("\n")
+
+        # --- Negative prompt (full text) --------------------------------
+        f.write("[Negative prompt — CLI default, full text]\n")
+        if args.negative_prompt:
+            f.write(f"  length  : {len(args.negative_prompt)} chars\n")
+            f.write(f"  value   : {args.negative_prompt}\n")
+        else:
+            f.write("  value   : (empty)\n")
+        f.write("\n")
+
+        # --- Iterations (full per-iter spec) ----------------------------
+        f.write("[Iterations]\n")
+        f.write(f"  count    : {len(requests)}\n")
+        for i, req in enumerate(requests):
+            if req.force_no_negative:
+                neg_label = "forced-empty (slot opts out)"
+            elif not req.negative_prompt:
+                neg_label = "empty"
+            elif req.negative_prompt == args.negative_prompt:
+                neg_label = "CLI default (see above)"
+            else:
+                neg_label = "literal override"
+            f.write(
+                f"\n  iter {i}:\n"
+                f"    height             : {req.height}\n"
+                f"    width              : {req.width}\n"
+                f"    num_frames         : {req.num_frames}\n"
+                f"    num_inference_steps: {req.num_inference_steps}\n"
+                f"    negative_prompt    : {neg_label}\n"
+            )
+            if (
+                neg_label == "literal override"
+                and req.negative_prompt is not None
+            ):
+                f.write(f"    negative_prompt text: {req.negative_prompt}\n")
+            f.write(f"    prompt:\n      {req.prompt}\n")
+
+
 def main(argv: list[str] | None = None) -> int:
     logging.basicConfig(
         level=logging.INFO,
@@ -1481,25 +1735,11 @@ def main(argv: list[str] | None = None) -> int:
         os.makedirs(output_dir)
         print(f"  Saving frames to: {output_dir}/")
 
-    # Write a prompts.txt manifest.
+    # Write a prompts.txt manifest documenting every param we feed to
+    # both backends, so a run can be reproduced end-to-end from this file.
     if output_dir is not None:
         prompts_path = os.path.join(output_dir, "prompts.txt")
-        with open(prompts_path, "w") as f:
-            f.write(f"seed: {args.seed}\n")
-            f.write(f"reproduce with: --seed {args.seed}\n\n")
-            for i, req in enumerate(requests):
-                neg_flag = (
-                    "no"
-                    if (req.force_no_negative or not req.negative_prompt)
-                    else "yes"
-                )
-                f.write(
-                    f"iter {i}: {req.width}x{req.height},"
-                    f" {req.num_frames} frames,"
-                    f" {req.num_inference_steps} steps,"
-                    f" negative_prompt={neg_flag}\n"
-                )
-                f.write(f"  prompt: {req.prompt}\n\n")
+        _write_prompts_manifest(prompts_path, args, requests)
         print(f"  Saved prompt manifest: {prompts_path}")
 
     diffusers_result: TimingResult | None = None
