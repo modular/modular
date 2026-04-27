@@ -798,58 +798,6 @@ def KGEN_StructInstanceType : KGENType<"StructInstance", "struct_inst"> {
 }
 
 //===----------------------------------------------------------------------===//
-// PackType
-//===----------------------------------------------------------------------===//
-
-def KGEN_PackType : KGENType<"Pack", "pack", [
-    DeclareTypeInterfaceMethods<ParameterTypeInterface>,
-    DeclareTypeInterfaceMethods<DataLayoutInterface>,
-    DeclareTypeInterfaceMethods<MemoryableTypeInterface>]> {
-  let summary = "parameterized pack type";
-  let description = [{
-    A `!kgen.pack` type represents a sequence of heterogeneously typed elements.
-    This type can be used to represent a tuple of 0 or more elements.
-
-    Example:
-
-    ```mlir
-    // A concrete pack type with no element types.
-    !kgen.pack<[]>
-
-    // A concrete pack type with two element types.
-    !kgen.pack<[i32, i64]>
-
-    kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
-      // A pack type parameterized on a variadic sequence of elements.
-      %0: !kgen.pack<Ts>,
-      // A pack type parameterized on two element types.
-      %1: !kgen.pack<[T0, T1]>,
-    ) { kgen.return }
-    ```
-  }];
-
-  let parameters = (ins "TypedAttr":$variadic);
-  let assemblyFormat = "`<` custom<PackType>($variadic) `>`";
-  let genVerifyDecl = 1;
-
-  let builders = [
-    TypeBuilderWithInferredContext<(ins "TypedAttr":$variadic), [{
-      return get(variadic.getContext(), variadic);
-    }]>
-  ];
-
-  let extraClassDeclaration = [{
-    /// Returns whether this is a concrete pack type with no elements.
-    bool isEmpty();
-
-    /// If the pack type is concrete, returns the attribute representing the
-    /// variadic sequence that the pack type is based upon. Otherwise, returns
-    /// a null attribute.
-    ParamListAttr getVariadicIfResolved() const;
-  }];
-}
-
-//===----------------------------------------------------------------------===//
 // VariantType
 //===----------------------------------------------------------------------===//
 

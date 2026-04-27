@@ -398,7 +398,7 @@ MojoTypeSystem::GetTypeClass(lldb::opaque_compiler_type_t type) {
   if (isa<POP::ArrayType>(astType))
     return lldb::eTypeClassArray;
 
-  if (impl->getIfStructDecl(astType) || isa<StructType, PackType>(astType))
+  if (impl->getIfStructDecl(astType) || isa<StructType>(astType))
     return lldb::eTypeClassStruct;
 
   return lldb::eTypeClassOther;
@@ -648,12 +648,6 @@ MojoTypeSystem::GetNumChildren(lldb::opaque_compiler_type_t type,
   if (LIT::StructDeclOp structDecl = impl->getIfStructDecl(astType))
     return llvm::range_size(structDecl.getFieldDecls());
 
-  if (auto packType = dyn_cast<PackType>(astType)) {
-    if (auto attr = dyn_cast<ParamListAttr>(packType.getVariadic()))
-      return llvm::range_size(attr.getValues());
-    return 0;
-  }
-
   if (auto structType = dyn_cast<StructType>(astType)) {
     std::optional<size_t> numElements = structType.getNumElements();
     return numElements.value_or(0);
@@ -777,7 +771,7 @@ MojoTypeSystem::GetChildCompilerTypeAtIndex(
     return lldb_private::CompilerType();
   }
 
-  if (isa<PackType, StructType>(astType)) {
+  if (isa<StructType>(astType)) {
     if (const std::optional<MojoTypeDataLayout> &layout =
             impl->dataLayoutContext->getOrCalculate(astType)) {
       childName = std::string(llvm::formatv("[{0}]", idx));
@@ -862,8 +856,8 @@ size_t MojoTypeSystem::GetIndexOfChildMemberWithName(
     }
   }
 
-  // Check if the name is an index of a SIMD or of a pack, which are 0-indexed.
-  if (isa<PackType, StructType, POP::SIMDType, POP::ArrayType>(astType)) {
+  // Check if the name is an index of a SIMD which is 0-indexed.
+  if (isa<StructType, POP::SIMDType, POP::ArrayType>(astType)) {
     unsigned long index;
     if (name.consume_front("[") && !name.consumeInteger(10, index) &&
         name.consume_front("]") && name.empty()) {

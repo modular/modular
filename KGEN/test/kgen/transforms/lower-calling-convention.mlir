@@ -109,7 +109,7 @@ kgen.func @co_await(%arg0: !co.routine) -> !kgen.none {
 }
 
 //===----------------------------------------------------------------------===//
-// `!kgen.pack` lowering
+// `!kgen.struct` lowering
 //===----------------------------------------------------------------------===//
 
 // CHECK-LABEL: @lower_pack
@@ -138,14 +138,6 @@ kgen.func @pack_gep(%arg0: !kgen.pointer<!kgen.struct<(i32, i64)>>) -> !kgen.poi
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(i32, i64)>>
   %0 = kgen.struct.gep %arg0[0] : <!kgen.struct<(i32, i64)>>
   kgen.return %0 : !kgen.pointer<i32>
-}
-
-// CHECK-LABEL: @pack_size
-kgen.func @pack_size(%arg0: !kgen.pack<[i32, i64]>) -> index {
-  // CHECK-NEXT: %index2 = kgen.param.constant = <2>
-  %0 = kgen.pack.size %arg0 : <[i32, i64]>
-  // CHECK-NEXT: return %index2
-  kgen.return %0 : index
 }
 
 // CHECK-LABEL: @pack_load

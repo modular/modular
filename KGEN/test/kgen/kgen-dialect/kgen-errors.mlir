@@ -617,24 +617,6 @@ kgen.generator @variant_constant<value: i32>() {
 
 // -----
 
-// expected-error @below {{cannot create pack with parametric element types}}
-"kgen.pack.create"() : () -> !kgen.pack<T>
-
-// -----
-
-// expected-error @below {{expected 1 operands, but got 0}}
-"kgen.pack.create"() : () -> !kgen.pack<[index]>
-
-// -----
-
-kgen.func @pack(%arg0: i32) {
-  // expected-error @below {{operand #0 should have type 'index' but got 'i32'}}
-  "kgen.pack.create"(%arg0) : (i32) -> !kgen.pack<[index]>
-  kgen.return
-}
-
-// -----
-
 // expected-error @below {{'byref_result' argument must be the last argument}}
 kgen.func @invalid(%arg0: !kgen.pointer<index> byref_result, %arg1: index) -> !kgen.none {
   kgen.unreachable

@@ -1698,46 +1698,6 @@ def KGEN_StructExtractAttr : KGENAttr<"StructExtract", "struct.extract",
 }
 
 //===----------------------------------------------------------------------===//
-// PackAttr
-//===----------------------------------------------------------------------===//
-
-def KGEN_PackAttr : KGENAttr<"Pack", "pack", [
-    TypedAttrInterface,
-    DeclareAttrInterfaceMethods<ParameterAttrInterface>]> {
-  let summary = "heterogeneous list of constant elements";
-  let description = [{
-    The `#kgen.pack` attribute contains a heterogenously typed list of constant
-    elements. It can be used to represent constant pack values, and so is of
-    pack type.
-
-    Example:
-
-    ```mlir
-    // A pack of 3 elements.
-    %0 = kgen.param.constant: !kgen.pack<[i8, ui4, i32]> = <<3, 1, 4>>
-    // An empty pack.
-    %1 = kgen.param.constant: !kgen.pack<[]> = <<>>
-    ```
-  }];
-
-  let parameters = (ins OptionalArrayRefParameter<"TypedAttr">:$values,
-                        AttributeSelfTypeParameter<"", "PackType">:$type);
-
-  let assemblyFormat = [{
-    `<` (`>`) : (custom<PackElements>($values, ref($type))^ `>`)?
-  }];
-
-  let builders = [
-    AttrBuilderWithInferredContext<(ins "ArrayRef<TypedAttr>":$values,
-                                        "PackType":$type), [{
-      return get(type.getContext(), values, type);
-    }]>
-  ];
-
-  let genVerifyDecl = 1;
-}
-
-//===----------------------------------------------------------------------===//
 // VariantAttr
 //===----------------------------------------------------------------------===//
 

@@ -63,7 +63,7 @@ public:
     // simply report as this type has no children, otherwise structs like `Bool`
     // are displayed with its nested `i1` field.
     //
-    // Exception: for multi-element types like Tuple's !kgen.pack, the
+    // Exception: for multi-element types like Tuple's !kgen.struct, the
     // HideChildren flag is intended to suppress redundant children on the
     // pack itself, not to hide Tuple's elements from the wrapping display.
     lldb::ValueObjectSP sv = GetSyntheticValue();

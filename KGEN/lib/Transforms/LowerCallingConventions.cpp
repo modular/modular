@@ -68,28 +68,6 @@ static StructType lowerPackStructType(StructType type) {
                          type.getIsMemoryOnly(), type.getMinAlignment(), false);
 }
 
-/// Lower a concrete pack to a struct.
-static StructType lowerPackTypeToStruct(PackType pack) {
-  ParamListAttr variadicAttr = pack.getVariadicIfResolved();
-  if (!variadicAttr)
-    return nullptr;
-
-  ArrayRef<TypedAttr> typeExprs = variadicAttr.getValues();
-  SmallVector<Type> elementTypes;
-  elementTypes.reserve(typeExprs.size());
-  for (TypedAttr typeExpr : typeExprs)
-    elementTypes.push_back(cast<TypeParamAttr>(typeExpr).getMlirType());
-  return StructType::get(pack.getContext(), elementTypes);
-}
-
-/// Lower a concrete pack attribute to a struct attribute.
-static StructAttr lowerPackAttrToStruct(PackAttr pack) {
-  StructType structType = lowerPackTypeToStruct(pack.getType());
-  if (!structType)
-    return nullptr;
-  return StructAttr::get(pack.getValues(), structType);
-}
-
 /// Lower `!kgen.variant` to a pair of `!pop.union` and a `!pop.scalar`.
 static StructType lowerVariantType(VariantType type) {
   SmallVector<Type> types = llvm::to_vector(type.getTypes());
@@ -253,27 +231,6 @@ static void rewriteFn(Operation *op, mlir::AttrTypeReplacer &replacer) {
   // Handle pack operations. Be mindful here of the ODS methods because the
   // operand and result types will have already been lowered to `!kgen.struct`.
   IRRewriter b{OpBuilder(op)};
-  if (auto create = dyn_cast<PackCreateOp>(op)) {
-    b.replaceOpWithNewOp<StructCreateOp>(create, create->getResultTypes(),
-                                         create.getElements());
-    return;
-  }
-  if (auto extract = dyn_cast<PackExtractOp>(op)) {
-    b.replaceOpWithNewOp<StructExtractOp>(
-        extract, extract->getOperand(0), cast<IntegerAttr>(extract.getIndex()));
-    return;
-  }
-  if (auto gep = dyn_cast<PackGEPOp>(op)) {
-    b.replaceOpWithNewOp<StructGEPOp>(gep, gep.getType(), gep->getOperand(0),
-                                      cast<IntegerAttr>(gep.getIndex()));
-    return;
-  }
-  if (auto size = dyn_cast<PackSizeOp>(op)) {
-    size_t numElements =
-        *cast<StructType>(size->getOperand(0).getType()).getNumElements();
-    b.replaceOpWithNewOp<ParamConstantOp>(size, b.getIndexAttr(numElements));
-    return;
-  }
   if (auto load = dyn_cast<PackLoadOp>(op)) {
     SmallVector<Value> elements;
     auto types =
@@ -385,8 +342,6 @@ void LowerCallingConventionsPass::runOnOperation() {
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
   replacer.addReplacement(lowerPackStructType);
-  replacer.addReplacement(lowerPackTypeToStruct);
-  replacer.addReplacement(lowerPackAttrToStruct);
   replacer.addReplacement(lowerVariantType);
   replacer.addReplacement(lowerVariantAttr);
   // Do not recurse into LinkageNameAttr sub-elements: by this point the

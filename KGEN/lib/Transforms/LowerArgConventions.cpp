@@ -825,11 +825,11 @@ static LogicalResult lowerFuncOp(FuncOp funcOp) {
 /// Expand pack operands on `pop.external_call` into individual elements.
 ///
 /// Before this, an `external_call` taking a pack looks like:
-///   pop.external_call @foo(%pack) : (!kgen.pack<[i32, f32]>) -> ()
+///   pop.external_call @foo(%pack) : (!kgen.struct<[i32, f32] isParamPack>)->()
 ///
 /// After expansion:
-///   %0 = kgen.pack.extract %pack[0] : <[i32, f32]>
-///   %1 = kgen.pack.extract %pack[1] : <[i32, f32]>
+///   %0 = kgen.struct.extract %pack[0] : <[i32, f32]>
+///   %1 = kgen.struct.extract %pack[1] : <[i32, f32]>
 ///   pop.external_call @foo(%0, %1) : (i32, f32) -> ()
 ///
 /// Recursively flatten a pack-typed value into individual scalar operands.

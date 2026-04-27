@@ -48,20 +48,6 @@ kgen.generator @struct<size, dtype: dtype, ty: type>(
   kgen.return
 }
 
-// CHECK-LABEL: @pack
-kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
-  // CHECK-SAME: !kgen.pack<Ts>
-  %arg0: !kgen.pack<Ts>,
-  // CHECK-SAME: !kgen.pack<[T0, T1]>
-  %arg1: !kgen.pack<[T0, T1]>,
-  // CHECK-SAME: !kgen.pack<[]>
-  %arg2: !kgen.pack<[]>,
-  // CHECK-SAME: !kgen.pack<[i32, i64]>
-  %arg3: !kgen.pack<[i32, i64]>
-) {
-  kgen.return
-}
-
 // CHECK-LABEL: @variadic
 kgen.generator @variadic<ty: type>(
   // CHECK-SAME: !kgen.param_list<scalar<f32>>

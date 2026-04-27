@@ -23,8 +23,6 @@ There are three kinds of types you'll see in the codebase:
   generates the C++ for us. For example:
   - The `def LIT_StructType { ... }` block in our `LITTypes.td` tells MLIR how
     to generate `LIT::StructType`.
-  - The `def KGEN_PackType { ... }` block in our `KGENAttrs.td` tells MLIR how
-    to generate `KGEN::PackType`.
 - **Data Wrappers** around those MLIR things. For example:
   - Our `ASTType` is a wrapper around `mlir::Type`.
   - Our `CValue`, `LValue`, `MLValue`, `DLValue`, `SBValue`, `MBValue`,
