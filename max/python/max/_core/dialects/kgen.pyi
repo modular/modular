@@ -3156,31 +3156,6 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
         result: max._core.dialects.builtin.IntegerType,
     ) -> None: ...
 
-class PackLoadOp(max._core.Operation):
-    """
-    The `kgen.pack.load` operation takes a struct of !kgen.pointer values and
-    loads each one into a struct without the pointer type.  This requires
-    elements with trivially loadable types supported by pop.load.
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: StructType,
-        pack: max._core.Value[StructType],
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        pack: max._core.Value[StructType],
-    ) -> None: ...
-    @property
-    def pack(self) -> max._core.Value[StructType]: ...
-
 class ParamApplyOp(max._core.Operation):
     """
     The `kgen.param.apply` operation is a call operation entirely in the
@@ -3955,6 +3930,10 @@ class StructLoadIndirectOp(max._core.Operation):
     The `kgen.struct.load_indirect` operation takes a struct of !kgen.pointer
     values and loads each one into a struct without the pointer type.  This
     requires elements with trivially loadable types supported by pop.load.
+
+    When the operand struct is a variadic parameter pack (`isParamPack`), the
+    result struct is also marked `isParamPack` so downstream ABI lowering can
+    still recognize a pack.
     """
 
     @overload

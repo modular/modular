@@ -1642,7 +1642,7 @@ struct VariadicPack[
     def get_loaded_kgen_pack(self) -> Self._loaded_kgen_pack_type:
         """This returns the stored KGEN pack after loading all of the elements.
         """
-        return __mlir_op.`kgen.pack.load`(self.get_as_kgen_pack())
+        return __mlir_op.`kgen.struct.load_indirect`(self.get_as_kgen_pack())
 
     def _write_to[
         O1: ImmutOrigin,
