@@ -2724,7 +2724,7 @@ async def benchmark(
 
 
 def validate_task_and_endpoint(
-    benchmark_task: BenchmarkTask, endpoint: Endpoint, backend: str
+    benchmark_task: BenchmarkTask, endpoint: Endpoint
 ) -> None:
     if benchmark_task == "text-generation":
         if endpoint in ("/v1/responses", "/v1/images/generations"):
@@ -3162,7 +3162,7 @@ def main_with_parsed_args(
                 f" with one of {sorted(PIXEL_GENERATION_ENDPOINTS)}."
             )
 
-    validate_task_and_endpoint(benchmark_task, endpoint, args.backend)
+    validate_task_and_endpoint(benchmark_task, endpoint)
     # chat is only meaningful for text-generation (enables chat template
     # formatting). For pixel generation via /v1/chat/completions
     # (vllm pixel gen), the pixel-gen code path ignores this flag.

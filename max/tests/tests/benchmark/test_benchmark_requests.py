@@ -19,6 +19,7 @@ from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
+from max.benchmark.benchmark_serving import validate_task_and_endpoint
 from max.benchmark.benchmark_shared.datasets.types import (
     PixelGenerationImageOptions,
 )
@@ -1055,38 +1056,34 @@ class TestPixelGenerationPayloadBuilders:
 class TestValidateTaskAndEndpoint:
     """Tests for validate_task_and_endpoint."""
 
-    @pytest.fixture(autouse=True)
-    def _import_validate(self) -> None:
-        from max.benchmark.benchmark_serving import validate_task_and_endpoint
-
-        self.validate = validate_task_and_endpoint
-
     def test_text_gen_modular_chat_ok(self) -> None:
-        self.validate("text-generation", "/v1/chat/completions", "modular")
+        validate_task_and_endpoint("text-generation", "/v1/chat/completions")
 
     def test_text_gen_modular_completions_ok(self) -> None:
-        self.validate("text-generation", "/v1/completions", "modular")
+        validate_task_and_endpoint("text-generation", "/v1/completions")
 
     def test_text_gen_responses_rejected(self) -> None:
         with pytest.raises(ValueError, match="does not support"):
-            self.validate("text-generation", "/v1/responses", "modular")
+            validate_task_and_endpoint("text-generation", "/v1/responses")
 
     def test_text_gen_images_rejected(self) -> None:
         with pytest.raises(ValueError, match="does not support"):
-            self.validate("text-generation", "/v1/images/generations", "sglang")
+            validate_task_and_endpoint(
+                "text-generation", "/v1/images/generations"
+            )
 
     def test_pixel_gen_responses_ok(self) -> None:
-        self.validate("text-to-image", "/v1/responses", "modular")
+        validate_task_and_endpoint("text-to-image", "/v1/responses")
 
     def test_pixel_gen_images_ok(self) -> None:
-        self.validate("text-to-image", "/v1/images/generations", "sglang")
+        validate_task_and_endpoint("text-to-image", "/v1/images/generations")
 
     def test_pixel_gen_chat_ok(self) -> None:
-        self.validate("text-to-image", "/v1/chat/completions", "vllm")
+        validate_task_and_endpoint("text-to-image", "/v1/chat/completions")
 
     def test_pixel_gen_completions_rejected(self) -> None:
         with pytest.raises(ValueError, match="requires --endpoint"):
-            self.validate("text-to-image", "/v1/completions", "modular")
+            validate_task_and_endpoint("text-to-image", "/v1/completions")
 
     def test_image_to_image_responses_ok(self) -> None:
-        self.validate("image-to-image", "/v1/responses", "modular")
+        validate_task_and_endpoint("image-to-image", "/v1/responses")
