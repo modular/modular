@@ -32,7 +32,7 @@ import numpy as np
 from max.driver import CPU, Buffer, Device
 from max.dtype import DType
 from max.engine import InferenceSession, Model
-from max.graph import DeviceRef, Graph, TensorType
+from max.graph import BufferType, DeviceRef, Graph, TensorType, ops
 from max.graph.buffer_utils import cast_dlpack_to
 from max.graph.weights import Weights
 from max.pipelines.lib import SupportedEncoding
@@ -104,6 +104,7 @@ class AutoencoderKLWanModel(ComponentModel):
         self.pqc_model: Model | None = None
         self.first_frame_model: Model | None = None
         self.rest_frame_model: Model | None = None
+        self.write_chunk_model: Model | None = None
         self.first_chunk_encoder: Model | None = None
         self.rest_chunk_encoder: Model | None = None
 
@@ -216,11 +217,34 @@ class AutoencoderKLWanModel(ComponentModel):
         pqc_module.load_state_dict(
             decoder_state_dict, weight_alignment=1, strict=False
         )
+        # The PQC graph takes the full 5D latent tensor plus a scalar
+        # ``t_idx`` and slices a single frame on-device before applying
+        # the post-quant conv. This avoids pulling latents to host and
+        # re-uploading per frame. ``t_idx`` is CPU-resident because
+        # ``ops.slice_tensor`` builds starts/stops/steps host tensors.
         pqc_input_types = [
-            TensorType(dtype, [1, cfg.z_dim, 1, "height", "width"], device=dev)
+            TensorType(
+                dtype,
+                [1, cfg.z_dim, "t_total", "height", "width"],
+                device=dev,
+            ),
+            TensorType(DType.int64, [], device=DeviceRef.CPU()),
         ]
         with Graph("wan_vae_pqc", input_types=pqc_input_types) as pqc_graph:
-            out = pqc_module(pqc_graph.inputs[0].tensor)
+            latents_5d = pqc_graph.inputs[0].tensor
+            t_idx = pqc_graph.inputs[1].tensor
+            z_t = ops.slice_tensor(
+                latents_5d,
+                [
+                    slice(None),
+                    slice(None),
+                    t_idx,
+                    slice(None),
+                    slice(None),
+                ],
+            )
+            z_t = ops.unsqueeze(z_t, axis=2)
+            out = pqc_module(z_t)
             pqc_graph.output(out)
         self.pqc_model = self._session.load(
             pqc_graph, weights_registry=pqc_module.state_dict()
@@ -313,6 +337,75 @@ class AutoencoderKLWanModel(ComponentModel):
             rest_graph, weights_registry=rest_module.state_dict()
         )
 
+        self.write_chunk_model = self._compile_write_chunk_graph()
+
+    def _compile_write_chunk_graph(self) -> Model:
+        """Compile a graph that writes a decoded chunk into a mutable output.
+
+        The Wan VAE's first-frame and rest-frame decoders emit different
+        temporal extents (``first_frame_model`` returns 1 video frame;
+        ``rest_frame_model`` returns ``N`` video frames where ``N`` is the
+        product of ``cfg.temporal_downsample``). Both cases reduce to "write
+        a chunk of T frames at a given starting slot," so a single graph
+        with symbolic ``t_chunk`` handles them uniformly.
+
+        Inputs:
+            * ``output_buf`` (mutable ``BufferType``) — pre-allocated 5D
+              ``[1, C, T_total, H, W]`` accumulator on device.
+            * ``chunk`` (``TensorType``) — decoded chunk
+              ``[1, C, t_chunk, H, W]`` with symbolic ``t_chunk``.
+            * ``start`` (``int64`` scalar) — destination starting index
+              along axis 2.
+
+        The graph performs one in-place ``buffer_store_slice`` that writes
+        ``chunk`` into ``output_buf[:, :, start:start + t_chunk, :, :]``.
+        """
+        cfg = self.config
+        dtype = cfg.dtype
+        dev = self.devices[0]
+        # BufferType's base __init__ expects a DeviceRef; unlike TensorType
+        # it does not auto-convert from driver Device, so wrap explicitly.
+        dev_ref = DeviceRef.from_device(dev)
+        output_type = BufferType(
+            dtype,
+            [1, cfg.out_channels, "t_total", "height", "width"],
+            device=dev_ref,
+        )
+        chunk_type = TensorType(
+            dtype,
+            [1, cfg.out_channels, "t_chunk", "height", "width"],
+            device=dev,
+        )
+        # ``start`` is CPU-resident — ``buffer_store_slice`` reuses the
+        # same slice-metadata machinery as ``ops.slice_tensor``, which
+        # requires starts/stops/steps on host.
+        start_type = TensorType(DType.int64, [], device=DeviceRef.CPU())
+        with Graph(
+            "wan_vae_write_chunk",
+            input_types=[output_type, chunk_type, start_type],
+        ) as g:
+            output_buf = g.inputs[0].buffer
+            chunk = g.inputs[1].tensor
+            start = g.inputs[2].tensor
+            # MAX's slice machinery rejects ``slice(tensor, tensor)``
+            # against a dynamic dim, so use the tuple form
+            # ``(slice(start, stop, step), out_dim)`` where ``out_dim``
+            # names the slice's output dim. The chunk's symbolic
+            # ``t_chunk`` is read at runtime via ``shape_to_tensor`` to
+            # form ``stop = start + t_chunk``.
+            t_chunk_dim = chunk.shape[2]
+            chunk_size = ops.shape_to_tensor(chunk.shape)[2]
+            stop = start + chunk_size
+            output_buf[
+                slice(None),
+                slice(None),
+                (slice(start, stop, 1), t_chunk_dim),
+                slice(None),
+                slice(None),
+            ] = chunk
+            g.output()
+        return self._session.load(g)
+
     def _compile_encoder_graphs(
         self, encoder_state_dict: dict[str, Any]
     ) -> None:
@@ -388,37 +481,70 @@ class AutoencoderKLWanModel(ComponentModel):
         )
 
     def decode_5d(self, latents_5d: Buffer) -> Buffer:
-        """Decode 5D latents [B, C, T, H, W] frame-by-frame."""
+        """Decode 5D latents [B, C, T, H, W] frame-by-frame on device.
+
+        The Wan VAE temporally upsamples by a factor equal to the product
+        of ``cfg.temporal_downsample`` (typically 4): the first latent
+        frame produces 1 video frame, every subsequent latent frame
+        produces ``N`` video frames. This method pre-allocates a single
+        ``[1, out_channels, T_video, H_out, W_out]`` buffer sized for the
+        total video frame count and writes each chunk into its temporal
+        slice via the compiled chunk-write graph. No per-frame device→host
+        copies and no final concat step — the returned buffer *is* the
+        stitched output.
+        """
         if self.pqc_model is None:
             self.load_model()
         pqc_model = self.pqc_model
         first_frame_model = self.first_frame_model
         rest_frame_model = self.rest_frame_model
+        write_chunk_model = self.write_chunk_model
         assert pqc_model is not None
         assert first_frame_model is not None
         assert rest_frame_model is not None
+        assert write_chunk_model is not None
 
         t_total = int(latents_5d.shape[2])
         if t_total <= 0:
             raise ValueError("Expected non-empty temporal dimension for decode")
 
-        cpu = CPU()
-        latents_np = _buffer_to_numpy_f32(latents_5d, cpu)
+        cfg = self.config
         device = self.devices[0]
-        target_dtype = self.config.dtype
+        h_latent = int(latents_5d.shape[3])
+        w_latent = int(latents_5d.shape[4])
+        h_out = h_latent * cfg.scale_factor_spatial
+        w_out = w_latent * cfg.scale_factor_spatial
 
-        decoded_frames: list[np.ndarray] = []
+        # Total video frames produced by the cached framewise decoder:
+        # the first latent emits 1 frame, every subsequent latent emits
+        # ``rest_chunk`` frames where ``rest_chunk`` is the product of the
+        # temporal upsample factors (each ``True`` in
+        # ``cfg.temporal_downsample`` doubles the temporal dim on decode).
+        rest_chunk = 1
+        for d in cfg.temporal_downsample:
+            if d:
+                rest_chunk *= 2
+        num_video_frames = 1 + max(t_total - 1, 0) * rest_chunk
+
+        # Pre-allocate the stitched output buffer once. Each iteration
+        # writes its decoded chunk into the correct temporal slice.
+        output_buf = Buffer(
+            cfg.dtype,
+            (1, cfg.out_channels, num_video_frames, h_out, w_out),
+            device=device,
+        )
+
         caches: list[Buffer] | None = None
+        out_offset = 0
 
         with Tracer("wan_vae_decode"):
             for t_idx in range(t_total):
-                z_t_np = np.ascontiguousarray(
-                    latents_np[:, :, t_idx : t_idx + 1, :, :]
-                )
-                z_t_buf = _numpy_f32_to_buffer(z_t_np, target_dtype, device)
+                # Keep ``t_idx`` on CPU — pqc_model declares it as a
+                # host-resident scalar.
+                t_idx_buf = Buffer.from_numpy(np.array(t_idx, dtype=np.int64))
 
-                # Post-quant conv
-                pqc_outputs = pqc_model.execute(z_t_buf)
+                # Post-quant conv (includes on-device slice of latents_5d).
+                pqc_outputs = pqc_model.execute(latents_5d, t_idx_buf)
                 if len(pqc_outputs) != 1:
                     raise ValueError(
                         f"Expected 1 output from post_quant_conv, "
@@ -443,12 +569,16 @@ class AutoencoderKLWanModel(ComponentModel):
                         f"expected {1 + WAN_DECODER_CACHE_SLOTS}."
                     )
 
-                decoded_buf = outputs[0]
+                # In-place chunk write into the accumulator. ``out_offset``
+                # advances by the chunk's temporal extent each iteration.
+                offset_buf = Buffer.from_numpy(
+                    np.array(out_offset, dtype=np.int64)
+                )
+                write_chunk_model.execute(output_buf, outputs[0], offset_buf)
+                out_offset += int(outputs[0].shape[2])
                 caches = list(outputs[1:])
-                decoded_frames.append(_buffer_to_numpy_f32(decoded_buf, cpu))
 
-        stitched = np.ascontiguousarray(np.concatenate(decoded_frames, axis=2))
-        return Buffer.from_numpy(stitched)
+        return output_buf
 
     def decode_4d(self, latents_4d: Buffer) -> Buffer:
         """Decode 4D latents by adding and removing a temporal dim."""
@@ -461,12 +591,15 @@ class AutoencoderKLWanModel(ComponentModel):
         )
         z5d = latents_4d.view(dtype=latents_4d.dtype, shape=shape_5d)
         decoded_5d = self.decode_5d(z5d)
-        # Remove temporal dimension from decoded output.
-        cpu = CPU()
-        decoded_np = _buffer_to_numpy_f32(decoded_5d, cpu)
-        return Buffer.from_numpy(
-            np.ascontiguousarray(decoded_np[:, :, 0, :, :])
+        # T=1 makes the temporal axis trivially squeezable; reinterpret
+        # the device buffer as 4D without copying.
+        shape_4d = (
+            int(decoded_5d.shape[0]),
+            int(decoded_5d.shape[1]),
+            int(decoded_5d.shape[3]),
+            int(decoded_5d.shape[4]),
         )
+        return decoded_5d.view(dtype=decoded_5d.dtype, shape=shape_4d)
 
     def decode(
         self, latents: Buffer, return_dict: bool = False
