@@ -795,16 +795,14 @@ your endpoint:
 
 When it's done, you'll see the results printed to the terminal.
 
-If you want to save the results, add the `--save-result` flag and it'll save a
-JSON file in the local directory. You can specify the file name with
-`--result-filename` and change the directory with `--result-dir`. For example:
+If you want to save the results, pass a filename with `--result-filename` and
+it'll save a JSON file at that path. The path can include a directory prefix.
+For example:
 
 ```sh
 max benchmark \
   ...
-  --save-result \
-  --result-filename "quickstart-benchmark.json" \
-  --result-dir "results"
+  --result-filename "results/quickstart-benchmark.json"
 ```
 
 The benchmark options above are just a starting point. When you want to save

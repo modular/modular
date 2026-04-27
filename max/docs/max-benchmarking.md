@@ -84,15 +84,8 @@ max benchmark --config-file gemma-3-27b-sonnet-decode-heavy-prefix200.yaml
 ## Output
 
 Results are printed to the terminal but you can also save a JSON-formatted
-file by adding the `--save-result` flag. It's saved to the local directory
-with this naming convention:
-
-```bash
-{backend}-{request_rate}qps-{model_name}-{timestamp}.json
-```
-
-You can change the file name with `--result-filename` and change the directory
-with `--result-dir`.
+file by providing a path with `--result-filename`. The path can include a
+directory prefix, for example `--result-filename results/my-benchmark.json`.
 
 The output in the terminal should look similar to the following:
 
