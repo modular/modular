@@ -115,6 +115,9 @@ from nn.attention.gpu.nvidia.sm100.mla_decode_dispatch import (
     MLADispatchScalarArgs,
     mla_decode_sm100_dispatch,
 )
+from nn.attention.gpu.nvidia.sm100.mla_decode_sparse_kv_fp8 import (
+    mla_decode_sm100_dispatch_sparse_fp8,
+)
 from .nvidia.sm100.mla_prefill_per_token_scale import (
     mla_sm100_prefill_per_token_scale,
 )
@@ -257,6 +260,56 @@ def flare_mla_decoding[
             max_prompt_len = Int(k.max_prompt_length())
 
         var k_operand = KVCacheMHAOperand(k)
+
+        # ----------------------------------------------------------------
+        # Sparse all-FP8 KV routing (Option C):
+        #
+        # When the cache layout is the 576-byte all-FP8 row (nope 512 B FP8
+        # + rope 64 B FP8), route to the dedicated
+        # `mla_decode_sm100_dispatch_sparse_fp8` entry point. This kernel
+        # uses a single 576-byte gather4 TMA and is mutually exclusive with
+        # the BF16-rope sparse kernel (640-byte rows) which continues to
+        # be served by the existing `flare_mla_decoding_dispatch` path.
+        #
+        # The discriminator is `cache_t.kv_params.head_size`: 576 selects
+        # the new all-FP8 kernel; any other value (e.g. 640 for FP8 nope +
+        # BF16 rope) falls through to the legacy dispatch unchanged.
+        # ----------------------------------------------------------------
+        comptime _is_sparse_all_fp8_kv = (
+            sparse
+            and cache_t.dtype == DType.float8_e4m3fn
+            and cache_t.kv_params.head_size == 576
+            and not per_token_scale_rope_aware
+        )
+
+        comptime if _is_sparse_all_fp8_kv:
+            mla_decode_sm100_dispatch_sparse_fp8[
+                config=config,
+                ragged=ragged,
+                decoding_warp_split_k=decoding_warp_split_k,
+            ](
+                output,
+                q,
+                k,
+                mask_functor,
+                valid_length,
+                max_prompt_len,
+                num_keys,
+                scale,
+                ctx,
+                scalar_args_buf,
+                q_scale_ptr,
+                d_indices,
+                indices_stride,
+                topk_lengths,
+                attn_sink_ptr,
+                extra_k=extra_k,
+                extra_d_indices=extra_d_indices,
+                extra_indices_stride=extra_indices_stride,
+                extra_topk_lengths=extra_topk_lengths,
+                extra_scales_ptr=extra_scales_ptr,
+            )
+            return
 
         # For per_token_scale_rope_aware: Q's last dim is 640 (interleaved FP8+BF16)
         # but the logical depth is 576. Override config to use 576.
