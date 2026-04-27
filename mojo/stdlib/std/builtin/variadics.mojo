@@ -1503,19 +1503,13 @@ struct VariadicPack[
 
         comptime if Self.is_owned:
             comptime for i in reversed(range(Self.__len__())):
-                # FIXME(MOCO-2953):
-                #   Due to a compiler limitation, we can't use
-                #   conforms_to() here, meaning the `trait_downcast` below
-                #   could fail with a worse elaboration error than we'd get from
-                #   _constrained_conforms_to.
-                #
-                # comptime element_type = Self.element_types[i]
-                # _constrained_conforms_to[
-                #     conforms_to(element_type, ImplicitlyDestructible),
-                #     Parent=Self,
-                #     Element=element_type,
-                #     ParentConformsTo="ImplicitlyDestructible",
-                # ]()
+                comptime element_type = Self.element_types[i]
+                _constrained_conforms_to[
+                    conforms_to(element_type, ImplicitlyDestructible),
+                    Parent=Self,
+                    Element=element_type,
+                    ParentConformsTo="ImplicitlyDestructible",
+                ]()
 
                 # Safety: We own the elements in this pack.
                 UnsafePointer(
