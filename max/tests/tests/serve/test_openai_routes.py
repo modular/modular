@@ -44,6 +44,7 @@ from max.serve.pipelines.echo_gen import (
 from max.serve.pipelines.llm import TokenGeneratorOutput, TokenGeneratorPipeline
 from max.serve.router.openai_routes import (
     OpenAIChatResponseGenerator,
+    _create_response_format,
     _process_chat_log_probabilities,
     openai_create_chat_completion,
 )
@@ -53,7 +54,12 @@ from max.serve.schemas.openai import (
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
+    JsonSchema,
     Logprobs2,
+    ResponseFormatJsonObject,
+    ResponseFormatJsonSchema,
+    ResponseFormatJsonSchemaSchema,
+    ResponseFormatText,
 )
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
 
@@ -873,3 +879,67 @@ async def test_openai_chat_stream_reasoning_finish_reason(
     assert responses[0].choices[0].finish_reason is None
     assert responses[1].choices[0].finish_reason is None
     assert responses[2].choices[0].finish_reason == "stop"
+
+
+# ============================================================================
+# Tests for response format conversion
+# ============================================================================
+
+
+def test_create_response_format_json_object() -> None:
+    """Test that json_object format is converted to json_schema with permissive schema."""
+    response_format = ResponseFormatJsonObject(type="json_object")
+    result = _create_response_format(response_format)
+
+    assert result is not None
+    # json_object should be normalized to json_schema internally
+    assert result["type"] == "json_schema"
+    # Should use a permissive schema that accepts any JSON object
+    assert result["json_schema"] == {"type": "object"}
+
+
+def test_create_response_format_json_schema() -> None:
+    """Test that json_schema format preserves the provided schema."""
+    # Use model_validate to construct schema with extra fields (extra='allow')
+    person_schema = ResponseFormatJsonSchemaSchema.model_validate(
+        {
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer"},
+            },
+            "required": ["name", "age"],
+        }
+    )
+
+    response_format = ResponseFormatJsonSchema(
+        type="json_schema",
+        json_schema=JsonSchema(
+            name="person",
+            schema=person_schema,  # Use 'schema' alias, not 'schema_'
+        ),
+    )
+    result = _create_response_format(response_format)
+
+    assert result is not None
+    assert result["type"] == "json_schema"
+    # Schema should contain the provided JSON schema
+    assert "properties" in result["json_schema"]
+    assert "name" in result["json_schema"]["properties"]
+    assert "age" in result["json_schema"]["properties"]
+
+
+def test_create_response_format_text() -> None:
+    """Test that text format returns empty json_schema."""
+    response_format = ResponseFormatText(type="text")
+    result = _create_response_format(response_format)
+
+    assert result is not None
+    assert result["type"] == "text"
+    assert result["json_schema"] == {}
+
+
+def test_create_response_format_none() -> None:
+    """Test that None input returns None."""
+    result = _create_response_format(None)
+    assert result is None
