@@ -202,6 +202,7 @@ def run_sweep(
         for result in results:
             # When uploading, save the median iteration's JSON so the
             # uploader has something to read.
+            json_path: str | None = None
             if (
                 upload_active
                 and result.result_dict is not None
@@ -211,8 +212,8 @@ def run_sweep(
                 json_path = str(
                     log_dir / f"results-{result.max_concurrency}-median.json"
                 )
-                config.result_filename = json_path
                 save_result_json(
+                    json_path,
                     config,
                     result.result_dict,
                     result.metrics,
@@ -226,7 +227,7 @@ def run_sweep(
                 result, percentiles, is_pixel_gen=is_pixel_gen
             )
             if upload_active:
-                sweep_result.result_filename = config.result_filename
+                sweep_result.result_filename = json_path
 
             result_writer.write_row(
                 max_concurrency=result.max_concurrency,

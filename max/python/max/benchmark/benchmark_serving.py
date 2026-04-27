@@ -2976,6 +2976,7 @@ def _execute_benchmark(
 
 
 def save_result_json(
+    result_filename: str | None,
     args: ServingBenchmarkConfig,
     benchmark_result: dict[str, Any],
     benchmark_metrics: ServingBenchmarkMetrics,
@@ -2985,8 +2986,8 @@ def save_result_json(
     tokenizer_id: str,
     request_rate: float,
 ) -> None:
-    """Persist benchmark results to the JSON file at *args.result_filename*."""
-    if not args.result_filename:
+    """Persist benchmark results to *result_filename*."""
+    if not result_filename:
         return
     backend: Backend = args.backend
     client_args = args.model_dump()
@@ -3009,15 +3010,14 @@ def save_result_json(
         **_parse_metadata(args.metadata),
         **benchmark_result,
     }
-    file_name = args.result_filename
-    logger.info(f"Writing file: {file_name}")
-    if os.path.isfile(file_name):
+    logger.info(f"Writing file: {result_filename}")
+    if os.path.isfile(result_filename):
         logger.warning(
             "This is going to overwrite an existing file.  "
-            f"The existing file will be moved to {file_name}.orig."
+            f"The existing file will be moved to {result_filename}.orig."
         )
-        os.rename(file_name, f"{file_name}.orig")
-    with open(file_name, "w") as outfile:
+        os.rename(result_filename, f"{result_filename}.orig")
+    with open(result_filename, "w") as outfile:
         json.dump(result_json, outfile)
 
 
@@ -3629,6 +3629,7 @@ def main_with_parsed_args(
 
             # JSON result file (for the median iteration).
             save_result_json(
+                args.result_filename,
                 args,
                 best_result,
                 best_metrics,
