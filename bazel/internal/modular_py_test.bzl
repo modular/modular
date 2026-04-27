@@ -48,6 +48,7 @@ def modular_py_test(
         imports = [],
         use_resource_tags = False,
         per_test_tags = {},
+        test_name_prefix = "",
         **kwargs):
     """Creates a pytest based python test target.
 
@@ -69,6 +70,7 @@ def modular_py_test(
         imports: Additional python import paths
         use_resource_tags: If true, use pregenerated resource tags for the test.
         per_test_tags: A mapping of source files to extra tags to apply to that test file.
+        test_name_prefix: Prefix added to per-src py_test target names (multi-source only).
         **kwargs: Extra arguments passed through to py_test
     """
 
@@ -195,7 +197,7 @@ def modular_py_test(
     if len(test_srcs) > 1:
         test_names = []
         for src in test_srcs:
-            test_name = src.replace(".py", "")
+            test_name = test_name_prefix + src.replace(".py", "")
             test_names.append(test_name)
             py_test(
                 name = test_name,
@@ -223,6 +225,8 @@ def modular_py_test(
         if per_test_tags:
             fail("Don't use `per_test_tags` if only one source file is specified, use `tags` directly.")
 
+        # test_name_prefix intentionally doesn't apply here: single-source
+        # collisions happen at the `name` arg, which callers pick themselves.
         py_test(
             name = name,
             data = data + extra_data,
