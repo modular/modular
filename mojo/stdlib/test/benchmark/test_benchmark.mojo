@@ -21,9 +21,10 @@ from std.benchmark.bencher import (
     BenchId,
     BenchMetric,
     Format,
+    Mode,
     ThroughputMeasure,
 )
-from std.testing import TestSuite, assert_equal, assert_true
+from std.testing import TestSuite, assert_equal, assert_false, assert_true
 from test_utils import check_write_to
 
 
@@ -315,6 +316,58 @@ def test_bench_function_no_arg_unified() raises:
 
     bench.bench_function(my_func, BenchId("test_noarg_unified"))
     assert_true(count > 0)
+
+
+def test_bench_config_write_to() raises:
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
+    var s = String()
+    cfg.write_to(s)
+    assert_true("min_runtime_secs=0.5" in s)
+    assert_true("max_runtime_secs=2.0" in s)
+    assert_true("max_iters=1000" in s)
+
+
+def test_bench_config_write_repr_to() raises:
+    var cfg = BenchConfig(
+        min_runtime_secs=0.5, max_runtime_secs=2.0, max_iters=1000
+    )
+    var s = String()
+    cfg.write_repr_to(s)
+    assert_true(s.startswith("BenchConfig("))
+    assert_true(s.endswith(")"))
+    assert_true("min_runtime_secs=0.5" in s)
+    assert_true("max_runtime_secs=2.0" in s)
+    assert_true("max_iters=1000" in s)
+
+
+def test_mode_equatable() raises:
+    assert_true(Mode.Benchmark == Mode.Benchmark)
+    assert_true(Mode.Test == Mode.Test)
+    assert_false(Mode.Benchmark == Mode.Test)
+    assert_true(Mode.Benchmark != Mode.Test)
+    assert_false(Mode.Benchmark != Mode.Benchmark)
+
+
+def test_mode_write_to() raises:
+    var s = String()
+    Mode.Benchmark.write_to(s)
+    assert_equal(s, "Benchmark")
+
+    s = String()
+    Mode.Test.write_to(s)
+    assert_equal(s, "Test")
+
+
+def test_mode_write_repr_to() raises:
+    var s = String()
+    Mode.Benchmark.write_repr_to(s)
+    assert_equal(s, "Mode.Benchmark")
+
+    s = String()
+    Mode.Test.write_repr_to(s)
+    assert_equal(s, "Mode.Test")
 
 
 def main() raises:
