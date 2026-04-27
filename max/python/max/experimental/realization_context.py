@@ -45,6 +45,7 @@ in another Graph API usage.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import hashlib
 import logging
@@ -58,6 +59,7 @@ from typing import TYPE_CHECKING, Any, TypeVar, cast
 
 from max import _core, driver, engine
 from max._core.dialects import builtin, rmo
+from max._mlir_context import ensure_default_mlir_context
 from max.dtype import DType
 from max.experimental import _passes
 from max.experimental import functional as F
@@ -370,11 +372,15 @@ class EagerRealizationContext(RealizationContext):
         self.source_values = {}
         self.unrealized = []
         self.signal_buffers = None
+        self._mlir_stack: contextlib.ExitStack | None = None
 
-        self.graph = Graph("main", input_types=[])
-
-        with realization_context(self), self.graph:
-            ops.random.set_seed(seed())
+        # MLIR Context.current is thread-local; on background threads the
+        # default context is not entered. Briefly enter it for graph
+        # construction.
+        with ensure_default_mlir_context():
+            self.graph = Graph("main", input_types=[])
+            with realization_context(self), self.graph:
+                ops.random.set_seed(seed())
 
     def finalize_graph(self) -> tuple[list[Tensor], Graph]:
         """Finalizes the computation graph for execution.
@@ -622,6 +628,10 @@ class EagerRealizationContext(RealizationContext):
         return self.signal_buffers
 
     def __enter__(self):
+        # Re-enter the default MLIR context for the duration of the block so
+        # graph operations and realize_all() work on background threads.
+        self._mlir_stack = contextlib.ExitStack()
+        self._mlir_stack.enter_context(ensure_default_mlir_context())
         self.graph.__enter__()
         return self
 
@@ -631,9 +641,14 @@ class EagerRealizationContext(RealizationContext):
         exception: Ex | None,
         traceback: TracebackType | None,
     ):
-        self.graph.__exit__(exception_type, exception, traceback)
-        if not exception:
-            F._run(self.realize_all())
+        try:
+            self.graph.__exit__(exception_type, exception, traceback)
+            if not exception:
+                F._run(self.realize_all())
+        finally:
+            assert self._mlir_stack is not None
+            self._mlir_stack.close()
+            self._mlir_stack = None
 
 
 class LazyRealizationContext(EagerRealizationContext):
@@ -665,7 +680,12 @@ class LazyRealizationContext(EagerRealizationContext):
         exception: Ex | None,
         traceback: TracebackType | None,
     ):
-        self.graph.__exit__(exception_type, exception, traceback)
+        try:
+            self.graph.__exit__(exception_type, exception, traceback)
+        finally:
+            assert self._mlir_stack is not None
+            self._mlir_stack.close()
+            self._mlir_stack = None
 
 
 class GraphRealizationContext(RealizationContext):

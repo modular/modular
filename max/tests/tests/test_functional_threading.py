@@ -23,6 +23,8 @@ from __future__ import annotations
 import threading
 
 from max.experimental import functional as F
+from max.experimental import tensor as tensor_mod
+from max.experimental.realization_context import EagerRealizationContext
 from max.experimental.tensor import Tensor
 
 
@@ -58,6 +60,27 @@ def test_lazy_context_in_background_thread() -> None:
     def target() -> None:
         try:
             with F.lazy():
+                result.append(_run_simple_op())
+        except BaseException as exc:
+            errors.append(exc)
+
+    t = threading.Thread(target=target)
+    t.start()
+    t.join()
+
+    assert not errors, f"op raised in background thread: {errors[0]!r}"
+    assert len(result) == 1
+    assert list(result[0].shape) == [4, 8]
+
+
+def test_explicit_eager_context_in_background_thread() -> None:
+    result: list[Tensor] = []
+    errors: list[BaseException] = []
+
+    def target() -> None:
+        try:
+            ctx = EagerRealizationContext()
+            with ctx, tensor_mod.realization_context(ctx):
                 result.append(_run_simple_op())
         except BaseException as exc:
             errors.append(exc)

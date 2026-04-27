@@ -259,9 +259,5 @@ def lazy() -> Generator[None]:
         # b is unrealized — no compilation has happened yet
         await b.realize
     """
-    with (
-        ensure_default_mlir_context(),
-        rc.LazyRealizationContext() as ctx,
-        tensor.realization_context(ctx),
-    ):
+    with rc.LazyRealizationContext() as ctx, tensor.realization_context(ctx):
         yield
