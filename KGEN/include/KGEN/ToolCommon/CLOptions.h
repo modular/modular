@@ -82,9 +82,7 @@ public:
 class KGENCommonOptions : public MLRT::RuntimeOptions {
 
 public:
-  KGENCommonOptions()
-      : MLRT::RuntimeOptions(MLRT::RuntimeOptions::WorkQueueType::kThreadPool) {
-  }
+  KGENCommonOptions() = default;
 
   CompilationOptions::DebugInfoLevel debugInfoLevel{
       CompilationOptions::kNoDebug};

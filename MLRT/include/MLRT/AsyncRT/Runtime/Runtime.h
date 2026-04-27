@@ -71,8 +71,6 @@ struct RuntimeOptions {
   };
 
   enum class WorkQueueType {
-    /// Autosense work queue type based on # threads.
-    kDefault,
     /// Workqueue that only ever uses one thread.
     kSingleThread,
     /// Default thread pool that uses std::thread and semaphores.
@@ -91,7 +89,6 @@ struct RuntimeOptions {
 
   size_t numThreads = 0;
   size_t maxThreads = 0;
-  bool singleThreaded = false;
 
   /// Filepath to write profile to, which enables profiling only if set.
   std::string profileFilename;
@@ -128,7 +125,7 @@ struct RuntimeOptions {
   bool tcmallocAllocator = true;
   bool profilingAllocator = false;
   bool useAfterFreeAllocator = false;
-  WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kDefault};
+  WorkQueueType workQueueType{RuntimeOptions::WorkQueueType::kThreadPool};
 
   AllocatorType allocatorType{
 #ifdef MODULAR_DEBUG
@@ -139,31 +136,8 @@ struct RuntimeOptions {
   };
 
   ProfilerDebuginfo profilerDebuginfo = ProfilerDebuginfo::kNoProfiler;
-  WorkQueueType defaultWorkQueue;
-  explicit RuntimeOptions(MLRT::RuntimeOptions::WorkQueueType wq =
-                              MLRT::RuntimeOptions::WorkQueueType::kThreadPool)
-      : defaultWorkQueue(wq) {}
-  /// Explicitly tell runtime to use single threaded workqueue. This is useful
-  /// in situations where computation is performed by some other runtime
-  void useSingleThreadedWorkqueue() {
-    numThreads = 1;
-    workQueueType = RuntimeOptions::WorkQueueType::kSingleThread;
-  }
 
-  // Return the workqueue type to use, resolving kDefault into a concrete kind.
-  WorkQueueType getWorkQueueType() const {
-    // The default behavior picks a thread count based on the -num-threads
-    // command line setting, but can be overridden. -num-threads=0 means using
-    // the default work queue.
-    if (workQueueType == WorkQueueType::kDefault) {
-      if (numThreads == 0)
-        return defaultWorkQueue;
-      if (numThreads == 1)
-        return WorkQueueType::kSingleThread;
-      return WorkQueueType::kThreadPool;
-    }
-    return workQueueType;
-  }
+  RuntimeOptions() = default;
 
   StringRef getProfileFilename() const {
     if constexpr (!kIsProfilingEnabled) {
@@ -214,11 +188,7 @@ struct RuntimeOptions {
       break;
     }
     printf(" allocator, and ");
-    switch (getWorkQueueType()) {
-    case RuntimeOptions::WorkQueueType::kDefault:
-      assert(0 && "should be resolved");
-      printf("potential assertion failure");
-      break;
+    switch (workQueueType) {
     case RuntimeOptions::WorkQueueType::kSingleThread:
       printf("single thread work queue");
       break;
@@ -250,7 +220,7 @@ struct RuntimeOptions {
   RuntimeOptions copy() const;
 
   RuntimeOptions &forDebug() {
-    singleThreaded = true;
+    workQueueType = WorkQueueType::kSingleThread;
     leakCheckedAllocator = true;
     return *this;
   }
@@ -281,8 +251,9 @@ struct RuntimeOptions {
     return *this;
   }
 
-  RuntimeOptions &withSingleThreaded(bool newSingleThreaded = true) {
-    singleThreaded = newSingleThreaded;
+  RuntimeOptions &withSingleThreaded(bool singleThreaded = true) {
+    workQueueType = singleThreaded ? WorkQueueType::kSingleThread
+                                   : WorkQueueType::kThreadPool;
     return *this;
   }
 

@@ -280,7 +280,7 @@ TEST(WorkQueueTest, ShouldRunInlineFromForeignThread) {
 
 TEST(WorkQueueTest, ShouldRunInlineSingleThreadedAlwaysTrue) {
   RuntimeOptions options;
-  options.singleThreaded = true;
+  options.withSingleThreaded();
   RuntimeRef runtime = getOrCreateRuntime(RuntimeSource::Test, options);
   WorkQueue &workQueue = *runtime->getWorkQueue();
 

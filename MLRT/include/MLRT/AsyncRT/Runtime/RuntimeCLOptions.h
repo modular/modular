@@ -45,8 +45,6 @@ private:
   M::cl::MOpt<RuntimeOptions::WorkQueueType, true> workQueueType{
       "workqueue", llvm::cl::desc("Specify workqueue type:"),
       llvm::cl::values(
-          clEnumValN(RuntimeOptions::WorkQueueType::kDefault, "default",
-                     "Auto-select based on # threads"),
           clEnumValN(RuntimeOptions::WorkQueueType::kSingleThread,
                      "single-thread",
                      "Work queue that only ever uses one thread"),
@@ -75,10 +73,9 @@ private:
       llvm::cl::location(options.allocatorType),
       llvm::cl::cat(RuntimeOptionsCategory)};
 
-  // Specify the number of threads. If `thread==1`, then we automatically set
-  // our work queue to `WorkQueueType::kSingleThread`. Otherwise, we assume
-  // the work queue is using a thread pool. The default number of threads is
-  // the result of M::getNumThreads().
+  // Specify the number of threads in the thread pool. Only consulted when
+  // the selected workqueue type is `kThreadPool`. The default number of
+  // threads is the result of M::getNumThreads().
   M::cl::MOpt<size_t, true> numThreads{
       "num-threads",
       llvm::cl::desc("Specify the number of threads to run the work queue "

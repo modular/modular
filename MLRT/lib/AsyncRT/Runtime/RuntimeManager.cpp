@@ -35,14 +35,19 @@ RuntimeRef getOrCreateRuntime(RuntimeSource source,
   CompactRuntimePtr runtimePtr = CompactRuntimePtr::reserve();
   std::unique_ptr<Allocator> allocator =
       getAllocator(options.getAllocatorOptions());
-  std::unique_ptr<WorkQueue> workQueue =
-      options.singleThreaded
-          ? createSingleThreadWorkQueue(runtimePtr)
-          : createThreadPoolWorkQueue(
-                runtimePtr, options.numThreads, options.maxThreads,
-                options.mainWillDonate, options.withAffinity,
-                std::chrono::microseconds(options.threadBusyWaitTime),
-                options.poolName);
+  std::unique_ptr<WorkQueue> workQueue;
+  switch (options.workQueueType) {
+  case RuntimeOptions::WorkQueueType::kSingleThread:
+    workQueue = createSingleThreadWorkQueue(runtimePtr);
+    break;
+  case RuntimeOptions::WorkQueueType::kThreadPool:
+    workQueue = createThreadPoolWorkQueue(
+        runtimePtr, options.numThreads, options.maxThreads,
+        options.mainWillDonate, options.withAffinity,
+        std::chrono::microseconds(options.threadBusyWaitTime),
+        options.poolName);
+    break;
+  }
   RuntimeRef newRuntime = RuntimeRef::take(
       new Runtime(runtimePtr, std::move(allocator), std::move(workQueue),
                   source, options.profileFilename,

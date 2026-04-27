@@ -11,7 +11,6 @@ using namespace M::MLRT;
 
 bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
   return numThreads == other.numThreads && maxThreads == other.maxThreads &&
-         singleThreaded == other.singleThreaded &&
          profileFilename == other.profileFilename &&
          runtimeProfilingTypeMask == other.runtimeProfilingTypeMask &&
          mainWillDonate == other.mainWillDonate &&
@@ -23,12 +22,11 @@ bool RuntimeOptions::operator==(const RuntimeOptions &other) const {
          useAfterFreeAllocator == other.useAfterFreeAllocator &&
          workQueueType == other.workQueueType &&
          allocatorType == other.allocatorType &&
-         profilerDebuginfo == other.profilerDebuginfo &&
-         defaultWorkQueue == other.defaultWorkQueue;
+         profilerDebuginfo == other.profilerDebuginfo;
 }
 
 RuntimeOptions RuntimeOptions::copy() const {
-  RuntimeOptions runtimeOptions; //{*this};
+  RuntimeOptions runtimeOptions;
   switch (allocatorType) {
   case RuntimeOptions::AllocatorType::kMalloc:
     runtimeOptions.tcmallocAllocator = false;
@@ -52,13 +50,9 @@ RuntimeOptions RuntimeOptions::copy() const {
 #endif
     break;
   }
-  // runtimeOptions.workQueueType = getWorkQueueType();
-  switch (getWorkQueueType()) {
-  case RuntimeOptions::WorkQueueType::kDefault:
-    assert(0 && "should be resolved");
-    LLVM_FALLTHROUGH;
+  runtimeOptions.workQueueType = workQueueType;
+  switch (workQueueType) {
   case RuntimeOptions::WorkQueueType::kSingleThread:
-    runtimeOptions.singleThreaded = true;
     break;
   case RuntimeOptions::WorkQueueType::kThreadPool:
     runtimeOptions.numThreads = numThreads;

@@ -30,7 +30,7 @@ protected:
   RuntimeRef createRuntime(int numThreads = 4, bool mainWillDonate = true) {
     RuntimeOptions runtimeOptions;
     runtimeOptions.leakCheckedAllocator = true;
-    runtimeOptions.singleThreaded = GetParam() == kSingleThread;
+    runtimeOptions.withSingleThreaded(GetParam() == kSingleThread);
     runtimeOptions.numThreads = numThreads;
     runtimeOptions.mainWillDonate = mainWillDonate;
     return M::MLRT::getOrCreateRuntime(M::MLRT::RuntimeSource::Test,
