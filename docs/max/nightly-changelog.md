@@ -323,6 +323,14 @@ This version is still a work in progress.
   `2.0`), reducing the call count to O(log N).
   ([Issue #6417](https://github.com/modular/modular/issues/6417))
 
+- Fixed integer indexing into a graph tensor (e.g. `x[0]` on a `(2, 3)`
+  tensor) failing graph compilation with
+  `'mo.static.reshape' op input and output elements do not match`. A
+  reshape-through-slice optimization pattern was incorrectly rewriting
+  the slice + squeeze pattern produced by integer indexing, generating a
+  reshape whose element count did not match the input.
+  ([Issue #6440](https://github.com/modular/modular/issues/6440))
+
 ## Mojo language {#26-3-mojo}
 
 For all the updates to the Mojo language, standard library, and tools,
