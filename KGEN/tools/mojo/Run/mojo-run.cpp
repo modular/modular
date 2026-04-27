@@ -6,6 +6,7 @@
 
 #include "mojo-run.h"
 #include "../Common/Compilation.h"
+#include "../Common/XlinkerResolution.h"
 
 #include "Init/Init.h"
 #include "KGEN/Compiler/KGENCompiler.h"
@@ -49,6 +50,7 @@
 #include "llvm/Support/TargetSelect.h"
 #include "llvm/Target/TargetMachine.h"
 
+#include <optional>
 #include <signal.h>
 
 #ifdef KGEN_ENABLE_PASS_OPTIONS
@@ -260,7 +262,8 @@ static int executeModule(const State &state, MLRT::Runtime &runtime,
                          const CompilationOptions &options,
                          OwningOpRef<ModuleOp> module, TargetInfoAttr target,
                          ArrayRef<const char *> arguments,
-                         M::Context &maxContext) {
+                         M::Context &maxContext,
+                         ArrayRef<std::string> additionalLibraries) {
   // Compile the Mojo module to the end of the KGEN pipeline.
   KGENCompiler compiler(context, options);
   if (ErrorOrSuccess err = compiler.runKGENPipeline(*module, target))
@@ -293,6 +296,8 @@ static int executeModule(const State &state, MLRT::Runtime &runtime,
   ExecutionEngineOptions eeOptions;
   if (options.debugLevel != CompilationOptions::kNoDebug)
     eeOptions.registerDebugPlugins = true;
+  for (const std::string &libPath : additionalLibraries)
+    eeOptions.libraryPaths.emplace_back(libPath);
   ErrorOr<std::unique_ptr<ExecutionEngine>> execEngineOr =
       initializeExecutionEngine(context, options, std::move(eeOptions),
                                 /*isJIT=*/true);
@@ -384,9 +389,12 @@ static int run(const State &subcommandState) {
     return EXIT_SUCCESS;
   }
 
-  // Warn that -Xlinker arguments are unused by mojo-run
-  for (auto xlinkerArg : args.getAllArgValues(options::OPT_Xlinker))
-    state.reportWarning("-Xlinker argument unused: '" + xlinkerArg + "'");
+  // Resolve any user-supplied `-Xlinker` flags into shared libraries the JIT
+  // should load. `mojo run` has no native linker — the program is JIT'd in
+  // process — so `-Xlinker -L<dir> -Xlinker -l<name>` is translated into a
+  // set of dlopen-able paths rather than passed verbatim to a system linker.
+  SmallVector<std::string> additionalLibraries = resolveXlinkerLibraries(
+      state, args.getAllArgValues(options::OPT_Xlinker));
 
   // Assert that we've parsed all command line arguments.
   state.assertNoUnusedArguments(args);
@@ -395,7 +403,7 @@ static int run(const State &subcommandState) {
   int result = executeModule(
       state, runtime, mlirCtx, options, moduleOp.takeValue(), target,
       state.arguments.slice(args.getLastArg(options::OPT_INPUT)->getIndex()),
-      *ctx);
+      *ctx, additionalLibraries);
   if (result != EXIT_SUCCESS)
     return result;
 
