@@ -14,7 +14,10 @@
 # ===----------------------------------------------------------------------=== #
 
 import os
+import shutil
+import subprocess
 import sys
+import tempfile
 import unittest
 from contextlib import contextmanager
 from functools import partial
@@ -92,6 +95,102 @@ def mojo_format_str(source: str, *, mode: mblack.Mode = MOJO_MODE) -> str:
     return mblack.format_str(source, mode=mode)
 
 
+# Enabled by passing `--validate-with-mojo-build` to pytest (see conftest.py).
+# When True, `assert_mojo_format` also runs `mojo build` on each sample to
+# verify it's valid Mojo. Off by default: it's slow (a `mojo build` per sample)
+# and many samples in this suite don't compile in isolation.
+VALIDATE_WITH_MOJO_BUILD = False
+
+
+def _require_mojo_binary() -> str:
+    """Returns a path to the ``mojo`` binary, or raises with a diagnostic.
+
+    Prefers ``MODULAR_MOJO_MAX_DRIVER_PATH`` when set (the surrounding
+    test environment, e.g. bazel, may point it at a pre-built binary).
+    Otherwise falls back to ``PATH``. Relative env-var values resolve
+    against cwd via ``os.path.abspath``.
+
+    Raises:
+        AssertionError: If no usable ``mojo`` binary can be found.
+    """
+    env_path = os.environ.get("MODULAR_MOJO_MAX_DRIVER_PATH", "")
+    if env_path:
+        resolved = env_path if os.path.isabs(env_path) else os.path.abspath(env_path)
+        if os.access(resolved, os.X_OK):
+            return resolved
+        detail = "does not exist" if not os.path.exists(resolved) else "is not executable"
+        raise AssertionError(
+            f"MODULAR_MOJO_MAX_DRIVER_PATH is set to {env_path!r} but "
+            f"the resolved path {resolved!r} {detail}."
+        )
+    which = shutil.which("mojo")
+    if which is None:
+        raise AssertionError(
+            "--validate-with-mojo-build needs `mojo` available: set "
+            "MODULAR_MOJO_MAX_DRIVER_PATH or put `mojo` on PATH."
+        )
+    return which
+
+
+def _truncate_for_error(text: str, *, head: int = 40, tail: int = 40) -> str:
+    """Truncates ``text`` to at most ``head + tail`` lines, with an elision marker."""
+    lines = text.splitlines(keepends=True)
+    if len(lines) <= head + tail:
+        return text
+    omitted = len(lines) - head - tail
+    return "".join(
+        lines[:head] + [f"... <{omitted} lines omitted> ...\n"] + lines[-tail:]
+    )
+
+
+def _assert_mojo_compiles(source: str, *, label: str) -> None:
+    """Compiles ``source`` with ``mojo build`` and fails if it's rejected.
+
+    A trivial ``def main(): pass`` is appended if missing.
+
+    Args:
+        source: The Mojo source to compile.
+        label: A short tag (e.g. ``"source"`` or ``"expected"``) used in
+            error messages to identify which sample was rejected.
+
+    Raises:
+        AssertionError: If no ``mojo`` binary is available, or if
+            ``mojo build`` rejects or times out on the sample.
+    """
+    mojo = _require_mojo_binary()
+    build_source = source
+    if "def main(" not in build_source:
+        build_source = build_source.rstrip("\n") + "\n\n\ndef main():\n    pass\n"
+    with tempfile.TemporaryDirectory() as tmp:
+        src = Path(tmp) / "sample.mojo"
+        src.write_text(build_source)
+        try:
+            result = subprocess.run(
+                [mojo, "build", str(src), "-o", str(Path(tmp) / "sample")],
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.TimeoutExpired as e:
+            raise AssertionError(
+                f"`mojo build` timed out on the {label} sample after "
+                f"{e.timeout}s:\n"
+                f"--- {label} ---\n{_truncate_for_error(build_source)}"
+            ) from e
+        if result.returncode != 0:
+            # Show `build_source` (what mojo actually saw) so the stderr
+            # line numbers line up with what the reader is looking at.
+            parts = [
+                f"`mojo build` rejected the {label} sample:",
+                f"--- {label} ---",
+                _truncate_for_error(build_source),
+            ]
+            if result.stdout:
+                parts += ["--- stdout ---", result.stdout]
+            parts += ["--- stderr ---", result.stderr]
+            raise AssertionError("\n".join(parts))
+
+
 def assert_mojo_format(
     source: str,
     expected: str,
@@ -103,7 +202,14 @@ def assert_mojo_format(
 
     When the source is reformatted, also verify that re-formatting the output
     is a no-op (idempotency).
+
+    When the pytest flag `--validate-with-mojo-build` is set, also compile
+    `source` with `mojo build` to verify it is valid Mojo.
     """
+    if VALIDATE_WITH_MOJO_BUILD:
+        # Only compile source to halve compile time. This ensures that the test
+        # inputs are valid Mojo, with a small risk that the outputs are not.
+        _assert_mojo_compiles(source, label="source")
     actual = mojo_format_str(source, mode=mode)
     _assert_format_equal(expected, actual)
     if not fast and source != expected:

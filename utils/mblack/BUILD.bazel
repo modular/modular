@@ -51,3 +51,36 @@ modular_py_test(
         requirement("pathspec"),
     ],
 )
+
+# Files whose samples are known to fail `mojo build` as-of today.
+_VALIDATE_EXCLUDE = [
+    "tests/test_conditional_conformance.py",
+    "tests/test_ftstrings.py",
+    "tests/test_kwargs_brace_initializers.py",
+    "tests/test_parametric_alias_formatting.py",
+    "tests/test_where_clause.py",
+]
+
+# Companion to `unit_tests` that compiles every sample with `mojo build`.
+# Only runs when manually specified. This validation is slow.
+modular_py_test(
+    name = "unit_tests_validate",
+    srcs = glob(
+        ["tests/*.py"],
+        exclude = _VALIDATE_EXCLUDE,
+    ),
+    args = ["--validate-with-mojo-build"],
+    data = glob(["tests/data/**"]) + [
+        "tests/empty.toml",
+        "tests/test.toml",
+    ],
+    imports = ["."],
+    mojo_deps = ["@mojo//:std"],
+    tags = ["manual"],
+    test_name_prefix = "validate/",
+    deps = [
+        ":mblack-lib",
+        requirement("click"),
+        requirement("pathspec"),
+    ],
+)
