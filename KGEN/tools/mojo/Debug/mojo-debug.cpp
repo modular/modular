@@ -58,7 +58,8 @@ getCudaGDBPath(llvm::opt::InputArgList &parsedArgs) {
 auto getCompilationOptions(llvm::opt::InputArgList &parsedArgs) {
   return parsedArgs.filtered(options::OPT_CompilationOptionGroup,
                              options::OPT_ExperimentalCompilationOptionGroup,
-                             options::OPT_DiagnosticOptionGroup);
+                             options::OPT_DiagnosticOptionGroup,
+                             options::OPT_LinkOptionGroup);
 }
 
 static bool isMojoFile(StringRef file) { return file.ends_with(".mojo"); }
