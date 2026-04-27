@@ -32,7 +32,7 @@ from urllib.parse import unquote, urlparse
 import aiofiles
 from fastapi import APIRouter, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
-from httpx import AsyncClient
+from httpx import AsyncClient, HTTPStatusError
 from max.interfaces import (
     AudioGenerationRequest,
     GenerationStatus,
@@ -751,7 +751,15 @@ async def resolve_image_from_url(
     if image_ref.scheme == "http" or image_ref.scheme == "https":
         # TODO: Evaluate creating a single AsyncClient for the app.
         async with AsyncClient() as client:
-            response = await client.get(str(image_ref), follow_redirects=True)
+            try:
+                response = await client.get(
+                    str(image_ref), follow_redirects=True
+                )
+                response.raise_for_status()
+            except HTTPStatusError as e:
+                raise ValueError(
+                    f"Failed to fetch image: HTTP {e.response.status_code}"
+                ) from e
             images_bytes = await response.aread()
             logger.debug(
                 "ResolvedImageUrl: %s -> %d bytes", image_ref, len(images_bytes)
