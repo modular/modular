@@ -6633,6 +6633,39 @@ def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
     )
 
 
+def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
+    """Enqueues a Python callback on the device stream.
+
+    Wraps the ``mo.launch_host_func`` custom op. The callback runs on a
+    driver thread once the stream reaches this point, after all preceding
+    work has completed.
+
+    The payload buffer must be a CPU-resident int64[2] containing
+    ``(trampoline_ptr, user_data_ptr)`` as returned by
+    ``driver.__unsafe_pack_py_host_func``.
+
+    Only supported on CUDA devices.
+
+    Args:
+        payload: CPU buffer of shape [2] and dtype int64 holding the
+            packed callback pointers.
+        device: GPU device on whose stream to enqueue the callback.
+    """
+    if payload.dtype != DType.int64:
+        raise ValueError(f"Expected payload dtype int64, got {payload.dtype}")
+    if payload.shape != [2]:
+        raise ValueError(f"Expected payload shape [2], got {payload.shape}")
+    if not device.is_gpu():
+        raise ValueError("launch_host_func is only supported on GPU devices")
+
+    ops.inplace_custom(
+        "mo.launch_host_func",
+        device=device,
+        values=[payload],
+        out_types=[],
+    )
+
+
 def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
     """Sleep for the given duration in seconds.
 

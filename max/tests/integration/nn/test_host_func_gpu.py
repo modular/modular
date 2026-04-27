@@ -22,7 +22,8 @@ import pytest
 from max.driver import Accelerator, Buffer, __unsafe_pack_py_host_func
 from max.dtype import DType
 from max.engine import InferenceSession
-from max.graph import BufferType, DeviceRef, Graph, ops
+from max.graph import BufferType, DeviceRef, Graph
+from max.nn import kernels
 
 
 def _build_launch_graph(device_ref: DeviceRef) -> Graph:
@@ -32,12 +33,7 @@ def _build_launch_graph(device_ref: DeviceRef) -> Graph:
         input_types=[BufferType(DType.int64, [2], device=DeviceRef.CPU())],
     ) as graph:
         payload = graph.inputs[0].buffer
-        ops.inplace_custom(
-            "mo.launch_host_func",
-            device=device_ref,
-            values=[payload],
-            out_types=[],
-        )
+        kernels.launch_host_func(payload=payload, device=device_ref)
         graph.output()
     return graph
 
