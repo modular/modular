@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.collections import OptionalReg
-
 from std.random import randint, randn, seed
 from std.sys import (
     has_nvidia_gpu_accelerator,
@@ -402,13 +400,6 @@ def test_combine[
             dispatch_recv_count_bufs_inputs[slot_idx][dev_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    ImmutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -431,13 +422,6 @@ def test_combine[
             combine_recv_count_bufs_inputs[slot_idx],
             get_atomic_counters(dev_idx, slot_idx),
             Int32(dev_idx),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    MutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

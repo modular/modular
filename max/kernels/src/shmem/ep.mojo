@@ -16,8 +16,6 @@
 Helper functions for Expert Parallelism (EP) Communication Kernels.
 """
 
-from std.collections import OptionalReg
-
 from std.gpu.primitives.grid_controls import PDLLevel, pdl_launch_attributes
 from std.gpu.host import FuncAttribute
 from std.gpu.host.info import is_gpu
@@ -259,7 +257,6 @@ def ep_dispatch_wait_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
-    fused_shared_expert: Bool = False,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     token_handler: token_fmt_type,
@@ -270,13 +267,6 @@ def ep_dispatch_wait_kernel_api[
     recv_count_ptrs: TileTensor[DType.uint64, ...],
     atomic_counters: TileTensor[DType.int32, ...],
     context: DeviceContextPtr,
-    maybe_fused_shared_expert_input: OptionalReg[
-        TileTensor[
-            DType.bfloat16,
-            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-            ImmutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     """Execute the Expert Parallelism dispatch completion kernel.
 
@@ -292,8 +282,6 @@ def ep_dispatch_wait_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
-        fused_shared_expert: Whether to pack shared expert inputs with routed
-            experts' inputs.
         input_scales_wrapper: The wrapper for the input scales.
 
     Arguments:
@@ -305,8 +293,6 @@ def ep_dispatch_wait_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
-        maybe_fused_shared_expert_input: Optional input tokens for the shared
-            experts.
     """
 
     # Ensure this kernel only runs on GPU targets
@@ -338,7 +324,6 @@ def ep_dispatch_wait_kernel_api[
         n_ranks,
         max_token_per_rank,
         token_fmt_type,
-        fused_shared_expert=fused_shared_expert,
         input_scales_wrapper=input_scales_wrapper,
     ]
 
@@ -383,7 +368,6 @@ def ep_dispatch_wait_kernel_api[
             recv_count_ptr,
             ep_counters,
             my_rank,
-            maybe_fused_shared_expert_input,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
             shared_mem_bytes=Int(smem_size),
@@ -612,7 +596,6 @@ def ep_combine_async_kernel_api[
     n_gpus_per_node: Int,
     n_nodes: Int,
     target: StaticString,
-    fused_shared_expert: Bool = False,
     use_shmem: Bool = (n_nodes > 1),
 ](
     atomic_counters: TileTensor[DType.int32, ...],
@@ -622,13 +605,6 @@ def ep_combine_async_kernel_api[
     recv_ptrs: TileTensor[DType.uint64, ...],
     recv_count_ptrs: TileTensor[DType.uint64, ...],
     context: DeviceContextPtr,
-    maybe_fused_shared_expert_output: OptionalReg[
-        TileTensor[
-            combine_dtype,
-            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-            MutAnyOrigin,
-        ]
-    ] = None,
 ) raises:
     """Execute the Expert Parallelism combine kernel.
 
@@ -648,7 +624,6 @@ def ep_combine_async_kernel_api[
         n_gpus_per_node: GPUs per physical node.
         n_nodes: Number of physical nodes.
         target: Target.
-        fused_shared_expert: Whether to filter out the shared expert's outputs.
         use_shmem: Whether to enable SHMEM communication.
 
     Arguments:
@@ -661,8 +636,6 @@ def ep_combine_async_kernel_api[
         recv_ptrs: Receive buffer pointers for each local GPU.
         recv_count_ptrs: Receive count buffer pointers for each local GPU.
         context: Device context pointer.
-        maybe_fused_shared_expert_output: Optional output tokens for the shared
-            experts.
     """
 
     # Ensure this kernel only runs on GPU targets
@@ -697,7 +670,6 @@ def ep_combine_async_kernel_api[
         combine_msg_size,
         max_token_per_rank,
         n_gpus_per_node,
-        fused_shared_expert=fused_shared_expert,
         use_shmem=use_shmem,
     ]
 
@@ -760,7 +732,6 @@ def ep_combine_async_kernel_api[
             recv_count_ptrs_arr,
             ep_counters,
             my_rank,
-            maybe_fused_shared_expert_output,
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )

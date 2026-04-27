@@ -129,17 +129,6 @@ class EPBatchManager:
     Used to determine the shape of the combined output tensor.
     """
 
-    _input_x: dict[int, TensorValue | None] = {}
-    """Input tokens for the current device. If shared experts fusion is
-    enabled, this will be used to temporarily store the inputs of the MoE
-    module, and passed to the ep_dispatch_wait kernel.
-    """
-
-    _shared_expert_outputs: dict[int, TensorValue | None] = {}
-    """Shared expert outputs for the current device. If shared experts fusion is
-    enabled, this will be used to store the outputs of the shared experts from
-    the ep_combine kernel."""
-
     def __init__(self, config: EPConfig):
         """Initialize the EP batch manager.
 
@@ -323,11 +312,6 @@ class EPBatchManager:
             input_scales=input_scales,
         )
 
-        if self.config.fused_shared_expert:
-            self._input_x[device_id] = input_tokens
-        else:
-            self._input_x[device_id] = None
-
     def ep_dispatch_wait(self, device_id: int) -> tuple[TensorValue, ...]:
         """Wait for Expert Parallelism token dispatch phase completion.
 
@@ -358,7 +342,6 @@ class EPBatchManager:
             self.recv_buf_ptrs[DISPATCH_GROUP],
             self.recv_count_ptrs[DISPATCH_GROUP],
             self.config,
-            self._input_x[device_id],
         )
 
         # The last element is the src_info, we need to store it for the
@@ -391,7 +374,7 @@ class EPBatchManager:
             "Source info is not set, you should call ep_dispatch_wait() first."
         )
 
-        self._shared_expert_outputs[device_id] = call_ep_combine_async(
+        call_ep_combine_async(
             input_tokens,
             src_info,
             self.atomic_counters[0][device_id],
@@ -399,7 +382,6 @@ class EPBatchManager:
             self.recv_buf_ptrs[COMBINE_GROUP],
             self.recv_count_ptrs[COMBINE_GROUP],
             self.config,
-            self._dispatch_dim[device_id],
         )
 
         # reset src_info to None to avoid reusing it for the next batch
@@ -439,11 +421,6 @@ class EPBatchManager:
             dispatch_dim,
             router_weight,
         )
-
-        if self.config.fused_shared_expert:
-            shared_expert_outputs = self._shared_expert_outputs[device_id]
-            assert shared_expert_outputs is not None
-            results += shared_expert_outputs
 
         return results
 

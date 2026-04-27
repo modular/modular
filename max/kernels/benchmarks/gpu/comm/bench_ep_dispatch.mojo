@@ -21,8 +21,6 @@
 # NUM_GPUS=$(nvidia-smi --query-gpu=name --format=csv,noheader | wc -l)
 # br --run_under="mpirun -n $NUM_GPUS --allow-run-as-root --bind-to none" //max/kernels/benchmarks:gpu/bench_ep_dispatch
 
-from std.collections import OptionalReg
-
 from std.random import randint, randn, seed
 from std.sys import (
     get_defined_int,
@@ -269,13 +267,6 @@ def bench_dispatch[
                 recv_count,
                 EPLocalSyncCounters[n_experts](atomic_counter),
                 Int32(my_rank),
-                OptionalReg[
-                    TileTensor[
-                        DType.bfloat16,
-                        type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                        ImmutAnyOrigin,
-                    ]
-                ](),
                 grid_dim=hw_info.sm_count,
                 block_dim=hw_info.max_thread_block_size,
             )

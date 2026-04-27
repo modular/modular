@@ -369,8 +369,6 @@ trait TokenFormat(DevicePassable, ImplicitlyDestructible):
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
-        expert_id: Int,
-        expert_token_index: Int,
     ) -> None:
         "Copy the message to the output tensor. This function needs to be called by all threads in a warp."
         ...
@@ -408,12 +406,7 @@ trait TokenFormat(DevicePassable, ImplicitlyDestructible):
         for tok_id_in_tile in range(w, tile_end - tile_start, n_warps):
             var msg_ptr = recv_buf_ptr_functor(tok_id_in_tile)
             var output_pos = expert_start_pos + tile_start + tok_id_in_tile
-            self.copy_msg_to_output_tensor(
-                msg_ptr,
-                output_pos,
-                expert_id + shared_expert_offset,
-                tile_start + tok_id_in_tile,
-            )
+            self.copy_msg_to_output_tensor(msg_ptr, output_pos)
 
             if umod(tile_id, n_k_tiles) == 0:
                 extract_topk_info_functor(msg_ptr, output_pos)
@@ -504,8 +497,6 @@ struct BF16TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
-        expert_id: Int,
-        expert_token_index: Int,
     ) -> None:
         comptime assert (
             Self.TensorType.flat_rank >= 2
@@ -715,8 +706,6 @@ struct BlockwiseFP8TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
-        expert_id: Int,
-        expert_token_index: Int,
     ) -> None:
         comptime assert (
             Self.TensorType.flat_rank >= 2
@@ -1038,8 +1027,6 @@ struct NVFP4TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
-        expert_id: Int,
-        expert_token_index: Int,
     ) -> None:
         "NVFP4 format directly uses tile based copy."
         pass
@@ -1385,8 +1372,6 @@ struct MXFP4TokenFormat[
         self,
         buf_p: UnsafePointer[mut=False, UInt8, _, address_space=buf_addr_space],
         token_index: Int,
-        expert_id: Int,
-        expert_token_index: Int,
     ) -> None:
         comptime assert (
             Self.TensorType.flat_rank >= 2
@@ -2548,7 +2533,7 @@ def dispatch_async_kernel[
 )
 @__llvm_arg_metadata(format_handler, `nvvm.grid_constant`)
 @__name(
-    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}_{fused_shared_expert}_{shared_expert_input_dtype}",
+    t"ep_wait_{num_threads}_{n_sms}_{n_experts}_{n_ranks}_{max_tokens_per_rank}",
     mangle=True,
 )
 def dispatch_wait_kernel[
@@ -2561,8 +2546,6 @@ def dispatch_wait_kernel[
     n_ranks: Int,
     max_tokens_per_rank: Int,
     token_fmt_type: TokenFormat,
-    fused_shared_expert: Bool = False,
-    shared_expert_input_dtype: DType = DType.bfloat16,
     input_scales_wrapper: Optional[input_scales_wrapper_type] = None,
 ](
     format_handler: token_fmt_type,
@@ -2575,13 +2558,6 @@ def dispatch_wait_kernel[
     recv_count_p: UnsafePointer[UInt64, MutExternalOrigin],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
-    maybe_input_tokens: OptionalReg[
-        TileTensor[
-            shared_expert_input_dtype,
-            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-            ImmutExternalOrigin,
-        ]
-    ],
 ):
     """
     This kernel is called after the `dispatch_kernel` to complete the
@@ -2603,9 +2579,6 @@ def dispatch_wait_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         token_fmt_type: Type conforming to TokenFormat trait that defines the
             token encoding scheme.
-        fused_shared_expert: Whether to pack the shared expert inputs with the
-            routed experts' inputs.
-        shared_expert_input_dtype: The data type of the shared expert inputs.
         input_scales_wrapper: The wrapper for the input scales.
 
     Args:
@@ -2627,9 +2600,6 @@ def dispatch_wait_kernel[
             buffer is of shape `(n_local_experts, n_ranks)`.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
-        maybe_input_tokens: The optional input tokens for the shared experts.
-            If fused_shared_expert is True, this will be used to load the input
-            tokens for the shared experts.
     """
 
     comptime dispatch_impl = EPDispatchKernel[
@@ -2641,7 +2611,6 @@ def dispatch_wait_kernel[
         1,  # p2p world size
         token_fmt_type,
         use_shmem=False,
-        fused_shared_expert=fused_shared_expert,
     ]
 
     var atomic_counter = ep_counters.get_dispatch_wait_ptr()
@@ -2650,13 +2619,6 @@ def dispatch_wait_kernel[
     # tokens from all the remote ranks. It will also calculate the offset where
     # the tokens start in the output tensor.
     if block_idx.x >= dispatch_impl.n_dispatch_wait_comm_sms:
-        var reserved_shared_expert_tokens: UInt32 = 0
-
-        comptime if fused_shared_expert:
-            reserved_shared_expert_tokens = UInt32(
-                maybe_input_tokens.value().dim(0)
-            )
-
         dispatch_impl.wait_for_arrivals_and_compute_offsets(
             format_handler,
             row_offsets,
@@ -2664,7 +2626,6 @@ def dispatch_wait_kernel[
             recv_count_p,
             atomic_counter,
             my_rank,
-            reserved_shared_expert_tokens,
         )
 
     # All the other SMs are used for copying the tokens to the output tensor.
@@ -3233,7 +3194,7 @@ struct EPCombineKernel[
     MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(num_threads))
 )
 @__name(
-    t"ep_combine_async_{input_type}_{num_threads}_{n_sms}_{top_k}_{n_experts}_{n_ranks}_{msg_bytes}_{max_tokens_per_rank}_{p2p_world_size}_{use_shmem}_{fused_shared_expert}",
+    t"ep_combine_async_{input_type}_{num_threads}_{n_sms}_{top_k}_{n_experts}_{n_ranks}_{msg_bytes}_{max_tokens_per_rank}_{p2p_world_size}_{use_shmem}",
     mangle=True,
 )
 def combine_async_kernel[
@@ -3249,7 +3210,6 @@ def combine_async_kernel[
     max_tokens_per_rank: Int,
     p2p_world_size: Int,
     use_shmem: Bool = True,
-    fused_shared_expert: Bool = False,
 ](
     input_tokens: TileTensor[
         input_type, input_tokens_layout, ImmutExternalOrigin
@@ -3264,14 +3224,6 @@ def combine_async_kernel[
     ],
     ep_counters: EPLocalSyncCounters[n_experts],
     my_rank: Int32,
-    maybe_output_tokens: OptionalReg[
-        TileTensor[
-            mut=True,
-            input_type,
-            type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-            MutExternalOrigin,
-        ]
-    ],
 ):
     """
     Send tokens to the original rank based on the src_info tensor.
@@ -3293,7 +3245,6 @@ def combine_async_kernel[
         max_tokens_per_rank: The maximum number of tokens per rank.
         p2p_world_size: Size of a High-speed GPU interconnect group.
         use_shmem: Whether to use the SHMEM API for the communication.
-        fused_shared_expert: Whether to filter out the shared expert's outputs.
 
     Args:
         input_tokens: The tokens to be sent back to the original rank.
@@ -3313,9 +3264,6 @@ def combine_async_kernel[
             `(n_local_experts, n_ranks)`.
         ep_counters: EP atomic counters for kernel synchronization.
         my_rank: The rank of the current device.
-        maybe_output_tokens: The optional output for the shared experts.
-            If fused_shared_expert is True, this will be used to store the
-            output tokens for the shared experts.
     """
 
     comptime combine_impl = EPCombineKernel[
@@ -3328,7 +3276,6 @@ def combine_async_kernel[
         max_tokens_per_rank,
         p2p_world_size,
         use_shmem,
-        fused_shared_expert,
     ]
 
     var atomic_counter = ep_counters.get_combine_async_ptr()
@@ -3345,12 +3292,6 @@ def combine_async_kernel[
         rank_completion_counter,
         my_rank,
     )
-
-    # Copy the shared expert's outputs to the output tensor.
-    comptime if fused_shared_expert:
-        combine_impl.copy_shared_expert_outputs(
-            input_tokens, maybe_output_tokens.value()
-        )
 
 
 @__llvm_metadata(

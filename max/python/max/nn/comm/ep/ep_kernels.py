@@ -313,7 +313,6 @@ def call_ep_dispatch_wait(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
-    input_tokens: TensorValue | None = None,
 ) -> tuple[TensorValue, ...]:
     """Wait for Expert Parallelism token dispatch and prepare for expert
     computation.
@@ -332,9 +331,6 @@ def call_ep_dispatch_wait(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_local_experts, n_ranks)
         config: EP configuration.
-        input_tokens: Input tokens for the shared expert. If shared expert
-            fusion is enabled, this will be bundled with the inputs of the
-            routed experts, and passed to the grouped matmul kernel.
 
     Returns:
         A tuple containing:
@@ -363,13 +359,9 @@ def call_ep_dispatch_wait(
         recv_buf_ptrs,
         recv_count_ptrs,
     ]
-
-    if input_tokens is not None:
-        assert config.fused_shared_expert, (
-            "Shared experts fusion must be enabled when input_tokens is provided"
-        )
-        op_name += ".fused_shared_expert"
-        input_vals.append(input_tokens)
+    assert not config.fused_shared_expert, (
+        "Fused shared expert is not supported when using dispatch_wait."
+    )
 
     output_vals = _ep_dispatch_output_types(config, device_ref)
 
@@ -411,8 +403,7 @@ def call_ep_combine_async(
     recv_buf_ptrs: TensorValue,
     recv_count_ptrs: TensorValue,
     config: EPConfig,
-    num_output_tokens: Dim | None = None,
-) -> TensorValue | None:
+) -> None:
     """Initiate Expert Parallelism token combine phase (async).
 
     This function launches the EP async combine kernel that sends expert outputs
@@ -439,13 +430,6 @@ def call_ep_combine_async(
             Shape: (n_gpus_per_node,) each points to a buffer of shape
             (n_experts,)
         config: EP configuration.
-        num_output_tokens: Number of output tokens. If provided, the shared
-            expert outputs will be filtered out and stored in a separate tensor.
-
-    Returns:
-        shared_expert_output: Output tokens from the shared expert. Only
-        returned when fused_shared_expert is enabled. Shape:
-        (num_output_tokens, hidden_size).
 
     Note:
         This is a non-blocking operation. Call call_ep_combine_wait() to wait
@@ -457,19 +441,9 @@ def call_ep_combine_async(
     op_name = "ep.combine_async"
     out_types: list[TensorType] = []
 
-    if config.fused_shared_expert:
-        op_name += ".fused_shared_expert"
-
-        assert num_output_tokens is not None, (
-            "num_output_tokens must be provided when fused_shared_expert is enabled"
-        )
-        out_types.append(
-            TensorType(
-                dtype=config.combine_dtype,
-                shape=[num_output_tokens, config.hidden_size],
-                device=atomic_counter.device,
-            )
-        )
+    assert not config.fused_shared_expert, (
+        "Fused shared expert is not supported when using combine_async."
+    )
 
     result = ops.inplace_custom(
         op_name,

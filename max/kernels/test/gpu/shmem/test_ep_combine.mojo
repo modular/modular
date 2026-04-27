@@ -15,8 +15,6 @@
 # RUN: %mojo-build %s -o %t
 # RUN: %mpirun-gpu-per-process %t
 
-from std.collections import OptionalReg
-
 import std.time
 from std.io.io import _printf
 from std.math import sqrt
@@ -299,13 +297,6 @@ def test_combine[
             recv_count,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    ImmutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
@@ -331,13 +322,6 @@ def test_combine[
             combine_recv_count_ptrs,
             EPLocalSyncCounters[n_experts](atomic_counter),
             Int32(my_rank),
-            OptionalReg[
-                TileTensor[
-                    input_type,
-                    type_of(row_major(Idx(Int64(1)), Idx(Int64(1)))),
-                    MutAnyOrigin,
-                ]
-            ](),
             grid_dim=hw_info.sm_count,
             block_dim=hw_info.max_thread_block_size,
         )
