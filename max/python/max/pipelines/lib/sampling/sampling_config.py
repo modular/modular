@@ -62,7 +62,7 @@ class SamplingConfig(ConfigFileModel):
         default=False,
         description=(
             "Enable structured generation/guided decoding for the server. This "
-            "allows the user to pass a json schema in the response_format "
+            "allows the user to pass a JSON schema in the ``response_format`` "
             "field, which the LLM will adhere to."
         ),
     )
@@ -71,7 +71,7 @@ class SamplingConfig(ConfigFileModel):
         default=False,
         description=(
             "Enable the sampling graph to accept a ragged tensor of different "
-            "sequences as inputs, along with their associated logit_offsets. "
+            "sequences as inputs, along with their associated ``logit_offsets``. "
             "This is needed to produce additional logits for echo and "
             "speculative decoding purposes."
         ),
@@ -88,8 +88,8 @@ class SamplingConfig(ConfigFileModel):
     enable_min_tokens: bool = Field(
         default=False,
         description=(
-            "Whether to enable min_tokens, which blocks the model from "
-            "generating stopping tokens before the min_tokens count is reached."
+            "Whether to enable ``min_tokens``, which blocks the model from "
+            "generating stopping tokens before the ``min_tokens`` count is reached."
         ),
     )
 

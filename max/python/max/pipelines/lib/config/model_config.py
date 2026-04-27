@@ -113,7 +113,7 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Maximum sequence length the model can process. If not specified, "
-            "defaults to the model's max_position_embeddings. May be clamped "
+            "defaults to the model's ``max_position_embeddings``. May be clamped "
             "during resolution based on available memory."
         ),
     )
@@ -134,7 +134,7 @@ class MAXModelConfig(MAXModelConfigBase):
         default="",
         description=(
             "The repository ID of a Hugging Face model to use. "
-            "The `--model` option also works as an alias."
+            "The ``--model`` option also works as an alias."
         ),
     )
     """The repository ID of a Hugging Face model to use."""
@@ -143,21 +143,26 @@ class MAXModelConfig(MAXModelConfigBase):
         default=None,
         description=(
             "Optional override for client-facing model name. Defaults to "
-            "model_path."
+            "``model_path``."
         ),
     )
     """An optional override for the client-facing model name."""
 
     weight_path: list[Path] = Field(
         default_factory=list,
-        description="Optional path or url of the model weights to use.",
+        description="Optional path or URL of the model weights to use.",
     )
     """The path or URL of the model weights to use."""
 
     # TODO(zheng): Move this under QuantizationConfig.
     quantization_encoding: SupportedEncoding | None = Field(
         default=None,
-        description="Weight encoding type.",
+        description=(
+            "Weight encoding type. For GGUF models, the encoding is "
+            "auto-detected from the repository when unset; if set, it must "
+            "match an available encoding. When the repository contains "
+            "multiple quantization formats, set this to choose one."
+        ),
     )
     """The weight encoding type."""
 
@@ -182,18 +187,18 @@ class MAXModelConfig(MAXModelConfigBase):
     trust_remote_code: bool = Field(
         default=False,
         description=(
-            "Whether or not to allow for custom modelling files on Hugging Face."
+            "Whether or not to allow for custom modeling files on Hugging Face."
         ),
     )
-    """Whether to allow custom modelling files from Hugging Face."""
+    """Whether to allow custom modeling files from Hugging Face."""
 
     subfolder: str | None = Field(
         default=None,
         description=(
             "Subdirectory within the HuggingFace repo to load config and "
-            "weights from (e.g., 'vae', 'text_encoder'). When set, "
-            "config.json and weights are resolved from "
-            "{model_path}/{subfolder}/."
+            "weights from (for example, ``vae`` or ``text_encoder``). When set, "
+            "``config.json`` and weights are resolved from "
+            "``{model_path}/{subfolder}/``."
         ),
     )
     """Subdirectory within the HuggingFace repo to load config and weights from."""
@@ -225,7 +230,7 @@ class MAXModelConfig(MAXModelConfigBase):
         default_factory=dict,
         description=(
             "Model-specific vision configuration overrides. For example, for "
-            'InternVL: {"max_dynamic_patch": 24}.'
+            'InternVL: ``{"max_dynamic_patch": 24}``.'
         ),
     )
     """Model-specific vision configuration overrides."""
@@ -233,8 +238,7 @@ class MAXModelConfig(MAXModelConfigBase):
     rope_type: RopeType | None = Field(
         default=None,
         description=(
-            "Force using a specific rope type: none, normal, or neox. Only "
-            "matters for GGUF weights."
+            "Force using a specific rope type. Only matters for GGUF weights."
         ),
     )
     """The RoPE type to use, forced regardless of model defaults."""
@@ -251,14 +255,14 @@ class MAXModelConfig(MAXModelConfigBase):
             "Optional custom chat template to override the one shipped with the "
             "Hugging Face model config. If a path is provided, the file is read "
             "during config resolution and the content stored as a string. If "
-            "None, the model's default chat template is used."
+            "``None``, the model's default chat template is used."
         ),
     )
     """An optional custom chat template to override the one shipped with the model."""
 
     kv_cache: KVCacheConfig = Field(
         default_factory=KVCacheConfig,
-        description="The KVCache config.",
+        description="The ``KVCacheConfig`` instance.",
     )
     """The KV cache configuration."""
 

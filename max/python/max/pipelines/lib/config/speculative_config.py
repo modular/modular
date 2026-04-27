@@ -46,20 +46,20 @@ class SpeculativeConfig(ConfigFileModel):
     rejection_sampling_strategy: RejectionSamplingStrategy | None = Field(
         default=None,
         description=(
-            "Rejection sampling strategy for verifying draft tokens."
-            " Defaults to 'typical-acceptance' for eagle/mtp,"
-            " 'residual' for standalone."
+            "Rejection sampling strategy for verifying draft tokens. "
+            "Defaults to ``typical-acceptance`` for ``eagle``/``mtp`` and "
+            "``residual`` for ``standalone``."
         ),
     )
 
     synthetic_acceptance_rate: float | None = Field(
         default=None,
         description=(
-            "Synthetic acceptance rate for benchmarking (0.0 to 1.0). "
+            "Synthetic acceptance rate for benchmarking (``0.0`` to ``1.0``). "
             "When set, the rejection sampler bypasses the real "
             "draft/target comparison and accepts each draft position "
             "with a calibrated probability so the mean joint acceptance "
-            "across num_speculative_tokens positions matches this value."
+            "across ``num_speculative_tokens`` positions matches this value."
         ),
     )
 

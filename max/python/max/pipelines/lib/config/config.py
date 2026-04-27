@@ -154,7 +154,7 @@ class PipelineConfig(ConfigFileModel):
     debug_verify_replay: bool = Field(
         default=False,
         description=(
-            "When device_graph_capture is enabled, execute eager launch-trace "
+            "When ``device_graph_capture`` is enabled, execute eager launch-trace "
             "verification before replay. Intended for debugging only."
         ),
     )
@@ -170,8 +170,8 @@ class PipelineConfig(ConfigFileModel):
         default_factory=list,
         description=(
             "Per-component overrides for the ModelManifest, in the format "
-            "'component.field=value'. Applied before resolution. Repeatable. "
-            "Example: 'transformer.quantization_encoding=float4_e2m1fnx2'."
+            "``component.field=value``. Applied before resolution. Repeatable. "
+            "Example: ``transformer.quantization_encoding=float4_e2m1fnx2``."
         ),
     )
     """Per-component model overrides applied before resolution."""

@@ -109,8 +109,8 @@ class KVCacheConfig(ConfigFileModel):
     kv_connector: KVConnectorType | None = Field(
         default=None,
         description=(
-            "Type of KV cache connector to use. Options: null, local, tiered, "
-            "lmcache. When not set, defaults to null (no external caching)."
+            "Type of KV cache connector to use. "
+            "When not set, defaults to ``null`` (no external caching)."
         ),
     )
     """Type of KV cache connector to use."""
@@ -130,8 +130,8 @@ class KVCacheConfig(ConfigFileModel):
         description=(
             "The fraction of available device memory that the process should "
             "consume. This informs the KVCache workspace size: "
-            "kv_cache_workspace = (total_free_memory * device_memory_utilization) "
-            "- model_weights_size."
+            "``kv_cache_workspace = (total_free_memory * device_memory_utilization) "
+            "- model_weights_size``."
         ),
     )
     """The fraction of available device memory the process should consume."""
@@ -142,8 +142,8 @@ class KVCacheConfig(ConfigFileModel):
     kv_cache_format: str | None = Field(
         default=None,
         description=(
-            "Override the default data type for the KV cache."
-            "Supported values: float32, bfloat16, float8_e4m3fn."
+            "Override the default data type for the KV cache. "
+            "Supported values: ``float32``, ``bfloat16``, ``float8_e4m3fn``."
         ),
     )
     """An override for the default data type of the KV cache."""

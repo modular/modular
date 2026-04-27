@@ -32,31 +32,10 @@ with your own model implementations:
 
     :::note Custom architectures
 
-    The `--custom-architectures` flag allows you to load custom pipeline
-    architectures from your own Python modules. You can set the `ARCHITECTURES`
-    variable containing the architecture definitions. Each entry in
-    `--custom-architectures` can be specified in two formats:
-
-    - A raw module name; for example: `my_module`.
-    - An import path followed by a colon and the module name; for example: `folder/path/to/import:my_module`.
-
-    The `ARCHITECTURES` variable in your module should be a list of implementations
-    that conform to the
-    [SupportedArchitecture](/max/api/python/generated/max.pipelines.lib.registry.SupportedArchitecture)
-    interface. These will be registered with the MAX pipeline registry automatically.
-
-    :::
-
-
-    :::note Quantization encoding
-
-    When using GGUF models, quantization encoding formats are automatically detected.
-    If no `--quantization-encoding` is specified, MAX Serve automatically detects and
-    uses the first encoding option from the repository. If quantization encoding is
-    provided, it must align with the available encoding options in the repository.
-
-    If the repository contains multiple quantization formats, specify which encoding
-    type you want to use with the `--quantization-encoding` parameter.
+    For a full example using the
+    [`--custom-architectures`](#--custom-architectures-custom_architectures) flag,
+    see [Serve custom model architectures
+    ](/max/develop/serve-custom-model-architectures).
 
     :::
 

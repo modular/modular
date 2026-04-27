@@ -47,8 +47,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Maximum batch size to execute with the model. When not specified "
-            "(None), this value is determined dynamically. For server launches, "
-            "set this higher based on server capacity."
+            "(``None``), this value is determined dynamically. For server "
+            "launches, set this higher based on server capacity."
         ),
     )
 
@@ -56,7 +56,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Maximum number of requests in decode queue. By default, this is "
-            "max_batch_size."
+            "``max_batch_size``."
         ),
     )
 
@@ -66,7 +66,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "Soft floor on the decode batch size. If the TG batch size is "
             "larger, the scheduler continues TG batches; if it falls below, the "
             "scheduler prioritizes CE. This is not a strict minimum. By "
-            "default, this is max_queue_size_tg. Experimental for the TTS "
+            "default, this is ``max_queue_size_tg``. Experimental for the TTS "
             "scheduler."
         ),
     )
@@ -108,7 +108,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=True,
         description=(
             "Enable chunked prefill to split context encoding requests into "
-            "multiple chunks based on max_batch_input_tokens."
+            "multiple chunks based on ``max_batch_input_tokens``."
         ),
     )
 
@@ -123,9 +123,10 @@ class PipelineRuntimeConfig(ConfigFileModel):
     max_num_steps: int = Field(
         default=-1,
         description=(
-            "The number of steps to run for multi-step scheduling. -1 specifies "
-            "a default value based on configuration and platform. Ignored for "
-            "models which are not auto-regressive (for example, embedding models)."
+            "The number of steps to run for multi-step scheduling. ``-1`` "
+            "specifies a default value based on configuration and platform. "
+            "Ignored for models which are not auto-regressive (for example, "
+            "embedding models)."
         ),
     )
 
@@ -140,7 +141,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
     use_experimental_kernels: str = Field(
         default=os.environ.get("USE_EXPERIMENTAL_KERNELS", "false"),
         description=(
-            "Enables using experimental mojo kernels with max serve. The "
+            "Enables using experimental Mojo kernels with ``max serve``. The "
             "kernels could be unstable or incorrect."
         ),
     )
@@ -148,8 +149,9 @@ class PipelineRuntimeConfig(ConfigFileModel):
     use_vendor_blas: str = Field(
         default=os.environ.get("MAX_SERVE_USE_VENDOR_BLAS", "false"),
         description=(
-            "Enables using vendor BLAS libraries (cublas/hipblas/etc) with max "
-            "serve. Currently, this just replaces matmul calls."
+            "Enables using vendor BLAS libraries (``cublas``, ``hipblas``, "
+            "etc.) with ``max serve``. Currently, this just replaces "
+            "``matmul`` calls."
         ),
     )
 
@@ -166,7 +168,7 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Custom architecture implementations to register. Each input can "
             "either be a raw module name or an import path followed by a colon "
-            "and the module name. Each module must expose an ARCHITECTURES list "
+            "and the module name. Each module must expose an ``ARCHITECTURES`` list "
             "of architectures to register."
         ),
     )
@@ -176,7 +178,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Prefix for ZMQ endpoints used for IPC. This ensures unique "
             "endpoints across MAX Serve instances on the same host. Example: "
-            'lora_request_zmq_endpoint = f"{zmq_endpoint_base}-lora_request".'
+            "``lora_request_zmq_endpoint = "
+            'f"{zmq_endpoint_base}-lora_request"``.'
         ),
     )
 
@@ -189,17 +192,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
         default=None,
         description=(
             "Ensures the sum of page-aligned context lengths in a batch does "
-            "not exceed max_batch_total_tokens. Alignment uses the KV cache "
-            "page size. If None, the sum is not limited."
+            "not exceed ``max_batch_total_tokens``. Alignment uses the KV "
+            "cache page size. If ``None``, the sum is not limited."
         ),
     )
 
     device_graph_capture: bool | None = Field(
         default=None,
         description=(
-            "Enable device graph capture/replay for graph execution. "
+            "Enable device graph capture and replay for graph execution. "
             "If unset, automatically enabled for some selected architectures. "
-            "Set to False (--no-device-graph-capture) to explicitly disable."
+            "Use ``--no-device-graph-capture`` to explicitly "
+            "disable."
         ),
     )
 
@@ -227,9 +231,9 @@ class PipelineRuntimeConfig(ConfigFileModel):
         else None,
         description=(
             "Seconds of no-batch-activity after which the decode worker exits "
-            "to trigger a pod restart. None (the default) disables the "
-            "watchdog. Set via MODULAR_DECODE_STALL_TIMEOUT_S env var or "
-            "directly in config."
+            "to trigger a pod restart. ``None`` (the default) disables the "
+            "watchdog. Set with the ``MODULAR_DECODE_STALL_TIMEOUT_S`` environment "
+            "variable."
         ),
     )
 
@@ -240,7 +244,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "to run alongside GPU execution. This helps improve GPU utilization. "
             "This is an experimental feature which may crash and burn. "
             "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-enable-overlap-scheduler --force."
+            "You can forcibly disable this by setting "
+            "``--no-enable-overlap-scheduler --force``."
         ),
     )
 
@@ -257,8 +262,9 @@ class PipelineRuntimeConfig(ConfigFileModel):
     reasoning_parser: str | None = Field(
         default=None,
         description=(
-            "Name of the reasoning output parser. The parser extracts thinking blocks to "
-            "populate the 'reasoning' field in chat completion responses."
+            "Name of the reasoning output parser. The parser extracts "
+            "thinking blocks to populate the ``reasoning`` field in chat "
+            "completion responses."
         ),
     )
 
@@ -274,8 +280,8 @@ class PipelineRuntimeConfig(ConfigFileModel):
         description=(
             "Maximum number of images cached in the vision encoder cache. "
             "Each entry stores the vision encoder output for one image, "
-            "avoiding re-encoding across chunks and requests. Set to 0 to "
-            "disable caching. Only used by VLMs."
+            "avoiding re-encoding across chunks and requests. Set to ``0`` "
+            "to disable caching. Only used by VLMs."
         ),
     )
 
