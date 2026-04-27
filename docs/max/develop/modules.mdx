@@ -1,7 +1,8 @@
 ---
 title: Build a model graph with Module
 sidebar_label: Modules
-description: Learn how to build model graphs using MAX's Module class
+description: Learn how to compose modules, write custom modules with explicit weights,
+  load checkpoint data, and construct a model graph.
 ---
 
 A [`Module`](/max/api/python/generated/max.nn.Module/#max.nn.Module) defines
@@ -10,12 +11,12 @@ your model's layers, weights, and forward computation. A
 that computation as a static data structure the compiler can optimize. You need
 both to build a runnable model.
 
-You'll use modules to build a model definition from the ground up, but
-you'll also use them to extend an existing [MAX-supported model](/max/models/)
-with custom layers. This page shows you how to compose built-in modules, write
+You'll use modules to build a model definition from the ground up, but you'll
+also use them to extend an existing [MAX-supported model](/max/models/) with
+custom layers. This page shows you how to compose built-in modules, write
 custom modules with explicit weights, load checkpoint data, and construct a
-graph from the result. By the end, you'll understand how to build a complete
-model definition and verify its outputs locally.
+graph. By the end, you'll understand how to build a complete model definition
+and verify its outputs locally.
 
 :::note
 
@@ -24,7 +25,7 @@ workflow, see the [Model development overview](/max/develop/).
 
 :::
 
-## Key concepts
+## Key APIs
 
 If you have experience with PyTorch and `torch.nn.Module`, MAX's `Module` class
 will look familiar. In both cases, a module defines your model's layers,
@@ -55,14 +56,10 @@ programming pattern relies on the following key APIs:
 
 :::note
 
-<!-- rumdl-disable MD013 -->
-The [`max.nn.Module`](/max/api/python/generated/max.nn.Module) API used on this
-page relies on explicit graph construction. MAX also provides
-[`max.experimental.nn.Module`](/max/api/python/generated/max.experimental.nn.Module),
-which uses an eager-style construction pattern that more closely resembles
-PyTorch. For more information, see [Eager
-execution](/max/develop/eager-execution/).
-<!-- rumdl-enable MD013 -->
+This page uses explicit graph construction with the `max.graph` and `max.nn`
+packages. MAX also provides an eager-style execution pattern with the
+`max.experimental` package. For more information, see the [Graph
+overview](/max/develop/graph).
 
 :::
 

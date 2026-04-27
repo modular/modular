@@ -90,6 +90,7 @@ const maxSidebars = {
           type: "category",
           collapsed: true,
           items: [
+            "max/develop/graph",
             "max/develop/modules",
             "max/develop/eager-execution",
           ],

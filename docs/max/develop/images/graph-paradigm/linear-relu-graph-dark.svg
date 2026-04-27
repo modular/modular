@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 450 476" width="450" height="476">
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;600&amp;display=swap');
+  </style>
+  <rect width="450" height="476" fill="#020c13"/>
+  <line x1="330" y1="84" x2="330" y2="122" stroke="#637bff" stroke-width="2"/>
+  <polygon points="330,128 324,119.0 336,119.0" fill="#637bff"/>
+  <line x1="330" y1="172" x2="330" y2="210" stroke="#637bff" stroke-width="2"/>
+  <polygon points="330,216 324,207.0 336,207.0" fill="#637bff"/>
+  <line x1="330" y1="260" x2="330" y2="298" stroke="#637bff" stroke-width="2"/>
+  <polygon points="330,304 324,295.0 336,295.0" fill="#637bff"/>
+  <line x1="330" y1="348" x2="330" y2="386" stroke="#637bff" stroke-width="2"/>
+  <polygon points="330,392 324,383.0 336,383.0" fill="#637bff"/>
+  <line x1="150" y1="150" x2="244" y2="150" stroke="#637bff" stroke-width="2"/>
+  <polygon points="250,150 241.0,144 241.0,156" fill="#637bff"/>
+  <line x1="150" y1="238" x2="244" y2="238" stroke="#637bff" stroke-width="2"/>
+  <polygon points="250,238 241.0,232 241.0,244" fill="#637bff"/>
+  <rect x="250" y="40" width="160" height="44" rx="6" fill="#181c1f" stroke="#637bff" stroke-width="2"/>
+  <text x="330.0" y="62.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="500" dominant-baseline="middle">x</text>
+  <rect x="250" y="128" width="160" height="44" rx="12" fill="#1a3a5c" stroke="#637bff" stroke-width="2"/>
+  <text x="330.0" y="150.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="500" dominant-baseline="middle">matmul</text>
+  <rect x="250" y="216" width="160" height="44" rx="12" fill="#1a3a5c" stroke="#637bff" stroke-width="2"/>
+  <text x="330.0" y="238.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="500" dominant-baseline="middle">add</text>
+  <rect x="250" y="304" width="160" height="44" rx="12" fill="#1a3a5c" stroke="#637bff" stroke-width="2"/>
+  <text x="330.0" y="326.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="500" dominant-baseline="middle">relu</text>
+  <rect x="250" y="392" width="160" height="44" rx="6" fill="#181c1f" stroke="#637bff" stroke-width="2"/>
+  <text x="330.0" y="414.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="500" dominant-baseline="middle">output</text>
+  <rect x="50" y="122" width="100" height="56" rx="6" fill="#181c1f" stroke="#353d42" stroke-width="2"/>
+  <text x="100.0" y="142.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="600" dominant-baseline="middle">W</text>
+  <text x="100.0" y="160.0" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">weight</text>
+  <rect x="50" y="210" width="100" height="56" rx="6" fill="#181c1f" stroke="#353d42" stroke-width="2"/>
+  <text x="100.0" y="230.0" font-family="Roboto Mono, Courier, monospace" font-size="13" fill="#ffffff" text-anchor="middle" font-weight="600" dominant-baseline="middle">b</text>
+  <text x="100.0" y="248.0" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">weight</text>
+  <rect x="267.8" y="98.5" width="124.4" height="15" rx="3" fill="#020c13"/>
+  <text x="330" y="106.0" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">["batch", 3] f32</text>
+  <rect x="267.8" y="186.5" width="124.4" height="15" rx="3" fill="#020c13"/>
+  <text x="330" y="194.0" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">["batch", 2] f32</text>
+  <rect x="267.8" y="274.5" width="124.4" height="15" rx="3" fill="#020c13"/>
+  <text x="330" y="282.0" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">["batch", 2] f32</text>
+  <rect x="267.8" y="362.5" width="124.4" height="15" rx="3" fill="#020c13"/>
+  <text x="330" y="370.0" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">["batch", 2] f32</text>
+  <rect x="159.25" y="126.5" width="81.5" height="15" rx="3" fill="#020c13"/>
+  <text x="200.0" y="134" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">[3, 2] f32</text>
+  <rect x="169.975" y="214.5" width="60.050000000000004" height="15" rx="3" fill="#020c13"/>
+  <text x="200.0" y="222" font-family="Roboto Mono, Courier, monospace" font-size="11" fill="#9a9eaa" text-anchor="middle" font-weight="400" dominant-baseline="middle">[2] f32</text>
+</svg>

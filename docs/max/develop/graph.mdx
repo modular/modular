@@ -1,0 +1,163 @@
+---
+title: Graph overview
+sidebar_label: Overview
+description: Learn why MAX uses graph compilation and how two programming patterns — explicit graph construction and eager-like execution — both produce graphs.
+---
+
+Every model that runs in MAX starts as a graph, which is a representation of a
+model's computation. This page explains why graphs are foundational to the MAX
+framework and how two different programming patterns in MAX both produce graphs.
+
+## The graph paradigm
+
+To optimize a model for production deployment, MAX records the model's
+computation into a graph and compiles it. You execute a model by running the
+compiled graph. During graph compilation, the compiler can perform
+optimizations such as:
+
+- Fusing sequences of ops into single kernels to reduce memory traffic.
+- Planning memory allocation and reuse across the computation.
+- Dispatching hardware-tuned kernels that saturate your specific CPU or GPU.
+
+As such, this one-time compilation step significantly speeds up model execution.
+
+Other frameworks like PyTorch use an *eager execution* programming pattern.
+This works well for research and quick iteration, but for production inference
+it leaves less room to optimize across the full computation.
+
+## Anatomy of a graph
+
+In MAX, a [`Graph`](/max/api/python/generated/max.graph.Graph/) is the data
+structure that contains a model's computation. When operations (ops) run inside
+a graph, MAX records each operation into an intermediate representation (IR)
+that the compiler uses to analyze and optimize the computation. Importantly,
+MAX doesn't execute any operations at this stage.
+
+It might help to visualize what's happening. The following diagram represents a
+graph that captures how data (including weights) flows through a linear-ReLU
+layer:
+
+<!-- rumdl-disable MD033 -->
+<figure>
+
+![](./images/graph-paradigm/linear-relu-graph.svg#light)
+![](./images/graph-paradigm/linear-relu-graph-dark.svg#dark)
+
+<figcaption><b>Figure 1.</b> A linear-ReLU layer</figcaption>
+</figure>
+<!-- rumdl-enable MD033 -->
+
+In figure 1, `matmul`, `add`, and `relu` are different ops. Each op here
+accepts one or more inputs, records its computation as a node in the graph, and
+produces an output that the next op consumes.
+
+These inputs and outputs—the values flowing through ops—are placeholders
+for tensors that will contain real data at execution time. You can query a
+placeholder for its shape, dtype, and device, but you can't read its data
+because no data exists yet. Once you compile the graph, you can run inference
+on real tensors.
+
+## Two ways to build a graph
+
+MAX supports two programming patterns for constructing a graph. Both patterns
+produce the same underlying graph structure but differ in how you define that
+structure.
+
+### Explicit graph construction
+
+With [`max.graph`](/max/api/python/graph) and [`max.nn`](/max/api/python/nn),
+you build the graph directly. You open a
+[`Graph`](/max/api/python/generated/max.graph.Graph/) context, declare your
+inputs as [`TensorValue`](/max/api/python/generated/max.graph.TensorValue/)
+objects, apply [ops](/max/api/python/graph.ops/) to those symbolic values, and
+mark the outputs.
+
+This pattern gives you full control over graph topology and is useful when you
+need to integrate custom ops or define multi-output graphs. The tradeoff is
+that you can't inspect intermediate values during construction, since every
+`TensorValue` is symbolic until you compile and run. This makes iteration
+slower than when you use the eager-like pattern.
+
+Here's an example using the `Graph` API to run a ReLU operation:
+
+```python
+import numpy as np
+from max.driver import CPU
+from max.dtype import DType
+from max.engine import InferenceSession
+from max.graph import Graph, TensorType, ops
+
+# Build the graph
+cpu = CPU()
+input_type = TensorType(DType.float32, shape=[5], device=cpu)
+
+with Graph("relu_graph", input_types=[input_type]) as graph:
+    x = graph.inputs[0]
+    graph.output(ops.relu(x))
+
+# Compile the graph
+session = InferenceSession(devices=[cpu])
+model = session.load(graph)
+
+# Run the computation and inspect results
+input_data = np.array([1.0, -2.0, 3.0, -4.0, 5.0], dtype=np.float32)
+result = model.execute(input_data)
+print(np.from_dlpack(result[0]))
+```
+
+### Eager-like execution
+
+With [`max.experimental`](/max/api/python/experimental), you write code that
+you can run directly. You define your model computation with operations on
+[`Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) objects
+and execute that computation immediately without explicitly creating a graph:
+
+This pattern is eager-like because every operation returns a result right away,
+even though MAX is still building and running graphs under the hood.
+
+In fact, `max.experimental` stages operations into graphs (the same kind you'd
+build explicitly) and runs each staged graph so you get a result back. Every
+operation you run goes through this staging and realization work, which adds up
+in a production loop. For production deployment, group your ops into a
+[`Module`](/max/api/python/generated/max.experimental.nn.Module) and call
+[`compile()`](/max/api/python/generated/max.experimental.nn.Module#max.experimental.nn.Module.compile)<!-- rumdl-disable-line MD013 -->
+on the module to capture the whole computation as a single optimized graph that
+you can run quickly and repeatedly.
+
+Here's an example using the experimental API to run a ReLU operation:
+
+```python
+from max.experimental import functional as F
+from max.experimental.tensor import Tensor
+
+x = Tensor.ones([5])
+y = F.relu(x)
+print(y)  # Result is available immediately
+```
+
+### API comparison
+
+The two patterns use parallel but separate APIs that aren't interchangeable.
+Review the following table to see the API separation:
+
+|                          | Explicit graph construction                                                 | Eager-like execution                                                                         |
+|--------------------------|-----------------------------------------------------------------------------|----------------------------------------------------------------------------------------------|
+| **Primary data object**  | [`max.graph.TensorValue`](/max/api/python/generated/max.graph.TensorValue/) | [`max.experimental.tensor.Tensor`](/max/api/python/generated/max.experimental.tensor.Tensor) |
+| **Built-in operations**  | [`max.graph.ops`](/max/api/python/graph/ops)                                | [`max.experimental.functional`](/max/api/python/experimental.functional)                     |
+| **Python operators**     | `+`, `-`, `*`, `/`, `@` on `TensorValue`                                    | `+`, `-`, `*`, `/`, `@` on `Tensor`                                                          |
+| **`Module` abstraction** | [`max.nn.Module`](/max/api/python/generated/max.nn.Module)                  | [`max.experimental.nn.Module`](/max/api/python/generated/max.experimental.nn.Module)         |
+
+## Next steps
+
+Now that you understand why graphs are foundational to MAX, explore how graphs
+fit into the larger model development workflow:
+
+- [Build a model graph with Module](/max/develop/modules): Learn how to
+  compose ops into reusable `Module` objects and assemble them into a full
+  model graph.
+- [Model bring-up workflow](/max/develop/model-bringup-workflow): See how a
+  model graph fits inside a MAX model architecture package, from
+  configuration and weight loading to serving.
+- [Model pipeline](/max/develop/pipelines): Connect your model to an
+  inference pipeline that handles tokenization, batching, and request
+  routing.
