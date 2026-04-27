@@ -115,28 +115,28 @@ kgen.func @co_await(%arg0: !co.routine) -> !kgen.none {
 // CHECK-LABEL: @lower_pack
 // CHECK-SAME: %arg0: !kgen.struct<(i32, i64)>
 // CHECK-SAME: -> !kgen.struct<(i32, i64)>
-kgen.func @lower_pack(%arg0: !kgen.pack<[i32, i64]>) -> !kgen.pack<[i32, i64]> {
-  kgen.return %arg0 : !kgen.pack<[i32, i64]>
+kgen.func @lower_pack(%arg0: !kgen.struct<(i32, i64)>) -> !kgen.struct<(i32, i64)> {
+  kgen.return %arg0 : !kgen.struct<(i32, i64)>
 }
 
 // CHECK-LABEL: @pack_create
-kgen.func @pack_create(%arg0: i32, %arg1: i64) -> !kgen.pack<[i32, i64]> {
+kgen.func @pack_create(%arg0: i32, %arg1: i64) -> !kgen.struct<(i32, i64)> {
   // CHECK-NEXT: %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(i32, i64)>
-  %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[i32, i64]>
-  kgen.return %0 : !kgen.pack<[i32, i64]>
+  %0 = kgen.struct.create(%arg0, %arg1) : !kgen.struct<(i32, i64)>
+  kgen.return %0 : !kgen.struct<(i32, i64)>
 }
 
 // CHECK-LABEL: @pack_extract
-kgen.func @pack_extract(%arg0: !kgen.pack<[i32, i64]>) -> i64 {
+kgen.func @pack_extract(%arg0: !kgen.struct<(i32, i64)>) -> i64 {
   // CHECK-NEXT: %0 = kgen.struct.extract %arg0[1] : <(i32, i64)>
-  %0 = kgen.pack.extract %arg0[1] : <[i32, i64]>
+  %0 = kgen.struct.extract %arg0[1] : <(i32, i64)>
   kgen.return %0 : i64
 }
 
 // CHECK-LABEL: @pack_gep
-kgen.func @pack_gep(%arg0: !kgen.pointer<!kgen.pack<[i32, i64]>>) -> !kgen.pointer<i32> {
+kgen.func @pack_gep(%arg0: !kgen.pointer<!kgen.struct<(i32, i64)>>) -> !kgen.pointer<i32> {
   // CHECK-NEXT: %0 = kgen.struct.gep %arg0[0] : <struct<(i32, i64)>>
-  %0 = kgen.pack.gep %arg0[0] : <!kgen.pack<[i32, i64]>>
+  %0 = kgen.struct.gep %arg0[0] : <!kgen.struct<(i32, i64)>>
   kgen.return %0 : !kgen.pointer<i32>
 }
 
@@ -149,21 +149,21 @@ kgen.func @pack_size(%arg0: !kgen.pack<[i32, i64]>) -> index {
 }
 
 // CHECK-LABEL: @pack_load
-kgen.func @pack_load(%arg0: !kgen.pack<[pointer<i32>, pointer<i64>]>) -> !kgen.pack<[i32, i64]> {
+kgen.func @pack_load(%arg0: !kgen.struct<(pointer<i32>, pointer<i64>) isParamPack>) -> !kgen.struct<(i32, i64) isParamPack> {
   // CHECK-NEXT: [[PTR0:%.*]] = kgen.struct.extract %arg0[0] : <(pointer<i32>, pointer<i64>)>
   // CHECK-NEXT: [[EL0:%.*]] = pop.load [[PTR0]]
   // CHECK-NEXT: [[PTR1:%.*]] = kgen.struct.extract %arg0[1] : <(pointer<i32>, pointer<i64>)>
   // CHECK-NEXT: [[EL1:%.*]] = pop.load [[PTR1]]
   // CHECK-NEXT: [[RESULT:%.*]] = kgen.struct.create([[EL0]], [[EL1]]) : !kgen.struct<(i32, i64)>
-  %0 = kgen.pack.load %arg0 : <[pointer<i32>, pointer<i64>]>
+  %0 = kgen.pack.load %arg0 : !kgen.struct<(pointer<i32>, pointer<i64>) isParamPack>
   // CHECK-NEXT: return [[RESULT]]
-  kgen.return %0 : !kgen.pack<[i32, i64]>
+  kgen.return %0 : !kgen.struct<(i32, i64) isParamPack>
 }
 
 // CHECK-LABEL: @nested_pack_attr
 kgen.func @nested_pack_attr() {
   // CHECK-NEXT: constant: struct<(struct<()>, struct<(i32, i64)>)> = <{ { }, { 1, 2 } }>
-  kgen.param.constant: !kgen.pack<[!kgen.pack<[]>, !kgen.pack<[i32, i64]>]> = <#kgen.pack<#kgen.pack<>, #kgen.pack<1, 2>>>
+  kgen.param.constant: !kgen.struct<(struct<()>, struct<(i32, i64)>)> = <#kgen.struct<{ }, { 1, 2 }>>
   kgen.return
 }
 
@@ -260,19 +260,19 @@ kgen.func @call_empty_thing(%arg0: !kgen.generator<() -> !kgen.struct<()>>) -> !
 
 module {
   // CHECK: kgen.func @func1(%arg0: !kgen.none) always_inline_no_debug
-  kgen.func @func1(%arg0: !kgen.none) -> !kgen.pack<[]> always_inline_no_debug {
-    %0 = kgen.pack.create() : !kgen.pack<[]>
-    %1 = pop.stack_allocation 1 x !kgen.pack<[]> marked
-    pop.store %0, %1 : !kgen.pointer<!kgen.pack<[]>>
-    %2 = pop.load %1 : !kgen.pointer<!kgen.pack<[]>>
-    pop.stack_alloc.lifetime.end(%1) : !kgen.pointer<!kgen.pack<[]>>
-    kgen.return %2 : !kgen.pack<[]>
+  kgen.func @func1(%arg0: !kgen.none) -> !kgen.struct<()> always_inline_no_debug {
+    %0 = kgen.struct.create() : !kgen.struct<()>
+    %1 = pop.stack_allocation 1 x !kgen.struct<()> marked
+    pop.store %0, %1 : !kgen.pointer<!kgen.struct<()>>
+    %2 = pop.load %1 : !kgen.pointer<!kgen.struct<()>>
+    pop.stack_alloc.lifetime.end(%1) : !kgen.pointer<!kgen.struct<()>>
+    kgen.return %2 : !kgen.struct<()>
   }
 
   kgen.func export @func2() {
       %none_4 = kgen.param.constant: none = <#kgen.none>
       // CHECK: kgen.call @func1(%none) : (!kgen.none) -> ()
-      %11 = kgen.call @func1(%none_4) : (!kgen.none) -> !kgen.pack<[]>
+      %11 = kgen.call @func1(%none_4) : (!kgen.none) -> !kgen.struct<()>
     kgen.return
   }
 }

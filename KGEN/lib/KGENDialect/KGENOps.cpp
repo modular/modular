@@ -1429,16 +1429,21 @@ LogicalResult PackLoadOp::inferReturnTypes(MLIRContext *ctx,
                                            std::optional<Location> loc,
                                            Adaptor adaptor,
                                            SmallVectorImpl<Type> &types) {
-  if (!isa<PackType>(adaptor.getPack().getType()))
+  if (!isa<StructType>(adaptor.getPack().getType()))
     return mlir::emitError(loc.value_or(adaptor.getPack().getLoc()),
-                           "expected one !kgen.pack operand, not ")
+                           "expected one !kgen.struct operand, not ")
            << adaptor.getPack().getType();
-  auto packType = cast<PackType>(adaptor.getPack().getType());
+  auto structType = cast<StructType>(adaptor.getPack().getType());
+  if (!structType.getIsParamPack())
+    return mlir::emitError(loc.value_or(adaptor.getPack().getLoc()),
+                           "expected a parametric struct type");
   // The result type is the same as the input type, but with a layer of pointers
   // stripped off.
-  auto mappedTypes =
-      ParamOperatorAttr::get(POC::VariadicPtrRemoveMap, packType.getVariadic());
-  types.push_back(PackType::get(mappedTypes));
+  auto mappedTypes = ParamOperatorAttr::get(
+      POC::VariadicPtrRemoveMap, structType.getElementTypesVariadic());
+  types.push_back(StructType::get(ctx, mappedTypes, /*memOnly*/ {},
+                                  /*minAlign*/ {},
+                                  /*isPack*/ true));
   return success();
 }
 

@@ -59,6 +59,16 @@ removeDINoneResults(DebugInfo::DISubroutineType type) {
 }
 
 /// Lower a concrete pack to a struct.
+static StructType lowerPackStructType(StructType type) {
+  // Leave non-pack structs alone.
+  if (!type.getIsParamPack())
+    return type;
+  // Strip off the isParamPack bit.
+  return StructType::get(type.getContext(), type.getElementTypesVariadic(),
+                         type.getIsMemoryOnly(), type.getMinAlignment(), false);
+}
+
+/// Lower a concrete pack to a struct.
 static StructType lowerPackTypeToStruct(PackType pack) {
   ParamListAttr variadicAttr = pack.getVariadicIfResolved();
   if (!variadicAttr)
@@ -374,6 +384,7 @@ void LowerCallingConventionsPass::runOnOperation() {
   };
   replacer.addReplacement(lowerResult);
   replacer.addReplacement(removeDINoneResults);
+  replacer.addReplacement(lowerPackStructType);
   replacer.addReplacement(lowerPackTypeToStruct);
   replacer.addReplacement(lowerPackAttrToStruct);
   replacer.addReplacement(lowerVariantType);

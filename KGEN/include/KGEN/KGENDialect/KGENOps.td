@@ -1691,13 +1691,13 @@ def KGEN_PackLoadOp : KGENOp<"pack.load", [Pure,
     DeclareOpInterfaceMethods<InterpreterOpInterface>]> {
   let summary = "load all pack elements";
   let description = [{
-    The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
-    loads each one into a pack without the pointer type.  This requires
+    The `kgen.pack.load` operation takes a struct of !kgen.pointer values and
+    loads each one into a struct without the pointer type.  This requires
     elements with trivially loadable types supported by pop.load.
   }];
 
-  let arguments = (ins KGEN_PackType:$pack);
-  let results = (outs KGEN_PackType:$result);
+  let arguments = (ins KGEN_StructType:$pack);
+  let results = (outs KGEN_StructType:$result);
   let assemblyFormat = "$pack attr-dict `:` type($pack)";
 }
 

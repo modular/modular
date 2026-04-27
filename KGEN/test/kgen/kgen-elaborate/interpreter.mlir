@@ -464,23 +464,23 @@ kgen.generator export @constexpr_elif() -> index {
 
 // -----
 
-kgen.func @pack_load() -> !kgen.pack<[si4, ui8]> {
+kgen.func @pack_load() -> !kgen.struct<(si4, ui8) isParamPack> {
   %i0 = kgen.param.constant: si4 = <-5>
   %i1 = kgen.param.constant: ui8 = <42>
   %p0 = pop.stack_allocation 1 x si4
   %p1 = pop.stack_allocation 1 x ui8
   pop.store %i0, %p0 : !kgen.pointer<si4>
   pop.store %i1, %p1 : !kgen.pointer<ui8>
-  %pack = kgen.pack.create(%p0, %p1) : !kgen.pack<[pointer<si4>, pointer<ui8>]>
-  %loaded_pack = kgen.pack.load %pack : !kgen.pack<[pointer<si4>, pointer<ui8>]>
-  kgen.return %loaded_pack : !kgen.pack<[si4, ui8]>
+  %pack = kgen.struct.create(%p0, %p1) : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
+  %loaded_pack = kgen.pack.load %pack : !kgen.struct<(pointer<si4>, pointer<ui8>) isParamPack>
+  kgen.return %loaded_pack : !kgen.struct<(si4, ui8) isParamPack>
 }
 
 // CHECK-LABEL: kgen.func export @interpret_pack_load
-kgen.generator export @interpret_pack_load() -> !kgen.pack<[si4, ui8]> {
-  // CHECK-NEXT: !kgen.pack<[si4, ui8]> = <<-5, 42>>
-  %0 = kgen.param.constant: !kgen.pack<[si4, ui8]> = <apply(:() -> !kgen.pack<[si4, ui8]> @pack_load)>
-  kgen.return %0 : !kgen.pack<[si4, ui8]>
+kgen.generator export @interpret_pack_load() -> !kgen.struct<(si4, ui8) isParamPack> {
+  // CHECK-NEXT: %{{.*}} = kgen.param.constant: struct<(si4, ui8) isParamPack> = <{ -5, 42 }>
+  %0 = kgen.param.constant: !kgen.struct<(si4, ui8) isParamPack> = <apply(:() -> !kgen.struct<(si4, ui8) isParamPack> @pack_load)>
+  kgen.return %0 : !kgen.struct<(si4, ui8) isParamPack>
 }
 
 // -----
@@ -588,9 +588,9 @@ kgen.generator export @root() -> index {
 // Test lifting of nested `store_to_mem`s.
 
 // This function takes a pack of two dtype pointers, and returns the first element, loaded.
-kgen.generator @use_pack(%arg0: !kgen.pointer<!kgen.pack<[pointer<dtype>, pointer<dtype>]>> owned_in_mem) -> !kgen.dtype {
-  %pack = pop.load %arg0 : !kgen.pointer<!kgen.pack<[pointer<dtype>, pointer<dtype>]>>
-  %elem = kgen.pack.extract %pack[0] : <[pointer<dtype>, pointer<dtype>]>
+kgen.generator @use_pack(%arg0: !kgen.pointer<!kgen.struct<(pointer<dtype>, pointer<dtype>) isParamPack>> owned_in_mem) -> !kgen.dtype {
+  %pack = pop.load %arg0 : !kgen.pointer<!kgen.struct<(pointer<dtype>, pointer<dtype>) isParamPack>>
+  %elem = kgen.struct.extract %pack[0] : <(pointer<dtype>, pointer<dtype>) isParamPack>
   %val = pop.load %elem : !kgen.pointer<dtype>
   kgen.return %val : !kgen.dtype
 }
@@ -600,7 +600,7 @@ kgen.generator export @top() {
   // Call `use_pack` with a pack of two dtypes stored in memory, with the pack stored in memory too.
   // After interpreting the function, we should get back the first dtype, loaded from memory.
   // CHECK-NEXT: kgen.param.constant: dtype = <f8e5m2>
-  kgen.param.constant : dtype = <apply(:(!kgen.pointer<!kgen.pack<[pointer<dtype>, pointer<dtype>]>> owned_in_mem) -> !kgen.dtype @use_pack, store_to_mem(<store_to_mem(f8e5m2), store_to_mem(f8e5m2fnuz)>))>
+  kgen.param.constant : dtype = <apply(:(!kgen.pointer<!kgen.struct<(pointer<dtype>, pointer<dtype>) isParamPack>> owned_in_mem) -> !kgen.dtype @use_pack, store_to_mem({ store_to_mem(f8e5m2), store_to_mem(f8e5m2fnuz) }))>
   kgen.return
 }
 

@@ -1997,7 +1997,7 @@ def LIT_RefPackExtractOp : LITOp<"ref.pack.extract",
 def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
   let summary = "cast a pointer pack to a reference pack";
   let description = [{
-    The `lit.ref.pack.from_pointer_pack` operation interprets a `!kgen.pack` of
+    The `lit.ref.pack.from_pointer_pack` operation interprets a `!kgen.struct` of
     pointers as a `!lit.ref.pack`. The result type supplies the common origin and
     address space, and its variadic element list must match the operand pack's
     element types after applying `variadic_ptrremove_map`.
@@ -2011,7 +2011,7 @@ def LIT_RefPackFromPointerPackOp : LITOp<"ref.pack.from_pointer_pack", [Pure]> {
     ```
   }];
 
-  let arguments = (ins KGEN_PackType:$pack);
+  let arguments = (ins KGEN_StructType:$pack);
   let results = (outs LIT_RefPackType:$result);
   let assemblyFormat = [{
     $pack attr-dict `:` type($pack) `->` type($result)

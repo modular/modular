@@ -217,9 +217,9 @@ static SmallVector<Attribute> expandOperands(ArrayRef<Attribute> args) {
   SmallVector<Attribute> operands;
   operands.reserve(args.size());
   for (auto value : args) {
-    if (auto packValueAttr = dyn_cast<KGEN::PackAttr>(value)) {
-      operands.append(packValueAttr.getValues().begin(),
-                      packValueAttr.getValues().end());
+    auto packAttr = dyn_cast<KGEN::StructAttr>(value);
+    if (packAttr && packAttr.getType().getIsParamPack()) {
+      operands.append(packAttr.getValues().begin(), packAttr.getValues().end());
     } else {
       operands.push_back(value);
     }
@@ -233,13 +233,7 @@ static SmallVector<Attribute> expandOperands(ArrayRef<Attribute> args) {
 static ErrorTreeOrSuccess interpretMemcpy(Location loc,
                                           ArrayRef<Attribute> operands,
                                           InterpreterState &state) {
-  if (operands.size() != 1 || !isa<PackAttr>(operands[0])) {
-    return ErrorTree(
-        loc,
-        "interpreting llvm.memcpy takes pack of 3: dst addr, src addr, count");
-  }
-
-  ArrayRef<TypedAttr> values = cast<PackAttr>(operands[0]).getValues();
+  SmallVector<Attribute> values = expandOperands(operands[0]);
   if (values.size() != 3) {
     return ErrorTree(
         loc,

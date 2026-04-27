@@ -1342,10 +1342,10 @@ struct Pointer[
 
 struct Tuple[*element_types: Movable](ImplicitlyCopyable):
     comptime _mlir_type = __mlir_type[
-        `!kgen.pack<:`,
+        `!kgen.struct<:`,
         _MLIR.KGENParamListType[Movable],
         Self.element_types.values,
-        `>`,
+        ` isParamPack>`,
     ]
     var _mlir_value: Self._mlir_type
 

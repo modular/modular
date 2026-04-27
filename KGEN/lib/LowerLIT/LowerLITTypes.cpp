@@ -327,7 +327,7 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
   replacer.addInferredDomainNonRecursiveReplacement(
       [=](NonStructTypeType) { return typeType; });
 
-  // #lit.ref.pack => #kgen.pack
+  // #lit.ref.pack => #kgen.struct
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer](RefPackAttr refPack) -> FailureOr<Attribute> {
         SmallVector<TypedAttr> loweredElts;
@@ -342,20 +342,22 @@ static void populateReplacer(StructDecls &decls, LowerLITReplacer &replacer,
             replacer.replace(refPack.getType(), TypeDomain::AsType);
         if (failed(typeOr))
           return failure();
-        auto type = cast<PackType>(*typeOr);
-        return PackAttr::get(loweredElts, type);
+        return StructAttr::get(loweredElts, cast<KGEN::StructType>(*typeOr));
       });
 
-  // !lit.ref.pack<:param_list<!kgen.type> types, owned_in_mem, mut life, 42>
-  // => !kgen.pack<variadic_ptr_map(types), 42>
+  // !lit.ref.pack<:param_list<!kgen.type> types, owned_in_mem, mut origin, 42>
+  // => !kgen.struct<variadic_ptr_map(types), 42>
   replacer.addInferredDomainNonRecursiveReplacement(
       [&replacer](RefPackType ref) -> FailureOr<Type> {
         auto variadicOr = replacer.replaceParameter(ref.getVariadic());
         auto addrSpaceOr = replacer.replaceParameter(ref.getAddressSpace());
         if (failed(variadicOr) || failed(addrSpaceOr))
           return failure();
-        return PackType::get(ParamOperatorAttr::get(POC::VariadicPtrMap,
-                                                    *variadicOr, *addrSpaceOr));
+        auto mapped = ParamOperatorAttr::get(POC::VariadicPtrMap, *variadicOr,
+                                             *addrSpaceOr);
+        return KGEN::StructType::get(ref.getContext(), mapped,
+                                     /*memOnly=*/false, /*minAlign*/ {},
+                                     /*isParamPack=*/true);
       });
 
   // !lit.ref -> !kgen.pointer
@@ -883,9 +885,13 @@ static Value lowerOp(RefStructGEROp op, RefStructGEROpAdaptor adaptor,
     // This catches cases where parametric types have resolved identically.
     bool isIdentity = adaptor.getContainer().getType() == resultType;
 
+    auto isNonPackStruct =
+        isa<KGEN::StructType>(containerElemType) &&
+        !cast<KGEN::StructType>(containerElemType).getIsParamPack();
+
     // Detection method 2: Container already flattened to a concrete scalar.
     // This catches cases where the struct was flattened before this point.
-    bool isFlattenedNonStruct = !isa<KGEN::StructType>(containerElemType) &&
+    bool isFlattenedNonStruct = !isNonPackStruct &&
                                 !isa<KGEN::ParamType>(containerElemType) &&
                                 !isa<KGEN::ClosureType>(containerElemType);
 
@@ -908,20 +914,20 @@ static Value lowerOp(RebindOp op, RebindOpAdaptor adaptor, LITTypeLowerer &b) {
   return op.getResult();
 }
 
-// lit.ref.pack.create => kgen.pack.create
+// lit.ref.pack.create => kgen.struct.create
 static Value lowerOp(RefPackCreateOp op, RefPackCreateOpAdaptor adaptor,
                      LITTypeLowerer &b) {
   auto typeOr = b.replace(op.getType(), TypeDomain::AsType);
   if (failed(typeOr))
     return nullptr;
-  return PackCreateOp::create(b, op.getLoc(), *typeOr, adaptor.getOperands());
+  return StructCreateOp::create(b, op.getLoc(), *typeOr, adaptor.getOperands());
 }
 
-// lit.ref.pack.extract => kgen.pack.extract
+// lit.ref.pack.extract => kgen.struct.extract
 static Value lowerOp(RefPackExtractOp op, RefPackExtractOpAdaptor adaptor,
                      LITTypeLowerer &b) {
-  Value value = PackExtractOp::create(b, op.getLoc(), adaptor.getOperands()[0],
-                                      op.getIndex());
+  Value value = KGEN::StructExtractOp::create(b, op.getLoc(), adaptor.getPack(),
+                                              adaptor.getIndex());
   // If the result didn't fold to a pointer type, we need to emit a rebind.
   FailureOr<Type> expectedOr = b.replace(op.getType(), TypeDomain::AsType);
   if (failed(expectedOr))
