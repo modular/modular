@@ -27,7 +27,7 @@ def test_basic_lock() raises:
     comptime maxI = 100
     comptime maxJ = 100
 
-    async def inc() unified {mut}:
+    async def inc() {mut}:
         with BlockingScopedLock(lock):
             rawCounter += 1
             _ = counter.fetch_add(1)
@@ -40,7 +40,7 @@ def test_basic_lock() raises:
         rawCounter,
     )
 
-    def test_atomic() unified {mut} -> None:
+    def test_atomic() {mut} -> None:
         var tg = TaskGroup()
         for _ in range(0, maxI):
             for _ in range(0, maxJ):

@@ -1,0 +1,138 @@
+##===----------------------------------------------------------------------===##
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+##===----------------------------------------------------------------------===##
+
+name: bench_conv3d_wan
+file: $KERNEL_BENCHMARKS_ROOT/gpu/nn/bench_conv3d.mojo
+metadata:
+  model: wan-vae
+
+commons: &commons
+  dtype: DType.bfloat16
+  N: 1
+  $stride_d: 1
+  $stride_h: 1
+  $stride_w: 1
+  impl: [naive, im2col, 1x1x1, qslice, cudnn]  # 5 instances per shape
+
+params:
+
+# Tiny sanity shape, stays in L2.
+- <<: *commons
+  D: 8
+  H: 16
+  W: 16
+  C_in: 16
+  C_out: 16
+  Q: 1
+  R: 1
+  S: 1
+  $pad_d: 0
+  $pad_h: 0
+  $pad_w: 0
+  $label: sanity_1x1x1_16to16
+
+# WAN post_quant_conv @ latent resolution: 1x1x1, 16->16.
+- <<: *commons
+  D: 21
+  H: 30
+  W: 52
+  C_in: 16
+  C_out: 16
+  Q: 1
+  R: 1
+  S: 1
+  $pad_d: 0
+  $pad_h: 0
+  $pad_w: 0
+  $label: WAN_post_quant_conv
+
+# WAN conv_in: 3x3x3, 16->384 at latent resolution.
+- <<: *commons
+  D: 21
+  H: 30
+  W: 52
+  C_in: 16
+  C_out: 384
+  Q: 3
+  R: 3
+  S: 3
+  $pad_d: 1
+  $pad_h: 1
+  $pad_w: 1
+  $label: WAN_conv_in_16to384
+
+# WAN mid ResidualBlock: 3x3x3, 384->384. D is pre-expanded to match
+# production (pipeline externally pre-pads the temporal axis for causal
+# convs, so by the time the kernel runs pad_d=0 and d=T+2). Qualifies
+# for the qslice dispatcher.
+- <<: *commons
+  D: 23
+  H: 30
+  W: 52
+  C_in: 384
+  C_out: 384
+  Q: 3
+  R: 3
+  S: 3
+  $pad_d: 0
+  $pad_h: 1
+  $pad_w: 1
+  $label: WAN_mid_res_384to384
+
+# WAN time_conv upsample: 3x1x1, 192->384 at 60x104 spatial.
+- <<: *commons
+  D: 23
+  H: 60
+  W: 104
+  C_in: 192
+  C_out: 384
+  Q: 3
+  R: 1
+  S: 1
+  $pad_d: 0
+  $pad_h: 0
+  $pad_w: 0
+  $label: WAN_time_conv_192to384
+
+# WAN upsampled residual: 3x3x3, 192->192 at 44x120x208. Doesn't qualify
+# for qslice (C_out=192 not 128-aligned); stays on im2col.
+- <<: *commons
+  D: 44
+  H: 120
+  W: 208
+  C_in: 192
+  C_out: 192
+  Q: 3
+  R: 3
+  S: 3
+  $pad_d: 0
+  $pad_h: 1
+  $pad_w: 1
+  $label: WAN_upsampled_res_192to192
+
+# WAN decoder's final UpBlock at full spatial 240x416: 3x3x3, 96->96.
+# Fails qslice gates on (C_in, C_out) % 64 == 0 (96 % 64 = 32), so lands
+# on im2col at the largest spatial resolution in the decoder.
+- <<: *commons
+  D: 19
+  H: 240
+  W: 416
+  C_in: 96
+  C_out: 96
+  Q: 3
+  R: 3
+  S: 3
+  $pad_d: 0
+  $pad_h: 1
+  $pad_w: 1
+  $label: WAN_level3_res_96to96

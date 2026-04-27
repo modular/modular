@@ -52,7 +52,11 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .dp_padding import DPBatchPadder
-from .utils import SchedulerLogger, get_cancelled_reqs
+from .utils import (
+    SchedulerLogger,
+    get_cancelled_reqs,
+    reshape_flat_kv_blocks_to_grid,
+)
 
 logger = logging.getLogger("max.serve")
 
@@ -94,15 +98,9 @@ class DecodeScheduler(Scheduler):
             0 for _ in range(scheduler_config.data_parallel_degree)
         ]
 
-        self.transfer_engine = KVTransferEngine(
+        self.transfer_engine = KVTransferEngine.from_paged_kv_cache(
             name=f"decode_agent_{uuid.uuid4()}",
-            # TODO: Also support scales tensors
-            tensors=[
-                self.kv_cache.get_device_buffer(replica_idx).values
-                for replica_idx in range(scheduler_config.data_parallel_degree)
-            ],
-            # Assume all replicas have the same number of pages.
-            total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
+            kv_cache=self.kv_cache,
         )
 
         # Register draft KV cache blocks for speculative decoding so that
@@ -111,7 +109,11 @@ class DecodeScheduler(Scheduler):
         if isinstance(draft_kv_blocks, list):
             self.transfer_engine.register_tensor_group(
                 name="draft",
-                tensors=[[buf] for buf in draft_kv_blocks],
+                tensors=reshape_flat_kv_blocks_to_grid(
+                    draft_kv_blocks,
+                    dp=scheduler_config.data_parallel_degree,
+                    group_name="draft",
+                ),
                 total_num_pages=self.kv_cache.get_num_pages(replica_idx=0),
             )
 
@@ -123,6 +125,7 @@ class DecodeScheduler(Scheduler):
             dp_padder=dp_padder,
         )
         self.scheduler_logger = SchedulerLogger()
+        self._last_batch_activity: float = time.monotonic()
         # None corresponds to the default destination address.
         # TODO: delete the default destination address.
         self.remote_endpoints: set[str] = set()
@@ -442,6 +445,27 @@ class DecodeScheduler(Scheduler):
         inputs = self.batch_constructor.construct_batch()
         t1 = time.monotonic()
         batch_creation_time_s = t1 - t0
+
+        total_pending = len(self.pending_reqs) + len(self.prefill_reqs)
+        if inputs or total_pending == 0:
+            self._last_batch_activity = time.monotonic()
+        elif self.scheduler_config.decode_stall_timeout_s is not None:
+            stall_duration = time.monotonic() - self._last_batch_activity
+            if stall_duration > self.scheduler_config.decode_stall_timeout_s:
+                logger.error(
+                    "Decode stall detected: no batch activity for %.1fs"
+                    " with %d pending requests (%d queued, %d in"
+                    " prefill). Terminating worker to trigger restart.",
+                    stall_duration,
+                    total_pending,
+                    len(self.pending_reqs),
+                    len(self.prefill_reqs),
+                )
+                # SystemExit bypasses except Exception handlers in the
+                # scheduler loop, guaranteeing the process exits and
+                # triggers a pod restart. A regular exception risks being
+                # caught and swallowed.
+                raise SystemExit(1)
 
         # Check whether the overlap pipeline has deferred outputs that must
         # be drained even when the current batch is empty.

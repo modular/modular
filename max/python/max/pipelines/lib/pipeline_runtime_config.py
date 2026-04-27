@@ -186,12 +186,12 @@ class PipelineRuntimeConfig(ConfigFileModel):
         ),
     )
 
-    device_graph_capture: bool = Field(
-        default=False,
+    device_graph_capture: bool | None = Field(
+        default=None,
         description=(
             "Enable device graph capture/replay for graph execution. "
-            "This feature will be enabled by default for some selected architectures. "
-            "You can forcibly disable this by setting --no-device-graph-capture --force."
+            "If unset, automatically enabled for some selected architectures. "
+            "Set to False (--no-device-graph-capture) to explicitly disable."
         ),
     )
 
@@ -210,6 +210,18 @@ class PipelineRuntimeConfig(ConfigFileModel):
             "considering current and incoming requests. CE is scheduled if "
             "either projected usage stays below this threshold or no active "
             "requests exist. Higher values can cause more preemptions."
+        ),
+    )
+
+    decode_stall_timeout_s: float | None = Field(
+        default=float(os.environ["MODULAR_DECODE_STALL_TIMEOUT_S"])
+        if "MODULAR_DECODE_STALL_TIMEOUT_S" in os.environ
+        else None,
+        description=(
+            "Seconds of no-batch-activity after which the decode worker exits "
+            "to trigger a pod restart. None (the default) disables the "
+            "watchdog. Set via MODULAR_DECODE_STALL_TIMEOUT_S env var or "
+            "directly in config."
         ),
     )
 

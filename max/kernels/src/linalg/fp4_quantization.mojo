@@ -1610,7 +1610,7 @@ def block_scaled_matmul[
     elementwise_compute_lambda_fn: Optional[
         elementwise_compute_lambda_type
     ] = None,
-    pdl_level: PDLLevel = PDLLevel(1),
+    pdl_level: PDLLevel = PDLLevel(0),
     _trace_description: StaticString = "",
     target: StaticString = "cpu",
 ](

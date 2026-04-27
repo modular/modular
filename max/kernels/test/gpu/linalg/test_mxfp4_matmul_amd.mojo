@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the native MXFP4 block-scaled matmul kernel on AMD CDNA4.
 
-Validates mxfp4_block_scaled_matmul_amd against a per-element GPU reference
+Validates MXFP4MatmulAMD against a per-element GPU reference
 that uses the llvm.amdgcn.cvt.scalef32.pk.f32.fp4 intrinsic for FP4→FP32
 dequantization and scalar accumulation.
 
@@ -30,7 +30,7 @@ from std.sys.intrinsics import llvm_intrinsic
 from internal_utils import assert_almost_equal
 from layout import Coord, Idx, TileTensor, row_major
 from linalg.fp4_utils import MXFP4_SF_VECTOR_SIZE
-from linalg.matmul.gpu.amd import mxfp4_block_scaled_matmul_amd
+from linalg.matmul.gpu.amd.mxfp4_matmul_amd import MXFP4MatmulAMD
 
 
 # ===----------------------------------------------------------------------=== #
@@ -105,17 +105,29 @@ def block_scaled_matmul_ref(
 
 
 def test_mxfp4_matmul[
-    M_static: Int, N_static: Int, K_static: Int
+    M_static: Int,
+    N_static: Int,
+    K_static: Int,
+    BM: Int = 128,
+    BN: Int = 128,
+    BK_ELEMS: Int = 128,
+    WM: Int = 64,
+    WN: Int = 64,
 ](ctx: DeviceContext) raises:
-    """Test mxfp4_block_scaled_matmul_amd against the GPU reference.
+    """Test MXFP4MatmulAMD against a GPU reference kernel.
 
-    All dimensions are compile-time static (required by the kernel).
-    K is the logical FP4 element count; packed data has K//2 bytes.
+    Launches MXFP4MatmulAMD directly with the provided BM/BN/BK_ELEMS/WM/WN.
+    Defaults match the current production tile config.
 
     Parameters:
         M_static: Number of rows in A / C.
         N_static: Number of rows in B (transposed) / cols in C.
         K_static: Logical K dimension (FP4 elements, must be multiple of 128).
+        BM: Block tile rows.
+        BN: Block tile cols.
+        BK_ELEMS: Block tile K in logical FP4 elements.
+        WM: Warp tile rows.
+        WN: Warp tile cols.
     """
     comptime assert (
         K_static % 128 == 0
@@ -123,8 +135,28 @@ def test_mxfp4_matmul[
     comptime assert (
         K_static % MXFP4_SF_VECTOR_SIZE == 0
     ), "K must be a multiple of MXFP4_SF_VECTOR_SIZE (32)"
+    comptime assert BK_ELEMS % 128 == 0, "BK_ELEMS must be a multiple of 128"
+    comptime assert BM % WM == 0, "BM must be divisible by WM"
+    comptime assert BN % WN == 0, "BN must be divisible by WN"
 
-    print(M_static, "x", N_static, "x", K_static)
+    print(
+        M_static,
+        "x",
+        N_static,
+        "x",
+        K_static,
+        " [BM=",
+        BM,
+        " BN=",
+        BN,
+        " BK=",
+        BK_ELEMS,
+        " WM=",
+        WM,
+        " WN=",
+        WN,
+        "]",
+    )
 
     comptime input_dtype = DType.uint8
     comptime scales_dtype = DType.float8_e8m0fnu
@@ -133,21 +165,18 @@ def test_mxfp4_matmul[
     comptime K_PACKED = K_static // 2
     comptime K_SCALES = K_static // MXFP4_SF_VECTOR_SIZE
 
-    # Sizes
     comptime a_size = M_static * K_PACKED
     comptime b_size = N_static * K_PACKED
     comptime c_size = M_static * N_static
     comptime a_scales_size = M_static * K_SCALES
     comptime b_scales_size = N_static * K_SCALES
 
-    # Layouts
     comptime a_shape = row_major[M_static, K_PACKED]()
     comptime b_shape = row_major[N_static, K_PACKED]()
     comptime c_shape = row_major[M_static, N_static]()
     comptime a_scales_shape = row_major[M_static, K_SCALES]()
     comptime b_scales_shape = row_major[N_static, K_SCALES]()
 
-    # Host allocations
     var a_host = alloc[Scalar[input_dtype]](a_size)
     var b_host = alloc[Scalar[input_dtype]](b_size)
     var a_scales_host = alloc[Scalar[scales_dtype]](a_scales_size)
@@ -155,22 +184,15 @@ def test_mxfp4_matmul[
     var c_host = alloc[Scalar[output_dtype]](c_size)
     var c_host_ref = alloc[Scalar[output_dtype]](c_size)
 
-    # Random packed FP4 data (same pattern as test_mxfp4_dequant_matmul_amd).
     for i in range(a_size):
         a_host[i] = UInt8(random_ui64(0, 255))
     for i in range(b_size):
         b_host[i] = UInt8(random_ui64(0, 255))
-
-    # Scales: each lane holds 32 FP4 elements and its own E8M0 scale,
-    # matching MX per-32 granularity. Each scale can be independent.
-    # Use exponent range [125..129] (scales 0.25..4.0) to keep
-    # accumulated values in FP32-representable range.
     for i in range(a_scales_size):
         a_scales_host[i] = bitcast[scales_dtype](UInt8(random_ui64(125, 129)))
     for i in range(b_scales_size):
         b_scales_host[i] = bitcast[scales_dtype](UInt8(random_ui64(125, 129)))
 
-    # Device allocations
     var a_dev = ctx.enqueue_create_buffer[input_dtype](a_size)
     var b_dev = ctx.enqueue_create_buffer[input_dtype](b_size)
     var a_scales_dev = ctx.enqueue_create_buffer[scales_dtype](a_scales_size)
@@ -178,25 +200,44 @@ def test_mxfp4_matmul[
     var c_dev = ctx.enqueue_create_buffer[output_dtype](c_size)
     var c_ref_dev = ctx.enqueue_create_buffer[output_dtype](c_size)
 
-    # Copy to device
     ctx.enqueue_copy(a_dev, a_host)
     ctx.enqueue_copy(b_dev, b_host)
     ctx.enqueue_copy(a_scales_dev, a_scales_host)
     ctx.enqueue_copy(b_scales_dev, b_scales_host)
 
-    # TileTensor views
     var a_tt = TileTensor[mut=False](a_dev, a_shape)
     var b_tt = TileTensor[mut=False](b_dev, b_shape)
     var c_tt = TileTensor[mut=True](c_dev, c_shape)
     var a_scales_tt = TileTensor[mut=False](a_scales_dev, a_scales_shape)
     var b_scales_tt = TileTensor[mut=False](b_scales_dev, b_scales_shape)
 
-    # --- Run kernel under test ---
-    mxfp4_block_scaled_matmul_amd(
-        c_tt, a_tt, b_tt, a_scales_tt, b_scales_tt, ctx
+    # --- Direct launch with explicit tile params ---
+    comptime Kernel = MXFP4MatmulAMD[
+        BM=BM,
+        BN=BN,
+        BK_ELEMS=BK_ELEMS,
+        WM=WM,
+        WN=WN,
+    ]
+    comptime kernel = Kernel.run[
+        DType.float32,
+        type_of(c_tt).LayoutType,
+        type_of(a_tt).LayoutType,
+        type_of(b_tt).LayoutType,
+        type_of(a_scales_tt).LayoutType,
+        type_of(b_scales_tt).LayoutType,
+    ]
+    ctx.enqueue_function[kernel, kernel](
+        c_tt,
+        a_tt,
+        b_tt,
+        a_scales_tt,
+        b_scales_tt,
+        grid_dim=(ceildiv(N_static, BN), ceildiv(M_static, BM)),
+        block_dim=Kernel.num_threads,
     )
 
-    # --- Run reference kernel ---
+    # --- Reference ---
     comptime BLOCK_DIM = 32
     ctx.enqueue_function_experimental[block_scaled_matmul_ref](
         a_dev,
@@ -211,28 +252,10 @@ def test_mxfp4_matmul[
         block_dim=(BLOCK_DIM, BLOCK_DIM),
     )
 
-    # Copy results back
     ctx.enqueue_copy(c_host, c_dev)
     ctx.enqueue_copy(c_host_ref, c_ref_dev)
     ctx.synchronize()
 
-    # var m = M_static
-    # var N = N_static
-    # print("\nFirst 32x32 block of Actual Output Matrix:")
-    # for row in range(min(32, m)):
-    #     for col in range(min(32, N)):
-    #         var actual = c_host[row * N + col].cast[DType.float32]()
-    #         print(actual, end=", " if col < min(32, N) - 1 else "")
-    #     print()
-
-    # print("\nFirst 32x32 block of Reference Output Matrix:")
-    # for row in range(min(32, m)):
-    #     for col in range(min(32, N)):
-    #         var expected = c_host_ref[row * N + col].cast[DType.float32]()
-    #         print(expected, end=", " if col < min(32, N) - 1 else "")
-    #     print()
-
-    # Validate
     assert_almost_equal(
         c_host,
         c_host_ref,
@@ -243,7 +266,6 @@ def test_mxfp4_matmul[
 
     print("  PASSED")
 
-    # Cleanup
     a_host.free()
     b_host.free()
     a_scales_host.free()
@@ -256,22 +278,140 @@ def main() raises:
     with DeviceContext() as ctx:
         print("===> MXFP4 block-scaled matmul (native CDNA4 MFMA)")
 
-        # Small: basic correctness
-        test_mxfp4_matmul[128, 128, 128](ctx)
+        # === Bucket A: baseline aligned correctness ===
+        print("\n--- A: baseline aligned shapes ---")
 
-        # K > BK: exercises the K-loop
+        test_mxfp4_matmul[128, 128, 128](ctx)
         test_mxfp4_matmul[128, 128, 256](ctx)
         test_mxfp4_matmul[128, 128, 512](ctx)
-
-        # Non-square tiles
         test_mxfp4_matmul[256, 128, 256](ctx)
         test_mxfp4_matmul[128, 256, 256](ctx)
-
-        # Larger: multiple blocks in M and N
         test_mxfp4_matmul[256, 256, 256](ctx)
         test_mxfp4_matmul[256, 256, 512](ctx)
-
-        # Stress: deeper K
         test_mxfp4_matmul[128, 128, 1024](ctx)
 
-        print("==== All MXFP4 block-scaled matmul tests passed ====")
+        # === Bucket B: Kimi K2.5 unaligned-M OOB stress matrix ===
+        print("\n--- B: Kimi K2.5 unaligned-M OOB stress ---")
+
+        # M=1 (decode, single row) across all projections.
+        test_mxfp4_matmul[1, 7168, 2048](ctx)
+        test_mxfp4_matmul[1, 2048, 7168](ctx)
+        test_mxfp4_matmul[1, 4096, 7168](ctx)
+        test_mxfp4_matmul[1, 7168, 18432](ctx)
+        test_mxfp4_matmul[1, 18432, 7168](ctx)
+        test_mxfp4_matmul[1, 36864, 7168](ctx)
+
+        # M=17 (short prefill)
+        test_mxfp4_matmul[17, 7168, 2048](ctx)
+        test_mxfp4_matmul[17, 2048, 7168](ctx)
+        test_mxfp4_matmul[17, 4096, 7168](ctx)
+        test_mxfp4_matmul[17, 18432, 7168](ctx)
+
+        # M=53 (mid-range unaligned)
+        test_mxfp4_matmul[53, 7168, 2048](ctx)
+        test_mxfp4_matmul[53, 7168, 18432](ctx)
+
+        # M=73 (mid-range unaligned)
+        test_mxfp4_matmul[73, 4096, 7168](ctx)
+        test_mxfp4_matmul[73, 7168, 18432](ctx)
+        test_mxfp4_matmul[73, 36864, 7168](ctx)
+
+        # M=111 (near BM=128 boundary — last block is 111 rows, 17-row short)
+        test_mxfp4_matmul[111, 7168, 2048](ctx)
+        test_mxfp4_matmul[111, 2048, 7168](ctx)
+        test_mxfp4_matmul[111, 18432, 7168](ctx)
+
+        # M=129 (crosses 1 full block + 1-row partial)
+        test_mxfp4_matmul[129, 7168, 2048](ctx)
+        test_mxfp4_matmul[129, 4096, 7168](ctx)
+
+        # M=257 (crosses 2 full blocks + 1-row partial)
+        test_mxfp4_matmul[257, 7168, 2048](ctx)
+        test_mxfp4_matmul[257, 18432, 7168](ctx)
+
+        print("\n--- B': exaggerated OOB stress ---")
+
+        # M = BM - 1 — last block is one row short of full.
+        # Maximum partial-block footprint (127 real rows, 1 OOB).
+        test_mxfp4_matmul[127, 7168, 2048](ctx)
+        test_mxfp4_matmul[127, 36864, 7168](ctx)
+
+        # M = 2*BM - 1 — one full block + 127-row partial.
+        test_mxfp4_matmul[255, 7168, 8192](ctx)
+
+        # M=1 + huge N + deepest K — maximum DRAM/scale volume with 1
+        # real row and 127 OOB rows per block.
+        test_mxfp4_matmul[1, 36864, 18432](ctx)
+        print("\n--- T: tile-shape parameter sweep ---")
+
+        # Baseline (same as default Kernel) — sanity check.
+        test_mxfp4_matmul[128, 128, 512, BM=128, BN=128, BK_ELEMS=128](ctx)
+
+        # Deeper BK: num_k_tiles=2, enables Level 1 intra-BK pipelining.
+        test_mxfp4_matmul[128, 128, 512, BM=128, BN=128, BK_ELEMS=256](ctx)
+        test_mxfp4_matmul[256, 256, 1024, BM=128, BN=128, BK_ELEMS=256](ctx)
+
+        # Wider M block: 8 warps/block, same warp tile.
+        test_mxfp4_matmul[256, 128, 512, BM=256, BN=128, BK_ELEMS=128](ctx)
+        test_mxfp4_matmul[512, 128, 1024, BM=256, BN=128, BK_ELEMS=128](ctx)
+
+        # Wider N block.
+        test_mxfp4_matmul[128, 256, 512, BM=128, BN=256, BK_ELEMS=128](ctx)
+
+        # Biggest block we can run at 1024 threads/workgroup: 256×256
+        # with WM=WN=64 = 16 warps = 1024 threads (at the limit).
+        test_mxfp4_matmul[256, 256, 512, BM=256, BN=256, BK_ELEMS=128](ctx)
+
+        # Combined: bigger block + deeper BK (the most-likely-fastest
+        # config for Kimi medium-M shapes).
+        test_mxfp4_matmul[256, 128, 1024, BM=256, BN=128, BK_ELEMS=256](ctx)
+
+        # Partial-block with non-default tile: makes sure OOB handling
+        # scales with BM.
+        test_mxfp4_matmul[73, 4096, 7168, BM=256, BN=128, BK_ELEMS=128](ctx)
+
+        print("\n--- T2: small-M tuning configs (BM=64, BN=32, WN=32) ---")
+
+        # K=2048 → K_BYTES=1024. Verify at each BK_ELEMS that K divides.
+        # 128 → 1024/64 = 16 iters (÷) ✓
+        test_mxfp4_matmul[
+            32,
+            7168,
+            2048,
+            BM=64,
+            BN=32,
+            BK_ELEMS=128,
+            WN=32,
+        ](ctx)
+        # 256 → 1024/128 = 8 iters ✓
+        test_mxfp4_matmul[
+            32,
+            7168,
+            2048,
+            BM=64,
+            BN=32,
+            BK_ELEMS=256,
+            WN=32,
+        ](ctx)
+        # 512 → 1024/256 = 4 iters ✓
+        test_mxfp4_matmul[
+            32,
+            7168,
+            2048,
+            BM=64,
+            BN=32,
+            BK_ELEMS=512,
+            WN=32,
+        ](ctx)
+
+        test_mxfp4_matmul[
+            32,
+            7168,
+            2048,
+            BM=64,
+            BN=32,
+            BK_ELEMS=1024,
+            WN=32,
+        ](ctx)
+
+        print("\n==== All MXFP4 block-scaled matmul tests passed ====")

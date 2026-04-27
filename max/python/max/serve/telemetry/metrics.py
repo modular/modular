@@ -149,7 +149,10 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     "maxserve.cache.hit_rate": _meter.create_histogram(
         "maxserve.cache.hit_rate",
         unit="percent_utilization",
-        description="Cache hit rate, measured at the scheduler after batch work. This is dividing the batche's cached_prompt_tokens by prompt_tokens.",
+        description=(
+            "Per-request KV cache hit rate (cached prefix tokens / prompt "
+            "tokens), emitted once per admitted request."
+        ),
     ),  # type: ignore
     "maxserve.cache.preemption_count": _meter.create_counter(
         "maxserve.cache.preemption_count",
@@ -157,13 +160,19 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
     ),  # type: ignore
     "maxserve.cache.hits": _meter.create_counter(
         "maxserve.cache.hits",
-        unit="requests",
-        description="Number of KV cache hits in a batch by the scheduler.",
+        unit="tokens",
+        description=(
+            "Cumulative KV cache hit tokens across all CE batches "
+            "(prompt tokens served from prefix cache)."
+        ),
     ),  # type: ignore
     "maxserve.cache.misses": _meter.create_counter(
         "maxserve.cache.misses",
-        unit="requests",
-        description="Number of KV cache misses in a batch by the scheduler.",
+        unit="tokens",
+        description=(
+            "Cumulative KV cache miss tokens across all CE batches "
+            "(prompt tokens actually prefilled by the model)."
+        ),
     ),  # type: ignore
     "maxserve.tts.audio_output_length": _meter.create_counter(
         "maxserve.tts.audio_output_length",

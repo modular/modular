@@ -620,12 +620,8 @@ def extract_topk_from_masked[
     comptime assert topk_vals_out.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert topk_idxs_out.flat_rank == 2, "expected rank-2 TileTensor"
     comptime assert masked_logits.flat_rank >= 2
-    comptime assert masked_logits.LayoutType.__shape_types[
-        0
-    ].DTYPE.is_integral()
-    comptime assert masked_logits.LayoutType.__shape_types[
-        1
-    ].DTYPE.is_integral()
+    comptime assert masked_logits.LayoutType._shape_types[0].DTYPE.is_integral()
+    comptime assert masked_logits.LayoutType._shape_types[1].DTYPE.is_integral()
     var batch_size = Int(masked_logits.layout.shape[0]().value())
     var N = Int(masked_logits.layout.shape[1]().value())
 

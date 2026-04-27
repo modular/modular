@@ -14,6 +14,7 @@ modular_py_test(
         exclude = [
             "test_device_event.py",
             "test_buffer_device_pinned.py",
+            "test_host_func.py",
         ],
     ),
     deps = [
@@ -32,6 +33,7 @@ modular_py_test(
         "accelerator_tests/test_device.py",
         "test_buffer_device_pinned.py",
         "test_device_event.py",
+        "test_host_func.py",
     ],
     gpu_constraints = ["//:has_gpu"] + select({
         "//:apple_gpu": ["@platforms//:incompatible"],

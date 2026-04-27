@@ -10,10 +10,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Verifies InferenceSession plumbing for MODULAR_MAX_UNINITIALIZED_READ_CHECK.
+"""Verifies InferenceSession plumbing for the uninitialized-read-check config.
 
 Used as a subprocess by test_uninit_check_e2e.py.  When
-MODULAR_MAX_UNINITIALIZED_READ_CHECK=true is in the environment,
+MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true is in the environment (or
+the `max-debug.uninitialized-read-check` Config key is set),
 InferenceSession.__init__ should set MODULAR_DEBUG_DEVICE_ALLOCATOR to
 include "uninitialized-poison".
 """

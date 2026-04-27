@@ -100,6 +100,16 @@ class TextContext:
     which blocks are available in the external BlockStore system.
     """
 
+    cached_prefix_length: int | None = field(default=None)
+    """How many prompt tokens were served from the KV prefix cache.
+
+    Set by the block manager when a request is admitted to a CE batch
+    (0 if the cache had no matching prefix). ``BatchMetrics.create``
+    consumes the value to emit a per-request cache hit rate observation,
+    then resets it to ``None`` so chunked-prefill follow-up calls do not
+    re-emit.
+    """
+
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
 

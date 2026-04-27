@@ -403,21 +403,14 @@ class InferenceSession:
             # Ignore errors if SIGUSR2 is already registered or unavailable
             pass
 
-        # Prefer the new max-debug.op-log-level config (covers MODULAR_MAX_DEBUG_OP_LOG_LEVEL
-        # env var, modular.cfg, and InferenceSession.debug.op_log_level Python setter).
-        # Fall back to the legacy MOJO_LOGGING_LEVEL env var.  The legacy
-        # fallback will be removed in a follow-up PR.
-        if log_level := (
-            _InferenceSession.debug.op_log_level
-            or os.getenv("MOJO_LOGGING_LEVEL")
-        ):
+        # Read the op log level from the max-debug.op-log-level config key
+        # (covers MODULAR_MAX_DEBUG_OP_LOG_LEVEL env var, modular.cfg, and
+        # InferenceSession.debug.op_log_level Python setter).
+        if log_level := _InferenceSession.debug.op_log_level:
             self.set_mojo_log_level(log_level)
 
-        # Same pattern for assert level.
-        if assert_level_str := (
-            _InferenceSession.debug.assert_level
-            or os.getenv("MOJO_ASSERT_LEVEL")
-        ):
+        # Read the assert level from the max-debug.assert-level Config key.
+        if assert_level_str := _InferenceSession.debug.assert_level:
             try:
                 assert_level = AssertLevel[assert_level_str.upper()]
             except KeyError as e:
@@ -436,16 +429,9 @@ class InferenceSession:
         if val := os.getenv("ENABLE_PER_TENSOR_FP8_QUANTIZE"):
             self.enable_per_tensor_fp8_quantize(val)
 
-        # Prefer the new max-debug.uninitialized-read-check config; fall
-        # back to the legacy MODULAR_MAX_UNINITIALIZED_READ_CHECK env var.
-        # The legacy fallback will be removed in a follow-up PR.
-        if (
-            _InferenceSession.debug.uninitialized_read_check
-            or os.environ.get(
-                "MODULAR_MAX_UNINITIALIZED_READ_CHECK", ""
-            ).lower()
-            == "true"
-        ):
+        # Read the uninit-read check from the max-debug.uninitialized-read-check
+        # Config key.
+        if _InferenceSession.debug.uninitialized_read_check:
             # Enable debug allocator poison
             existing = os.environ.get("MODULAR_DEBUG_DEVICE_ALLOCATOR", "")
             if existing:
@@ -595,8 +581,10 @@ class InferenceSession:
                         "Failed to compile the model. Please file an issue, "
                         "all models should be correct by construction and "
                         "this error should have been caught during construction.\n"
-                        "For more detailed failure information run with the "
-                        "environment variable `MODULAR_MAX_DEBUG=True`."
+                        "For more detailed failure information enable the "
+                        "`max-debug.source-tracebacks` config key (for example, "
+                        "`Graph.debug.source_tracebacks = True` or "
+                        "`MODULAR_DEBUG=source-tracebacks`)."
                     ) from e
         else:
             raise RuntimeError("The model is not a valid path or module.")

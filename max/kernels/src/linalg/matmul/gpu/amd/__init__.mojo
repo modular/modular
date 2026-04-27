@@ -13,8 +13,9 @@
 """Provides the AMD GPU backend implementations for matmuls."""
 
 from .mxfp4_dequant_matmul_amd import mxfp4_dequant_matmul_amd
-from .mxfp4_grouped_matmul_amd import mxfp4_grouped_matmul_amd
+from .mxfp4_dequant_grouped_matmul_amd import mxfp4_dequant_grouped_matmul_amd
 from .mxfp4_matmul_amd import mxfp4_block_scaled_matmul_amd, MXFP4MatmulAMD
+from .mxfp4_grouped_matmul_amd import mxfp4_grouped_matmul_amd
 from .amd_matmul import AMDMatmul
 from .amd_ping_pong_matmul import (
     AMDPingPongMatmul,

@@ -1171,6 +1171,96 @@ def cp_async_bulk_prefetch[
 
 
 @always_inline("nodebug")
+def cp_async_bulk_reduce_global_shared_cta[
+    dtype: DType,
+    /,
+    *,
+    reduction_kind: ReduceOp,
+    eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+](
+    dst_mem: UnsafePointer[mut=True, Scalar[dtype], ...],
+    src_mem: UnsafePointer[Scalar[dtype], _, address_space=AddressSpace.SHARED],
+    size: Int32,
+):
+    """Initiates an asynchronous bulk reduction from shared CTA memory into
+    global memory.
+
+    Performs a non-blocking element-wise reduction of `size` bytes of shared
+    memory into the matching locations in global memory, using the PTX
+    `cp.reduce.async.bulk` instruction with the `.bulk_group` completion
+    mechanism. Use `cp_async_bulk_commit_group` and `cp_async_bulk_wait_group`
+    from `std.gpu.sync` to synchronize.
+
+    Both `dst_mem` and `src_mem` must be 16-byte aligned, and `size` must be a
+    multiple of 16. Requires sm_100 or higher.
+
+    Parameters:
+        dtype: Element data type of the reduction. Supported floating-point
+            types are `float16`, `bfloat16`, `float32`, and `float64`.
+        reduction_kind: The reduction operation to apply. Curently only `ADD` is supported.
+        eviction_policy: Cache eviction policy for the L2 cache.
+            Defaults to `EVICT_NORMAL`.
+
+    Args:
+        dst_mem: Destination pointer in global or generic memory (16-byte
+            aligned).
+        src_mem: Source pointer in shared CTA memory (16-byte aligned).
+        size: Number of bytes to reduce (must be a multiple of 16).
+    """
+    comptime assert (
+        _is_sm_100x_or_newer()
+    ), "1D TMA copies are currently only supported on SM100+ GPUs"
+    comptime assert dst_mem.address_space in (
+        AddressSpace.GLOBAL,
+        AddressSpace.GENERIC,
+    ), "dst_mem must be in GLOBAL or GENERIC address space"
+    comptime assert dtype in (
+        DType.float16,
+        DType.bfloat16,
+        DType.float32,
+        DType.float64,
+    ), (
+        "cp_async_bulk_reduce_global_shared_cta currently supports float16,"
+        " bfloat16, float32, and float64"
+    )
+    comptime assert (
+        reduction_kind == ReduceOp.ADD
+    ), "cp_async_bulk_reduce_global_shared_cta currently supports ADD only"
+
+    var dst_global = dst_mem.address_space_cast[AddressSpace.GLOBAL]()
+    comptime cache_hint: Bool = eviction_policy != CacheEviction.EVICT_NORMAL
+
+    comptime cache_hint_mnemonic = ".L2::cache_hint" if cache_hint else ""
+    comptime asm_body = (
+        "cp.reduce.async.bulk.global.shared::cta.bulk_group"
+        + cache_hint_mnemonic
+        + "."
+        + reduction_kind.mnemonic()
+        + "."
+        + _get_type_mnemonic[dtype]()
+    )
+
+    comptime if cache_hint:
+        var cache_policy = _mark_eviction[eviction_policy]()
+        inlined_assembly[
+            asm_body + " [$0], [$1], $2, $3;",
+            NoneType,
+            constraints="l,r,r,l",
+        ](
+            Int64(Int(dst_global)),
+            Int32(Int(src_mem)),
+            size,
+            cache_policy,
+        )
+    else:
+        inlined_assembly[
+            asm_body + " [$0], [$1], $2;",
+            NoneType,
+            constraints="l,r,r",
+        ](Int64(Int(dst_global)), Int32(Int(src_mem)), size)
+
+
+@always_inline("nodebug")
 def cp_async_bulk_tensor_shared_cluster_global[
     dst_type: AnyType,  # Type of the destination memory
     mbr_type: AnyType,  # Type of the memory barrier
@@ -2148,7 +2238,7 @@ def cp_async_bulk_tensor_global_shared_cta[
 
 
 @always_inline
-def cp_async_bulk_tensor_reduce[
+def cp_async_bulk_tensor_reduce_global_shared_cta[
     src_type: AnyType,
     rank: Int,
     /,

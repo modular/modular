@@ -89,10 +89,11 @@ struct StackTrace(Copyable, Movable, Writable):
     @staticmethod
     @no_inline
     def collect_if_enabled(depth: Int = 0) -> Optional[StackTrace]:
-        """Collect a stack trace if enabled by environment variable.
+        """Collect a stack trace if enabled by configuration.
 
-        This method checks the `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment
-        variable and collects a stack trace only if it is enabled. Returns
+        This method checks the `max-debug.stack-trace-on-error` Config key
+        (settable via the `MODULAR_DEBUG=stack-trace-on-error` environment
+        variable) and collects a stack trace only if it is enabled. Returns
         `None` if stack traces are disabled, on GPU, or if collection fails.
 
         Args:
@@ -164,7 +165,8 @@ struct Error(
 
     By default, stack trace is collected for errors created from string
     literals. Stack trace collection can be controlled via the
-    `MOJO_ENABLE_STACK_TRACE_ON_ERROR` environment variable.
+    `max-debug.stack-trace-on-error` Config key (settable via the
+    `MODULAR_DEBUG=stack-trace-on-error` environment variable).
     """
 
     # ===-------------------------------------------------------------------===#

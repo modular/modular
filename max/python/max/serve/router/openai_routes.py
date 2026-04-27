@@ -1038,22 +1038,25 @@ def _create_response_format(
     if not response_format:
         return None
 
-    # We don't have llguidance grammar for generic JSON output.
-    # Only json_schema is supported for structured output.
-    if response_format.type == "json_object":
-        raise ValueError(
-            "'json_object' response format is not supported. Use 'json_schema' instead for structured output."
-        )
-
     json_schema: dict[Any, Any] = {}
-    if (
+
+    response_type = response_format.type
+    if response_format.type == "json_object":
+        # For json_object mode (any valid JSON), use a permissive schema that
+        # accepts any JSON object. llguidance's grammar_from_json_schema supports
+        # this - an empty or minimal schema means "any valid JSON".
+        json_schema = {"type": "object"}
+        # Normalize type to json_schema for the internal representation since both
+        # json_object and json_schema use grammar-based constrained decoding.
+        response_type = "json_schema"
+    elif (
         response_format.type == "json_schema"
         and response_format.json_schema.schema_ is not None
     ):
         json_schema = response_format.json_schema.schema_.model_dump()
 
     return TextGenerationResponseFormat(
-        type=response_format.type, json_schema=json_schema
+        type=response_type, json_schema=json_schema
     )
 
 

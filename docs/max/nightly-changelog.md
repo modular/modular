@@ -61,11 +61,13 @@ This version is still a work in progress.
   eager-mode execution of group normalization without graph compilation.
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
   which previously raised a `RuntimeError` at compile time.
-- Setting `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` enables detection of
-  uninitialized memory reads in Mojo kernels. `InferenceSession` automatically
-  enables the debug allocator poison and compiles kernels with load-time
-  poison checks for all float types. When a load matches a poison pattern,
-  the process aborts with a descriptive message.
+- Setting `MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true` (or the
+  `max-debug.uninitialized-read-check` config key, or
+  `InferenceSession.debug.uninitialized_read_check = True`) enables detection
+  of uninitialized memory reads in Mojo kernels. `InferenceSession`
+  automatically enables the debug allocator poison and compiles kernels with
+  load-time poison checks for all float types. When a load matches a poison
+  pattern, the process aborts with a descriptive message.
 - Added support for the `bfloat16` data type on ARM CPU devices in MAX graphs.
   Previously, `session.load()` raised a `ValueError` when a graph contained
   bf16 tensors targeting an ARM CPU.

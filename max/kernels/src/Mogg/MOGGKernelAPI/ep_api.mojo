@@ -1045,7 +1045,7 @@ struct DistributedEPDispatchNVFP4:
         @always_inline
         def launch_dispatch[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read output_tokens,
             read output_scales,
             read row_offsets,
@@ -1165,7 +1165,7 @@ struct DistributedEPDispatchMXFP4:
         @always_inline
         def launch_dispatch[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read output_tokens,
             read output_scales,
             read row_offsets,
@@ -1258,7 +1258,7 @@ struct DistributedEPDispatch:
         @always_inline
         def launch_dispatch[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read output_tokens,
             read row_offsets,
             read expert_ids,
@@ -1350,7 +1350,7 @@ struct DistributedEPDispatchFP8:
         @always_inline
         def launch_dispatch[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read output_tokens,
             read output_scales,
             read row_offsets,
@@ -1461,7 +1461,7 @@ struct DistributedEPCombine:
         @always_inline
         def launch_combine[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read output_tokens,
             read input_tokens,
             read src_info,

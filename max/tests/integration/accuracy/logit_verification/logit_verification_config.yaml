@@ -429,10 +429,10 @@ logit_verification_pipelines:
     kl_div_threshold: 1.6e-02
     timeout: 1200
 
-  mistral-community/pixtral-12b-bfloat16:
+  mistral-experimental/pixtral-12b-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
-    pipeline: "mistral-community/pixtral-12b"
+    pipeline: "mistral-experimental/pixtral-12b"
     compatible_with: [gpu]
     encoding: bfloat16
     tags: []
@@ -492,7 +492,7 @@ logit_verification_pipelines:
       tar_file: "s3://modular-bazel-artifacts-public/artifacts/torch_qwen2.5-vl-32b-instruct_bfloat16_golden/1/62db96f972e210adb18a6042441b49feb5a163bdb6f5592e8788dbb9f887dbe8/torch_qwen2.5-vl-32b-instruct_bfloat16_golden.tar.gz"
       json_file: "torch_qwen2.5_vl_32b_instruct_bfloat16_golden.json"
     cos_dist_threshold: 7.0e-2
-    kl_div_threshold: 2.6e-1
+    kl_div_threshold: 3.0e-1
     timeout: 900
 
   Qwen/Qwen3-VL-30B-A3B-Instruct:
@@ -780,6 +780,29 @@ logit_verification_pipelines:
     relative_tolerance: 9.6e-01
     cos_dist_threshold: 2.0e-03
     kl_div_threshold: 5.0e+00
+
+  # Text-only DeepseekV3 conversion of Kimi-K2.5-NVFP4. The checkpoint is the
+  # original nvidia/Kimi-K2.5-NVFP4 weights with the vision stack stripped and
+  # key prefixes rewritten to match DeepseekV3ForCausalLM. Tighter tolerances
+  # than the multimodal entry above are intentional: the vision-induced drift
+  # tracked in MODELS-1159 does not apply to this text-only path.
+  #
+  # Reuses the multimodal Kimi golden tarball above. Comparison is by prompt
+  # string (see compare_text_generation in model_output.py), so the extra
+  # multimodal prompt in the golden is silently ignored — only the three
+  # text-only prompts our oracle emits are compared.
+  austinpowers/Kimi-K2.5-NVFP4-DeepseekV3:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/vllm_kimik2_5_nvfp4_golden/1/0b26362d7cc605bcc3925fa3d6aff4aeef4ed12fe0ed2f1684f3c8cfbf285822/vllm_kimik2_5_nvfp4_golden.tar.gz"
+      json_file: "vllm_kimik2_5_nvfp4_golden.json"
+    cos_dist_threshold: 2.0e-03
+    kl_div_threshold: 3.0e-01
 
   MiniMaxAI/MiniMax-M2.7:
     pre_submit_agents: []

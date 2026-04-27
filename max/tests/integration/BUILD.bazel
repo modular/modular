@@ -40,3 +40,20 @@ modular_py_test(
         requirement("pytest-mock"),
     ],
 )
+
+modular_py_test(
+    name = "test_hf_repo_lock_casing",
+    size = "large",
+    srcs = ["test_hf_repo_lock_casing.py"],
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+        "run-in-hf-workflow",
+    ],
+    deps = [
+        ":hf_repo_lock",
+        requirement("huggingface-hub"),
+    ],
+)

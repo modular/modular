@@ -24,16 +24,21 @@ import time
 from collections import defaultdict
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal
+from typing import Literal, TypeVar
 from uuid import uuid4
 
 import msgspec
 from max._core import nixl
 from max.driver import Buffer, Device
+from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
+
+from .cache_manager import PagedKVCacheManager
 
 logger = logging.getLogger("max.pipelines")
 
 NixlBackendType = Literal["ucx", "libfabric"]
+
+_ShardT = TypeVar("_ShardT")
 
 _NIXL_BACKEND_ENV_VAR = "MODULAR_NIXL_TRANSFER_BACKEND"
 _SUPPORTED_BACKENDS: set[NixlBackendType] = {"ucx", "libfabric"}
@@ -98,9 +103,6 @@ def _validate_device_type(
         raise ValueError(
             "Mixed device tensors detected. All tensors must be either on CPU or GPU, not both."
         )
-
-    if is_cpu and len(devices) != 1:
-        raise ValueError("CPU transfer engine must have exactly one tensor.")
 
     first_device = devices[0]
     if first_device.api == "hip" and backend_type == "ucx":
@@ -400,6 +402,68 @@ class TensorAgent:
         )
 
 
+@dataclass
+class _PeerView:
+    """Per-peer routing view computed at connect() time.
+
+    Captures whether either side's ``[dp][tp]`` must be reinterpreted as
+    ``[dp*tp][1]`` for this peer, and the resulting effective DP.
+    """
+
+    flatten_local: bool
+    flatten_remote: bool
+    effective_dp: int
+
+
+def resolve_peer_view(
+    local_dp: int,
+    local_tp: int,
+    local_replicate: bool,
+    remote_dp: int,
+    remote_tp: int,
+    remote_replicate: bool,
+) -> _PeerView:
+    """Decide how to view the local and remote ``[dp][tp]`` for this peer.
+
+    Homogeneous shapes match as-is. Heterogeneous shapes are accepted only
+    when exactly one side has ``replicate=True``, ``tp > 1``, and its
+    ``dp * tp`` matches the other side's ``dp``. Anything else raises.
+    """
+    if (local_dp, local_tp) == (remote_dp, remote_tp):
+        return _PeerView(
+            flatten_local=False, flatten_remote=False, effective_dp=local_dp
+        )
+
+    if (
+        local_replicate
+        and local_tp > 1
+        and remote_tp == 1
+        and local_dp * local_tp == remote_dp
+    ):
+        return _PeerView(
+            flatten_local=True, flatten_remote=False, effective_dp=remote_dp
+        )
+
+    if (
+        remote_replicate
+        and remote_tp > 1
+        and local_tp == 1
+        and remote_dp * remote_tp == local_dp
+    ):
+        return _PeerView(
+            flatten_local=False, flatten_remote=True, effective_dp=local_dp
+        )
+
+    raise ValueError(
+        f"Incompatible transfer engine shapes: "
+        f"local=(dp={local_dp},tp={local_tp},replicate={local_replicate}) "
+        f"remote=(dp={remote_dp},tp={remote_tp},replicate={remote_replicate}). "
+        f"Heterogeneous DP/TP is only supported when exactly one side "
+        f"has replicate_kv_across_tp=True (MLA) with TP>1 and its "
+        f"DP*TP matches the other side's DP."
+    )
+
+
 class KVTransferEngineMetadata(
     msgspec.Struct, tag=True, kw_only=True, omit_defaults=True
 ):
@@ -425,6 +489,13 @@ class KVTransferEngineMetadata(
 
     agents_meta: list[list[TensorAgentMetadata]]
     """Metadata for each replica's agents: [replica][tp_shard]."""
+
+    replicate_kv_across_tp: bool = False
+    """True iff KV buffers are identical across TP ranks (e.g. MLA with
+    num_kv_heads=1). When both sides declare different (dp, tp) but one
+    replicates, the engine can reinterpret the replicating side as
+    ``[dp*tp][1]`` to let a prefill worker at (DP=m, TP=n) connect to a
+    decode worker at (DP=m*n, TP=1)."""
 
 
 class TransferReqData(
@@ -464,6 +535,12 @@ class TransferReqData(
 
     tp_shard_count: int = 0
     """Number of TP shards participating. 0 = all shards (backwards compat)."""
+
+    local_shards_used: list[int] = []
+    """Physical TP shard indices on the initiator that own this transfer's
+    handles. Empty means "all shards in the recorded replica" (pre-flatten
+    behavior). Required to release/status-check transfers when flatten_local
+    has picked a subset of shards."""
 
 
 class KVTransferEngine:
@@ -510,12 +587,16 @@ class KVTransferEngine:
     tp: int
     """Number of TP shards per replica."""
 
+    replicate_kv_across_tp: bool
+    """Whether KV is replicated across TP ranks (MLA)."""
+
     def __init__(
         self,
         name: str,
         tensors: Sequence[Sequence[Buffer]],
         *,
         total_num_pages: int,
+        replicate_kv_across_tp: bool = False,
     ) -> None:
         if total_num_pages <= 0:
             raise ValueError(
@@ -540,6 +621,7 @@ class KVTransferEngine:
                 )
 
         self.dp = len(tensors)
+        self.replicate_kv_across_tp = replicate_kv_across_tp and self.tp > 1
 
         backend_type = _get_nixl_backend_type()
 
@@ -613,7 +695,10 @@ class KVTransferEngine:
         )
 
         # Remote connections
-        self.remote_connections = {}
+        self.remote_connections: dict[str, KVTransferEngineMetadata] = {}
+
+        # Per-peer routing view populated at connect().
+        self._peer_views: dict[str, _PeerView] = {}
 
         # Map of agents to completed transfers
         self.completed_recv_transfers = defaultdict(lambda: defaultdict(int))
@@ -626,6 +711,36 @@ class KVTransferEngine:
 
         # All read transfers - maps transfer_name to TransferReqData
         self.inflight_read_transfers: dict[str, TransferReqData] = {}
+
+    @classmethod
+    def from_paged_kv_cache(
+        cls, name: str, kv_cache: PagedKVCacheManager
+    ) -> KVTransferEngine:
+        """Construct an engine wired to a ``PagedKVCacheManager``.
+
+        Pulls the per-replica device buffers, sets ``total_num_pages``, and
+        derives ``replicate_kv_across_tp`` from ``is_mla`` on the primary
+        cache params. Equivalent to constructing the engine manually but
+        consolidates the boilerplate that prefill/decode schedulers share.
+        """
+        cache_params = kv_cache.params
+        if isinstance(cache_params, MultiKVCacheParams):
+            primary_params = cache_params.params[0]
+        else:
+            assert isinstance(cache_params, KVCacheParams)
+            primary_params = cache_params
+        dp = primary_params.data_parallel_degree
+        # TODO: Also support scales tensors.
+        tensors: list[list[Buffer]] = [
+            list(kv_cache.get_device_buffer(replica_idx).values)
+            for replica_idx in range(dp)
+        ]
+        return cls(
+            name=name,
+            tensors=tensors,
+            total_num_pages=kv_cache.get_num_pages(replica_idx=0),
+            replicate_kv_across_tp=primary_params.is_mla,
+        )
 
     def register_tensor_group(
         self,
@@ -694,6 +809,100 @@ class KVTransferEngine:
             memory_type=self.memory_type,
             agents_meta=agents_meta,
             hostname=socket.gethostname(),
+            replicate_kv_across_tp=self.replicate_kv_across_tp,
+        )
+
+    def _resolve_local_agents_for_transfer(
+        self, replica_idx: int, transfer_req: TransferReqData
+    ) -> list[TensorAgent]:
+        """Return the local ``TensorAgent``s that own a transfer's handles.
+
+        Consults ``transfer_req.local_shards_used`` when populated; falls
+        back to every shard in the replica when empty (pre-flatten behavior).
+        """
+        if not transfer_req.local_shards_used:
+            return list(self.tensor_agents[replica_idx])
+        return [
+            self.tensor_agents[replica_idx][s]
+            for s in transfer_req.local_shards_used
+        ]
+
+    def _compute_peer_view(self, remote: KVTransferEngineMetadata) -> _PeerView:
+        """Decide how the local and remote shapes should be viewed for this peer.
+
+        Thin wrapper around :func:`resolve_peer_view`.
+        """
+        rdp = len(remote.agents_meta)
+        rtp = len(remote.agents_meta[0]) if remote.agents_meta else 0
+        return resolve_peer_view(
+            local_dp=self.dp,
+            local_tp=self.tp,
+            local_replicate=self.replicate_kv_across_tp,
+            remote_dp=rdp,
+            remote_tp=rtp,
+            remote_replicate=remote.replicate_kv_across_tp,
+        )
+
+    def _pick_transfer_shards(
+        self,
+        replica_agents: Sequence[_ShardT],
+        flatten: bool,
+        tp_shard_limit: int | None,
+    ) -> list[_ShardT]:
+        """Select which TP shards of a single replica participate in a transfer.
+
+        Under ``flatten``, MLA KV is replicated across TP so shard 0 carries
+        the full payload. Otherwise honor ``tp_shard_limit`` if set.
+        """
+        if flatten:
+            return [replica_agents[0]]
+        agents = list(replica_agents)
+        if tp_shard_limit is not None:
+            agents = agents[:tp_shard_limit]
+        return agents
+
+    def _effective_local_agents(self, flatten: bool) -> list[list[TensorAgent]]:
+        """Return ``tensor_agents`` viewed as ``[effective_dp][effective_tp]`` for a peer.
+
+        When ``flatten`` is True, the natural ``[dp][tp]`` is reinterpreted
+        as ``[dp*tp][1]`` — each TP shard becomes its own single-shard
+        replica. Otherwise returns the natural layout unchanged.
+        """
+        if flatten:
+            return [
+                [self.tensor_agents[r][s]]
+                for r in range(self.dp)
+                for s in range(self.tp)
+            ]
+        return [list(replica) for replica in self.tensor_agents]
+
+    def _effective_remote_meta(
+        self, remote: KVTransferEngineMetadata, flatten: bool
+    ) -> list[list[TensorAgentMetadata]]:
+        """Mirror of ``_effective_local_agents`` for a remote peer."""
+        if flatten:
+            return [
+                [agent_meta]
+                for replica_agents in remote.agents_meta
+                for agent_meta in replica_agents
+            ]
+        return [list(replica) for replica in remote.agents_meta]
+
+    def _effective_agents_for_peer(
+        self,
+        remote: KVTransferEngineMetadata,
+        view: _PeerView | None,
+    ) -> tuple[list[list[TensorAgent]], list[list[TensorAgentMetadata]]]:
+        """Return the (local, remote) agent grids to iterate against a peer.
+
+        Applies the peer view's flatten flags to align heterogeneous shapes;
+        falls back to the natural ``[dp][tp]`` layout when ``view`` is None.
+        """
+        flatten_local = view.flatten_local if view is not None else False
+        flatten_remote = view.flatten_remote if view is not None else False
+        return (
+            self._effective_local_agents(flatten_local),
+            self._effective_remote_meta(remote, flatten_remote),
         )
 
     def connect(self, remote: KVTransferEngineMetadata) -> None:
@@ -705,10 +914,7 @@ class KVTransferEngine:
         if remote.name in self.remote_connections:
             raise ValueError(f"Agent {remote.name} already connected")
 
-        if self.dp != len(remote.agents_meta):
-            raise ValueError(
-                f"Number of replicas mismatch: {self.dp} != {len(remote.agents_meta)}"
-            )
+        view = self._compute_peer_view(remote)
 
         if self.bytes_per_page != remote.bytes_per_page:
             raise ValueError(
@@ -742,9 +948,16 @@ class KVTransferEngine:
                     remote.hostname,
                 )
 
-        # Connect all replicas pairwise
+        # Connect pairwise in the effective view, flattening [dp][tp] to
+        # [dp*tp][1] on whichever side the peer view calls for.
+        local_effective, remote_effective = self._effective_agents_for_peer(
+            remote, view
+        )
+        assert (
+            len(local_effective) == len(remote_effective) == view.effective_dp
+        )
         for local_agents, remote_agents_meta in itertools.product(
-            self.tensor_agents, remote.agents_meta
+            local_effective, remote_effective
         ):
             # Connect each TP shard within the replica
             for local_ta, remote_agent_meta in zip(
@@ -769,6 +982,7 @@ class KVTransferEngine:
                     )
 
         self.remote_connections[remote.name] = remote
+        self._peer_views[remote.name] = view
 
         # Update the remote agent to engine mapping
         for replica_agents_meta in remote.agents_meta:
@@ -793,6 +1007,7 @@ class KVTransferEngine:
             raise ValueError(
                 f"Remote connection '{name}' not found; cannot disconnect"
             )
+        view = self._peer_views.pop(name, None)
 
         # Release inflight send transfers targeting this remote.
         stale_sends = [
@@ -802,7 +1017,9 @@ class KVTransferEngine:
         ]
         for tname in stale_sends:
             req = self.inflight_send_transfers.pop(tname)
-            src_agents = self.tensor_agents[req.src_replica_idx]
+            src_agents = self._resolve_local_agents_for_transfer(
+                req.src_replica_idx, req
+            )
             for tp_idx, tid in enumerate(req.transfer_ids):
                 try:
                     src_agents[tp_idx].agent.release_transfer_request(tid)
@@ -824,7 +1041,9 @@ class KVTransferEngine:
         ]
         for tname in stale_reads:
             req = self.inflight_read_transfers.pop(tname)
-            dst_agents = self.tensor_agents[req.dst_replica_idx]
+            dst_agents = self._resolve_local_agents_for_transfer(
+                req.dst_replica_idx, req
+            )
             for tp_idx, tid in enumerate(req.transfer_ids):
                 try:
                     dst_agents[tp_idx].agent.release_transfer_request(tid)
@@ -838,14 +1057,14 @@ class KVTransferEngine:
                         exc_info=True,
                     )
 
-        # Invalidate remote NIXL metadata on all local agents.
+        # Teardown must mirror the connect() iteration.
+        local_eff, remote_eff = self._effective_agents_for_peer(remote, view)
+
         for local_agents, remote_agents_meta in itertools.product(
-            self.tensor_agents, remote.agents_meta
+            local_eff, remote_eff
         ):
             for local_ta, remote_agent_meta in zip(
-                local_agents,
-                remote_agents_meta,
-                strict=True,
+                local_agents, remote_agents_meta, strict=True
             ):
                 try:
                     status = local_ta.agent.invalidate_remote_metadata(
@@ -922,6 +1141,7 @@ class KVTransferEngine:
             )
 
         remote = self.remote_connections[remote_metadata.name]
+        view = self._peer_views[remote_metadata.name]
 
         if len(src_idxs) != len(dst_idxs):
             raise ValueError(
@@ -946,16 +1166,33 @@ class KVTransferEngine:
                     f"Destination index {dst_idx} must be between 0 and {remote.total_num_pages - 1}"
                 )
 
-        # Create transfers for TP shards in the specified source replica
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        # Get the remote destination replica's agent metadata
-        remote_replica_agents_meta = remote.agents_meta[dst_replica_idx]
-
-        src_agents = self.tensor_agents[src_replica_idx]
+        # Source: pick which physical shard(s) source the bytes.
+        # flatten_local picks shard 0 (MLA-replicated source saves bandwidth).
+        # TODO(SERVOPT-1337): rotate shards to spread NIC/PCIe load.
+        src_agents = self._pick_transfer_shards(
+            self.tensor_agents[src_replica_idx],
+            view.flatten_local,
+            tp_shard_limit,
+        )
+        # Destination: always write to all TP shards on the chosen replica.
+        # Each remote TP shard owns its own GPU memory and must receive a
+        # copy. flatten_remote affects connect-time pairing only.
+        remote_replica_agents_meta = list(remote.agents_meta[dst_replica_idx])
         if tp_shard_limit is not None:
-            src_agents = src_agents[:tp_shard_limit]
+            remote_replica_agents_meta = remote_replica_agents_meta[
+                :tp_shard_limit
+            ]
+        # Fan out when src is one shard but dst has many (DP-prefill →
+        # TP-decode): repeat the src so the loop pairs shard 0 with each
+        # remote shard. All N transfers originate on the same source GPU.
+        if len(src_agents) == 1 and len(remote_replica_agents_meta) > 1:
+            src_agents = src_agents * len(remote_replica_agents_meta)
+            local_shards_used = [0] * len(remote_replica_agents_meta)
+        else:
+            local_shards_used = list(range(len(src_agents)))
 
         for tp_idx, ta in enumerate(src_agents):
             remote_agent_meta = remote_replica_agents_meta[tp_idx]
@@ -1032,6 +1269,7 @@ class KVTransferEngine:
             src_replica_idx=src_replica_idx,
             dst_replica_idx=dst_replica_idx,
             tp_shard_count=len(transfer_ids),
+            local_shards_used=local_shards_used,
         )
         self.inflight_send_transfers[transfer_name] = transfer_req
         return transfer_req
@@ -1074,6 +1312,7 @@ class KVTransferEngine:
             )
 
         remote = self.remote_connections[remote_metadata.name]
+        view = self._peer_views[remote_metadata.name]
 
         if len(src_idxs) != len(dst_idxs):
             raise ValueError(
@@ -1095,13 +1334,28 @@ class KVTransferEngine:
         transfer_name = str(uuid4())
         transfer_ids = []
 
-        # Remote source replica's agent metadata
-        remote_replica_agents_meta = remote.agents_meta[src_replica_idx]
-
-        # Local destination agents
-        dst_agents = self.tensor_agents[dst_replica_idx]
+        # Local (destination): always use all TP shards on the chosen
+        # replica. Each shard owns its own GPU memory and must land the
+        # incoming bytes. flatten_local affects connect-time pairing only.
+        dst_agents = list(self.tensor_agents[dst_replica_idx])
         if tp_shard_limit is not None:
             dst_agents = dst_agents[:tp_shard_limit]
+        # Remote (source): flatten_remote picks shard 0 when the source is
+        # MLA-replicated (any shard's copy works, saves bandwidth).
+        # TODO(SERVOPT-1337): rotate shards to spread NIC/PCIe load.
+        remote_replica_agents_meta = self._pick_transfer_shards(
+            remote.agents_meta[src_replica_idx],
+            view.flatten_remote,
+            tp_shard_limit,
+        )
+        # Fan out when remote-source is one shard but local-dest has many
+        # (DP-source → TP-dest read): repeat the remote source so each
+        # local shard pulls a copy from the same remote GPU.
+        if len(remote_replica_agents_meta) == 1 and len(dst_agents) > 1:
+            remote_replica_agents_meta = remote_replica_agents_meta * len(
+                dst_agents
+            )
+        local_shards_used = list(range(len(dst_agents)))
 
         for tp_idx, ta in enumerate(dst_agents):
             remote_agent_meta = remote_replica_agents_meta[tp_idx]
@@ -1182,6 +1436,7 @@ class KVTransferEngine:
             dst_replica_idx=dst_replica_idx,
             is_read=True,
             tp_shard_count=len(transfer_ids),
+            local_shards_used=local_shards_used,
         )
         self.inflight_read_transfers[transfer_name] = transfer_req
         return transfer_req
@@ -1215,7 +1470,9 @@ class KVTransferEngine:
 
         is_complete = True
         src_replica_idx = transfer_req.src_replica_idx
-        tp_agents = self.tensor_agents[src_replica_idx]
+        tp_agents = self._resolve_local_agents_for_transfer(
+            src_replica_idx, transfer_req
+        )
         for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
             agent = tp_agents[tp_idx].agent
             status = agent.get_transfer_status(transfer_id)
@@ -1277,7 +1534,9 @@ class KVTransferEngine:
         assert self._owns_transfer_request(transfer_req)
 
         dst_replica_idx = transfer_req.dst_replica_idx
-        tp_agents = self.tensor_agents[dst_replica_idx]
+        tp_agents = self._resolve_local_agents_for_transfer(
+            dst_replica_idx, transfer_req
+        )
 
         for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
             agent = tp_agents[tp_idx].agent
@@ -1352,8 +1611,11 @@ class KVTransferEngine:
         del self.inflight_send_transfers[transfer_name]
 
         src_replica_idx = transfer_req.src_replica_idx
+        tp_agents = self._resolve_local_agents_for_transfer(
+            src_replica_idx, transfer_req
+        )
         for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
-            agent = self.tensor_agents[src_replica_idx][tp_idx].agent
+            agent = tp_agents[tp_idx].agent
             status = agent.release_transfer_request(transfer_id)
             if status != nixl.Status.SUCCESS:
                 raise ValueError(
@@ -1369,8 +1631,11 @@ class KVTransferEngine:
         del self.inflight_read_transfers[transfer_name]
 
         dst_replica_idx = transfer_req.dst_replica_idx
+        tp_agents = self._resolve_local_agents_for_transfer(
+            dst_replica_idx, transfer_req
+        )
         for tp_idx, transfer_id in enumerate(transfer_req.transfer_ids):
-            agent = self.tensor_agents[dst_replica_idx][tp_idx].agent
+            agent = tp_agents[tp_idx].agent
             status = agent.release_transfer_request(transfer_id)
             if status != nixl.Status.SUCCESS:
                 raise ValueError(
@@ -1436,18 +1701,18 @@ class KVTransferEngine:
         for read_transfer_req in list(self.inflight_read_transfers.values()):
             self._cleanup_read_transfer(read_transfer_req)
 
-        # Invalidate metadata of other agents
+        # Invalidate metadata of other agents. Iterate via the recorded
+        # peer view so heterogeneous flatten shapes line up under zip.
         for remote_name in self.remote_connections:
             remote = self.remote_connections[remote_name]
-            # Invalidate for each agent pair (all replicas)
+            local_eff, remote_eff = self._effective_agents_for_peer(
+                remote, self._peer_views.get(remote_name)
+            )
             for local_agents, remote_agents_meta in itertools.product(
-                self.tensor_agents, remote.agents_meta
+                local_eff, remote_eff
             ):
-                # Connect each TP shard within the replica
                 for local_ta, remote_agent_meta in zip(
-                    local_agents,
-                    remote_agents_meta,
-                    strict=True,
+                    local_agents, remote_agents_meta, strict=True
                 ):
                     status = local_ta.agent.invalidate_remote_metadata(
                         remote_agent_meta.agent_name

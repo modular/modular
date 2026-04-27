@@ -781,7 +781,9 @@ def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
 
 
 struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
-    comptime _mlir_type = __mlir_type[`!kgen.pack<`, ~Self.a.values, `>`]
+    comptime _mlir_type = __mlir_type[
+        `!kgen.struct<`, ~Self.a.values, ` isParamPack>`
+    ]
 
     var _mlir_value: Self._mlir_type
 
@@ -795,7 +797,7 @@ struct _RegisterPackType[*a: TrivialRegisterPassable](TrivialRegisterPassable):
         Returns:
             The tuple element at the requested index.
         """
-        return __mlir_op.`kgen.pack.extract`[index=i._int_mlir_index()](
+        return __mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](
             self._mlir_value
         )
 

@@ -740,6 +740,85 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         self._check_valid_index(idx)
         return self._unchecked_get_byte(idx)
 
+    def __getitem__(self, *, grapheme: ContiguousSlice) -> Self:
+        """Gets a substring at the specified grapheme-cluster positions.
+
+        A grapheme cluster is what a user would typically think of as a
+        single "character" on screen (see `graphemes()`). Slicing by
+        grapheme requires a forward scan of the string and is O(n) in the
+        byte length; use `byte=` slicing when you already have byte
+        offsets.
+
+        Out-of-range ends are clamped to the end of the string. Negative
+        indices are not supported.
+
+        Args:
+            grapheme: A slice specifying the grapheme-cluster range of the
+                new substring.
+
+        Returns:
+            A new `StringSlice` covering the requested grapheme range.
+
+        Examples:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "café" decomposed: 'c', 'a', 'f', 'e' + combining acute.
+        # 5 codepoints, 4 graphemes.
+        var s = StringSlice("cafe\\u{0301}")
+        assert_equal(s[grapheme=0:3], "caf")
+        assert_equal(s[grapheme=3:4], "e\\u{0301}")
+        assert_equal(s[grapheme=3:], "e\\u{0301}")
+        assert_equal(s[grapheme=:], s)
+        ```
+        """
+        var start_idx = grapheme.start.or_else(0)
+        debug_assert[assert_mode="safe"](
+            start_idx >= 0, "grapheme start index must be non-negative"
+        )
+
+        var iter = self.graphemes()
+        var start_bytes = 0
+        var i = 0
+
+        # Skip `start_idx` graphemes to find the starting byte offset.
+        while i < start_idx:
+            var g = iter.next()
+            if not g:
+                break
+            start_bytes += g.unsafe_value().byte_length()
+            i += 1
+
+        if not grapheme.end:
+            return Self(
+                unsafe_from_utf8=Span[Byte, Self.origin](
+                    ptr=self._slice.unsafe_ptr() + start_bytes,
+                    length=self._slice.__len__() - start_bytes,
+                )
+            )
+
+        var end_idx = grapheme.end.unsafe_value()
+        debug_assert[assert_mode="safe"](
+            end_idx >= start_idx,
+            "grapheme end index must be >= start index",
+        )
+
+        var end_bytes = start_bytes
+        while i < end_idx:
+            var g = iter.next()
+            if not g:
+                break
+            end_bytes += g.unsafe_value().byte_length()
+            i += 1
+
+        return Self(
+            unsafe_from_utf8=Span[Byte, Self.origin](
+                ptr=self._slice.unsafe_ptr() + start_bytes,
+                length=end_bytes - start_bytes,
+            )
+        )
+
     @always_inline
     def _check_valid_index(self, idx: Int):
         # Show source location where user provided incorrect index by skipping
@@ -1178,6 +1257,37 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         return GraphemeSliceIter(self)
+
+    def graphemes_reversed(self) -> GraphemeSliceIter[Self.origin, False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster. Reverse
+        iteration is more expensive per element than forward iteration: the
+        UAX #29 state machine is forward-scanning, so each step backs up
+        to a guaranteed grapheme boundary (typically a line break or the
+        start of the string) and forward-scans from there.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        var s = StringSlice("abc")
+        var result = List[String]()
+        for g in s.graphemes_reversed():
+            result.append(String(g))
+        assert_equal(len(result), 3)
+        assert_equal(result[0], "c")
+        assert_equal(result[1], "b")
+        assert_equal(result[2], "a")
+        ```
+        """
+        return GraphemeSliceIter[Self.origin, False](self)
 
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.
@@ -2522,8 +2632,10 @@ def _split[
     var items = 0
     var ptr = src_str.unsafe_ptr().as_immutable()
 
+    comptime PointerType = type_of(ptr)
+
     @always_inline("nodebug")
-    def _build_slice(p: type_of(ptr), start: Int, end: Int) -> S:
+    def _build_slice(p: PointerType, start: Int, end: Int) -> S:
         return S(ptr=p + start, length=end - start)
 
     while lhs <= str_byte_len:

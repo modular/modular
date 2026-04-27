@@ -54,7 +54,7 @@ from std.gpu.memory import (
     ReduceOp,
     async_copy,
     cp_async_bulk_tensor_global_shared_cta,
-    cp_async_bulk_tensor_reduce,
+    cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
     cp_async_bulk_tensor_shared_cluster_global_im2col,
     cp_async_bulk_tensor_shared_cluster_global_im2col_multicast,
@@ -2679,7 +2679,9 @@ struct TMATensorTile[
         comptime assert (
             type_of(src).alignment % 128 == 0
         ), "TMA requires 128B alignment in shared memory"
-        cp_async_bulk_tensor_reduce[reduction_kind=reduction_kind](
+        cp_async_bulk_tensor_reduce_global_shared_cta[
+            reduction_kind=reduction_kind
+        ](
             src.ptr,
             UnsafePointer(to=self.descriptor).bitcast[NoneType](),
             Index(coords[0], coords[1]),

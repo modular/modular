@@ -41,6 +41,7 @@ from std.sys.info import is_32bit
 from std.bit import count_leading_zeros
 from std.memory import memcmp, memcpy, memset
 from std.python import ConvertibleFromPython, ConvertibleToPython, PythonObject
+from std.reflection.traits import AllWritable
 
 # ===----------------------------------------------------------------------=== #
 # String
@@ -477,6 +478,8 @@ struct String(
         _ = variadic_pack_to_string(1, ", ", 2.0, ", ", "three")
         ```
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -506,6 +509,8 @@ struct String(
         Returns:
             A string formed by formatting the argument sequence.
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         args._write_to(total_bytes, end=end, sep=sep)
 
@@ -529,6 +534,8 @@ struct String(
         Args:
             args: Sequence of arguments to write to this Writer.
         """
+        comptime assert AllWritable[*Ts]  # satisfy where clause.
+
         var total_bytes = _TotalWritableBytes()
         total_bytes.size += self.byte_length()
         args._write_to(total_bytes, sep="")
@@ -1166,6 +1173,20 @@ struct String(
             An iterator yielding each grapheme cluster as a `StringSlice`.
         """
         return StringSlice(self).graphemes()
+
+    def graphemes_reversed(
+        self,
+    ) -> GraphemeSliceIter[origin_of(self), False]:
+        """Return an iterator over the grapheme clusters in this string,
+        yielding them in reverse order.
+
+        See `graphemes()` for the definition of a grapheme cluster.
+
+        Returns:
+            A reverse iterator yielding each grapheme cluster as a
+            `StringSlice`.
+        """
+        return StringSlice(self).graphemes_reversed()
 
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.

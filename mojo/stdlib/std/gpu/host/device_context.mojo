@@ -1651,6 +1651,39 @@ struct DeviceStream(ImplicitlyCopyable):
         )
 
     @always_inline
+    def enqueue_host_func(
+        self,
+        func: def(OpaquePointer[MutAnyOrigin]) thin -> None,
+        user_data: OpaquePointer[MutAnyOrigin],
+    ) raises:
+        """Enqueues a host callback to run on this stream.
+
+        This corresponds to CUDA's `cuLaunchHostFunc`. The callback `func`
+        runs on a driver thread once all preceding work on this stream has
+        completed, and receives `user_data` as its only argument. Per the
+        CUDA contract, the callback must not call any device APIs.
+
+        Currently only implemented for CUDA streams; other backends raise.
+
+        Args:
+            func: A `thin` C-compatible function pointer that accepts a
+                single `void*` argument.
+            user_data: An opaque pointer passed through to `func` when it
+                runs.
+
+        Raises:
+            If the underlying device does not support host callbacks, or if
+            the driver rejects the enqueue.
+        """
+        # const char *AsyncRT_DeviceStream_enqueueHostFunc(const DeviceStream *stream, void (*fn)(void *), void *userData)
+        _checked(
+            external_call[
+                "AsyncRT_DeviceStream_enqueueHostFunc",
+                _CString[],
+            ](self._handle, func, user_data)
+        )
+
+    @always_inline
     def enqueue_function[
         *Ts: DevicePassable
     ](
@@ -4976,7 +5009,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def enqueue_function[
-        FuncType: def() unified register_passable -> None,
+        FuncType: def() register_passable -> None,
         //,
         dump_asm: _DumpPath = False,
         dump_llvm: _DumpPath = False,
@@ -5044,7 +5077,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
                         h[i] = Float32(i)
 
                 # This kernel captures 'scale_factor' from the enclosing scope
-                def scale_kernel() unified {var}:
+                def scale_kernel() {var}:
                     var i = global_idx.x
                     if i >= UInt(100):
                         return
@@ -5344,7 +5377,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def enqueue_cpu_function[
-        FuncType: def() unified -> None,
+        FuncType: def() -> None,
     ](self, func: FuncType) raises:
         """Enqueues a function for execution on CPU.
 
@@ -5434,7 +5467,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def enqueue_cpu_range[
-        FuncType: def(Int) unified -> None,
+        FuncType: def(Int) -> None,
     ](self, func: FuncType, count: Int,) raises:
         """Enqueues a function to be executed in parallel over a 1D range.
 
@@ -5616,7 +5649,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        FuncType: def(Self) unified -> None,
+        FuncType: def(Self) -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5761,7 +5794,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        FuncType: def() unified -> None,
+        FuncType: def() -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5854,7 +5887,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time_iter[
-        FuncType: def(Self, Int) unified -> None,
+        FuncType: def(Self, Int) -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 
@@ -6057,7 +6090,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
         def to_device_buffer(
             pointer: OptionalUnsafePointer[Scalar[dtype], ...]
-        ) unified {read} -> DeviceBuffer[dtype]:
+        ) {read} -> DeviceBuffer[dtype]:
             if pointer:
                 return DeviceBuffer[dtype](
                     self,

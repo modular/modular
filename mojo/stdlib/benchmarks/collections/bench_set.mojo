@@ -43,7 +43,7 @@ def bench_set_eq_int[size: Int](mut b: Bencher) raises:
     var s2 = make_int_set[size]()
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -59,7 +59,7 @@ def bench_set_eq_string[size: Int](mut b: Bencher) raises:
     var s2 = make_string_set[size]()
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -75,7 +75,7 @@ def bench_set_eq_diff_size[size: Int](mut b: Bencher) raises:
     var s2 = make_int_set[size + 1]()
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -93,7 +93,7 @@ def bench_set_eq_diff_elems[size: Int](mut b: Bencher) raises:
         s2.add(i + size)
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) == black_box(s2))
 
     b.iter(call_fn)
@@ -108,7 +108,7 @@ def bench_set_contains[size: Int](mut b: Bencher) raises:
     var s = make_int_set[size]()
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         ref int_set = black_box(s)
         for key in range(10):
             keep(black_box(key) in int_set)
@@ -125,7 +125,7 @@ def bench_set_add[size: Int](mut b: Bencher) raises:
     var s = make_int_set[size]()
 
     @always_inline
-    def call_fn() unified {mut s}:
+    def call_fn() {mut s}:
         ref int_set = black_box(s)
         for key in range(10):
             int_set.add(black_box(key))
@@ -146,7 +146,7 @@ def bench_set_union[size: Int](mut b: Bencher) raises:
         s2.add(i)
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) | black_box(s2))
 
     b.iter(call_fn)
@@ -165,7 +165,7 @@ def bench_set_intersection[size: Int](mut b: Bencher) raises:
         s2.add(i)
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) & black_box(s2))
 
     b.iter(call_fn)
@@ -184,7 +184,7 @@ def bench_set_difference[size: Int](mut b: Bencher) raises:
         s2.add(i)
 
     @always_inline
-    def call_fn() unified {read}:
+    def call_fn() {read}:
         keep(black_box(s1) - black_box(s2))
 
     b.iter(call_fn)

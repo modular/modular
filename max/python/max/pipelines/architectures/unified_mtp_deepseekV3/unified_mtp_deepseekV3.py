@@ -111,6 +111,7 @@ class UnifiedMTPDeepseekV3(Module):
                 else None
             ),
             num_draft_steps=self.num_draft_steps,
+            use_stochastic=True,
         )
         self.target = DeepseekV3(config)
         self.merger = RaggedTokenMerger(config.devices[0])
@@ -130,6 +131,11 @@ class UnifiedMTPDeepseekV3(Module):
         data_parallel_splits: TensorValue,
         batch_context_lengths: list[TensorValue],
         seed: TensorValue,
+        temperature: TensorValue,
+        top_k: TensorValue,
+        max_k: TensorValue,
+        top_p: TensorValue,
+        min_top_p: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
     ) -> tuple[TensorValue, ...]:
@@ -168,7 +174,14 @@ class UnifiedMTPDeepseekV3(Module):
         hidden_states = list(target_outputs[3 : 3 + n_devs])
 
         num_accepted_draft_tokens, recovered, bonus = self.acceptance_sampler(
-            draft_tokens, logits, seed=seed
+            draft_tokens,
+            logits,
+            seed=seed,
+            temperature=temperature,
+            top_k=top_k,
+            max_k=max_k,
+            top_p=top_p,
+            min_top_p=min_top_p,
         )
 
         target_tokens = ops.concat([recovered, bonus], axis=1)
@@ -413,10 +426,11 @@ class UnifiedMTPDeepseekV3(Module):
     ) -> tuple[TensorType | BufferType, ...]:
         """Input types for the with-MTP graph.
 
-        Order: tokens, device_offsets, host_offsets, draft_tokens,
-               return_n_logits, data_parallel_splits, signal_buffers,
-               target_kv_cache, draft_kv_blocks_per_device,
-               batch_context_lengths, ep_inputs, seed.
+        Order: tokens, device_offsets, host_offsets, return_n_logits,
+               data_parallel_splits, signal_buffers, target_kv_cache,
+               batch_context_lengths, ep_inputs, draft_tokens,
+               draft_kv_blocks_per_device, seed, temperature, top_k,
+               max_k, top_p, min_top_p.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -478,5 +492,28 @@ class UnifiedMTPDeepseekV3(Module):
                 all_input_types.append(sym.kv_blocks)
 
         all_input_types.append(ops.random.SeedType)
+
+        temperature_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        top_k_type = TensorType(
+            DType.int64, shape=["batch_size"], device=device_ref
+        )
+        max_k_type = TensorType(DType.int64, shape=[], device=DeviceRef.CPU())
+        top_p_type = TensorType(
+            DType.float32, shape=["batch_size"], device=device_ref
+        )
+        min_top_p_type = TensorType(
+            DType.float32, shape=[], device=DeviceRef.CPU()
+        )
+        all_input_types.extend(
+            [
+                temperature_type,
+                top_k_type,
+                max_k_type,
+                top_p_type,
+                min_top_p_type,
+            ]
+        )
 
         return tuple(all_input_types)

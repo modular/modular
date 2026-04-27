@@ -20,6 +20,7 @@ from std.builtin.rebind import downcast
 from std.format._utils import FormatStruct, TypeNames
 from std.sys.intrinsics import _type_is_eq_parse_time
 from std.builtin.globals import global_constant
+from std.reflection.traits import AllWritable
 
 
 struct _MLIR:
@@ -1607,19 +1608,21 @@ struct VariadicPack[
         `, 0: index>: `,
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
-    """Use variadic_ptr_map to construct the type list of the !kgen.pack that
+    """Use variadic_ptr_map to construct the type list of the !kgen.struct that
     the !lit.ref.pack will lower to.  It exposes the pointers introduced by the
     references.
     """
     comptime _kgen_pack_with_pointer_type = __mlir_type[
-        `!kgen.pack<:param_list<type> `, Self._variadic_pointer_types, `>`
+        `!kgen.struct<:param_list<type> `,
+        Self._variadic_pointer_types,
+        ` isParamPack>`,
     ]
-    """This is the !kgen.pack type with pointer elements."""
+    """This is the !kgen.struct type with pointer elements."""
 
     @doc_hidden
     @always_inline("nodebug")
     def get_as_kgen_pack(self) -> Self._kgen_pack_with_pointer_type:
-        """This rebinds `in_pack` to the equivalent `!kgen.pack` with kgen
+        """This rebinds `in_pack` to the equivalent `!kgen.struct` with kgen
         pointers."""
         return rebind[Self._kgen_pack_with_pointer_type](self._value)
 
@@ -1631,11 +1634,11 @@ struct VariadicPack[
         _MLIR.KGENParamListType[__mlir_type.`!kgen.type`],
     ]
     comptime _loaded_kgen_pack_type = __mlir_type[
-        `!kgen.pack<:param_list<type> `,
+        `!kgen.struct<:param_list<type> `,
         Self._variadic_with_pointers_removed,
-        `>`,
+        ` isParamPack>`,
     ]
-    """This is the `!kgen.pack` type that happens if one loads all the elements
+    """This is the `!kgen.struct` type that happens if one loads all the elements
     of the pack.
     """
 
@@ -1655,12 +1658,12 @@ struct VariadicPack[
         *,
         is_repr: Bool = False,
     ](
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
         start: StringSlice[O1] = StaticString(""),
         end: StringSlice[O2] = StaticString(""),
         sep: StringSlice[O3] = StaticString(", "),
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes a sequence of writable values from a pack to a writer with
         delimiters.
 
@@ -1687,16 +1690,16 @@ struct VariadicPack[
                 writer.write_string(sep)
 
             comptime if is_repr:
-                self[i].write_repr_to(writer)
+                trait_downcast[Writable](self[i]).write_repr_to(writer)
             else:
-                self[i].write_to(writer)
+                trait_downcast[Writable](self[i]).write_to(writer)
         writer.write_string(end)
 
     @no_inline
     def write_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes the elements of this pack to a writer.
 
         Args:
@@ -1710,9 +1713,9 @@ struct VariadicPack[
 
     @no_inline
     def write_repr_to(
-        self: VariadicPack[element_trait=Writable, _, ...],
+        self,
         mut writer: Some[Writer],
-    ):
+    ) where AllWritable[*Self.element_types]:
         """Writes the repr of the elements of this pack to a writer.
 
         Args:

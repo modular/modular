@@ -1178,3 +1178,83 @@ def test_write_to_3d() raises:
     var tensor = TileTensor(storage, row_major[2, 2, 2]())
     # Elements are printed in column-major coordinate order.
     assert_equal(String(tensor), "[1.0, 5.0, 3.0, 7.0, 2.0, 6.0, 4.0, 8.0]")
+
+
+def test_copy_roundtrip_scalar() raises:
+    """Roundtrip `TileTensor.copy` with element_size == 1 restores original
+    data."""
+    var src_data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        src_data[i] = Int32(i + 1)
+
+    var mid_data = InlineArray[Int32, 16](fill=0)
+    var dst_data = InlineArray[Int32, 16](fill=0)
+
+    var src = TileTensor(src_data, row_major[4, 4]())
+    var mid = TileTensor(mid_data, row_major[4, 4]())
+    var dst = TileTensor(dst_data, row_major[4, 4]())
+
+    mid.copy(src)
+    dst.copy(mid)
+
+    for i in range(16):
+        assert_equal(dst_data[i], src_data[i])
+
+
+def test_copy_roundtrip_vectorized() raises:
+    """Roundtrip `TileTensor.copy` when both sides have element_size > 1.
+
+    Regression test for the element_size-vs-scalar-count bug: previously
+    this would only touch 1/element_size of the underlying scalars.
+    """
+    var src_data = InlineArray[Float32, 16](uninitialized=True)
+    for i in range(16):
+        src_data[i] = Float32(i + 1)
+
+    var mid_data = InlineArray[Float32, 16](fill=0)
+    var dst_data = InlineArray[Float32, 16](fill=0)
+
+    # Vectorize 4x4 -> 4x1 with element_size == 4.
+    var src = TileTensor(src_data, row_major[4, 4]()).vectorize[1, 4]()
+    var mid = TileTensor(mid_data, row_major[4, 4]()).vectorize[1, 4]()
+    var dst = TileTensor(dst_data, row_major[4, 4]()).vectorize[1, 4]()
+
+    mid.copy(src)
+    dst.copy(mid)
+
+    for i in range(16):
+        assert_equal(dst_data[i], src_data[i])
+
+
+def test_copy_roundtrip_tile_by_tile() raises:
+    """Roundtrip a full tensor tile-by-tile through an intermediate.
+
+    Exercises `TileTensor.copy` on sub-tiles (so the layout strides don't
+    equal the full-tensor strides) and verifies a full tile-by-tile
+    round-trip restores every element of the original tensor.
+    """
+    var src_data = InlineArray[Int32, 16](uninitialized=True)
+    for i in range(16):
+        src_data[i] = Int32(i + 1)
+
+    var mid_data = InlineArray[Int32, 16](fill=0)
+    var dst_data = InlineArray[Int32, 16](fill=0)
+
+    var src = TileTensor(src_data, row_major[4, 4]())
+    var mid = TileTensor(mid_data, row_major[4, 4]())
+    var dst = TileTensor(dst_data, row_major[4, 4]())
+
+    comptime for tile_i in range(2):
+        comptime for tile_j in range(2):
+            var s = src.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
+            var m = mid.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
+            m.copy(s)
+
+    comptime for tile_i in range(2):
+        comptime for tile_j in range(2):
+            var m = mid.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
+            var d = dst.tile[2, 2]((Idx(tile_i), Idx(tile_j)))
+            d.copy(m)
+
+    for i in range(16):
+        assert_equal(dst_data[i], src_data[i])

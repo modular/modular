@@ -102,8 +102,10 @@ from linalg.fp4_quantization import (
     block_scales_interleave,
     quantize_mxfp4_amd,
     quantize_dynamic_block_scaled_mxfp4,
-    matmul_dynamic_block_scaled_mxfp4,
-    grouped_matmul_block_scaled_mxfp4,
+)
+from linalg.matmul.gpu.amd import (
+    mxfp4_block_scaled_matmul_amd,
+    mxfp4_grouped_matmul_amd,
 )
 from linalg.mxfp4_matmul_sm90 import mxfp4_matmul_sm90
 from linalg.mxfp4_dequant import dequant_mxfp4
@@ -346,6 +348,7 @@ from tensor.managed_tensor_slice import (
 from tensor.managed_tensor_slice import (
     _MutableInputVariadicTensors as MutableInputVariadicTensors,
 )
+from std.memory import memcpy
 from std.time import sleep
 from std.logger import Logger
 
@@ -9047,7 +9050,7 @@ struct Struct_grouped_matmul_block_scaled_mxfp4:
         ](), "grouped block-scaled matmul only supports GPUs"
         if num_active_experts == 0:
             return
-        grouped_matmul_block_scaled_mxfp4(
+        mxfp4_grouped_matmul_amd(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
@@ -9121,11 +9124,10 @@ struct Struct_matmul_dynamic_block_scaled:
         b_type: DType,
         scales_type: DType,
         //,
-        lambdas_have_fusion: Bool,
         SF_VECTOR_SIZE: Int,
         target: StaticString,
     ](
-        c: _FusedComputeOutputTensor[dtype=c_type, rank=2, ...],
+        c: OutputTensor[dtype=c_type, rank=2, ...],
         a: InputTensor[dtype=a_type, rank=2, ...],
         b: InputTensor[dtype=b_type, rank=2, ...],
         a_scales: InputTensor[dtype=scales_type, rank=5, ...],
@@ -9138,49 +9140,10 @@ struct Struct_matmul_dynamic_block_scaled:
             " block scaled support"
         )
 
-        @parameter
-        @always_inline
-        def epilogue_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]):
-            c._lambda_store[width=_width, element_alignment=alignment](
-                coords,
-                rebind[SIMD[c.dtype, _width]](val),
-            )
-
-        @parameter
-        @always_inline
-        def output_compute_fn[
-            _dtype: DType, _width: Int, *, alignment: Int = 1
-        ](coords: IndexList[2], val: SIMD[_dtype, _width]) -> SIMD[
-            _dtype, _width
-        ]:
-            return rebind[SIMD[_dtype, _width]](
-                c._fused_compute_output_lambda[element_alignment=alignment](
-                    coords, rebind[SIMD[c.dtype, _width]](val)
-                )
-            )
-
-        comptime has_compute_lambda = type_of(c)._has_compute_fusion
-
-        comptime elementwise_lambda = Optional[
-            matmul_elementwise_epilogue_type
-        ](
-            epilogue_fn
-        ) if lambdas_have_fusion and not has_compute_lambda else None
-
-        comptime compute_lambda = Optional[
-            matmul_elementwise_compute_lambda_type
-        ](
-            output_compute_fn
-        ) if lambdas_have_fusion and has_compute_lambda else None
-
         cuda_ctx = context.get_device_context()
         block_scaled_matmul[
             SF_VECTOR_SIZE=SF_VECTOR_SIZE,
             transpose_b=True,
-            elementwise_lambda_fn=elementwise_lambda,
-            elementwise_compute_lambda_fn=compute_lambda,
             target=target,
         ](
             c.to_tile_tensor[DType.int64](),
@@ -9214,7 +9177,7 @@ struct Struct_matmul_dynamic_block_scaled_mxfp4:
             " block scaled support"
         )
 
-        matmul_dynamic_block_scaled_mxfp4(
+        mxfp4_block_scaled_matmul_amd(
             c.to_tile_tensor[DType.int64](),
             a.to_tile_tensor[DType.int64](),
             b.to_tile_tensor[DType.int64](),
@@ -10589,7 +10552,7 @@ def task_id_for_device(device_id: Int) -> Int:
 @always_inline
 def _launch_device_collective[
     num_devices: Int,
-    F: def[Int]() raises unified -> None,
+    F: def[Int]() raises -> None,
 ](func: F, dev_ctxs: DeviceContextPtrList) raises:
     """Dispatch async tasks to call func[i]() for each device in dev_ctxs."""
 
@@ -10711,7 +10674,7 @@ struct DistributedAllReduceSum:
             @always_inline
             def launch_vendor_allreduce[
                 index: Int
-            ]() raises unified {
+            ]() raises {
                 read in_tensors,
                 read rank_sigs,
                 read dev_ctxs_input,
@@ -10756,7 +10719,7 @@ struct DistributedAllReduceSum:
         @always_inline
         def launch_allreduce[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -10918,7 +10881,7 @@ struct DistributedReduceScatterSum:
         @always_inline
         def launch_reducescatter[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -11046,7 +11009,7 @@ struct DistributedAllGather:
         @always_inline
         def launch_allgather[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read out_tensors,
             read rank_sigs,
@@ -11143,7 +11106,7 @@ struct DistributedBroadcast:
         @always_inline
         def launch_broadcast[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_buf,
             read rank_sigs,
             read dev_ctxs_input,
@@ -11231,10 +11194,9 @@ struct DistributedScatter:
             rank_sigs[i] = signal_buffers[i]._ptr.bitcast[Signal]()
 
         @always_inline
-        @parameter
         def launch_scatter[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs_input,
@@ -11321,7 +11283,7 @@ struct DistributedAllReduceAddRMSNormQuantFP8:
         @always_inline
         def launch_fused_allreduce[
             index: Int
-        ]() raises unified {
+        ]() raises {
             read in_tensors,
             read rank_sigs,
             read dev_ctxs,
@@ -12495,3 +12457,100 @@ struct Sleep:
             )
         else:
             sleep(duration_sec)
+
+
+# ===-----------------------------------------------------------------------===#
+# In-place memcpy kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.inplace_memcpy")
+struct InplaceMemcpy[DstDevice: StaticString, SrcDevice: StaticString]:
+    """Copies the contents of `src` into `dst` in place.
+
+    Semantically equivalent to ``Buffer.inplace_copy_from``, but exposed
+    as a graph op so the copy can be scheduled as part of a compiled MAX
+    graph. Both operands must have the same dtype, rank, and total
+    element count.
+
+    Supports the four direction combinations expressible with a single
+    `DeviceContext`: GPU-to-GPU on the same device, GPU-to-CPU,
+    CPU-to-GPU, and CPU-to-CPU. Cross-GPU memcpy (different GPU ids) is
+    rejected by the Python wrapper at graph build time.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+        dtype: DType,
+        rank: Int,
+    ](
+        dst: MutableInputTensor[dtype=dtype, rank=rank, ...],
+        src: InputTensor[dtype=dtype, rank=rank, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        var count = dst.size()
+        comptime if is_gpu[Self.DstDevice]() and is_gpu[Self.SrcDevice]():
+            # Same-GPU async memcpy.
+            ctx[].enqueue_copy[dtype](dst.unsafe_ptr(), src.unsafe_ptr(), count)
+        elif is_gpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
+            # Host-to-device async memcpy. Wrap the GPU dst pointer as a
+            # non-owning `DeviceBuffer` so the typed overload is selected.
+            ctx[].enqueue_copy[dtype](
+                dst.to_device_buffer(ctx[]),
+                src.unsafe_ptr(),
+            )
+        elif is_cpu[Self.DstDevice]() and is_gpu[Self.SrcDevice]():
+            # Device-to-host async memcpy.
+            ctx[].enqueue_copy[dtype](
+                dst.unsafe_ptr(),
+                src.to_device_buffer(ctx[]),
+            )
+        elif is_cpu[Self.DstDevice]() and is_cpu[Self.SrcDevice]():
+            # Host-to-host. Plain synchronous memcpy.
+            memcpy(
+                dest=dst.unsafe_ptr(),
+                src=src.unsafe_ptr(),
+                count=count,
+            )
+        else:
+            # Cross-device memcpy are unsupported since stream is ambiguous.
+            raise Error("InplaceMemcpy does not support cross-gpu memcpy")
+
+
+# ===-----------------------------------------------------------------------===#
+# Host function launch kernel
+# ===-----------------------------------------------------------------------===#
+
+
+@compiler.register("mo.launch_host_func")
+struct LaunchHostFunc:
+    """Enqueues a pre-packed host callback on the device's default stream.
+
+    Corresponds to CUDA's `cuLaunchHostFunc`. Accepts a 1-D int64 buffer of
+    shape `[2]` whose elements are raw pointer-sized integers:
+
+    - `payload[0]`: address of a `void (*)(void *)` trampoline function.
+    - `payload[1]`: address of an opaque user-data block owned by the
+      trampoline (freed after the callback runs).
+
+    Both values are produced by `max._core.driver._pack_host_func(fn)` on
+    the Python side. Currently only CUDA streams support host callbacks;
+    non-CUDA backends raise at runtime.
+    """
+
+    @staticmethod
+    def execute[
+        target: StaticString,
+    ](
+        # A mutable input buffer prevents the op from being DCE'd (see
+        # `mo.sleep` above; tracked in GEX-3080).
+        payload: MutableInputTensor[dtype=DType.int64, rank=1, ...],
+        ctx: DeviceContextPtr,
+    ) raises:
+        comptime _HostFuncTy = def(OpaquePointer[MutAnyOrigin]) thin -> None
+        var tr_addr = Int(payload[0])
+        var ud_addr = Int(payload[1])
+        var tr_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=tr_addr)
+        var ud_ptr = OpaquePointer[MutAnyOrigin](unsafe_from_address=ud_addr)
+        ctx[].stream().enqueue_host_func(rebind[_HostFuncTy](tr_ptr), ud_ptr)

@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from itertools import pairwise
 
-from max.driver import accelerator_api
 from max.dtype import DType
 from max.graph import DeviceRef, Dim, TensorValue, Weight, ops
 from max.graph.type import FilterLayout
@@ -28,12 +27,6 @@ from .model_config import AutoencoderKLWanConfig
 CACHE_T = 2
 WAN_DECODER_CACHE_SLOTS = 32
 WAN_ENCODER_CHUNK_SIZE = 4  # Frames per encoder chunk (matching diffusers)
-
-
-def _use_nvidia_fcrs_conv3d(device: DeviceRef | None) -> bool:
-    return (
-        device is not None and device.is_gpu() and accelerator_api() == "cuda"
-    )
 
 
 def _zero_cache_for(x: TensorValue) -> TensorValue:
@@ -88,8 +81,7 @@ class CausalConv3d(Module):
     padding parameter supports directly.
 
     Input is permuted from NCDHW to NDHWC before conv, and back after.
-    On NVIDIA GPUs, weights stay in PyTorch FCQRS layout to use the cuDNN
-    3D conv dispatch path. Other backends use MAX's native QRSCF layout.
+    Weights are in MAX's native QRSCF layout.
     """
 
     def __init__(
@@ -102,7 +94,6 @@ class CausalConv3d(Module):
         dtype: DType | None = None,
         device: DeviceRef | None = None,
         has_bias: bool = True,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         if isinstance(kernel_size, int):
@@ -123,14 +114,7 @@ class CausalConv3d(Module):
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
         d, h, w = kernel_size
-        self._use_nvidia_fcrs = prefer_nvidia_fcrs and _use_nvidia_fcrs_conv3d(
-            dev_ref
-        )
-        filter_shape = (
-            [out_channels, in_channels, d, h, w]
-            if self._use_nvidia_fcrs
-            else [d, h, w, in_channels, out_channels]
-        )
+        filter_shape = [d, h, w, in_channels, out_channels]
         self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
@@ -144,11 +128,7 @@ class CausalConv3d(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=(
-                FilterLayout.FCRS
-                if self._use_nvidia_fcrs
-                else FilterLayout.QRSCF
-            ),
+            filter_layout=FilterLayout.QRSCF,
         )
         # NDHWC -> NCDHW
         out = ops.permute(out, [0, 4, 1, 2, 3])
@@ -197,12 +177,7 @@ class CausalConv3dCached(Module):
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
         d, h, w = kernel_size
-        self._use_nvidia_fcrs = _use_nvidia_fcrs_conv3d(dev_ref)
-        filter_shape = (
-            [out_channels, in_channels, d, h, w]
-            if self._use_nvidia_fcrs
-            else [d, h, w, in_channels, out_channels]
-        )
+        filter_shape = [d, h, w, in_channels, out_channels]
         self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
@@ -225,11 +200,7 @@ class CausalConv3dCached(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=(
-                FilterLayout.FCRS
-                if self._use_nvidia_fcrs
-                else FilterLayout.QRSCF
-            ),
+            filter_layout=FilterLayout.QRSCF,
         )
         # NDHWC -> NCDHW
         out = ops.permute(out, [0, 4, 1, 2, 3])
@@ -264,10 +235,10 @@ class CausalConv3dCached(Module):
 
 
 class Conv2dPermuted(Module):
-    """2D convolution with NCHW input and FCRS weights (permute=True equivalent).
+    """2D convolution with NCHW input.
 
     Input is permuted from NCHW to NHWC before conv, and back after.
-    Weights stay in FCRS (PyTorch) layout.
+    Weights are in MAX's native RSCF layout.
     """
 
     def __init__(
@@ -295,12 +266,8 @@ class Conv2dPermuted(Module):
 
         dev_ref = device if device is not None else DeviceRef.CPU()
         dt = dtype or DType.float32
-        self.filter = Weight(
-            "weight",
-            dt,
-            [out_channels, in_channels, kernel_size, kernel_size],
-            dev_ref,
-        )
+        filter_shape = [kernel_size, kernel_size, in_channels, out_channels]
+        self.filter = Weight("weight", dt, filter_shape, dev_ref)
         self._has_bias = has_bias
         if has_bias:
             self.bias = Weight("bias", dt, [out_channels], dev_ref)
@@ -313,7 +280,7 @@ class Conv2dPermuted(Module):
             self.filter,
             stride=self._stride,
             padding=self._padding,
-            filter_layout=FilterLayout.FCRS,
+            filter_layout=FilterLayout.RSCF,
         )
         # NHWC -> NCHW
         out = ops.permute(out, [0, 3, 1, 2])
@@ -386,7 +353,6 @@ class ResidualBlock(Module):
         out_dim: int,
         dtype: DType | None = None,
         device: DeviceRef | None = None,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.norm1 = RMSNorm(
@@ -403,7 +369,6 @@ class ResidualBlock(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=prefer_nvidia_fcrs,
         )
         self.norm2 = RMSNorm(
             out_dim,
@@ -419,7 +384,6 @@ class ResidualBlock(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=prefer_nvidia_fcrs,
         )
         self.conv_shortcut = (
             CausalConv3d(
@@ -430,7 +394,6 @@ class ResidualBlock(Module):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                prefer_nvidia_fcrs=prefer_nvidia_fcrs,
             )
             if in_dim != out_dim
             else None
@@ -547,7 +510,6 @@ class MidBlock(Module):
         dim: int,
         dtype: DType | None = None,
         device: DeviceRef | None = None,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.resnets = LayerList(
@@ -557,14 +519,12 @@ class MidBlock(Module):
                     dim,
                     dtype=dtype,
                     device=device,
-                    prefer_nvidia_fcrs=prefer_nvidia_fcrs,
                 ),
                 ResidualBlock(
                     dim,
                     dim,
                     dtype=dtype,
                     device=device,
-                    prefer_nvidia_fcrs=prefer_nvidia_fcrs,
                 ),
             ]
         )
@@ -1466,7 +1426,6 @@ class DownResample(Module):
         mode: str,
         dtype: DType | None = None,
         device: DeviceRef | None = None,
-        prefer_nvidia_fcrs: bool = True,
     ) -> None:
         super().__init__()
         self.dim = dim
@@ -1502,9 +1461,6 @@ class DownResample(Module):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                # Encoder temporal downsample is the only conv pattern that
-                # currently reproduces cuDNN aborts in VAE encode.
-                prefer_nvidia_fcrs=False,
             )
         elif mode != "downsample2d":
             raise ValueError(f"Unsupported DownResample mode: {mode}")
@@ -1592,7 +1548,6 @@ class DownResampleCached(Module):
                 dtype=dtype,
                 device=device,
                 has_bias=True,
-                prefer_nvidia_fcrs=False,
             )
         elif mode != "downsample2d":
             raise ValueError(f"Unsupported DownResampleCached mode: {mode}")
@@ -1728,7 +1683,6 @@ class Encoder3d(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=False,
         )
 
         # Flat ModuleList matching diffusers weight naming:
@@ -1745,7 +1699,6 @@ class Encoder3d(Module):
                         out_dim,
                         dtype=dtype,
                         device=device,
-                        prefer_nvidia_fcrs=False,
                     )
                 )
             down_flag = i != len(dim_mult) - 1
@@ -1759,7 +1712,6 @@ class Encoder3d(Module):
                         mode=mode,
                         dtype=dtype,
                         device=device,
-                        prefer_nvidia_fcrs=False,
                     )
                 )
 
@@ -1770,7 +1722,6 @@ class Encoder3d(Module):
             final_dim,
             dtype=dtype,
             device=device,
-            prefer_nvidia_fcrs=False,
         )
 
         self.norm_out = RMSNorm(
@@ -1788,7 +1739,6 @@ class Encoder3d(Module):
             dtype=dtype,
             device=device,
             has_bias=True,
-            prefer_nvidia_fcrs=False,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:
@@ -2027,7 +1977,6 @@ class VAEEncoder(Module):
             dtype=config.dtype,
             device=config.device,
             has_bias=True,
-            prefer_nvidia_fcrs=False,
         )
 
     def __call__(self, x: TensorValue) -> TensorValue:

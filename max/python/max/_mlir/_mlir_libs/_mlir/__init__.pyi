@@ -4,6 +4,7 @@
 
 """MLIR Python Native Extension"""
 
+import enum
 from collections.abc import Callable
 from typing import TypeVar
 
@@ -16,6 +17,16 @@ from . import rewrite as rewrite
 T = TypeVar("T")
 
 U = TypeVar("U")
+
+class OnExplicitAction(enum.Enum):
+    USE_EXPLICIT = 0
+
+    USE_TRACEBACK = 1
+
+class CurrentLocAction(enum.Enum):
+    FALLBACK = 0
+
+    NAMELOC_WRAP = 1
 
 globals: _Globals = ...
 

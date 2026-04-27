@@ -420,7 +420,7 @@ struct Coord[*element_types: CoordLike](CoordLike, Sized, Writable):
     """A struct representing tuple-like data with compile-time and runtime elements.
 
     Parameters:
-        element_types: The variadic pack of element types that implement `CoordLike`.
+        element_types: The list of element types that implement `CoordLike`.
     """
 
     comptime ParamListType = Self.element_types
@@ -1327,7 +1327,7 @@ def coord_to_int_tuple[
     - Tuple elements (nested `Coord`) become nested `IntTuple`s
 
     Parameters:
-        element_types: The variadic pack of element types in the `Coord`.
+        element_types: The list of element types in the `Coord`.
 
     Args:
         value: The `Coord` to convert.
@@ -1357,7 +1357,7 @@ def coord_to_index_list[
     """Convert a flat `Coord` to an `IndexList`.
 
     Parameters:
-        element_types: The variadic pack of element types in the `Coord`.
+        element_types: The list of element types in the `Coord`.
 
     Args:
         value: The `Coord` to convert.
@@ -1381,7 +1381,7 @@ def coord_to_int_tuple[*element_types: CoordLike]() -> IntTuple:
     - Tuple elements (nested `Coord`) become nested `IntTuple`s
 
     Parameters:
-        element_types: The variadic pack of element types in the `Coord`.
+        element_types: The list of element types in the `Coord`.
 
     Returns:
         An `IntTuple` with the same structure and values as the input `Coord`.
@@ -1862,10 +1862,10 @@ struct _RegTuple[*element_types: CoordLike](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!kgen.pack<:`,
+        `!kgen.struct<:`,
         type_of(Self.element_types.values),
         Self.element_types.values,
-        `>`,
+        ` isParamPack>`,
     ]
 
     var _mlir_value: Self._mlir_type
@@ -1936,8 +1936,9 @@ struct _RegTuple[*element_types: CoordLike](
         var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
 
         # KGenPointer to the element.
-        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index=idx._int_mlir_index()
+        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
+            index=idx._int_mlir_index(),
+            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 

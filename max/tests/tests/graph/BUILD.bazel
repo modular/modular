@@ -118,7 +118,8 @@ modular_multi_py_version_test(
 
 # Uninitialized memory read detection end-to-end tests.
 # Subprocess-based: each test spawns a child process with/without the
-# MODULAR_MAX_UNINITIALIZED_READ_CHECK env var to exercise the full pipeline.
+# MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK env var to exercise the full
+# pipeline.
 modular_py_test(
     name = "test_uninit_check_e2e",
     srcs = _UNINIT_CHECK_TESTS,

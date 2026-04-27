@@ -195,7 +195,12 @@ def _compute_output_tile_shape(
             mma_shape[0] == 256 or cta_group == 1
         ) else (mma_shape[1] // 2)
         var output_tile_n = 8
-        if c_tile_n % 32 == 0:
+        # For AB_swapped, c_swizzle is picked independently of output_tile_n
+        # (see _compute_swizzle_modes). This in turn limits the chosen TMA
+        # op (see c_tile_dim1 in matmul_kernels.mojo).
+        if c_tile_n % 64 == 0 and not AB_swapped:
+            output_tile_n = 64
+        elif c_tile_n % 32 == 0:
             output_tile_n = 32
         elif c_tile_n % 16 == 0:
             output_tile_n = 16
@@ -228,7 +233,9 @@ def _compute_swizzle_modes(
         else:
             # When not swapped, output_tile_shape[1] is the N dimension
             var tile_n = output_tile_shape[1]
-            if tile_n == 32:
+            if tile_n == 64:
+                c_swizzle = TensorMapSwizzle.SWIZZLE_128B
+            elif tile_n == 32:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_64B
             elif tile_n == 16:
                 c_swizzle = TensorMapSwizzle.SWIZZLE_32B
@@ -517,7 +524,7 @@ struct MatmulConfig[
         self.b_swizzle = swizzles[1]
         self.c_swizzle = swizzles[2]
 
-        self.num_pipeline_stages = _maximize_pipeline_stages[
+        var max_num_pipeline_stages = _maximize_pipeline_stages[
             Self.a_type, Self.b_type, Self.c_type
         ](
             self.block_tile_shape,
@@ -529,7 +536,12 @@ struct MatmulConfig[
         )
 
         if num_pipeline_stages:
+            assert (
+                num_pipeline_stages.value() <= max_num_pipeline_stages
+            ), "MatmulConfig requested num_pipeline_stages exceeds smem budget."
             self.num_pipeline_stages = num_pipeline_stages.value()
+        else:
+            self.num_pipeline_stages = max_num_pipeline_stages
 
         # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
         self.num_pipeline_stages = align_down(
@@ -962,7 +974,7 @@ struct BlockScaledMatmulConfig[
             + sfb_tmem_load_mbars_size
         )
 
-        self.num_pipeline_stages = _maximize_pipeline_stages[
+        var max_num_pipeline_stages = _maximize_pipeline_stages[
             Self.a_type, Self.b_type, Self.c_type
         ](
             self.block_tile_shape,
@@ -974,7 +986,13 @@ struct BlockScaledMatmulConfig[
         )
 
         if num_pipeline_stages:
+            assert num_pipeline_stages.value() <= max_num_pipeline_stages, (
+                "BlockScaledMatmulConfig requested num_pipeline_stages exceeds"
+                " smem budget. "
+            )
             self.num_pipeline_stages = num_pipeline_stages.value()
+        else:
+            self.num_pipeline_stages = max_num_pipeline_stages
 
         # SM100 kernel only supports k grouping when num_pipeline_stages is a multiple of k_group_size.
         self.num_pipeline_stages = align_down(

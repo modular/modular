@@ -399,7 +399,7 @@ def test_map_with_none() raises:
 def test_map_with_closure_that_takes_by_read() raises:
     var opt = Optional[String]("hello")
 
-    def closure_by_read(s: String) unified {} -> String:
+    def closure_by_read(s: String) -> String:
         return s + "42"
 
     var result1 = opt.map[To=String](closure_by_read)

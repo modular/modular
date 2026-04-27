@@ -1,0 +1,19 @@
+load("//bazel:api.bzl", "mojo_test")
+
+package(default_visibility = ["//max:consumers"])
+
+mojo_test(
+    name = "test_sub_tile_loader_lds_smoke.mojo.test",
+    size = "medium",
+    srcs = ["test_sub_tile_loader_lds_smoke.mojo"],
+    tags = ["gpu"],
+    target_compatible_with = [
+        "//:has_gpu",
+        "//:amd_gpu",
+    ],
+    deps = [
+        "//max:layout",
+        "//max:structured_kernels",
+        "@mojo//:std",
+    ],
+)

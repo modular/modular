@@ -24,7 +24,7 @@ from max.engine import InferenceSession, Model
 from max.graph import Graph, TensorType, ops
 from max.graph.weights import load_weights
 from max.pipelines.lib.model_manifest import ModelManifest
-from max.profiler import traced
+from max.profiler import Tracer, traced
 
 from ...autoencoders.autoencoder_kl_wan import (
     AutoencoderKLWanModel,
@@ -116,24 +116,29 @@ class VaeWrapper:
         """
         logger.info("Decoding Wan output")
         # Denormalize: latents * std + mean, cast to model dtype.
-        denorm_result = self._denorm_model.execute(
-            latents, self._vae_std_buf, self._vae_mean_buf
-        )
-        denorm_latents = denorm_result[0]
+        with Tracer("vae_denormalize"):
+            denorm_result = self._denorm_model.execute(
+                latents, self._vae_std_buf, self._vae_mean_buf
+            )
+            denorm_latents = denorm_result[0]
 
-        # Decode through VAE.
-        decoded_video = self._vae.decode_5d(denorm_latents)
-        decoded_np = _buffer_to_numpy_f32(decoded_video)
-        target_num_frames = min(decoded_np.shape[2], num_frames)
-        decoded_np = decoded_np[:, :, :target_num_frames, :height, :width]
+        # Decode through VAE (framewise, has internal "wan_vae_decode" trace).
+        with Tracer("vae_decode_5d"):
+            decoded_video = self._vae.decode_5d(denorm_latents)
 
-        # (B, C, T, H, W) -> (B*T, H, W, C) and [-1, 1] -> uint8.
-        b, c, t, h, w = decoded_np.shape
-        decoded_np = np.transpose(decoded_np, (0, 2, 3, 4, 1))
-        decoded_np = decoded_np.reshape(b * t, h, w, c)
-        decoded_np = ((decoded_np * 0.5 + 0.5).clip(0.0, 1.0) * 255.0).astype(
-            np.uint8
-        )
+        # CPU post-processing: layout, clip and uint8 conversion.
+        with Tracer("vae_decode_postprocess"):
+            decoded_np = _buffer_to_numpy_f32(decoded_video)
+            target_num_frames = min(decoded_np.shape[2], num_frames)
+            decoded_np = decoded_np[:, :, :target_num_frames, :height, :width]
+
+            # (B, C, T, H, W) -> (B*T, H, W, C) and [-1, 1] -> uint8.
+            b, c, t, h, w = decoded_np.shape
+            decoded_np = np.transpose(decoded_np, (0, 2, 3, 4, 1))
+            decoded_np = decoded_np.reshape(b * t, h, w, c)
+            decoded_np = (
+                (decoded_np * 0.5 + 0.5).clip(0.0, 1.0) * 255.0
+            ).astype(np.uint8)
         return decoded_np
 
     @traced(message="VaeWrapper.encode_i2v_condition")

@@ -72,3 +72,27 @@ modular_py_test(
         requirement("pytest-asyncio"),
     ],
 )
+
+modular_py_test(
+    name = "test_tiktoken_structured_output_compatibility",
+    size = "medium",
+    srcs = [
+        "test_tiktoken_structured_output_compatibility.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/pipelines/lib",
+        "//max/tests/integration:hf_repo_lock",
+        requirement("llguidance"),
+        requirement("transformers"),
+    ],
+)

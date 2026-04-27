@@ -352,6 +352,25 @@ struct Box[T: Copyable](
     # conforms to Equatable only when T does
 ```
 
+### Conditional conformance and compile-time values
+
+Conditional conformance can depend only on information known at compile
+time. While it often uses trait bounds, it is not limited to traits. A
+condition can use any compile-time value that can be evaluated in a clear
+and consistent way.
+
+For example, a type might conform to a trait only on a specific platform,
+(such as NVIDIA GPUs or Apple Silicon with Metal) or when a compile-time
+constant has a given value. If the condition can be fully resolved at
+compile time, it can gate conformance.
+
+That said, conformance cannot depend on a computed compile-time member.
+Trait conformance is part of the type's signature, and the signature is
+needed to resolve members. Depending on a computed member would create a
+circular dependency.
+
+### Conditional conformance and default implementations
+
 Conditional conformance and default implementations are independent
 features, but they often work together.
 
@@ -422,23 +441,6 @@ struct Pair[T: Copyable & ImplicitlyDestructible](
 ):
     # ...
 ```
-
-### Conditional conformance and compile-time values
-
-Conditional conformance can depend only on information known at compile
-time. While it often uses trait bounds, it is not limited to traits. A
-condition can use any compile-time value that can be evaluated in a clear
-and consistent way.
-
-For example, a type could conform to a trait only on a specific platform,
-(such as NVIDIA GPUs or Apple Silicon with Metal) or when a compile-time
-constant has a given value. If the condition can be fully resolved at
-compile time, it can gate conformance.
-
-That said, conformance cannot depend on a computed compile-time member.
-Trait conformance is part of the type's signature, and the signature is
-needed to resolve members. Depending on a computed member would create a
-circular dependency.
 
 ## Methods
 

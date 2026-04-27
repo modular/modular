@@ -338,7 +338,7 @@ modular_py_test(
         "//max/tests/integration/Inputs/kernel_verification_ops",
     ],
     env = {
-        "MODULAR_MAX_DEBUG": "True",
+        "MODULAR_DEBUG": "source-tracebacks",
         "MODULAR_DEVICE_CONTEXT_SYNC_MODE": "1",
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },

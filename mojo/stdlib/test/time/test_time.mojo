@@ -43,7 +43,7 @@ def time_templated_function[
 
 
 def time_capturing_function(iters: Int) -> Int:
-    def time_fn() unified {}:
+    def time_fn():
         sleep(1.0)
 
     return Int(time_function(time_fn))

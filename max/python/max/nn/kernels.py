@@ -6580,6 +6580,92 @@ def kv_cache_copy_pages_d2h(
     )
 
 
+def inplace_memcpy(dst: BufferValue, src: TensorValue) -> None:
+    """Copies `src` into `dst` in place.
+
+    Wraps the `mo.inplace_memcpy` custom op. Semantically equivalent to
+    ``Buffer.inplace_copy_from``, but usable from within a compiled MAX
+    graph so the copy can be scheduled alongside other graph work.
+
+    Both operands must have the same dtype and shape. The op supports
+    the four combinations expressible with a single `DeviceContext`:
+    GPU-to-GPU on the same device, GPU-to-CPU, CPU-to-GPU, and
+    CPU-to-CPU. Cross-GPU memcpy (different GPU ids) is rejected; use
+    an explicit cross-device transfer for that case.
+    The compute device is inferred from the operands: if either lives
+    on a GPU the op is scheduled on that GPU, otherwise on CPU.
+    Args:
+        dst: Destination buffer mutated in place.
+        src: Source tensor whose contents are copied into `dst`.
+    """
+    if dst.dtype != src.dtype:
+        raise ValueError(
+            "Expected dst and src to have the same dtype, but got "
+            f"dst={dst.dtype} and src={src.dtype}"
+        )
+    if dst.shape != src.shape:
+        raise ValueError(
+            "Expected dst and src to have the same shape, but got "
+            f"dst={dst.shape} and src={src.shape}"
+        )
+    if dst.device.is_gpu() and src.device.is_gpu() and dst.device != src.device:
+        raise ValueError(
+            "Cross-GPU memcpy is not supported; dst and src must be on "
+            f"the same GPU, but got dst={dst.device} and src={src.device}"
+        )
+
+    if dst.device.is_gpu():
+        compute_device = dst.device
+    elif src.device.is_gpu():
+        compute_device = src.device
+    else:
+        compute_device = dst.device
+
+    ops.inplace_custom(
+        "mo.inplace_memcpy",
+        device=compute_device,
+        values=[dst, src],
+        out_types=[],
+        parameters={
+            "DstDevice": dst.device.device_type.value,
+            "SrcDevice": src.device.device_type.value,
+        },
+    )
+
+
+def launch_host_func(payload: BufferValue, device: DeviceRef) -> None:
+    """Enqueues a Python callback on the device stream.
+
+    Wraps the ``mo.launch_host_func`` custom op. The callback runs on a
+    driver thread once the stream reaches this point, after all preceding
+    work has completed.
+
+    The payload buffer must be a CPU-resident int64[2] containing
+    ``(trampoline_ptr, user_data_ptr)`` as returned by
+    ``driver.__unsafe_pack_py_host_func``.
+
+    Only supported on CUDA devices.
+
+    Args:
+        payload: CPU buffer of shape [2] and dtype int64 holding the
+            packed callback pointers.
+        device: GPU device on whose stream to enqueue the callback.
+    """
+    if payload.dtype != DType.int64:
+        raise ValueError(f"Expected payload dtype int64, got {payload.dtype}")
+    if payload.shape != [2]:
+        raise ValueError(f"Expected payload shape [2], got {payload.shape}")
+    if not device.is_gpu():
+        raise ValueError("launch_host_func is only supported on GPU devices")
+
+    ops.inplace_custom(
+        "mo.launch_host_func",
+        device=device,
+        values=[payload],
+        out_types=[],
+    )
+
+
 def sleep(duration_sec: BufferValue, device_ref: DeviceRef) -> None:
     """Sleep for the given duration in seconds.
 

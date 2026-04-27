@@ -25,7 +25,7 @@ import threading
 import time
 import traceback
 from abc import ABC, abstractmethod
-from collections.abc import AsyncIterable, AsyncIterator, Callable
+from collections.abc import AsyncIterable, AsyncIterator, Callable, Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -156,6 +156,38 @@ class BaseRequestFuncOutput:
         if self.request_submit_time is None:
             return None
         return self.request_submit_time + self.latency
+
+
+def measured_window_duration(
+    outputs: Iterable[BaseRequestFuncOutput], fallback: float
+) -> float:
+    """Wall-clock seconds from the first submit to the last complete.
+
+    The window covers only requests with both a ``request_submit_time`` and a
+    ``request_complete_time``. If no such request exists, return ``fallback``.
+    Otherwise return ``max(last_complete - first_submit, 1e-9)`` so callers
+    can safely divide.
+
+    This is the same window math the steady-state block uses and is the
+    correct denominator for aggregate throughput / TPM over a sliced benchmark
+    region — warmup/tail wall time is excluded along with warmup/tail tokens.
+    """
+    first_submit: float | None = None
+    last_complete: float | None = None
+    for o in outputs:
+        submit = o.request_submit_time
+        if submit is None:
+            continue
+        complete = o.request_complete_time
+        if complete is None:
+            continue
+        if first_submit is None or submit < first_submit:
+            first_submit = submit
+        if last_complete is None or complete > last_complete:
+            last_complete = complete
+    if first_submit is None or last_complete is None:
+        return fallback
+    return max(last_complete - first_submit, 1e-9)
 
 
 # TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for

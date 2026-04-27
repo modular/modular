@@ -153,6 +153,29 @@ This version is still a work in progress.
   the grapheme cluster count. This correctly handles combining marks, emoji ZWJ
   sequences, flag emoji, Hangul syllables, and other multi-codepoint clusters.
 
+- `StringSlice` now supports slicing by grapheme cluster via the `grapheme=`
+  keyword argument, mirroring the existing `byte=` indexer. For example,
+  `s[grapheme=0:3]` returns a `StringSlice` covering the first three grapheme
+  clusters, and `s[grapheme=i:i+1]` extracts the *i*-th grapheme. Out-of-range
+  ends are clamped to the end of the string; negative indices are not supported.
+  Because grapheme boundaries are discovered by a forward scan, this operation
+  is O(n) in the byte length — prefer `byte=` slicing when you already have
+  byte offsets.
+
+- `GraphemeSliceIter` now supports reverse iteration. `next_back()` and
+  `peek_back()` return the last grapheme cluster in the remaining range, and
+  `StringSlice.graphemes_reversed()` / `String.graphemes_reversed()` return a
+  `GraphemeSliceIter` whose `for`-loop iteration walks clusters from end to
+  start. `next()` and `next_back()` can be interleaved on the same iterator.
+  Reverse iteration costs more per cluster than forward iteration because the
+  UAX #29 state machine is inherently forward-scanning: `next_back()` backs
+  up to a guaranteed grapheme boundary (the start of the string or a
+  Control/CR/LF codepoint) and rescans forward. The safe boundary is cached
+  across reverse calls — a forward `next()` invalidates it — so per-call cost
+  is dominated by forward-scan length: small in text containing line breaks
+  or whitespace, growing with the distance back to such a codepoint in long
+  runs without them.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 
@@ -187,8 +210,10 @@ This version is still a work in progress.
   against the debug allocator's poison patterns (0xFF host fill and canonical
   qNaN device fill). A match triggers `abort()` with a descriptive message.
   When disabled (the default), zero runtime overhead. For MAX pipelines, set
-  `MODULAR_MAX_UNINITIALIZED_READ_CHECK=true` to enable both the debug
-  allocator and the load-time checks automatically.
+  `MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true` (or the
+  `max-debug.uninitialized-read-check` config key, or
+  `InferenceSession.debug.uninitialized_read_check = True`) to enable both the
+  debug allocator and the load-time checks automatically.
 
 - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
   targets at compile time. `is_apple_silicon()` now includes M5 in its check.
@@ -210,6 +235,41 @@ This version is still a work in progress.
 - `OwnedDLHandle.get_symbol()` now returns `Optional[UnsafePointer[...]]`
   instead of aborting when a symbol is not found. This allows callers to handle
   missing symbols gracefully.
+
+- `UnsafePointer` is now non-null by design. See the
+  [non-null pointer proposal](https://github.com/modular/modular/blob/main/mojo/proposals/non-null-pointer.md)
+  for the full design and migration timeline.
+
+  The default null constructor `__init__(out self)` and `__bool__(self)` method
+  are now deprecated, and `UnsafePointer` no longer conforms to `Defaultable` or
+  `Boolable`.
+
+  To migrate, express nullability explicitly with
+  `Optional[UnsafePointer[...]]`, which has the same layout as `UnsafePointer`
+  (the null address is the `None` niche) so nullable pointers remain
+  zero-overhead and can be used across C-FFIs.
+
+  ```mojo
+  # Before: null default construction
+  var ptr = UnsafePointer[Int, origin]()
+
+  # After: express absence with Optional
+  var ptr: Optional[UnsafePointer[Int, origin]] = None
+
+  # Before: Bool-based null check
+  if ptr:
+      use(ptr[])
+
+  # After: check the Optional, then unwrap
+  if ptr:
+      use(ptr.value()[])
+  ```
+
+  If you specifically need a non-null placeholder for a field that will be
+  populated later (for example, a buffer that is allocated on demand) use
+  `UnsafePointer.unsafe_dangling()`, which returns a well-aligned but dangling
+  pointer. Note that `unsafe_dangling()` is not a null sentinel: types that
+  lazily allocate must track initialization separately.
 
 - GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
   `Int`.
@@ -504,3 +564,6 @@ This version is still a work in progress.
   must construct the bytes explicitly (for example via a `List[Byte]`
   literal).
   ([Issue #2842](https://github.com/modular/modular/issues/2842))
+
+- Fixed incorrect data layout for `MI250X` AMDGPU architectures.
+  ([Issue #6451](https://github.com/modular/modular/issues/6451)

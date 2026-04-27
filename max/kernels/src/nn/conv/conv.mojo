@@ -18,7 +18,7 @@ from std.math.uutils import udivmod
 
 from std.os import abort
 from std.ffi import _get_global_or_null, external_call
-from std.sys.info import align_of, simd_width_of
+from std.sys.info import align_of, simd_width_of, size_of
 
 from _cudnn.cnn_infer import (
     cudnnConvolutionForward,
@@ -134,6 +134,9 @@ from .conv_utils import (
     get_partition,
     reorder_padding,
 )
+from .gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
+from .gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
+from .gpu.nvidia.sm100.qslice_conv3d import dispatch_qslice_conv3d_sm100
 from nn.shapes import get_sliding_window_out_dim
 from nn.pad_gpu import pad_constant as pad_constant_gpu
 from layout import lt_to_tt
@@ -375,7 +378,7 @@ def _reduce_output[
         @always_inline
         def sum[
             width: Int
-        ](offset: Int) unified {F, scratch, num_partitions, output, mut}:
+        ](offset: Int) {F, scratch, num_partitions, output, mut}:
             var tid_output_offset = reduce_range[0] * F + offset
             var vec = scratch.load[width=width](tid_output_offset)
             # The number of partitions here is typically small.
@@ -3211,7 +3214,7 @@ def conv_nhwc_direct[
             comptime simd_size = simd_width_of[output_type]()
 
             @always_inline
-            def body[width: Int](idx: Int) unified {coords, output_lt, mut}:
+            def body[width: Int](idx: Int) {coords, output_lt, mut}:
                 # Coordinates of the current index.
                 var curr_coords = rebind[IndexList[input_lt.rank]](coords)
                 curr_coords[input_lt.rank - 1] += idx
@@ -4527,6 +4530,32 @@ def conv_gpu[
                     _sm100_dispatch[]()
                 return
 
+        # SM100 im2col+matmul: route non-128-aligned channels through
+        # `_matmul_gpu` (UMMA-on-Blackwell for bf16) instead of the naive
+        # thread-per-pixel fallback.
+        comptime if _is_sm100:
+            from nn.conv.gpu.im2col_matmul_2d import (
+                dispatch_im2col_matmul_conv2d,
+            )
+
+            if dispatch_im2col_matmul_conv2d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[2]](stride),
+                rebind[IndexList[2]](dilation),
+                rebind[IndexList[2]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
         # AMD RDNA 3+ dispatch: im2col + WMMA matmul for supported shapes.
         comptime if has_amd_rdna_gpu_accelerator() and input_type in (
             DType.bfloat16,
@@ -4755,6 +4784,78 @@ def conv_gpu[
                 ctx,
             )
         else:
+            # Phase A (1x1x1 fast path): direct _matmul_gpu for bf16 1x1x1
+            # convs with stride=1, dilation=1, zero padding, groups=1.
+            # Covers WAN post_quant_conv and every conv_shortcut.
+            if dispatch_1x1x1_matmul_conv3d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[3]](stride),
+                rebind[IndexList[3]](dilation),
+                rebind[IndexList[3]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
+            # Phase B (SM100 Q-slice): decompose the Q filter dimension
+            # into Q sequential 2-D SM100 conv calls accumulated into an
+            # fp32 buffer. Qualifies shapes with bf16, stride=1,
+            # dilation=1, groups=1, C_in%64==0, C_out%128==0 on SM100
+            # hardware. Covers WAN mid_res and time_conv; declines
+            # conv_in (C_in=16) and upsampled_res (C_out=192).
+            # Comptime-gated on SM100 + bf16 so the SM100 conv2d kernel
+            # (which uses tcgen05 / Blackwell-only intrinsics) is not
+            # instantiated when compiling for non-SM100 targets.
+            comptime _is_sm100 = _is_sm10x_gpu(ctx.default_device_info)
+            comptime _is_supported_dtype = input_type == DType.bfloat16
+            comptime if _is_sm100 and _is_supported_dtype:
+                if dispatch_qslice_conv3d_sm100[
+                    input_type,
+                    filter_type,
+                    output_type,
+                    filter_is_fcrs,
+                    maybe_epilogue_func,
+                ](
+                    input,
+                    filter,
+                    output,
+                    rebind[IndexList[3]](stride),
+                    rebind[IndexList[3]](dilation),
+                    rebind[IndexList[3]](symmetric_padding),
+                    num_groups,
+                    ctx,
+                ):
+                    return
+
+            # Phase 2 path: explicit im2col + _matmul_gpu for bf16 3D convs.
+            # Covers 3x3x3, 3x1x1, etc. and falls back to the naive kernel on
+            # shapes it can't handle (grouped, dilated, non-bf16, etc.).
+            if dispatch_im2col_matmul_conv3d[
+                input_type,
+                filter_type,
+                output_type,
+                filter_is_fcrs,
+                maybe_epilogue_func,
+            ](
+                input,
+                filter,
+                output,
+                rebind[IndexList[3]](stride),
+                rebind[IndexList[3]](dilation),
+                rebind[IndexList[3]](symmetric_padding),
+                num_groups,
+                ctx,
+            ):
+                return
+
             var grid_dim_x = ceildiv(
                 output_lt.dim[2]() * output_lt.dim[3](), block_size
             )  # h * w / block size for 3d
@@ -4837,11 +4938,21 @@ def conv3d_gpu_naive_ndhwc_qrscf[
         return
 
     # ============= convolution =============
+    # Input is NDHWC (C innermost, contiguous). Vectorize C_in loads as 128-bit
+    # wide SIMD reads. Filter is QRSCF (F innermost, so the C axis is strided
+    # by F); we keep scalar filter loads since they're cache-hot across
+    # repeated use but assemble them into a SIMD register so the dot product
+    # uses a single fused multiply-add chain per chunk.
+    comptime accum_type = get_accum_type[output_type]()
+    # 128-bit load is the widest single-thread GPU transaction; pick the
+    # element count that fills it for this dtype.
+    comptime vec_w = 16 // size_of[input_type]()
+
     for co in range(C_out):
-        comptime accum_type = get_accum_type[output_type]()
-        var value = Scalar[accum_type](0)
         var g = co // F_per_group
         var ci_base = g * C_per_group
+        var simd_value = SIMD[accum_type, vec_w](0)
+        var scalar_value = Scalar[accum_type](0)
 
         for q in range(Q):
             for r in range(R):
@@ -4851,17 +4962,33 @@ def conv3d_gpu_naive_ndhwc_qrscf[
                     var w_in = w_out_idx * stride_w + s * dil_w - pad_w
 
                     if 0 <= d_in < D and 0 <= h_in < H and 0 <= w_in < W:
-                        for ci in range(C_per_group):
-                            value += (
+                        var ci = 0
+                        while ci + vec_w <= C_per_group:
+                            var in_vec = input.load[width=vec_w](
+                                IndexList[5](n, d_in, h_in, w_in, ci_base + ci)
+                            ).cast[accum_type]()
+                            var flt_vec = SIMD[accum_type, vec_w](0)
+
+                            comptime for k in range(vec_w):
+                                flt_vec[k] = filter.load[width=1](
+                                    IndexList[5](q, r, s, ci + k, co)
+                                )[0].cast[accum_type]()
+                            simd_value = simd_value + in_vec * flt_vec
+                            ci += vec_w
+                        while ci < C_per_group:
+                            scalar_value += (
                                 input.load[width=1](
                                     IndexList[5](
                                         n, d_in, h_in, w_in, ci_base + ci
                                     )
-                                ).cast[accum_type]()
+                                )[0].cast[accum_type]()
                                 * filter.load[width=1](
                                     IndexList[5](q, r, s, ci, co)
-                                ).cast[accum_type]()
+                                )[0].cast[accum_type]()
                             )
+                            ci += 1
+
+        var value = simd_value.reduce_add() + scalar_value
 
         comptime if maybe_epilogue_func:
             comptime epilogue_func = maybe_epilogue_func.value()

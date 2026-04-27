@@ -195,6 +195,10 @@ class BlockManager:
         if not self.enable_prefix_caching or ctx.tokens.active_length == 1:
             return 0
 
+        # Identify a request's first admission so we record one cache-hit
+        # observation per request, not one per chunked-prefill chunk.
+        is_first_admission = ctx.tokens.processed_length == 0
+
         req_blocks = self.req_to_blocks[ctx.request_id]
 
         # Compute block hashes. These hashes are used by the subsequent methods.
@@ -228,8 +232,12 @@ class BlockManager:
                     "We should never get 100% prefix cache hit rate. "
                     "Something went wrong!"
                 )
+            if is_first_admission:
+                ctx.cached_prefix_length = skip_amount
             return skip_amount
 
+        if is_first_admission:
+            ctx.cached_prefix_length = 0
         return 0
 
     @traced
@@ -418,10 +426,18 @@ class BlockManager:
         # to the block size.
         num_computed_blocks = ctx.tokens.processed_length // self.block_size
 
-        # Commit these blocks into the prefix cache, collecting newly
-        # committed blocks for a single batched save to the connector.
-        new_bids: list[int] = []
-        new_hashes: list[int] = []
+        # Commit blocks into the prefix cache, grouping contiguous runs
+        # of new blocks with their parent hash for the connector.
+        # When a block already exists in the device prefix cache (dup),
+        # it breaks the current run; the dup's hash becomes the parent
+        # of the next new block.
+        current_parent = (
+            req_hashes[num_committed_blocks - 1]
+            if num_committed_blocks > 0
+            else 0
+        )
+        run_bids: list[int] = []
+        run_hashes: list[int] = []
         for block_idx in range(num_committed_blocks, num_computed_blocks):
             block = req_blocks[block_idx]
             block_hash = req_hashes[block_idx]
@@ -431,12 +447,21 @@ class BlockManager:
             )
             if new_block is not None:
                 req_blocks[block_idx] = new_block
+                if run_bids:
+                    self.connector.save(
+                        run_bids, run_hashes, parent_seq_hash=current_parent
+                    )
+                    run_bids = []
+                    run_hashes = []
+                current_parent = block_hash
             else:
-                new_bids.append(block.bid)
-                new_hashes.append(block_hash)
+                run_bids.append(block.bid)
+                run_hashes.append(block_hash)
 
-        if new_bids:
-            self.connector.save(new_bids, new_hashes)
+        if run_bids:
+            self.connector.save(
+                run_bids, run_hashes, parent_seq_hash=current_parent
+            )
 
         # Update committed index managed by BlockManager.
         self.req_to_committed_idx[ctx.request_id] = (

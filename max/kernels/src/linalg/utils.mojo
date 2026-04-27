@@ -717,7 +717,7 @@ def packA_i8mm[
     @always_inline
     def packA_helper[
         nrow: Int
-    ](offset: Int) unified {var k, var t0, read a_ptr, read a_packed_ptr}:
+    ](offset: Int) {var k, var t0, read a_ptr, read a_packed_ptr}:
         var kl = align_down(k, 8)
         var kh = align_up(k, 8)
         var j = t0 + offset

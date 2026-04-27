@@ -12,6 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.collections.string.string_slice import (
+    _get_kgen_string,
+    get_static_string,
+)
 from std.utils import StaticTuple
 
 
@@ -181,40 +185,46 @@ comptime _dtype_to_llvm_type_i64[dtype: DType] = __mlir_type.`i64` if dtype in (
 
 comptime dtype_to_llvm_type[dtype: DType] = _dtype_to_llvm_type_i64[dtype]
 
-comptime llvm_struct_splat[
-    field_type: TrivialRegisterPassable, repeat: Int
-] = __mlir_type[
+
+@always_inline("nodebug")
+def _dtype_to_llvm_type_str[dtype: DType]() -> StaticString:
+    comptime if dtype == DType.float32:
+        return "f32"
+    elif dtype == DType.float16:
+        return "f16"
+    elif dtype == DType.bfloat16:
+        return "bf16"
+    elif dtype == DType.float64:
+        return "f64"
+    elif dtype == DType.int32:
+        return "i32"
+    elif dtype == DType.uint32:
+        return "i32"
+    elif dtype == DType.int64:
+        return "i64"
+    elif dtype == DType.uint64:
+        return "i64"
+    else:
+        return "i8"  # float8 variants
+
+
+@always_inline("nodebug")
+def _get_llvm_struct_fields[n: Int, dtype: DType]() -> StaticString:
+    comptime s = _dtype_to_llvm_type_str[dtype]()
+    comptime if n == 1:
+        return s
+    else:
+        return get_static_string[
+            s, ", ", _get_llvm_struct_fields[n - 1, dtype]()
+        ]()
+
+
+comptime llvm_struct_dtype_splat_type[
+    dtype: DType, n: Int
+] = __mlir_deferred_type[
     `!llvm.struct<(`,
-    __mlir_type[
-        `!kgen.param_list_splat<`,
-        +field_type,
-        `, `,
-        repeat._int_mlir_index(),
-        `>`,
-    ],
+    +_get_kgen_string[_get_llvm_struct_fields[n, dtype]()](),
     `)>`,
-]
-
-comptime kgen_struct_splat[
-    field_type: TrivialRegisterPassable, repeat: Int
-] = __mlir_type[
-    `!kgen.struct<(`,
-    __mlir_type[
-        `!kgen.param_list_splat<`,
-        +field_type,
-        `, `,
-        repeat._int_mlir_index(),
-        `>`,
-    ],
-    `)>`,
-]
-
-comptime llvm_struct_dtype_splat_type[dtype: DType, n: Int] = llvm_struct_splat[
-    dtype_to_llvm_type[dtype], n
-]
-
-comptime kgen_struct_dtype_splat_type[dtype: DType, n: Int] = kgen_struct_splat[
-    Scalar[dtype]._mlir_type, n
 ]
 
 
@@ -231,23 +241,108 @@ def simd_to_llvm_struct[
         A `!llvm.struct` with the same number of fields as the SIMD value.
     """
     var llvmst = __mlir_op.`llvm.mlir.undef`[
-        _type=llvm_struct_dtype_splat_type[dtype, n]
+        _type=__mlir_deferred_type[
+            `!llvm.struct<(`,
+            +_get_kgen_string[_get_llvm_struct_fields[n, dtype]()](),
+            `)>`,
+        ]
     ]()
 
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type=kgen_struct_dtype_splat_type[dtype, n]
+        _type=__mlir_deferred_type[
+            `!kgen.struct<(`,
+            +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
+            `)>`,
+        ]
     ](llvmst)
 
     comptime for i in range(n):
         var e = simd[i]
         st = __mlir_op.`kgen.struct.replace`[
-            _type=kgen_struct_dtype_splat_type[dtype, n],
+            _type=__mlir_deferred_type[
+                `!kgen.struct<(`,
+                +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
+                `)>`,
+            ],
             index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](e, st)
 
-    return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type=llvm_struct_dtype_splat_type[dtype, n]
-    ](st)
+    return rebind[llvm_struct_dtype_splat_type[dtype, n]](
+        __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=__mlir_deferred_type[
+                `!llvm.struct<(`,
+                +_get_kgen_string[_get_llvm_struct_fields[n, dtype]()](),
+                `)>`,
+            ]
+        ](st)
+    )
+
+
+@always_inline("nodebug")
+def _dtype_to_pop_scalar_str[dtype: DType]() -> StaticString:
+    comptime if dtype == DType.bool:
+        return "!pop.scalar<bool>"
+    elif dtype == DType.int8:
+        return "!pop.scalar<si8>"
+    elif dtype == DType.uint8:
+        return "!pop.scalar<ui8>"
+    elif dtype == DType.int16:
+        return "!pop.scalar<si16>"
+    elif dtype == DType.uint16:
+        return "!pop.scalar<ui16>"
+    elif dtype == DType.int32:
+        return "!pop.scalar<si32>"
+    elif dtype == DType.uint32:
+        return "!pop.scalar<ui32>"
+    elif dtype == DType.int64:
+        return "!pop.scalar<si64>"
+    elif dtype == DType.uint64:
+        return "!pop.scalar<ui64>"
+    elif dtype == DType.float16:
+        return "!pop.scalar<f16>"
+    elif dtype == DType.bfloat16:
+        return "!pop.scalar<bf16>"
+    elif dtype == DType.float32:
+        return "!pop.scalar<f32>"
+    elif dtype == DType.float64:
+        return "!pop.scalar<f64>"
+    elif dtype == DType.float8_e5m2:
+        return "!pop.scalar<f8E5M2>"
+    elif dtype == DType.float8_e5m2fnuz:
+        return "!pop.scalar<f8E5M2FNUZ>"
+    elif dtype == DType.float8_e4m3fn:
+        return "!pop.scalar<f8E4M3>"
+    elif dtype == DType.float8_e4m3fnuz:
+        return "!pop.scalar<f8E4M3FNUZ>"
+    elif dtype == DType.float8_e3m4:
+        return "!pop.scalar<f8E3M4>"
+    elif dtype == DType.float8_e8m0fnu:
+        return "!pop.scalar<f8E8M0FNU>"
+    else:
+        comptime assert False, "unsupported dtype for !pop.scalar"
+
+
+@always_inline("nodebug")
+def _get_kgen_struct_fields[n: Int, dtype: DType]() -> StaticString:
+    comptime s = _dtype_to_pop_scalar_str[dtype]()
+    comptime if n == 1:
+        return s
+    else:
+        return get_static_string[
+            s, ", ", _get_kgen_struct_fields[n - 1, dtype]()
+        ]()
+
+
+# `!kgen.struct` of N copies of `Scalar[dtype]`, built natively via
+# `TypeList.splat`; extracts work through `kgen.pack.extract` without a
+# deferred type.
+comptime _kgen_pack_splat_type[dtype: DType, n: Int] = __mlir_type[
+    `!kgen.struct<`,
+    ~TypeList.splat[
+        Trait=TrivialRegisterPassable, count=n, type=Scalar[dtype]
+    ]().values,
+    ` isParamPack>`,
+]
 
 
 @always_inline
@@ -263,16 +358,16 @@ def llvm_struct_to_simd[
         A SIMD value with the same number of elements as the `!llvm.struct`.
     """
     var simd = SIMD[dtype, n]()
-    var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type=kgen_struct_dtype_splat_type[dtype, n]
+    var pack = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=_kgen_pack_splat_type[dtype, n]
     ](llvmst)
 
     comptime for i in range(n):
-        var e = __mlir_op.`kgen.struct.extract`[
-            _type=Scalar[dtype]._mlir_type,
-            index=__mlir_attr[i._int_mlir_index(), `:index`],
-        ](st)
-
+        # `kgen.pack.extract` infers a parametric element type; an
+        # unrealized_conversion_cast retypes it to `!pop.scalar<dtype>`.
+        var e = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=Scalar[dtype]._mlir_type
+        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
         simd[i] = Scalar[dtype](mlir_value=e)
     return simd
 
@@ -292,23 +387,41 @@ def array_to_llvm_struct[
         A `!llvm.struct` with the same number of fields as the array value.
     """
     var llvmst = __mlir_op.`llvm.mlir.undef`[
-        _type=llvm_struct_dtype_splat_type[dtype, n]
+        _type=__mlir_deferred_type[
+            `!llvm.struct<(`,
+            +_get_kgen_string[_get_llvm_struct_fields[n, dtype]()](),
+            `)>`,
+        ]
     ]()
 
     var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type=kgen_struct_dtype_splat_type[dtype, n]
+        _type=__mlir_deferred_type[
+            `!kgen.struct<(`,
+            +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
+            `)>`,
+        ]
     ](llvmst)
 
     comptime for i in range(n):
         var e = array[i]
         st = __mlir_op.`kgen.struct.replace`[
-            _type=kgen_struct_dtype_splat_type[dtype, n],
+            _type=__mlir_deferred_type[
+                `!kgen.struct<(`,
+                +_get_kgen_string[_get_kgen_struct_fields[n, dtype]()](),
+                `)>`,
+            ],
             index=__mlir_attr[i._int_mlir_index(), `:index`],
         ](e, st)
 
-    return __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type=llvm_struct_dtype_splat_type[dtype, n]
-    ](st)
+    return rebind[llvm_struct_dtype_splat_type[dtype, n]](
+        __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=__mlir_deferred_type[
+                `!llvm.struct<(`,
+                +_get_kgen_string[_get_llvm_struct_fields[n, dtype]()](),
+                `)>`,
+            ]
+        ](st)
+    )
 
 
 @always_inline
@@ -326,15 +439,13 @@ def llvm_struct_to_array[
         A array value with the same number of elements as the `!llvm.struct`.
     """
     var array = StaticTuple[Scalar[dtype], n]()
-    var st = __mlir_op.`builtin.unrealized_conversion_cast`[
-        _type=kgen_struct_dtype_splat_type[dtype, n]
+    var pack = __mlir_op.`builtin.unrealized_conversion_cast`[
+        _type=_kgen_pack_splat_type[dtype, n]
     ](llvmst)
 
     comptime for i in range(n):
-        var e = __mlir_op.`kgen.struct.extract`[
-            _type=Scalar[dtype]._mlir_type,
-            index=__mlir_attr[i._int_mlir_index(), `:index`],
-        ](st)
-
+        var e = __mlir_op.`builtin.unrealized_conversion_cast`[
+            _type=Scalar[dtype]._mlir_type
+        ](__mlir_op.`kgen.struct.extract`[index=i._int_mlir_index()](pack))
         array[i] = Scalar[dtype](mlir_value=e)
     return array

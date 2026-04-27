@@ -59,11 +59,8 @@ from .amd_ping_pong_schedule import (
     MMA,
 )
 
-from .matmul_mma import (
-    QuadrantMmaOp,
-    TileLoaderLDS,
-)
-from structured_kernels.amd_tile_io import RegTileWriter
+from .matmul_mma import QuadrantMmaOp
+from structured_kernels.amd_tile_io import RegTileWriter, TileLoaderLDS
 
 
 # ===----------------------------------------------------------------------=== #

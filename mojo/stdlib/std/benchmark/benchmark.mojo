@@ -512,7 +512,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises unified {read num_iters}:
+        def iter_fn() raises {read num_iters}:
             for _ in range(num_iters):
                 func1()
 
@@ -612,7 +612,7 @@ def run[
     @always_inline
     def benchmark_fn(num_iters: Int) raises -> Int:
         @always_inline
-        def iter_fn() raises unified {read num_iters}:
+        def iter_fn() raises {read num_iters}:
             for _ in range(num_iters):
                 func3()
 

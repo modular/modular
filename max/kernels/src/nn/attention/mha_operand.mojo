@@ -14,6 +14,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
 from kv_cache.types import KVCacheT, swizzle_granularity, padded_depth
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
+from layout.tile_layout import TensorLayout
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
     _gather4_box_width,
@@ -54,6 +55,27 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
         head_dim_idx: UInt32 = 0,
     ) -> UnsafePointer[Scalar[Self.dtype], ImmutAnyOrigin]:
         ...
+
+    @always_inline
+    def block_paged_tile[
+        layout_t: TensorLayout,
+        //,
+        tile_size: Int,
+    ](
+        self,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        layout_val: layout_t,
+        head_dim_idx: UInt32 = 0,
+    ) -> TileTensor[Self.dtype, layout_t, ImmutAnyOrigin]:
+        """Wraps block_paged_ptr in a TileTensor with the caller's layout."""
+        return TileTensor[Self.dtype, layout_t, ImmutAnyOrigin](
+            ptr=self.block_paged_ptr[tile_size](
+                batch_idx, start_tok_idx, head_idx, head_dim_idx
+            ),
+            layout=layout_val,
+        )
 
     @always_inline
     def scales_block_paged_ptr(

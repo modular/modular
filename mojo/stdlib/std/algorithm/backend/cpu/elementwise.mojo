@@ -36,7 +36,7 @@ def _elementwise_impl_cpu[
     simd_width: Int,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
     *,
     use_blocking_impl: Bool = False,
     trace_description: StaticString = "",
@@ -75,7 +75,7 @@ def _elementwise_impl_cpu_1d[
     use_blocking_impl: Bool,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
 ](
     func: FuncType,
     shape: IndexList[rank, ...],
@@ -107,7 +107,7 @@ def _elementwise_impl_cpu_1d[
         @always_inline
         def blocking_task_fun[
             simd_width: Int
-        ](idx: Int) unified {read func,}:
+        ](idx: Int) {read func,}:
             func[simd_width, rank](IndexList[rank](idx))
 
         vectorize[simd_width, unroll_factor=unroll_factor](
@@ -128,7 +128,7 @@ def _elementwise_impl_cpu_1d[
         @always_inline
         def func_wrapper[
             simd_width: Int
-        ](idx: Int) unified {read start_offset, read func,}:
+        ](idx: Int) {read start_offset, read func,}:
             var offset = start_offset + idx
             func[simd_width, rank](IndexList[rank](offset))
 
@@ -146,7 +146,7 @@ def _elementwise_impl_cpu_nd[
     use_blocking_impl: Bool,
     FuncType: def[width: Int, rank: Int, alignment: Int = 1](
         IndexList[rank]
-    ) unified register_passable -> None,
+    ) register_passable -> None,
 ](
     func: FuncType,
     shape: IndexList[rank, ...],
@@ -193,7 +193,7 @@ def _elementwise_impl_cpu_nd[
             @always_inline
             def func_wrapper[
                 simd_width: Int
-            ](idx: Int) unified {mut indices, read func,}:
+            ](idx: Int) {mut indices, read func,}:
                 indices[rank - 1] = idx
                 func[simd_width, rank](indices.canonicalize())
 
@@ -230,7 +230,7 @@ def _elementwise_impl_cpu_nd[
             @always_inline
             def func_wrapper[
                 simd_width: Int
-            ](idx: Int) unified {mut indices, read func,}:
+            ](idx: Int) {mut indices, read func,}:
                 indices[rank - 1] = idx
                 func[simd_width, rank](indices.canonicalize())
 

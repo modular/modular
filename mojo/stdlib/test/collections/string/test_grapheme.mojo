@@ -15,6 +15,7 @@
 from std.collections.string import StringSlice
 from std.testing import (
     assert_equal,
+    assert_true,
     TestSuite,
 )
 
@@ -272,6 +273,250 @@ def test_keycap_sequence() raises:
     # Digit + U+FE0F (VS16) + U+20E3 (combining enclosing keycap) = 1 grapheme
     var s = _string_from_codepoints(0x31, 0xFE0F, 0x20E3)  # 1️⃣
     assert_equal(s.count_graphemes(), 1)
+
+
+# ===----------------------------------------------------------------------=== #
+# grapheme=: slice indexer
+# ===----------------------------------------------------------------------=== #
+
+
+def test_grapheme_slice_ascii() raises:
+    var s = StringSlice("Hello")
+    assert_equal(s[grapheme=0:5], "Hello")
+    assert_equal(s[grapheme=0:1], "H")
+    assert_equal(s[grapheme=1:4], "ell")
+    assert_equal(s[grapheme=4:5], "o")
+    assert_equal(s[grapheme=:], "Hello")
+    assert_equal(s[grapheme=:3], "Hel")
+    assert_equal(s[grapheme=2:], "llo")
+
+
+def test_grapheme_slice_empty_ranges() raises:
+    var s = StringSlice("Hello")
+    assert_equal(s[grapheme=0:0], "")
+    assert_equal(s[grapheme=3:3], "")
+    assert_equal(s[grapheme=5:5], "")
+
+
+def test_grapheme_slice_out_of_range_clamps() raises:
+    var s = StringSlice("Hi")
+    # End past the string clamps to the end.
+    assert_equal(s[grapheme=0:99], "Hi")
+    # Start at/after the end yields empty.
+    assert_equal(s[grapheme=2:99], "")
+    assert_equal(s[grapheme=5:], "")
+
+
+def test_grapheme_slice_empty_string() raises:
+    var s = StringSlice("")
+    assert_equal(s[grapheme=:], "")
+    assert_equal(s[grapheme=0:0], "")
+    assert_equal(s[grapheme=0:5], "")
+
+
+def test_grapheme_slice_combining_mark() raises:
+    # "café" decomposed: 'c','a','f','e' + combining acute (U+0301).
+    # 5 codepoints but 4 graphemes; the 4th grapheme spans 3 bytes.
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var decomposed = String("caf") + e_acute
+    var s = StringSlice(decomposed)
+    assert_equal(s.count_graphemes(), 4)
+    assert_equal(s[grapheme=0:3], "caf")
+    assert_equal(s[grapheme=3:4], e_acute)
+    assert_equal(s[grapheme=3:], e_acute)
+    assert_equal(s[grapheme=:4], String("caf") + e_acute)
+
+
+def test_grapheme_slice_emoji_zwj() raises:
+    # "a" + family ZWJ sequence + "b": 3 graphemes, but 9 codepoints.
+    var family = _string_from_codepoints(
+        0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466
+    )
+    var s = String("a") + family + String("b")
+    var slc = StringSlice(s)
+    assert_equal(slc.count_graphemes(), 3)
+    assert_equal(slc[grapheme=0:1], "a")
+    assert_equal(slc[grapheme=1:2], family)
+    assert_equal(slc[grapheme=2:3], "b")
+    assert_equal(slc[grapheme=0:2], String("a") + family)
+
+
+def test_grapheme_slice_flag_emoji() raises:
+    # US flag: two Regional Indicators = 1 grapheme, 8 bytes.
+    var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
+    var s = String("A") + flag + String("B")
+    var slc = StringSlice(s)
+    assert_equal(slc.count_graphemes(), 3)
+    assert_equal(slc[grapheme=1:2], flag)
+    assert_equal(slc[grapheme=0:3], String("A") + flag + String("B"))
+
+
+def test_grapheme_slice_crlf() raises:
+    # CR+LF is a single grapheme cluster.
+    var s = StringSlice("a\r\nb")
+    assert_equal(s.count_graphemes(), 3)
+    assert_equal(s[grapheme=1:2], "\r\n")
+    assert_equal(s[grapheme=0:2], "a\r\n")
+
+
+# ===----------------------------------------------------------------------=== #
+# Reverse grapheme iteration
+# ===----------------------------------------------------------------------=== #
+
+
+def _assert_reverse_matches(s: StringSlice) raises:
+    """Assert that iterating s.graphemes_reversed() yields the same clusters
+    as s.graphemes() in reverse order."""
+    var fwd = List[String]()
+    for g in s.graphemes():
+        fwd.append(String(g))
+    var rev = List[String]()
+    for g in s.graphemes_reversed():
+        rev.append(String(g))
+    assert_equal(len(fwd), len(rev))
+    for i in range(len(fwd)):
+        assert_equal(
+            fwd[len(fwd) - 1 - i],
+            rev[i],
+            msg=String(t"forward[{len(fwd) - 1 - i}] != reversed[{i}]"),
+        )
+
+
+def test_next_back_ascii() raises:
+    var s = StringSlice("abc")
+    var iter = s.graphemes()
+    assert_equal(iter.next_back().value(), "c")
+    assert_equal(iter.next_back().value(), "b")
+    assert_equal(iter.next_back().value(), "a")
+    assert_true(iter.next_back() is None)
+
+
+def test_next_back_empty() raises:
+    var iter = StringSlice("").graphemes()
+    assert_true(iter.next_back() is None)
+
+
+def test_peek_back_does_not_advance() raises:
+    var iter = StringSlice("abc").graphemes()
+    assert_equal(iter.peek_back().value(), "c")
+    assert_equal(iter.peek_back().value(), "c")
+    assert_equal(iter.next_back().value(), "c")
+    assert_equal(iter.peek_back().value(), "b")
+
+
+def test_next_back_combining_mark() raises:
+    # "caf" + e + combining acute: 4 graphemes.
+    # next_back() must return the full 2-codepoint cluster, not just the mark.
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var s = String("caf") + e_acute
+    var slc = StringSlice(s)
+    var iter = slc.graphemes()
+    assert_equal(iter.next_back().value(), e_acute)
+    assert_equal(iter.next_back().value(), "f")
+    assert_equal(iter.next_back().value(), "a")
+    assert_equal(iter.next_back().value(), "c")
+    assert_true(iter.next_back() is None)
+
+
+def test_next_back_emoji_zwj() raises:
+    # Family ZWJ sequence (7 codepoints, 1 grapheme) between ASCII markers.
+    var family = _string_from_codepoints(
+        0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466
+    )
+    var s = String("a") + family + String("b")
+    var slc = StringSlice(s)
+    var iter = slc.graphemes()
+    assert_equal(iter.next_back().value(), "b")
+    assert_equal(iter.next_back().value(), family)
+    assert_equal(iter.next_back().value(), "a")
+
+
+def test_next_back_flag_emoji() raises:
+    # Two RIs = 1 flag grapheme.
+    var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
+    var s = String("A") + flag + String("B")
+    var slc = StringSlice(s)
+    var iter = slc.graphemes()
+    assert_equal(iter.next_back().value(), "B")
+    assert_equal(iter.next_back().value(), flag)
+    assert_equal(iter.next_back().value(), "A")
+
+
+def test_next_back_crlf_single_grapheme() raises:
+    # CR+LF must remain a single grapheme cluster on backward scan.
+    var slc = StringSlice("a\r\nb")
+    var iter = slc.graphemes()
+    assert_equal(iter.next_back().value(), "b")
+    assert_equal(iter.next_back().value(), "\r\n")
+    assert_equal(iter.next_back().value(), "a")
+
+
+def test_next_back_indic_conjunct() raises:
+    # क + virama + ष = 1 grapheme via GB9c.
+    var s = _string_from_codepoints(0x0915, 0x094D, 0x0937)
+    var slc = StringSlice(s)
+    var iter = slc.graphemes()
+    assert_equal(
+        iter.next_back().value(),
+        _string_from_codepoints(0x0915, 0x094D, 0x0937),
+    )
+    assert_true(iter.next_back() is None)
+
+
+def test_alternating_next_and_next_back() raises:
+    # "abcde" -> a, e, b, d, c when alternating.
+    var iter = StringSlice("abcde").graphemes()
+    assert_equal(iter.next().value(), "a")
+    assert_equal(iter.next_back().value(), "e")
+    assert_equal(iter.next().value(), "b")
+    assert_equal(iter.next_back().value(), "d")
+    assert_equal(iter.next().value(), "c")
+    assert_true(iter.next() is None)
+    assert_true(iter.next_back() is None)
+
+
+def test_graphemes_reversed_for_loop() raises:
+    var s = StringSlice("abc")
+    var result = List[String]()
+    for g in s.graphemes_reversed():
+        result.append(String(g))
+    assert_equal(len(result), 3)
+    assert_equal(result[0], "c")
+    assert_equal(result[1], "b")
+    assert_equal(result[2], "a")
+
+
+def test_reverse_matches_forward_various() raises:
+    _assert_reverse_matches(StringSlice(""))
+    _assert_reverse_matches(StringSlice("a"))
+    _assert_reverse_matches(StringSlice("Hello, World!"))
+    _assert_reverse_matches(StringSlice("a\r\nb\r\nc"))
+
+    # Combining mark
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    _assert_reverse_matches(StringSlice(String("caf") + e_acute))
+
+    # Emoji ZWJ family
+    var family = _string_from_codepoints(
+        0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466
+    )
+    _assert_reverse_matches(StringSlice(String("a") + family + String("b")))
+
+    # Flag emoji
+    var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
+    _assert_reverse_matches(StringSlice(String("A") + flag + String("B")))
+
+    # Mixed scripts
+    var mixed = String("A") + chr(0x4E16) + chr(0x1F600)  # "A世😀"
+    _assert_reverse_matches(StringSlice(mixed))
+
+    # Indic conjunct
+    var indic = _string_from_codepoints(0x0915, 0x094D, 0x0937)
+    _assert_reverse_matches(StringSlice(indic))
+
+    # Keycap sequence
+    var keycap = _string_from_codepoints(0x31, 0xFE0F, 0x20E3)
+    _assert_reverse_matches(StringSlice(keycap))
 
 
 # ===----------------------------------------------------------------------=== #

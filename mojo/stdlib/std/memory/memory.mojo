@@ -173,7 +173,7 @@ def _memcpy_impl(
         n: The number of bytes to copy.
     """
 
-    def copy[width: Int](offset: Int) unified {read}:
+    def copy[width: Int](offset: Int) {read}:
         dest_data.store(offset, src_data.load[width=width](offset))
 
     comptime if is_gpu():
@@ -325,7 +325,7 @@ def memmove[
 def _memset_impl(
     ptr: UnsafePointer[mut=True, Byte, ...], value: Byte, count: Int
 ):
-    def fill[width: Int](offset: Int) unified {read}:
+    def fill[width: Int](offset: Int) {read}:
         ptr.store(offset, SIMD[DType.uint8, width](value))
 
     comptime simd_width = simd_width_of[Byte]()
@@ -377,7 +377,7 @@ def memset_zero[
     comptime if count > 128:
         return memset_zero(ptr, count)
 
-    def fill[width: Int](offset: Int) unified {read}:
+    def fill[width: Int](offset: Int) {read}:
         ptr.store(offset, SIMD[dtype, width](0))
 
     vectorize[simd_width_of[dtype]()](count, fill)
@@ -648,6 +648,8 @@ def forget_deinit[T: AnyType](var value: T):
     Example:
 
     ```mojo
+    from std.memory import forget_deinit
+
     @fieldwise_init
     struct Noisy:
         def __del__(deinit self):
@@ -664,6 +666,8 @@ def forget_deinit[T: AnyType](var value: T):
     it's fields, recursively. Example:
 
     ```mojo
+    from std.memory import forget_deinit
+
     @fieldwise_init
     struct Parent:
         var child: Child

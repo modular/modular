@@ -310,7 +310,7 @@ def apple_gemv[
             var acc_scalar = Scalar[c.dtype]()
 
             @always_inline
-            def compute_fn[width: Int](k: Int) unified {a, b, c, mut}:
+            def compute_fn[width: Int](k: Int) {a, b, c, mut}:
                 var a_val = a.load[width=width](Coord(Idx(0), Idx(k))).cast[
                     c.dtype
                 ]()

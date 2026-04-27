@@ -2295,7 +2295,7 @@ def fused_token_sampling_gpu[
 
         # softmax with temperature, then top-k+top-p rejection sampling.
 
-        if adjusted_max_k >= 64:
+        if adjusted_max_k >= 32:
             _topk_topp_sampling_fi[dtype, out_idx_type](
                 ctx,
                 adjusted_max_k,

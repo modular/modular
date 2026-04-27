@@ -20,14 +20,12 @@ from std.sys import (
     align_of,
     get_defined_bool,
     has_amd_gpu_accelerator,
-    has_amd_rdna_gpu_accelerator,
     has_nvidia_gpu_accelerator,
     is_amd_gpu,
     is_nvidia_gpu,
     simd_width_of,
     size_of,
 )
-from std.sys.info import _is_amd_rdna
 from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
 from std.algorithm import elementwise
@@ -83,10 +81,10 @@ from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from std.memory import stack_allocation
 
-from .amd.mha import Attention, MHAAttentionConfig
-from .amd.mha_structured import Attention
-from .amd_rdna.mha_rdna import MHAAttentionConfigRDNA
-from .amd_rdna.attention_rdna import AttentionRDNA
+from .amd_structured.attention import Attention
+from .amd_structured.mha_decode import Attention
+from .amd_structured.mha_decode_streaming import Attention
+from .amd_structured.mha_prefill import Attention
 from nn.attention.mha_mask import (
     CausalMask,
     MaterializedMask,
@@ -811,16 +809,29 @@ def flash_attention_dispatch[
                 var max_cache_valid_length_value = (
                     dispatch_metadata.max_cache_valid_length
                 )
+                var partition_num_keys = max_cache_valid_length_value
+                comptime if mask_t.check_mask_during_decoding:
+                    if partition_num_keys > 0:
+                        partition_num_keys -= Int(
+                            mask_functor.start_column[BM, BN, k_t.page_size](
+                                UInt32(partition_num_keys - 1)
+                            )
+                        )
+                        if partition_num_keys <= 0:
+                            partition_num_keys = 1
 
                 var num_partitions_value: Int
                 if num_partitions:
                     num_partitions_value = num_partitions.value()
-                elif dispatch_metadata.num_partitions > 0:
+                elif (
+                    dispatch_metadata.num_partitions > 0
+                    and partition_num_keys == max_cache_valid_length_value
+                ):
                     num_partitions_value = dispatch_metadata.num_partitions
                 else:
                     num_partitions_value = get_mha_decoding_num_partitions[
                         num_heads, group
-                    ](batch_size, max_cache_valid_length_value, ctx)
+                    ](batch_size, partition_num_keys, ctx)
 
                 comptime use_fa3_kernel = (
                     (is_sm90 or is_sm100)
@@ -1709,40 +1720,29 @@ def mha[
                 batch_idx,
                 sink_weights,
             )
-    elif _is_amd_rdna():
-        comptime rdna_config = MHAAttentionConfigRDNA[False, config, group]()
-        var attention = AttentionRDNA[config, group, False, sink](
-            rdna_config,
-            output_ptr + q_batch_offset,
-            q_ptr + q_batch_offset,
-            k,
-            v,
-            mask,
-            sink_weights,
-            batch_idx,
-            scale,
-            seq_len,
-            num_keys,
-            Int(start_pos),
-        )
-        attention.mha_prefill_rdna()
     elif is_amd_gpu():
-        comptime attention_config = MHAAttentionConfig[False, config, group]()
-        var attention = Attention[config, group, False, sink](
-            attention_config,
+        # Single unified gfx950 prefill kernel — handles BF16+FP8, any mask,
+        # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
+        # live in the kernel itself.
+        var sink_weights_ptr = OptionalReg[
+            UnsafePointer[Scalar[q_type], ImmutAnyOrigin]
+        ]()
+        comptime if sink:
+            sink_weights_ptr = sink_weights.value().ptr
+
+        var attention = Attention[config, group, sink](
             output_ptr + q_batch_offset,
             q_ptr + q_batch_offset,
             k,
             v,
             mask,
-            sink_weights,
+            sink_weights_ptr,
             batch_idx,
             scale,
             seq_len,
             num_keys,
             Int(start_pos),
         )
-
         attention.mha_prefill()
     else:
         CompilationTarget.unsupported_target_error[
@@ -3307,57 +3307,6 @@ def mha_decoding[
                 batch_idx,
                 sink_weights,
             )
-    elif _is_amd_rdna():
-        comptime config = MHAConfig[q_type](
-            num_heads,
-            depth,
-            num_queries_per_block=BM,
-            num_keys_per_block=BN,
-            BK=BK,
-            WM=WM,
-            WN=WN,
-            num_pipeline_stages=num_pipeline_stages,
-            k_group_size=group,
-        )
-        var sink_weights_lt: OptionalReg[
-            LayoutTensor[
-                q_ptr.type.dtype,
-                Layout.row_major(UNKNOWN_VALUE),
-                ImmutAnyOrigin,
-            ]
-        ] = None
-        if sink_weights:
-            sink_weights_lt = LayoutTensor[
-                q_ptr.type.dtype,
-                Layout.row_major(UNKNOWN_VALUE),
-                ImmutAnyOrigin,
-            ](
-                sink_weights.value().ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    IndexList[1](sink_weights.value().size())
-                ),
-            )
-
-        comptime rdna_config = MHAAttentionConfigRDNA[True, config, group]()
-        var attention = AttentionRDNA[config, group, True, sink](
-            rdna_config,
-            output_ptr + output_batch_offset,
-            q_ptr + q_batch_offset,
-            k,
-            v,
-            mask,
-            sink_weights_lt,
-            batch_idx,
-            scale,
-            1,
-            num_keys,
-            0,
-        )
-        attention.mha_decoding_rdna(
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            num_partitions,
-        )
     elif is_amd_gpu():
         comptime config = MHAConfig[q_type](
             num_heads,
@@ -3370,45 +3319,42 @@ def mha_decoding[
             num_pipeline_stages=num_pipeline_stages,
             k_group_size=group,
         )
-        var sink_weights_lt: OptionalReg[
-            LayoutTensor[
-                q_ptr.type.dtype,
-                Layout.row_major(UNKNOWN_VALUE),
-                ImmutAnyOrigin,
-            ]
-        ] = None
-        if sink_weights:
-            sink_weights_lt = LayoutTensor[
-                q_ptr.type.dtype,
-                Layout.row_major(UNKNOWN_VALUE),
-                ImmutAnyOrigin,
-            ](
-                sink_weights.value().ptr,
-                RuntimeLayout[Layout.row_major(UNKNOWN_VALUE)].row_major(
-                    IndexList[1](sink_weights.value().size())
-                ),
-            )
 
-        comptime attention_config = MHAAttentionConfig[True, config, group]()
-        var attention = Attention[config, group, True, sink](
-            attention_config,
+        comptime use_streaming_decode = get_defined_bool[
+            "MHA_STREAMING_DECODE", False
+        ]()
+
+        var sink_weights_ptr = OptionalReg[
+            UnsafePointer[Scalar[q_type], ImmutAnyOrigin]
+        ]()
+        comptime if sink:
+            sink_weights_ptr = sink_weights.value().ptr
+
+        var attention = Attention[config, group, sink, token_gen=True](
             output_ptr + output_batch_offset,
             q_ptr + q_batch_offset,
             k,
             v,
             mask,
-            sink_weights_lt,
+            sink_weights_ptr,
             batch_idx,
             scale,
             1,
             num_keys,
             0,
         )
-        attention.mha_decoding(
-            exp_sum_batch_ptr,
-            qk_max_batch_ptr,
-            num_partitions,
-        )
+        comptime if use_streaming_decode:
+            attention.mha_decode_streaming(
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                num_partitions,
+            )
+        else:
+            attention.mha_decode(
+                exp_sum_batch_ptr,
+                qk_max_batch_ptr,
+                num_partitions,
+            )
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -4750,10 +4696,9 @@ def mha_splitk_reduce[
     )
     var base_ptr = intermediate_output.ptr + base_offset
 
-    @parameter
     def accum_fn[
         simd_width: Int
-    ](partition_idx: Int) unified {exp_sums, base_ptr, partition_stride, mut}:
+    ](partition_idx: Int) {exp_sums, base_ptr, partition_stride, mut}:
         var partition_exp_sum = exp_sums.vectorize[simd_width]()[
             partition_idx // simd_width
         ]
@@ -5043,7 +4988,7 @@ def _bmm0_bs[
 
         def accum_fn[
             width: Int
-        ](offset: Int) unified {q, y, num_heads, depth, k_ptr, mut}:
+        ](offset: Int) {q, y, num_heads, depth, k_ptr, mut}:
             comptime alignment = align_of[SIMD[k_type, width]]()
             var q_val = q.load[
                 width=width, alignment=align_of[SIMD[q_type, width]]()

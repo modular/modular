@@ -14,6 +14,7 @@
 from max._core import __version__
 from max._core.driver import (
     DeviceEvent,
+    __unsafe_pack_py_host_func,
     enable_all_peer_access,
     get_virtual_device_api,
     get_virtual_device_count,

@@ -60,6 +60,46 @@ def test_unicode_grapheme_break_conformance() raises:
         )
 
 
+def test_unicode_grapheme_reverse_matches_forward() raises:
+    """Every conformance vector, iterated in reverse, produces the same
+    clusters as forward iteration reversed."""
+    var data = Span(global_constant[GRAPHEME_CONFORMANCE_DATA]())
+    var idx = 0
+    var test_num = 0
+
+    while idx < len(data):
+        var num_cps = Int(data[idx + 1])
+        idx += 2
+        var s = _string_from_data(data, idx, num_cps)
+        idx += num_cps
+        test_num += 1
+
+        var fwd = List[String]()
+        for g in s.graphemes():
+            fwd.append(String(g))
+
+        var rev = List[String]()
+        for g in s.graphemes_reversed():
+            rev.append(String(g))
+
+        assert_equal(
+            len(fwd),
+            len(rev),
+            msg=String(
+                t"test vector {test_num}: forward/reverse length mismatch"
+            ),
+        )
+        for i in range(len(fwd)):
+            assert_equal(
+                fwd[len(fwd) - 1 - i],
+                rev[i],
+                msg=String(
+                    t"test vector {test_num} position {i}: forward/reverse"
+                    t" cluster mismatch"
+                ),
+            )
+
+
 def main() raises:
     var suite = TestSuite.discover_tests[__functions_in_module()]()
     suite^.run()

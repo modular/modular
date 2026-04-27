@@ -15,35 +15,47 @@ Benchmark files should be prefixed with `bench_` in the filename.
 This is helpful for consistency, but also is recognized by tooling
 internally.
 
+## Target layout
+
+Every `bench_*.mojo` source produces two Bazel targets:
+
+- `<src>.smoke` — runs the benchmark once in `Mode.Test` (the `Bench`
+  framework's `-t` flag). This is the cheap compile-and-smoke check that runs
+  in presubmit on every PR, so that benchmarks do not silently bitrot.
+- `<src>.bench` — runs the benchmark with its configured repetitions and
+  reports timings. Tagged `manual` + `stdlib-benchmark` so it is excluded
+  from `//...` wildcards and only runs on explicit request.
+
+There is also a `//mojo/stdlib/benchmarks:all_benchmarks` `test_suite` that
+expands to every `.bench` target.
+
 ## How to run the benchmarks
 
-If you want to just compile and run all the benchmarks as-is,
-we need to execute the following command:
+Run a single benchmark with full measurements:
 
 ```bash
-./bazelw test mojo/stdlib/benchmarks/... --local_test_jobs=1 --test_output=all
+./bazelw test //mojo/stdlib/benchmarks/collections:bench_dict.mojo.bench \
+  --test_output=all
 ```
 
-This script builds the open source `std.mojopkg` and then executes
-all the benchmarks sequentially.
-
-If you wish to test changes you are making on the current branch, remove the
-`-t` flag on top of the `mojo/stdlib/benchmarks/BUILD.bazel` BAZEL file.
-
-To run a specific benchmark, you need to change the following line BAZEL file:
+Run every stdlib benchmark with full measurements:
 
 ```bash
-for src in glob(["**/*.mojo"])
+./bazelw test //mojo/stdlib/benchmarks:all_benchmarks \
+  --local_test_jobs=1 --test_output=all
 ```
 
-To something like this:
+`--local_test_jobs=1` serializes execution so concurrent benchmarks do not
+perturb each other's timings.
+
+To only run the smoke-test variants (what presubmit does):
 
 ```bash
-for src in glob(["**/collections/bench_dict.mojo"])
+./bazelw test //mojo/stdlib/benchmarks/...
 ```
 
-Remember to revert the `-t` flag and the `glob` changes again before pushing
-any code.
+No flag toggling is required — `//...` expansion skips the `.bench` targets
+because they are tagged `manual`.
 
 ## How to write effective benchmarks
 

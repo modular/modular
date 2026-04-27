@@ -73,10 +73,10 @@ struct Tuple[*element_types: Movable](
     """
 
     comptime _mlir_type = __mlir_type[
-        `!kgen.pack<:`,
+        `!kgen.struct<:`,
         type_of(Self.element_types.values),
         Self.element_types.values,
-        `>`,
+        ` isParamPack>`,
     ]
 
     var _mlir_value: Self._mlir_type
@@ -134,7 +134,7 @@ struct Tuple[*element_types: Movable](
     def __del__(deinit self):
         """Destructor that destroys all of the elements."""
 
-        # Run the destructor on each member, the destructor of !kgen.pack is
+        # Run the destructor on each member, the destructor of !kgen.struct is
         # trivial and won't do anything.
         comptime for i in range(Self.__len__()):
             comptime TUnknown = Self.element_types[i]
@@ -223,8 +223,9 @@ struct Tuple[*element_types: Movable](
         var storage_kgen_ptr = UnsafePointer(to=self._mlir_value).address
 
         # KGenPointer to the element.
-        var elt_kgen_ptr = __mlir_op.`kgen.pack.gep`[
-            index=idx._int_mlir_index()
+        var elt_kgen_ptr = __mlir_op.`kgen.struct.gep`[
+            index=idx._int_mlir_index(),
+            _type=UnsafePointer[Self.element_types[idx]]._mlir_type,
         ](storage_kgen_ptr)
         return UnsafePointer[_, origin_of(self)](elt_kgen_ptr)[]
 

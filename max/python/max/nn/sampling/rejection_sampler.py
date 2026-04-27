@@ -337,21 +337,31 @@ def greedy_acceptance_sampler(
 
 
 class AcceptanceSampler:
-    """Dispatches between greedy and synthetic acceptance sampling.
+    """Dispatches between greedy, synthetic, and stochastic acceptance.
 
-    When ``synthetic_acceptance_rate`` is set, the per-position
-    acceptance probability is calibrated so that the mean joint
-    acceptance across ``num_draft_steps`` matches the configured rate.
-    ``base_rate`` is solved for by
-    :func:`compute_synthetic_acceptance_base_rate`.
+    - ``synthetic_acceptance_rate`` set → synthetic (benchmarking) mode.
+      The per-position acceptance probability is calibrated so that
+      the mean joint acceptance across ``num_draft_steps`` matches
+      the configured rate, via
+      :func:`compute_synthetic_acceptance_base_rate`.
+    - ``use_stochastic=True`` → stochastic (real) target-only rejection
+      sampling. The caller must then pass per-row sampling params
+      (``temperature``, ``top_k``, ``max_k``, ``top_p``, ``min_top_p``)
+      at call time.
+    - Otherwise → greedy (accept iff draft token == target argmax).
+
+    Synthetic mode takes priority over stochastic when both are
+    configured; the stochastic params are ignored in that case.
     """
 
     def __init__(
         self,
         synthetic_acceptance_rate: float | None = None,
         num_draft_steps: int = 1,
+        use_stochastic: bool = False,
     ) -> None:
         self._num_draft_steps = num_draft_steps
+        self._use_stochastic = use_stochastic
         self._base_rate: float | None = None
 
         if synthetic_acceptance_rate is not None and num_draft_steps > 0:
@@ -364,18 +374,25 @@ class AcceptanceSampler:
         self,
         draft_tokens: TensorValue,
         target_logits: TensorValue,
+        *,
         seed: TensorValue | None = None,
+        temperature: TensorValue | None = None,
+        top_k: TensorValue | None = None,
+        max_k: TensorValue | None = None,
+        top_p: TensorValue | None = None,
+        min_top_p: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
         Args:
             draft_tokens: Draft token ids from the draft model.
             target_logits: Verified target logits.
-            seed: Optional per-execute seed tensor. When provided and
-                synthetic mode is active, feeds
-                :func:`synthetic_acceptance_sampler` so every graph
-                execution samples fresh RNG values. When ``None`` in
-                synthetic mode, the graph falls back to a static seed.
+            seed: Optional per-execute seed tensor. Consumed by the
+                synthetic and stochastic paths; ignored by greedy.
+            temperature, top_k, max_k, top_p, min_top_p: Per-row
+                sampling params. Required when the sampler was built
+                with ``use_stochastic=True`` and synthetic mode is off;
+                ignored otherwise.
         """
         if self._base_rate is not None:
             return synthetic_acceptance_sampler(
@@ -383,6 +400,22 @@ class AcceptanceSampler:
                 target_logits,
                 base_acceptance_rate=self._base_rate,
                 num_draft_steps=self._num_draft_steps,
+                seed=seed,
+            )
+        if self._use_stochastic:
+            assert temperature is not None
+            assert top_k is not None
+            assert max_k is not None
+            assert top_p is not None
+            assert min_top_p is not None
+            return stochastic_acceptance_sampler(
+                draft_tokens,
+                target_logits,
+                temperature=temperature,
+                top_k=top_k,
+                max_k=max_k,
+                top_p=top_p,
+                min_top_p=min_top_p,
                 seed=seed,
             )
         return greedy_acceptance_sampler(draft_tokens, target_logits)
@@ -396,7 +429,7 @@ def stochastic_acceptance_sampler(
     max_k: TensorValue,
     top_p: TensorValue,
     min_top_p: TensorValue,
-    seed: int = 0,
+    seed: int | TensorValue | None = 0,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
@@ -408,9 +441,17 @@ def stochastic_acceptance_sampler(
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
-    ops.random.set_seed(seed)
+    if seed is None:
+        ops.random.set_seed(42)
+    else:
+        ops.random.set_seed(seed)
 
     device = draft_tokens.device
+
+    temperature = ops.max(
+        temperature,
+        ops.constant(1e-6, dtype=temperature.dtype, device=temperature.device),
+    )
 
     target_logits_3d = _reshape_target_logits(target_logits)
 

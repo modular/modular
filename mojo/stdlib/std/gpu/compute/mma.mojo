@@ -28,8 +28,8 @@ from std.sys.info import (
 )
 
 from std.gpu._utils import (
+    _get_llvm_struct_fields,
     array_to_llvm_struct,
-    dtype_to_llvm_type,
     llvm_struct_to_array,
     llvm_struct_to_simd,
     simd_to_llvm_struct,
@@ -740,15 +740,9 @@ def wgmma_async[
         scaleB=_to_nvvm_scale_in[scale_b](),
         layoutA=_to_nvvm_layout[layout_a](),
         layoutB=_to_nvvm_layout[layout_b](),
-        _type=__mlir_type[
+        _type=__mlir_deferred_type[
             `!llvm.struct<(`,
-            __mlir_type[
-                `!kgen.param_list_splat<`,
-                dtype_to_llvm_type[c_dtype],
-                `, `,
-                width._int_mlir_index(),
-                `>`,
-            ],
+            +_get_kgen_string[_get_llvm_struct_fields[width, c_dtype]()](),
             `)>`,
         ],
     ](llvmst, desc_a_value, desc_b_value)
@@ -867,15 +861,9 @@ def wgmma_async[
         scaleB=_to_nvvm_scale_in[scale_b](),
         layoutA=_to_nvvm_layout[layout_a](),
         layoutB=_to_nvvm_layout[layout_b](),
-        _type=__mlir_type[
+        _type=__mlir_deferred_type[
             `!llvm.struct<(`,
-            __mlir_type[
-                `!kgen.param_list_splat<`,
-                dtype_to_llvm_type[c_dtype],
-                `, `,
-                width._mlir_value,
-                `>`,
-            ],
+            +_get_kgen_string[_get_llvm_struct_fields[width, c_dtype]()](),
             `)>`,
         ],
     ](llvmst, desc_a_value, desc_b_value)

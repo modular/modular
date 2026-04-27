@@ -315,7 +315,7 @@ struct BitSet[size: Int](Boolable, Copyable, Defaultable, Sized, Writable):
         @always_inline
         def _intersect[
             simd_width: Int
-        ](offset: Int) unified {mut res, read left, read right}:
+        ](offset: Int) {mut res, read left, read right}:
             # Initialize SIMD vectors to hold multiple words from each bitset
             var left_vec = SIMD[DType.int64, simd_width]()
             var right_vec = SIMD[DType.int64, simd_width]()

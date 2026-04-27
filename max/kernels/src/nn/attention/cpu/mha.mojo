@@ -681,7 +681,7 @@ struct _FlashAttention[
             @always_inline
             def do_correction[
                 _simd_width: Int
-            ](idx: Int) unified {o_row_ptr, fixup_val, mut}:
+            ](idx: Int) {o_row_ptr, fixup_val, mut}:
                 var val = o_row_ptr.load[width=_simd_width](idx)
                 o_row_ptr.store(idx, val * fixup_val)
 
@@ -925,7 +925,7 @@ struct _FlashAttention[
                     @always_inline
                     def do_final[
                         _simd_width: Int
-                    ](idx: Int) unified {oz_ptr, o_ptr, reciprocal, mut}:
+                    ](idx: Int) {oz_ptr, o_ptr, reciprocal, mut}:
                         var v = oz_ptr.load[width=_simd_width](idx)
                         o_ptr.store(idx, v * reciprocal)
 

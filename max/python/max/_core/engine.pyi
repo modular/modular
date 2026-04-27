@@ -296,11 +296,8 @@ class DebugConfig:
     such as ``NaN`` checks, synchronous GPU execution, stack traces, and IR
     dumping.
 
-    You can configure debugging options three ways:
+    There are two ways to configure debugging options:
 
-    * Add a ``[max-debug]`` section to the ``modular.cfg`` configuration
-      file with the properties below in kebab case. For example,
-      ``nan-check = true`` or ``assert-level = all``.
     * Set the ``MODULAR_DEBUG`` environment variable to a list of
       kebab-case property names separated by commas. Boolean properties
       can be enabled with just the name; others use ``name=value`` form.

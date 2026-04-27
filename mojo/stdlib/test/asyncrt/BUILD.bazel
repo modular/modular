@@ -27,6 +27,7 @@ _MACOS_INCOMPATIBLE = select({
 _EXTRA_CONSTRAINTS = {
     "test_hip.mojo": ["//:amd_gpu"],
     "test_cuda.mojo": ["//:nvidia_gpu"],
+    "test_host_func.mojo": ["//:nvidia_gpu"],
     "test_copies.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2562
     "test_smoke.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: GEX-2554
 }

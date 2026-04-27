@@ -50,7 +50,7 @@ from .batch_constructor import TextBatchConstructor
 from .batch_constructor.text_batch_constructor import BatchSchedulingStrategy
 from .config import TokenGenerationSchedulerConfig
 from .di_dispatchers import PrefillDispatcherServer
-from .utils import SchedulerLogger
+from .utils import SchedulerLogger, reshape_flat_kv_blocks_to_grid
 
 logger = logging.getLogger("max.serve")
 
@@ -87,15 +87,9 @@ class PrefillScheduler(Scheduler):
             RequestID, tuple[ClientIdentity, TransferDest]
         ] = {}
 
-        self.transfer_engine = KVTransferEngine(
+        self.transfer_engine = KVTransferEngine.from_paged_kv_cache(
             name=f"prefill_agent_{uuid.uuid4()}",
-            # TODO: Also support scales tensors
-            tensors=[
-                kv_cache.get_device_buffer(replica_idx).values
-                for replica_idx in range(scheduler_config.data_parallel_degree)
-            ],
-            # Assume all replicas have the same number of pages.
-            total_num_pages=kv_cache.get_num_pages(replica_idx=0),
+            kv_cache=kv_cache,
         )
 
         # Register draft KV cache blocks for speculative decoding so that
@@ -104,9 +98,11 @@ class PrefillScheduler(Scheduler):
         if isinstance(draft_kv_blocks, list):
             self.transfer_engine.register_tensor_group(
                 name="draft",
-                # draft_kv_blocks is list[Buffer] (one per replica).
-                # Wrap each in a list for the [replica][tp_shard=1] shape.
-                tensors=[[buf] for buf in draft_kv_blocks],
+                tensors=reshape_flat_kv_blocks_to_grid(
+                    draft_kv_blocks,
+                    dp=scheduler_config.data_parallel_degree,
+                    group_name="draft",
+                ),
                 total_num_pages=kv_cache.get_num_pages(replica_idx=0),
             )
 
@@ -232,7 +228,6 @@ class PrefillScheduler(Scheduler):
         dst_idxs = dst_idxs[num_already_cached_blocks:]
         assert dst_idxs.count(-1) == 0
 
-        # Initiate the KV transfer
         logger.debug("initiating transfer from prefill worker.")
         transfer_data = self.transfer_engine.initiate_send_transfer(
             remote_metadata,

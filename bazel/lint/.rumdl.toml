@@ -18,6 +18,7 @@ disable = [
 exclude = [
     ".claude",
     "third-party",
+    "oss/mojo-gpu-puzzles/book",
 ]
 
 [ul-style]

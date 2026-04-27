@@ -316,7 +316,7 @@ struct OwnedDLHandle(Movable):
         from std.ffi import OwnedDLHandle
 
         var lib = OwnedDLHandle("libm.so")
-        var sqrt = lib.get_function[def(Float64) abi("C") -> Float64]("sqrt")
+        var sqrt = lib.get_function[def(Float64) thin abi("C") -> Float64]("sqrt")
         ```
 
         Parameters:

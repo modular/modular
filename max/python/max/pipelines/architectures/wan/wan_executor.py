@@ -241,11 +241,12 @@ class WanExecutor(
         )
 
         # Compute RoPE for the latent resolution.
-        rope_cos, rope_sin = self.transformer.compute_rope(
-            num_frames=int(latents.shape[2]) if latents.ndim == 5 else 1,
-            height=int(latents.shape[3]) if latents.ndim == 5 else 1,
-            width=int(latents.shape[4]) if latents.ndim == 5 else 1,
-        )
+        with Tracer("compute_rope"):
+            rope_cos, rope_sin = self.transformer.compute_rope(
+                num_frames=int(latents.shape[2]) if latents.ndim == 5 else 1,
+                height=int(latents.shape[3]) if latents.ndim == 5 else 1,
+                width=int(latents.shape[4]) if latents.ndim == 5 else 1,
+            )
 
         # Spatial shape carrier.
         p_t, p_h, p_w = self.transformer.config.patch_size
@@ -332,7 +333,8 @@ class WanExecutor(
         device = self._model_device
 
         # Bulk device transfer.
-        inputs = inputs.to(device)
+        with Tracer("inputs_to_device"):
+            inputs = inputs.to(device)
 
         # 1. Encode prompts.
         # num_images_per_prompt includes the frame count for
@@ -441,29 +443,13 @@ class WanExecutor(
             step_state: WanUniPCState = (None, None, None)
 
             # High-noise phase (or full denoising if no MoE).
-            latents, step_state = self._run_denoising_phase(
-                latents=latents,
-                use_secondary_transformer=False,
-                prompt_embeds=prompt_embeds,
-                negative_prompt_embeds=negative_prompt_embeds,
-                rope_cos=inputs.rope_cos,
-                rope_sin=inputs.rope_sin,
-                batched_timesteps=batched_timesteps,
-                coeff_buffers=coeff_buffers,
-                do_cfg=do_cfg,
-                guidance_scale=guidance_scale_high,
-                step_range=range(boundary_step_idx),
-                desc="Denoising (high-noise)" if has_moe else "Denoising",
-                spatial_shape=inputs.spatial_shape,
-                step_state=step_state,
-                i2v_condition=i2v_condition,
+            high_phase_name = (
+                "denoising_phase_high_noise" if has_moe else "denoising_phase"
             )
-
-            # Low-noise phase (MoE only).
-            if has_moe and boundary_step_idx < num_steps:
-                latents, _ = self._run_denoising_phase(
+            with Tracer(high_phase_name):
+                latents, step_state = self._run_denoising_phase(
                     latents=latents,
-                    use_secondary_transformer=True,
+                    use_secondary_transformer=False,
                     prompt_embeds=prompt_embeds,
                     negative_prompt_embeds=negative_prompt_embeds,
                     rope_cos=inputs.rope_cos,
@@ -471,13 +457,34 @@ class WanExecutor(
                     batched_timesteps=batched_timesteps,
                     coeff_buffers=coeff_buffers,
                     do_cfg=do_cfg,
-                    guidance_scale=guidance_scale_low,
-                    step_range=range(boundary_step_idx, num_steps),
-                    desc="Denoising (low-noise)",
+                    guidance_scale=guidance_scale_high,
+                    step_range=range(boundary_step_idx),
+                    desc="Denoising (high-noise)" if has_moe else "Denoising",
                     spatial_shape=inputs.spatial_shape,
                     step_state=step_state,
                     i2v_condition=i2v_condition,
                 )
+
+            # Low-noise phase (MoE only).
+            if has_moe and boundary_step_idx < num_steps:
+                with Tracer("denoising_phase_low_noise"):
+                    latents, _ = self._run_denoising_phase(
+                        latents=latents,
+                        use_secondary_transformer=True,
+                        prompt_embeds=prompt_embeds,
+                        negative_prompt_embeds=negative_prompt_embeds,
+                        rope_cos=inputs.rope_cos,
+                        rope_sin=inputs.rope_sin,
+                        batched_timesteps=batched_timesteps,
+                        coeff_buffers=coeff_buffers,
+                        do_cfg=do_cfg,
+                        guidance_scale=guidance_scale_low,
+                        step_range=range(boundary_step_idx, num_steps),
+                        desc="Denoising (low-noise)",
+                        spatial_shape=inputs.spatial_shape,
+                        step_state=step_state,
+                        i2v_condition=i2v_condition,
+                    )
 
         # 6. Decode.
         with Tracer("decode_outputs"):

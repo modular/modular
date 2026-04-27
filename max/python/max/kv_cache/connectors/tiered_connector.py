@@ -287,6 +287,7 @@ class TieredConnector:
         self,
         block_ids: list[int],
         block_hashes: list[int],
+        parent_seq_hash: int = 0,
     ) -> None:
         """Queue device blocks for offload to host. Executed in flush()."""
         for block_id, block_hash in zip(block_ids, block_hashes, strict=True):

@@ -80,6 +80,7 @@ _4X_GPU_TESTS = [
     "test_send_recv_multi_tensor_threaded_gpu.py",
     "test_send_recv_multi_tensor_multi_process_gpu.py",
     "test_send_recv_dp2_tp2_gpu.py",
+    "test_send_recv_heterogeneous_mla_gpu.py",
 ]
 
 modular_py_test(

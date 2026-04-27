@@ -807,7 +807,7 @@ struct Optional[T: Movable](
     def map[
         To: Movable,
         //,
-        Mapper: def(var Self.T) unified -> To,
+        Mapper: def(var Self.T) -> To,
     ](deinit self, mapper: Mapper) -> Optional[To]:
         """Applies a function to the contained value (if any), returning an
         `Optional` containing the result.
@@ -855,7 +855,7 @@ struct Optional[T: Movable](
     def and_then[
         To: Movable,
         //,
-        Mapper: def(var Self.T) unified -> Optional[To],
+        Mapper: def(var Self.T) -> Optional[To],
     ](deinit self, mapper: Mapper) -> Optional[To]:
         """Calls `mapper` on the contained value (if any), returning the result.
 

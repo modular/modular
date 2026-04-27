@@ -13,6 +13,7 @@
 """Implements `TString`, a template string that captures interpolated values at compile-time."""
 from std.collections.string.format import _FormatUtils, _comptime_list_to_span
 from std.utils import Variant
+from std.reflection.traits import AllWritable
 import std.format._utils as fmt
 
 
@@ -61,9 +62,7 @@ struct TString[
         var offset = 0
 
         @always_inline
-        def write_string() unified {
-            read encoded_bytes, read offset, mut writer
-        } -> Int:
+        def write_string() {read encoded_bytes, read offset, mut writer} -> Int:
             var literal_start = encoded_bytes.unsafe_ptr() + offset
             var literal_length = _strlen(literal_start)
             var string_literal = StringSlice(
@@ -112,6 +111,8 @@ struct TString[
         Args:
             writer: The writer to output the debug representation to.
         """
+
+        comptime assert AllWritable[*Self.Ts]  # satisfy where clause.
 
         @parameter
         def fields(mut writer: Some[Writer]):
@@ -225,7 +226,7 @@ def _encode_format_string(format: StringSlice) raises -> List[Byte]:
     var i = 0
 
     @always_inline
-    def peek_next_is(byte: Byte) unified {read} -> Bool:
+    def peek_next_is(byte: Byte) {read} -> Bool:
         return i + 1 < len(bytes) and bytes[i + 1] == byte
 
     while i < len(bytes):

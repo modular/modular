@@ -250,7 +250,7 @@ def _get_bounds(tensor: TileTensor) -> Int:
     """
     var dim0 = Int(tensor.dim[0]())
     var dim1 = Int(tensor.dim[1]())
-    if dim0 == 0 or dim1 == 0:
+    if dim0 <= 0 or dim1 <= 0:
         return 0
     var stride0 = Int(tensor.layout.stride[0]().value())
     var stride1 = Int(tensor.layout.stride[1]().value())

@@ -991,39 +991,6 @@ class MemSymbolTripleAttr(max._core.Attribute):
     @property
     def is_move(self) -> max._core.dialects.builtin.UnitAttr: ...
 
-class PackAttr(max._core.Attribute):
-    """
-    The `#kgen.pack` attribute contains a heterogenously typed list of constant
-    elements. It can be used to represent constant pack values, and so is of
-    pack type.
-
-    Example:
-
-    ```mlir
-    // A pack of 3 elements.
-    %0 = kgen.param.constant: !kgen.pack<[i8, ui4, i32]> = <<3, 1, 4>>
-    // An empty pack.
-    %1 = kgen.param.constant: !kgen.pack<[]> = <<>>
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: PackType,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        values: Sequence[max._core.dialects.builtin.TypedAttr],
-        type: PackType,
-    ) -> None: ...
-    @property
-    def values(self) -> Sequence[max._core.dialects.builtin.TypedAttr]: ...
-    @property
-    def type(self) -> PackType: ...
-
 class ParamDeclArrayAttr(max._core.Attribute):
     @overload
     def __init__(self, param_decl: ParamDeclAttr) -> None: ...
@@ -2121,8 +2088,6 @@ class FnEffects(enum.Enum):
 
     refresult = 32
 
-    unified = 64
-
     register_passable = 128
 
     cabi = 512
@@ -3191,129 +3156,10 @@ class IsRunInComptimeInterpreterOp(max._core.Operation):
         result: max._core.dialects.builtin.IntegerType,
     ) -> None: ...
 
-class PackCreateOp(max._core.Operation):
-    """
-    The `kgen.pack.create` operation creates a value of `!kgen.pack` type,
-    populated with the given SSA values.
-
-    Example:
-
-    ```mlir
-    kgen.generator @pack<Ts: param_list<!kgen.type>>(
-      %arg0: f32, %arg1: si8
-    ) {
-      // Create a pack of two elements.
-      %0 = kgen.pack.create(%arg0, %arg1) : !kgen.pack<[f32, si8]>
-
-      // Create that same pack of two elements, but with a parameterized result.
-      %1 = kgen.pack.create(%arg0 : f32, %arg1 : si8) : !kgen.pack<Ts>
-
-      // Create an empty pack.
-      %2 = kgen.pack.create() : !kgen.pack<[]>
-
-      kgen.return
-    }
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PackType,
-        elements: Sequence[max._core.Value[max._core.Type]],
-    ) -> None: ...
-    @property
-    def elements(self) -> Sequence[max._core.Value[max._core.Type]]: ...
-
-class PackExtractOp(max._core.Operation):
-    """
-    The `kgen.pack.extract` operation returns the element of a pack at the
-    provided index.  The index must be a parameter of index type.  This
-    operation is resolved post-elaboration when the pack details become known.
-
-    Example:
-
-    ```mlir
-    kgen.generator @pack<Ts: param_list<!kgen.type>, T: type, I: index>(
-      %arg0: !kgen.pack<i32, T>
-      %arg1: Ts,
-    ) {
-      // Get the first element, of type `i32`.
-      %0 = kgen.pack.extract %arg0[0] : <[i32, T]>
-      // Get the second element, of type `!kgen.param<T>`.
-      %1 = kgen.pack.extract %arg0[1] : <[i32, T]>
-
-      // Get the element at an offset `I + 1`.
-      %2 = kgen.pack.extract %arg0[add(I, 1)] : <[i32, T]>
-
-      // Get the element at index 3.
-      %3 = kgen.pack.extract %arg1[3] : <Ts>
-
-      kgen.return
-    }
-    ```
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.Type,
-        pack: max._core.Value[PackType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        pack: max._core.Value[PackType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def pack(self) -> max._core.Value[PackType]: ...
-    @property
-    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @index.setter
-    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
-class PackGepOp(max._core.Operation):
-    """
-    The `kgen.pack.gep` operation returns a pointer to the element of a pack at
-    the provided index.  The index must be a parameter of index type.  This
-    operation is resolved post-elaboration when the pack details become known.
-    """
-
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: PointerType,
-        pack: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @overload
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        pack: max._core.Value[PointerType],
-        index: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def pack(self) -> max._core.Value[PointerType]: ...
-    @property
-    def index(self) -> max._core.dialects.builtin.TypedAttr: ...
-    @index.setter
-    def index(self, arg: max._core.dialects.builtin.TypedAttr, /) -> None: ...
-
 class PackLoadOp(max._core.Operation):
     """
-    The `kgen.pack.load` operation takes a pack of !kgen.pointer values and
-    loads each one into a pack without the pointer type.  This requires
+    The `kgen.pack.load` operation takes a struct of !kgen.pointer values and
+    loads each one into a struct without the pointer type.  This requires
     elements with trivially loadable types supported by pop.load.
     """
 
@@ -3322,43 +3168,18 @@ class PackLoadOp(max._core.Operation):
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        result: PackType,
-        pack: max._core.Value[PackType],
+        result: StructType,
+        pack: max._core.Value[StructType],
     ) -> None: ...
     @overload
     def __init__(
         self,
         builder: max._core.OpBuilder,
         location: Location,
-        pack: max._core.Value[PackType],
+        pack: max._core.Value[StructType],
     ) -> None: ...
     @property
-    def pack(self) -> max._core.Value[PackType]: ...
-
-class PackSizeOp(max._core.Operation):
-    """
-    The `kgen.pack.size` operation takes an operand with a `!kgen.pack` type and
-    returns the number of elements in the pack.
-
-    Example:
-
-    ```mlir
-    // Get the size of a pack.
-    kgen.pack.size %0 : <Ts>
-    // Get the size of a concrete pack with 2 elements.
-    kgen.pack.size %1 : <[i32, f32]>
-    ```
-    """
-
-    def __init__(
-        self,
-        builder: max._core.OpBuilder,
-        location: Location,
-        result: max._core.dialects.builtin.IndexType,
-        operand: max._core.Value[PackType],
-    ) -> None: ...
-    @property
-    def operand(self) -> max._core.Value[PackType]: ...
+    def pack(self) -> max._core.Value[StructType]: ...
 
 class ParamApplyOp(max._core.Operation):
     """
@@ -4563,6 +4384,27 @@ class GeneratorType(max._core.Type):
     @property
     def metadata(self) -> GeneratorMetadataAttrInterface: ...
 
+class MLIRDeferredType(max._core.Type):
+    """
+    A `!kgen.deferred_type` wraps an `#kgen.attr_ctor_deferred` attribute that,
+    once all parameters are concrete, is concatenated into a type string and
+    parsed by the elaborator to produce the actual MLIR type.
+
+    This type is produced by the Mojo parser when `__mlir_deferred_type[...]`
+    is used as a function return type and the type string cannot be parsed at
+    parse time (because it references not-yet-concrete parameters).
+
+    Example:
+
+    ```mlir
+    !kgen.deferred_type<#kgen.attr_ctor_deferred("llvm.array<", ...)>
+    ```
+    """
+
+    def __init__(self, attr: max._core.Attribute) -> None: ...
+    @property
+    def attr(self) -> max._core.Attribute | None: ...
+
 class NeverType(max._core.Type):
     """
     A `!kgen.never` type represents a type that cannot be
@@ -4602,40 +4444,6 @@ class NoneType(max._core.Type):
     """
 
     def __init__(self) -> None: ...
-
-class PackType(max._core.Type):
-    """
-    A `!kgen.pack` type represents a sequence of heterogeneously typed elements.
-    This type can be used to represent a tuple of 0 or more elements.
-
-    Example:
-
-    ```mlir
-    // A concrete pack type with no element types.
-    !kgen.pack<[]>
-
-    // A concrete pack type with two element types.
-    !kgen.pack<[i32, i64]>
-
-    kgen.generator @pack<Ts: param_list<!kgen.type>, T0: type, T1: type>(
-      // A pack type parameterized on a variadic sequence of elements.
-      %0: !kgen.pack<Ts>,
-      // A pack type parameterized on two element types.
-      %1: !kgen.pack<[T0, T1]>,
-    ) { kgen.return }
-    ```
-    """
-
-    @overload
-    def __init__(
-        self, variadic: max._core.dialects.builtin.TypedAttr
-    ) -> None: ...
-    @overload
-    def __init__(
-        self, variadic: max._core.dialects.builtin.TypedAttr
-    ) -> None: ...
-    @property
-    def variadic(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class ParamClosureType(max._core.Type):
     """
@@ -4690,35 +4498,6 @@ class ParamClosureType(max._core.Type):
     def parent_symbol(self) -> max._core.dialects.builtin.SymbolRefAttr: ...
     @property
     def name(self) -> max._core.dialects.builtin.StringAttr: ...
-
-class ParamListSplatType(max._core.Type):
-    """
-    The `!kgen.param_list_splat` type represents deferred type that splats
-    element type specified number of times. The type cannot be used standalone
-    and has to be used either within `!kgen.struct` or `!llvm.struct` types.
-
-    ```mlir
-    !kgen.struct<(!kgen.param_list_splat<index, 3>)>
-    !llvm.struct<(!kgen.param_list_splat<index, 5>)>
-    ```
-
-    will be concretized to
-
-    ```mlir
-    !kgen.struct<(index, index, index)>
-    !llvm.struct<(index, index, index, index, index)>
-    ```
-    """
-
-    def __init__(
-        self,
-        element_type: max._core.Type,
-        count: max._core.dialects.builtin.TypedAttr,
-    ) -> None: ...
-    @property
-    def element_type(self) -> max._core.Type | None: ...
-    @property
-    def count(self) -> max._core.dialects.builtin.TypedAttr: ...
 
 class ParamListType(max._core.Type):
     """
@@ -4892,6 +4671,7 @@ class StructType(max._core.Type):
         variadic: max._core.dialects.builtin.TypedAttr,
         is_memory_only: max._core.dialects.builtin.TypedAttr = ...,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+        is_param_pack: bool = False,
     ) -> None: ...
     @overload
     def __init__(
@@ -4899,6 +4679,7 @@ class StructType(max._core.Type):
         variadic: max._core.dialects.builtin.TypedAttr,
         is_memory_only: bool,
         min_alignment: max._core.dialects.builtin.TypedAttr = ...,
+        is_param_pack: bool = False,
     ) -> None: ...
     @property
     def element_types_variadic(
@@ -4908,6 +4689,8 @@ class StructType(max._core.Type):
     def is_memory_only(self) -> max._core.dialects.builtin.TypedAttr: ...
     @property
     def min_alignment(self) -> max._core.dialects.builtin.TypedAttr: ...
+    @property
+    def is_param_pack(self) -> bool: ...
 
 class TargetType(max._core.Type):
     """

@@ -220,11 +220,12 @@ trait Writable(ImplicitlyDestructible):
                 writer.write("(", self.x, ", ", self.y, ")")
         ```
         """
+        comptime WriterType = type_of(writer)
 
         @always_inline
         def call_write_to[
             FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
+        ](field: FieldType, mut writer: WriterType):
             field.write_to(writer)
 
         _reflection_write_to[f=call_write_to](self, writer)
@@ -261,10 +262,12 @@ trait Writable(ImplicitlyDestructible):
             (`\\'`).
         """
 
+        comptime WriterType = type_of(writer)
+
         @always_inline
         def call_write_repr_to[
             FieldType: Writable
-        ](field: FieldType, mut writer: type_of(writer)):
+        ](field: FieldType, mut writer: WriterType):
             field.write_repr_to(writer)
 
         _reflection_write_to[f=call_write_repr_to](self, writer)

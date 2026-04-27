@@ -60,12 +60,17 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
     draft_tokens: Buffer | None = None
     draft_kv_blocks: list[Buffer] | None = None
     seed: Buffer | None = None
-    """Per-execute int64 scalar seed reserved for stochastic sub-modules.
+    """Per-execute int64 scalar seed consumed by the stochastic acceptance
+    sampler (and, when enabled, the synthetic benchmarking sampler)."""
 
-    Currently only consumed by synthetic acceptance sampling, but always
-    bound so the graph signature is stable and additional stochastic
-    paths can reuse the same input.
-    """
+    temperature: Buffer | None = None
+    top_k: Buffer | None = None
+    max_k: Buffer | None = None
+    top_p: Buffer | None = None
+    min_top_p: Buffer | None = None
+    """Per-batch sampling parameters consumed by the stochastic acceptance
+    sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
+    ``[batch_size]`` tensors on the primary device."""
 
     @property
     def buffers(self) -> tuple[Buffer, ...]:
@@ -90,6 +95,22 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
             buffers += tuple(self.draft_kv_blocks)
         assert self.seed is not None
         buffers += (self.seed,)
+        if self.draft_tokens is not None:
+            # Sampling params are only required when the spec-decode path
+            # is active (i.e. draft_tokens was bound). They mirror the
+            # graph's input signature exactly in that case.
+            assert self.temperature is not None
+            assert self.top_k is not None
+            assert self.max_k is not None
+            assert self.top_p is not None
+            assert self.min_top_p is not None
+            buffers += (
+                self.temperature,
+                self.top_k,
+                self.max_k,
+                self.top_p,
+                self.min_top_p,
+            )
         return buffers
 
 
@@ -361,6 +382,11 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     )
 
                 seed = next(variadic_args_iter).tensor
+                temperature = next(variadic_args_iter).tensor
+                top_k = next(variadic_args_iter).tensor
+                max_k = next(variadic_args_iter).tensor
+                top_p = next(variadic_args_iter).tensor
+                min_top_p = next(variadic_args_iter).tensor
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -373,6 +399,11 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     data_parallel_splits=data_parallel_splits.tensor,
                     batch_context_lengths=batch_context_lengths,
                     seed=seed,
+                    temperature=temperature,
+                    top_k=top_k,
+                    max_k=max_k,
+                    top_p=top_p,
+                    min_top_p=min_top_p,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
                 )
