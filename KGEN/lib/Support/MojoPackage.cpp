@@ -37,7 +37,7 @@ ErrorOrSuccess M::KGEN::checkCompatiblePackage(const MojoPackageHeader &header,
 
   // We have a mismatch. Since MLIR checksums aren't meaningful to users, prefer
   // to return an error containing version information as a proxy.
-  MojoPackageVersion currentVer = M::getModularVersion();
+  MojoPackageVersion currentVer = M::getMojoVersion();
 
   std::string errMsg = "Mojo package is incompatible with the current version "
                        "of the Mojo compiler";
@@ -115,7 +115,7 @@ static void writeVersion(MojoPackageVersion version, llvm::raw_ostream &os) {
 
 LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
                                           MojoPackageVersion &mojoVer,
-                                          MojoPackageVersion &modularVer,
+                                          MojoPackageVersion &maxVer,
                                           StringRef mlirChecksum,
                                           llvm::raw_ostream &os) {
   // Serialize the MLIR bytecode to a temporary buffer first so we can compress
@@ -136,11 +136,9 @@ LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
   writeInt<uint8_t>(os, static_cast<uint8_t>(MojoPackageFormatVersion::V2));
   os << "..."; // plus 3 reserved bytes.
 
-  // Write the Mojo version (not currently set; ignored)
   writeVersion(mojoVer, os);
 
-  // Write the Modular version
-  writeVersion(modularVer, os);
+  writeVersion(maxVer, os);
 
   // Write the nul-terminated MLIR checksum
   os << mlirChecksum << '\0';
@@ -162,13 +160,11 @@ LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
 
 LogicalResult M::KGEN::writeBinaryPackage(Operation *op,
                                           llvm::raw_ostream &os) {
-  // The Mojo version - not currently set; ignored
-  MojoPackageVersion mojoVersion{0, 0, 0};
-  // The Modular version - currently only for public release builds
-  MojoPackageVersion modularVersion = M::getModularVersion();
+  MojoPackageVersion mojoVersion = M::getMojoVersion();
+  MojoPackageVersion maxVersion = M::getMAXVersion();
   // The MLIR checksum
   StringRef mlirChecksum = M::getMojoMlirDialectChecksum();
-  return writeBinaryPackage(op, mojoVersion, modularVersion, mlirChecksum, os);
+  return writeBinaryPackage(op, mojoVersion, maxVersion, mlirChecksum, os);
 }
 
 bool M::KGEN::isMojoPackage(llvm::MemoryBufferRef buffer) {
