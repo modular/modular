@@ -1240,6 +1240,20 @@ def test_indirect_default_params[
     callee[4, 9, "meow"]()
 
 
+struct ContextDefault[a: Int = 7, b: Int = a]:
+    @staticmethod
+    def inner[c: Int = Self.b, d: Int = c]():
+        pass
+
+
+# COM: Check that defaults on prepended contextual params survive full-signature
+# COM: reconstruction when referencing a function on a bound parametric type.
+# CHECK-LABEL: lit.fn @"test_contextual_default_fn_ref()"
+def test_contextual_default_fn_ref():
+    # CHECK: contextual_default_fn{{.*}}: !lit.generator<<"a": !Int = {7}, "b": !Int = *(0,0), +, "c": !Int = *(0,1), "d": !Int = *(0,2)
+    comptime contextual_default_fn = ContextDefault.inner
+
+
 # COM: check that inferred parameter values take precedence over defaults
 # CHECK-LABEL: lit.fn @"inferred_default_param
 def inferred_default_param[dt: DType, w: Int = 8](a: SIMD[dt, w]):

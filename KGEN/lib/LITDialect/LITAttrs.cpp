@@ -271,15 +271,22 @@ GeneratorMetadataAttrInterface PogListAttr::getSpecializedMetadata(
 /// Get a new metadata attribute for a generator with the given number of
 /// positional input parameters prepended to the generator.
 PogListAttr
-PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> newParams) const {
-  if (newParams.empty())
+PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> names,
+                                     ArrayRef<TypedAttr> defaults) const {
+  assert((defaults.empty() || defaults.size() == names.size()) &&
+         "defaults is either empty (no default column) or parallel to names");
+  if (names.empty())
     return *this;
 
   SmallVector<PogMetadataAttr> newPogs;
-  for (StringAttr paramName : newParams) {
+  for (auto [i, name] : llvm::enumerate(names)) {
+    TypedAttr newDefault{};
+    if (!defaults.empty() && defaults[i])
+      newDefault = defaults[i];
     // Strip off variadic kinds and turn the parameter into infer-only too.
-    newPogs.push_back(PogMetadataAttr::get(paramName, PassingKind::Inferred,
-                                           VariadicKind::None));
+    newPogs.push_back(PogMetadataAttr::get(name, PassingKind::Inferred,
+                                           VariadicKind::None, newDefault,
+                                           /*constraints=*/{}));
   }
   newPogs.append(getPogs().begin(), getPogs().end());
   return PogListAttr::get(getContext(), newPogs, getOrigVariadicConvention());
@@ -288,7 +295,7 @@ PogListAttr::prependAsInferredParams(ArrayRef<StringAttr> newParams) const {
 GeneratorMetadataAttrInterface
 PogListAttr::prependContextualParamsFromOps(ArrayRef<StringAttr> newParams,
                                             ArrayRef<Operation *> ops) const {
-  return prependAsInferredParams(newParams);
+  return prependAsInferredParams(newParams, /*defaults=*/{});
 }
 
 //===----------------------------------------------------------------------===//

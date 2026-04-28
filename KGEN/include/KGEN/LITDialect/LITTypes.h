@@ -271,12 +271,16 @@ public:
 
   FnType getBody();
 
-  /// Reconstruct the generator using a list of named input parameters and info
-  /// about what kind of variadic they are. These parameters are prepended to
-  /// the current signature and references are remapped to index references.
+  /// Reconstruct the generator using a list of named input parameters; these
+  /// are prepended to the current signature and references are remapped to
+  /// index references. If `paramNames` is non-empty, it must match
+  /// `parentParams` in length. If `paramDefaults` is non-empty, it must match
+  /// `parentParams` in length; a nullptr `TypedAttr` at index `i` means no
+  /// default for that parameter.
   static FnTypeGeneratorType
   prependParams(FnTypeGeneratorType sig, ArrayRef<ParamDeclAttr> parentParams,
-                ArrayRef<StringAttr> paramNames = {});
+                ArrayRef<StringAttr> paramNames = {},
+                ArrayRef<TypedAttr> paramDefaults = {});
 
   /// Substitute the specified implicit origin references into the specified
   /// type, replacing them with `values` if they are at depth 0, or decrementing
