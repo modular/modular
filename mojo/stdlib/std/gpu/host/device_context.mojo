@@ -5697,7 +5697,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        FuncType: def(Self) -> None,
+        FuncType: def(Self) raises -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes a DeviceContext parameter.
 
@@ -5842,7 +5842,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time[
-        FuncType: def() -> None,
+        FuncType: def() raises -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function over multiple iterations.
 
@@ -5935,7 +5935,7 @@ struct DeviceContext(ImplicitlyCopyable, RegisterPassable):
 
     @always_inline
     def execution_time_iter[
-        FuncType: def(Self, Int) -> None,
+        FuncType: def(Self, Int) raises -> None,
     ](self, func: FuncType, num_iters: Int) raises -> Int:
         """Measures the execution time of a function that takes iteration index as input.
 

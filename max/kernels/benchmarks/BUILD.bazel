@@ -181,6 +181,7 @@ _CPU_TESTS = glob(
         ["gpu/**/*.mojo"],
         exclude = [
             "gpu/nn/bench_conv2d.mojo",
+            "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
         ],
     )
@@ -196,6 +197,7 @@ _CPU_TESTS = glob(
         ["gpu/**/*.mojo"],
         exclude = [
             "gpu/nn/bench_conv2d.mojo",
+            "gpu/layout/bench_tile_io_copy.mojo",
             "gpu/nn/bench_conv3d.mojo",
         ],
     )
@@ -241,6 +243,25 @@ mojo_test(
         "//max:internal_utils",
         "//max:layout",
         "//max:nn",
+        "@mojo//:std",
+    ],
+)
+
+mojo_test(
+    name = "gpu/layout/bench_tile_io_copy.mojo.run",
+    size = "enormous",
+    srcs = ["gpu/layout/bench_tile_io_copy.mojo"],
+    enable_assertions = False,
+    exec_properties = {
+        "test.resources:gpu-memory": "1",
+    },
+    tags = [
+        "gpu",
+        "manual",
+    ],
+    target_compatible_with = ["//:has_gpu"],
+    deps = [
+        "//max:layout",
         "@mojo//:std",
     ],
 )
