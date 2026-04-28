@@ -13,6 +13,8 @@
 
 from std.sys.info import _TargetType, _current_target
 
+from std.utils.index import Index, IndexList, StaticTuple
+
 
 trait PluginHooks:
     """Compile-time hook interface for pluggable stdlib behavior.
@@ -52,6 +54,30 @@ trait PluginHooks:
         ]
     ]
 
+    comptime reduce_generator_fn[target: StaticString]: Optional[
+        ReduceGeneratorFnType
+    ]
+
+
+comptime ReduceGeneratorFnType = (
+    def[
+        num_reductions: Int,
+        init_type: DType,
+        input_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank]
+        ) capturing[_] -> SIMD[dtype, width],
+        output_0_fn: def[dtype: DType, width: Int, rank: Int](
+            IndexList[rank], StaticTuple[SIMD[dtype, width], num_reductions]
+        ) capturing[_] -> None,
+        reduce_function: def[ty: DType, width: Int, reduction_idx: Int](
+            SIMD[ty, width], SIMD[ty, width]
+        ) capturing[_] -> SIMD[ty, width],
+    ](
+        shape: IndexList[_, element_type=DType.int64],
+        init: StaticTuple[Scalar[init_type], num_reductions],
+        reduce_dim: Int,
+    ) thin
+)
 
 # ===-----------------------------------------------------------------------===#
 # DefaultPlugin
@@ -77,4 +103,8 @@ struct DefaultPlugin(PluginHooks):
         ]() thin -> UnsafePointer[
             type, MutExternalOrigin, address_space=address_space
         ]
+    ] = None
+
+    comptime reduce_generator_fn[target: StaticString]: Optional[
+        ReduceGeneratorFnType
     ] = None

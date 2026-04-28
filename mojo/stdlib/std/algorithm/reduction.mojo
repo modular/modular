@@ -35,6 +35,8 @@ from std.runtime.tracing import Trace, TraceLevel, get_safe_task_id, trace_arg
 from std.utils.index import Index, IndexList, StaticTuple
 from std.sys.info import has_apple_gpu_accelerator
 
+from std._plugin import CurrentPlugin
+
 # Import CPU implementations.
 from .backend.cpu.reduction import _reduce_generator_cpu
 
@@ -160,6 +162,14 @@ def _reduce_generator[
             output_0_fn,
             reduce_function,
             single_thread_blocking_override,
+        ](shape, init, reduce_dim)
+    elif CurrentPlugin.reduce_generator_fn[target]:
+        return comptime (CurrentPlugin.reduce_generator_fn[target].value())[
+            num_reductions,
+            init_type,
+            input_0_fn,
+            output_0_fn,
+            reduce_function,
         ](shape, init, reduce_dim)
     else:
         _reduce_generator_gpu[
