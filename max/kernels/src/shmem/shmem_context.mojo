@@ -436,8 +436,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
 
         shmem_module_init(gpu_kernel)
 
-        self._ctx._enqueue_function(
-            gpu_kernel,
+        gpu_kernel._call_with_pack_checked(
+            self._ctx,
             *args,
             grid_dim=grid_dim,
             block_dim=block_dim,
@@ -596,8 +596,8 @@ struct SHMEMContext[tcp: Bool = False](ImplicitlyCopyable):
                 "Warning: cooperative launch not supported on at least one PE;"
                 " GPU-side synchronization may cause hang"
             )
-        self._priority_stream._enqueue_function(
-            gpu_kernel,
+        gpu_kernel._call_with_pack_checked(
+            self._priority_stream,
             *args,
             grid_dim=Dim(grid_x, grid_y, grid_z),
             block_dim=block_dim,
