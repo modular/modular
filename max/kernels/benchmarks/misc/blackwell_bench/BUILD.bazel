@@ -77,8 +77,13 @@ pycross_wheel_library(
     wheel = "@flash_attn_sm100_wheel//file",
     deps = [
         ":cutlass-imports",  # adds nvidia_cutlass_dsl/python_packages to sys.path
+        requirement("apache-tvm-ffi"),
         requirement("einops"),
         requirement("nvidia-cutlass-dsl"),
+        requirement("setuptools"),
         requirement("torch"),
+        requirement("typing-extensions"),
+        "@modular_pip_lock_file_repo//deps:quack-kernels@0.3.3",
+        "@modular_pip_lock_file_repo//deps:torch-c-dlpack-ext@0.1.5",
     ],
 )

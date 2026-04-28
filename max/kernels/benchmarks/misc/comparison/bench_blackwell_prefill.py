@@ -48,6 +48,10 @@ except ImportError as e:
 
 _flash_attn_varlen_func: Callable[..., Any] | None
 try:
+    # FA4 beta4 still reaches distutils-era imports on Python 3.12+.
+    # Import setuptools first so its compatibility shim is available.
+    import setuptools  # noqa: F401
+
     # The pure Python flash-attention wheel's __init__.py tries to import
     # flash_attn_2_cuda (CUDA extension not in pure wheel).
     # Bypass this by creating a stub flash_attn module with valid __path__
