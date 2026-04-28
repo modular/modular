@@ -433,13 +433,11 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         is_flag=False,
         type=DevicesOptionType(),
         show_default=False,
-        default="default",
+        default=None,
         help=(
-            "Whether to run the model on CPU (``--devices=cpu``), GPU (``--devices=gpu``)"
-            " or a list of GPUs (``--devices=gpu:0,1``). An ID value can be"
-            " provided optionally to indicate the device ID to target. If not"
-            " provided, the model will run on the first available GPU,"
-            " or CPU if no GPUs are available."
+            "Devices for the draft model in speculative decoding. "
+            "If not provided, inherits from ``--devices``. "
+            "Accepts the same format as ``--devices``."
         ),
     )
     @functools.wraps(func)
@@ -454,6 +452,10 @@ def pipeline_config_options(func: Callable[_P, _R]) -> Callable[_P, _R]:
         devices = kwargs.pop("devices")
         draft_devices = kwargs.pop("draft_devices")
         assert is_str_or_list_of_int(devices)
+
+        # Inherit draft_devices from devices if not explicitly specified
+        if draft_devices is None:
+            draft_devices = devices
         assert is_str_or_list_of_int(draft_devices)
 
         # Enable virtual device mode if target is set.

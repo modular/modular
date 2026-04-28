@@ -393,6 +393,13 @@ class PipelineConfig(ConfigFileModel):
             strip_prefix=True,
         )
         if draft_kwargs.get("model_path", "") != "":
+            # Inherit certain fields from the target model if not explicitly
+            # specified for the draft model. This simplifies CLI usage for
+            # speculative decoding (e.g. --draft-trust-remote-code is not
+            # needed if --trust-remote-code is already set).
+            if "main" in self.models:
+                self._apply_draft_model_defaults(draft_kwargs, self.model)
+
             draft_config = MAXModelConfig(**draft_kwargs)
             if kv_cache_kwargs:
                 draft_config.create_kv_cache_config(**kv_cache_kwargs)
@@ -403,6 +410,62 @@ class PipelineConfig(ConfigFileModel):
         # Apply per-component overrides from --model-override flags
         if self.model_override:
             self._apply_model_overrides()
+
+    @staticmethod
+    def _apply_draft_model_defaults(
+        draft_kwargs: dict[str, Any], target_model: MAXModelConfig
+    ) -> None:
+        """Inherit certain fields from the target model for the draft model.
+
+        When running speculative decoding, the draft model typically shares
+        configuration with the target model (same devices, same trust settings,
+        same parallelism). This method copies these fields from the target
+        model config into the draft kwargs if they weren't explicitly specified.
+
+        Fields inherited:
+        - ``trust_remote_code``: If the target model requires custom code,
+          the draft model (from the same model family) likely does too.
+        - ``device_specs``: The draft model runs on the same devices as the
+          target model.
+        - ``data_parallel_degree``: Both models use the same parallelism.
+
+        Note: ``quantization_encoding`` is NOT inherited because draft models
+        (especially EAGLE3) often use bfloat16 regardless of the target model's
+        quantization. The draft model should auto-detect its encoding from its
+        weights.
+
+        Args:
+            draft_kwargs: The draft model kwargs dict (modified in place).
+            target_model: The target model configuration to inherit from.
+        """
+        # Inherit trust_remote_code if not explicitly specified
+        if "trust_remote_code" not in draft_kwargs:
+            if target_model.trust_remote_code:
+                logger.info(
+                    "Inheriting trust_remote_code=True from target model "
+                    "for draft model"
+                )
+                draft_kwargs["trust_remote_code"] = True
+
+        # Inherit device_specs if not explicitly specified
+        if "device_specs" not in draft_kwargs:
+            logger.info(
+                f"Inheriting device_specs={target_model.device_specs} "
+                "from target model for draft model"
+            )
+            draft_kwargs["device_specs"] = target_model.device_specs
+
+        # Inherit data_parallel_degree if not explicitly specified
+        if "data_parallel_degree" not in draft_kwargs:
+            if target_model.data_parallel_degree != 1:
+                logger.info(
+                    f"Inheriting data_parallel_degree="
+                    f"{target_model.data_parallel_degree} from target model "
+                    "for draft model"
+                )
+            draft_kwargs["data_parallel_degree"] = (
+                target_model.data_parallel_degree
+            )
 
     def _apply_model_overrides(self) -> None:
         """Apply --model-override entries to the manifest.
@@ -1211,17 +1274,10 @@ class PipelineConfig(ConfigFileModel):
 
         target_arch = self._validate_and_resolve_architecture(self.model)
 
-        if (
-            self.draft_model.quantization_encoding is None
-            and self.model.quantization_encoding is not None
-        ):
-            logger.info(
-                f"draft_quantization_encoding not specified, defaulting to"
-                f" target model encoding: {self.model.quantization_encoding}"
-            )
-            self.draft_model.quantization_encoding = (
-                self.model.quantization_encoding
-            )
+        # Note: quantization_encoding is NOT inherited from the target model.
+        # Draft models (especially EAGLE3) typically use bfloat16 regardless
+        # of the target model's quantization. The draft model auto-detects
+        # its encoding from its weights during architecture resolution.
 
         draft_arch = self._validate_and_resolve_architecture(self.draft_model)
 

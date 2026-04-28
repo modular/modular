@@ -118,7 +118,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
         "max_serve_args": (
             "--draft-model-path atomicapple0/EAGLE-LLaMA3.1-Instruct-8B "
             "--devices gpu:0 "
-            "--draft-devices gpu:0 "
             "--speculative-method eagle"
         ),
     },
@@ -140,10 +139,6 @@ MODEL_ALIASES = CaseInsensitiveDict({
     "nvidia/Kimi-K2.5-NVFP4__eagle": {
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
-            "--draft-trust-remote-code "
-            "--draft-devices gpu:0,1,2,3,4,5,6,7 "
-            "--draft-data-parallel-degree 8 "
-            "--draft-quantization-encoding bfloat16 "
             "--speculative-method eagle "
             "--num-speculative-tokens 3 "
             "--kv-cache-format float8_e4m3fn "

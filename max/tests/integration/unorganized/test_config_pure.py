@@ -34,6 +34,7 @@ from max.pipelines.lib import (
     SamplingConfig,
 )
 from max.pipelines.lib.config import AudioGenerationConfig
+from max.pipelines.lib.config.config_enums import SupportedEncoding
 from max.pipelines.lib.config.speculative_config import SpeculativeConfig
 from max.pipelines.lib.model_manifest import ModelManifest
 from test_common.mocks import (
@@ -410,8 +411,142 @@ class TestPipelineConfigUtilityMethods:
         assert config.draft_model.kv_cache.cache_dtype == DType.bfloat16
 
 
-class TestDraftModelEncodingDefault:
-    """Tests that draft model quantization_encoding defaults to the target model's encoding."""
+class TestDraftModelDefaultsInheritance:
+    """Tests that draft model inherits certain defaults from the target model."""
+
+    def test_apply_draft_model_defaults_inherits_trust_remote_code(
+        self,
+    ) -> None:
+        """_apply_draft_model_defaults inherits trust_remote_code from target."""
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            trust_remote_code=True,
+        )
+        draft_kwargs: dict[str, Any] = {"model_path": "test/draft"}
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        assert draft_kwargs["trust_remote_code"] is True
+
+    def test_apply_draft_model_defaults_does_not_inherit_false_trust_remote_code(
+        self,
+    ) -> None:
+        """_apply_draft_model_defaults does not inherit trust_remote_code=False."""
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            trust_remote_code=False,
+        )
+        draft_kwargs: dict[str, Any] = {"model_path": "test/draft"}
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        # trust_remote_code should not be added when target has False
+        assert "trust_remote_code" not in draft_kwargs
+
+    def test_apply_draft_model_defaults_preserves_explicit_trust_remote_code(
+        self,
+    ) -> None:
+        """Explicit draft trust_remote_code is not overridden."""
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            trust_remote_code=True,
+        )
+        draft_kwargs: dict[str, Any] = {
+            "model_path": "test/draft",
+            "trust_remote_code": False,
+        }
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        # Explicit False should be preserved
+        assert draft_kwargs["trust_remote_code"] is False
+
+    def test_apply_draft_model_defaults_inherits_device_specs(self) -> None:
+        """_apply_draft_model_defaults inherits device_specs from target."""
+        target_devices = [DeviceSpec.cpu()]
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            device_specs=target_devices,
+        )
+        draft_kwargs: dict[str, Any] = {"model_path": "test/draft"}
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        assert draft_kwargs["device_specs"] == target_devices
+
+    def test_apply_draft_model_defaults_preserves_explicit_device_specs(
+        self,
+    ) -> None:
+        """Explicit draft device_specs is not overridden."""
+        target_devices = [DeviceSpec.cpu()]
+        draft_devices = [DeviceSpec.accelerator()]
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            device_specs=target_devices,
+        )
+        draft_kwargs: dict[str, Any] = {
+            "model_path": "test/draft",
+            "device_specs": draft_devices,
+        }
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        assert draft_kwargs["device_specs"] == draft_devices
+
+    def test_apply_draft_model_defaults_inherits_data_parallel_degree(
+        self,
+    ) -> None:
+        """_apply_draft_model_defaults inherits data_parallel_degree from target."""
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            data_parallel_degree=8,
+        )
+        draft_kwargs: dict[str, Any] = {"model_path": "test/draft"}
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        assert draft_kwargs["data_parallel_degree"] == 8
+
+    def test_apply_draft_model_defaults_preserves_explicit_data_parallel_degree(
+        self,
+    ) -> None:
+        """Explicit draft data_parallel_degree is not overridden."""
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            data_parallel_degree=8,
+        )
+        draft_kwargs: dict[str, Any] = {
+            "model_path": "test/draft",
+            "data_parallel_degree": 4,
+        }
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        assert draft_kwargs["data_parallel_degree"] == 4
+
+    def test_apply_draft_model_defaults_does_not_inherit_quantization_encoding(
+        self,
+    ) -> None:
+        """_apply_draft_model_defaults does NOT inherit quantization_encoding.
+
+        EAGLE3 and other draft models typically use bfloat16 regardless of
+        the target model's quantization. The draft model should auto-detect
+        its encoding from its weights, not inherit from target.
+        """
+        target_model = MAXModelConfig(
+            model_path="test/model",
+            quantization_encoding="float4_e2m1fnx2",
+        )
+        draft_kwargs: dict[str, Any] = {"model_path": "test/draft"}
+
+        PipelineConfig._apply_draft_model_defaults(draft_kwargs, target_model)
+
+        # quantization_encoding should NOT be inherited
+        assert "quantization_encoding" not in draft_kwargs
+
+
+class TestDraftModelQuantizationEncoding:
+    """Tests that draft model quantization_encoding is independent from target."""
 
     _MODEL = "trl-internal-testing/tiny-random-LlamaForCausalLM"
 
@@ -420,17 +555,21 @@ class TestDraftModelEncodingDefault:
         config: PipelineConfig,
         *,
         draft_max_seq_len: int = 131072,
+        draft_encoding: SupportedEncoding = "bfloat16",
     ) -> None:
         """Run _validate_and_resolve_speculative_memory with mocked internals.
 
         Mocks architecture resolution so that calling it on the target model
-        sets its encoding to ``"bfloat16"`` (simulating normal resolution).
+        sets its encoding to ``"bfloat16"`` and on the draft model sets its
+        encoding to ``draft_encoding`` (simulating auto-detection from weights).
 
         Args:
             config: The pipeline config to resolve.
             draft_max_seq_len: Value returned by the draft arch config's
                 ``get_max_seq_len()``.  Defaults to a large value so the
                 clamping path is *not* exercised unless explicitly requested.
+            draft_encoding: Encoding to set on the draft model during
+                architecture resolution (simulating auto-detection).
         """
         mock_draft_arch_config = Mock()
         mock_draft_arch_config.get_max_seq_len.return_value = draft_max_seq_len
@@ -441,7 +580,11 @@ class TestDraftModelEncodingDefault:
 
         def fake_resolve_arch(model_config: MAXModelConfig) -> Mock:
             if model_config is config.model:
-                model_config.quantization_encoding = "bfloat16"
+                model_config.quantization_encoding = "float8_e4m3fn"
+            elif model_config is config.draft_model:
+                # Draft model auto-detects its own encoding from weights
+                if model_config.quantization_encoding is None:
+                    model_config.quantization_encoding = draft_encoding
             return mock_arch
 
         with (
@@ -458,8 +601,8 @@ class TestDraftModelEncodingDefault:
             config._validate_and_resolve_speculative_memory()
 
     @mock_pipeline_config_resolve
-    def test_draft_encoding_defaults_to_target(self) -> None:
-        """Draft encoding inherits the target's resolved encoding when unset."""
+    def test_draft_encoding_auto_detected_independently(self) -> None:
+        """Draft encoding is auto-detected from weights, not inherited from target."""
         config = PipelineConfig(
             models=ModelManifest(
                 {
@@ -472,13 +615,18 @@ class TestDraftModelEncodingDefault:
         assert config.draft_model is not None
         assert config.draft_model.quantization_encoding is None
 
-        self._run_speculative_memory_resolution(config)
+        # Simulate resolution where target gets float8 and draft gets bfloat16
+        self._run_speculative_memory_resolution(
+            config, draft_encoding="bfloat16"
+        )
 
+        # Draft should have its own encoding (bfloat16), not target's (float8)
+        assert config.model.quantization_encoding == "float8_e4m3fn"
         assert config.draft_model.quantization_encoding == "bfloat16"
 
     @mock_pipeline_config_resolve
     def test_explicit_draft_encoding_is_preserved(self) -> None:
-        """Explicit draft encoding is not overridden by the target's encoding."""
+        """Explicit draft encoding is not overridden during resolution."""
         config = PipelineConfig(
             models=ModelManifest(
                 {
