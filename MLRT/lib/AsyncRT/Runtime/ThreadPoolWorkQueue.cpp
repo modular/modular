@@ -767,11 +767,14 @@ void WorkQueueThread::runItemsImpl(EarlyStopPredicateFn earlyStopPredicate,
 #endif
     }
 
-    // On wakeup, check the 'slow' predicate to see if we should stop (this is
-    // how worker threads know to exit).  The early predicate is checked as
-    // part of the outer while loop immediately after this.
-    if (lateStopPredicate())
-      return;
+    // On wakeup, do NOT exit immediately even when lateStopPredicate() is
+    // true. Returning here skips the affinity queue drain at the top of the
+    // outer loop, leaving items in LockFreeRingBuffer and triggering its
+    // non-empty destructor assertion when the WorkQueueThread is torn down.
+    //
+    // Instead, fall through to the next iteration so the outer loop drains
+    // all pending local, affinity, and global work. The spinning phase exits
+    // cleanly once every queue is empty and lateStopPredicate() becomes true.
   }
 }
 
