@@ -67,28 +67,28 @@ def bench_rms_norm_rope_gpu[
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = data_buf.layout(Coord(coords))
-        return data_buf.raw_load[width=width](idx)
+        return data_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(cos_vals)
     @always_inline
     @parameter
     def cos_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = cos_vals.layout(Coord(coords))
-        return cos_vals.raw_load[width=width](idx)
+        return cos_vals.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(sin_vals)
     @always_inline
     @parameter
     def sin_fn[
-        width: Int, _rank: Int
+        width: Int, _rank: Int, alignment: Int
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = sin_vals.layout(Coord(coords))
-        return sin_vals.raw_load[width=width](idx)
+        return sin_vals.raw_load[width=width, alignment=alignment](idx)
 
     @always_inline
     @__copy_capture(output_buf)

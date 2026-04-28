@@ -2358,15 +2358,15 @@ def _rms_norm_rope_gpu_warp_tiling[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        input_dtype, width
-    ],
-    cos_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
-    sin_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
+    input_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[input_dtype, width],
+    cos_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[cos_sin_dtype, width],
+    sin_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[cos_sin_dtype, width],
     output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[input_dtype, width]
     ) capturing -> None,
@@ -2404,7 +2404,9 @@ def _rms_norm_rope_gpu_warp_tiling[
     with PDL():
         var gamma_val = SIMD[input_dtype, simd_width](0)
         if idx < num_cols:
-            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            vec_data = input_fn[simd_width, alignment=align](row, idx).cast[
+                accum_type
+            ]()
             gamma_val = gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(idx))
             )
@@ -2444,8 +2446,12 @@ def _rms_norm_rope_gpu_warp_tiling[
         # The paired normed value is recomputed from the raw input in shared memory.
         if idx < num_cols:
             var half_cols = num_cols // 2
-            var cos_val = cos_fn[simd_width](row, idx).cast[accum_type]()
-            var sin_val = sin_fn[simd_width](row, idx).cast[accum_type]()
+            var cos_val = cos_fn[simd_width, alignment=align](row, idx).cast[
+                accum_type
+            ]()
+            var sin_val = sin_fn[simd_width, alignment=align](row, idx).cast[
+                accum_type
+            ]()
             var normed_col = norm_val.cast[accum_type]()
 
             # Since half_cols % simd_width == 0 (guaranteed by dispatch), all
@@ -2499,15 +2505,15 @@ def _rms_norm_rope_gpu_warp_tiling_128[
     //,
     simd_width: Int,
     warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        input_dtype, width
-    ],
-    cos_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
-    sin_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
+    input_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[input_dtype, width],
+    cos_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[cos_sin_dtype, width],
+    sin_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[cos_sin_dtype, width],
     output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[input_dtype, width]
     ) capturing -> None,
@@ -2586,7 +2592,9 @@ def _rms_norm_rope_gpu_warp_tiling_128[
         var gamma_val = SIMD[input_dtype, simd_width](0)
 
         if row < num_rows and idx < num_cols:
-            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            vec_data = input_fn[simd_width, alignment=align](row, idx).cast[
+                accum_type
+            ]()
             gamma_val = gamma.load[width=simd_width, alignment=align](
                 Coord(Idx(idx))
             )
@@ -2626,8 +2634,12 @@ def _rms_norm_rope_gpu_warp_tiling_128[
         # Apply RoPE using the paired element re-normalized from shared memory.
         if row < num_rows and idx < num_cols:
             var half_cols = num_cols // 2
-            var cos_val = cos_fn[simd_width](row, idx).cast[accum_type]()
-            var sin_val = sin_fn[simd_width](row, idx).cast[accum_type]()
+            var cos_val = cos_fn[simd_width, alignment=align](row, idx).cast[
+                accum_type
+            ]()
+            var sin_val = sin_fn[simd_width, alignment=align](row, idx).cast[
+                accum_type
+            ]()
             var normed_col = norm_val.cast[accum_type]()
 
             # paired_idx is in the same row's shmem slot (within [0, num_cols)).
@@ -2677,15 +2689,15 @@ def _rms_norm_rope_gpu_block[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        input_dtype, width
-    ],
-    cos_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
-    sin_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
+    input_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[input_dtype, width],
+    cos_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[cos_sin_dtype, width],
+    sin_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[cos_sin_dtype, width],
     output_fn: def[width: Int, alignment: Int](
         row: Int, col: Int, val: SIMD[input_dtype, width]
     ) capturing -> None,
@@ -2711,7 +2723,9 @@ def _rms_norm_rope_gpu_block[
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < num_cols:
-                var v = input_fn[simd_width](row, offset).cast[accum_type]()
+                var v = input_fn[simd_width, alignment=align](row, offset).cast[
+                    accum_type
+                ]()
                 thread_m2 += (v**2).reduce_add()
 
         var row_m2 = block_reduce[max_warps_per_block=max_warps_per_block](
@@ -2729,7 +2743,9 @@ def _rms_norm_rope_gpu_block[
         for x in range(ceildiv(num_cols // simd_width, block_dim.x)):
             var offset = x * block_dim.x * simd_width + tid * simd_width
             if offset < num_cols:
-                var v = input_fn[simd_width](row, offset).cast[accum_type]()
+                var v = input_fn[simd_width, alignment=align](row, offset).cast[
+                    accum_type
+                ]()
                 var gamma_val = gamma.load[width=simd_width, alignment=align](
                     Coord(Idx(offset))
                 )
@@ -2756,9 +2772,9 @@ def _rms_norm_rope_gpu_block[
                     offset + half_cols if offset
                     < half_cols else offset - half_cols
                 )
-                var paired_v = input_fn[simd_width](row, paired_offset).cast[
-                    accum_type
-                ]()
+                var paired_v = input_fn[simd_width, alignment=align](
+                    row, paired_offset
+                ).cast[accum_type]()
                 var paired_gamma_val = gamma.load[
                     width=simd_width, alignment=align
                 ](Coord(Idx(paired_offset)))
@@ -2785,8 +2801,12 @@ def _rms_norm_rope_gpu_block[
                 else:
                     rotated = paired_norm_val
 
-                var cos_val = cos_fn[simd_width](row, offset).cast[accum_type]()
-                var sin_val = sin_fn[simd_width](row, offset).cast[accum_type]()
+                var cos_val = cos_fn[simd_width, alignment=align](
+                    row, offset
+                ).cast[accum_type]()
+                var sin_val = sin_fn[simd_width, alignment=align](
+                    row, offset
+                ).cast[accum_type]()
                 var result = (norm_val * cos_val + rotated * sin_val).cast[
                     input_dtype
                 ]()
@@ -2798,15 +2818,15 @@ def rms_norm_rope_gpu[
     cos_sin_dtype: DType,
     rank: Int,
     //,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        input_dtype, width
-    ],
-    cos_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
-    sin_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        cos_sin_dtype, width
-    ],
+    input_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[input_dtype, width],
+    cos_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[cos_sin_dtype, width],
+    sin_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[cos_sin_dtype, width],
     output_fn: def[width: Int, alignment: Int](
         IndexList[rank], SIMD[input_dtype, width]
     ) capturing -> None,
@@ -2853,29 +2873,29 @@ def rms_norm_rope_gpu[
     @parameter
     @always_inline
     def input_fn_2d[
-        simd_width: Int
+        simd_width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[input_dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        return input_fn[simd_width](indices.canonicalize())
+        return input_fn[simd_width, rank, alignment](indices.canonicalize())
 
     @parameter
     @always_inline
     def cos_fn_2d[
-        simd_width: Int
+        simd_width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[cos_sin_dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        return cos_fn[simd_width](indices.canonicalize())
+        return cos_fn[simd_width, rank, alignment](indices.canonicalize())
 
     @parameter
     @always_inline
     def sin_fn_2d[
-        simd_width: Int
+        simd_width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[cos_sin_dtype, simd_width]:
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        return sin_fn[simd_width](indices.canonicalize())
+        return sin_fn[simd_width, rank, alignment](indices.canonicalize())
 
     comptime simd_width = simd_width_of[input_dtype, target=get_gpu_target()]()
     comptime max_warps_per_block = ctx.default_device_info.max_thread_block_size // WARP_SIZE

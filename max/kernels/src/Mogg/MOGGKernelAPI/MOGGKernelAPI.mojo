@@ -3402,29 +3402,29 @@ struct ReduceRMSNormRoPE:
         @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width, element_alignment=width](
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         def cos_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
-            return cos_vals._fused_load[width=width](
-                rebind[IndexList[cos_vals.rank]](coords)
-            )
+            return cos_vals._fused_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[cos_vals.rank]](coords))
 
         @parameter
         @always_inline
         def sin_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[cos_sin_dtype, width]:
-            return sin_vals._fused_load[width=width](
-                rebind[IndexList[sin_vals.rank]](coords)
-            )
+            return sin_vals._fused_load[
+                width=width, element_alignment=alignment
+            ](rebind[IndexList[sin_vals.rank]](coords))
 
         @parameter
         @always_inline
