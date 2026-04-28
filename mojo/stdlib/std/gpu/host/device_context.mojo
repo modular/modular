@@ -886,7 +886,7 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[Self.dtype]()
         var cpp_handle: _DeviceBufferPtr[mut=True] = {}
-        var device_ptr = Self._DevicePtr(_unsafe_null=())
+        var device_ptr: Optional[Self._DevicePtr] = {}
 
         # TODO: Remove this if statement.
         # As of GEX-3005, Driver only supports async allocation. For
@@ -898,13 +898,6 @@ struct DeviceBuffer[dtype: DType](
                 external_call[
                     "AsyncRT_DeviceContext_createBuffer_async",
                     _CString[],
-                    UnsafePointer[
-                        _DeviceBufferPtr[mut=True], origin_of(cpp_handle)
-                    ],
-                    UnsafePointer[Self._DevicePtr, origin_of(device_ptr)],
-                    _DeviceContextPtr[mut=True],
-                    c_size_t,
-                    c_size_t,
                 ](
                     UnsafePointer(to=cpp_handle),
                     UnsafePointer(to=device_ptr),
@@ -921,7 +914,7 @@ struct DeviceBuffer[dtype: DType](
                 ")",
             )
 
-        self._device_ptr = device_ptr
+        self._device_ptr = device_ptr.value()
         self._handle = cpp_handle
 
     @doc_hidden
@@ -1067,7 +1060,7 @@ struct DeviceBuffer[dtype: DType](
     def empty(context: DeviceContext) -> Self:
         return Self(
             context,
-            Self._DevicePtr(_unsafe_null=()),
+            Self._DevicePtr.unsafe_dangling(),
             0,
             owning=False,
         )
@@ -1116,9 +1109,9 @@ struct DeviceBuffer[dtype: DType](
         comptime assert not is_gpu(), "DeviceBuffer is not supported on GPUs"
         comptime elem_size = size_of[view_type]()
         var new_handle: _DeviceBufferPtr[mut=True] = {}
-        var new_device_ptr = UnsafePointer[Scalar[view_type], MutAnyOrigin](
-            _unsafe_null=()
-        )
+        var new_device_ptr: Optional[
+            UnsafePointer[Scalar[view_type], MutAnyOrigin]
+        ] = {}
         # const char *AsyncRT_DeviceBuffer_createSubBuffer(
         #     const DeviceBuffer **result, void **device_ptr,
         #     const DeviceBuffer *buf, size_t offset, size_t len, size_t elem_size)
@@ -1126,17 +1119,6 @@ struct DeviceBuffer[dtype: DType](
             external_call[
                 "AsyncRT_DeviceBuffer_createSubBuffer",
                 _CString[],
-                UnsafePointer[
-                    _DeviceBufferPtr[mut=True], origin_of(new_handle)
-                ],
-                UnsafePointer[
-                    UnsafePointer[Scalar[view_type], MutAnyOrigin],
-                    origin_of(new_device_ptr),
-                ],
-                _DeviceBufferPtr[mut=True],
-                c_size_t,
-                c_size_t,
-                c_size_t,
             ](
                 UnsafePointer(to=new_handle),
                 UnsafePointer(to=new_device_ptr),
@@ -1147,7 +1129,7 @@ struct DeviceBuffer[dtype: DType](
             ),
             location=call_location(),
         )
-        return DeviceBuffer[view_type](new_handle, new_device_ptr)
+        return DeviceBuffer[view_type](new_handle, new_device_ptr.value())
 
     def enqueue_copy_to(self, dst: DeviceBuffer[Self.dtype, ...]) raises:
         """Enqueues an asynchronous copy from this buffer to another device buffer.
@@ -7326,19 +7308,14 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_unicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        var buf_ptr = _BufPtr(_unsafe_null=())
+        var buf_ptr = Optional[
+            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        ]()
 
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_unicastBufferFor",
                 _CString[],
-                UnsafePointer[
-                    _DeviceBufferPtr[mut=True], origin_of(buf_handle)
-                ],
-                UnsafePointer[_BufPtr, origin_of(buf_ptr)],
-                _DeviceMulticastBufferPtr[mut=True],
-                _DeviceContextPtr[mut=True],
             ](
                 UnsafePointer(to=buf_handle),
                 UnsafePointer(to=buf_ptr),
@@ -7347,7 +7324,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
             )
         )
 
-        return DeviceBuffer[Self.dtype](buf_handle, buf_ptr)
+        return DeviceBuffer[Self.dtype](buf_handle, buf_ptr.value())
 
     @doc_hidden
     def multicast_buffer_for(
@@ -7355,19 +7332,14 @@ struct DeviceMulticastBuffer[dtype: DType]:
     ) raises -> DeviceBuffer[Self.dtype]:
         # const char* AsyncRT_DeviceMulticastBuffer_multicastBufferFor(const DeviceBuffer **result, void **devicePtr, const DeviceMulticastBuffer *multiBuffer, const DeviceContext* ctx)
         var buf_handle = _DeviceBufferPtr[mut=True]()
-        comptime _BufPtr = UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
-        var buf_ptr = _BufPtr(_unsafe_null=())
+        var buf_ptr = Optional[
+            UnsafePointer[Scalar[Self.dtype], MutAnyOrigin]
+        ]()
 
         _checked(
             external_call[
                 "AsyncRT_DeviceMulticastBuffer_multicastBufferFor",
                 _CString[],
-                UnsafePointer[
-                    _DeviceBufferPtr[mut=True], origin_of(buf_handle)
-                ],
-                UnsafePointer[_BufPtr, origin_of(buf_ptr)],
-                _DeviceMulticastBufferPtr[mut=True],
-                _DeviceContextPtr[mut=True],
             ](
                 UnsafePointer(to=buf_handle),
                 UnsafePointer(to=buf_ptr),
@@ -7376,7 +7348,7 @@ struct DeviceMulticastBuffer[dtype: DType]:
             )
         )
 
-        return DeviceBuffer[Self.dtype](buf_handle, buf_ptr)
+        return DeviceBuffer[Self.dtype](buf_handle, buf_ptr.value())
 
 
 struct _HostMappedBuffer[dtype: DType]:
