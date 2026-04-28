@@ -3,9 +3,11 @@
 
 .. raw:: markdown
 
-    The `max` command line tool allows you to create an OpenAI-compatible endpoint
-    with a simple `max serve` command. It also includes a command to benchmark your
-    endpoint using built-in datasets or your own dataset.
+    The `max` command line tool runs and benchmarks MAX pipelines from one
+    binary. Use `max serve` to host an OpenAI-compatible endpoint, `max generate`
+    or `max encode` to run a model directly, `max benchmark` to load-test a
+    running server, `max warm-cache` to compile and cache a model ahead of
+    deployment, and `max list` to discover the architectures MAX supports.
 
     To install the `max` CLI, install the `modular` package as shown
     in the [install guide](/max/packages#install).

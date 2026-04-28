@@ -8,12 +8,24 @@ Preloads and compiles the model to optimize initialization time by:
 
 This command is useful to run before serving a model.
 
-For example:
+For example, compile and cache a model hosted on Hugging Face:
 
 .. code-block:: bash
 
     max warm-cache \
       --model google/gemma-3-12b-it
+
+To compile for a target API and architecture without requiring matching
+physical hardware, pass ``--target`` (for example, ``cuda``,
+``cuda:sm_90``, or ``hip:gfx942``). MAX uses virtual devices for the
+compilation, which is useful when building MEF caches on a CI host that
+doesn't have the deployment hardware attached:
+
+.. code-block:: bash
+
+    max warm-cache \
+      --model google/gemma-3-12b-it \
+      --target cuda:sm_90
 
 .. raw:: markdown
 

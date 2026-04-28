@@ -1,9 +1,9 @@
 :title: max serve
 
-Launches a model server with an OpenAI-compatible endpoint. Just specify the
+Launches a model server with an OpenAI-compatible endpoint. Specify the
 model as a Hugging Face model ID or a local path.
 
-For example:
+For example, start a server for a Gemma 3 model on the first GPU:
 
 .. code-block:: bash
 
@@ -16,9 +16,9 @@ For example:
 For details about the endpoint APIs provided by the server, see [the MAX REST
 API reference](/max/api/serve).
 
-The ``max`` CLI also supports loading custom model architectures through the
-``--custom-architectures`` flag. This allows you to extend MAX's capabilities
-with your own model implementations:
+You can extend MAX with your own model implementations by loading custom
+architectures through the ``--custom-architectures`` flag. Each value takes
+the form ``path/to/module:module_name``:
 
 .. code-block:: bash
 

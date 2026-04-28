@@ -29,19 +29,15 @@
     By default, it sends inference requests to `localhost:8000`, but you can change
     that with the `--host` and `--port` arguments.
 
-    If you want to save the results, add the `--save-result` option, which creates
-    a JSON file in the local path with the following naming convention:
+    To save the results to a JSON file, set `--result-filename` to the path you
+    want (the value can include a directory, which is created if needed):
 
-    ```bash
-    {backend}-{request_rate}qps-{model_name}-{timestamp}.json
+    ```sh
+    max benchmark ... --result-filename results/gemma-run.json
     ```
 
-    But you can specify the file name with `--result-filename` and change the
-    directory with `--result-dir`.
-
-    Instead of passing all these benchmark options, you can instead pass a
-    configuration file. See [Configuration file](#benchmark-configuration-file)
-    below.
+    Instead of passing all these benchmark options, you can pass a configuration
+    file. See [Configuration file](#benchmark-configuration-file) below.
 
     :::note
 
@@ -53,139 +49,187 @@
 
     ## Usage
 
+    Run `max benchmark` with one or more options:
+
     ```sh
     max benchmark [OPTIONS]
     ```
 
     ## Options
 
-    This list of options is not exhaustive. For more information, run `max
-    benchmark --help` or see the [benchmarking script source
-    code](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
+    The full option list is long. The most useful options group as follows. For
+    everything else, run `max benchmark --help` or see the [benchmarking script
+    source code](https://github.com/modular/modular/tree/main/max/python/max/benchmark).
 
     - Backend configuration:
 
-      - `--backend`: Choose from `modular` (MAX `v1/completions` endpoint),
-      `modular-chat` (MAX `v1/chat/completions` endpoint), or `vllm` (vLLM)
+      - `--backend`: Backend to benchmark. Choices include `modular` (MAX
+        `/v1/completions` endpoint), `modular-chat` (MAX `/v1/chat/completions`
+        endpoint), `vllm`, `vllm-chat`, `sglang`, `sglang-chat`, `trtllm`, and
+        `trtllm-chat`. Default: `modular`.
 
-      - `--model`: Hugging Face model ID or local path
+      - `--model`: Hugging Face model ID or local path.
+
+      - `--endpoint`: Specific API endpoint, such as `/v1/completions` or
+        `/v1/chat/completions`. Default: `/v1/chat/completions`.
+
+      - `--base-url`: Base URL of the API service. Overrides `--host` and
+        `--port` when set.
+
+      - `--host`: Server host. Default: `localhost`.
+
+      - `--port`: Server port. Default: `8000`.
+
+      - `--tokenizer`: Hugging Face tokenizer to use. Defaults to the model's
+        tokenizer.
 
     - Load generation:
 
-      - `--num-prompts`: Number of prompts to process (`int`, default: `500`)
+      - `--num-prompts`: Number of prompts to process. Default: unset (driven by
+        the dataset and duration).
 
-      - `--request-rate`: Request rate in requests/second (`int`, default: `inf`)
+      - `--request-rate`: Requests per second. Accepts a single value or a
+        comma-separated sweep (such as `1,2,4,8`). Default: `inf` (no rate
+        limit).
 
-      - `--seed`: The random seed used to sample the dataset (`int`, default: `0`)
+      - `--max-concurrency`: Maximum concurrent requests. Accepts a single
+        integer or a comma-separated sweep.
 
-    - Serving options
+      - `--seed`: Random seed used to sample the dataset. Default: `0`.
 
-      - `--base-url`: Base URL of the API service
+    - Dataset selection:
 
-      - `--endpoint`: Specific API endpoint (`/v1/completions` or
-      `/v1/chat/completions`)
+      - `--dataset-name`: Dataset to benchmark on. Determines the dataset class
+        and processing logic. Default: `sharegpt`. See [Datasets](#datasets)
+        below.
 
-      - `--tokenizer`: Hugging Face tokenizer to use (can be different from model)
+      - `--dataset-path`: Path to a local dataset file that overrides the
+        default source for the chosen `--dataset-name`. The file format must
+        match the expected format for that dataset (such as JSON for
+        `axolotl`, JSONL for `obfuscated-conversations`, plain text for
+        `sonnet`).
 
-      - `--dataset-name`: (Required; default:`sharegpt`) Specifies which type of
-      benchmark dataset to use. This determines the dataset class and processing
-      logic. See [Datasets](#datasets) below.
+    - Output control:
 
-      - `--dataset-path`: Path to a local dataset file that overrides the default
-      dataset source for the specified `dataset-name`. The file format must match
-      the expected format for the specified `dataset-name` (such as JSON for
-      `axolotl`, JSONL for `obfuscated-conversations`, plain text for `sonnet`).
+      - `--max-output-len`: Maximum output length per request, in tokens.
 
-    - Additional options
+      - `--temperature`, `--top-p`, `--top-k`: Sampling parameters forwarded to
+        the server.
 
-      - `--collect-gpu-stats`: Report GPU utilization and memory consumption
-        for both NVIDIA and AMD GPUs. Only works when running `max benchmark`
-        on the same instance as the server.
+    - LoRA traffic:
 
-      - `--save-results`: Saves results to a local JSON file.
+      - `--lora`: Optional LoRA name to send with each request.
 
-    - LoRA benchmarking options
+      - `--lora-paths`: Paths to existing LoRA adapters. Each entry is either
+        `path` or `name=path`.
 
-      The benchmark script supports testing LoRA adapter performance for
-      supported models and target modules:
+      - `--lora-uniform-traffic-ratio`: Probability (between `0.0` and `1.0`)
+        that any given request targets a randomly selected LoRA instead of the
+        base model. Default: `0.0`.
 
-      - `--num-loras`: Number of LoRA adapters to test. If > 0, test LoRA
-        adapters will be generated.
-      - `--lora-rank`: LoRA rank (r parameter) for generated adapters. Controls
-        the dimension of the low-rank decomposition.
-      - `--lora-output-dir`: Directory to save generated LoRA adapters.
-        Defaults to `/tmp/loras`.
-      - `--lora-paths`: Paths to existing LoRA adapters to use instead of
-        generating new ones.
-      - `--lora-request-ratio`: Ratio of requests to send with LoRA adapters
-        (0.0-1.0). For example, 0.5 means 50% of requests use LoRA.
-      - `--max-num-loras`: Maximum number of LoRA adapters cached on GPU.
-        This should match the server configuration.
-      - `--lora-target-modules`: List of module names to apply LoRA to when
-        generating random test adapters (e.g., `q_proj`, `k_proj`, `v_proj`,
-        `o_proj`). Only used when `--num-loras` > 0 and generating adapters
-        (not when using existing `--lora-paths`).
+      - `--per-lora-traffic-ratio`: Per-adapter traffic ratios, in the same
+        order as `--lora-paths`. Sum must not exceed `1.0`; the remainder goes
+        to the base model. Overrides `--lora-uniform-traffic-ratio` when set.
 
-      - `--config-file`: Path to a YAML file containing benchmark configuration.
-        The configuration file is a YAML file that contains key-value pairs for all
-        your benchmark configurations (as a replacement for individual command line
-        options). See [Configuration file](#benchmark-configuration-file) below.
+      - `--max-concurrent-lora-ops`: Maximum concurrent LoRA load and unload
+        operations. Default: `1`.
+
+    - Result saving:
+
+      - `--result-filename`: Path to a JSON file for benchmark results. When
+        unset, no file is written. The path may include directories that the
+        command creates if they don't exist.
+
+      - `--metadata`: Key-value pairs (such as `--metadata version=0.3.3 tp=1`)
+        recorded alongside the run in the result JSON.
+
+      - `--log-dir`: Directory for log output. Default:
+        `<backend>-latency-Y.m.d-H.M.S`.
+
+    - Stats collection:
+
+      - `--collect-gpu-stats` / `--no-collect-gpu-stats`: Report GPU utilization
+        and memory consumption (NVIDIA only). Enabled by default. Only works
+        when `max benchmark` runs on the same instance as the server.
+
+      - `--collect-cpu-stats` / `--no-collect-cpu-stats`: Report CPU stats.
+        Enabled by default.
+
+      - `--collect-server-stats` / `--no-collect-server-stats`: Report server
+        stats. Enabled by default.
+
+    - Configuration file:
+
+      - `--config-file`: Path to a YAML file containing all benchmark options.
+        Replaces individual command line flags. See [Configuration
+        file](#benchmark-configuration-file) below.
 
     ### Datasets
 
-    The `--dataset-name` option supports several dataset names/formats you can
-    use for benchmarking:
+    The `--dataset-name` option supports the following datasets:
 
-    - `arxiv-summarization` - Research paper summarization dataset containing
-    academic papers with abstracts for training summarization models, from Hugging
-    Face Datasets.
+    - `arxiv-summarization`: Research paper summarization dataset containing
+      academic papers with abstracts, from Hugging Face Datasets.
 
-    - `axolotl` - Local dataset in Axolotl format with conversation segments
-    labeled as human/assistant text, from Hugging Face Datasets.
+    - `axolotl`: Local dataset in Axolotl format with conversation segments
+      labeled as human/assistant text.
 
-    - `code_debug` - Long-context code debugging dataset containing code with
-    multiple choice debugging questions for testing long-context understanding,
-    from Hugging Face Datasets.
+    - `agentic-code`: Multiturn agentic coding workload with tool-call turns.
 
-    - `obfuscated-conversations` - Local dataset with obfuscated conversation data.
-    You must pair this with the `--dataset-path` option to specify the local JSONL
-    file.
+    - `batch-job`: Batch image workload. Set `--batch-job-image-dir` to point
+      the server at a directory of images, or omit it to embed images as
+      base64.
 
-    - `random` - Synthetically generated random dataset that creates random
-    token sequences with configurable input/output lengths and distributions.
+    - `code_debug`: Long-context code debugging dataset with multiple-choice
+      questions for testing long-context understanding, from Hugging Face
+      Datasets.
 
-    - `sharegpt` - Conversational dataset containing human-AI conversations for
-    chat model evaluation, from Hugging Face Datasets.
+    - `instruct-coder`: Instruction-following coding dataset with multiturn
+      support.
 
-    - `sonnet` - Poetry dataset using local text files containing poem lines,
-    from Hugging Face Datasets.
+    - `local-image`: Local images for vision benchmarks. Pair with
+      `--dataset-path`.
 
-    - `vision-arena` - Vision-language benchmark dataset containing images with
-    associated questions for multimodal model evaluation, from Hugging Face
-    Datasets.
+    - `obfuscated-conversations`: Local dataset with obfuscated conversation
+      data. Pair with `--dataset-path` to point at a local JSONL file.
 
-    You can override the default dataset source for any of these using the
-    `--dataset-path` option (except for generated datasets like `random`), but you
-    must always specify a `--dataset-name` so the tool knows how to process the
-    dataset format.
+    - `random`: Synthetically generated random dataset with configurable
+      input/output lengths and distributions (see the `--random-*` options).
+
+    - `sharegpt`: Conversational dataset with human-AI conversations for chat
+      model evaluation, from Hugging Face Datasets.
+
+    - `sonnet`: Poetry dataset using local text files containing poem lines.
+
+    - `synthetic`: Synthetic text generation workload with multiturn support.
+
+    - `synthetic-pixel`: Synthetic pixel-generation workload for image-output
+      backends.
+
+    - `vision-arena`: Vision-language benchmark dataset with images and
+      associated questions for multimodal model evaluation, from Hugging Face
+      Datasets.
+
+    You can override the default source for any dataset (except generated ones
+    like `random`) using `--dataset-path`. You must always specify a
+    `--dataset-name` so the tool knows how to process the file.
 
     ### Configuration file {#benchmark-configuration-file}
 
-    The `--config-file` option allows you to specify a YAML file containing all
-    your benchmark configurations, as a replacement for individual command line
-    options. Simply define all the configuration options (corresponding to the `max
-    benchmark` command line options) in a YAML file, all nested under the
+    The `--config-file` option points at a YAML file containing all benchmark
+    options as a replacement for individual command line flags. Define every
+    option (corresponding to a `max benchmark` flag) under a top-level
     `benchmark_config` key.
 
     :::caution
 
     In the YAML file, the properties **must use `snake_case` names** instead of
-    using the hyphenated names from the command line options. For example,
-    `--num-prompts` becomes `num_prompts`.
+    the hyphenated names from the command line. For example, `--num-prompts`
+    becomes `num_prompts`.
 
     :::
 
-    For instance, instead of specifying all configurations in the command line like
+    For example, instead of specifying configurations on the command line like
     this:
 
     ```sh
@@ -216,7 +260,7 @@
       max_output_len: 1200
     ```
 
-    And then run the benchmark by passing that file:
+    Then run the benchmark by passing that file:
 
     ```sh
     max benchmark --config-file gemma-benchmark.yaml
@@ -225,25 +269,25 @@
     For more config file examples, see our [benchmark configs on
     GitHub](https://github.com/modular/modular/tree/main/max/python/max/benchmark/configs).
 
-    For a walkthrough of setting up an endpoint and running a benchmark, see the
-    [quickstart guide](/max/get-started).
+    For a walkthrough of setting up an endpoint and running a benchmark, see
+    the [quickstart guide](/max/get-started).
 
     ## Output
 
-    Here's an explanation of the most important metrics printed upon completion:
+    Each run prints the following metrics on completion:
 
-    - **Request throughput**: Number of complete requests processed per second
-    - **Input token throughput**: Number of input tokens processed per second
-    - **Output token throughput**: Number of tokens generated per second
-    - **TTFT**: Time to first token—the time from request start to first
-    token generation
-    - **TPOT**: Time per output token—the average time taken to generate
-    each output token
-    - **ITL**: Inter-token latency—the average time between consecutive token
-    or token-chunk generations
+    - **Request throughput**: number of complete requests processed per second.
+    - **Input token throughput**: number of input tokens processed per second.
+    - **Output token throughput**: number of tokens generated per second.
+    - **TTFT** (time to first token): time from request start to first token
+      generation.
+    - **TPOT** (time per output token): average time taken to generate each
+      output token.
+    - **ITL** (inter-token latency): average time between consecutive token or
+      token-chunk generations.
 
-    If `--collect-gpu-stats` is set, you'll also see these:
+    When `--collect-gpu-stats` is enabled, the run also reports:
 
-    - **GPU utilization**: Percentage of time during which at least one GPU kernel
-    is being executed
-    - **Peak GPU memory used**: Peak memory usage during benchmark run
+    - **GPU utilization**: percentage of time during which at least one GPU
+      kernel is executing.
+    - **Peak GPU memory used**: peak memory usage during the benchmark run.
