@@ -10,6 +10,45 @@
 using namespace M;
 using namespace lldb;
 
+TEST(StdlibTypesTest, testVariant) {
+  StopContext ctx = buildAndLaunch("variant.mojo");
+
+  // v = Variant[Int, String](42) — active type is Int
+  SBValue v = ctx.frame.FindVariable("v");
+  EXPECT_STREQ(v.GetSummary(), "Int(42)");
+
+  ctx.resume();
+
+  // v.set[String]("hello, world") — heap-encoded String.
+  v = ctx.frame.FindVariable("v");
+  EXPECT_STREQ(v.GetSummary(), "String(\"hello, world\")");
+
+  ctx.resume();
+
+  // v.set[String]("hi") — inline/small-string form.
+  v = ctx.frame.FindVariable("v");
+  EXPECT_STREQ(v.GetSummary(), "String(\"hi\")");
+
+  ctx.resume();
+
+  // v.set[String](String("")) — heap path with size == 0.
+  v = ctx.frame.FindVariable("v");
+  EXPECT_STREQ(v.GetSummary(), "String(\"\")");
+
+  ctx.resume();
+
+  // w = Variant[Int, Bool, String](True) — discriminant > 1 in a 3-way
+  // variant, confirming the union's `GetChildAtIndex(discr)` indexing.
+  SBValue w = ctx.frame.FindVariable("w");
+  EXPECT_STREQ(w.GetSummary(), "Bool(True)");
+
+  ctx.resume();
+
+  // w.set[String]("last arm") — boundary case: last arm of a 3-way variant.
+  w = ctx.frame.FindVariable("w");
+  EXPECT_STREQ(w.GetSummary(), "String(\"last arm\")");
+}
+
 TEST(StdlibTypesTest, testList) {
   /// Tests that List can be parsed correctly and its data formatter works
   /// correctly as well.

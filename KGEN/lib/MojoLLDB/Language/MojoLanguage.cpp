@@ -11,6 +11,7 @@
 #include "Formatters/MojoKGENVariantTypeFormatter.h"
 #include "Formatters/MojoListTypeFormatter.h"
 #include "Formatters/MojoStringHelpers.h"
+#include "Formatters/MojoVariantTypeFormatter.h"
 #include "lldb/API/SBValue.h"
 #include "lldb/Core/PluginManager.h"
 #include "lldb/DataFormatters/DataVisualization.h"
@@ -482,6 +483,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
       R"(^!lit.struct<@std::@collections::@list::@"?List[\[<].*)";
   constexpr const char *kLLDBFormatterWrappingTypeRegex =
       R"(.* {@std::utils::_visualizers::lldb_formatter_wrapping_type\(.*)";
+  // Matches both DWARF form (@"Variant[...]) and REPL form (@Variant<...>).
+  constexpr const char *kVariantRegex =
+      R"(^!lit\.struct<@std::@utils::@variant::@"?Variant[\[<].*)";
 
   // Formatters are matched in reverse order (last registered = highest
   // priority). The _mlir_value elision is registered first so it has the
@@ -574,6 +578,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   AddCXXSummary(mojoCategorySP, vectorLikeSummaryProvider,
                 "collections::list::List summary provider", kListRegex,
                 summaryFlags, /*regex=*/true);
+  AddCXXSummary(mojoCategorySP, mojoVariantSummaryProvider,
+                "Variant summary provider", kVariantRegex, summaryFlags,
+                /*regex=*/true);
 }
 
 lldb::TypeCategoryImplSP MojoLanguage::GetFormatters() {
