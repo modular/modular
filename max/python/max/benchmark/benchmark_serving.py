@@ -2702,9 +2702,6 @@ def validate_task_and_endpoint(
             )
 
 
-ServingBenchmarkMetrics = BenchmarkMetrics | PixelGenerationBenchmarkMetrics
-
-
 def _apply_workload_to_config(
     config: ServingBenchmarkConfig,
     workload: dict[str, Any],
@@ -2804,7 +2801,7 @@ class BenchmarkRunResult:
     max_concurrency: int | None
     request_rate: float
     num_prompts: int
-    metrics: ServingBenchmarkMetrics | None = None
+    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics | None = None
     result_dict: dict[str, Any] | None = None
 
 
@@ -2836,7 +2833,7 @@ def _execute_benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> tuple[dict[str, Any], ServingBenchmarkMetrics]:
+) -> tuple[dict[str, Any], BenchmarkMetrics | PixelGenerationBenchmarkMetrics]:
     """Run a single benchmark invocation and return *(result_dict, metrics)*."""
     backend: Backend = args.backend
     skip_first = session.skip_first
@@ -2911,7 +2908,7 @@ def save_result_json(
     result_filename: str | None,
     args: ServingBenchmarkConfig,
     benchmark_result: dict[str, Any],
-    benchmark_metrics: ServingBenchmarkMetrics,
+    benchmark_metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
     *,
     benchmark_task: BenchmarkTask,
     model_id: str,
@@ -3536,7 +3533,10 @@ def main_with_parsed_args(
             args.request_rate = str(rr)
 
             iteration_results: list[
-                tuple[dict[str, Any], ServingBenchmarkMetrics]
+                tuple[
+                    dict[str, Any],
+                    BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
+                ]
             ] = []
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:

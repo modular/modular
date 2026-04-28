@@ -133,7 +133,7 @@ def run_sweep(
     config: ServingBenchmarkConfig,
     *,
     uploader: SweepUploader | None = None,
-) -> None:
+) -> list[BenchmarkRunResult]:
     """Set up CSV + upload infrastructure and delegate benchmarking to the library.
 
     The actual range iteration, workload YAML loading, num_iters / median
@@ -148,6 +148,12 @@ def run_sweep(
             per-iteration result JSON path.  Only consulted when
             ``config.upload_results`` is True and the run is not a dry
             run.
+
+    Returns:
+        The per-iteration :class:`BenchmarkRunResult` list produced by
+        :func:`benchmark_serving.main_with_parsed_args`, so callers can
+        publish results through additional reporters (e.g. the unified
+        ``results_publication`` framework) without re-running the benchmark.
     """
     if config.upload_results and config.cluster_information_path is None:
         logger.warning("Warning: uploading results without cluster information")
@@ -182,7 +188,11 @@ def run_sweep(
     upload_active = uploader is not None and config.upload_results
 
     # ---- Run benchmarks ----
-    results = benchmark_serving_main(config)
+    # Materialize the iterator up front: benchmark_serving_main yields results
+    # lazily, but we want to both drive CSV + upload side effects here and
+    # return the list to callers (e.g. the unified ``benchmark_serving``
+    # binary) for downstream publication through ``results_publication``.
+    results = list(benchmark_serving_main(config))
 
     # ---- CSV output + upload ----
     results_csv_path = log_dir / "results.csv"
@@ -240,6 +250,7 @@ def run_sweep(
     logger.info(
         f"All concurrency sweep results have been written to: {result_file_path}"
     )
+    return results
 
 
 if __name__ == "__main__":
