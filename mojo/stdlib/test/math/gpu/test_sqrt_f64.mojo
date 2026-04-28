@@ -11,34 +11,24 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 #
-# This file only tests that `sin` and `cos` on float64 are unsupported.
+# This file only tests that `sqrt` on float64 is unsupported on NVIDIA GPU.
 #
 # ===----------------------------------------------------------------------=== #
 # RUN: not %bare-mojo %s 2>&1 | FileCheck %s
 
 from std.compile import compile_info
-from std.math.math import sin, cos
+from std.math.math import sqrt
 from std.gpu.host.info import _get_h100_target
 
 
-def sin_func(x: Float64) raises -> Float64:
-    # CHECK: constraint failed: DType.float64 is not supported for sin on NVIDIA GPU
-    return sin(x)
-
-
-def cos_func(x: Float64) raises -> Float64:
-    # CHECK: constraint failed: DType.float64 is not supported for cos on NVIDIA GPU
-    return cos(x)
+def sqrt_func(x: Float64) raises -> Float64:
+    # CHECK: constraint failed: DType.float64 is not supported for approx sqrt on NVIDIA GPU
+    return sqrt(x)
 
 
 def main() raises:
     print(
         compile_info[
-            sin_func, emission_kind="llvm", target=_get_h100_target()
-        ]()
-    )
-    print(
-        compile_info[
-            cos_func, emission_kind="llvm", target=_get_h100_target()
+            sqrt_func, emission_kind="llvm", target=_get_h100_target()
         ]()
     )

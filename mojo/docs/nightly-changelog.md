@@ -534,6 +534,15 @@ This version is still a work in progress.
 
 ## 🛠️ Fixed
 
+- Fixed `math.sqrt` on `Float64` on NVIDIA GPU producing a cryptic
+  `could not find LLVM intrinsic: "llvm.nvvm.sqrt.approx.d"` failure at LLVM
+  IR translation time. `math.sqrt` now rejects `Float64` on NVIDIA GPU at
+  compile time with the message `DType.float64 isn't supported for approx
+  sqrt on NVIDIA GPU`. The existing `math.sin` and `math.cos` constraint
+  messages were also sharpened to name the op (`DType.float64 isn't supported
+  for sin/cos on NVIDIA GPU`).
+  ([Issue #6434](https://github.com/modular/modular/issues/6434))
+
 - Fixed pack inference failing with `could not infer type of parameter pack ...
   given value with unresolved type` when passing list, dict, set, or slice
   literals to a `*Ts`-bound variadic pack parameter (e.g.
