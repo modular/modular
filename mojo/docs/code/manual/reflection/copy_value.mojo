@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import struct_field_count, struct_field_types
+from std.reflection import (
+    struct_field_count,
+    struct_field_ref,
+    struct_field_types,
+)
 
 
 trait MakeCopyable:
@@ -27,9 +31,9 @@ trait MakeCopyable:
                 continue
 
             # Perform copy
-            ref p_value = __struct_field_ref(idx, self)
+            ref p_value = struct_field_ref[idx](self)
             trait_downcast[Copyable & ImplicitlyDestructible](
-                __struct_field_ref(idx, other)
+                struct_field_ref[idx](other)
             ) = trait_downcast[Copyable & ImplicitlyDestructible](
                 p_value
             ).copy()

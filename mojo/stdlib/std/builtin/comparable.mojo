@@ -14,7 +14,11 @@
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.builtin.range import _ZeroStartingRange
-from std.reflection import struct_field_names, struct_field_types
+from std.reflection import (
+    struct_field_names,
+    struct_field_ref,
+    struct_field_types,
+)
 
 
 trait Equatable(ImplicitlyDestructible):
@@ -78,10 +82,8 @@ trait Equatable(ImplicitlyDestructible):
                 ParentConformsTo="Equatable",
             ]()
             if trait_downcast[Equatable](
-                __struct_field_ref(i._int_mlir_index(), self)
-            ) != trait_downcast[Equatable](
-                __struct_field_ref(i._int_mlir_index(), other)
-            ):
+                struct_field_ref[i](self)
+            ) != trait_downcast[Equatable](struct_field_ref[i](other)):
                 return False
         return True
 

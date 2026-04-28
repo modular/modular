@@ -53,6 +53,7 @@ from .struct_fields import (
     is_struct_type,
     struct_field_count,
     struct_field_names,
+    struct_field_ref,
     struct_field_types,
     struct_field_index_by_name,
     struct_field_type_by_name,

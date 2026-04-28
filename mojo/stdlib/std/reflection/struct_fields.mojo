@@ -64,15 +64,15 @@ def main():
 
 For accessing struct field values by index (returns a reference, not a copy):
 
-- `__struct_field_ref(idx, ref s)` - returns a reference to the field at index
+- `struct_field_ref[idx](ref s)` - returns a reference to the field at index
 
-The `__struct_field_ref` magic function enables reflection-based utilities to work
-with non-copyable types by returning references instead of copies. It works with
+`struct_field_ref` enables reflection-based utilities to work with
+non-copyable types by returning references instead of copies. It works with
 both literal indices and parametric indices (such as loop variables in
 `comptime for` loops):
 
 ```mojo
-from std.reflection import struct_field_names, struct_field_count
+from std.reflection import struct_field_ref
 
 @fieldwise_init
 struct Container:
@@ -81,11 +81,11 @@ struct Container:
 
 def inspect(mut c: Container):
     # Get references to fields without copying
-    ref id_ref = __struct_field_ref(0, c)
-    ref name_ref = __struct_field_ref(1, c)
+    ref id_ref = struct_field_ref[0](c)
+    ref name_ref = struct_field_ref[1](c)
 
     # Mutation through reference
-    __struct_field_ref(0, c) = 42
+    struct_field_ref[0](c) = 42
 
 def main():
     var c = Container(id=1, name="test")
@@ -440,6 +440,78 @@ def is_struct_type[T: AnyType]() -> Bool:
         T,
         `> : i1`,
     ]
+
+
+# ===----------------------------------------------------------------------=== #
+# Struct Field Reference API
+# ===----------------------------------------------------------------------=== #
+
+
+@always_inline("nodebug")
+def struct_field_ref[
+    idx: Int, T: AnyType
+](ref s: T) -> ref[s] struct_field_types[T]()[idx]:
+    """Returns a reference to the struct field at the given index.
+
+    This function provides reference-based access to struct fields by index,
+    enabling reflection-based utilities to work with non-copyable types by
+    returning references instead of copies. It works with both literal indices
+    and parametric indices (such as loop variables in `comptime for` loops),
+    and with both concrete struct types and generic type parameters.
+
+    Parameters:
+        idx: The zero-based index of the field.
+        T: A struct type.
+
+    Args:
+        s: The struct value to access.
+
+    Constraints:
+        `T` must be a struct type. The index must be in range
+        `[0, struct_field_count[T]())`.
+
+    Returns:
+        A reference to the field at the specified index, with the same
+        mutability as `s`.
+
+    Example:
+        ```mojo
+        from std.reflection import struct_field_ref
+
+        @fieldwise_init
+        struct Container:
+            var id: Int
+            var name: String
+
+        def inspect(mut c: Container):
+            ref id_ref = struct_field_ref[0](c)
+            ref name_ref = struct_field_ref[1](c)
+
+            # Mutation through reference
+            struct_field_ref[0](c) = 42
+
+        def main():
+            var c = Container(id=1, name="test")
+            inspect(c)
+        ```
+    """
+    # Emit `lit.ref.struct.ger` with index-access form. The op accepts
+    # StructType, ParamType, and ClosureType element types, so this works for
+    # concrete structs, generic type parameters, and closures alike. Once `idx`
+    # and the struct type are both concrete, the canonicalizer rewrites this to
+    # field-name access.
+    return __get_litref_as_mvalue(
+        __mlir_op.`lit.ref.struct.ger`[
+            index=idx._int_mlir_index(),
+            _type=__mlir_type[
+                `!lit.ref<`,
+                struct_field_types[T]()[idx],
+                `, `,
+                origin_of(s)._mlir_origin,
+                `>`,
+            ],
+        ](__get_mvalue_as_litref(s))
+    )
 
 
 # ===----------------------------------------------------------------------=== #

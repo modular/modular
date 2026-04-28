@@ -154,6 +154,13 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Added `struct_field_ref[idx, T](ref s)` to `std.reflection` for accessing
+  struct fields by index without copying. The function returns a reference
+  with the same mutability as `s` and works with both concrete and generic
+  struct types, including parametric indices in `comptime for` loops. The
+  default implementations of `Hashable`, `Equatable`, and `Writable` now use
+  this library function instead of the `__struct_field_ref` magic.
+
 - The `Variadic` suite of low-level operation has been refactored and migrated
   to being members of the `TypeList` and `ParameterList` types, making them more
   ergonomic to work with and more accessible.

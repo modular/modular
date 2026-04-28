@@ -11,7 +11,11 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import struct_field_count, struct_field_types
+from std.reflection import (
+    struct_field_count,
+    struct_field_ref,
+    struct_field_types,
+)
 
 
 trait MakeCopyable:
@@ -28,10 +32,10 @@ trait MakeCopyable:
 
             # Perform copy
             ref p_value = trait_downcast[ImplicitlyCopyable](
-                __struct_field_ref(idx, self)
+                struct_field_ref[idx](self)
             )
             trait_downcast[ImplicitlyCopyable](
-                __struct_field_ref(idx, other)
+                struct_field_ref[idx](other)
             ) = p_value
 
 
@@ -58,8 +62,8 @@ def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
             continue
 
         # Fetch values
-        ref lhs_value = __struct_field_ref(idx, lhs)
-        ref rhs_value = __struct_field_ref(idx, rhs)
+        ref lhs_value = struct_field_ref[idx](lhs)
+        ref rhs_value = struct_field_ref[idx](rhs)
 
         # Early exit `False` when inequality found
         if trait_downcast[Equatable](lhs_value) != trait_downcast[Equatable](

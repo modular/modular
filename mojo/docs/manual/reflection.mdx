@@ -197,7 +197,7 @@ limits copying to fields whose types conform to `Copyable`. It requires an
 already initialized target, avoiding matching values to `__init__` arguments.
 
 ```mojo
-from std.reflection import struct_field_count, struct_field_types
+from std.reflection import struct_field_count, struct_field_ref, struct_field_types
 
 trait MakeCopyable:
     def copy_to(self, mut other: Self):
@@ -211,9 +211,9 @@ trait MakeCopyable:
             comptime if not conforms_to(field_type, Copyable): continue
 
             # Perform the copy
-            ref p_value = __struct_field_ref(idx, self)
+            ref p_value = struct_field_ref[idx](self)
             trait_downcast[Copyable & ImplicitlyDestructible](
-                __struct_field_ref(idx, other)
+                struct_field_ref[idx](other)
             ) = trait_downcast[Copyable & ImplicitlyDestructible](
                 p_value
             ).copy()
@@ -229,7 +229,7 @@ trait MakeCopyable:
 - The `copy_to()` _implementation_ is heavily parameterized and evaluated at
   compile time. It uses `comptime for` and `comptime if` together with
   reflection calls.
-- The `__struct_field_ref(idx, self)` and `__struct_field_ref(idx, other)` calls
+- The `struct_field_ref[idx](self)` and `struct_field_ref[idx](other)` calls
   return references to fields by index, which allows both reading from the
   source instance and writing to the destination instance.
 
@@ -281,7 +281,7 @@ retrieves field value references from the `lhs` and `rhs` arguments. It uses
 early return for the first inequality (`False`), otherwise returning `True`:
 
 ```mojo
-from std.reflection import struct_field_count, struct_field_types
+from std.reflection import struct_field_count, struct_field_ref, struct_field_types
 
 def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime field_count = struct_field_count[T]()
@@ -293,8 +293,8 @@ def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
         comptime if not conforms_to(field_type, Equatable): continue
 
         # Fetch values
-        ref lhs_value = __struct_field_ref(idx, lhs)
-        ref rhs_value = __struct_field_ref(idx, rhs)
+        ref lhs_value = struct_field_ref[idx](lhs)
+        ref rhs_value = struct_field_ref[idx](rhs)
 
         # Early exit with `False` when inequality found
         if trait_downcast[Equatable](lhs_value) != trait_downcast[Equatable](rhs_value): return False
@@ -313,7 +313,7 @@ def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
   If its type, after resolution, does _not_ conform to that trait, it
   will produce a compilation error. Checking for conformance first
   ensures that error won't occur.
-- As its name suggests, `__struct_field_ref()` is limited to use with
+- As its name suggests, `struct_field_ref[]()` is limited to use with
   struct types.
 
 ### Calling the tests
