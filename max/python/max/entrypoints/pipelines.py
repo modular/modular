@@ -34,30 +34,21 @@ _P = ParamSpec("_P")
 _R = TypeVar("_R")
 
 
-def replace_deprecated_model_flag(args: list[str]) -> list[str]:
-    """Replace deprecated --model flag with --model-path.
+def check_model_flag_conflict(args: list[str]) -> None:
+    """Raises if both --model and --model-path are specified.
 
     Raises:
         ValueError: If both --model and --model-path are specified.
     """
-    updated_args: list[str] = []
     saw_model = False
     saw_model_path = False
     for arg in args:
-        if arg == "--model":
+        if arg == "--model" or arg.startswith("--model="):
             saw_model = True
-            updated_args.append("--model-path")
-        elif arg.startswith("--model="):
-            saw_model = True
-            updated_args.append("--model-path" + arg[len("--model") :])
-        else:
-            if arg == "--model-path" or arg.startswith("--model-path="):
-                saw_model_path = True
-            updated_args.append(arg)
-
+        elif arg == "--model-path" or arg.startswith("--model-path="):
+            saw_model_path = True
         if saw_model and saw_model_path:
             raise ValueError("model_path and model cannot both be specified")
-    return updated_args
 
 
 class WithLazyPipelineOptions(click.Command):
@@ -111,14 +102,9 @@ class WithLazyPipelineOptions(click.Command):
         return super().invoke(ctx)
 
     def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
-        # Accept deprecated --model flag by rewriting it to --model-path.
         self._ensure_options_loaded()
-        updated_args = replace_deprecated_model_flag(args)
-        if updated_args != args:
-            logger.warning(
-                "Deprecated flag --model detected; use --model-path instead."
-            )
-        return super().parse_args(ctx, updated_args)
+        check_model_flag_conflict(args)
+        return super().parse_args(ctx, args)
 
     def get_params(self, ctx: click.Context) -> list[click.Parameter]:
         self._ensure_options_loaded()

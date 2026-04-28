@@ -58,7 +58,7 @@ environment variable:
           -v ~/.cache/max_cache:/opt/venv/share/max/.max_cache \
           -p 8000:8000 \
           modular/max-nvidia-full:latest \
-          --model-path google/gemma-3-27b-it
+          --model google/gemma-3-27b-it
         ```
 
       </TabItem>
@@ -74,7 +74,7 @@ environment variable:
           --device /dev/kfd \
           --device /dev/dri \
           modular/max-amd:latest \
-          --model-path google/gemma-3-27b-it
+          --model google/gemma-3-27b-it
         ```
 
       </TabItem>
@@ -182,7 +182,7 @@ environment variable:
 For details about the OpenAI-compatible endpoint, see [our Serve API
 docs](/max/api/serve).
 
-To run a different model, change the `--model-path` to something else from our
+To run a different model, change the `--model` to something else from our
 [supported models](/max/models/).
 
 For information about the available containers, see the [Modular
@@ -233,7 +233,7 @@ You also might need some environment variables (set with `--env`):
     # highlight-end
     -p 8000:8000 \
     modular/max-nvidia-full:latest \
-    --model-path google/gemma-3-27b-it
+    --model google/gemma-3-27b-it
   ```
 
   Learn more about
@@ -246,14 +246,14 @@ You also might need some environment variables (set with `--env`):
 ### MAX options
 
 Following the container name in the `docker run` command, you must specify a
-model with `--model-path`, but there are other options you might need
+model with `--model`, but there are other options you might need
 to configure the `max serve` behavior.
 
 To see all available options, see the [`max` CLI
 page](/max/cli/serve), because the MAX container is basically a
 wrapper around that tool.
 
-- `--model-path`: This is required to specify the model you want to
+- `--model`: This is required to specify the model you want to
 deploy. To find other GenAI models that are compatible with MAX, check out
 our [supported models](/max/models/).
 
@@ -292,7 +292,7 @@ You can run the container on either NVIDIA or AMD as follows:
       --env "HF_TOKEN=${HF_TOKEN}" \
       -p 8000:8000 \
       modular/max-full:latest \
-      --model-path google/gemma-3-27b-it
+      --model google/gemma-3-27b-it
     ```
 
   </TabItem>
@@ -308,7 +308,7 @@ You can run the container on either NVIDIA or AMD as follows:
       --device /dev/dri \
       -p 8000:8000 \
       modular/max-full:latest \
-      --model-path google/gemma-3-27b-it
+      --model google/gemma-3-27b-it
     ```
 
   </TabItem>
@@ -350,7 +350,7 @@ docker run \
   --device /dev/dri \
   -p 8000:8000 \
   modular/max-amd:latest \
-  --model-path google/gemma-3-27b-it
+  --model google/gemma-3-27b-it
 ```
 
 Or, to use the base container, replace `max-amd` with
@@ -378,7 +378,7 @@ docker run --gpus=1 \
   --env "HF_TOKEN=${HF_TOKEN}" \
   -p 8000:8000 \
   modular/max-nvidia-full:latest \
-  --model-path google/gemma-3-27b-it
+  --model google/gemma-3-27b-it
 ```
 
 Or, to use the base container, replace `max-nvidia-full` with
@@ -471,7 +471,7 @@ docker run --gpus=1 \
   --env "MODULAR_STRUCTURED_LOGGING=0" \
   # highlight-end
   modular/max-nvidia-full:latest \
-  --model-path google/gemma-3-27b-it
+  --model google/gemma-3-27b-it
 ```
 
 ## Metrics

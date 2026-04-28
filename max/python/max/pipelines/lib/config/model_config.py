@@ -133,8 +133,8 @@ class MAXModelConfig(MAXModelConfigBase):
     model_path: str = Field(
         default="",
         description=(
-            "The repository ID of a Hugging Face model to use. "
-            "The ``--model`` option also works as an alias."
+            "Accepts either a Hugging Face repository ID "
+            "or a local path to the model."
         ),
     )
     """The repository ID of a Hugging Face model to use."""

@@ -59,7 +59,7 @@ docker run --gpus=1 \
     -v ~/.cache/huggingface:/root/.cache/huggingface \
     -p 8000:8000 \
     modular/max-nvidia-full:latest \
-    --model-path google/gemma-3-27b-it
+    --model google/gemma-3-27b-it
 ```
 
 For more information, see our [MAX container

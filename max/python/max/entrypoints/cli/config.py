@@ -191,13 +191,18 @@ def is_multiple(field_type: Any) -> bool:
     return get_origin(field_type) is list
 
 
-def get_normalized_flag_name(dataclass_field: Any, field_type: Any) -> str:
+def get_normalized_flag_names(
+    dataclass_field: Any, field_type: Any
+) -> tuple[str, ...]:
     normalized_name = dataclass_field.name.lower().replace("_", "-")
 
+    if dataclass_field.name == "model_path":
+        return ("--model", "--model-path", dataclass_field.name)
+
     if is_flag(field_type):
-        return f"--{normalized_name}/--no-{normalized_name}"
-    else:
-        return f"--{normalized_name}"
+        return (f"--{normalized_name}/--no-{normalized_name}",)
+
+    return (f"--{normalized_name}",)
 
 
 def create_click_option(
@@ -210,7 +215,7 @@ def create_click_option(
 
     # Get help field.
     return click.option(
-        get_normalized_flag_name(dataclass_field, field_type),
+        *get_normalized_flag_names(dataclass_field, field_type),
         show_default=False,  # Many strings include default already, and True breaks Sphinx docs
         help=help_text,
         is_flag=is_flag(field_type),

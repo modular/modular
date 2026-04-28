@@ -530,7 +530,7 @@ sudo docker run -d \
   -p 80:8000 \
   --ipc=host \
   modular/max-nvidia-full:latest \
-  --model-path ${HUGGING_FACE_REPO_ID}'
+  --model ${HUGGING_FACE_REPO_ID}'
 
 export STARTUP_SCRIPT=$(echo "$STARTUP_SCRIPT" | base64)
 ```
@@ -641,7 +641,7 @@ sudo docker run -d \
   --device /dev/kfd \
   --device /dev/dri \
   modular/max-amd:latest \
-  --model-path ${HUGGING_FACE_REPO_ID}'
+  --model ${HUGGING_FACE_REPO_ID}'
 
 export STARTUP_SCRIPT=$(echo "$STARTUP_SCRIPT" | base64)
 ```
