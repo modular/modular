@@ -140,6 +140,56 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.batch_size = batch_size
 
 
+struct TuningConfigGEMV(TrivialRegisterPassable, TuningConfig):
+    var M: Int
+    var M_end: Int
+    var N: Int
+    var K: Int
+    var tile_m: Int
+    var tile_n: Int
+    var num_threads: Int
+    var unroll_factor: Int
+
+    def __init__(
+        out self,
+        M: Int,
+        M_end: Int,
+        N: Int,
+        K: Int,
+        tile_m: Int,
+        tile_n: Int,
+        num_threads: Int,
+        unroll_factor: Int = 1,
+    ):
+        self.M = M
+        self.M_end = M_end
+        self.N = N
+        self.K = K
+        self.tile_m = tile_m
+        self.tile_n = tile_n
+        self.num_threads = num_threads
+        self.unroll_factor = unroll_factor
+
+    def write_to(self, mut writer: Some[Writer]):
+        writer.write(
+            "gemv_config: ",
+            "m:",
+            self.M,
+            "-",
+            self.M_end,
+            "/n:",
+            self.N,
+            "/k:",
+            self.K,
+            "/tile_m:",
+            self.tile_m,
+            "/tile_n:",
+            self.tile_n,
+            "/threads:",
+            self.num_threads,
+        )
+
+
 # codegen template
 # TuningConfigSM100(
 #     M=[@M],
@@ -2025,3 +2075,49 @@ def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
     ]
 
     return materialize[config_list]()
+
+
+# ===----------------------------------------------------------------------=== #
+# GEMV tuning configs for small-N shapes
+# ===----------------------------------------------------------------------=== #
+
+
+def _get_tuning_list_gemv_bf16() -> List[TuningConfigGEMV]:
+    return [
+        TuningConfigGEMV(
+            M=2, M_end=5, N=384, K=7168, tile_m=1, tile_n=2, num_threads=256
+        ),
+        TuningConfigGEMV(
+            M=5,
+            M_end=9,
+            N=384,
+            K=7168,
+            tile_m=2,
+            tile_n=2,
+            num_threads=128,
+            unroll_factor=2,
+        ),
+        TuningConfigGEMV(
+            M=9,
+            M_end=13,
+            N=384,
+            K=7168,
+            tile_m=2,
+            tile_n=2,
+            num_threads=128,
+            unroll_factor=2,
+        ),
+        TuningConfigGEMV(
+            M=13, M_end=17, N=384, K=7168, tile_m=2, tile_n=2, num_threads=128
+        ),
+        TuningConfigGEMV(
+            M=17,
+            M_end=25,
+            N=384,
+            K=7168,
+            tile_m=4,
+            tile_n=2,
+            num_threads=128,
+            unroll_factor=2,
+        ),
+    ]

@@ -24,7 +24,7 @@ from std.gpu.primitives.grid_controls import PDLLevel
 from std.gpu.host import DeviceContext, get_gpu_target
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
 from std.gpu.host.info import B200
-from layout import Coord, Idx, TileTensor
+from layout import Coord, Idx, TensorLayout, TileTensor
 from layout.tile_tensor import NullableTileTensor
 from std.logger import Logger
 
@@ -47,6 +47,7 @@ from ..structured_kernels.config import (
 from ... import matmul_kernel_naive, gemv_gpu, multistage_gemm
 from ....vendor.matmul import matmul as matmul_vendor
 from ...tile_scheduler import RasterOrder
+from linalg.gemv import gemv_split_k
 from .matmul import (
     blackwell_matmul_tma_umma_warp_specialized,
     blackwell_batched_matmul_tma_umma_warp_specialized,
@@ -55,15 +56,89 @@ from internal_utils import Table
 from .tuning_configs import (
     _get_tuning_list_sm100_fp8,
     TuningConfigSM100,
+    TuningConfigGEMV,
     _get_tuning_list_sm100_bf16,
     _get_tuning_list_sm100_batched_bf16,
     _get_tuning_list_sm100_batched_fp8,
+    _get_tuning_list_gemv_bf16,
 )
 
 comptime DISPATCH_MISS = 0
 comptime DISPATCH_HIT = 1
 
 comptime logger = Logger()
+
+
+@always_inline
+def _to_immut[
+    dtype: DType, layout: TensorLayout
+](t: TileTensor[dtype, layout, ...]) -> TileTensor[
+    dtype, layout, ImmutAnyOrigin
+]:
+    return rebind[TileTensor[dtype, layout, ImmutAnyOrigin]](t)
+
+
+@always_inline
+def small_N_gemms[
+    tile_m: Int = 1,
+    tile_n: Int = 2,
+    num_threads: Int = 128,
+    unroll_factor: Int = 1,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, ...],
+    a: TileTensor,
+    b: TileTensor,
+    ctx: DeviceContext,
+) raises:
+    comptime assert c.rank == 2
+    comptime assert a.rank == 2
+    comptime assert b.rank == 2
+
+    comptime c_type = c.dtype
+    comptime a_type = a.dtype
+    comptime b_type = b.dtype
+    comptime simd_width = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime static_N = c.static_shape[1]
+    comptime check_bounds = static_N % tile_n != 0
+
+    var m = Int(c.dim[0]())
+    var n = Int(c.dim[1]())
+    var k = Int(a.dim[1]())
+
+    comptime c_layout = type_of(c).LayoutType
+    comptime a_layout = type_of(a).LayoutType
+    comptime b_layout = type_of(b).LayoutType
+
+    comptime kernel = gemv_split_k[
+        c_type,
+        a_type,
+        b_type,
+        c_layout,
+        a_layout,
+        b_layout,
+        simd_width=simd_width,
+        tile_m=tile_m,
+        tile_n=tile_n,
+        num_threads=num_threads,
+        unroll_factor=unroll_factor,
+        elementwise_lambda_fn=elementwise_lambda_fn,
+        check_bounds=check_bounds,
+    ]
+
+    var a_immut = _to_immut[a_type, a_layout](a)
+    var b_immut = _to_immut[b_type, b_layout](b)
+
+    ctx.enqueue_function[kernel, kernel](
+        c,
+        a_immut,
+        b_immut,
+        m,
+        n,
+        k,
+        grid_dim=(ceildiv(m, tile_m), ceildiv(n, tile_n)),
+        block_dim=num_threads,
+    )
 
 
 @always_inline
@@ -608,6 +683,30 @@ def matmul_dispatch_sm100_bf16[
             elementwise_lambda_wrapper=elementwise_lambda_wrapper,
         ](c, a, b, ctx)
         return DISPATCH_HIT
+
+    comptime gemv_table = Table(
+        _get_tuning_list_gemv_bf16(), "gemv_bf16_configs"
+    )
+
+    @parameter
+    @always_inline
+    def gemv_rule(x: TuningConfigGEMV) -> Bool:
+        return x.K == static_K and x.N == static_N
+
+    comptime gemv_configs = gemv_table.find[gemv_rule]()
+
+    comptime if gemv_configs:
+        var m = Int(c.dim[0]())
+        comptime for config in gemv_configs:
+            if m >= config.M and m < config.M_end:
+                small_N_gemms[
+                    tile_m=config.tile_m,
+                    tile_n=config.tile_n,
+                    num_threads=config.num_threads,
+                    unroll_factor=config.unroll_factor,
+                    elementwise_lambda_fn=elementwise_lambda_wrapper,
+                ](c, a, b, ctx)
+                return DISPATCH_HIT
 
     return sm100_heuristic_and_outliers_dispatch[
         transpose_b=transpose_b,
