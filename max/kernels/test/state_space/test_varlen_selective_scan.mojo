@@ -23,7 +23,6 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from std.memory import alloc
 from state_space.varlen_selective_scan import (
     varlen_selective_scan_fwd_cpu,
     varlen_selective_state_update_cpu,
@@ -104,26 +103,28 @@ def run_varlen_selective_scan_fwd[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # u: (dim, total_length)
-    var u_heap = alloc[Scalar[dtype]](dim * total_length)
-    var u_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var u_heap = List(length=dim * total_length, fill=Scalar[dtype](0))
+    var u_h = LayoutTensor[dtype, layout_2d, _](
         u_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
     )
 
     # delta: (dim, total_length) - also used as output if no z
-    var delta_heap = alloc[Scalar[dtype]](dim * total_length)
-    var delta_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var delta_heap = List(length=dim * total_length, fill=Scalar[dtype](0))
+    var delta_h = LayoutTensor[dtype, layout_2d, _](
         delta_heap, RuntimeLayout[layout_2d].row_major(Index(dim, total_length))
     )
 
     # A: (dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](dim * dstate)
-    var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var A_heap = List(length=dim * dstate, fill=Scalar[dtype](0))
+    var A_h = LayoutTensor[dtype, layout_2d, _](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
 
     # B: (ngroups, dstate, total_length)
-    var B_heap = alloc[Scalar[dtype]](ngroups * dstate * total_length)
-    var B_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_heap = List(
+        length=ngroups * dstate * total_length, fill=Scalar[dtype](0)
+    )
+    var B_h = LayoutTensor[dtype, layout_3d, _](
         B_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(ngroups, dstate, total_length)
@@ -131,8 +132,10 @@ def run_varlen_selective_scan_fwd[
     )
 
     # C: (ngroups, dstate, total_length)
-    var C_heap = alloc[Scalar[dtype]](ngroups * dstate * total_length)
-    var C_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_heap = List(
+        length=ngroups * dstate * total_length, fill=Scalar[dtype](0)
+    )
+    var C_h = LayoutTensor[dtype, layout_3d, _](
         C_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(ngroups, dstate, total_length)
@@ -141,15 +144,15 @@ def run_varlen_selective_scan_fwd[
 
     # D: (dim,) or empty
     var D_size = dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = LayoutTensor[dtype, layout_1d, _](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
 
     # z: (dim, total_length) or empty
     var z_size = dim * total_length if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
+    var z_h = LayoutTensor[dtype, layout_2d, _](
         z_heap,
         RuntimeLayout[layout_2d].row_major(
             Index(dim if has_z else 0, total_length if has_z else 0)
@@ -158,29 +161,31 @@ def run_varlen_selective_scan_fwd[
 
     # delta_bias: (dim,) or empty
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_heap = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var delta_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var delta_bias_heap = List(
+        length=max(delta_bias_size, 1), fill=Scalar[dtype](0)
+    )
+    var delta_bias_h = LayoutTensor[dtype, layout_1d, _](
         delta_bias_heap,
         RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
 
     # ssm_states: (batch, dim, dstate) - in/out
-    var ssm_states_heap = alloc[Scalar[dtype]](batch * dim * dstate)
-    var ssm_states_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        ssm_states_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    ).fill(0)
+    var ssm_states_heap = List(
+        length=batch * dim * dstate, fill=Scalar[dtype](0)
+    )
 
     # output: (dim, total_length) - same as delta
-    var output_heap = alloc[Scalar[dtype]](dim * total_length)
-    var output_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var output_heap = List(length=dim * total_length, fill=Scalar[dtype](0))
+    var output_h = LayoutTensor[dtype, layout_2d, _](
         output_heap,
         RuntimeLayout[layout_2d].row_major(Index(dim, total_length)),
-    ).fill(0)
+    )
 
     # query_start_loc: (batch + 1,) - cumulative sequence lengths
-    var query_start_loc_heap = alloc[Scalar[DType.int32]](batch + 1)
-    var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var query_start_loc_heap = List(
+        length=batch + 1, fill=Scalar[DType.int32](0)
+    )
+    var query_start_loc_h = LayoutTensor[DType.int32, layout_1d, _](
         query_start_loc_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch + 1)),
     )
@@ -191,20 +196,17 @@ def run_varlen_selective_scan_fwd[
         query_start_loc_h.ptr.store(i + 1, Scalar[DType.int32](cumsum))
 
     # cache_indices: (batch,) - can be empty or identity mapping
-    var cache_indices_heap = alloc[Scalar[DType.int32]](batch)
-    var cache_indices_h = LayoutTensor[DType.int32, layout_1d, MutAnyOrigin](
+    var cache_indices_heap = List(length=batch, fill=Scalar[DType.int32](0))
+    var cache_indices_h = LayoutTensor[DType.int32, layout_1d, _](
         cache_indices_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
     )
     for i in range(batch):
         cache_indices_h.ptr.store(i, Scalar[DType.int32](i))
 
     # has_initial_state: (batch,) - can be empty or all False
-    var has_initial_state_heap = alloc[Scalar[DType.bool]](batch)
-    var has_initial_state_h = LayoutTensor[DType.bool, layout_1d, MutAnyOrigin](
-        has_initial_state_heap, RuntimeLayout[layout_1d].row_major(Index(batch))
+    var has_initial_state_heap = List(
+        length=batch, fill=Scalar[DType.bool](False)
     )
-    for i in range(batch):
-        has_initial_state_h.ptr.store(i, Scalar[DType.bool](False))
 
     # Initialize input data
     random(u_h)
@@ -290,19 +292,8 @@ def run_varlen_selective_scan_fwd[
         ),
     )
 
-    var u_buf = u_h
-    var delta_buf = delta_h
-    var A_buf = A_h
-    var B_buf = B_h
-    var C_buf = C_h
-    var D_buf = D_h
     var z_buf = z_h
-    var delta_bias_buf = delta_bias_h
-    var ssm_states_buf = ssm_states_h
     var output_buf = output_h
-    var query_start_loc_buf = query_start_loc_h
-    var cache_indices_buf = cache_indices_h
-    var has_initial_state_buf = has_initial_state_h
 
     # Strides for row-major layout using IndexList types
     var u_strides = IndexList[2](total_length, 1)
@@ -365,21 +356,6 @@ def run_varlen_selective_scan_fwd[
             "Output is all zeros - kernel may not be executing correctly"
         )
 
-    # Cleanup
-    u_heap.free()
-    delta_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    delta_bias_heap.free()
-    ssm_states_heap.free()
-    output_heap.free()
-    query_start_loc_heap.free()
-    cache_indices_heap.free()
-    has_initial_state_heap.free()
-
 
 def run_varlen_selective_state_update[
     dtype: DType,
@@ -410,55 +386,53 @@ def run_varlen_selective_state_update[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # state: (batch, nheads, dim, dstate) - in/out
-    var state_heap = alloc[Scalar[dtype]](batch * nheads * dim * dstate)
-    var state_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        state_heap,
-        RuntimeLayout[layout_4d].row_major(Index(batch, nheads, dim, dstate)),
-    ).fill(0)
+    var state_heap = List(
+        length=batch * nheads * dim * dstate, fill=Scalar[dtype](0)
+    )
 
     # output: (batch, nheads, dim)
-    var output_heap = alloc[Scalar[dtype]](batch * nheads * dim)
-    var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var output_heap = List(length=batch * nheads * dim, fill=Scalar[dtype](0))
+    var output_h = LayoutTensor[dtype, layout_3d, _](
         output_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, nheads, dim)),
-    ).fill(0)
+    )
 
     # x: (batch, nheads, dim)
-    var x_heap = alloc[Scalar[dtype]](batch * nheads * dim)
-    var x_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var x_heap = List(length=batch * nheads * dim, fill=Scalar[dtype](0))
+    var x_h = LayoutTensor[dtype, layout_3d, _](
         x_heap, RuntimeLayout[layout_3d].row_major(Index(batch, nheads, dim))
     )
 
     # dt: (batch, nheads, dim)
-    var dt_heap = alloc[Scalar[dtype]](batch * nheads * dim)
-    var dt_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var dt_heap = List(length=batch * nheads * dim, fill=Scalar[dtype](0))
+    var dt_h = LayoutTensor[dtype, layout_3d, _](
         dt_heap, RuntimeLayout[layout_3d].row_major(Index(batch, nheads, dim))
     )
 
     # A: (nheads, dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](nheads * dim * dstate)
-    var A_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var A_heap = List(length=nheads * dim * dstate, fill=Scalar[dtype](0))
+    var A_h = LayoutTensor[dtype, layout_3d, _](
         A_heap, RuntimeLayout[layout_3d].row_major(Index(nheads, dim, dstate))
     )
 
     # B: (batch, ngroups, dstate)
-    var B_heap = alloc[Scalar[dtype]](batch * ngroups * dstate)
-    var B_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_heap = List(length=batch * ngroups * dstate, fill=Scalar[dtype](0))
+    var B_h = LayoutTensor[dtype, layout_3d, _](
         B_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, ngroups, dstate)),
     )
 
     # C: (batch, ngroups, dstate)
-    var C_heap = alloc[Scalar[dtype]](batch * ngroups * dstate)
-    var C_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_heap = List(length=batch * ngroups * dstate, fill=Scalar[dtype](0))
+    var C_h = LayoutTensor[dtype, layout_3d, _](
         C_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, ngroups, dstate)),
     )
 
     # D: (nheads, dim) or empty
     var D_size = nheads * dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = LayoutTensor[dtype, layout_2d, _](
         D_heap,
         RuntimeLayout[layout_2d].row_major(
             Index(nheads if has_D else 0, dim if has_D else 0)
@@ -467,8 +441,8 @@ def run_varlen_selective_state_update[
 
     # z: (batch, nheads, dim) or empty
     var z_size = batch * nheads * dim if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
+    var z_h = LayoutTensor[dtype, layout_3d, _](
         z_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(
@@ -481,8 +455,8 @@ def run_varlen_selective_state_update[
 
     # dt_bias: (nheads, dim) or empty
     var dt_bias_size = nheads * dim if has_dt_bias else 0
-    var dt_bias_heap = alloc[Scalar[dtype]](max(dt_bias_size, 1))
-    var dt_bias_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var dt_bias_heap = List(length=max(dt_bias_size, 1), fill=Scalar[dtype](0))
+    var dt_bias_h = LayoutTensor[dtype, layout_2d, _](
         dt_bias_heap,
         RuntimeLayout[layout_2d].row_major(
             Index(nheads if has_dt_bias else 0, dim if has_dt_bias else 0)
@@ -490,10 +464,10 @@ def run_varlen_selective_state_update[
     )
 
     # state_batch_indices: (batch,) - can be empty or identity
-    var state_batch_indices_heap = alloc[Scalar[DType.int32]](batch)
-    var state_batch_indices_h = LayoutTensor[
-        DType.int32, layout_1d, MutAnyOrigin
-    ](
+    var state_batch_indices_heap = List(
+        length=batch, fill=Scalar[DType.int32](0)
+    )
+    var state_batch_indices_h = LayoutTensor[DType.int32, layout_1d, _](
         state_batch_indices_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch)),
     )
@@ -580,18 +554,6 @@ def run_varlen_selective_state_update[
         ),
     )
 
-    var state_buf = state_h
-    var output_buf = output_h
-    var x_buf = x_h
-    var dt_buf = dt_h
-    var A_buf = A_h
-    var B_buf = B_h
-    var C_buf = C_h
-    var D_buf = D_h
-    var z_buf = z_h
-    var dt_bias_buf = dt_bias_h
-    var state_batch_indices_buf = state_batch_indices_h
-
     # Strides for row-major layout using IndexList types
     var state_strides = IndexList[4](
         nheads * dim * dstate, dim * dstate, dstate, 1
@@ -652,19 +614,6 @@ def run_varlen_selective_state_update[
         raise Error(
             "Output is all zeros - kernel may not be executing correctly"
         )
-
-    # Cleanup
-    state_heap.free()
-    output_heap.free()
-    x_heap.free()
-    dt_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    dt_bias_heap.free()
-    state_batch_indices_heap.free()
 
 
 # =============================================================================

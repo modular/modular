@@ -77,7 +77,7 @@ def test_case_sampling[
     input_shape: IndexList[rank],
     temperature: Scalar[dtype] = 1,
 ) raises:
-    var input_ptr = alloc[Scalar[dtype]](product(input_shape))
+    var input_ptr = List(length=product(input_shape), fill=Scalar[dtype](0))
     var input = TileTensor(input_ptr, row_major(Coord(input_shape)))
 
     var output_shape: IndexList[rank]
@@ -93,8 +93,10 @@ def test_case_sampling[
         output_shape = IndexList[rank](input_shape[0], input_shape[1], K)
         output_idxs_shape = IndexList[rank](input_shape[0], input_shape[1], 1)
 
-    var output_vals_ptr = alloc[Scalar[dtype]](product(output_shape))
-    var output_idxs_ptr = alloc[Int64](product(output_idxs_shape))
+    var output_vals_ptr = List(
+        length=product(output_shape), fill=Scalar[dtype](0)
+    )
+    var output_idxs_ptr = List(length=product(output_idxs_shape), fill=Int64(0))
     var out_vals = TileTensor(output_vals_ptr, row_major(Coord(output_shape)))
     var out_idxs = TileTensor(
         output_idxs_ptr, row_major(Coord(output_idxs_shape))
@@ -110,7 +112,7 @@ def test_case_sampling[
         batch_size = input_shape[0]
     else:
         batch_size = input_shape[0] * input_shape[1]
-    var temperature_ptr = alloc[Float32](batch_size)
+    var temperature_ptr = List(length=batch_size, fill=Float32(0))
     for i in range(batch_size):
         temperature_ptr[i] = temperature.cast[DType.float32]()
 
@@ -120,9 +122,7 @@ def test_case_sampling[
         .as_immut()
     )
 
-    var seed_ptr = alloc[UInt64](batch_size)
-    for i in range(batch_size):
-        seed_ptr[i] = 12
+    var seed_ptr = List(length=batch_size, fill=UInt64(12))
     var seed_buf = Optional(
         TileTensor(seed_ptr, row_major(Idx(Int64(batch_size))))
         .as_any_origin()
@@ -146,12 +146,6 @@ def test_case_sampling[
         print(out_idxs.raw_load(i), end="")
         print(",", end="")
     print("")
-
-    input_ptr.free()
-    output_vals_ptr.free()
-    output_idxs_ptr.free()
-    temperature_ptr.free()
-    seed_ptr.free()
 
 
 def test_case[

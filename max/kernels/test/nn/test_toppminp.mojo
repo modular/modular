@@ -86,11 +86,7 @@ def test_is_sorted_descending[
 ](mut buf: TileTensor[dtype, ...], vocab_size: Int) -> Bool:
     comptime assert buf.rank == 2, "rank must be 2"
     var batch_size = buf.num_elements() // vocab_size
-    var sorted_flag = alloc[Bool](batch_size)
-
-    # Initialize all flags to True
-    for i in range(batch_size):
-        sorted_flag[i] = True
+    var sorted_flag = List(length=batch_size, fill=True)
 
     @parameter
     def process_rows(start_batch: Int, end_batch: Int):
@@ -123,9 +119,6 @@ def test_is_sorted_descending[
     var all_sorted = True
     for i in range(batch_size):
         all_sorted = all_sorted and sorted_flag[i]
-
-    # Free the temporary array
-    sorted_flag.free()
 
     return all_sorted
 
@@ -167,17 +160,21 @@ def test_case_sampling[
     var m = Bench()
 
     # Create input tensors
-    var in_logits_ptr = alloc[Scalar[dtype]](batch_size * vocab_size)
+    var in_logits_ptr = List(
+        length=batch_size * vocab_size, fill=Scalar[dtype](0)
+    )
     var in_logits = TileTensor(
         in_logits_ptr,
         row_major(Coord(Idx(batch_size), Idx(vocab_size))),
     )
-    var token_ids_ptr = alloc[Scalar[out_idx_type]](batch_size * 1)
+    var token_ids_ptr = List(
+        length=batch_size * 1, fill=Scalar[out_idx_type](0)
+    )
     var token_ids = TileTensor(
         token_ids_ptr,
         row_major(Coord(Idx(batch_size), Idx(1))),
     )
-    var p_thresholds_ptr = alloc[Scalar[dtype]](batch_size)
+    var p_thresholds_ptr = List(length=batch_size, fill=Scalar[dtype](0))
     var p_thresholds = TileTensor(
         p_thresholds_ptr,
         row_major(Idx(batch_size)),
@@ -238,11 +235,6 @@ def test_case_sampling[
 
     comptime if DEBUG_BENCH:
         m.dump_report()
-
-    # free all pointers
-    in_logits_ptr.free()
-    token_ids_ptr.free()
-    p_thresholds_ptr.free()
 
 
 def test_toppminp[

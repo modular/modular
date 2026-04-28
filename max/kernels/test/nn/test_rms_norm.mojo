@@ -44,9 +44,9 @@ def run_rms_norm_cpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var input_ptr = alloc[Scalar[dtype]](rows * cols)
-    var output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var gamma_ptr = alloc[Scalar[dtype]](cols)
+    var input_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_ptr = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         input_ptr[i] = Scalar[dtype](i)
@@ -92,7 +92,7 @@ def run_rms_norm_cpu[
 
     for r, c in product(range(rows), range(cols)):
         var vec = TileTensor(
-            input_ptr + r * cols,
+            input_ptr.unsafe_ptr() + r * cols,
             row_major(Idx(cols)),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
@@ -103,10 +103,6 @@ def run_rms_norm_cpu[
             dtype
         ]() * (gamma_ptr[c] + weight_offset)
         assert_almost_equal(val, output_ptr[idx], rtol=rtol)
-
-    input_ptr.free()
-    output_ptr.free()
-    gamma_ptr.free()
 
 
 def run_rms_norm_tests[dtype: DType](rtol: Float64 = 0.001) raises:

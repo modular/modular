@@ -37,9 +37,7 @@ def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
 
     comptime acc_type = get_accum_type[c.dtype]()
 
-    var accum = alloc[Scalar[acc_type]](m * n)
-    for idx in range(m * n):
-        accum[idx] = Scalar[acc_type](0)
+    var accum = List(length=m * n, fill=Scalar[acc_type](0))
 
     for i in range(m):
         for p in range(k):
@@ -50,14 +48,13 @@ def gemm_naive(a: TileTensor, b: TileTensor, c: TileTensor[mut=True, ...]):
 
     for idx in range(m * n):
         c.ptr[idx] = accum[idx].cast[c.dtype]()
-    accum.free()
 
 
 def verify(a: TileTensor, b: TileTensor, c: TileTensor):
     var m = Int(c.dim[0]())
     var n = Int(c.dim[1]())
 
-    var c_ref_ptr = alloc[Scalar[c.dtype]](m * n)
+    var c_ref_ptr = List(length=m * n, fill=Scalar[c.dtype](0))
     var c_ref = TileTensor(c_ref_ptr, row_major(Coord(_ri(m), _ri(n))))
     gemm_naive(a, b, c_ref)
 
@@ -69,7 +66,6 @@ def verify(a: TileTensor, b: TileTensor, c: TileTensor):
                 )
             except e:
                 abort(String(e))
-    c_ref_ptr.free()
 
 
 def bench_matmul_spec(mut m: Bench, spec: MatmulSpec) raises:

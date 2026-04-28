@@ -23,7 +23,6 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from std.memory import alloc
 from state_space.selective_scan import (
     selective_scan_fwd_cpu,
     selective_scan_update_cpu,
@@ -99,50 +98,44 @@ def run_selective_scan_fwd[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # output: (batch, dim, seqlen)
-    var output_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var output_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var output_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var output_h = LayoutTensor[dtype, layout_3d, _](
         output_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    )
 
     # x: (batch, dim, n_chunks, 2*dstate) - checkpoint tensor
-    var x_heap = alloc[Scalar[dtype]](batch * dim * n_chunks * 2 * dstate)
-    var x_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
-        x_heap,
-        RuntimeLayout[layout_4d].row_major(
-            Index(batch, dim, n_chunks, 2 * dstate)
-        ),
-    ).fill(0)
+    var x_heap = List(
+        length=batch * dim * n_chunks * 2 * dstate, fill=Scalar[dtype](0)
+    )
 
     # out_z: (batch, dim, seqlen)
-    var out_z_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var out_z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        out_z_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    var out_z_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
 
     # u: (batch, dim, seqlen)
-    var u_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var u_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var u_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var u_h = LayoutTensor[dtype, layout_3d, _](
         u_heap, RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen))
     )
 
     # delta: (batch, dim, seqlen)
-    var delta_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var delta_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var delta_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var delta_h = LayoutTensor[dtype, layout_3d, _](
         delta_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
     # A: (dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](dim * dstate)
-    var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var A_heap = List(length=dim * dstate, fill=Scalar[dtype](0))
+    var A_h = LayoutTensor[dtype, layout_2d, _](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
 
     # B: (batch, n_groups, dstate, seqlen)
-    var B_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
-    var B_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
+    var B_heap = List(
+        length=batch * n_groups * dstate * seqlen, fill=Scalar[dtype](0)
+    )
+    var B_h = LayoutTensor[dtype, layout_4d, _](
         B_heap,
         RuntimeLayout[layout_4d].row_major(
             Index(batch, n_groups, dstate, seqlen)
@@ -150,8 +143,10 @@ def run_selective_scan_fwd[
     )
 
     # C: (batch, n_groups, dstate, seqlen)
-    var C_heap = alloc[Scalar[dtype]](batch * n_groups * dstate * seqlen)
-    var C_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
+    var C_heap = List(
+        length=batch * n_groups * dstate * seqlen, fill=Scalar[dtype](0)
+    )
+    var C_h = LayoutTensor[dtype, layout_4d, _](
         C_heap,
         RuntimeLayout[layout_4d].row_major(
             Index(batch, n_groups, dstate, seqlen)
@@ -160,15 +155,15 @@ def run_selective_scan_fwd[
 
     # D: (dim,) or empty
     var D_size = dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = LayoutTensor[dtype, layout_1d, _](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
 
     # z: (batch, dim, seqlen) or empty
     var z_size = batch * dim * seqlen if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
+    var z_h = LayoutTensor[dtype, layout_3d, _](
         z_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(
@@ -181,18 +176,13 @@ def run_selective_scan_fwd[
 
     # delta_bias: (dim,) or empty
     var delta_bias_size = dim if has_delta_bias else 0
-    var delta_bias_heap = alloc[Scalar[dtype]](max(delta_bias_size, 1))
-    var delta_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var delta_bias_heap = List(
+        length=max(delta_bias_size, 1), fill=Scalar[dtype](0)
+    )
+    var delta_bias_h = LayoutTensor[dtype, layout_1d, _](
         delta_bias_heap,
         RuntimeLayout[layout_1d].row_major(Index(delta_bias_size)),
     )
-
-    # Reference output
-    var output_ref_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var output_ref_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
-        output_ref_heap,
-        RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
 
     # Initialize input data
     random(u_h)
@@ -264,19 +254,6 @@ def run_selective_scan_fwd[
         ),
     )
 
-    var output_buf = output_h
-    var x_buf = x_h
-    var out_z_buf = out_z_h
-    var u_buf = u_h
-    var delta_buf = delta_h
-    var A_buf = A_h
-    var B_buf = B_h
-    var C_buf = C_h
-    var D_buf = D_h
-    var z_buf = z_h
-    var delta_bias_buf = delta_bias_h
-    var output_ref_buf = output_ref_h
-
     # Strides for row-major layout
     var output_strides = Strides3D(dim * seqlen, seqlen, 1)
     var x_strides = Strides4D(
@@ -347,20 +324,6 @@ def run_selective_scan_fwd[
             "Output is all zeros - kernel may not be executing correctly"
         )
 
-    # Cleanup
-    output_heap.free()
-    x_heap.free()
-    out_z_heap.free()
-    u_heap.free()
-    delta_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    delta_bias_heap.free()
-    output_ref_heap.free()
-
 
 def run_selective_scan_update[
     dtype: DType,
@@ -382,68 +345,70 @@ def run_selective_scan_update[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # state_in: (batch, dim, dstate)
-    var state_in_heap = alloc[Scalar[dtype]](batch * dim * dstate)
-    var state_in_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var state_in_heap = List(length=batch * dim * dstate, fill=Scalar[dtype](0))
+    var state_in_h = LayoutTensor[dtype, layout_3d, _](
         state_in_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
     )
 
     # state_out: (batch, dim, dstate)
-    var state_out_heap = alloc[Scalar[dtype]](batch * dim * dstate)
-    var state_out_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var state_out_heap = List(
+        length=batch * dim * dstate, fill=Scalar[dtype](0)
+    )
+    var state_out_h = LayoutTensor[dtype, layout_3d, _](
         state_out_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    ).fill(0)
+    )
 
     # output: (batch, dim)
-    var output_heap = alloc[Scalar[dtype]](batch * dim)
-    var output_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var output_heap = List(length=batch * dim, fill=Scalar[dtype](0))
+    var output_h = LayoutTensor[dtype, layout_2d, _](
         output_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
-    ).fill(0)
+    )
 
     # x: (batch, dim)
-    var x_heap = alloc[Scalar[dtype]](batch * dim)
-    var x_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var x_heap = List(length=batch * dim, fill=Scalar[dtype](0))
+    var x_h = LayoutTensor[dtype, layout_2d, _](
         x_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
     )
 
     # dt: (batch, dim)
-    var dt_heap = alloc[Scalar[dtype]](batch * dim)
-    var dt_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var dt_heap = List(length=batch * dim, fill=Scalar[dtype](0))
+    var dt_h = LayoutTensor[dtype, layout_2d, _](
         dt_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
     )
 
     # A: (dim, dstate)
-    var A_heap = alloc[Scalar[dtype]](dim * dstate)
-    var A_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var A_heap = List(length=dim * dstate, fill=Scalar[dtype](0))
+    var A_h = LayoutTensor[dtype, layout_2d, _](
         A_heap, RuntimeLayout[layout_2d].row_major(Index(dim, dstate))
     )
 
     # B: (batch, n_groups, dstate)
-    var B_heap = alloc[Scalar[dtype]](batch * n_groups * dstate)
-    var B_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var B_heap = List(length=batch * n_groups * dstate, fill=Scalar[dtype](0))
+    var B_h = LayoutTensor[dtype, layout_3d, _](
         B_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate)),
     )
 
     # C: (batch, n_groups, dstate)
-    var C_heap = alloc[Scalar[dtype]](batch * n_groups * dstate)
-    var C_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var C_heap = List(length=batch * n_groups * dstate, fill=Scalar[dtype](0))
+    var C_h = LayoutTensor[dtype, layout_3d, _](
         C_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, n_groups, dstate)),
     )
 
     # D: (dim,) or empty
     var D_size = dim if has_D else 0
-    var D_heap = alloc[Scalar[dtype]](max(D_size, 1))
-    var D_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var D_heap = List(length=max(D_size, 1), fill=Scalar[dtype](0))
+    var D_h = LayoutTensor[dtype, layout_1d, _](
         D_heap, RuntimeLayout[layout_1d].row_major(Index(D_size))
     )
 
     # z: (batch, dim) or empty
     var z_size = batch * dim if has_z else 0
-    var z_heap = alloc[Scalar[dtype]](max(z_size, 1))
-    var z_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var z_heap = List(length=max(z_size, 1), fill=Scalar[dtype](0))
+    var z_h = LayoutTensor[dtype, layout_2d, _](
         z_heap,
         RuntimeLayout[layout_2d].row_major(
             Index(batch if has_z else 0, dim if has_z else 0)
@@ -452,22 +417,24 @@ def run_selective_scan_update[
 
     # dt_bias: (dim,) or empty
     var dt_bias_size = dim if has_delta_bias else 0
-    var dt_bias_heap = alloc[Scalar[dtype]](max(dt_bias_size, 1))
-    var dt_bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var dt_bias_heap = List(length=max(dt_bias_size, 1), fill=Scalar[dtype](0))
+    var dt_bias_h = LayoutTensor[dtype, layout_1d, _](
         dt_bias_heap, RuntimeLayout[layout_1d].row_major(Index(dt_bias_size))
     )
 
     # Reference output
-    var state_out_ref_heap = alloc[Scalar[dtype]](batch * dim * dstate)
-    var state_out_ref_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var state_out_ref_heap = List(
+        length=batch * dim * dstate, fill=Scalar[dtype](0)
+    )
+    var state_out_ref_h = LayoutTensor[dtype, layout_3d, _](
         state_out_ref_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, dstate)),
-    ).fill(0)
+    )
 
-    var output_ref_heap = alloc[Scalar[dtype]](batch * dim)
-    var output_ref_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var output_ref_heap = List(length=batch * dim, fill=Scalar[dtype](0))
+    var output_ref_h = LayoutTensor[dtype, layout_2d, _](
         output_ref_heap, RuntimeLayout[layout_2d].row_major(Index(batch, dim))
-    ).fill(0)
+    )
 
     # Initialize input data
     random(state_in_h)
@@ -526,9 +493,6 @@ def run_selective_scan_update[
         ),
     )
 
-    var state_in_buf = state_in_h
-    var state_out_buf = state_out_h
-    var output_buf = output_h
     var x_buf = x_h
     var dt_buf = dt_h
     var A_buf = A_h
@@ -674,21 +638,6 @@ def run_selective_scan_update[
             output_ref_h.ptr[i],
             rtol=rtol,
         )
-
-    # Cleanup
-    state_in_heap.free()
-    state_out_heap.free()
-    output_heap.free()
-    x_heap.free()
-    dt_heap.free()
-    A_heap.free()
-    B_heap.free()
-    C_heap.free()
-    D_heap.free()
-    z_heap.free()
-    dt_bias_heap.free()
-    state_out_ref_heap.free()
-    output_ref_heap.free()
 
 
 # =============================================================================

@@ -23,7 +23,6 @@ from layout import (
     TileTensor,
     row_major,
 )
-from std.memory import alloc
 from std.random import Random
 from state_space.rms_norm_fused_residual import rms_norm_fused_residual_cpu
 from std.testing import TestSuite, assert_almost_equal
@@ -57,11 +56,11 @@ def run_rms_norm_fused_residual_cpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate memory
-    var input_ptr = alloc[Scalar[dtype]](rows * cols)
-    var residual_ptr = alloc[Scalar[dtype]](rows * cols)
-    var output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var residual_output_ptr = alloc[Scalar[dtype]](rows * cols)
-    var gamma_ptr = alloc[Scalar[dtype]](cols)
+    var input_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_output_ptr = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_ptr = List(length=cols, fill=Scalar[dtype](0))
 
     # Initialize input data
     for i in range(rows * cols):
@@ -75,19 +74,19 @@ def run_rms_norm_fused_residual_cpu[
     # Create tensors
     comptime layout_nd = Layout.row_major[rank]()
 
-    var input_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var input_tensor = LayoutTensor[dtype, layout_nd, _](
         input_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var residual_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var residual_tensor = LayoutTensor[dtype, layout_nd, _](
         residual_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var output_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var output_tensor = LayoutTensor[dtype, layout_nd, _](
         output_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
-    var residual_output_tensor = LayoutTensor[dtype, layout_nd, MutAnyOrigin](
+    var residual_output_tensor = LayoutTensor[dtype, layout_nd, _](
         residual_output_ptr,
         RuntimeLayout[layout_nd].row_major(shape),
     )
@@ -211,13 +210,6 @@ def run_rms_norm_fused_residual_cpu[
             assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
 
         sum_ptr.free()
-
-    # Cleanup
-    input_ptr.free()
-    residual_ptr.free()
-    output_ptr.free()
-    residual_output_ptr.free()
-    gamma_ptr.free()
 
 
 def test_rms_norm_fused_residual_float32_2d() raises:

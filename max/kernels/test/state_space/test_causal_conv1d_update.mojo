@@ -23,7 +23,6 @@ from layout import (
     row_major,
 )
 from layout._fillers import random
-from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_update_cpu,
     causal_conv1d_update_cpu_no_bias,
@@ -67,47 +66,55 @@ def run_causal_conv1d_update[
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
     # Input x: (B, C, L)
-    var input_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var input_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var input_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var input_h = LayoutTensor[dtype, layout_3d, _](
         input_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
 
     # Conv state: (B, C, S)
-    var conv_state_heap = alloc[Scalar[dtype]](batch * dim * state_len)
-    var conv_state_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_state_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_state_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
 
     # Weight: (C, W)
-    var weight_heap = alloc[Scalar[dtype]](dim * width)
-    var weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_h = LayoutTensor[dtype, layout_2d, _](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
 
     # Bias: (C,)
-    var bias_heap = alloc[Scalar[dtype]](dim)
-    var bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
 
     # Output: (B, C, L)
-    var result_fused_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var result_fused_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var result_fused_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var result_fused_h = LayoutTensor[dtype, layout_3d, _](
         result_fused_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    )
 
-    var result_unfused_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var result_unfused_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var result_unfused_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var result_unfused_h = LayoutTensor[dtype, layout_3d, _](
         result_unfused_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    )
 
     # Copy of conv_state for reference implementation
-    var conv_state_ref_heap = alloc[Scalar[dtype]](batch * dim * state_len)
-    var conv_state_ref_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_state_ref_heap = List(
+        length=batch * dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_state_ref_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_ref_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, state_len)),
     )
@@ -143,10 +150,8 @@ def run_causal_conv1d_update[
     )
 
     var input_buf = input_h
-    var conv_state_buf = conv_state_h
     var weight_buf = weight_h
     var bias_buf = bias_h
-    var result_fused_buf = result_fused_h
     var result_unfused_buf = result_unfused_h
     var conv_state_ref_buf = conv_state_ref_h
 
@@ -352,15 +357,6 @@ def run_causal_conv1d_update[
             conv_state_ref_h.ptr[i],
             rtol=rtol,
         )
-
-    # Cleanup
-    input_heap.free()
-    conv_state_heap.free()
-    conv_state_ref_heap.free()
-    weight_heap.free()
-    bias_heap.free()
-    result_fused_heap.free()
-    result_unfused_heap.free()
 
 
 def test_basic_causal_conv1d_update() raises:
