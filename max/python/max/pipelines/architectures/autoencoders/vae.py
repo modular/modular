@@ -415,7 +415,18 @@ class AttentionBlock(Module):
 
     Single-head attention matching the diffusers Wan VAE: the full
     channel dim is the head dim, with `scale = 1 / sqrt(dim)`.
+
+    The fused SM100 MHA kernel only supports head_dim in
+    ``_FUSED_MHA_DEPTHS``. When ``dim`` falls outside that set
+    (e.g. dim=384 for the default Wan config), Q/K/V are zero-padded
+    along head_dim up to the next supported depth so the call routes
+    to the fused path; the output is sliced back to ``dim``. Math is
+    identical because zero-padded dims contribute zero to QKᵀ and PV;
+    ``scale`` stays at ``1/sqrt(dim)``. Tracked in KERN-2818 for
+    native head_dim support.
     """
+
+    _FUSED_MHA_DEPTHS: tuple[int, ...] = (64, 72, 80, 96, 128, 256, 512)
 
     def __init__(
         self,
@@ -428,6 +439,9 @@ class AttentionBlock(Module):
         self.num_heads = 1
         self.head_dim = dim
         self.scale = 1.0 / (dim**0.5)
+        self._fa_head_dim = next(
+            (d for d in AttentionBlock._FUSED_MHA_DEPTHS if d >= dim), dim
+        )
         self.norm = RMSNorm(
             dim,
             images=True,
@@ -483,6 +497,13 @@ class AttentionBlock(Module):
         k = ops.reshape(k, [b * t, seq_len, self.num_heads, self.head_dim])
         v = ops.reshape(v, [b * t, seq_len, self.num_heads, self.head_dim])
 
+        pad_amount = self._fa_head_dim - self.head_dim
+        if pad_amount > 0:
+            paddings = [0, 0, 0, 0, 0, 0, 0, pad_amount]
+            q = ops.pad(q, paddings)
+            k = ops.pad(k, paddings)
+            v = ops.pad(v, paddings)
+
         out = flash_attention_gpu(
             q,
             k,
@@ -490,6 +511,9 @@ class AttentionBlock(Module):
             mask_variant=MHAMaskVariant.NULL_MASK,
             scale=self.scale,
         )
+
+        if pad_amount > 0:
+            out = out[:, :, :, : self.head_dim]
 
         # [bt, seq_len, num_heads, head_dim] -> [bt, h, w, c]
         out = ops.reshape(out, [b * t, seq_len, c])
