@@ -451,6 +451,7 @@ const maxSidebars = {
             "max/api/python/pipelines.architectures.qwen3vl_moe",
             "max/api/python/pipelines.architectures.qwen_image",
             "max/api/python/pipelines.architectures.qwen_image_edit",
+            "max/api/python/pipelines.architectures.step3p5",
             "max/api/python/pipelines.architectures.unified_eagle_llama3",
             "max/api/python/pipelines.architectures.unified_mtp_deepseekV3",
             "max/api/python/pipelines.architectures.wan",

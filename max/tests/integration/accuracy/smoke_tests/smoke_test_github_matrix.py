@@ -98,6 +98,7 @@ HF_MODELS: dict[str, set[str]] = {
     "nvidia/Llama-3.1-405B-Instruct-NVFP4": NON_XL | {"max", "8xMI355"},
     "RedHatAI/Meta-Llama-3.1-405B-Instruct-FP8-dynamic": NON_XL,
     "openai/gpt-oss-20b": XL | {"max@H100", "2xMI355"},
+    "stepfun-ai/Step-3.5-Flash": NON_XL | {"8xMI355"},
     "unsloth/gpt-oss-20b-BF16": XL | {"max@H100", "2xMI355"},
 }
 

@@ -1309,6 +1309,11 @@ class ImageGenerationOracle(PipelineOracle):
 
 
 PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
+    "stepfun-ai/Step-3.5-Flash": GenericOracle(
+        model_path="stepfun-ai/Step-3.5-Flash",
+        config_params={"trust_remote_code": True},
+        device_encoding_map={"gpu": ["bfloat16"]},
+    ),
     "allenai/OLMo-1B-hf": GenericOracle(
         model_path="allenai/OLMo-1B-hf",
         config_params={"max_length": 1024},

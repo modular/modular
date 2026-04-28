@@ -94,6 +94,7 @@ Modules
    pipelines.architectures.qwen3vl_moe
    pipelines.architectures.qwen_image
    pipelines.architectures.qwen_image_edit
+   pipelines.architectures.step3p5
    pipelines.architectures.unified_eagle_llama3
    pipelines.architectures.unified_mtp_deepseekV3
    pipelines.architectures.wan

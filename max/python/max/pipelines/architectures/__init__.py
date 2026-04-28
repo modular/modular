@@ -85,6 +85,7 @@ def register_all_models() -> None:
     from .qwen3vl_moe import qwen3vl_arch, qwen3vl_moe_arch
     from .qwen_image import qwen_image_arch
     from .qwen_image_edit import qwen_image_edit_arch, qwen_image_edit_plus_arch
+    from .step3p5 import step3p5_arch
     from .unified_eagle_llama3 import unified_eagle_llama3_arch
     from .unified_mtp_deepseekV3 import unified_mtp_deepseekV3_arch
     from .wan import wan_arch, wan_i2v_arch
@@ -148,6 +149,7 @@ def register_all_models() -> None:
         qwen_image_arch,
         qwen_image_edit_arch,
         qwen_image_edit_plus_arch,
+        step3p5_arch,
         unified_eagle_llama3_arch,
         unified_mtp_deepseekV3_arch,
         wan_arch,
