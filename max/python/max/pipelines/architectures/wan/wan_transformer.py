@@ -25,7 +25,7 @@ from max.nn.linear import Linear
 from .embeddings import (
     TimestepEmbedding,
     Timesteps,
-    apply_rotary_emb,
+    apply_rotary_emb_fused,
 )
 from .model_config import WanConfigBase
 
@@ -349,21 +349,9 @@ class WanSelfAttention(Module):
             value, [batch_size, seq_len, self.num_heads, self.head_dim]
         )
 
-        # Apply RoPE (stays in input dtype — no f32 promotion)
-        query = apply_rotary_emb(
-            query,
-            rotary_emb,
-            use_real=True,
-            use_real_unbind_dim=-1,
-            sequence_dim=1,
-        )
-        key = apply_rotary_emb(
-            key,
-            rotary_emb,
-            use_real=True,
-            use_real_unbind_dim=-1,
-            sequence_dim=1,
-        )
+        # Apply RoPE via the fused ragged kernel (eliminates the per-token
+        # fused_concat_inner_most_single_dim that ops.stack lowers to).
+        query, key = apply_rotary_emb_fused(query, key, rotary_emb)
 
         # Flash attention
         scale = 1.0 / (self.head_dim**0.5)

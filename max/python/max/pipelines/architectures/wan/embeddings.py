@@ -15,11 +15,11 @@ from __future__ import annotations
 
 import math
 from collections.abc import Callable
-from typing import Any
 
 from max.dtype import DType
 from max.graph import DeviceRef, TensorValue, ops
 from max.nn.activation import activation_function_from_name
+from max.nn.kernels import rope_ragged_with_position_ids
 from max.nn.layer import Module
 from max.nn.linear import Linear
 
@@ -49,52 +49,57 @@ def get_timestep_embedding(
     return emb
 
 
-def apply_rotary_emb(
-    x: TensorValue,
-    freqs_cis: tuple[TensorValue, TensorValue],
-    use_real: bool = True,
-    use_real_unbind_dim: int = -1,
-    sequence_dim: int = 2,
-) -> TensorValue:
-    if not use_real:
-        raise NotImplementedError("Only use_real=True is supported")
+def apply_rotary_emb_fused(
+    q: TensorValue,
+    k: TensorValue,
+    rotary_emb: tuple[TensorValue, TensorValue],
+) -> tuple[TensorValue, TensorValue]:
+    """Pair-interleaved RoPE on Q/K via the fused ragged kernel.
 
-    cos, sin = freqs_cis
-    if sequence_dim == 2:
-        cos = ops.unsqueeze(ops.unsqueeze(cos, 0), 0)
-        sin = ops.unsqueeze(ops.unsqueeze(sin, 0), 0)
-    elif sequence_dim == 1:
-        cos = ops.unsqueeze(ops.unsqueeze(cos, 0), 2)
-        sin = ops.unsqueeze(ops.unsqueeze(sin, 0), 2)
-    else:
-        raise ValueError(f"`sequence_dim={sequence_dim}` but should be 1 or 2.")
+    Builds the interleaved freqs_cis layout once from Wan's repeat-
+    interleaved cos/sin and dispatches both Q and K rotations through
+    ``rope_ragged_with_position_ids``.
+    """
+    cos, sin = rotary_emb
+    seq_len = cos.shape[0]
+    head_dim = cos.shape[1]
 
-    if use_real_unbind_dim == -1:
-        x_shape: list[Any] = list(x.shape)
-        new_shape: list[Any] = x_shape[:-1] + [x_shape[-1] // 2, 2]
-        x_reshaped = ops.reshape(x, new_shape)
-        x_real = x_reshaped[..., 0]
-        x_imag = x_reshaped[..., 1]
-        x_rotated_stacked = ops.stack([-x_imag, x_real], axis=-1)
-        x_rotated = ops.reshape(x_rotated_stacked, x_shape)
-    elif use_real_unbind_dim == -2:
-        x_shape = list(x.shape)
-        new_shape = x_shape[:-1] + [2, x_shape[-1] // 2]
-        x_reshaped = ops.reshape(x, new_shape)
-        x_real = x_reshaped[..., 0, :]
-        x_imag = x_reshaped[..., 1, :]
-        x_rotated = ops.concat([-x_imag, x_real], axis=-1)
-    else:
-        raise ValueError(
-            f"`use_real_unbind_dim={use_real_unbind_dim}` but should be -1 or -2."
-        )
+    # Repeat-interleaved [c0,c0,c1,c1,...] -> interleaved-pairs [c0,s0,c1,s1,...].
+    cos_pairs = ops.reshape(cos, [seq_len, head_dim // 2, 2])[..., 0]
+    sin_pairs = ops.reshape(sin, [seq_len, head_dim // 2, 2])[..., 0]
+    freqs_cis = ops.reshape(
+        ops.stack([cos_pairs, sin_pairs], axis=-1),
+        [seq_len, head_dim],
+    )
 
-    # RoPE multiply-add in the input dtype (bf16). This matches the
-    # diffusers reference and avoids materializing large f32 scratchpad
-    # tensors that scale with seq_len.
-    cos = ops.cast(cos, x.dtype)
-    sin = ops.cast(sin, x.dtype)
-    return x * cos + x_rotated * sin
+    batch_size = q.shape[0]
+    q_seq_len = q.shape[1]
+    num_heads = q.shape[2]
+    head_dim_qk = q.shape[3]
+
+    position_ids = ops.broadcast_to(
+        ops.unsqueeze(
+            ops.range(0, q_seq_len, 1, dtype=DType.uint32, device=q.device),
+            0,
+        ),
+        [batch_size, q_seq_len],
+    )
+    position_ids = ops.reshape(position_ids, [batch_size * q_seq_len])
+
+    q_ragged = ops.reshape(q, [batch_size * q_seq_len, num_heads, head_dim_qk])
+    k_ragged = ops.reshape(k, [batch_size * q_seq_len, num_heads, head_dim_qk])
+
+    q_rotated = rope_ragged_with_position_ids(
+        q_ragged, freqs_cis, position_ids, interleaved=True
+    )
+    k_rotated = rope_ragged_with_position_ids(
+        k_ragged, freqs_cis, position_ids, interleaved=True
+    )
+
+    return (
+        ops.reshape(q_rotated, [batch_size, q_seq_len, num_heads, head_dim_qk]),
+        ops.reshape(k_rotated, [batch_size, q_seq_len, num_heads, head_dim_qk]),
+    )
 
 
 class Timesteps(Module):
