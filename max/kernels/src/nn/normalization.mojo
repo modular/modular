@@ -3690,11 +3690,44 @@ def group_norm_gpu[
             var h, w = divmod(hw, shape[3])
             indices = IndexList[rank](n, c, h, w)
 
+            # Guard against c_offset boundary straddling.  A view-fused
+            # NHWC→NCHW transpose generates a strided_load(stride=C) for
+            # the W-dimension.  That load is correct within a single c_offset
+            # region (consecutive-w with stride C maps to adjacent NHWC
+            # addresses), but it reads wrong elements when the simd_width
+            # window crosses a c_offset boundary at a multiple of
+            # inner_volume=H*W.  This happens when H*W % simd_width != 0 and
+            # the thread's starting column lands near a boundary.  Fall back
+            # to element-wise scalar loads in that case so each element's
+            # full (n, c, h, w) index is recomputed independently.
+            if (col + simd_width - 1) // inner_volume != c_offset:
+                var result = SIMD[dtype, simd_width]()
+                for i in range(simd_width):
+                    var cur_col = col + i
+                    var c_off, hw_i = divmod(cur_col, inner_volume)
+                    var h_i, w_i = divmod(hw_i, shape[3])
+                    result[i] = input_fn[1, rank](
+                        IndexList[rank](
+                            n, g * channels_per_group + c_off, h_i, w_i
+                        )
+                    )[0]
+                return result
+
         elif rank == 3:
             var inner_volume = shape[2]
             var c_offset, l = divmod(col, inner_volume)
             c += c_offset
             indices = IndexList[rank](n, c, l)
+
+            if (col + simd_width - 1) // inner_volume != c_offset:
+                var result = SIMD[dtype, simd_width]()
+                for i in range(simd_width):
+                    var cur_col = col + i
+                    var c_off, l_i = divmod(cur_col, inner_volume)
+                    result[i] = input_fn[1, rank](
+                        IndexList[rank](n, g * channels_per_group + c_off, l_i)
+                    )[0]
+                return result
 
         return input_fn[simd_width, rank](indices)
 
