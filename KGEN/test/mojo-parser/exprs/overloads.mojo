@@ -117,3 +117,30 @@ struct MyContainer[T: ImplicitlyCopyable]:
 def test_impl(a: MyContainer[MyElement], b: Int):
     # CHECK: lit.call {{.*}}@MyContainer::@"foo{{.*}}, "index": !Int
     _ = a.foo(b)
+
+
+# Regression test for MOCO-3665: overload resolution must prefer `ref self`
+# over `var self` for TrivialRegisterPassable types when called from a
+# borrowed self context.
+#
+# In MLIR mangling, the self-argument convention is encoded as a suffix inside
+# the quoted function name: '%' = ref/borrowed, '$' = owned/var.
+@fieldwise_init
+struct TrivSelfOverload(ImplicitlyCopyable, TrivialRegisterPassable):
+    var x: Int
+
+    # CHECK-LABEL: lit.fn @"which{{.*}}TrivSelfOverload%)"
+    def which(ref self) -> Int: return 1
+
+    # CHECK-LABEL: lit.fn @"which{{.*}}TrivSelfOverload$)"
+    def which(var self) -> Int: return 2
+
+    # CHECK-LABEL: lit.fn @"call_which{{.*}}TrivSelfOverload)"
+    def call_which(self) -> Int:
+        # Borrowed self must dispatch to the ref overload (name ends with '%)')
+        # not the var overload ('$)'). Note: the ref overload's name also
+        # contains '$' in its origin parameters (e.g. '[$0]'), so we match
+        # 'TrivSelfOverload%)' specifically rather than checking for absence
+        # of '$'.
+        # CHECK: lit.call {{.*}}TrivSelfOverload%)
+        return self.which()
