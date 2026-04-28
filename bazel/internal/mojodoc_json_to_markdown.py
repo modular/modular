@@ -222,6 +222,7 @@ def generateMarkdown(
     is_nested=False,  # noqa: ANN001
     namespace=None,  # noqa: ANN001
     show_stability_markers: str = "none",
+    docs_title: str | None = None,
 ) -> None:
     """Generate markdown docs from `mojo doc` JSON data.
 
@@ -244,6 +245,9 @@ def generateMarkdown(
             Affects path generation and namespace handling. Defaults to False.
         namespace: The current namespace path (dot-separated).
             Used to generate fully qualified names and proper cross-references.
+            Defaults to None.
+        docs_title: Custom title for the top-level package index page. Only
+            applied at the root level; nested sub-packages use their own names.
             Defaults to None.
     """
     name = mojo_json["name"]
@@ -277,6 +281,7 @@ def generateMarkdown(
                 is_nested=True,
                 namespace=namespace,
                 show_stability_markers=show_stability_markers,
+                docs_title=docs_title if not is_nested else None,
             )
         return
     else:
@@ -389,8 +394,7 @@ def generateMarkdown(
                 if not package["name"].startswith("_")
             ]
 
-            # We want to display the name of the parent module in the title.
-            mojo_json["name"] = parent_json["name"]
+            mojo_json["name"] = docs_title or parent_json["name"]
         else:
             output = output / Path("index.md")
         mojo_json["slug"] = " "
@@ -437,6 +441,11 @@ def main() -> None:
         help="Show stability markers: 'all' marks every API, "
         "'stable' marks only stable APIs, 'none' hides markers.",
     )
+    parser.add_argument(
+        "--docs-title",
+        default=None,
+        help="Custom title for the top-level package index page.",
+    )
     args = parser.parse_args()
 
     with open(args.filename) as jsonFile:
@@ -461,6 +470,7 @@ def main() -> None:
             environment,
             template,
             show_stability_markers=args.show_stability_markers,
+            docs_title=args.docs_title,
         )
         # os.remove(args.filename)
 

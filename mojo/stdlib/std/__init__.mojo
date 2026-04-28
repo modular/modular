@@ -10,7 +10,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""The Mojo standard library.
+"""All the data types, structs, traits, functions, and other APIs included with Mojo.
 
 The standard library provides nearly everything you'll need for
 writing Mojo programs, including basic data types like

@@ -51,7 +51,7 @@ def _mojo_doc_implementation(ctx):
             "-o",
             doc_output.path,
             mojodoc_output.path,
-        ],
+        ] + (["--docs-title", ctx.attr.docs_title] if ctx.attr.docs_title else []),
         use_default_shell_env = True,
     )
 
@@ -76,6 +76,10 @@ mojo_doc = rule(
         "docs_base_path": attr.string(
             default = "",
             doc = "Base path prefix for generated documentation links",
+        ),
+        "docs_title": attr.string(
+            default = "",
+            doc = "Custom title for the top-level package index page",
         ),
         "show_stability_markers": attr.string(
             default = "none",
