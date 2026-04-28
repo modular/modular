@@ -24,6 +24,7 @@ _EXTRA_CONSTRAINTS = {
     "test_conv_transposed_cudnn.mojo": ["//:nvidia_gpu"],
     "test_irfft.mojo": ["//:nvidia_gpu"],
     "test_flash_attention_amd.mojo": ["//:amd_gpu"],
+    "test_mha_gemma4_global_decode_amd.mojo": ["//:amd_gpu"],
     "test_mha_sink_weights.mojo": select({
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],

@@ -186,16 +186,15 @@ __extension Attention:
         v_dma_buffer.kv_cache_iter.tile_start_row = start
         self.kv_start_row = UInt32(start)
 
-        # Pre-scale Q by (scale * log2e).  Default on for bf16 to avoid
-        # Qwen decode NaN in the `_fma` path.  Disabled for fp8 (quant-
-        # ization back to fp8 loses too much precision → fp8 stays on
-        # `_fma`).  Disabled for depth>128 (LLVM MI Scheduler isReg
-        # assertion in RewriteMFMAFormStage, same crash as prefill).
+        # Pre-scale Q by (scale * log2e).  Default on for bf16: the deferred
+        # `_fma` scaling path can overflow before softmax for large decode
+        # scores (for example Gemma 4's depth=512, scale=1.0 global layers).
+        # Disabled for fp8 because quantizing scaled Q back to fp8 loses too
+        # much precision, so fp8 stays on `_fma`.
         # Sink forces pre-scaling (rowmax in scaled-log2 space).
         comptime prescale_q = (
             get_defined_bool["PRESCALE_Q", True]()
             and not Self.q_type.is_float8()
-            and Self.depth <= 128
         ) or Self.sink
         comptime if prescale_q:
             self.scale_q_buffer()
