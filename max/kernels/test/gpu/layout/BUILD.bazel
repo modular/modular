@@ -74,6 +74,7 @@ _EXTRA_CONSTRAINTS = {
     "test_layout_tensor_copy.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_tensor_gpu.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: PRDT-506
     "test_matmul.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: MOCO-2415
+    "test_tile_io.mojo": _APPLE_GPU_INCOMPATIBLE,  # FIXME: KERN-2834
 }
 
 _FILECHECK_TESTS = [

@@ -52,6 +52,10 @@ modular_py_test(
     name = "test_autoconfig_error_propagation",
     size = "small",
     srcs = ["test_autoconfig_error_propagation.py"],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: MOCO-3860
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/pipelines",
         "//max/python/max/pipelines/lib",

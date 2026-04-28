@@ -39,6 +39,10 @@ modular_py_test(
     tags = [
         "requires-network",
     ],
+    target_compatible_with = select({
+        "@platforms//os:macos": ["@platforms//:incompatible"],  # FIXME: PERF-2442
+        "//conditions:default": [],
+    }),
     deps = [
         "//max/python/max/benchmark/benchmark_shared",
         "//max/python/max/pipelines/lib",
