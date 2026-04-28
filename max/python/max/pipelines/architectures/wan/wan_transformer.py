@@ -702,6 +702,26 @@ class WanTransformerPreProcess(Module):
         # Cast f32 latents to model dtype.
         hidden_states = ops.cast(hidden_states, self._dtype)
 
+        # Broadcast latents/timestep to match encoder_hidden_states' batch
+        # axis. For batched CFG the caller supplies B=1 latents/timestep
+        # with a pre-concatenated [cond; uncond] B=2 text embedding, and
+        # this fold avoids needing a separate pack graph. For non-CFG /
+        # I2V the broadcast is an identity because all three inputs share
+        # the same batch. ``ops.broadcast_to`` is used (not ``ops.tile``)
+        # because tile currently falls back to CPU on GPU graphs.
+        target_batch = encoder_hidden_states.shape[0]
+        hidden_states = ops.broadcast_to(
+            hidden_states,
+            [
+                target_batch,
+                hidden_states.shape[1],
+                hidden_states.shape[2],
+                hidden_states.shape[3],
+                hidden_states.shape[4],
+            ],
+        )
+        timestep = ops.broadcast_to(timestep, [target_batch])
+
         # Concat I2V condition along channel axis if present.
         if i2v_condition is not None:
             hidden_states = ops.concat([hidden_states, i2v_condition], axis=1)

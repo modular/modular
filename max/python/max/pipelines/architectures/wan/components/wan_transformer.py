@@ -139,12 +139,18 @@ class WanTransformer(CompiledComponent):
                 self._split_state_dict(state_dict)
             )
 
-            # Pre-processor graph.
+            # Pre-processor graph. Latents and timestep are pinned to B=1
+            # (the executor enforces single-prompt batches) so that the pre
+            # module can ``ops.broadcast_to`` them up to the text
+            # embedding's symbolic ``"batch"`` axis. This serves:
+            #   * non-CFG (text emb is also B=1; broadcast is identity)
+            #   * batched CFG (text emb is B=2; broadcast expands without
+            #     a separate pack graph).
             pre_input_types = [
                 TensorType(
                     DType.float32,
                     [
-                        "batch",
+                        1,
                         self.config.in_channels,
                         "frames",
                         "height",
@@ -152,7 +158,7 @@ class WanTransformer(CompiledComponent):
                     ],
                     device=dev,
                 ),
-                TensorType(DType.float32, ["batch"], device=dev),
+                TensorType(DType.float32, [1], device=dev),
                 TensorType(
                     dtype,
                     ["batch", seq_text_len, self.config.text_dim],
@@ -174,13 +180,20 @@ class WanTransformer(CompiledComponent):
 
             # Combined blocks graph: all blocks in a single Model
             # so the runtime allocates one shared workspace.
+            #
+            # Batch dim is symbolic so the same compiled graph serves both
+            # the B=1 path (no CFG / i2v fallback) and the B=2 path used by
+            # batched CFG (call_cfg_batched).
             block_seq_len_dim: str = "seq_len"
+            block_batch_dim: str = "batch"
             block_input_types = [
                 TensorType(
-                    dtype, [batch_size, block_seq_len_dim, dim], device=dev
+                    dtype, [block_batch_dim, block_seq_len_dim, dim], device=dev
                 ),
-                TensorType(dtype, [batch_size, seq_text_len, dim], device=dev),
-                TensorType(dtype, [batch_size, 6, dim], device=dev),
+                TensorType(
+                    dtype, [block_batch_dim, seq_text_len, dim], device=dev
+                ),
+                TensorType(dtype, [block_batch_dim, 6, dim], device=dev),
                 TensorType(
                     DType.float32,
                     [block_seq_len_dim, self.config.attention_head_dim],
@@ -261,6 +274,33 @@ class WanTransformer(CompiledComponent):
                 combined_blocks=combined_blocks_model,
             )
 
+            # CFG unpack: split the B=2 noise prediction back into the
+            # cond / uncond halves expected by the guidance scheduler.
+            # The matching pack step (concat + tile of latents/timestep)
+            # is folded into ``WanTransformerPreProcess.__call__`` so we
+            # only need this one helper graph for batched CFG.
+            cfg_unpack_input_types = [
+                TensorType(
+                    dtype,
+                    [
+                        "batch",
+                        "channels",
+                        "frames",
+                        "height",
+                        "width",
+                    ],
+                    device=dev,
+                ),
+            ]
+            with Graph(
+                "wan_cfg_unpack", input_types=cfg_unpack_input_types
+            ) as g:
+                noise_b2 = next(v.tensor for v in g.inputs)
+                noise_cond = noise_b2[0:1, :, :, :, :]
+                noise_uncond = noise_b2[1:2, :, :, :, :]
+                g.output(noise_cond, noise_uncond)
+            self._cfg_unpack_model = self._session.load(g)
+
     @traced(message="WanTransformer.__call__")
     def __call__(
         self,
@@ -327,6 +367,59 @@ class WanTransformer(CompiledComponent):
             spatial_shape,
             i2v_condition=i2v_condition,
         )
+
+    @traced(message="WanTransformer.call_cfg_batched")
+    def call_cfg_batched(
+        self,
+        hidden_states: Buffer,
+        timestep: Buffer,
+        encoder_hidden_states_b2: Buffer,
+        rope_cos: Buffer,
+        rope_sin: Buffer,
+        spatial_shape: Buffer,
+        *,
+        use_secondary_transformer: bool = False,
+    ) -> tuple[Buffer, Buffer]:
+        """Run conditional and unconditional DiT forwards in a single B=2 pass.
+
+        Replaces two sequential B=1 ``__call__`` invocations (cond + uncond)
+        with one B=2 call, halving kernel-launch overhead and improving SM
+        occupancy on the per-block GEMMs and attention. The pre graph tiles
+        ``hidden_states`` and ``timestep`` (provided at B=1) up to the batch
+        dim of ``encoder_hidden_states_b2``; the unpack graph splits the
+        B=2 noise output back into the cond / uncond halves.
+
+        Args:
+            encoder_hidden_states_b2: Text embedding pre-concatenated as
+                ``[cond; uncond]`` along axis 0 — the caller is responsible
+                for batching this once per denoising phase.
+
+        Does not currently support I2V (``i2v_condition``) — callers should
+        fall back to two ``__call__``s when an I2V condition is present.
+
+        Returns:
+            A tuple of B=1 noise predictions ``(cond, uncond)``.
+        """
+        model = self._model_2 if use_secondary_transformer else self._model
+        if model is None:
+            raise RuntimeError(
+                "Transformer not compiled. "
+                f"use_secondary_transformer={use_secondary_transformer}."
+            )
+
+        # Pre internally tiles latents/timestep to match text emb's batch.
+        noise_b2 = model(
+            hidden_states,
+            timestep,
+            encoder_hidden_states_b2,
+            rope_cos,
+            rope_sin,
+            spatial_shape,
+            i2v_condition=None,
+        )
+
+        unpack_outs = self._cfg_unpack_model.execute(noise_b2)
+        return unpack_outs[0], unpack_outs[1]
 
     def compute_rope(
         self,
