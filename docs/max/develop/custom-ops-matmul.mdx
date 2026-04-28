@@ -654,11 +654,15 @@ algorithm.
 ## Kernel 6: Block tiling with vectorized memory access
 
 As a final optimization to our block-tiling kernel, memory accesses can be
-vectorized to improve memory access bandwidth. The only new thing in this kernel
-is the use of the
+vectorized to improve memory access bandwidth. The new tool in this kernel is
+the
 [`TileTensor.vectorize()`](/mojo/std/layout/tile_tensor/TileTensor#vectorize)
-method to produce vectorized views of the shared-memory tiles, allowing
-multiple values to be copied as a single SIMD vector.
+method, which produces a vectorized view of a tile so that multiple values can
+be loaded or stored as a single SIMD vector. The `B` tile copies straight into
+row-major shared memory, but `a_smem` switches to column-major so the inner
+loop can read `TM` contiguous M-elements at a fixed K. Each thread does a
+vectorized K-load from global `A` and scalar-scatters the lanes into `a_smem`,
+transposing `A` on the way in.
 
 ```mojo
 from std.sys.info import simd_width_of
@@ -689,8 +693,10 @@ var b_reg = stack_allocation[dtype=dtype, address_space=AddressSpace.LOCAL](
     row_major[TN]()
 )
 
-comptime load_a_layout = row_major[NUM_THREADS // BK, BK]()
 comptime load_b_layout = row_major[BK, NUM_THREADS // BK]()
+
+# Each thread loads one `simd_width` chunk along K from a single row of A.
+var inner_row_a, inner_col_a = udivmod(thread_idx.x, BK // simd_width)
 
 var ntiles = Int(b.dim[0]()) // BK
 
@@ -698,10 +704,18 @@ for block in range(ntiles):
     var a_tile = a.tile[BM, BK](block_idx.y, block)
     var b_tile = b.tile[BK, BN](block, block_idx.x)
 
-    GenericToSharedAsyncTileCopier[load_a_layout]().copy(
-        a_smem.vectorize[simd_width, 1](),
-        a_tile.vectorize[simd_width, 1](),
-    )
+    # Vectorized K-load, scalar scatter into column-major `a_smem` —
+    # transposes A on the way in.
+    var a_load = a_tile.vectorize[1, simd_width]()[
+        inner_row_a, inner_col_a
+    ]
+    comptime for v in range(simd_width):
+        a_smem[inner_row_a, inner_col_a * simd_width + v] = rebind[
+            a_smem.ElementType
+        ](a_load[v])
+
+    # Asynchronously load the tile of B into shared memory using
+    # vectorized memory access.
     GenericToSharedAsyncTileCopier[load_b_layout]().copy(
         b_smem.vectorize[1, simd_width](),
         b_tile.vectorize[1, simd_width](),

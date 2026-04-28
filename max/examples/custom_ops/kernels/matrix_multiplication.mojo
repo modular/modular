@@ -704,8 +704,10 @@ def block_tiled_vectorized_matrix_multiplication[
         row_major[TN]()
     )
 
-    comptime load_a_layout = row_major[NUM_THREADS // BK, BK]()
     comptime load_b_layout = row_major[BK, NUM_THREADS // BK]()
+
+    # Each thread loads one `simd_width` chunk along K from a single row of A.
+    var inner_row_a, inner_col_a = udivmod(thread_idx.x, BK // simd_width)
 
     var ntiles = Int(b.dim[0]()) // BK
 
@@ -714,12 +716,16 @@ def block_tiled_vectorized_matrix_multiplication[
         var a_tile = a.tile[BM, BK](block_idx.y, block)
         var b_tile = b.tile[BK, BN](block, block_idx.x)
 
-        # Asynchronously load the tiles of A and B into shared memory using
+        # Vectorized K-load, scalar scatter into column-major `a_smem` —
+        # transposes A on the way in.
+        var a_load = a_tile.vectorize[1, simd_width]()[inner_row_a, inner_col_a]
+        comptime for v in range(simd_width):
+            a_smem[inner_row_a, inner_col_a * simd_width + v] = rebind[
+                a_smem.ElementType
+            ](a_load[v])
+
+        # Asynchronously load the tile of B into shared memory using
         # vectorized memory access.
-        GenericToSharedAsyncTileCopier[load_a_layout]().copy(
-            a_smem.vectorize[simd_width, 1](),
-            a_tile.vectorize[simd_width, 1](),
-        )
         GenericToSharedAsyncTileCopier[load_b_layout]().copy(
             b_smem.vectorize[1, simd_width](),
             b_tile.vectorize[1, simd_width](),

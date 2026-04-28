@@ -77,7 +77,6 @@ custom_op_example_py_binary(
 custom_op_example_py_binary(
     name = "matrix_multiplication",
     srcs = ["matrix_multiplication.py"],
-    tags = ["manual"],  # TODO: Disabled in CI - fix vectorization issue
 )
 
 custom_op_example_py_binary(
