@@ -6,10 +6,39 @@ This version is still a work in progress.
 
 ## Documentation
 
+- Compilation targets docs instructs how to inspect your current platform,
+  select a target configuration, and generate code for that target. Use it to
+  build for your own system or target other CPUs, operating systems, and
+  accelerators.
+
+- Mojo language reference covers lexical elements, expressions, statements,
+  numeric types, struct declarations, trait declarations.
+
+- Functions reference page improves discoverability of new function features.
+
+- Split operators manual into separate pages; refreshed coverage and added
+  tutorial, operator tests, and new reference page.
+
+- Negative examples and errors added to reference pages highlight sharp
+  edges of the language.
+
+- MLIR reference page introduces inline MLIR to developers in Mojo code.
+
+- Adds docs for non-nullable pointers and provides sample code showing
+  how to use `Optional` with `UnsafePointer`.
+
 ## Language enhancements
 
-- Mojo now uses `NoneType` instead of an empty tuple to mark constructor using
-  literals.
+- Improved diagnostics for onboarding-priority parser errors in Mojo
+  for clarity and UX.
+
+- Migrated monorepo from `fn` to using `def` for function declaration.
+  Warned on use of `fn` and will deprecate `fn` in the next release.
+
+- Updated signature error diagnostics and added related tests.
+
+- Mojo now uses `NoneType` instead of an empty tuple to mark constructor
+  using literals.
 
 - The ternary `if/else` expression now coerces each element to its contextual
   type when it is obvious. For example, this works instead of producing an
