@@ -1285,6 +1285,11 @@ def calculate_pixel_generation_metrics(
         gpu_utilization=gpu_utilization,
         cpu_metrics=cpu_metrics,
         metrics_by_endpoint=metrics_by_endpoint or {},
+        latencies=[o.latency for o in outputs],
+        num_generated_outputs=[o.num_generated_outputs for o in outputs],
+        errors=[o.error for o in outputs],
+        request_submit_times=[o.request_submit_time for o in outputs],
+        request_complete_times=[o.request_complete_time for o in outputs],
     )
 
 
@@ -1991,21 +1996,6 @@ def _build_pixel_generation_result(
         metrics_by_endpoint=metrics_by_endpoint,
     )
     result = metrics.to_result_dict()
-    result.update(
-        {
-            "latencies": [output.latency for output in outputs],
-            "num_generated_outputs": [
-                output.num_generated_outputs for output in outputs
-            ],
-            "errors": [output.error for output in outputs],
-            "request_submit_times": [
-                output.request_submit_time for output in outputs
-            ],
-            "request_complete_times": [
-                output.request_complete_time for output in outputs
-            ],
-        }
-    )
     return result, metrics
 
 

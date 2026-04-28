@@ -555,9 +555,23 @@ class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
 
     total_generated_outputs: int
 
+    # Per-request raw data, preserved for archival and post-processing.
+    latencies: list[float] = field(default_factory=list)
+    # Per-request output counts (distinct from total_generated_outputs, which
+    # is the run-level sum of successful outputs only).
+    num_generated_outputs: list[int] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    request_submit_times: list[float | None] = field(default_factory=list)
+    request_complete_times: list[float | None] = field(default_factory=list)
+
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
         d["total_generated_outputs"] = self.total_generated_outputs
+        d["latencies"] = self.latencies
+        d["num_generated_outputs"] = self.num_generated_outputs
+        d["errors"] = self.errors
+        d["request_submit_times"] = self.request_submit_times
+        d["request_complete_times"] = self.request_complete_times
         return d
 
 
