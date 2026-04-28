@@ -236,9 +236,12 @@ def LIT_PogListAttr : LITAttr<"PogList", "pog_list",
       ArrayRef<VariadicKind> variadics, ArrayRef<TypedAttr> defaults,
       ArrayRef<SmallVector<ConstraintAttr>> constraints);
 
-    /// Get a new metadata attribute for a generator with the given number input
-    /// parameters prepended with 'Inferred' passing kind.
-    PogListAttr prependAsInferredParams(ArrayRef<StringAttr> newParams) const;
+    /// Prepend inferred parameters: `defaults` is either empty (names
+    /// only) or the same length as `names` (use null/empty `TypedAttr` for
+    /// slots with no default). When non-empty, defaults must already be
+    /// remapped for the prepended `ParamDeclAttr` list by the caller.
+    PogListAttr prependAsInferredParams(
+      ArrayRef<StringAttr> names, ArrayRef<TypedAttr> defaults) const;
   }];
 
   let genVerifyDecl = 1;

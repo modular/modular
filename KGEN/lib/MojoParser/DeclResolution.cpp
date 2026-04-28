@@ -1433,9 +1433,6 @@ DeclResolver::createSelfContainedSignature(FnTypeGeneratorType original) {
   // Unbind the N capture parameters, creating a FuncType with N new input
   // parameters prepended.
   // TODO: what if we capture a variadic?
-  SmallVector<StringAttr> paramNames = llvm::map_to_vector(
-      captured, [](ParamDeclRefAttr ref) { return ref.getName(); });
-
   auto unbound = FnTypeGeneratorType::prependParams(
       original, llvm::map_to_vector(captured, [](ParamDeclRefAttr ref) {
         return ParamDeclAttr::get(ref);

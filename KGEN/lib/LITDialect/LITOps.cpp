@@ -138,16 +138,20 @@ FnTypeGeneratorType LIT::getFullSignature(Operation *container,
 
   SmallVector<StringAttr> paramNames;
   SmallVector<ParamDeclAttr> paramDecls;
+  SmallVector<TypedAttr> paramDefaults;
   for (auto [op, pogList] : opAndPogLists) {
-    // Get the user-defined parameter names from the pog list.
-    for (PogMetadataAttr pog : pogList.getPogs())
+    for (PogMetadataAttr pog : pogList.getPogs()) {
       paramNames.push_back(pog.getName());
+      paramDefaults.push_back(pog.getDefaultValue());
+    }
     for (ParamDeclAttr param : cast<DeclInterface>(op).getInputParams())
       paramDecls.push_back(param);
   }
 
   assert(paramNames.size() == paramDecls.size());
-  return FnTypeGeneratorType::prependParams(signature, paramDecls, paramNames);
+  assert(paramDefaults.size() == paramDecls.size());
+  return FnTypeGeneratorType::prependParams(signature, paramDecls, paramNames,
+                                            paramDefaults);
 }
 
 //===----------------------------------------------------------------------===//
