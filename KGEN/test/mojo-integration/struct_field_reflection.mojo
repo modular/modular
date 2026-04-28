@@ -9,6 +9,7 @@
 from std.builtin.rebind import downcast
 from std.reflection import (
     struct_field_names,
+    struct_field_ref,
     struct_field_types,
 )
 
@@ -21,7 +22,7 @@ trait CanDoSomething:
         comptime for i in range(names.size):
             print(materialize[names[i]](), ": ", sep="", end="")
             trait_downcast[CanDoSomething](
-                __struct_field_ref(i, self)
+                struct_field_ref[i](self)
             ).do_something()
 
 
