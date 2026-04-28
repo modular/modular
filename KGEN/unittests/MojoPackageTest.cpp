@@ -273,7 +273,7 @@ TEST(MojoPackageTest, testPackageValidationErrorNoPackageVer) {
     // Check the specific expected error based on whether this build has version
     // information.
     StringRef errStr = Err.getError();
-    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+    if (M::KGEN::MojoPackageVersion currentVer = M::getMojoVersion()) {
       EXPECT_STREQ(
           errStr.data(),
           (Twine("Mojo package is incompatible with the current version "
@@ -299,7 +299,7 @@ TEST(MojoPackageTest, testPackageValidationErrorNoPackageVer) {
     // Check the specific expected error based on whether this build has version
     // information.
     StringRef errStr = Err.getError();
-    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+    if (M::KGEN::MojoPackageVersion currentVer = M::getMojoVersion()) {
       EXPECT_STREQ(
           errStr.data(),
           (Twine("Mojo package is incompatible with the current version "
@@ -346,7 +346,7 @@ TEST(MojoPackageTest, testPackageValidationErrorPackageVer) {
     StringRef errStr = Err.getError();
     // Note this is assuming that the current version of the compiler is set,
     // it's newer than 0.0.1.
-    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+    if (M::KGEN::MojoPackageVersion currentVer = M::getMojoVersion()) {
       EXPECT_STREQ(
           errStr.data(),
           (Twine("Mojo package is incompatible with the current version "
@@ -375,7 +375,7 @@ TEST(MojoPackageTest, testPackageValidationErrorPackageVer) {
     StringRef errStr = Err.getError();
     // Note this is assuming that the current version of the compiler is set,
     // it's newer than 0.0.1.
-    if (M::KGEN::MojoPackageVersion currentVer = M::getModularVersion()) {
+    if (M::KGEN::MojoPackageVersion currentVer = M::getMojoVersion()) {
       EXPECT_STREQ(
           errStr.data(),
           (Twine("Mojo package is incompatible with the current version "

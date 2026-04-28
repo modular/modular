@@ -163,7 +163,7 @@ LogicalResult writeBinaryPackage(Operation *op, raw_ostream &os);
 /// be in "binary" mode.
 /// Note: public visibility, intended only for round-trip unit testing
 LogicalResult writeBinaryPackage(Operation *op, MojoPackageVersion &mojoVer,
-                                 MojoPackageVersion &modularVer,
+                                 MojoPackageVersion &maxVer,
                                  StringRef mlirChecksum, raw_ostream &os);
 
 /// Holds the MLIR buffer extracted from a Mojo package. For compressed (v2+)

@@ -92,9 +92,9 @@ int main(int argc, char **argv) {
 
   // Override the default version printer.
   llvm::cl::SetVersionPrinter([](raw_ostream &os) {
-    ModularVersion version = getModularVersion();
+    ProjectVersion version = getMojoVersion();
     os << "LLVM Module Split Tool:\n  ";
-    os << "Modular version: " << version.major << '.' << version.minor << '.'
+    os << "Mojo version: " << version.major << '.' << version.minor << '.'
        << version.patch << version.label << "\n  ";
     os << "Git SHA: " << version.revision << "\n  ";
     os << "Build config: " << version.buildType << "\n\n";
