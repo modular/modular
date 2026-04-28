@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import random
 
-from max.benchmark.benchmark_serving import _steady_state_metric_values
+from max.benchmark.benchmark_shared.metrics import SteadyStateResult
 from max.benchmark.benchmark_shared.request import RequestFuncOutput
 from max.benchmark.benchmark_shared.steady_state import (
     _rolling_mad_over_median,
@@ -378,17 +378,32 @@ def test_steady_state_metric_suffixes_match_full_run_keys() -> None:
         StandardPercentileMetrics,
     )
 
-    mock = MagicMock()
-    mock.request_throughput = 10.0
-    mock.ttft_ms = StandardPercentileMetrics([0.05], scale_factor=1000.0)
-    mock.tpot_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
-    mock.itl_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
-    mock.latency_ms = StandardPercentileMetrics([0.5], scale_factor=1000.0)
+    mock_metrics = MagicMock()
+    mock_metrics.request_throughput = 10.0
+    mock_metrics.ttft_ms = StandardPercentileMetrics(
+        [0.05], scale_factor=1000.0
+    )
+    mock_metrics.tpot_ms = StandardPercentileMetrics(
+        [0.02], scale_factor=1000.0
+    )
+    mock_metrics.itl_ms = StandardPercentileMetrics([0.02], scale_factor=1000.0)
+    mock_metrics.latency_ms = StandardPercentileMetrics(
+        [0.5], scale_factor=1000.0
+    )
 
-    suffixes = {s for s, _ in _steady_state_metric_values(mock)}
+    ss = SteadyStateResult(
+        detected=True,
+        start_index=0,
+        end_index=1,
+        count=1,
+        warning=None,
+        mode="full",
+        metrics=mock_metrics,
+    )
+    result_keys = set(ss.to_result_dict().keys())
 
     # Full-run keys that must have steady-state counterparts
-    expected = {
+    expected_metric_suffixes = {
         "request_throughput",
         "mean_ttft_ms",
         "p99_ttft_ms",
@@ -399,4 +414,10 @@ def test_steady_state_metric_suffixes_match_full_run_keys() -> None:
         "mean_latency_ms",
         "p99_latency_ms",
     }
-    assert suffixes == expected
+    actual_suffixes = {
+        k.removeprefix("steady_state_")
+        for k in result_keys
+        if k.startswith("steady_state_")
+        and k[len("steady_state_") :] in expected_metric_suffixes
+    }
+    assert actual_suffixes == expected_metric_suffixes

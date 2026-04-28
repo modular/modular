@@ -101,6 +101,7 @@ from max.benchmark.benchmark_shared.metrics import (
     SpecDecodeMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
+    SteadyStateResult,
     ThroughputMetrics,
     calculate_spec_decode_stats,
 )
@@ -698,28 +699,6 @@ def print_benchmark_summary(
             print(f"\n--- Metrics: {label} ---")
         print_server_metrics(pm)
     print("=" * 50)
-
-
-def _steady_state_metric_values(
-    m: BenchmarkMetrics,
-) -> list[tuple[str, float]]:
-    """Return (suffix, value) pairs for steady-state metrics.
-
-    Each suffix corresponds to an existing full-run key (e.g.,
-    "mean_ttft_ms" maps to result["mean_ttft_ms"] in the full run and
-    result["steady_state_mean_ttft_ms"] in the steady-state section).
-    """
-    return [
-        ("request_throughput", m.request_throughput),
-        ("mean_ttft_ms", m.ttft_ms.mean),
-        ("p99_ttft_ms", m.ttft_ms.p99),
-        ("mean_tpot_ms", m.tpot_ms.mean),
-        ("p99_tpot_ms", m.tpot_ms.p99),
-        ("mean_itl_ms", m.itl_ms.mean),
-        ("p99_itl_ms", m.itl_ms.p99),
-        ("mean_latency_ms", m.latency_ms.mean),
-        ("p99_latency_ms", m.latency_ms.p99),
-    ]
 
 
 def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
@@ -2041,8 +2020,7 @@ def _build_text_generation_result(
     for warn in text_metrics.confidence_warnings():
         logger.warning(f"Confidence: {warn}")
 
-    _add_steady_state_result(
-        result,
+    steady_state_result = _compute_steady_state_result(
         outputs=outputs,
         tokenizer=tokenizer,
         gpu_metrics=gpu_metrics,
@@ -2052,12 +2030,12 @@ def _build_text_generation_result(
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
     )
+    result.update(steady_state_result.to_result_dict())
 
     return result, text_metrics
 
 
-def _add_steady_state_result(
-    result: dict[str, object],
+def _compute_steady_state_result(
     *,
     outputs: Sequence[RequestFuncOutput],
     tokenizer: PreTrainedTokenizerBase | None,
@@ -2067,20 +2045,17 @@ def _add_steady_state_result(
     max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None,
-) -> None:
-    """Detect steady-state window and add its metrics to *result*."""
+) -> SteadyStateResult:
+    """Detect steady-state window and return a SteadyStateResult."""
     steady = detect_steady_state(outputs, max_concurrency=max_concurrency)
-    result["steady_state_detected"] = steady.detected
-    result["steady_state_start_index"] = steady.start_index
-    result["steady_state_end_index"] = steady.end_index
-    result["steady_state_count"] = steady.steady_state_count
-    result["steady_state_warning"] = steady.warning
     # Persist detection mode for downstream consumers; skip it when
     # detection was skipped (concurrency=1) so the default "full"
     # isn't mistaken for a real result.
-    if steady.detected or steady.warning is not None:
-        result["steady_state_mode"] = steady.mode
+    mode = (
+        steady.mode if (steady.detected or steady.warning is not None) else None
+    )
 
+    ss_metrics: BenchmarkMetrics | None = None
     if steady.detected:
         ss_index_set = set(steady.steady_state_indices)
         ss_outputs = [
@@ -2115,13 +2090,7 @@ def _add_steady_state_result(
                 collect_gpu_stats=collect_gpu_stats,
                 metrics_by_endpoint=metrics_by_endpoint,
             )
-            for suffix, value in _steady_state_metric_values(ss_metrics):
-                result[f"steady_state_{suffix}"] = value
-            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
-                pm = getattr(ss_metrics, name)
-                result.update(
-                    pm.confidence_to_flat_dict(f"steady_state_{name}")
-                )
+
         # start_index and end_index are in original dispatch order and
         # may span requests filtered out by detect_steady_state (failed,
         # missing TPOT, etc.), particularly in multi-turn runs where
@@ -2150,6 +2119,16 @@ def _add_steady_state_result(
         )
     elif steady.warning:
         logger.warning(f"Steady-state detection: {steady.warning}")
+
+    return SteadyStateResult(
+        detected=steady.detected,
+        start_index=steady.start_index,
+        end_index=steady.end_index,
+        count=steady.steady_state_count,
+        warning=steady.warning,
+        mode=mode,
+        metrics=ss_metrics,
+    )
 
 
 async def prime_shared_contexts(

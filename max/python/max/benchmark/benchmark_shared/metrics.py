@@ -550,6 +550,49 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
 
 
 @dataclass(kw_only=True)
+class SteadyStateResult:
+    """Steady-state detection outcome and its per-window metrics."""
+
+    detected: bool
+    start_index: int | None
+    end_index: int | None
+    count: int
+    warning: str | None
+    mode: str | None = None
+    metrics: BenchmarkMetrics | None = None
+
+    def to_result_dict(self) -> dict[str, object]:
+        """Return a flat dict of steady-state keys with the same layout as the full-run result dict."""
+        d: dict[str, object] = {
+            "steady_state_detected": self.detected,
+            "steady_state_start_index": self.start_index,
+            "steady_state_end_index": self.end_index,
+            "steady_state_count": self.count,
+            "steady_state_warning": self.warning,
+        }
+        if self.mode is not None:
+            d["steady_state_mode"] = self.mode
+        if self.metrics is not None:
+            m = self.metrics
+            for suffix, value in [
+                ("request_throughput", m.request_throughput),
+                ("mean_ttft_ms", m.ttft_ms.mean),
+                ("p99_ttft_ms", m.ttft_ms.p99),
+                ("mean_tpot_ms", m.tpot_ms.mean),
+                ("p99_tpot_ms", m.tpot_ms.p99),
+                ("mean_itl_ms", m.itl_ms.mean),
+                ("p99_itl_ms", m.itl_ms.p99),
+                ("mean_latency_ms", m.latency_ms.mean),
+                ("p99_latency_ms", m.latency_ms.p99),
+            ]:
+                d[f"steady_state_{suffix}"] = value
+            for name in ("ttft_ms", "tpot_ms", "itl_ms", "latency_ms"):
+                pm = getattr(m, name)
+                d.update(pm.confidence_to_flat_dict(f"steady_state_{name}"))
+        return d
+
+
+@dataclass(kw_only=True)
 class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for pixel generation serving benchmark metrics."""
 
