@@ -64,7 +64,7 @@ def test_per_chunk_tpot_collected_from_outputs() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello world": 5})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
@@ -109,7 +109,7 @@ def test_tpot_weighted_mean() -> None:
     # Mock tokenizer: output1 -> 10 tokens, output2 -> 4 tokens
     tokenizer = _make_mock_tokenizer({"ten tokens out": 10, "four tok": 4})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[output1, output2],
         dur_s=2.0,
         tokenizer=tokenizer,
@@ -147,7 +147,7 @@ def test_tpot_zero_decode_tokens() -> None:
     # 1 output token, 1 completed -> decode_tokens = 0
     tokenizer = _make_mock_tokenizer({"a": 1})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
@@ -168,7 +168,7 @@ def test_empty_outputs_no_crash() -> None:
     """Empty outputs list doesn't crash."""
     tokenizer = _make_mock_tokenizer({})
 
-    metrics, actual_output_lens = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[],
         dur_s=1.0,
         tokenizer=tokenizer,
@@ -182,7 +182,7 @@ def test_empty_outputs_no_crash() -> None:
     )
 
     assert metrics.completed == 0
-    assert actual_output_lens == []
+    assert metrics.output_lens == []
     # TPOT mean should be NaN since there are no outputs
     assert math.isnan(metrics.tpot_ms.mean)
 
@@ -201,7 +201,7 @@ def test_itl_metrics_unchanged() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello world": 5})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
@@ -239,7 +239,7 @@ def test_failed_requests_excluded() -> None:
 
     tokenizer = _make_mock_tokenizer({"hello": 3, "": 0})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[success_output, failed_output],
         dur_s=1.0,
         tokenizer=tokenizer,
@@ -293,7 +293,7 @@ def test_skip_last_n_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 3, "second": 3, "third": 3})
 
-    metrics_all, _ = calculate_metrics(
+    metrics_all = calculate_metrics(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
@@ -306,7 +306,7 @@ def test_skip_last_n_requests() -> None:
         collect_gpu_stats=False,
     )
 
-    metrics_skip_last, _ = calculate_metrics(
+    metrics_skip_last = calculate_metrics(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
@@ -360,7 +360,7 @@ def test_skip_first_and_last_n_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 2, "middle": 2, "last": 2})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
@@ -417,7 +417,7 @@ def test_skip_last_with_cancelled_requests() -> None:
 
     tokenizer = _make_mock_tokenizer({"first": 2, "second": 2, "third": 2})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=outputs,
         dur_s=3.0,
         tokenizer=tokenizer,
@@ -527,7 +527,7 @@ def test_request_submit_time_set_on_output() -> None:
     assert output.request_submit_time == 100.5
 
     tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[output],
         dur_s=1.0,
         tokenizer=tokenizer,
@@ -595,7 +595,7 @@ def test_measured_duration_uses_measured_window() -> None:
     # measured window should be.
     full_run_duration = 60.0
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=outputs,
         dur_s=full_run_duration,
         tokenizer=tokenizer,
@@ -638,7 +638,7 @@ def test_measured_duration_falls_back_when_no_timestamps() -> None:
     )
     # No request_submit_time -> fallback to dur_s.
     tokenizer = _make_mock_tokenizer({"hello": 2})
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=[output],
         dur_s=3.0,
         tokenizer=tokenizer,
@@ -690,7 +690,7 @@ def test_skipped_tokens_excluded_from_totals() -> None:
     ]
     tokenizer = _make_mock_tokenizer({"warm": 999, "mid": 3, "tail": 999})
 
-    metrics, _ = calculate_metrics(
+    metrics = calculate_metrics(
         outputs=outputs,
         dur_s=20.0,
         tokenizer=tokenizer,

@@ -1056,7 +1056,7 @@ def calculate_metrics(
     max_concurrent_conversations: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> tuple[BenchmarkMetrics, list[int]]:
+) -> BenchmarkMetrics:
     actual_output_lens: list[int] = []
     failures = 0
     failed_responses: list[RequestFuncOutput] = []
@@ -1201,6 +1201,16 @@ def calculate_metrics(
         gpu_utilization=gpu_utilization,
         cpu_metrics=cpu_metrics,
         metrics_by_endpoint=metrics_by_endpoint or {},
+        skip_first_n_requests=skip_first_n_requests,
+        skip_last_n_requests=skip_last_n_requests,
+        input_lens=[o.prompt_len for o in outputs],
+        output_lens=actual_output_lens,
+        ttfts=[o.ttft for o in outputs],
+        itls=[o.itl for o in outputs],
+        generated_texts=[o.generated_text for o in outputs],
+        errors=[o.error for o in outputs],
+        request_submit_times=[o.request_submit_time for o in outputs],
+        request_complete_times=[o.request_complete_time for o in outputs],
     )
 
     # Override TPOT mean with weighted average: sum(ITL) / decode_tokens.
@@ -1210,7 +1220,7 @@ def calculate_metrics(
     if decode_tokens > 0 and itls:
         metrics.tpot_ms._metrics.mean = sum(itls) / decode_tokens * 1000.0
 
-    return metrics, actual_output_lens
+    return metrics
 
 
 def calculate_pixel_generation_metrics(
@@ -2020,7 +2030,7 @@ def _build_text_generation_result(
             "Expected all outputs to be RequestFuncOutput"
             " in text-generation benchmark flow."
         )
-    text_metrics, actual_output_lens = calculate_metrics(
+    text_metrics = calculate_metrics(
         outputs=outputs,
         dur_s=benchmark_duration,
         tokenizer=tokenizer,
@@ -2035,24 +2045,6 @@ def _build_text_generation_result(
     )
 
     result = text_metrics.to_result_dict()
-    result.update(
-        {
-            "skip_first_n_requests": skip_first_n_requests,
-            "skip_last_n_requests": skip_last_n_requests,
-            "input_lens": [output.prompt_len for output in outputs],
-            "output_lens": actual_output_lens,
-            "ttfts": [output.ttft for output in outputs],
-            "itls": [output.itl for output in outputs],
-            "generated_texts": [output.generated_text for output in outputs],
-            "errors": [output.error for output in outputs],
-            "request_submit_times": [
-                output.request_submit_time for output in outputs
-            ],
-            "request_complete_times": [
-                output.request_complete_time for output in outputs
-            ],
-        }
-    )
 
     _add_spec_decode_result(result, spec_decode_stats)
 
@@ -2120,7 +2112,7 @@ def _add_steady_state_result(
             ss_duration = last_complete - first_submit
             ss_duration = max(ss_duration, 1e-9)
 
-            ss_metrics, _ = calculate_metrics(
+            ss_metrics = calculate_metrics(
                 outputs=ss_outputs,
                 dur_s=ss_duration,
                 tokenizer=tokenizer,

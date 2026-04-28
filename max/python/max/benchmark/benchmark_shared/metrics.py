@@ -449,6 +449,26 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     max_output: int
     max_total: int
 
+    # Per-request raw data, preserved for archival and post-processing.
+    # N.B.: skip_first_n_requests and skip_last_n_requests are inputs and
+    # shouldn't be part of the output metrics, but are included for
+    # compatibility.  These should be removed once results publication is in
+    # use.
+    skip_first_n_requests: int = 0
+    skip_last_n_requests: int = 0
+    # input_lens covers all outputs (including cancelled); output_lens covers
+    # only non-cancelled outputs (failures get 0, not None — they failed, they
+    # did not produce a zero-length response). The two lists are not aligned
+    # index-for-index: failures appear first in output_lens, then successes.
+    input_lens: list[int] = field(default_factory=list)
+    output_lens: list[int] = field(default_factory=list)
+    ttfts: list[float] = field(default_factory=list)
+    itls: list[list[float]] = field(default_factory=list)
+    generated_texts: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
+    request_submit_times: list[float | None] = field(default_factory=list)
+    request_complete_times: list[float | None] = field(default_factory=list)
+
     def _find_batch_histogram(self, batch_type: str) -> HistogramData | None:
         """First endpoint that exposes the MAX-serve batch-time histogram."""
         for pm in self.metrics_by_endpoint.values():
@@ -499,6 +519,16 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         d["total_input_tokens"] = self.total_input
         d["total_output_tokens"] = self.total_output
         d["max_concurrent_conversations"] = self.max_concurrent_conversations
+        d["skip_first_n_requests"] = self.skip_first_n_requests
+        d["skip_last_n_requests"] = self.skip_last_n_requests
+        d["input_lens"] = self.input_lens
+        d["output_lens"] = self.output_lens
+        d["ttfts"] = self.ttfts
+        d["itls"] = self.itls
+        d["generated_texts"] = self.generated_texts
+        d["errors"] = self.errors
+        d["request_submit_times"] = self.request_submit_times
+        d["request_complete_times"] = self.request_complete_times
         return d
 
     def confidence_warnings(self) -> list[str]:
