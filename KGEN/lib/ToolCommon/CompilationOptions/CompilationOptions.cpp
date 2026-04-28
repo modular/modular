@@ -37,7 +37,7 @@ CompilationOptions::CompilationOptions(
       elaborationErrorVerbose(elaborationErrorVerbose),
       elaborationMaxDepth(elaborationMaxDepth) {
 
-  if (targetCpu.empty())
+  if (this->targetCpu.empty())
     setDefaultCPU();
 }
 
@@ -137,13 +137,21 @@ void CompilationOptions::print(raw_ostream &os) const {
 }
 
 void CompilationOptions::setDefaultCPU() {
+  llvm::Triple triple(targetTriple);
   if (isHexagonBackend(*this)) {
     // Set hexagon default CPU same as
     // https://github.com/llvm/llvm-project/blob/8d59cca1ab9cf4e39e43bf695e415de9ccd41115/clang/lib/Driver/ToolChains/Hexagon.cpp#L804
     targetCpu = "hexagonv68";
   } else if (isARMBackend(*this)) {
-    llvm::Triple triple(targetTriple);
     targetCpu = llvm::ARM::getDefaultCPU(triple.getArchName());
+  } else if (triple.getArch() !=
+             llvm::Triple(llvm::sys::getDefaultTargetTriple()).getArch()) {
+    // When cross-compiling, the host CPU is invalid for the target arch.
+    // Clear it so LLVM selects the target's baseline CPU instead.
+    targetCpu = "";
+  } else {
+    // Native target with no explicit CPU: use the host CPU.
+    targetCpu = llvm::sys::getHostCPUName();
   }
 }
 
