@@ -1,4 +1,6 @@
-# Nightly: v0.26.3
+---
+title: Mojo nightly
+---
 
 This version is still a work in progress.
 

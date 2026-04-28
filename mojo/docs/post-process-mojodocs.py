@@ -17,7 +17,6 @@ import glob
 import os
 import re
 import sys
-from datetime import datetime, timedelta, timezone
 
 
 def _is_heading(line: str, in_code_block: bool) -> re.Match[str] | None:
@@ -96,7 +95,7 @@ def demote_all_headings(file_path) -> None:  # noqa: ANN001
                 file.write(line)
 
 
-def _frontmatter_to_heading(text: str) -> str:
+def _frontmatter_to_heading(text: str, edit_title: bool = True) -> str:
     """Replace YAML frontmatter with an H1 heading reconstructed from its fields.
 
     Converts frontmatter like:
@@ -106,6 +105,9 @@ def _frontmatter_to_heading(text: str) -> str:
         ---
     into:
         # v0.26.2 (2026-03-19)
+
+    When edit_title is False, the title is used as-is without stripping
+    the "Mojo" prefix or appending the date.
     """
     m = re.match(
         r"^---\s*\n(.*?\n)---\s*\n",
@@ -122,8 +124,11 @@ def _frontmatter_to_heading(text: str) -> str:
             title = line.split(":", 1)[1].strip()
         elif line.startswith("date:"):
             date = line.split(":", 1)[1].strip()
-    title = re.sub(r"^Mojo\s+", "", title)
-    heading = f"# {title} ({date})\n" if date else f"# {title}\n"
+    if edit_title:
+        title = re.sub(r"^Mojo\s+", "", title)
+        heading = f"# {title} ({date})\n" if date else f"# {title}\n"
+    else:
+        heading = f"# {title}\n\n"
     return heading + text[m.end() :]
 
 
@@ -147,24 +152,9 @@ def assemble_changelog(base_path: str) -> None:
         nightly_content = (
             "".join(_remove_empty_headings(nightly_lines)).rstrip() + "\n"
         )
-        # Also write the nightly notes to a separate nightly.md file
-        # Replace the MD heading with frontmatter title, date, and version
-        pst = timezone(timedelta(hours=-8))
-        today_pst = datetime.now(pst).strftime("%Y-%m-%d")
-        version = ""
-        build_version_path = os.path.join(base_path, "build_version.js")
-        if os.path.exists(build_version_path):
-            with open(build_version_path) as f:
-                m = re.search(r'"([^"]+)"', f.read())
-                if m:
-                    version = m.group(1)
-        frontmatter = f"---\ntitle: Mojo nightly\ndate: {today_pst}\n"
-        if version:
-            frontmatter += f"version: {version}\n"
-        frontmatter += "---\n\n"
-        nightly_page = re.sub(r"^# .+\n*", frontmatter, nightly_content)
+        # Write the nightly notes to a separate nightly.md file
         with open(os.path.join(changelog_dir, "nightly.md"), "w") as f:
-            f.write(nightly_page)
+            f.write(nightly_content)
 
     candidates = [
         os.path.basename(p)
@@ -188,7 +178,7 @@ def assemble_changelog(base_path: str) -> None:
     # Assemble: frontmatter/intro, nightly (if present), released versions
     # newest-first, then archive.
     assembled = index_content.rstrip() + "\n\n"
-    assembled += nightly_content
+    assembled += _frontmatter_to_heading(nightly_content, edit_title=False)
     for vfile in version_files:
         with open(os.path.join(changelog_dir, vfile)) as f:
             content = _frontmatter_to_heading(f.read())

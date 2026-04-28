@@ -1,5 +1,5 @@
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("//bazel:api.bzl", "install_docs", "modular_py_binary", "modular_versioned_expand_template", "pkg_filegroup", "pkg_files", "strip_prefix")
+load("//bazel:api.bzl", "install_docs", "modular_py_binary", "pkg_filegroup", "pkg_files", "strip_prefix")
 
 # gazelle:default_visibility //oss/modular/docs:__subpackages__
 
@@ -19,19 +19,10 @@ install_docs(
     target = ":changelog",
 )
 
-modular_versioned_expand_template(
-    name = "build_version_js",
-    out = "build_version.js",
-    substitutions = {},
-    tags = ["manual"],
-    template = "build_version.js.tmpl",
-)
-
 genrule(
     name = "mojodocs",
     srcs = [
         ":mojosite",
-        ":build_version_js",
     ],
     outs = ["mojodocs.tar"],
     cmd = """
@@ -42,9 +33,6 @@ genrule(
   # Strip the mojo/ prefix (mojosite content lives at root, not under mojo/)
   mv mojosite/mojo/* mojosite/
   rm -rf mojosite/mojo
-
-  # Place build version file early so post-process can read it
-  cp $(location :build_version_js) mojosite/build_version.js
 
   # Post-process before restructuring (script expects original paths)
   chmod -R +w mojosite
@@ -67,7 +55,6 @@ genrule(
   rm mojosite/docs/lib.mdx
   rm -f mojosite/docs/nightly-changelog.md
   rm -f mojosite/docs/sidebars.js
-  mv mojosite/docs/build_version.js mojosite/build_version.js
 
   # Generate final output
   cd mojosite
@@ -114,7 +101,6 @@ pkg_files(
             "code/**",
             "internal/**",
             "post-process-mojodocs.py",
-            "build_version.js.tmpl",
         ],
     ),
     prefix = "mojo",
