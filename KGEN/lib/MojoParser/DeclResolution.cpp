@@ -2196,9 +2196,12 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       continue;
     }
     if (convention == ArgConvention::ReadReg) {
-      // borrowed_in_reg is used for TrivialRegisterPassable types, where
-      // borrowed vs owned doesn't matter so we use SRValue.
-      setDecl(SRValue(bbArg));
+      // borrowed_in_reg is used for TrivialRegisterPassable types. Use
+      // SBValue (not SRValue) to preserve borrowed semantics, which matters
+      // for overload resolution: it ensures a borrowed self correctly prefers
+      // `ref self` over `var self` overloads. IREmitter upgrades SBValue to
+      // SRValue for trivial types during code generation as needed.
+      setDecl(SBValue(bbArg));
       continue;
     }
 
