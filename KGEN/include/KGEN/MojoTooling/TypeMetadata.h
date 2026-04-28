@@ -23,8 +23,7 @@ class TypeMetadata {
 public:
   TypeMetadata() = default;
   TypeMetadata(llvm::StringRef typeStr, llvm::StringRef module = "",
-               llvm::StringRef relativePath = "",
-               llvm::StringRef constraints = "")
+               llvm::StringRef relativePath = "")
       : typeString(typeStr.str()), moduleNamespace(module.str()),
         relativeDocPath(relativePath.str()) {}
 
@@ -36,8 +35,10 @@ public:
 
   /// Serialize the metadata to JSON with the following schema:
   /// {
-  ///   "type": string,           // Base type name (always present)
-  ///   "path": string,           // Relative documentation path (optional)
+  ///   "type": string,           // Full type as written in source, including
+  ///                             // any parameterization (e.g. "List[Int]").
+  ///   "path": string,           // Relative documentation path for the base
+  ///                             // type's doc page (optional).
   /// }
   llvm::json::Object toJSON() const;
 

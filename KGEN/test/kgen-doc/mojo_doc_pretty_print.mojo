@@ -9,14 +9,14 @@ from std.collections import List
 
 
 # CHECK: "name": "foo"
-# CHECK: "type": "List"
+# CHECK: "type": "List[Int]"
 # CHECK: "signature": "foo(x: List[Int])"
 def foo(x: List[Int]):
     pass
 
 
 # CHECK: "name": "bar"
-# CHECK: "type": "List"
+# CHECK: "type": "List[Int]"
 # CHECK: "signature": "bar[x: List[Int]]()"
 def bar[x: List[Int]]():
     pass
@@ -24,7 +24,7 @@ def bar[x: List[Int]]():
 
 # CHECK: "name": "baz"
 # CHECK: "returns": {
-# CHECK:    "type": "List"
+# CHECK:    "type": "List[Int]"
 # CHECK: }
 # CHECK: "signature": "baz() -> List[Int]"
 def baz() -> List[Int]:

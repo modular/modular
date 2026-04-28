@@ -1386,12 +1386,7 @@ llvm::json::Object PublicFunctionDecl::toJSON(MojoParserContext &ctx) const {
     TypeMetadata metadata = ::KGEN::TypeExtractionUtils::extractLibraryInfo(
         *returnType, nullptr, &ctx.getSharedState());
 
-    llvm::json::Object returnObj;
-    returnObj["type"] =
-        ::KGEN::TypeExtractionUtils::extractBaseTypeName(*returnType);
-    if (!metadata.getRelativeDocPath().empty()) {
-      returnObj["path"] = metadata.getRelativeDocPath().str();
-    }
+    llvm::json::Object returnObj = metadata.toJSON();
     if (!returnsDoc.empty()) {
       returnObj["doc"] = returnsDoc;
     }
@@ -1573,6 +1568,8 @@ void PublicFunctionDecl::initFromSignature(MojoASTDeclRef declRef,
     MojoASTTypeRef astType(reboundUserType);
     std::string typeString = generateTypeString(
         shared, reboundUserType, variadicKind, selfType, convention);
+    typeString = ::KGEN::TypeExtractionUtils::stripImplicitArgParams(
+        typeString, pogAttr.getName());
 
     // Use AST-based library source extraction for function arguments
     args.push_back(PublicArgumentDecl(pogAttr.getName(), std::move(prefix),

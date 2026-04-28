@@ -620,7 +620,7 @@ def function[type: TrivialRegisterPassable](arg: type):
       (await doc.hover(doc.findFirstPosition("print(")))!.contents,
       {
         kind: "markdown",
-        value: "```mojo\n(function) def print(x: StringLiteral[x.value])\n```",
+        value: "```mojo\n(function) def print(x: StringLiteral)\n```",
       }
     );
 
@@ -629,7 +629,7 @@ def function[type: TrivialRegisterPassable](arg: type):
       {
         kind: "markdown",
         value: `\`\`\`mojo
-(function) def print(x: StringLiteral[x.value])
+(function) def print(x: StringLiteral)
 \`\`\`
 ---
 

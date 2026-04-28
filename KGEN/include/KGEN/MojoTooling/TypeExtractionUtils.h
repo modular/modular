@@ -79,6 +79,28 @@ extractLibraryInfo(llvm::StringRef typeStr,
                    const M::MojoASTDeclRef *currentDeclContext = nullptr,
                    M::KGEN::LIT::SharedState *sharedState = nullptr);
 
+/// Strip type parameters that are member-access references to `argName`
+/// (e.g. `output.origin` when the argument is `output`) from a printed type
+/// string.
+///
+/// Now that mojo-doc emits full parameterized type names, parameter values
+/// that the compiler synthesizes from the owning argument — the user wrote
+/// `_` or omitted the slot — are noise in user-facing docs. This function
+/// removes them.
+///
+/// Operates on the printer's string output and assumes the following
+/// invariants of `ASTType::print`:
+///  - all `[`/`]` are paired,
+///  - parameters within `[...]` are separated by `, ` at depth 1,
+///  - identifiers do not contain `[`, `]`, or `,`.
+///
+/// Scope: this is only intended for argument types. It does not strip from
+/// return types — there is no obvious "owning name" for a return — so a
+/// method returning `Container[self.T]` keeps its parameters. Extend later
+/// if a real case shows up.
+std::string stripImplicitArgParams(llvm::StringRef typeStr,
+                                   llvm::StringRef argName);
+
 } // namespace TypeExtractionUtils
 } // namespace KGEN
 } // namespace M

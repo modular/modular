@@ -15,10 +15,12 @@
 #include "KGEN/MojoParser/SharedState.h"
 #include "KGEN/MojoTooling/PublicASTDecl.h"
 #include "mlir/IR/BuiltinTypes.h"
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringExtras.h"
 #include "llvm/Support/raw_ostream.h"
 #include <algorithm>
+#include <cassert>
 #include <cctype>
 #include <map>
 #include <mutex>
@@ -234,13 +236,33 @@ std::string generateDocPath(llvm::StringRef module, llvm::StringRef typeName,
   return path;
 }
 
+/// Resolved cross-reference info for a base type name. The display string
+/// (`"type"`) is the caller's full parameterized type and is not cached here,
+/// so different parameterizations of the same base type (e.g. `List[Int]` vs
+/// `List[String]`) share the same path resolution without overwriting each
+/// other's display string.
+///
+/// An entry with both fields empty is a negative-cache marker — used only when
+/// `extractLibraryInfo` is called without `SharedState`, since AST resolution
+/// may succeed later given better context.
+namespace {
+struct ResolvedPath {
+  std::string moduleNamespace;
+  std::string docPath;
+};
+} // namespace
+
 /// The main function that extracts comprehensive type metadata from type names.
 TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
                                 const M::MojoASTDeclRef *currentDeclContext,
                                 SharedState *sharedState) {
-  // Cache for resolved type metadata to avoid repeated expensive lookups
-  static std::map<std::string, TypeMetadata> typeMetadataCache;
+  // Cache for resolved cross-reference paths, keyed by stripped base name.
+  static std::map<std::string, ResolvedPath> pathCache;
   static std::mutex cacheMutex;
+
+  auto makeMetadata = [&](const ResolvedPath &resolved) {
+    return TypeMetadata(typeStr, resolved.moduleNamespace, resolved.docPath);
+  };
 
   // Extract base type name: remove templates and qualified prefixes
   llvm::StringRef baseType = typeStr;
@@ -253,13 +275,12 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
 
   baseType = baseType.trim();
 
-  // Check cache first (with thread safety)
+  // Check cache first (with thread safety).
   std::string cacheKey = baseType.str();
   {
     std::lock_guard<std::mutex> lock(cacheMutex);
-    if (auto cachedIt = typeMetadataCache.find(cacheKey);
-        cachedIt != typeMetadataCache.end()) {
-      return cachedIt->second;
+    if (auto cachedIt = pathCache.find(cacheKey); cachedIt != pathCache.end()) {
+      return makeMetadata(cachedIt->second);
     }
   }
 
@@ -275,7 +296,7 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
         // Check if this is an alias declaration
         bool isAlias = isa_and_nonnull<AliasDeclOp>(declRef->getIfOperation());
         if (isAlias) {
-          // Preserve the original alias name
+          // Preserve the original alias name (used to build the URL anchor)
           typeName = baseType.str();
         } else {
           // For concrete types (structs/traits), use the regular path
@@ -284,25 +305,123 @@ TypeMetadata extractLibraryInfo(llvm::StringRef typeStr,
         docPath = generateDocPath(modulePath, typeName,
                                   sharedState->getDocsBasePath(), isAlias);
 
-        TypeMetadata result(typeName, modulePath, docPath, "");
+        ResolvedPath resolved{modulePath, docPath};
         {
           std::lock_guard<std::mutex> lock(cacheMutex);
-          typeMetadataCache[cacheKey] = result;
+          pathCache[cacheKey] = resolved;
         }
-        return result;
+        return makeMetadata(resolved);
       }
     }
   }
 
-  // For unknown types (not found in AST), return minimal info
-  // Use extractBaseTypeName to ensure consistent type name handling
-  TypeMetadata result(extractBaseTypeName(typeStr));
-
+  // For unknown types (not found in AST), return minimal info with no path.
   // Don't cache failures when we have SharedState - they might succeed later
-  // with better context
+  // with better context.
+  //
+  // Asymmetry: the lookup at the top of the function does *not* re-check
+  // `sharedState`, so a negative entry inserted here will be returned on
+  // subsequent calls even if a later caller has SharedState. In practice the
+  // same baseType is queried with consistent SharedState availability, so
+  // this hasn't bitten us; revisit if it ever does.
   if (!sharedState) {
     std::lock_guard<std::mutex> lock(cacheMutex);
-    typeMetadataCache[cacheKey] = result;
+    pathCache[cacheKey] = ResolvedPath{};
+  }
+  return makeMetadata(ResolvedPath{});
+}
+
+namespace {
+
+/// True if `s` is a Mojo identifier (`[A-Za-z_][A-Za-z0-9_]*`).
+bool isIdentifier(llvm::StringRef s) {
+  if (s.empty() || (!llvm::isAlpha(s[0]) && s[0] != '_'))
+    return false;
+  for (char c : s.drop_front())
+    if (!llvm::isAlnum(c) && c != '_')
+      return false;
+  return true;
+}
+
+/// True if `param` is a member access on `argName`, i.e. `argName.X(.Y)*`.
+/// Matches `output.origin` or `arg.x.y` but not `output`, `outputFoo`, or
+/// `output + 1`.
+bool isMemberAccessOn(llvm::StringRef param, llvm::StringRef argName) {
+  param = param.trim();
+  if (!param.consume_front(argName) || !param.consume_front("."))
+    return false;
+  while (true) {
+    auto [seg, rest] = param.split('.');
+    if (!isIdentifier(seg))
+      return false;
+    if (rest.empty())
+      return true;
+    param = rest;
+  }
+}
+
+} // namespace
+
+std::string stripImplicitArgParams(llvm::StringRef typeStr,
+                                   llvm::StringRef argName) {
+  if (argName.empty())
+    return typeStr.str();
+
+  std::string result;
+  result.reserve(typeStr.size());
+
+  for (size_t i = 0; i < typeStr.size();) {
+    if (typeStr[i] != '[') {
+      result += typeStr[i++];
+      continue;
+    }
+
+    // Find the matching ']' and the comma positions at this bracket depth.
+    size_t depth = 1;
+    size_t j = i + 1;
+    llvm::SmallVector<size_t> commas;
+    for (; j < typeStr.size() && depth > 0; ++j) {
+      char c = typeStr[j];
+      if (c == '[')
+        ++depth;
+      else if (c == ']') {
+        if (--depth == 0)
+          break;
+      } else if (c == ',' && depth == 1) {
+        commas.push_back(j);
+      }
+    }
+    assert(depth == 0 && "type printer emitted unbalanced brackets");
+    if (depth != 0) {
+      // Release-build fallback: emit the remainder verbatim.
+      result += typeStr.substr(i);
+      return result;
+    }
+
+    llvm::SmallVector<llvm::StringRef> params;
+    size_t prev = i + 1;
+    for (size_t comma : commas) {
+      params.push_back(typeStr.slice(prev, comma));
+      prev = comma + 1;
+    }
+    params.push_back(typeStr.slice(prev, j));
+
+    llvm::SmallVector<std::string> kept;
+    for (llvm::StringRef p : params) {
+      if (isMemberAccessOn(p, argName))
+        continue;
+      kept.push_back(stripImplicitArgParams(p.trim(), argName));
+    }
+
+    if (!kept.empty()) {
+      result += '[';
+      llvm::interleave(
+          kept, [&](const std::string &k) { result += k; },
+          [&] { result += ", "; });
+      result += ']';
+    }
+
+    i = j + 1;
   }
   return result;
 }

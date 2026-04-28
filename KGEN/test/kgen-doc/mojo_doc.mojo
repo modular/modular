@@ -373,7 +373,7 @@ def fn_with_fn_param_and_arg[
 # CHECK: "name": "logsoftmax",
 # CHECK:     "args":
 # CHECK:         "name": "output"
-# CHECK:         "type": "UnsafePointer"
+# CHECK:         "type": "UnsafePointer[Scalar[dtype]]"
 # CHECK:     "parameters":
 # CHECK:         "name": "origins"
 # CHECK:         "type": "OriginSet"
@@ -438,7 +438,7 @@ struct MyStruct[x: Int]:
 # CHECK:     "path": "/std/builtin/int/Int",
 # CHECK:     "type": "Int"
 # CHECK: }
-# CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct[arg.x])"
+# CHECK: "signature": "fn_with_implicit_params[p: Int](arg: MyStruct)"
 
 
 def fn_with_implicit_params[p: Int](arg: MyStruct):
@@ -685,13 +685,13 @@ def deprecated_function():
 # CHECK: "args":
 # CHECK:   "name": "value",
 # CHECK:   "path": "/mojo_doc/UsesParameter",
-# CHECK:   "type": "UsesParameter"
+# CHECK:   "type": "UsesParameter[K]"
 # CHECK: "parameters":
 # CHECK:   "name": "K",
 # CHECK:   "path": "/std/builtin/anytype/AnyType",
 # CHECK:   "type": "AnyType"
 # CHECK: "returns": {
-# CHECK:   "type": "ref"
+# CHECK:   "type": "ref[value] UsesParameter[K]"
 # CHECK: },
 # CHECK: "signature": "dep_type[K: AnyType](ref value: UsesParameter[K]) -> ref[value] UsesParameter[K]",
 struct UsesParameter[A: AnyType]:
