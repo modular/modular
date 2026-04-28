@@ -277,6 +277,9 @@ class Model:
     ) -> None:
         """Debug verify replay against captured graph."""
 
+    def _await_device_graphs(self) -> None:
+        """Await all pending device graph instantiations."""
+
     def _export_mef(self, path: str) -> None:
         """
         Exports the compiled model as a mef to a file.
