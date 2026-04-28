@@ -219,7 +219,15 @@ def _compute_num_partitions_64[
     """
     var num_kv_cache_pages = ceildiv(effective_max_cache_len, split_page_size)
 
-    var ctas_per_partition = ceildiv(num_heads, 64) * q_max_seq_len * batch_size
+    # When fold is active (q_len > 1 AND num_heads * q_len <= BM=64), the
+    # kernel packs all q_tokens into the M tile of a single CTA, so
+    # ctas_per_partition should NOT multiply by q_max_seq_len. The guard is
+    # byte-identical for every non-fold caller (q_len=1, or
+    # num_heads * q_len > 64), preserving prior np values for full-Kimi
+    # (num_heads=64) and decode-q=1 paths.
+    var fold_active = (q_max_seq_len > 1) and (num_heads * q_max_seq_len <= 64)
+    var q_len_factor = 1 if fold_active else q_max_seq_len
+    var ctas_per_partition = ceildiv(num_heads, 64) * q_len_factor * batch_size
 
     # Single head group: 85% fill threshold (floor * ctas * 20 >= sm * 17).
     var floor_target = sm_count // ctas_per_partition
