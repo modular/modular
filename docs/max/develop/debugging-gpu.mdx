@@ -1,0 +1,84 @@
+---
+title: GPU errors
+description: Force synchronous GPU execution and enable kernel-level bounds checking to pinpoint the op that caused a failure.
+---
+
+GPU operations normally dispatch asynchronously, so when a kernel fails,
+the host usually reports the failure at a later op that happens to
+synchronize next. GPU debugging forces synchronous dispatch and turns on
+kernel-level assertions so errors surface at the op that caused them.
+
+## Force synchronous device execution
+
+A GPU kernel is a function that runs on the device. When MAX runs your
+model, it launches a sequence of kernels on the GPU (one per op). By
+default, the host enqueues each kernel onto a device stream and
+continues immediately without waiting for the kernel to finish. This is
+called *asynchronous dispatch*, and it's what lets the host and device
+make progress in parallel.
+
+Async dispatch is fast in the common case but makes debugging painful.
+The host only observes a kernel failure at the next synchronization
+point (for example, when copying output back to host memory), so the
+reported location can be many ops past the one that actually failed.
+When you enable `device-sync-mode`, MAX waits for each kernel to
+complete before queuing the next. Throughput drops, but a failure now
+surfaces at the exact op boundary that produced it.
+
+Enable `device-sync-mode` to force synchronous execution:
+
+```bash
+MODULAR_DEBUG=device-sync-mode max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+:::caution
+
+Synchronous device mode significantly reduces throughput. It can also change
+the order in which parallel operations complete. Use it only during debugging
+sessions; do not use in production.
+
+:::
+
+## Enable kernel-level bounds checking
+
+Mojo's standard library ships with assertions that catch common
+kernel-authoring bugs, including out-of-bounds accesses on
+[`LayoutTensor`](/mojo/stdlib/layout/layout_tensor/LayoutTensor), which happen
+when a kernel reads or writes outside the allocated region of a tensor. These
+assertions are compiled out by default, so a buggy kernel produces corrupted
+output downstream instead of a clear error at the kernel site.
+
+The `assert-level` option controls assertions in the Mojo standard library:
+
+- `none`: no assertions (default, best performance)
+- `warn`: log warnings for out-of-bounds accesses
+- `safe`: assertions on bounds checks that are unlikely to trigger in
+  correct code
+- `all`: full bounds checking on every access
+
+```bash
+MODULAR_DEBUG=assert-level=safe max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+:::caution
+
+Not all kernels support running with assertions enabled. If a run fails
+with `assert-level` set, retry with `assert-level=none` and only enable
+assertions when actively debugging a specific kernel.
+
+:::
+
+## Next steps
+
+Now that you can pin down GPU failures to the op that caused them, explore
+related debug options and profiling tools:
+
+- [Diagnose runtime errors](/max/develop/debugging-errors): When a GPU
+  failure escalates to a crash, capture Mojo stack traces and IR dumps
+  for deeper investigation.
+- [Trace op execution](/max/develop/debugging-tracing): Use op-level
+  tracing alongside synchronous dispatch to see the exact sequence that
+  led to the failure.
+- [GPU system profiling](/max/gpu-system-profiling): Move beyond
+  correctness debugging to profile GPU workloads for performance
+  bottlenecks.

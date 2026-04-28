@@ -1,0 +1,89 @@
+---
+title: Execution tracing
+description: See which operations MAX runs, in what order, and on which device, and map each op back to its Python source.
+---
+
+Execution tracing surfaces two pieces of information that aren't visible by
+default: the sequence of operations the MAX runtime launches, and the Python
+source location that defined each op. Together, they let you correlate a
+runtime failure with the line of code that caused it.
+
+When you build a model with the Graph API, you describe the computation
+as a series of ops: discrete units of work such as a matrix multiply, an
+RMS norm, or an element-wise add. MAX compiles the graph, plans the
+schedule, and dispatches the compiled ops at run time. Execution tracing
+exposes this otherwise-hidden activity.
+
+## Enable op-level tracing
+
+An op is the unit of dispatch in the MAX runtime. The scheduler decides
+when each op is ready, sends it to its target device, and reclaims
+resources when it finishes.
+
+Op-level tracing makes this lifecycle visible. When you enable `op-log-level`,
+MAX emits a `LAUNCH` event when the runtime dispatches an op and a `COMPLETE`
+event when it finishes. Each event carries a unique op ID and the target
+device, so you can correlate a launch with its completion and see which device
+handled each op.
+
+The option accepts the standard log levels (`trace`, `debug`, `info`,
+`warning`, `error`, `critical`), where `trace` is the most verbose. Because
+the output can be significant, you'll usually want to redirect it to a file
+for later inspection.
+
+```bash
+MODULAR_DEBUG=op-log-level=trace max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+This outputs detailed information about each operation's launch and completion
+to `stderr`. For example:
+
+```output
+[OP] LAUNCH elementwise [id=40028] target=cpu:0
+[OP] COMPLETE elementwise [id=40028] target=cpu:0
+[OP] LAUNCH rms_norm [id=40029] target=gpu:0
+[OP] COMPLETE rms_norm [id=40029] target=gpu:0
+```
+
+## Map ops to Python source
+
+Graph compilation discards most of the context that surrounded an op in your
+Python source. Once the graph is compiled, an error message from a specific op
+typically reports the op's internal name and little else, which makes it hard
+to map a runtime failure back to the line that caused it. Source tracebacks
+preserve the Python frame information for each op through compilation, so that
+when an op raises an error (or when another debug option such as `nan-check` or
+`assert-level` reports an op), the error message includes the `.py` file and
+line where you defined the op.
+
+You can enable `source-tracebacks` by setting the `MODULAR_DEBUG` environment
+variable:
+
+```bash
+MODULAR_DEBUG=source-tracebacks max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+You can also enable this through the Python API on
+[`Graph`](/max/api/python/generated/max.graph.Graph). See the
+[overview](/max/develop/debugging#how-debug-options-are-applied) for how to
+configure debug options in Python code.
+
+:::tip
+
+You can enable `op-log-level` and `source-tracebacks` independently, but
+they're most useful together. Op-level tracing shows the runtime sequence, and
+source tracebacks map each op back to the code.
+
+:::
+
+## Next steps
+
+Now that you can see what your model is doing at runtime, explore related
+debug options that use the same tracing data:
+
+- [Debug accuracy issues](/max/develop/debugging-accuracy): Combine
+  `source-tracebacks` with `nan-check` for the most actionable accuracy
+  error messages.
+- [Debug GPU errors](/max/develop/debugging-gpu): When tracing shows the
+  failure originated on a GPU device, force synchronous dispatch to
+  pinpoint the exact op.

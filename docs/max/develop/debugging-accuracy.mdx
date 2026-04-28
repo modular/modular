@@ -1,0 +1,67 @@
+---
+title: Accuracy issues
+description: Catch NaN and Inf values and uninitialized memory reads in your MAX model with accuracy debugging options.
+---
+
+MAX provides accuracy debugging tools to catch numerical corruption and
+uninitialized memory reads that would otherwise propagate through your model.
+When enabled, these tools report the operation that produced a bad value, so
+you can narrow down where the corruption originates.
+
+## Check for `NaN` and `Inf` values
+
+`NaN` (Not a Number) is a special floating-point value that represents the
+result of an undefined operation such as `0/0` or `log(0)`. `Inf` represents
+infinity, the result of overflow or a non-zero number divided by zero. Once a
+tensor contains a NaN or Inf, any arithmetic that touches it produces another
+NaN or Inf, so one bad value can corrupt the rest of the forward pass.
+In an LLM, this usually manifests as gibberish tokens or a sudden collapse in
+output quality, with nothing in the logs pointing to the origin.
+
+When you enable `nan-check`, MAX inserts a check after each fused set of ops.
+If the check fires, MAX raises a runtime error that identifies the op group
+that produced the bad value.
+
+Here's how to enable the check:
+
+```bash
+MODULAR_DEBUG=nan-check max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+If you also enable
+[`source-tracebacks`](/max/develop/debugging-tracing#map-ops-to-python-source),
+MAX includes the Python source location where you defined the operation.
+
+## Detect uninitialized memory reads
+
+When MAX allocates a tensor buffer, the underlying memory contains
+whatever bytes happened to be there before the allocation. If a kernel
+reads from that buffer before an op has written to it, the kernel
+operates on arbitrary data. The resulting output looks plausible but
+bears no relationship to your inputs.
+
+When you enable `uninitialized-read-check`, MAX fills newly allocated
+buffers with a recognizable poison pattern. The check fires when a read
+touches a poisoned region, so kernels that consume a buffer before any
+op has written to it fail immediately with a clear error.
+
+Enable `uninitialized-read-check` to detect when your model reads from
+memory that was never written to:
+
+```bash
+MODULAR_DEBUG=uninitialized-read-check max serve --model modularai/Llama-3.1-8B-Instruct-GGUF
+```
+
+This check adds runtime overhead, so disable it after debugging sessions.
+
+## Next steps
+
+These are just a couple of debugging tools MAX provides. Explore the following
+resources to learn about additional debugging scenarios:
+
+- [Trace op execution](/max/develop/debugging-tracing): See which ops
+  MAX runs and map them back to Python source.
+- [Debug GPU errors](/max/develop/debugging-gpu): Force synchronous GPU
+  dispatch and enable kernel-level bounds checking.
+- [Diagnose runtime errors](/max/develop/debugging-errors): Capture
+  Mojo stack traces and IR dumps for unrecoverable failures.
