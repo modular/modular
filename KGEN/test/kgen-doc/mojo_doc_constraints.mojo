@@ -318,7 +318,7 @@ def fn_with_both_constraint_types[
 
 
 # CHECK-LABEL: "name": "fn_with_identity_reconstruction",
-# CHECK: "signature": "fn_with_identity_reconstruction(c: Container[c.T]) where (c.inner_size == 2)"
+# CHECK: "signature": "fn_with_identity_reconstruction(c: Container) where (c.inner_size == 2)"
 def fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
     """Function where a constraint references a computed property of an argument.
 
@@ -334,7 +334,7 @@ def fn_with_identity_reconstruction(c: Container) where c.inner_size == 2:
 # Negative test: AltContainer has different declared param names than Container,
 # so AltContainer[c.T] should NOT simplify to just 'c'.
 # CHECK-LABEL: "name": "fn_no_false_positive_different_struct",
-# CHECK: "signature": "fn_no_false_positive_different_struct(c: Container[c.T]) where (AltContainer[c.T].alt_size == 4)"
+# CHECK: "signature": "fn_no_false_positive_different_struct(c: Container) where (AltContainer[c.T].alt_size == 4)"
 def fn_no_false_positive_different_struct(
     c: Container,
 ) where AltContainer[c.T].alt_size == 4:

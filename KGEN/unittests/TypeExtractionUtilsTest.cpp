@@ -181,27 +181,35 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_SimpleTypes) {
 }
 
 /// Test extractLibraryInfo with generic types.
-/// Should strip generic parameters in the returned metadata.
+/// Should preserve full parameterization in the returned metadata.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_GenericTypes) {
-  // Test that generic parameters are stripped
   auto metadata = extractLibraryInfo("List[Int]");
   auto json = metadata.toJSON();
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
-  EXPECT_EQ(typeValue.value(), "List");
+  EXPECT_EQ(typeValue.value(), "List[Int]");
 }
 
 /// Test extractLibraryInfo with qualified type names.
-/// Should extract the leaf type name from qualified names.
+/// Should preserve full parameterization including all type arguments.
 TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_QualifiedTypes) {
-  // Test that qualified names get the leaf type
   auto metadata = extractLibraryInfo("Dict[String, Int]");
   auto json = metadata.toJSON();
 
   auto typeValue = json.find("type")->second.getAsString();
   EXPECT_TRUE(typeValue.has_value());
-  EXPECT_EQ(typeValue.value(), "Dict");
+  EXPECT_EQ(typeValue.value(), "Dict[String, Int]");
+}
+
+/// Test extractLibraryInfo with deeply nested generics.
+TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_NestedGenerics) {
+  auto metadata = extractLibraryInfo("List[Dict[String, Int]]");
+  auto json = metadata.toJSON();
+
+  auto typeValue = json.find("type")->second.getAsString();
+  EXPECT_TRUE(typeValue.has_value());
+  EXPECT_EQ(typeValue.value(), "List[Dict[String, Int]]");
 }
 
 /// Test extractLibraryInfo with function types.
@@ -235,7 +243,6 @@ TEST_F(TypeExtractionUtilsTest, ExtractLibraryInfo_EmptyType) {
 /// Should include both type and path information in JSON output.
 TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
   // Test TypeMetadata JSON serialization
-  // Constructor: TypeMetadata(typeStr, module, relativePath, constraints)
   M::KGEN::TypeMetadata metadata("List[Int]", "std.collections",
                                  "/std/collections/List");
 
@@ -257,11 +264,67 @@ TEST_F(TypeExtractionUtilsTest, TypeMetadata_ToJSON) {
 /// Should omit path field when empty (not include empty string).
 TEST_F(TypeExtractionUtilsTest, TypeMetadata_EmptyPath) {
   // Test with empty path (should not include path in JSON)
-  // Constructor: TypeMetadata(typeStr, module, relativePath, constraints)
   M::KGEN::TypeMetadata metadata("SomeType", "", "");
 
   auto json = metadata.toJSON();
 
   EXPECT_TRUE(json.find("type") != json.end());
   EXPECT_TRUE(json.find("path") == json.end());
+}
+
+//===----------------------------------------------------------------------===//
+// stripImplicitArgParams tests
+//===----------------------------------------------------------------------===//
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_DropsMemberAccess) {
+  EXPECT_EQ(stripImplicitArgParams(
+                "UnsafePointer[Scalar[dtype], output.origin]", "output"),
+            "UnsafePointer[Scalar[dtype]]");
+}
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_DropsBracketsWhenEmpty) {
+  // Sole parameter is implicit -> drop the entire `[...]`.
+  EXPECT_EQ(stripImplicitArgParams("MyStruct[arg.x]", "arg"), "MyStruct");
+}
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_PreservesPrefixOfName) {
+  // `outputFoo` shares a prefix with `output` but is not a member access.
+  EXPECT_EQ(stripImplicitArgParams("Foo[outputFoo]", "output"),
+            "Foo[outputFoo]");
+  // Bare arg name (no `.`) is also not a member access — keep it.
+  EXPECT_EQ(stripImplicitArgParams("Foo[output]", "output"), "Foo[output]");
+}
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_NestedBrackets) {
+  EXPECT_EQ(stripImplicitArgParams("Foo[Bar[arg.x]]", "arg"), "Foo[Bar]");
+  EXPECT_EQ(stripImplicitArgParams("Foo[Bar[arg.x], arg.y]", "arg"),
+            "Foo[Bar]");
+}
+
+TEST_F(TypeExtractionUtilsTest,
+       StripImplicitArgParams_MultiSegmentMemberAccess) {
+  EXPECT_EQ(stripImplicitArgParams("Foo[arg.x.y]", "arg"), "Foo");
+  // Numeric segment is not an identifier — keep.
+  EXPECT_EQ(stripImplicitArgParams("Foo[arg.123]", "arg"), "Foo[arg.123]");
+}
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_EmptyArgNameNoOp) {
+  EXPECT_EQ(stripImplicitArgParams("Foo[arg.x]", ""), "Foo[arg.x]");
+}
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_NoBrackets) {
+  EXPECT_EQ(stripImplicitArgParams("Int", "x"), "Int");
+}
+
+TEST_F(TypeExtractionUtilsTest, StripImplicitArgParams_CrossArgRefPreserved) {
+  // `a.x` is an explicit cross-argument reference, not implicit on the
+  // current arg — must not be stripped when stripping for `b`.
+  EXPECT_EQ(stripImplicitArgParams("Baz[a.x]", "b"), "Baz[a.x]");
+}
+
+TEST_F(TypeExtractionUtilsTest,
+       StripImplicitArgParams_ComplexExpressionPreserved) {
+  // Anything beyond `argName.<ident>(.<ident>)*` is left alone.
+  EXPECT_EQ(stripImplicitArgParams("Origin[mut=output.is_mutable]", "output"),
+            "Origin[mut=output.is_mutable]");
 }
