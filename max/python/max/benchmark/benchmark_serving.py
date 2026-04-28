@@ -3066,6 +3066,13 @@ def main_with_parsed_args(
             (mc for mc in concurrency_range if mc is not None), default=1
         )
         args.num_prompts = args.num_prompts_multiplier * max_mc
+        # When using num_prompts_multiplier without explicit duration, default to
+        # 300s timeout per MC config to prevent indefinitely long benchmark runs.
+        logger.info(
+            "Using --num-prompts-multiplier without --max-benchmark-duration-s."
+            " Defaulting to 300s timeout per max-concurrency configuration."
+        )
+        args.max_benchmark_duration_s = 300
 
     # ---- Dry run ----
     if args.dry_run:
