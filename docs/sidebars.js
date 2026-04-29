@@ -418,6 +418,7 @@ const maxSidebars = {
             "max/api/python/pipelines.architectures.deepseekV3",
             "max/api/python/pipelines.architectures.deepseekV3_2",
             "max/api/python/pipelines.architectures.deepseekV3_nextn",
+            "max/api/python/pipelines.architectures.eagle3_deepseekV3",
             "max/api/python/pipelines.architectures.eagle_llama3",
             "max/api/python/pipelines.architectures.exaone",
             "max/api/python/pipelines.architectures.exaone_modulev3",

@@ -116,6 +116,7 @@ _AUTO_ENABLE_OVERLAP_SCHEDULER_ARCHITECTURES = (
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
+    "Eagle3DeepseekV3ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
 
@@ -130,6 +131,7 @@ _AUTO_ENABLE_DEVICE_GRAPH_CAPTURE_ARCHITECTURES = (
     "UnifiedEagleLlama3ForCausalLM",
     "UnifiedMTPDeepseekV3ForCausalLM",
     "Eagle3DeepseekV2ForCausalLM",
+    "Eagle3DeepseekV3ForCausalLM",
     "MiniMaxM2ForCausalLM",
 )
 
@@ -880,7 +882,35 @@ class PipelineConfig(ConfigFileModel):
             if target_archs[0] == "LlamaForCausalLM":
                 target_archs[0] = "UnifiedEagleLlama3ForCausalLM"
             if target_archs[0] == "DeepseekV3ForCausalLM":
-                target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+                # Choose between MTP (NextN layer baked into target ckpt) and
+                # Eagle3 (separate draft ckpt with arch
+                # ``Eagle3DeepseekV2ForCausalLM``) based on the draft arch.
+                draft_archs = (
+                    self.draft_model.huggingface_config.architectures
+                    if self.draft_model is not None
+                    else None
+                )
+                if draft_archs is None:
+                    target_archs[0] = "UnifiedMTPDeepseekV3ForCausalLM"
+                elif (
+                    draft_archs
+                    and draft_archs[0] == "Eagle3DeepseekV2ForCausalLM"
+                ):
+                    target_archs[0] = "Eagle3DeepseekV3ForCausalLM"
+                else:
+                    if not draft_archs:
+                        raise ValueError(
+                            "Draft model HF config has empty"
+                            " ``architectures=[]``. Expected"
+                            " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft) or"
+                            " no draft model (MTP path)."
+                        )
+                    raise ValueError(
+                        "Unrecognized draft architecture for DeepseekV3"
+                        f" target: {draft_archs[0]!r}. Expected"
+                        " 'Eagle3DeepseekV2ForCausalLM' (Eagle3 draft) or no"
+                        " draft model (MTP path)."
+                    )
             if target_archs[0] == "KimiK25ForConditionalGeneration":
                 target_archs[0] = "Eagle3DeepseekV2ForCausalLM"
 

@@ -50,6 +50,7 @@ Modules
    pipelines.architectures.deepseekV3
    pipelines.architectures.deepseekV3_2
    pipelines.architectures.deepseekV3_nextn
+   pipelines.architectures.eagle3_deepseekV3
    pipelines.architectures.eagle_llama3
    pipelines.architectures.exaone
    pipelines.architectures.exaone_modulev3
