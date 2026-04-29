@@ -1212,7 +1212,10 @@ def infer_address_space[
   # Show that we can infer the address space parameter of Pointer from a
   # !lit.ref.
 
-  # CHECK: lit.call {{.*}}@Pointer::@"__init__{{.*}}(%a)
+  # The ref is rebound to match the `to:` parameter origin before
+  # `Pointer.__init__`.
+  # CHECK: kgen.rebind %a
+  # CHECK-NEXT: lit.call {{.*}}@Pointer::@"__init__{{.*}}({{%.*}})
   var x = Pointer(to=__get_litref_as_mvalue(a))
 
 

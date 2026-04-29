@@ -731,7 +731,7 @@ LogicalResult ParamMatcher::matchParams(TypedAttr actualAttr,
       // the former to the latter and we should remove this redundant check for
       // implicit convertibility.
       expectedAttr = state.evaluator.getReboundAttribute(expectedAttr);
-      auto expectedType = expectedAttr.getType();
+      auto expectedType = getCanonicalType(expectedAttr.getType());
       if (IREmitter::canImplicitlyConvertToType(
               {actualAttr, expr}, expectedType, emitter.getDeclScope())) {
         actualAttr = emitter.emitPValue({actualAttr, expr}, EC_TypeParamValue,

@@ -1055,9 +1055,25 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       declKind = VarDeclKind::Bind;
       break;
     }
-    // The ultimate reference will be a !lit.ref<lit.ref<T>> but we don't know
-    // the origin of the input value type yet. Just use a placeholder for it,
-    // the emitStoreToLValue function will replace it with the actual type.
+
+    // Type refinement strategy by destination shape:
+    //
+    //   Ordinary var/ref/bind | declaration time
+    //   Tuple unpack element  | after the element store
+    //
+    // Tuple unpack is currently the only destructuring path that first forms an
+    // aggregate LValue from element destinations, then stores the RHS tuple by
+    // extracting each element. If we refined element bindings here, the
+    // aggregate LValue would expect `Tuple[refined T, ...]`, while the RHS
+    // still has type `Tuple[T, ...]`. Keep tuple element storage compatible
+    // with the extracted RHS elements; the store path updates the ASTDecl to a
+    // refined lookup view after each element is initialized.
+    if (dest.getContext() != EC_TupleElement)
+      varType = maybeRefineTypeWithAssumptions(varType, emitter.declScope);
+
+    // For bind/ref patterns, wrap with placeholder origin (replaced at store
+    // time). The ultimate reference will be a !lit.ref<!lit.ref<T>> but we
+    // don't know the origin of the input value type yet.
     if (isRefOrBind)
       varType = RefType::getAnyOrigin(varType, true);
 
@@ -1105,6 +1121,12 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       dest.getIfInitializerType()) {
     auto contextualType = dest.getIfInitializerType();
     assert(contextualType && "must have contextual type");
+
+    // NOTE: We intentionally do NOT apply type refinement to contextual types
+    // for implicit variable declarations. The contextual type comes from the
+    // source expression (e.g., iterator element type), and refining it here
+    // would cause type mismatches when the source value isn't refined.
+    // Refinement is only applied to explicitly declared variables (var x: T).
 
     // Use this builder to place any VarDeclOps. In Python there is only one
     // scope for the whole def and all variables belong to that scope.
@@ -1361,6 +1383,13 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
     return {};
   }
 
+  // Apply use-time type refinement. Variables declared in an outer scope may
+  // gain additional conforms_to constraints when referenced in an inner scope
+  // (e.g., inside comptime if/comptime assert blocks). This emits a
+  // kgen.rebind with DowncastAttr when the current scope has additional
+  // trait constraints beyond what was applied at declaration time.
+  value = maybeEmitRefinementRebind({value, expr}, emitter);
+
   // If the declaration is a type check error, its error has already been
   // diagnosed. Squelch any downstream issues.
   if (sugarIsa<TypeCheckErrorType>(value.getRValueType()))
@@ -1461,7 +1490,15 @@ CValue AttributeRefNode::emitStoredFieldRef(ASTExprAnd<CValue> base,
   }
 
   auto fieldRef =
-      RefStructGEROp::create(*emitter.builder, mlirLoc, baseBVal, fieldOp);
+      Value(RefStructGEROp::create(*emitter.builder, mlirLoc, baseBVal, fieldOp)
+                .getResult());
+
+  // Apply type refinement to struct field accesses whose element type is a
+  // parametric type with comptime assumptions (e.g., Self.T in a struct
+  // method with `where conforms_to(Self.T, Trait)`).
+  fieldRef = maybeEmitRefinementRebind(fieldRef, emitter.declScope,
+                                       *emitter.builder, mlirLoc);
+
   // Result kind depends on the input kind.
   CValue result;
   if (base.ir.getIfMLValue())
@@ -1909,6 +1946,12 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
   }
 
   // Find the decl for the type we're looking up into.
+  // Note: Type refinement for parametric types is handled at value creation
+  // time (call results in UncheckedCallEmission, function args in
+  // DeclResolution, local vars in maybeRefineTypeWithAssumptions) and at
+  // variable use time (emitUnqualLookup applies maybeEmitRefRefinement for
+  // comptime if/assert scopes), so baseRVType should already be refined if
+  // applicable.
   ASTDecl *typeDecl = baseRVType.getDecl(shared);
   if (!typeDecl) {
     // If the attribute spelling is empty, we couldn't find a name to look up.
@@ -2035,6 +2078,9 @@ auto AttributeRefNode::emitLCVIR(ValueDest &dest, IREmitter &emitter,
 
   // Find the member being accessed.
   // Search through the struct and also through any of its visible extensions.
+  // Type refinement is applied at value creation time and at variable use
+  // time (for comptime if/assert scopes), so baseRVType should already
+  // include any refinements.
   SmallVector<ASTDecl *, 4> structAndExtensionsDecls =
       emitter.getDeclScope().collectTypeAndExtensions(baseRVType, getLoc());
   SmallVector<ASTDecl *> memberDecls;
@@ -4805,6 +4851,13 @@ AnyValue MagicFunctionNode::emitStructFieldRef(ValueDest &dest,
     resultRef = RefStructGEROp::create(*emitter.builder, mlirLoc, resultType,
                                        indexAttr, structRef);
   }
+
+  // Apply type refinement to struct field accesses whose element type is a
+  // parametric type with comptime assumptions. This handles tuple subscript
+  // where elements are reference types like ref[origin] T (and assumptions
+  // introduced by `where`, `comptime if`, or `comptime assert`).
+  resultRef = maybeEmitRefinementRebind(resultRef, emitter.declScope,
+                                        *emitter.builder, mlirLoc);
 
   // Result kind depends on the input kind - preserve mutability
   CValue result;
