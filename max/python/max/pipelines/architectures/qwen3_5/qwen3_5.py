@@ -1,0 +1,473 @@
+# ===----------------------------------------------------------------------=== #
+# Copyright (c) 2026, Modular Inc. All rights reserved.
+#
+# Licensed under the Apache License v2.0 with LLVM Exceptions:
+# https://llvm.org/LICENSE.txt
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# ===----------------------------------------------------------------------=== #
+"""Qwen3.5 hybrid attention model (linear + full attention layers)."""
+
+from __future__ import annotations
+
+import functools
+from collections.abc import Callable
+
+from max.dtype import DType
+from max.graph import (
+    BufferType,
+    BufferValue,
+    DeviceRef,
+    ShardingStrategy,
+    TensorType,
+    TensorValue,
+    TensorValueLike,
+    ops,
+)
+from max.graph.quantization import QuantizationEncoding
+from max.nn.comm import Signals
+from max.nn.embedding import VocabParallelEmbedding
+from max.nn.kv_cache import KVCacheParamInterface, PagedCacheValues
+from max.nn.layer import LayerList, Module
+from max.nn.linear import MLP, ColumnParallelLinear, Linear
+from max.nn.norm import RMSNorm
+from max.nn.rotary_embedding import Llama3RotaryEmbedding
+from max.nn.transformer.distributed_transformer import (
+    DistributedLogitsPostprocessMixin,
+)
+from max.pipelines.lib.vlm_utils import merge_multimodal_embeddings
+
+from .layers.attention import Qwen3_5Attention
+from .layers.gated_deltanet import GatedDeltaNet
+from .layers.visual_transformer import VisionTransformer
+from .model_config import Qwen3_5Config
+
+
+class Qwen3_5TransformerBlock(Module):
+    """Transformer block for Qwen3.5 that supports both attention types.
+
+    Each block can be either a full attention block (with KV cache) or a
+    linear attention block (with Gated DeltaNet recurrence).
+    """
+
+    def __init__(
+        self,
+        config: Qwen3_5Config,
+        layer_idx: int,
+        rope: Llama3RotaryEmbedding,
+        create_norm: Callable[..., RMSNorm],
+        linear_cls: Callable[..., Linear],
+    ) -> None:
+        super().__init__()
+        self.layer_type = config.layer_types[layer_idx]
+        self.devices = config.devices
+
+        if self.layer_type == "full_attention":
+            self.self_attn = Qwen3_5Attention(
+                num_attention_heads=config.num_attention_heads,
+                num_key_value_heads=config.num_key_value_heads,
+                hidden_size=config.hidden_size,
+                head_dim=config.kv_params.head_dim,
+                kv_params=config.kv_params,
+                layer_idx=layer_idx,
+                dtype=config.dtype,
+                rope=rope,
+                linear_cls=linear_cls,
+                devices=config.devices,
+                scale=config.attention_multiplier,
+                partial_rotary_factor=config.partial_rotary_factor,
+                has_bias=config.attention_bias,
+                norm_dtype=config.norm_dtype or config.dtype,
+                norm_eps=config.rms_norm_eps or 1e-6,
+            )
+        else:
+            self.linear_attn = GatedDeltaNet(
+                hidden_size=config.hidden_size,
+                num_key_heads=config.linear_num_key_heads,
+                num_value_heads=config.linear_num_value_heads,
+                key_head_dim=config.linear_key_head_dim,
+                value_head_dim=config.linear_value_head_dim,
+                conv_kernel_size=config.linear_conv_kernel_dim,
+                dtype=config.dtype,
+                device=config.devices[0],
+                rms_norm_eps=config.rms_norm_eps or 1e-6,
+            )
+
+        self.mlp = MLP(
+            config.dtype,
+            config.model_quantization_encoding,
+            config.hidden_size,
+            config.intermediate_size,
+            config.devices,
+            linear_cls,
+        )
+
+        self.input_layernorm = create_norm()
+        self.post_attention_layernorm = create_norm()
+
+    def __call__(
+        self,
+        x: TensorValue,
+        layer_idx: TensorValue | None = None,
+        kv_collection: PagedCacheValues | None = None,
+        freqs_cis: TensorValue | None = None,
+        input_row_offsets: TensorValue | None = None,
+        conv_state: TensorValue | None = None,
+        recurrent_state: TensorValue | None = None,
+        is_decode: TensorValue | None = None,
+    ) -> tuple[TensorValue, TensorValue | None, TensorValue | None]:
+        residual = x
+        h = self.input_layernorm(x)
+
+        new_conv_state = None
+        new_recurrent_state = None
+
+        if self.layer_type == "full_attention":
+            assert layer_idx is not None
+            assert kv_collection is not None
+            assert freqs_cis is not None
+            assert input_row_offsets is not None
+            h = self.self_attn(
+                layer_idx, h, kv_collection, freqs_cis, input_row_offsets
+            )
+        else:
+            assert conv_state is not None
+            assert recurrent_state is not None
+            assert input_row_offsets is not None
+            assert is_decode is not None
+            h, new_conv_state, new_recurrent_state = self.linear_attn(
+                h, conv_state, recurrent_state, input_row_offsets, is_decode
+            )
+
+        h = residual + h
+        residual = h
+        h = self.post_attention_layernorm(h)
+        h = self.mlp(h)
+        return residual + h, new_conv_state, new_recurrent_state
+
+
+class Qwen3_5(DistributedLogitsPostprocessMixin, Module):
+    """Qwen3.5 hybrid attention model.
+
+    This model uses a mix of full attention (with KV cache) and linear
+    attention (Gated DeltaNet) layers. Every full_attention_interval-th
+    layer uses full attention, and the rest use linear attention.
+    """
+
+    def __init__(self, config: Qwen3_5Config) -> None:
+        super().__init__()
+        self.config = config
+        self.devices = config.devices
+        self.num_devices = len(config.devices)
+
+        if config.model_quantization_encoding == QuantizationEncoding.GPTQ:
+            raise NotImplementedError("GPTQ Qwen3.5 is not implemented yet")
+        if config.model_quantization_encoding is not None:
+            raise NotImplementedError("GGUFQ Qwen3.5 is not implemented yet")
+
+        # Create RoPE embedding for full attention layers
+        # Only the partial rotary dimension gets rotation
+        rotary_dim = int(
+            config.kv_params.head_dim * config.partial_rotary_factor
+        )
+        rope = Llama3RotaryEmbedding(
+            dim=config.hidden_size,
+            n_heads=config.num_attention_heads,
+            theta=config.rope_theta,
+            max_seq_len=config.max_seq_len,
+            head_dim=rotary_dim,
+            interleaved=config.interleaved_rope_weights,
+            scaling_params=config.rope_scaling_params,
+        )
+        self.rope = rope
+
+        # Norm factory (uses (1 + weight) offset for Qwen3.5)
+        if config.norm_method != "rms_norm" or config.rms_norm_eps is None:
+            raise ValueError(
+                "Qwen3.5 requires RMSNorm. Set norm_method='rms_norm' "
+                "and provide rms_norm_eps."
+            )
+
+        create_norm = functools.partial(
+            RMSNorm,
+            config.hidden_size,
+            dtype=config.norm_dtype or DType.float32,
+            eps=config.rms_norm_eps,
+            weight_offset=1.0,
+            multiply_before_cast=False,
+        )
+
+        linear_cls = functools.partial(Linear, quant_config=config.quant_config)
+
+        # Create transformer layers
+        self.layers = LayerList(
+            [
+                Qwen3_5TransformerBlock(
+                    config=config,
+                    layer_idx=i,
+                    rope=rope,
+                    create_norm=create_norm,
+                    linear_cls=linear_cls,
+                )
+                for i in range(config.num_hidden_layers)
+            ]
+        )
+
+        # Track which layers are which type for state management
+        self.layer_types = config.layer_types
+        self.linear_layer_indices = [
+            i
+            for i, lt in enumerate(config.layer_types)
+            if lt == "linear_attention"
+        ]
+
+        # Final norm (replicated across devices)
+        self.norm = create_norm()
+        self.norm.sharding_strategy = ShardingStrategy.replicate(
+            self.num_devices
+        )
+        self.norm_shards = self.norm.shard(config.devices)
+
+        # Embedding and output layers
+        embedding_dtype = config.dtype
+        self.embed_tokens = VocabParallelEmbedding(
+            config.vocab_size,
+            config.hidden_size,
+            embedding_dtype,
+            config.devices,
+        )
+        self.lm_head = ColumnParallelLinear(
+            config.hidden_size,
+            config.vocab_size,
+            embedding_dtype,
+            devices=config.devices,
+            tied_weight=(
+                self.embed_tokens.weight if config.tie_word_embeddings else None
+            ),
+        )
+
+        self.kv_params = config.kv_params
+        self.return_logits = config.return_logits
+
+        # Linear attention state dimensions
+        self._conv_dim = (
+            config.linear_key_head_dim * config.linear_num_key_heads * 2
+            + config.linear_value_head_dim * config.linear_num_value_heads
+        )
+        self._conv_kernel_size = config.linear_conv_kernel_dim
+        self._num_v_heads = config.linear_num_value_heads
+        self._key_head_dim = config.linear_key_head_dim
+        self._value_head_dim = config.linear_value_head_dim
+
+        # Vision encoder (only present in multimodal checkpoints)
+        self.vision_encoder: VisionTransformer | None = (
+            VisionTransformer(config=config.vision_config)
+            if config.vision_config is not None
+            else None
+        )
+
+    def __call__(
+        self,
+        tokens: TensorValueLike,
+        kv_collections: list[PagedCacheValues],
+        return_n_logits: TensorValue,
+        input_row_offsets: TensorValue,
+        signal_buffers: list[BufferValue],
+        conv_states: list[TensorValue],
+        recurrent_states: list[TensorValue],
+        image_embeddings: TensorValue | None = None,
+        image_token_indices: TensorValue | None = None,
+    ) -> tuple[TensorValue, ...]:
+        """Forward pass through the hybrid model.
+
+        Args:
+            tokens: Input token IDs.
+            kv_collections: KV cache per device.
+            return_n_logits: Number of logits to return.
+            input_row_offsets: Row offsets for ragged batching.
+            signal_buffers: Signal buffers for allreduce.
+            conv_states: Per-linear-layer conv states.
+            recurrent_states: Per-linear-layer recurrent states.
+            image_embeddings: Vision encoder output to merge into token embeddings.
+                Shape [vision_merged_seq_len, hidden_size]. None for text-only.
+            image_token_indices: Scatter indices for placing image embeddings in
+                the token sequence. Shape [vision_merged_seq_len]. None for text-only.
+
+        Returns:
+            Tuple of (logits, updated_conv_states..., updated_recurrent_states...).
+        """
+        # Get embeddings — unwrap immediately; this model is single-GPU only.
+        h_list = self.embed_tokens(tokens, signal_buffers)
+        h: TensorValue = h_list[0] if isinstance(h_list, list) else h_list
+
+        # Merge vision embeddings into text embeddings at image token positions.
+        # Use ops.cond to skip at runtime on decode steps (zero vision tokens).
+        # Both branches compile; only the selected one executes.
+        if image_embeddings is not None and image_token_indices is not None:
+            # TODO: multi-device — merge must be applied per shard with a
+            # matching sharded image_embeddings.
+            n_vision = ops.cast(
+                ops.shape_to_tensor([image_token_indices.shape[0]]).reshape(()),
+                DType.int32,
+            )
+            has_vision = n_vision > ops.constant(
+                0, DType.int32, device=DeviceRef.CPU()
+            )
+            h_pre = h
+            [h] = ops.cond(
+                has_vision,
+                [TensorType(h_pre.dtype, h_pre.shape, h_pre.device)],
+                lambda: merge_multimodal_embeddings(
+                    h_pre, image_embeddings, image_token_indices
+                ),
+                lambda: h_pre,
+            )
+
+        # Place RoPE frequencies and row offsets on device
+        freqs_cis = self.rope.freqs_cis.to(self.devices[0])
+        input_row_offsets = input_row_offsets.to(self.devices[0])
+
+        # Track updated linear attention states
+        updated_conv_states: list[TensorValue] = []
+        updated_recurrent_states: list[TensorValue] = []
+        linear_state_idx = 0
+        # kv_cache_idx is the sequential index within the KV cache (0-based
+        # across full-attention layers only), distinct from the absolute layer
+        # index.  The KV cache is only allocated for full-attention layers, so
+        # we must NOT pass the absolute layer index here.
+        kv_cache_idx = 0
+
+        # Pre-compute the decode/prefill flag once and share it across all
+        # 48 linear attention layers, avoiding redundant graph ops per layer.
+        total_N_s = ops.cast(
+            ops.shape_to_tensor([h.shape[0]]).reshape(()), DType.int32
+        )
+        batch_B_s = ops.cast(
+            ops.shape_to_tensor([input_row_offsets.shape[0]]).reshape(())
+            - ops.constant(1, DType.int32, device=DeviceRef.CPU()),
+            DType.int32,
+        )
+        is_decode = total_N_s == batch_B_s  # bool scalar on CPU
+
+        # Process through transformer layers
+        for idx, layer in enumerate(self.layers):
+            if self.layer_types[idx] == "full_attention":
+                layer_idx_tensor = ops.constant(
+                    kv_cache_idx, DType.uint32, device=DeviceRef.CPU()
+                )
+                h, _, _ = layer(
+                    h,
+                    layer_idx=layer_idx_tensor,
+                    kv_collection=kv_collections[0],
+                    freqs_cis=freqs_cis,
+                    input_row_offsets=input_row_offsets,
+                )
+                kv_cache_idx += 1
+            else:
+                h, new_conv, new_recurrent = layer(
+                    h,
+                    conv_state=conv_states[linear_state_idx],
+                    recurrent_state=recurrent_states[linear_state_idx],
+                    input_row_offsets=input_row_offsets,
+                    is_decode=is_decode,
+                )
+                updated_conv_states.append(new_conv)
+                updated_recurrent_states.append(new_recurrent)
+                linear_state_idx += 1
+
+        logits = self._postprocess_logits(
+            [h], [input_row_offsets], return_n_logits, signal_buffers
+        )
+        return (*logits, *updated_conv_states, *updated_recurrent_states)
+
+    def input_types(
+        self, kv_params: KVCacheParamInterface
+    ) -> tuple[TensorType | BufferType, ...]:
+        """Get input types for graph construction."""
+        device_ref = self.devices[0]
+
+        tokens_type = TensorType(
+            DType.int64, shape=["total_seq_len"], device=device_ref
+        )
+        input_row_offsets_type = TensorType(
+            DType.uint32, shape=["input_row_offsets_len"], device=device_ref
+        )
+        return_n_logits_type = TensorType(
+            DType.int64, shape=["return_n_logits"], device=DeviceRef.CPU()
+        )
+
+        kv_inputs = kv_params.get_symbolic_inputs()
+
+        base_inputs: list[TensorType | BufferType] = [
+            tokens_type,
+            input_row_offsets_type,
+            return_n_logits_type,
+        ]
+
+        # Signal buffer types
+        signals = Signals(devices=self.devices)
+        signal_buffer_types = signals.input_types()
+
+        # Flatten KV types for all devices
+        flattened_kv_types = kv_inputs.flatten()
+
+        # Linear attention state types.
+        # States are per-sequence (batch_size), independent of total_seq_len
+        # (which counts all tokens across sequences in the ragged batch).
+        # States are stored in the model's native dtype (typically bfloat16);
+        # computation is promoted to float32 inside GatedDeltaNet.__call__().
+        num_linear_layers = len(self.linear_layer_indices)
+        state_dtype = self.config.dtype
+        conv_state_types: list[TensorType | BufferType] = [
+            TensorType(
+                state_dtype,
+                shape=[
+                    "batch_size",
+                    self._conv_dim,
+                    self._conv_kernel_size - 1,
+                ],
+                device=device_ref,
+            )
+            for _ in range(num_linear_layers)
+        ]
+        recurrent_state_types: list[TensorType | BufferType] = [
+            TensorType(
+                state_dtype,
+                shape=[
+                    "batch_size",
+                    self._num_v_heads,
+                    self._key_head_dim,
+                    self._value_head_dim,
+                ],
+                device=device_ref,
+            )
+            for _ in range(num_linear_layers)
+        ]
+
+        vision_types: list[TensorType | BufferType] = []
+        if self.vision_encoder is not None:
+            vision_types = [
+                TensorType(
+                    self.config.dtype,
+                    shape=["vision_merged_seq_len", self.config.hidden_size],
+                    device=device_ref,
+                ),
+                TensorType(
+                    DType.int32,
+                    shape=["total_image_tokens"],
+                    device=device_ref,
+                ),
+            ]
+
+        return tuple(
+            base_inputs
+            + signal_buffer_types
+            + flattened_kv_types
+            + conv_state_types
+            + recurrent_state_types
+            + vision_types
+        )

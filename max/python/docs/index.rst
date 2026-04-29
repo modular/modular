@@ -90,6 +90,7 @@ Modules
    pipelines.architectures.qwen2
    pipelines.architectures.qwen2_5vl
    pipelines.architectures.qwen3
+   pipelines.architectures.qwen3_5
    pipelines.architectures.qwen3_embedding
    pipelines.architectures.qwen3_embedding_modulev3
    pipelines.architectures.qwen3vl_moe

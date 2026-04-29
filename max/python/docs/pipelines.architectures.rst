@@ -63,6 +63,7 @@ family.
    pipelines.architectures.qwen2
    pipelines.architectures.qwen2_5vl
    pipelines.architectures.qwen3
+   pipelines.architectures.qwen3_5
    pipelines.architectures.qwen3_embedding
    pipelines.architectures.qwen3_embedding_modulev3
    pipelines.architectures.qwen3vl_moe
@@ -119,6 +120,7 @@ Text generation
    ~max.pipelines.architectures.qwen2
    ~max.pipelines.architectures.qwen2_5vl
    ~max.pipelines.architectures.qwen3
+   ~max.pipelines.architectures.qwen3_5
    ~max.pipelines.architectures.qwen3vl_moe
    ~max.pipelines.architectures.step3p5
    ~max.pipelines.architectures.unified_eagle_llama3

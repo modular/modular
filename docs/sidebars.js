@@ -458,6 +458,7 @@ const maxSidebars = {
             "max/api/python/pipelines.architectures.qwen2",
             "max/api/python/pipelines.architectures.qwen2_5vl",
             "max/api/python/pipelines.architectures.qwen3",
+            "max/api/python/pipelines.architectures.qwen3_5",
             "max/api/python/pipelines.architectures.qwen3_embedding",
             "max/api/python/pipelines.architectures.qwen3_embedding_modulev3",
             "max/api/python/pipelines.architectures.qwen3vl_moe",
