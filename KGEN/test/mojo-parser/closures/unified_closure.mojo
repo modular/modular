@@ -1692,7 +1692,10 @@ def repro_stencil_indirect_call[
 
 # // -----
 
-# COM: Closures with non FnOp parents have their captures registered correctly.
+# COM: Stateless nested functions whose signature references both a captured
+# COM: parameter (dtype) and a free wildcard (alignment) are promoted to a
+# COM: top-level fn whose call site binds the captured params directly,
+# COM: without going through a lit.closure.init or a hoisted aux param.
 
 def _current_target() -> __mlir_type.`!kgen.target`:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
@@ -1718,13 +1721,14 @@ def outer[
     ) -> LayoutTensor[dtype]:
         return LayoutTensor[dtype]()
 
-    # CHECK: :!DType dtype, :!Int E1{{.*}}>(%{{.*}}, %a)
+    # CHECK: lit.call tail @{{.*}}::@"inner{{.*}}"<:!DType dtype, :!Int *"a.alignment{{.*}}">(%a)
     var x = inner(a)
 
 
 # // -----
 
-# COM: Ensure Hoisted Parameters Persist In Signature
+# COM: Ensure Hoisted Parameters Persist In Signature for stateful nested
+# COM: closures (which still go through the lit.closure.init path).
 
 def _current_target() -> __mlir_type.`!kgen.target`:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
@@ -1743,10 +1747,12 @@ def outer[
 ](
     a: LayoutTensor[dtype, ...]
 ) raises:
-    # CHECK: {hoistedCaptures = #kgen<param.decls[E1 : !Int]>}
+    var captured = 1
+    # CHECK: hoistedCaptures = #kgen<param.decls[E1 : !Int]>
     def inner(
         buf: LayoutTensor[dtype, ...]
-    ) -> LayoutTensor[dtype]:
+    ) {var captured} -> LayoutTensor[dtype]:
+        _ = captured
         return LayoutTensor[dtype]()
 
 # // -----

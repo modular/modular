@@ -213,6 +213,12 @@ public:
   getHoistedBindingsByScope() const {
     return hoistedBindingsByScope;
   }
+  /// This is `isEqualCanon` with one relaxation: parameters
+  /// in the leading "before-`+`" region of the pog list (i.e.
+  /// `PassingKind::Inferred`) are not user-bindable, so their names are
+  /// arbitrary disambiguators and may differ.
+  static bool isTypeRebindableTo(FuncTypeGeneratorType from,
+                                 FuncTypeGeneratorType to);
 
 private:
   /// Given a name, a list of builtin parent traits (like "Movable" for

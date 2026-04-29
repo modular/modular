@@ -1127,15 +1127,19 @@ ClosureEmitter::createFnStructWrapper(ASTDecl &moduleDecl, ASTDecl &traitDecl,
   // name.
   SmallString<128> name(ASTType(selfContainedSignature).getAsString(&shared));
   name += "_PtrWrapper";
-
+  TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
   if (auto decls = moduleDecl.lookupInCurrentScope(name); !decls.empty()) {
-    return decls.front();
+    ASTDecl *existing = decls.front();
+    // Two closure traits that share a canonical signature but
+    // differ in implicit parameter name suffixes will hit the same cached
+    // wrapper. If the traits are different then emit conformance.
+    [[maybe_unused]] auto outcome = augmentWitnessTablesToConformTo(
+        existing->getTypeDeclSelf(), &traitDecl);
+    assert(succeeded(outcome) && "unexpected failure in lazy conformance");
+    return existing;
   }
 
   StringRef implName = "Impl";
-
-  TraitDeclOp trait = cast<TraitDeclOp>(traitDecl.getIfOperation());
-  assert(trait);
 
   auto module = cast<FileModuleOp>(moduleDecl.getIfOperation());
   Location location = shared.diags.translateLocation(smLocation);
@@ -1621,7 +1625,7 @@ selfContainedSymbolAndCaptures(PValue fnPValue,
   TypedAttr fnVal = SymbolConstantAttr::get(
       shared.getContext(), symbol.getSymbol(), bindings, selfContainedSig);
   assert(
-      isEqualCanon(selfContainedSig, wrapperImplType) &&
+      ClosureEmitter::isTypeRebindableTo(selfContainedSig, wrapperImplType) &&
       "self-contained promoted signature must match wrapper Impl canonically");
   if (fnVal.getType() != wrapperImplType)
     fnVal = ParamOperatorAttr::getRebind(fnVal, wrapperImplType);
@@ -2962,11 +2966,10 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
   if (failed(specialization))
     return false;
 
-  // Create conformance table entries and adaptor pieces from bindings.
+  // Walk each target trait aux specialization. The inference produces these
+  // bindings in the *wrapper's __call__* parameter space (e.g. _a + _b);
+  // we need them in the struct space to call from the adaptee.
   ConformanceTableEntryMapper createConformanceTableEntry(actualFn, ctx);
-  DenseMap<Attribute, TypedAttr> structBindingToFnLevel;
-  adapteeParts.fnLevelBindings.reserve(actualExplicitParams.size() +
-                                       ctx.traitAuxiliaryParameters.size());
   unsigned targetAuxStart = ctx.startingIndex;
   for (auto [offset, aliasAndParam] : llvm::enumerate(
            llvm::zip(ctx.traitAliases, ctx.traitAuxiliaryParameters))) {
@@ -2991,31 +2994,25 @@ static bool canFunctionSignatureMatchTraitParamInf(FnOp actualFn,
                                mappedBinding.binding))
       return false;
 
-    TypedAttr underlyingBinding = getUnderlyingParamRef(rawBinding);
-    // If the binding is concrete, record as is and keep going. No function
-    // level binding needed.
-    if (!underlyingBinding) {
-      adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] = rawBinding;
-      continue;
-    }
-    // We have already encountered this binding. No need to add to function
-    // bindings.
-    auto it = structBindingToFnLevel.find(underlyingBinding);
-    if (it != structBindingToFnLevel.end()) {
-      adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] = it->second;
-      continue;
-    }
-    // We have a new binding. Add it and remember the mapping in the type.
-    TypedAttr fnLevelBinding = ParamDeclRefAttr::get(auxiliaryParameter);
-    if (auto upcast = dyn_cast<UpcastAttr>(rawBinding))
-      fnLevelBinding = DowncastAttr::get(upcast.getInputTypeValue().getType(),
-                                         fnLevelBinding);
-    structBindingToFnLevel[underlyingBinding] = fnLevelBinding;
-    adapteeParts.fnLevelBindings.push_back(fnLevelBinding);
-    if (!isEqualCanon(fnLevelBinding,
-                      ParamDeclRefAttr::get(auxiliaryParameter)))
-      adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] =
-          fnLevelBinding;
+    // The adaptor's block-argument types reference target trait aux params.
+    // Rewrite them into struct-level expressions so that, after symbol
+    // binding (which substitutes the wrapper's __call__ aux with the same
+    // struct-level expressions), the operand types match the callee's
+    // expected types.
+    adapteeParts.adapteeTypeMap[auxiliaryParameter.getName()] =
+        mappedBinding.binding;
+  }
+
+  // The wrapper's __call__ has one type-level aux per struct alias (1:1 by
+  // construction in createFnStructWrapper). Bind each one to its struct
+  // alias value
+  adapteeParts.fnLevelBindings.reserve(ctx.numStructAuxiliaryParams +
+                                       targetExplicitParams.size());
+  for (size_t offset = 0; offset < ctx.numStructAuxiliaryParams; ++offset) {
+    TypedAttr aliasValue = ctx.getAliasRef(ctx.startingIndex + offset);
+    if (!aliasValue)
+      return false;
+    adapteeParts.fnLevelBindings.push_back(aliasValue);
   }
   for (auto [index, explicitParamType] :
        llvm::enumerate(targetExplicitParams)) {
@@ -3509,4 +3506,43 @@ void ClosureEmitter::enumerateWrapperTraits(SmallVectorImpl<char> &out,
            "wrapper trait symbol missing from parent ordinals");
     os << "_" << it->second;
   }
+}
+
+bool ClosureEmitter::isTypeRebindableTo(FuncTypeGeneratorType from,
+                                        FuncTypeGeneratorType to) {
+  if (from == to)
+    return true;
+  if (from.getInputParamTypes() != to.getInputParamTypes())
+    return false;
+  if (from.getBody() != to.getBody())
+    return false;
+
+  // Enforce parameter-name equality for every passing kind except
+  // `Inferred`. Inferred parameters appear before the `+` separator in the
+  // pog list and are not user-bindable, so their names are arbitrary
+  // disambiguators that may legitimately differ between alpha-equivalent
+  // generator types.
+  auto fromPogs = dyn_cast_or_null<PogListAttr>(from.getMetadata());
+  auto toPogs = dyn_cast_or_null<PogListAttr>(to.getMetadata());
+  if (!fromPogs || !toPogs)
+    return false;
+  if (fromPogs == toPogs)
+    return true;
+  if (fromPogs.getOrigVariadicConvention() !=
+      toPogs.getOrigVariadicConvention())
+    return false;
+  ArrayRef<PogMetadataAttr> a = fromPogs.getPogs();
+  ArrayRef<PogMetadataAttr> b = toPogs.getPogs();
+  assert(a.size() == b.size() &&
+         "PogListAttr size invariant: tied to input-param-types count");
+  for (auto [pa, pb] : llvm::zip(a, b)) {
+    if (pa.getPassingKind() != pb.getPassingKind() ||
+        pa.getVariadic() != pb.getVariadic() ||
+        pa.getDefaultValue() != pb.getDefaultValue() ||
+        pa.getConstraints() != pb.getConstraints() ||
+        (pa.getPassingKind() != PassingKind::Inferred &&
+         pa.getName() != pb.getName()))
+      return false;
+  }
+  return true;
 }
