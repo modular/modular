@@ -14,12 +14,7 @@
 
 from std.sys import get_defined_bool
 
-from std.reflection import (
-    struct_field_index_by_name,
-    struct_field_type_by_name,
-    offset_of,
-    get_type_name,
-)
+from std.reflection import get_type_name, reflect
 
 
 struct TestStruct:
@@ -27,22 +22,22 @@ struct TestStruct:
     var y: Float64
 
 
-# Test that struct_field_index_by_name produces an error for non-existent field.
+# Test that field_index produces an error for non-existent field.
 # Use `comptime assert` to force compile-time evaluation.
 def test_nonexistent_field_index():
     comptime if get_defined_bool["TEST_NONEXISTENT_INDEX", False]():
         # CHECK-INDEX: has no field named 'nonexistent'
         comptime assert (
-            struct_field_index_by_name[TestStruct, "nonexistent"]() == 0
+            reflect[TestStruct]().field_index["nonexistent"]() == 0
         ), "should not reach here"
 
 
-# Test that struct_field_type_by_name produces an error for non-existent field.
+# Test that field_type produces an error for non-existent field.
 def test_nonexistent_field_type():
     comptime if get_defined_bool["TEST_NONEXISTENT_TYPE", False]():
         # CHECK-TYPE: has no field named 'missing_field'
-        comptime field_type = struct_field_type_by_name[
-            TestStruct, "missing_field"
+        comptime field_type = reflect[TestStruct]().field_type[
+            "missing_field"
         ]()
         # Force evaluation by using the type
         comptime assert (
@@ -50,30 +45,30 @@ def test_nonexistent_field_type():
         ), "should not reach here"
 
 
-# Test that offset_of[name=] produces an error for non-existent field.
+# Test that field_offset[name=] produces an error for non-existent field.
 def test_offset_nonexistent_field():
     comptime if get_defined_bool["TEST_OFFSET_NONEXISTENT_FIELD", False]():
         # CHECK-OFFSET-NAME: has no field named 'does_not_exist'
         comptime assert (
-            offset_of[TestStruct, name="does_not_exist"]() == 0
+            reflect[TestStruct]().field_offset[name="does_not_exist"]() == 0
         ), "should not reach here"
 
 
-# Test that offset_of[index=] produces an error for out-of-bounds index.
+# Test that field_offset[index=] produces an error for out-of-bounds index.
 def test_offset_out_of_bounds():
     comptime if get_defined_bool["TEST_OFFSET_OUT_OF_BOUNDS", False]():
         # CHECK-OFFSET-INDEX: field index 99 is out of bounds for struct with 2 fields
         comptime assert (
-            offset_of[TestStruct, index=99]() == 0
+            reflect[TestStruct]().field_offset[index=99]() == 0
         ), "should not reach here"
 
 
-# Test that offset_of[index=] produces an error for negative index.
+# Test that field_offset[index=] produces an error for negative index.
 def test_offset_negative_index():
     comptime if get_defined_bool["TEST_OFFSET_NEGATIVE_INDEX", False]():
         # CHECK-OFFSET-NEGATIVE: field index -1 is out of bounds for struct with 2 fields
         comptime assert (
-            offset_of[TestStruct, index=-1]() == 0
+            reflect[TestStruct]().field_offset[index=-1]() == 0
         ), "should not reach here"
 
 

@@ -7,23 +7,18 @@
 
 
 from std.builtin.rebind import downcast
-from std.reflection import (
-    struct_field_names,
-    struct_field_ref,
-    struct_field_types,
-)
+from std.reflection import reflect
 
 
 trait CanDoSomething:
     # An unsafe default that assumes all fields implement CanDoSomething.
     def do_something(self):
-        comptime names = struct_field_names[Self]()
+        comptime r = reflect[Self]()
+        comptime names = r.field_names()
 
         comptime for i in range(names.size):
             print(materialize[names[i]](), ": ", sep="", end="")
-            trait_downcast[CanDoSomething](
-                struct_field_ref[i](self)
-            ).do_something()
+            trait_downcast[CanDoSomething](r.field_ref[i](self)).do_something()
 
 
 @fieldwise_init
