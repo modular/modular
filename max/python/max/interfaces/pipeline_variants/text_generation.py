@@ -298,10 +298,6 @@ class TextGenerationRequest:
     the generated output. This can be useful for debugging or when you want to
     see how the input relates to the output.
     """
-    stop: str | list[str] | None = None
-    """
-    Optional list of stop expressions (see: https://platform.openai.com/docs/api-reference/chat/create#chat-create-stop)
-    """
     chat_template_options: dict[str, Any] | None = None
     """
     Optional dictionary of options to pass when applying the chat template.
