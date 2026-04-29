@@ -35,6 +35,7 @@ from max.experimental import tensor
 from max.experimental.sharding import DeviceMapping
 from max.experimental.tensor import Tensor
 from max.graph import TensorValue, TensorValueLike, Type, ops
+from max.graph.dim import StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 
 from ..sharding.rules.conv import (
@@ -575,7 +576,13 @@ def split(
     into chunks with exactly those sizes.
     """
     if isinstance(split_size_or_sections, int):
-        dim_size = int(x.shape[axis])
+        dim = x.shape[axis]
+        if not isinstance(dim, StaticDim):
+            raise TypeError(
+                f"split(x, chunk_size={split_size_or_sections}, axis={axis}): "
+                f"non-static dim {dim!r}; pass an explicit split_sizes list."
+            )
+        dim_size = int(dim)
         chunk_size = split_size_or_sections
         num_full, remainder = divmod(dim_size, chunk_size)
         split_sizes: list[int] = [chunk_size] * num_full

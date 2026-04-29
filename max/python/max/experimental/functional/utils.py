@@ -34,7 +34,8 @@ from max.experimental.sharding import (
     TensorLayout,
 )
 from max.experimental.tensor import Tensor
-from max.graph import BufferValue, Graph, TensorValue
+from max.graph import BufferValue, Graph, TensorValue, ops
+from max.graph.dim import StaticDim
 
 # ═════════════════════════════════════════════════════════════════════════
 #  Graph context + realization context
@@ -153,9 +154,35 @@ def _mesh_axis_groups(mesh: DeviceMesh, mesh_axis: int) -> list[list[int]]:
 
 
 def _even_split_sizes(dim: int, n: int) -> list[int]:
-    """Split *dim* into *n* sizes that differ by at most 1."""
+    """Splits *dim* into *n* sizes that differ by at most 1."""
     base, rem = divmod(dim, n)
     return [base + (1 if i < rem else 0) for i in range(n)]
+
+
+def _even_split_along_axis(
+    sv: TensorValue, axis: int, n: int
+) -> list[TensorValue]:
+    """Splits ``sv`` into ``n`` equal chunks along ``axis``.
+
+    Static dims route through :func:`ops.split`; symbolic dims use per-rank
+    :func:`ops.slice_tensor` with ``Dim`` arithmetic bounds. Eager execution
+    cannot use the ``slice_tensor`` path on a static shape (asserts inside
+    the runtime), hence the branch.
+    """
+    dim = sv.shape[axis]
+    if isinstance(dim, StaticDim):
+        return list(ops.split(sv, _even_split_sizes(int(dim), n), axis=axis))
+
+    base = dim // n
+    rank_ndim = len(sv.shape)
+    chunks: list[TensorValue] = []
+    for i in range(n):
+        start_tv = ops.shape_to_tensor([i * base])
+        stop_tv = ops.shape_to_tensor([(i + 1) * base])
+        indices: list[object] = [slice(None)] * rank_ndim
+        indices[axis] = (slice(start_tv, stop_tv, 1), base)
+        chunks.append(ops.slice_tensor(sv, indices))  # type: ignore[arg-type]
+    return chunks
 
 
 # ═════════════════════════════════════════════════════════════════════════

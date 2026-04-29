@@ -147,19 +147,15 @@ def _resolve_conv3d_roles(
 def conv2d_rule(
     x: TensorLayout,
     filter: TensorLayout,
-    stride: object = (1, 1),
-    dilation: object = (1, 1),
-    padding: object = (0, 0, 0, 0),
-    groups: object = 1,
-    bias: object = None,
-    input_layout: ConvInputLayout | None = None,
-    filter_layout: FilterLayout | None = None,
+    stride: tuple[int, int] = (1, 1),
+    dilation: tuple[int, int] = (1, 1),
+    padding: tuple[int, int, int, int] = (0, 0, 0, 0),
+    groups: int = 1,
+    bias: TensorLayout | None = None,
+    input_layout: ConvInputLayout = ConvInputLayout.NHWC,
+    filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> RuleSignature:
     """Sharding rule for conv2d."""
-    if input_layout is None:
-        input_layout = ConvInputLayout.NHWC
-    if filter_layout is None:
-        filter_layout = FilterLayout.RSCF
     roles = _resolve_conv2d_roles(input_layout, filter_layout)
     mesh = x.mapping.mesh
 
@@ -191,19 +187,15 @@ def conv2d_rule(
 def conv3d_rule(
     x: TensorLayout,
     filter: TensorLayout,
-    stride: object = (1, 1, 1),
-    dilation: object = (1, 1, 1),
-    padding: object = (0, 0, 0, 0, 0, 0),
-    groups: object = 1,
-    bias: object = None,
-    input_layout: ConvInputLayout | None = None,
-    filter_layout: FilterLayout | None = None,
+    stride: tuple[int, int, int] = (1, 1, 1),
+    dilation: tuple[int, int, int] = (1, 1, 1),
+    padding: tuple[int, int, int, int, int, int] = (0, 0, 0, 0, 0, 0),
+    groups: int = 1,
+    bias: TensorLayout | None = None,
+    input_layout: ConvInputLayout = ConvInputLayout.NHWC,
+    filter_layout: FilterLayout = FilterLayout.QRSCF,
 ) -> RuleSignature:
     """Sharding rule for conv3d."""
-    if input_layout is None:
-        input_layout = ConvInputLayout.NHWC
-    if filter_layout is None:
-        filter_layout = FilterLayout.QRSCF
     roles = _resolve_conv3d_roles(input_layout, filter_layout)
     mesh = x.mapping.mesh
 
@@ -235,19 +227,15 @@ def conv3d_rule(
 def conv2d_transpose_rule(
     x: TensorLayout,
     filter: TensorLayout,
-    stride: object = (1, 1),
-    dilation: object = (1, 1),
-    padding: object = (0, 0, 0, 0),
-    output_paddings: object = (0, 0),
-    bias: object = None,
-    input_layout: ConvInputLayout | None = None,
-    filter_layout: FilterLayout | None = None,
+    stride: tuple[int, int] = (1, 1),
+    dilation: tuple[int, int] = (1, 1),
+    padding: tuple[int, int, int, int] = (0, 0, 0, 0),
+    output_paddings: tuple[int, int] = (0, 0),
+    bias: TensorLayout | None = None,
+    input_layout: ConvInputLayout = ConvInputLayout.NHWC,
+    filter_layout: FilterLayout = FilterLayout.RSCF,
 ) -> RuleSignature:
     """Sharding rule for conv2d transpose."""
-    if input_layout is None:
-        input_layout = ConvInputLayout.NHWC
-    if filter_layout is None:
-        filter_layout = FilterLayout.RSCF
     roles = _resolve_conv2d_roles(input_layout, filter_layout)
     if filter_layout == FilterLayout.RSCF:
         roles = ConvRoles(

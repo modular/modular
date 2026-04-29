@@ -160,14 +160,14 @@ def linear_binary_rule(lhs: TensorLayout, rhs: TensorLayout) -> RuleSignature:
 
 
 def ternary_rule(
-    a: TensorLayout,
-    b: TensorLayout,
-    c: TensorLayout,
+    condition: TensorLayout,
+    x: TensorLayout,
+    y: TensorLayout,
 ) -> RuleSignature:
     """Ternary (where): always nonlinear, resolves all Partials."""
-    layouts = [a, b, c]
+    layouts = [condition, x, y]
     max_rank = max(l.rank for l in layouts)
-    mesh = a.mapping.mesh
+    mesh = condition.mapping.mesh
 
     all_p = [
         _maybe_resolve(

@@ -184,7 +184,7 @@ class TestLayerNormRule:
         x = _layout(M(MESH_1D, R), (4, 8))
         gamma = _layout(M(MESH_1D, R), (8,))
         beta = _layout(M(MESH_1D, R), (8,))
-        _, (out,) = layer_norm_rule(x, gamma, beta)
+        _, (out,) = layer_norm_rule(x, gamma, beta, 1e-5)
         assert out.to_placements() == (R,)
 
     def test_batch_sharded(self) -> None:
@@ -192,7 +192,7 @@ class TestLayerNormRule:
         x = _layout(M(MESH_1D, S(0)), (4, 8))
         gamma = _layout(M(MESH_1D, R), (8,))
         beta = _layout(M(MESH_1D, R), (8,))
-        _, (out,) = layer_norm_rule(x, gamma, beta)
+        _, (out,) = layer_norm_rule(x, gamma, beta, 1e-5)
         assert out.to_placements() == (S(0),)
 
     def test_norm_dim_sharded_raises(self) -> None:
@@ -201,14 +201,14 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (8,))
         beta = _layout(M(MESH_1D, R), (8,))
         with pytest.raises(ValueError, match="cannot normalize"):
-            layer_norm_rule(x, gamma, beta)
+            layer_norm_rule(x, gamma, beta, 1e-5)
 
     def test_3d_input_2d_weight(self) -> None:
         """[B, S, H] with weight [S, H]: norm dims start at 1."""
         x = _layout(M(MESH_1D, S(0)), (2, 4, 8))
         gamma = _layout(M(MESH_1D, R), (4, 8))
         beta = _layout(M(MESH_1D, R), (4, 8))
-        _, (out,) = layer_norm_rule(x, gamma, beta)
+        _, (out,) = layer_norm_rule(x, gamma, beta, 1e-5)
         assert out.to_placements() == (S(0),)
 
     def test_3d_input_sharded_seq_raises(self) -> None:
@@ -217,4 +217,4 @@ class TestLayerNormRule:
         gamma = _layout(M(MESH_1D, R), (4, 8))
         beta = _layout(M(MESH_1D, R), (4, 8))
         with pytest.raises(ValueError, match="cannot normalize"):
-            layer_norm_rule(x, gamma, beta)
+            layer_norm_rule(x, gamma, beta, 1e-5)

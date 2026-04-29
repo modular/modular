@@ -46,7 +46,7 @@ from max.graph import BufferValue, DeviceRef, TensorValue, ops
 
 from .utils import (
     _devices_are_unique,
-    _even_split_sizes,
+    _even_split_along_axis,
     _mesh_axis_groups,
     _signal_buffers,
     ensure_context,
@@ -162,10 +162,9 @@ def _local_split(t: Tensor, mesh_axis: int, tensor_axis: int) -> Tensor:
         result: list[TensorValue] = list(shards)
         for group in groups:
             for rank_in_group, idx in enumerate(group):
-                sizes = _even_split_sizes(
-                    int(shards[idx].shape[tensor_axis]), n
+                split_chunks = _even_split_along_axis(
+                    shards[idx], tensor_axis, n
                 )
-                split_chunks = ops.split(shards[idx], sizes, axis=tensor_axis)
                 result[idx] = split_chunks[rank_in_group]
         return Tensor.from_shard_values(
             result, PlacementMapping(mesh, new_placements)
@@ -214,8 +213,7 @@ def _scatter(t: Tensor, target: DeviceMapping) -> Tensor:
             if isinstance(p, Sharded):
                 new_tvs: list[TensorValue] = []
                 for sv in shard_tvs:
-                    sizes = _even_split_sizes(int(sv.shape[p.axis]), n)
-                    new_tvs.extend(ops.split(sv, sizes, axis=p.axis))
+                    new_tvs.extend(_even_split_along_axis(sv, p.axis, n))
                 shard_tvs = new_tvs
             elif isinstance(p, Replicated):
                 shard_tvs = [sv for sv in shard_tvs for _ in range(n)]

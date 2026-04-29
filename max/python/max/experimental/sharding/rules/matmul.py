@@ -219,16 +219,16 @@ def matmul_rule(lhs: TensorLayout, rhs: TensorLayout) -> RuleSignature:
 
 
 def layer_norm_rule(
-    x: TensorLayout,
+    input: TensorLayout,
     gamma: TensorLayout,
     beta: TensorLayout,
-    epsilon: float = 1e-5,
+    epsilon: float,
 ) -> RuleSignature:
     """Placement rule for layer_norm: rejects sharded norm dimensions."""
-    x_p = x.mapping.to_placements()
-    mesh = x.mapping.mesh
+    x_p = input.mapping.to_placements()
+    mesh = input.mapping.mesh
     w_rank = gamma.rank
-    norm_start = x.rank - w_rank
+    norm_start = input.rank - w_rank
 
     suggested_x_p = tuple(
         Replicated() if isinstance(p, Partial) else p for p in x_p

@@ -20,11 +20,13 @@ from __future__ import annotations
 
 import builtins
 import math
+from collections.abc import Iterable, Sequence
+from typing import Literal
 
 from max.experimental.sharding.mappings import DeviceMapping, PlacementMapping
 from max.experimental.sharding.placements import Placement, Replicated, Sharded
 from max.experimental.sharding.types import TensorLayout
-from max.graph import Dim, Shape, ShapeLike, StaticDim, SymbolicDim
+from max.graph import Dim, DimLike, Shape, ShapeLike, StaticDim
 
 from ._common import (
     RuleSignature,
@@ -34,38 +36,39 @@ from ._common import (
     resolve_partials_mapping,
 )
 
-# ─── Shape localization ──────────────────────────────────────────────
-
 
 def _localize_shape(
-    shape: ShapeLike,
+    shape: Sequence[DimLike],
     placements: tuple[Placement, ...],
     mesh_shape: tuple[int, ...],
 ) -> Shape:
-    local = list(Shape(shape))
+    local: list[Dim] = [Dim(d) for d in shape]
     for mesh_ax, p in enumerate(placements):
         if isinstance(p, Sharded) and p.axis < len(local):
-            if isinstance(local[p.axis], SymbolicDim):
-                raise ValueError(
-                    f"Cannot shard {shape} along axis {p.axis}. "
-                    "Symbolic dimension sharding is not yet supported."
-                )
+            # Preserve the ``-1`` reshape-infer sentinel: MLIR would fold
+            # ``Dim(-1) // n`` to ``0`` and silently corrupt the placeholder.
+            if _is_minus_one(local[p.axis]):
+                continue
             local[p.axis] //= mesh_shape[mesh_ax]
     return Shape(local)
 
 
 def _localize_sizes(
-    sizes: list[int],
+    sizes: Sequence[DimLike],
     axis: int,
     ndim: int,
     placements: tuple[Placement, ...],
     mesh_shape: tuple[int, ...],
-) -> list[int] | None:
+) -> list[Dim] | None:
     norm_axis = axis % ndim
     for mesh_ax, p in enumerate(placements):
         if isinstance(p, Sharded) and p.axis == norm_axis:
-            return [s // mesh_shape[mesh_ax] for s in sizes]
+            return [Dim(s) // mesh_shape[mesh_ax] for s in sizes]
     return None
+
+
+def _is_minus_one(d: Dim) -> bool:
+    return isinstance(d, StaticDim) and d.dim == -1
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -79,7 +82,7 @@ def passthrough_rule(x: TensorLayout, linear: bool = False) -> RuleSignature:
     return (s,), (s,)
 
 
-def tile_rule(x: TensorLayout, repeats: object) -> RuleSignature:
+def tile_rule(x: TensorLayout, repeats: Iterable[DimLike]) -> RuleSignature:
     """Sharding rule for tile."""
     return (x.mapping, repeats), (x.mapping,)
 
@@ -90,34 +93,34 @@ def tile_rule(x: TensorLayout, repeats: object) -> RuleSignature:
 
 
 def gather_rule(
-    x: TensorLayout, indices: TensorLayout, axis: int = -1
+    input: TensorLayout, indices: TensorLayout, axis: int
 ) -> RuleSignature:
     """Sharding rule for gather."""
-    s = resolve_partials_mapping(x.mapping)
+    s = resolve_partials_mapping(input.mapping)
     si = resolve_partials_mapping(indices.mapping)
-    reject_sharded_axis(s.to_placements(), axis % x.rank, "gather")
+    reject_sharded_axis(s.to_placements(), axis % input.rank, "gather")
     return (s, si, axis), (s,)
 
 
 def scatter_rule(
-    x: TensorLayout,
+    input: TensorLayout,
     updates: TensorLayout,
     indices: TensorLayout,
     axis: int = -1,
 ) -> RuleSignature:
     """Sharding rule for scatter."""
-    s = resolve_partials_mapping(x.mapping)
+    s = resolve_partials_mapping(input.mapping)
     su = resolve_partials_mapping(updates.mapping)
     si = resolve_partials_mapping(indices.mapping)
-    reject_sharded_axis(s.to_placements(), axis % x.rank, "scatter")
+    reject_sharded_axis(s.to_placements(), axis % input.rank, "scatter")
     return (s, su, si, axis), (s,)
 
 
 def scatter_nd_rule(
-    x: TensorLayout, updates: TensorLayout, indices: TensorLayout
+    input: TensorLayout, updates: TensorLayout, indices: TensorLayout
 ) -> RuleSignature:
     """Sharding rule for scatter nd."""
-    s = resolve_partials_mapping(x.mapping)
+    s = resolve_partials_mapping(input.mapping)
     su = resolve_partials_mapping(updates.mapping)
     si = resolve_partials_mapping(indices.mapping)
     reject_any_sharded(s.to_placements(), "scatter_nd")
@@ -125,24 +128,24 @@ def scatter_nd_rule(
 
 
 def scatter_add_rule(
-    x: TensorLayout,
+    input: TensorLayout,
     updates: TensorLayout,
     indices: TensorLayout,
     axis: int = -1,
 ) -> RuleSignature:
     """Sharding rule for scatter add (also used by scatter_max/min/mul)."""
-    s = resolve_partials_mapping(x.mapping)
+    s = resolve_partials_mapping(input.mapping)
     su = resolve_partials_mapping(updates.mapping)
     si = resolve_partials_mapping(indices.mapping)
-    reject_sharded_axis(s.to_placements(), axis % x.rank, "scatter_add")
+    reject_sharded_axis(s.to_placements(), axis % input.rank, "scatter_add")
     return (s, su, si, axis), (s,)
 
 
 def scatter_nd_add_rule(
-    x: TensorLayout, updates: TensorLayout, indices: TensorLayout
+    input: TensorLayout, updates: TensorLayout, indices: TensorLayout
 ) -> RuleSignature:
     """Sharding rule for scatter nd add (also used by scatter_nd_max/min/mul)."""
-    s = resolve_partials_mapping(x.mapping)
+    s = resolve_partials_mapping(input.mapping)
     su = resolve_partials_mapping(updates.mapping)
     si = resolve_partials_mapping(indices.mapping)
     reject_any_sharded(s.to_placements(), "scatter_nd_add")
@@ -150,13 +153,13 @@ def scatter_nd_add_rule(
 
 
 def masked_scatter_rule(
-    x: TensorLayout,
+    input: TensorLayout,
     mask: TensorLayout,
     updates: TensorLayout,
-    out_dim: object = 0,
+    out_dim: DimLike,
 ) -> RuleSignature:
     """Sharding rule for masked scatter."""
-    s = resolve_partials_mapping(x.mapping)
+    s = resolve_partials_mapping(input.mapping)
     sm = resolve_partials_mapping(mask.mapping)
     su = resolve_partials_mapping(updates.mapping)
     reject_any_sharded(s.to_placements(), "masked_scatter")
@@ -164,10 +167,10 @@ def masked_scatter_rule(
 
 
 def gather_nd_rule(
-    x: TensorLayout, indices: TensorLayout, batch_dims: int = 0
+    input: TensorLayout, indices: TensorLayout, batch_dims: int = 0
 ) -> RuleSignature:
     """Sharding rule for gather nd."""
-    sx = resolve_partials_mapping(x.mapping)
+    sx = resolve_partials_mapping(input.mapping)
     si = resolve_partials_mapping(indices.mapping)
     for p in sx.to_placements():
         if isinstance(p, Sharded) and p.axis >= batch_dims:
@@ -183,30 +186,28 @@ def gather_nd_rule(
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def chunk_rule(
-    x: TensorLayout, chunks: int = 1, axis: int = 0
-) -> RuleSignature:
+def chunk_rule(x: TensorLayout, chunks: int, axis: int = 0) -> RuleSignature:
     """Sharding rule for chunk."""
     s = resolve_partials_mapping(x.mapping)
     reject_sharded_axis(s.to_placements(), axis % x.rank, "chunk")
     return (s, chunks, axis), (s,)
 
 
-def top_k_rule(x: TensorLayout, k: int = 1, axis: int = -1) -> RuleSignature:
-    """Sharding rule for top k."""
-    s = resolve_partials_mapping(x.mapping)
-    reject_sharded_axis(s.to_placements(), axis % x.rank, "top_k")
+def top_k_rule(input: TensorLayout, k: int, axis: int = -1) -> RuleSignature:
+    """Sharding rule for top_k (also used by bottom_k)."""
+    s = resolve_partials_mapping(input.mapping)
+    reject_sharded_axis(s.to_placements(), axis % input.rank, "top_k")
     return (s, k, axis), (s,)
 
 
-def argsort_rule(x: TensorLayout, ascending: object = True) -> RuleSignature:
+def argsort_rule(x: TensorLayout, ascending: bool = True) -> RuleSignature:
     """Sharding rule for argsort."""
     s = resolve_partials_mapping(x.mapping)
     reject_any_sharded(s.to_placements(), "argsort")
     return (s, ascending), (s,)
 
 
-def nonzero_rule(x: TensorLayout, out_dim: object = 0) -> RuleSignature:
+def nonzero_rule(x: TensorLayout, out_dim: DimLike) -> RuleSignature:
     """Sharding rule for nonzero."""
     s = resolve_partials_mapping(x.mapping)
     reject_any_sharded(s.to_placements(), "nonzero")
@@ -215,9 +216,9 @@ def nonzero_rule(x: TensorLayout, out_dim: object = 0) -> RuleSignature:
 
 def repeat_interleave_rule(
     x: TensorLayout,
-    repeats: object = 1,
+    repeats: int | TensorLayout,
     axis: int | None = None,
-    out_dim: object = None,
+    out_dim: DimLike | None = None,
 ) -> RuleSignature:
     """Sharding rule for repeat interleave."""
     s = resolve_partials_mapping(x.mapping)
@@ -230,28 +231,29 @@ def repeat_interleave_rule(
 
 
 def pad_rule(
-    x: TensorLayout,
-    paddings: tuple[int, ...] | list[int] = (),
-    mode: object = "constant",
-    value: object = 0,
+    input: TensorLayout,
+    paddings: Iterable[int],
+    mode: Literal["constant", "reflect", "edge"] = "constant",
+    value: TensorLayout | int | float = 0,
 ) -> RuleSignature:
     """Sharding rule for pad."""
-    s = x.mapping
-    if paddings:
+    s = input.mapping
+    pad_list = list(paddings)
+    if pad_list:
         for p in s.to_placements():
             if isinstance(p, Sharded):
                 idx = p.axis * 2
-                if idx + 1 < len(paddings) and (
-                    paddings[idx] != 0 or paddings[idx + 1] != 0
+                if idx + 1 < len(pad_list) and (
+                    pad_list[idx] != 0 or pad_list[idx + 1] != 0
                 ):
                     raise ValueError(
                         f"pad: cannot pad along sharded axis {p.axis}."
                     )
-    return (s, paddings, mode, value), (s,)
+    return (s, pad_list, mode, value), (s,)
 
 
 def slice_tensor_rule(x: TensorLayout, indices: object = None) -> RuleSignature:
-    """Sharding rule for slice tensor."""
+    """Sharding rule for slice_tensor."""
     s = x.mapping
     if indices is not None:
         for p in s.to_placements():
@@ -367,15 +369,20 @@ def flatten_rule(
 
 
 def same_placement_multi_input_rule(
-    tensors: list[TensorLayout] | tuple[TensorLayout, ...],
+    original_vals: Iterable[TensorLayout],
     axis: int = 0,
 ) -> RuleSignature:
-    """concat(tensors, axis) — tensors is a list or tuple."""
-    if not tensors:
+    """Placement rule for ``ops.concat``.
+
+    ``original_vals`` mirrors the upstream param name; it arrives as a list
+    or tuple of per-input :class:`TensorLayout` after dispatcher mapping.
+    """
+    values = list(original_vals)
+    if not values:
         raise ValueError("same_placement_multi_input_rule: no tensor inputs")
 
-    mesh = tensors[0].mapping.mesh
-    suggested = [t.mapping for t in tensors]
+    mesh = values[0].mapping.mesh
+    suggested = [t.mapping for t in values]
     first_p = suggested[0].to_placements()
     for sm in suggested[1:]:
         if sm.to_placements() != first_p:
@@ -385,32 +392,37 @@ def same_placement_multi_input_rule(
             )
     out_m = PlacementMapping(mesh, first_p)
     result: list[DeviceMapping] | tuple[DeviceMapping, ...] = (
-        tuple(suggested) if isinstance(tensors, tuple) else suggested
+        tuple(suggested) if isinstance(original_vals, tuple) else suggested
     )
     return (result, axis), (out_m,)
 
 
 def stack_rule(
-    tensors: list[TensorLayout] | tuple[TensorLayout, ...],
+    values: Iterable[TensorLayout],
     axis: int = 0,
 ) -> RuleSignature:
-    """stack(tensors, axis) — tensors is a list or tuple."""
-    if not tensors:
+    """Placement rule for ``ops.stack``.
+
+    ``values`` mirrors the upstream param name; it arrives as a list or tuple
+    of per-input :class:`TensorLayout` after dispatcher mapping.
+    """
+    layouts = list(values)
+    if not layouts:
         raise ValueError("stack_rule: no tensor inputs")
 
-    mesh = tensors[0].mapping.mesh
-    suggested = [t.mapping for t in tensors]
+    mesh = layouts[0].mapping.mesh
+    suggested = [t.mapping for t in layouts]
     first_p = suggested[0].to_placements()
     for sm in suggested[1:]:
         if sm.to_placements() != first_p:
             raise ValueError("stack: all inputs must have the same placements.")
 
-    ndim = tensors[0].rank
+    ndim = layouts[0].rank
     norm = axis if axis >= 0 else axis + ndim + 1
     out_p = remap_sharded(first_p, lambda a: a + 1 if a >= norm else a)
     out_m = PlacementMapping(mesh, out_p)
     result: list[DeviceMapping] | tuple[DeviceMapping, ...] = (
-        tuple(suggested) if isinstance(tensors, tuple) else suggested
+        tuple(suggested) if isinstance(values, tuple) else suggested
     )
     return (result, axis), (out_m,)
 
@@ -422,18 +434,22 @@ def stack_rule(
 
 def broadcast_to_rule(
     x: TensorLayout,
-    shape: tuple[int, ...] = (),
-    out_dims: object = None,
+    shape: TensorLayout | ShapeLike,
+    out_dims: Iterable[DimLike] | None = None,
 ) -> RuleSignature:
-    """Sharding rule for broadcast to.
+    """Sharding rule for broadcast_to.
 
-    ``shape`` elements may be ``StaticDim``, ``SymbolicDim``, or
-    ``AlgebraicDim`` — structural ``Dim`` equality (``==``) handles the
-    compatibility check without concretization.
+    A tensor-valued ``shape`` is unsupported by the sharding rule.
     """
+    if isinstance(shape, TensorLayout):
+        raise NotImplementedError(
+            "broadcast_to sharding rule does not support a tensor-valued "
+            "shape; pass a ShapeLike (list of DimLike)."
+        )
+    target_shape = list(shape)
     src = x.shape
-    for i in builtins.range(1, builtins.min(len(src), len(shape)) + 1):
-        s_dim, t_dim = src[-i], shape[-i]
+    for i in builtins.range(1, builtins.min(len(src), len(target_shape)) + 1):
+        s_dim, t_dim = src[-i], target_shape[-i]
         if s_dim != 1 and s_dim != t_dim:
             raise ValueError(
                 f"broadcast_to: input dimension {-i} (size {s_dim}) "
@@ -441,14 +457,18 @@ def broadcast_to_rule(
             )
     s = x.mapping
     mesh = x.mapping.mesh
-    local_shape = _localize_shape(shape, s.to_placements(), mesh.mesh_shape)
+    local_shape = _localize_shape(
+        target_shape, s.to_placements(), mesh.mesh_shape
+    )
     return (s, local_shape, out_dims), (
         PlacementMapping(mesh, s.to_placements()),
     )
 
 
 def split_rule(
-    x: TensorLayout, split_sizes: list[int] | None = None, axis: int = 0
+    x: TensorLayout,
+    split_sizes: Sequence[DimLike],
+    axis: int = 0,
 ) -> RuleSignature:
     """Sharding rule for split."""
     s = x.mapping
@@ -457,22 +477,20 @@ def split_rule(
     ndim = x.rank
     norm_axis = axis % ndim
 
-    local_sizes = split_sizes
-    if split_sizes is not None:
-        for mesh_ax, p in enumerate(sp):
-            if isinstance(p, Sharded) and p.axis == norm_axis:
-                n = mesh.mesh_shape[mesh_ax]
-                for sz in split_sizes:
-                    if sz % n != 0:
-                        raise ValueError(
-                            f"split: split size {sz} along sharded axis "
-                            f"{norm_axis} is not evenly divisible by {n}."
-                        )
-        localized = _localize_sizes(
-            split_sizes, axis, ndim, sp, mesh.mesh_shape
-        )
-        if localized is not None:
-            local_sizes = localized
+    normalized = [Dim(sz) for sz in split_sizes]
+    for mesh_ax, p in enumerate(sp):
+        if isinstance(p, Sharded) and p.axis == norm_axis:
+            n = mesh.mesh_shape[mesh_ax]
+            for sz in normalized:
+                if isinstance(sz, StaticDim) and sz.dim % n != 0:
+                    raise ValueError(
+                        f"split: split size {sz} along sharded axis "
+                        f"{norm_axis} is not evenly divisible by {n}."
+                    )
+    local_sizes: Sequence[DimLike] = (
+        _localize_sizes(normalized, axis, ndim, sp, mesh.mesh_shape)
+        or normalized
+    )
 
     out_m = PlacementMapping(mesh, sp)
     return (s, local_sizes, axis), (out_m,)
@@ -515,8 +533,8 @@ def _map_old_axis_to_new_axis(
         int(d) for d in new_shape if isinstance(d, StaticDim) and int(d) != -1
     )
 
-    old_dynamic_dims = set(d for d in old_shape if isinstance(d, SymbolicDim))
-    new_dynamic_dims = set(d for d in new_shape if isinstance(d, SymbolicDim))
+    old_dynamic_dims = set(d for d in old_shape if not isinstance(d, StaticDim))
+    new_dynamic_dims = set(d for d in new_shape if not isinstance(d, StaticDim))
 
     # Compute absorbed static and dynamic dimensions and/or validate
     # input/output dimensions.
@@ -555,10 +573,11 @@ def _map_old_axis_to_new_axis(
             if dim == -1:
                 dynamic_count += absorbed_dynamic_dims
                 static_product *= absorbed_static_dims
-            elif isinstance(dim, SymbolicDim):
-                dynamic_count += 1
-            else:
+            elif isinstance(dim, StaticDim):
                 static_product *= int(dim)
+            else:
+                # SymbolicDim or AlgebraicDim: counts as one dynamic slot.
+                dynamic_count += 1
 
             # Record where this axis ends
             boundaries.append((dynamic_count, static_product))
@@ -692,9 +711,6 @@ def reshape_rule(x: TensorLayout, shape: ShapeLike) -> RuleSignature:
     placement_tuple = tuple(out_placements)
     local_shape = _localize_shape(new_shape, placement_tuple, mesh.mesh_shape)
 
-    # _localize_shape will replace -1s with 0s, so restore them here.
-    local_shape = Shape([Dim(-1) if d == 0 else d for d in local_shape])
-
     out_mapping = PlacementMapping(mesh, placement_tuple)
     return (device_mapping, local_shape), (out_mapping,)
 
@@ -704,11 +720,11 @@ def reshape_rule(x: TensorLayout, shape: ShapeLike) -> RuleSignature:
 # ═══════════════════════════════════════════════════════════════════════
 
 
-def outer_rule(x: TensorLayout, y: TensorLayout) -> RuleSignature:
+def outer_rule(lhs: TensorLayout, rhs: TensorLayout) -> RuleSignature:
     """Sharding rule for outer."""
-    sx = resolve_partials_mapping(x.mapping)
-    sy = resolve_partials_mapping(y.mapping)
-    mesh = x.mapping.mesh
+    sx = resolve_partials_mapping(lhs.mapping)
+    sy = resolve_partials_mapping(rhs.mapping)
+    mesh = lhs.mapping.mesh
     xp, yp = sx.to_placements(), sy.to_placements()
 
     out_p: list[Placement] = []

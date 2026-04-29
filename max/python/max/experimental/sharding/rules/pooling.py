@@ -28,9 +28,11 @@ from ._common import RuleSignature
 _SPATIAL_AXES = {1, 2}
 
 
-def _pool_impl(x: TensorLayout, *extra: object, linear: bool) -> RuleSignature:
-    placements = x.mapping.to_placements()
-    mesh = x.mapping.mesh
+def _pool_impl(
+    input: TensorLayout, *extra: object, linear: bool
+) -> RuleSignature:
+    placements = input.mapping.to_placements()
+    mesh = input.mapping.mesh
     if not linear:
         suggested_p = tuple(
             Replicated() if isinstance(p, Partial) else p for p in placements
@@ -46,11 +48,11 @@ def _pool_impl(x: TensorLayout, *extra: object, linear: bool) -> RuleSignature:
     return (m, *extra), (m,)
 
 
-def pool_rule(x: TensorLayout, *extra: object) -> RuleSignature:
+def pool_rule(input: TensorLayout, *extra: object) -> RuleSignature:
     """Nonlinear pooling: resolves Partials."""
-    return _pool_impl(x, *extra, linear=False)
+    return _pool_impl(input, *extra, linear=False)
 
 
-def linear_pool_rule(x: TensorLayout, *extra: object) -> RuleSignature:
+def linear_pool_rule(input: TensorLayout, *extra: object) -> RuleSignature:
     """Linear pooling (avg_pool): Partials pass through."""
-    return _pool_impl(x, *extra, linear=True)
+    return _pool_impl(input, *extra, linear=True)

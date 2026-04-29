@@ -39,7 +39,7 @@ from max.experimental.sharding.rules.shape import (
     unsqueeze_rule,
 )
 from max.experimental.sharding.types import TensorLayout
-from max.graph import Shape, ShapeLike
+from max.graph import Dim, Shape, ShapeLike
 
 from rules._fixtures import MESH_1D, MESH_2, MESH_2D, M, R, S
 
@@ -260,9 +260,11 @@ class TestReshape:
     def test_sharded_dynamic_axis_identity(self) -> None:
         """S(0) on ('batch', 4) -> ('batch', 4): identity, S(0) preserved."""
         layout = _layout(M(MESH_1D, S(0)), ("batch", 4))
-        # TODO(MXF-278): add support for symbolic dimension sharding
-        with pytest.raises(ValueError, match="Symbolic dimension sharding"):
-            reshape_rule(layout, shape=("batch", 4))
+        (_, target_shape), (out,) = reshape_rule(layout, shape=("batch", 4))
+        assert out.to_placements() == (S(0),)
+        # Symbolic batch axis is divided by mesh size (4) via Dim arithmetic.
+        assert isinstance(target_shape, Shape)
+        assert target_shape == [Dim("batch") // 4, 4]
 
     def test_sharded_static_with_dynamic_passthrough(self) -> None:
         """S(1) on ('batch', 8) -> ('batch', 4, 2): static axis 1 splits cleanly, S(1) preserved."""
@@ -278,9 +280,10 @@ class TestReshape:
     def test_sharded_dynamic_axis_with_static_merge(self) -> None:
         """S(0) on ('batch', 4, 8) -> ('batch', 32): S(0) on 'batch' stays at 0."""
         layout = _layout(M(MESH_1D, S(0)), ("batch", 4, 8))
-        # TODO(MXF-278): add support for symbolic dimension sharding
-        with pytest.raises(ValueError, match="Symbolic dimension sharding"):
-            reshape_rule(layout, shape=("batch", 32))
+        (_, target_shape), (out,) = reshape_rule(layout, shape=("batch", 32))
+        assert out.to_placements() == (S(0),)
+        assert isinstance(target_shape, Shape)
+        assert target_shape == [Dim("batch") // 4, 32]
 
     def test_sharded_static_merged_after_dynamic(self) -> None:
         """S(1) on ('batch', 4, 8) -> ('batch', 32): old static axis 1 merges into new axis 1."""
@@ -303,9 +306,11 @@ class TestReshape:
     def test_minus_one_absorbs_static_dynamic_sharded_unaffected(self) -> None:
         """S(0) on ('batch', 4, 8) -> ('batch', -1): -1 absorbs static dims, S(0) on 'batch' stays."""
         layout = _layout(M(MESH_1D, S(0)), ("batch", 4, 8))
-        # TODO(MXF-278): add support for symbolic dimension sharding
-        with pytest.raises(ValueError, match="Symbolic dimension sharding"):
-            reshape_rule(layout, shape=("batch", -1))
+        (_, target_shape), (out,) = reshape_rule(layout, shape=("batch", -1))
+        assert out.to_placements() == (S(0),)
+        # 'batch' shard divides; -1 placeholder is preserved.
+        assert isinstance(target_shape, Shape)
+        assert target_shape == [Dim("batch") // 4, -1]
 
     def test_minus_one_absorbs_sharded_static(self) -> None:
         """S(1) on ('batch', 4, 8) -> ('batch', -1): -1 absorbs old axes 1+2 into new axis 1."""
@@ -319,9 +324,10 @@ class TestReshape:
     def test_split_static_dynamic_sharded_unaffected(self) -> None:
         """S(0) on ('batch', 32) -> ('batch', 4, 8): only static axis splits, S(0) on 'batch' stays."""
         layout = _layout(M(MESH_1D, S(0)), ("batch", 32))
-        # TODO(MXF-278): add support for symbolic dimension sharding
-        with pytest.raises(ValueError, match="Symbolic dimension sharding"):
-            reshape_rule(layout, shape=("batch", 4, 8))
+        (_, target_shape), (out,) = reshape_rule(layout, shape=("batch", 4, 8))
+        assert out.to_placements() == (S(0),)
+        assert isinstance(target_shape, Shape)
+        assert target_shape == [Dim("batch") // 4, 4, 8]
 
     def test_dynamic_dim_merged(self) -> None:
         layout = _layout(M(MESH_1D, S(1)), ("batch", 4, 8, "dynamic"))
@@ -411,6 +417,44 @@ class TestReshape:
         assert target_shape == ["batch", 16]
 
 
+class TestReshapeDynamic:
+    """Reshape with non-static dims — no ``int(Dim)`` coercion."""
+
+    def test_symbolic_batch_preserved_in_place(self) -> None:
+        layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
+        _, (out,) = reshape_rule(layout, shape=("batch", 8))
+        assert out.to_placements() == (S(0),)
+
+    def test_symbolic_batch_minus_one_at_sharded_position(self) -> None:
+        layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
+        _, (out,) = reshape_rule(layout, shape=(-1, 4, 2))
+        assert out.to_placements() == (S(0),)
+
+    def test_symbolic_non_sharded_preserved(self) -> None:
+        layout = _layout(M(MESH_1D, S(1)), ("batch", 8))
+        _, (out,) = reshape_rule(layout, shape=("batch", 8, 1))
+        assert out.to_placements() == (S(1),)
+
+    def test_symbolic_crosses_sharded_axis_raises(self) -> None:
+        layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
+        with pytest.raises(
+            ValueError, match=r"(Static|Dynamic) dimensions in new shape"
+        ):
+            reshape_rule(layout, shape=("batch_x_H",))
+
+    def test_symbolic_two_minus_ones_raises(self) -> None:
+        layout = _layout(M(MESH_1D, S(0)), ("batch", 8))
+        with pytest.raises(
+            ValueError, match="at most one -1 dimension is allowed"
+        ):
+            reshape_rule(layout, shape=(-1, -1, 2))
+
+    def test_symbolic_replicated_path_untouched(self) -> None:
+        layout = _layout(M(MESH_1D, R), ("batch", 8))
+        _, (out,) = reshape_rule(layout, shape=("batch", 4, 2))
+        assert out.to_placements() == (R,)
+
+
 # ═════════════════════════════════════════════════════════════════════════
 #  Broadcast_to / Split
 # ═════════════════════════════════════════════════════════════════════════
@@ -426,6 +470,16 @@ class TestBroadcastTo:
         layout = _layout(M(MESH_1D, S(0)), (4, 1))
         _, (out,) = broadcast_to_rule(layout, shape=(4, 8))
         assert out.to_placements() == (S(0),)
+
+    def test_symbolic_target_preserves_sharding(self) -> None:
+        layout = _layout(M(MESH_1D, S(0)), ("batch", 1))
+        _, (out,) = broadcast_to_rule(layout, shape=("batch", 8))
+        assert out.to_placements() == (S(0),)
+
+    def test_symbolic_mismatch_raises(self) -> None:
+        layout = _layout(M(MESH_1D, R), ("seq", 8))
+        with pytest.raises(ValueError, match="must be either 1 or equal"):
+            broadcast_to_rule(layout, shape=("batch", 8))
 
 
 class TestSplit:
@@ -560,18 +614,18 @@ class TestSliceTensor:
 class TestRepeatInterleave:
     def test_non_sharded_axis(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
-        _, (out,) = repeat_interleave_rule(layout, axis=1)
+        _, (out,) = repeat_interleave_rule(layout, repeats=2, axis=1)
         assert out.to_placements() == (S(0),)
 
     def test_sharded_axis_raises(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         with pytest.raises(ValueError, match="repeat_interleave"):
-            repeat_interleave_rule(layout, axis=0)
+            repeat_interleave_rule(layout, repeats=2, axis=0)
 
     def test_axis_none_any_sharded_raises(self) -> None:
         layout = _layout(M(MESH_1D, S(0)), (4, 8))
         with pytest.raises(ValueError, match="axis=None"):
-            repeat_interleave_rule(layout, axis=None)
+            repeat_interleave_rule(layout, repeats=2, axis=None)
 
 
 # ═════════════════════════════════════════════════════════════════════════
