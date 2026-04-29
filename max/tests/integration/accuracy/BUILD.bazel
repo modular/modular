@@ -254,10 +254,17 @@ modular_py_binary(
     name = "lm-eval",
     testonly = True,
     srcs = ["run_lm_eval.py"],
+    # transformers is a runtime dep of lm-eval; we refrain from
+    # installing the lm_eval[hf] extra because it includes torch,
+    # accelerate, and peft which are unnecessary here.
+    ignore_extra_deps = [
+        requirement("transformers"),
+    ],
     main = "run_lm_eval.py",
     deps = [
         requirement("lm-eval"),
         requirement("aiohttp"),
+        requirement("transformers"),
     ],
 )
 
