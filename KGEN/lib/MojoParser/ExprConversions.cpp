@@ -1488,8 +1488,10 @@ static bool isClosureWrapperStruct(SharedState &shared, PValue value,
     if (!structOp.getDefinesClosure() ||
         structOp.getInputParams().size() != 1 + capturedRefs.size())
       return false;
-    if (!isEqualCanon(structOp.getInputParams().back().getType(),
-                      selfContainedSig))
+    auto wrapperImplType = dyn_cast<FuncTypeGeneratorType>(
+        structOp.getInputParams().back().getType());
+    if (!wrapperImplType ||
+        !ClosureEmitter::isTypeRebindableTo(selfContainedSig, wrapperImplType))
       return false;
     return llvm::all_of(
         llvm::zip(capturedRefs,
@@ -1514,7 +1516,6 @@ bool IREmitter::canImplicitlyConvertToType(ASTExprAnd<CValue> value,
   auto &shared = declScope.getShared();
   assert(value.ir && "Should only query valid values");
   ASTType rvType = value.ir.getRValueType();
-
   // If it already matches, then we're done.
   if (rvType.isEqualCanon(requiredType))
     return true;

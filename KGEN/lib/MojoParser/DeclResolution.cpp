@@ -2032,18 +2032,11 @@ LogicalResult DeclResolver::resolveSignature(FnOp funcOp, Lexer &lexer,
     if (closureExternalRefs.empty() &&
         captureSignature.parsedCaptures.empty() &&
         !captureSignature.captureAllByConvention) {
-      // TODO: Support stateless promotion for closures that need hoisting
-      Location hoistLoc = shared.translateLocation(decl.getLoc());
-      if (shared.diBuilder)
-        hoistLoc = shared.diBuilder->createScopedLoc(hoistLoc);
-      if (!shared.closureEmitter->sigNeedsHoistForClosureTrait(
-              funcOp.getFuncTypeGenerator(), decl, hoistLoc)) {
-        // The closure body needs to be completely resolved before promotion to
-        // sidestep an ordering issue.
-        resolveAllWithin(decl);
-        shared.closureEmitter->promoteStatelessClosure(decl, paramCaptures);
-        return success();
-      }
+      // The closure body needs to be completely resolved before promotion to
+      // sidestep an ordering issue.
+      resolveAllWithin(decl);
+      shared.closureEmitter->promoteStatelessClosure(decl, paramCaptures);
+      return success();
     }
 
     MLValue instance = emitClosureInstance(captures, decl, shared);

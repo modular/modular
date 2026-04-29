@@ -16,6 +16,30 @@ def takeIt[T: def(Int) -> Int](cb: T, x: Int):
     print(cb(x))
 
 
+@fieldwise_init
+struct HasParam[N: Int](ImplicitlyCopyable):
+    comptime rank = Self.N + Self.N
+
+    def printMe(self):
+        print(Self.rank)
+
+
+def consume[
+    c: Int, r: Int, FuncType: def(a: HasParam[c]) -> HasParam[r]
+](impl: FuncType):
+    var p = impl(HasParam[c]())
+    p.printMe()
+
+
+def foo[a: Int, b: Int, c: Int]():
+    def nested(a: HasParam[a + b]) -> HasParam[b + c]:
+        return HasParam[b + c]()
+
+    comptime parameter_domain = nested(HasParam[a + b]())
+    materialize[parameter_domain]().printMe()
+    consume[a + b, b + c, type_of(nested)](nested)
+
+
 def main() raises:
     var x = atol(argv()[1])
     var y = atol(argv()[2])
@@ -25,3 +49,7 @@ def main() raises:
 
     # CHECK: 4
     takeIt(top_level, y)
+
+    # CHECK: 10
+    # CHECK: 10
+    foo[1, 2, 3]()
