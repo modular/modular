@@ -718,6 +718,13 @@ FnTypeIsCABIAttr FnTypeIsCABIAttr::get(MLIRContext *ctx, TypedAttr typeValue) {
 
 bool GetWitnessAttr::isConstant() const { return false; }
 
+GetWitnessAttr GetWitnessAttr::get(MLIRContext *ctx, TypedAttr typeValue,
+                                   StringAttr traitName, StringAttr witnessName,
+                                   Type type) {
+  return Base::get(ctx, UpcastAttr::strip(typeValue), traitName, witnessName,
+                   type);
+}
+
 TypedAttr GetWitnessAttr::getTypeRefIfResolved() {
   return getTypeRefForTypeValueIfResolved(getTypeValue());
 }

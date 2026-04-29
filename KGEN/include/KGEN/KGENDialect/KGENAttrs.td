@@ -743,13 +743,20 @@ def KGEN_GetWitnessAttr : KGEN_ExprAttr<"GetWitness", "get_witness",
   }];
 
   let builders = [
+    // Convenience form with inferred context.
     AttrBuilderWithInferredContext<(ins "TypedAttr":$typeValue,
                                         "StringAttr":$traitName,
                                         "StringAttr":$witnessName,
                                         "Type":$type), [{
       return get(type.getContext(), typeValue, traitName, witnessName, type);
-    }]>,
+    }], "GetWitnessAttr">,
+
+    // Verbose form with MLIRContext, used by the generated parser.
+    AttrBuilder<(ins "TypedAttr":$typeValue, "StringAttr":$traitName,
+                     "StringAttr":$witnessName, "Type":$type), "",
+                "GetWitnessAttr">,
   ];
+  let skipDefaultBuilders = 1;
 
   let extraClassDeclaration = [{
     /// Extract the type reference if the type value field is already resolved.

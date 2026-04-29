@@ -682,6 +682,22 @@ def _get_kgen_string[
     ]
 
 
+@always_inline("builtin")
+def _type_is_eq_parse_time[t1: AnyType, t2: AnyType]() -> Bool:
+    """Compares the two types for equality at parse-time."""
+    return __mlir_attr[
+        `#kgen.param.expr<eq,`,
+        `#kgen.type<`,
+        +t1,
+        `> : !kgen.type`,
+        `,`,
+        `#kgen.type<`,
+        +t2,
+        `> : !kgen.type`,
+        `> : i1`,
+    ]
+
+
 @always_inline("nodebug")
 def get_static_string[
     string: StaticString, *extra: StaticString

@@ -139,6 +139,16 @@ kgen.generator @"LinkedList::__bool__(::LinkedList)"<T: type, x: !kgen.param<T>>
   g = #kgen.get_source_name<#kgen.symbol.constant<@return_one> : !kgen.generator<() -> index>> : !kgen.string
 } : () -> ()
 
+!BaseTrait = !lit.trait<@BaseTrait>
+!DerivedTrait = !lit.trait<@DerivedTrait>
+
+// CHECK-LABEL: kgen.generator @canonicalize_get_witness_upcast
+kgen.generator @canonicalize_get_witness_upcast<T: !DerivedTrait>() {
+  // CHECK-NOT: upcast
+  // CHECK: #kgen.get_witness<:trait<@BaseTrait> T, "BaseTrait", "AssociatedType">
+  kgen.param.constant: !kgen.type = <#kgen.get_witness<upcast(:!BaseTrait T), "BaseTrait", "AssociatedType"> : !kgen.type>
+  kgen.return
+}
 
 // CHECK: kgen.param.assert <rebind(:i53 42)>, "rebind must fold"
 kgen.param.assert <rebind(:i73 rebind(:i53 42))>, "rebind must fold"

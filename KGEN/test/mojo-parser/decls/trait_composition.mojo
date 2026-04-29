@@ -99,7 +99,7 @@ def use12[T: Trait1 & Trait2](x: T):
 def use23[T: Trait2 & Trait3](x: T):
     # CHECK: lit.call tail[
     # CHECK-SAME: "self": !lit.ref<:!Trait2_Trait3 T,
-    # CHECK-SAME: #kgen.get_witness<:!Trait3 {{.*}}!Trait2_Trait3 T{{.*}}, "trait_composition::Trait3", "f3{{.*}}">
+    # CHECK-SAME: #kgen.get_witness<:!Trait2_Trait3 T{{.*}}, "trait_composition::Trait3", "f3{{.*}}">
     x.f3()
 
 
@@ -212,7 +212,7 @@ trait IntConstructable:
 def useIntConstructable[T: Defaultable & IntConstructable]() -> T:
     # CHECK: %[[INT33:.*]] = {{.*}} !Int = <{33}>
     # CHECK: lit.call tail[
-    # CHECK-SAME: #kgen.get_witness<:!IntConstructable {{.*}}!Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
+    # CHECK-SAME: #kgen.get_witness<:!Defaultable_IntConstructable T{{.*}}, "trait_composition::IntConstructable", "__init__{{.*}}">
     # CHECK-SAME: %[[INT33]]
     return T(33)
 
