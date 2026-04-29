@@ -17,7 +17,7 @@
 # RUN: %mojo %s | FileCheck %s
 
 from std.collections import InlineArray
-from std.reflection import get_base_type_name
+from std.reflection import reflect
 
 
 @fieldwise_init
@@ -45,7 +45,7 @@ struct KernelArgPack[kernel: KernelFunction[_]]:
 
 # Rudimentary check to see if a type is an UnsafePointer.
 def looks_like_pointer[T: AnyType]() -> Bool:
-    comptime base_name = get_base_type_name[T]()
+    comptime base_name = reflect[T]().base_name()
     return base_name == "UnsafePointer"
 
 
