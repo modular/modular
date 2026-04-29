@@ -165,3 +165,78 @@ async def test_openai_extract_image_from_requests() -> None:
     assert messages[0].content[2].type == "image"
     assert images[0] == AnyUrl(request_images["smily_b64"])
     assert images[1] == AnyUrl(request_images["mountain_url"])
+
+
+async def test_openai_user_message_with_null_content() -> None:
+    """Test that user messages with null content are accepted and handled."""
+    # Test with explicit null content
+    user_message_null_content = {
+        "role": "user",
+        "content": None,
+    }
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [user_message_null_content]}
+    )
+    settings = Settings()
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, False, settings
+    )
+    assert len(messages) == 1
+    assert messages[0].role == "user"
+    assert messages[0].content == ""
+
+    # Test with missing content field (should default to None)
+    user_message_no_content = {
+        "role": "user",
+    }
+    request = CreateChatCompletionRequest.model_validate(
+        {"model": "test", "messages": [user_message_no_content]}
+    )
+    messages, _images, _videos = await openai_parse_chat_completion_request(
+        request, False, settings
+    )
+    assert len(messages) == 1
+    assert messages[0].role == "user"
+    assert messages[0].content == ""
+
+
+def test_openai_user_message_content_nullable_schema() -> None:
+    """Test that the CreateChatCompletionRequest schema accepts null user content."""
+    # Test with explicit null content in user message
+    request_data = {
+        "model": "test",
+        "messages": [{"role": "user", "content": None}],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data)
+    assert len(request.messages) == 1
+    assert request.messages[0].root.role == "user"
+    assert request.messages[0].root.content is None
+
+    # Test with omitted content field
+    request_data_no_content = {
+        "model": "test",
+        "messages": [{"role": "user"}],
+    }
+    request = CreateChatCompletionRequest.model_validate(
+        request_data_no_content
+    )
+    assert len(request.messages) == 1
+    assert request.messages[0].root.role == "user"
+    assert request.messages[0].root.content is None
+
+    # Test mixed messages with null user content
+    request_data_mixed = {
+        "model": "test",
+        "messages": [
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": None},
+            {"role": "assistant", "content": "How can I help you?"},
+            {"role": "user", "content": "Hello!"},
+        ],
+    }
+    request = CreateChatCompletionRequest.model_validate(request_data_mixed)
+    assert len(request.messages) == 4
+    assert request.messages[0].root.content == "You are a helpful assistant."
+    assert request.messages[1].root.content is None
+    assert request.messages[2].root.content == "How can I help you?"
+    assert request.messages[3].root.content == "Hello!"

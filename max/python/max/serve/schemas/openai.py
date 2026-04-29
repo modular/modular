@@ -162,9 +162,9 @@ class ChatCompletionRequestSystemMessage(BaseModel):
 
 
 class ChatCompletionRequestUserMessage(BaseModel):
-    content: Union[str, List[ChatCompletionRequestUserMessageContentPart]] = (
-        Field(..., description='The contents of the user message.\n')
-    )
+    content: Optional[
+        Union[str, List[ChatCompletionRequestUserMessageContentPart]]
+    ] = Field(None, description='The contents of the user message.\n')
     role: Literal['user'] = Field(
         ..., description='The role of the messages author, in this case `user`.'
     )

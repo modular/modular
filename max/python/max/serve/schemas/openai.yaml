@@ -9133,6 +9133,7 @@ components:
             title: User message
             properties:
                 content:
+                    nullable: true
                     description: |
                         The contents of the user message.
                     oneOf:
@@ -9154,7 +9155,6 @@ components:
                     type: string
                     description: An optional name for the participant. Provides the model information to differentiate between participants of the same role.
             required:
-                - content
                 - role
 
         ChatCompletionRequestAssistantMessage:
