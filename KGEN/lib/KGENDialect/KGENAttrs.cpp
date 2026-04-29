@@ -2873,9 +2873,50 @@ struct DivOperandInfo {
 
 } // namespace
 
+/// If the numerator is an `Add(t1, t2, ...)` and the denominator cleanly
+/// divides every term, distribute the division across the sum and reduce the
+/// denominator to 1. Returns true on success.
+///
+/// Without this, `(a*b*K + c*K) / K` gets stuck because `mul_no_wrap`
+/// distributes over `Add` during simplification, leaving a sum whose shared
+/// factor `K` can't be pulled back out of the `Div` folder.
+static bool tryDistributeDivOverAdd(SmallVectorImpl<TypedAttr> &operands) {
+  assert(operands.size() == 2 && "div has exactly two operands");
+
+  ParamOperatorAttr addAttr = dyn_castPE(POC::Add, operands[0]);
+  if (!addAttr)
+    return false;
+
+  TypedAttr denominatorAttr = operands[1];
+  SmallVector<TypedAttr> quotients;
+  quotients.reserve(addAttr.getOperands().size());
+  for (TypedAttr term : addAttr.getOperands()) {
+    DivOperandInfo numInfo(term);
+    DivOperandInfo denomInfo(denominatorAttr);
+    if (numInfo.isPoisoned || denomInfo.isPoisoned)
+      return false;
+
+    DivOperandInfo::simplifyDivInPlace(numInfo, denomInfo);
+
+    // Only distribute if this term fully cancels the denominator.
+    auto denomConst = sugarDynCast<IntegerAttr>(denomInfo.getExpression());
+    if (!denomConst || !denomConst.getValue().isOne())
+      return false;
+
+    quotients.push_back(numInfo.getExpression());
+  }
+
+  operands[0] = ParamOperatorAttr::get(POC::Add, quotients);
+  operands[1] = IntegerAttr::get(denominatorAttr.getType(), 1);
+  return true;
+}
+
 /// Simplify division operands by cancelling out shared elements within
 /// numerator and denominator products, e.g., `(a*b)/(b*b) --> a/b`
 static void simplifyDivOperands(SmallVectorImpl<TypedAttr> &operands) {
+  if (tryDistributeDivOverAdd(operands))
+    return;
+
   TypedAttr &numeratorAttr = operands[0];
   TypedAttr &denominatorAttr = operands[1];
 

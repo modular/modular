@@ -487,6 +487,22 @@ kgen.generator @param_canonicalize<p1, p2>() {
   // CHECK: = kgen.param.constant = <p1>
   kgen.param.constant = <div(mul_no_wrap(p1, -1), -1)>
 
+  // Division distributes across addition when the denominator cleanly divides
+  // every term (GEX-3582).
+  // CHECK: = kgen.param.constant = <add(mul_no_wrap(p1, p2), p1)>
+  kgen.param.constant = <div(add(mul_no_wrap(p1, p2, 1536), mul_no_wrap(p1, 1536)), 1536)>
+
+  // CHECK: = kgen.param.constant = <add(p1, p2)>
+  kgen.param.constant = <div(add(mul_no_wrap(p1, 4), mul_no_wrap(p2, 4)), 4)>
+
+  // Partial cancellation via GCD: (6*p1 + 4*p2) / 2 -> 3*p1 + 2*p2.
+  // CHECK: = kgen.param.constant = <add(mul_no_wrap(p1, 3), mul_no_wrap(p2, 2))>
+  kgen.param.constant = <div(add(mul_no_wrap(p1, 6), mul_no_wrap(p2, 4)), 2)>
+
+  // No distribution when one term doesn't cleanly divide.
+  // CHECK: = kgen.param.constant = <div(add(mul_no_wrap(p1, 4), p2), 4)>
+  kgen.param.constant = <div(add(mul_no_wrap(p1, 4), p2), 4)>
+
   // CHECK: = kgen.param.constant: si64 = <1>
   kgen.param.constant: si64 = <div(-4, -4)>
 
