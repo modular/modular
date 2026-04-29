@@ -88,7 +88,8 @@ public:
   Value emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                       ArrayRef<Capture> captures, TraitDeclOp trait,
                       Location location, bool isCopyable,
-                      FnTypeGeneratorType closureSig);
+                      FnTypeGeneratorType closureSig,
+                      ArrayRef<ParamDeclRefAttr> paramCaptures);
   static ASTDecl *addCaptureValue(SharedState &shared, ASTDecl &closure,
                                   StringRef name, SMLoc location);
 
@@ -102,13 +103,6 @@ public:
   getClosureTraitKey(FnTypeGeneratorType rawSignature);
   ASTDecl *getOrCreateClosureTrait(FnTypeGeneratorType key,
                                    llvm::function_ref<ASTDecl *()> creation);
-  /// Canonicalize a closure signature and hoist expression-shaped
-  /// parameters into parent-scope `kgen.param.declare` entries.
-  FnTypeGeneratorType hoistParamExpressionsForClosureTrait(
-      FnTypeGeneratorType sig, ASTDecl &closureDecl, Location insertLoc);
-  /// Return true if hoisting would change the signature (without mutating IR).
-  bool sigNeedsHoistForClosureTrait(FnTypeGeneratorType sig,
-                                    ASTDecl &closureDecl, Location insertLoc);
   /// Given a name and a trait decl, generate a struct that conforms to the
   /// trait and has a single field that also conforms to that same trait. For
   /// example, if the trait is:
@@ -209,10 +203,6 @@ public:
   void enumerateWrapperTraits(SmallVectorImpl<char> &out,
                               TraitType wrapperTraitType, ASTDecl &moduleDecl);
 
-  const DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>> &
-  getHoistedBindingsByScope() const {
-    return hoistedBindingsByScope;
-  }
   /// This is `isEqualCanon` with one relaxation: parameters
   /// in the leading "before-`+`" region of the pog list (i.e.
   /// `PassingKind::Inferred`) are not user-bindable, so their names are
@@ -302,14 +292,6 @@ private:
   /// Mapping from each known parent trait's SymbolRefAttr to
   /// a fixed ordinal used for readable mangling
   std::optional<DenseMap<SymbolRefAttr, unsigned>> parentOrdinals;
-
-  /// Monotonic counter for hoisted closure parameter names (E1, E2, ...).
-  unsigned nextHoistedParamIdx = 0;
-  /// Maps each target scope to its hoisted parameter bindings (original attr
-  /// → hoisted ParamDeclAttr).  Used for deduplication during hoisting and
-  /// looked up during overload resolution to avoid redundant IR walks.
-  DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>>
-      hoistedBindingsByScope;
 };
 
 } // namespace M::KGEN::LIT

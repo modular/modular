@@ -572,8 +572,6 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
   // We allow implicit conversion of the operands to this call unless it is
   // itself an implicit conversion.  We don't want to allow A->B->C conversions.
   bool allowImplicitConversions = syntax != CallSyntax::kImplicitConvert;
-  auto visibleParamDeclBindings =
-      OverloadFitness::collectVisibleParamDeclBindings(&getDeclScope());
 
   CallOperands scratchOperands(operands.syntax, operands.callExpr);
   // Evaluate the fitness of each candidate in our overload set.
@@ -598,9 +596,9 @@ PValue OverloadSet::filterOverloadSet(CallOperands &operands,
 
     auto desiredSignature = func.getFullSignature();
     evaluations.emplace_back(
-        candidate, OverloadFitness::evaluate(
-                       desiredSignature, candidate, *this, *operandsToUse,
-                       allowImplicitConversions, &visibleParamDeclBindings));
+        candidate,
+        OverloadFitness::evaluate(desiredSignature, candidate, *this,
+                                  *operandsToUse, allowImplicitConversions));
     OverloadFitness::Validity validity =
         evaluations.back().second.getValidity();
     allInvalid &= validity == OverloadFitness::Validity::kInvalid;
@@ -1400,11 +1398,9 @@ CValue IREmitter::emitIndirectCall(CValue callee, CallOperands &&operands,
   OverloadSet bindings{"callee", /*fnDecls=*/{},
                        ParamBindings(getDeclScope(), callExpr),
                        operands.syntax};
-  auto visibleParamDeclBindings =
-      OverloadFitness::collectVisibleParamDeclBindings(&getDeclScope());
-  auto fitness = OverloadFitness::evaluate(
-      calleeSig, /*indirect*/ nullptr, bindings, operands,
-      /*allowImplicitConversions=*/true, &visibleParamDeclBindings);
+  auto fitness = OverloadFitness::evaluate(calleeSig, /*indirect*/ nullptr,
+                                           bindings, operands,
+                                           /*allowImplicitConversions=*/true);
   if (fitness.getValidity() != OverloadFitness::Validity::kValid) {
     // If not, diagnose it with an error.
     if (fitness.isInconclusive()) {

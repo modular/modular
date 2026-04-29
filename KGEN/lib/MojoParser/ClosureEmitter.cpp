@@ -38,6 +38,7 @@
 #include "mlir/Transforms/RegionUtils.h"
 #include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/ScopeExit.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/Support/SaveAndRestore.h"
 #include "llvm/Support/SourceMgr.h"
 
@@ -1363,237 +1364,6 @@ ASTDecl *ClosureEmitter::getOrCreateClosureTrait(
   return traitDecl;
 }
 
-/// Walk up the enclosing function scopes from \p start and return the nearest
-/// function that defines \p operand, either as a formal parameter or as a
-/// leading `kgen.param.declare` in the function body. If no match is found,
-/// return \p start so the caller treats the operand as closure-owned.
-static ASTDecl *findNearestDefiningScope(ParamDeclRefAttr operand,
-                                         ASTDecl &start) {
-  auto isMatchingOperand = [&](StringAttr name, Type type) {
-    return name == operand.getName() && isEqualCanon(type, operand.getType());
-  };
-  for (ASTDecl *scope = &start; scope; scope = scope->getParentDecl()) {
-    auto fn = dyn_cast_if_present<FnOp>(scope->getIfOperation());
-    if (!fn)
-      continue;
-    auto fnSig = fn.getFuncTypeGenerator();
-    for (size_t i = 0; i < fnSig.getInputParamTypes().size(); ++i) {
-      if (isMatchingOperand(fnSig.getParamName(i),
-                            fnSig.getInputParamTypes()[i]))
-        return scope;
-    }
-    for (Operation &op : *fn.getBody()) {
-      auto declareOp = dyn_cast<ParamDeclareOp>(op);
-      if (!declareOp)
-        break;
-      if (isMatchingOperand(declareOp.getName(), declareOp.getType()))
-        return scope;
-    }
-  }
-  return &start;
-}
-
-struct HoistRewriteResult {
-  /// The rewritten form of the current attribute.
-  TypedAttr rewritten;
-  /// The nearest enclosing scope that defines the innermost remaining external
-  /// parameter reference(s) in `rewritten`. This is null when `rewritten` has
-  /// no external parameter references.
-  ASTDecl *targetScope = nullptr;
-  /// Whether `rewritten` must be hoisted out of the closure.
-  bool needsHoist = false;
-};
-
-struct HoistRewriteContext {
-  HoistRewriteContext(unsigned &nextHoistedParamIdx,
-                      DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>>
-                          &hoistedBindingsByScope,
-                      ASTDecl &closureDecl, Location insertLoc,
-                      bool dryRun = false)
-      : nextHoistedParamIdx(nextHoistedParamIdx),
-        hoistedBindingsByScope(hoistedBindingsByScope),
-        closureDecl(closureDecl), insertLoc(insertLoc), dryRun(dryRun) {}
-  SharedState &shared() { return closureDecl.getShared(); }
-  unsigned &nextHoistedParamIdx;
-  DenseMap<ASTDecl *, DenseMap<TypedAttr, ParamDeclAttr>>
-      &hoistedBindingsByScope;
-  std::optional<ImplicitLocOpBuilder> builder;
-  ASTDecl &closureDecl;
-  Location insertLoc;
-  bool hasReplacement = false;
-  bool dryRun = false;
-};
-
-static TypedAttr hoistAttr(HoistRewriteContext &context, TypedAttr attr,
-                           ASTDecl *targetScope) {
-  // If the target scope is the closure itself or if there is no target scope
-  // because the typedAttr is atomic, no hoisting is needed.
-  if (!targetScope || &context.closureDecl == targetScope)
-    return attr;
-  context.hasReplacement = true;
-  if (context.dryRun)
-    return attr;
-  Operation *targetOp = targetScope->getIfOperation();
-  auto &scopeMap = context.hoistedBindingsByScope[targetScope];
-  auto hoistedExpr = scopeMap.find(attr);
-  if (hoistedExpr != scopeMap.end())
-    return ParamDeclRefAttr::get(hoistedExpr->second);
-
-  if (!context.builder)
-    context.builder.emplace(context.insertLoc,
-                            cast<FnOp>(context.closureDecl.getIfOperation()));
-  context.builder->setInsertionPointToStart(&targetOp->getRegion(0).front());
-  StringAttr paramName = context.builder->getStringAttr(
-      "E" + Twine(++context.nextHoistedParamIdx));
-  ParamDeclAttr hoistedDecl = ParamDeclAttr::get(paramName, attr.getType());
-  Operation *declareOp =
-      ParamDeclareOp::create(*context.builder, hoistedDecl, attr);
-  scopeMap.try_emplace(attr, hoistedDecl);
-  SMLoc smloc = context.shared().diags.convertLocToSMLoc(context.insertLoc);
-  context.shared().getDeclResolver().addFullyResolvedDecl(declareOp, paramName,
-                                                          smloc, targetScope);
-  return ParamDeclRefAttr::get(hoistedDecl);
-}
-
-/// Given two hoist-target scopes, return the more deeply nested one.
-/// If \p lhs is a descendant of \p rhs, \p lhs is returned (and vice versa).
-/// For scopes on separate branches the result is arbitrary but stable.
-static ASTDecl *innermostScope(ASTDecl *lhs, ASTDecl *rhs) {
-  if (!lhs)
-    return rhs;
-  if (!rhs || lhs == rhs)
-    return lhs;
-  for (ASTDecl *scope = lhs; scope; scope = scope->getParentDecl())
-    if (scope == rhs)
-      return lhs;
-  return rhs;
-}
-
-/// Given a TypedAttr, recursively check if the children can be hoisted. If they
-/// all can then the parent can be hoisted also. Otherwise end the hoisting with
-/// some of the children hoisted.
-static HoistRewriteResult rewriteForHoist(HoistRewriteContext &context,
-                                          TypedAttr current) {
-  if (auto paramRef = dyn_cast<ParamDeclRefAttr>(current))
-    return {current, findNearestDefiningScope(paramRef, context.closureDecl),
-            false};
-
-  // Phase 1: recurse into TypedAttr children, pass everything else through.
-  SmallVector<HoistRewriteResult> childResults;
-  SmallVector<Attribute> replAttrs;
-  SmallVector<Type> replTypes;
-  ASTDecl *targetScope = nullptr;
-  bool changed = false;
-
-  current.walkImmediateSubElements(
-      [&](Attribute attr) {
-        auto typedAttr = dyn_cast<TypedAttr>(attr);
-        if (!typedAttr) {
-          replAttrs.push_back(attr);
-          return;
-        }
-        HoistRewriteResult result = rewriteForHoist(context, typedAttr);
-        changed |= result.rewritten != typedAttr;
-        targetScope = innermostScope(targetScope, result.targetScope);
-        childResults.push_back(result);
-        replAttrs.push_back(result.rewritten);
-      },
-      [&](Type type) { replTypes.push_back(type); });
-
-  if (childResults.empty())
-    return {current, nullptr, false};
-
-  TypedAttr rebuilt = current;
-  if (changed)
-    rebuilt = cast<TypedAttr>(
-        current.replaceImmediateSubElements(replAttrs, replTypes));
-
-  // If all children resolve to a scope external to the closure, the whole
-  // attr can be hoisted — propagate upward.
-  if (targetScope && targetScope != &context.closureDecl)
-    return {rebuilt, targetScope, true};
-
-  // Mixed or closure-local scopes: hoist individual children that need it.
-  bool childHoisted = false;
-  size_t childIdx = 0;
-  replAttrs.clear();
-  current.walkImmediateSubElements(
-      [&](Attribute attr) {
-        if (!isa<TypedAttr>(attr)) {
-          replAttrs.push_back(attr);
-          return;
-        }
-        auto &result = childResults[childIdx++];
-        if (result.needsHoist) {
-          replAttrs.push_back(
-              hoistAttr(context, result.rewritten, result.targetScope));
-          childHoisted = true;
-        } else {
-          replAttrs.push_back(result.rewritten);
-        }
-      },
-      [&](Type) {});
-
-  if (childHoisted)
-    rebuilt = cast<TypedAttr>(
-        rebuilt.replaceImmediateSubElements(replAttrs, replTypes));
-
-  return {rebuilt, targetScope, false};
-}
-
-// Given a type, recursively rewrite its immediate sub-elements. We avoid the
-// AttrTypeReplacer because the decision to hoist a node depends on its parent
-// (if all children resolve to the same scope, hoist the parent instead of each
-// child individually). The replacer visits nodes bottom-up without parent
-// context, forcing rewriteForHoist to re-walk subtrees — turning an O(N) pass
-// into O(N²). Walking one level at a time here keeps the total work linear.
-static Type rewriteTypeWithHoists(HoistRewriteContext &context, Type type) {
-  SmallVector<Attribute> replAttrs;
-  SmallVector<Type> replTypes;
-  type.walkImmediateSubElements(
-      [&](Attribute attribute) {
-        if (auto attr = dyn_cast<TypedAttr>(attribute)) {
-          HoistRewriteResult result = rewriteForHoist(context, attr);
-          Attribute replacement = result.rewritten;
-          if (result.needsHoist)
-            replacement =
-                hoistAttr(context, result.rewritten, result.targetScope);
-          replAttrs.emplace_back(replacement);
-        } else {
-          replAttrs.emplace_back(attribute);
-        }
-      },
-      [&](Type type) {
-        replTypes.push_back(rewriteTypeWithHoists(context, type));
-      });
-  return type.replaceImmediateSubElements(replAttrs, replTypes);
-}
-
-FnTypeGeneratorType ClosureEmitter::hoistParamExpressionsForClosureTrait(
-    FnTypeGeneratorType sig, ASTDecl &closureDecl, Location insertLoc) {
-  FnTypeGeneratorType canonicalSig =
-      cast<FnTypeGeneratorType>(getCanonicalType(sig));
-  HoistRewriteContext context{nextHoistedParamIdx, hoistedBindingsByScope,
-                              closureDecl, insertLoc};
-  FnTypeGeneratorType rewrittenSig =
-      cast<FnTypeGeneratorType>(rewriteTypeWithHoists(context, canonicalSig));
-  if (!context.hasReplacement)
-    return sig;
-  cast<FnOp>(closureDecl.getIfOperation()).setFuncTypeGenerator(rewrittenSig);
-  return rewrittenSig;
-}
-
-bool ClosureEmitter::sigNeedsHoistForClosureTrait(FnTypeGeneratorType sig,
-                                                  ASTDecl &closureDecl,
-                                                  Location insertLoc) {
-  FnTypeGeneratorType canonicalSig =
-      cast<FnTypeGeneratorType>(getCanonicalType(sig));
-  HoistRewriteContext context{nextHoistedParamIdx, hoistedBindingsByScope,
-                              closureDecl, insertLoc, /*dryRun=*/true};
-  rewriteTypeWithHoists(context, canonicalSig);
-  return context.hasReplacement;
-}
-
 static std::pair<TypedAttr, SmallVector<TypedAttr>>
 selfContainedSymbolAndCaptures(PValue fnPValue,
                                FnTypeGeneratorType wrapperImplType,
@@ -2229,7 +1999,8 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
                                     ArrayRef<Capture> captures,
                                     TraitDeclOp trait, Location location,
                                     bool isCopyable,
-                                    FnTypeGeneratorType closureSig) {
+                                    FnTypeGeneratorType closureSig,
+                                    ArrayRef<ParamDeclRefAttr> paramCaptures) {
   // (1) Create the closure instance.
   FnOp nestedFn = cast<FnOp>(nestedFnDecl.getIfOperation());
   FnOp parent = nestedFn->getParentOfType<FnOp>();
@@ -2441,18 +2212,12 @@ Value ClosureEmitter::emitClosureOp(ASTDecl &moduleDecl, ASTDecl &nestedFnDecl,
   if (ArrayAttr argMetadata = nestedFn.getLLVMArgMetadataArray();
       argMetadata && !argMetadata.empty())
     closure.setLLVMArgMetadataArrayAttr(argMetadata);
-
-  // Record hoisted parameter bindings
-  SmallVector<ParamDeclAttr> hoistedDecls;
-  for (ASTDecl *scope = nestedFnDecl.getParentDecl(); scope;
-       scope = scope->getParentDecl()) {
-    auto it = hoistedBindingsByScope.find(scope);
-    if (it != hoistedBindingsByScope.end())
-      for (auto &[expr, decl] : it->second)
-        hoistedDecls.push_back(decl);
-  }
+  llvm::SmallSetVector<ParamDeclAttr, 8> hoistedDecls;
+  for (ParamDeclRefAttr capturedRef : paramCaptures)
+    hoistedDecls.insert(ParamDeclAttr::get(capturedRef));
   if (!hoistedDecls.empty())
-    closure.setHoistedCapturesAttr(ParamDeclArrayAttr::get(ctx, hoistedDecls));
+    closure.setHoistedCapturesAttr(
+        ParamDeclArrayAttr::get(ctx, hoistedDecls.getArrayRef()));
 
   closure.getBodyRegion().takeBody(nestedFn.getBodyRegion());
 

@@ -1468,8 +1468,6 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   FnTypeGeneratorType closureSig = nestedFn.getFuncTypeGenerator();
   assert(nestedFnDecl.getParentDecl() &&
          "closure instance must have a parent function");
-  closureSig = shared.getClosureEmitter().hoistParamExpressionsForClosureTrait(
-      closureSig, nestedFnDecl, mlirLoc);
 
   ASTDecl *moduleDecl = nestedFnDecl.getNearestDeclOfType<FileModuleOp>();
   auto [capturedRefs, _] =
@@ -1498,7 +1496,7 @@ static MLValue emitClosureInstance(ArrayRef<Capture> captures,
   Value wrapperInstance =
       emitter.emitClosureOp(*moduleDecl, nestedFnDecl, captures,
                             cast<TraitDeclOp>(closureTrait->getIfOperation()),
-                            mlirLoc, isCopyable, closureSig);
+                            mlirLoc, isCopyable, closureSig, capturedRefs);
   if (!wrapperInstance)
     return {};
 
