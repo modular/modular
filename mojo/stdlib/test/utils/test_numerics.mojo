@@ -134,6 +134,146 @@ def test_isnan() raises:
     assert_true(isnan(nan[DType.float64]()))
 
 
+# ===-------------------------------------------------------------------=== #
+# Float8 / Float4 isnan / isinf / isfinite coverage
+#
+# These are regression tests for some floating point dtypes, where compiling `isnan` /
+# `isinf` / `isfinite` on `float8_e3m4` and `float4_e2m1fn` failed because
+# `llvm.is.fpclass` has no overload for those types. Constructing values
+# via `from_bits` lets us cover NaN / Inf / finite encodings without
+# relying on `nan[T]()` (which is undefined for several of these dtypes).
+# ===-------------------------------------------------------------------=== #
+
+
+def test_isnan_float8_e4m3fn() raises:
+    # E4M3FN: the only NaN encodings are 0x7F (+NaN) and 0xFF (-NaN); no Inf.
+    assert_true(isnan(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7F))))
+    assert_true(isnan(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0xFF))))
+    assert_false(isnan(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x00))))
+    assert_false(isnan(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x7E))))
+    assert_false(isnan(Scalar[DType.float8_e4m3fn](from_bits=UInt8(0x80))))
+
+
+def test_isnan_float8_e5m2() raises:
+    # E5M2: NaN at exp=11111 + mantissa nonzero, i.e. 0x7D / 0x7E / 0x7F
+    # and their negative counterparts; 0x7C / 0xFC are +/-Inf.
+    assert_true(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0x7D))))
+    assert_true(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0x7E))))
+    assert_true(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0x7F))))
+    assert_true(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0xFD))))
+    assert_true(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0xFF))))
+    assert_false(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0x7C))))
+    assert_false(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0xFC))))
+    assert_false(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0x00))))
+    assert_false(isnan(Scalar[DType.float8_e5m2](from_bits=UInt8(0x3C))))
+
+
+def test_isnan_float8_e8m0fnu() raises:
+    # E8M0FNU: only NaN encoding is 0xFF.
+    assert_true(isnan(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0xFF))))
+    assert_false(isnan(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0x00))))
+    assert_false(isnan(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0x7F))))
+    assert_false(isnan(Scalar[DType.float8_e8m0fnu](from_bits=UInt8(0xFE))))
+
+
+def test_isnan_float8_e3m4() raises:
+    # E3M4 follows IEEE-style semantics: NaN is exp=111 with mantissa nonzero,
+    # Inf is exp=111 with mantissa zero. Multiple bit patterns are NaN.
+    # 0x70 = 0_111_0000 = +Inf, 0xF0 = -Inf — must NOT be NaN.
+    assert_false(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x70))))
+    assert_false(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0xF0))))
+    # Several distinct NaN bit patterns must all be detected.
+    assert_true(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x71))))
+    assert_true(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x78))))
+    assert_true(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x7F))))
+    assert_true(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0xF1))))
+    assert_true(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0xF8))))
+    assert_true(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0xFF))))
+    # Zero and finite values are not NaN.
+    assert_false(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x00))))
+    assert_false(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x80))))
+    assert_false(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0x6F))))
+    assert_false(isnan(Scalar[DType.float8_e3m4](from_bits=UInt8(0xEF))))
+
+
+def test_isnan_float4_e2m1fn() raises:
+    # E2M1FN has no NaN encoding; cover all 16 representable magnitudes
+    # (+/-{0, 0.5, 1.0, 1.5, 2.0, 3.0, 4.0, 6.0}) via Float32 casts.
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(0.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(0.5))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(1.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(1.5))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(2.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(3.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(4.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(6.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-0.5))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-1.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-1.5))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-2.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-3.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-4.0))))
+    assert_false(isnan(Scalar[DType.float4_e2m1fn](Float32(-6.0))))
+
+
+def test_isinf_float8_e5m2() raises:
+    # E5M2 has both +Inf (0x7C) and -Inf (0xFC).
+    assert_true(isinf(Scalar[DType.float8_e5m2](from_bits=UInt8(0x7C))))
+    assert_true(isinf(Scalar[DType.float8_e5m2](from_bits=UInt8(0xFC))))
+    # NaN bit patterns are not Inf.
+    assert_false(isinf(Scalar[DType.float8_e5m2](from_bits=UInt8(0x7D))))
+    assert_false(isinf(Scalar[DType.float8_e5m2](from_bits=UInt8(0xFF))))
+    # Finite values are not Inf.
+    assert_false(isinf(Scalar[DType.float8_e5m2](from_bits=UInt8(0x00))))
+    assert_false(isinf(Scalar[DType.float8_e5m2](from_bits=UInt8(0x3C))))
+
+
+def test_isinf_float8_e3m4() raises:
+    # E3M4 has +Inf at 0x70 and -Inf at 0xF0.
+    assert_true(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0x70))))
+    assert_true(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0xF0))))
+    # NaN bit patterns are not Inf.
+    assert_false(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0x71))))
+    assert_false(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0x7F))))
+    assert_false(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0xFF))))
+    # Finite values are not Inf.
+    assert_false(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0x00))))
+    assert_false(isinf(Scalar[DType.float8_e3m4](from_bits=UInt8(0x6F))))
+
+
+def test_isinf_float4_e2m1fn() raises:
+    # E2M1FN has no Inf encoding; spot-check several representable values.
+    assert_false(isinf(Scalar[DType.float4_e2m1fn](Float32(0.0))))
+    assert_false(isinf(Scalar[DType.float4_e2m1fn](Float32(1.0))))
+    assert_false(isinf(Scalar[DType.float4_e2m1fn](Float32(6.0))))
+    assert_false(isinf(Scalar[DType.float4_e2m1fn](Float32(-1.0))))
+    assert_false(isinf(Scalar[DType.float4_e2m1fn](Float32(-6.0))))
+
+
+def test_isfinite_float8_e3m4() raises:
+    # Zero and other finite encodings.
+    assert_true(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x00))))
+    assert_true(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x80))))
+    assert_true(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x6F))))
+    assert_true(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0xEF))))
+    # Inf encodings.
+    assert_false(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x70))))
+    assert_false(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0xF0))))
+    # NaN encodings.
+    assert_false(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x71))))
+    assert_false(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0x7F))))
+    assert_false(isfinite(Scalar[DType.float8_e3m4](from_bits=UInt8(0xFF))))
+
+
+def test_isfinite_float4_e2m1fn() raises:
+    # E2M1FN: every representable value is finite.
+    assert_true(isfinite(Scalar[DType.float4_e2m1fn](Float32(0.0))))
+    assert_true(isfinite(Scalar[DType.float4_e2m1fn](Float32(1.0))))
+    assert_true(isfinite(Scalar[DType.float4_e2m1fn](Float32(6.0))))
+    assert_true(isfinite(Scalar[DType.float4_e2m1fn](Float32(-1.0))))
+    assert_true(isfinite(Scalar[DType.float4_e2m1fn](Float32(-6.0))))
+
+
 def overflow_int[dtype: DType]() -> Bool:
     comptime assert (
         dtype.is_integral()

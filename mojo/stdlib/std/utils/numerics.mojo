@@ -546,6 +546,9 @@ def isnan[
     comptime if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
+        # The OCP MX FP4 (E2M1) format has no NaN encoding; every bit pattern
+        # is a finite value.
+        DType.float4_e2m1fn,
     ):
         return SIMD[DType.bool, width](fill=False)
     elif dtype == DType.float8_e4m3fn:
@@ -556,6 +559,10 @@ def isnan[
         # For the float8_e5m2 dtype NaN is limited to 0x7F and 0xFF values.
         # 7D, 7E, 7F are positive NaNs; FD, FE, FF are negative NaNs.
         return (val.to_bits() & 0x7F).gt(0x7C)
+    elif dtype == DType.float8_e3m4:
+        # `llvm.is.fpclass` has no overload for f8e3m4, so cast up to bf16
+        # (which preserves IEEE-style NaN/Inf) and dispatch there.
+        return isnan(val.cast[DType.bfloat16]())
     elif dtype == DType.bfloat16:
         return (val.to_bits() & 0x7FFF).gt(0x7F80)
     elif dtype == DType.float16:
@@ -830,12 +837,18 @@ def isinf[
     comptime if not dtype.is_floating_point() or dtype in (
         DType.float8_e4m3fnuz,
         DType.float8_e5m2fnuz,
+        # The OCP MX FP4 (E2M1) format has no Inf encoding.
+        DType.float4_e2m1fn,
     ):
         return SIMD[DType.bool, width](fill=False)
 
     elif dtype == DType.float8_e5m2:
         # For the float8_e5m2 both 7C and FC are infinity.
         return (val.to_bits() & 0x7F).eq(0x7C)
+    elif dtype == DType.float8_e3m4:
+        # `llvm.is.fpclass` has no overload for f8e3m4, so cast up to bf16
+        # (which preserves IEEE-style NaN/Inf) and dispatch there.
+        return isinf(val.cast[DType.bfloat16]())
 
     comptime negative_infinity_test: UInt32 = 0x0004
     comptime positive_infinity_test: UInt32 = 0x0200
@@ -868,8 +881,14 @@ def isfinite[
         True if val is finite and False otherwise.
     """
 
-    comptime if not dtype.is_floating_point():
+    comptime if (not dtype.is_floating_point() or dtype == DType.float4_e2m1fn):
+        # The OCP MX FP4 (E2M1) format has no NaN or Inf encodings; every
+        # bit pattern is finite.
         return SIMD[DType.bool, width](fill=True)
+    elif dtype == DType.float8_e3m4:
+        # `llvm.is.fpclass` has no overload for f8e3m4, so cast up to bf16
+        # (which preserves IEEE-style NaN/Inf) and dispatch there.
+        return isfinite(val.cast[DType.bfloat16]())
 
     return llvm_intrinsic[
         "llvm.is.fpclass", SIMD[DType.bool, width], has_side_effect=False
