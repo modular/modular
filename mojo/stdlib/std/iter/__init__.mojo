@@ -54,6 +54,8 @@ for squared in map[square](values):
 """
 
 from std.builtin.constrained import _constrained_conforms_to
+from std.sys.intrinsics import _type_is_eq_parse_time
+
 
 from std.builtin.variadics import TypeList
 from std.reflection.traits import AllImplicitlyDestructible, AllCopyable
@@ -734,6 +736,136 @@ def peekable(
         A peekable iterator.
     """
     return {iter(iterable^)}
+
+
+# ===-----------------------------------------------------------------------===#
+# chain
+# ===-----------------------------------------------------------------------===#
+
+comptime _all_yield_same_ref_condition[
+    T0: Movable, origin: Origin, T: Iterable
+] = _type_is_eq_parse_time[T.IteratorType[origin].Element, T0]()
+
+comptime _all_yield_same_ref[
+    origin: Origin, *Ts: Iterable
+]: Bool = Ts.all_satisfies[
+    _all_yield_same_ref_condition[Ts[0].IteratorType[origin].Element, origin, _]
+]()
+
+comptime _all_yield_same_owned_condition[
+    T0: Movable, T: IterableOwned
+] = _type_is_eq_parse_time[T.IteratorOwnedType.Element, T0]()
+
+comptime _all_yield_same_owned[*Ts: IterableOwned]: Bool = Ts.all_satisfies[
+    _all_yield_same_owned_condition[Ts[0].IteratorOwnedType.Element, _]
+]()
+
+
+struct _ChainedIterator[*Ts: Iterator](
+    Copyable where AllCopyable[*Ts],
+    Iterable where AllCopyable[*Ts],
+    IterableOwned,
+    Iterator,
+):
+    comptime _Iterators = Tuple[*Self.Ts]
+    var _idx: Int
+    var _iterators: Self._Iterators
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+    comptime Element = Self.Ts[0].Element
+
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where AllCopyable[*Self.Ts]:
+        return self.copy()
+
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        comptime for i in range(Self._Iterators.__len__()):
+            if self._idx <= i:
+                try:
+                    return rebind_var[Self.Element](next(self._iterators[i]))
+                except:
+                    self._idx += 1
+        raise StopIteration()
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var final_lb = 0
+        var final_ub = Optional(0)
+        comptime for i in range(Self._Iterators.__len__()):
+            if self._idx > i:
+                continue
+
+            var lb, ub = self._iterators[i].bounds()
+            final_lb = final_lb + min(lb, Int.MAX - final_lb)
+            if final_ub and ub:
+                final_ub = final_ub.unsafe_value() + min(
+                    ub.unsafe_value(), Int.MAX - final_ub.unsafe_value()
+                )
+            else:
+                final_ub = None
+        return final_lb, final_ub
+
+
+def chain[
+    *Ts: Iterable
+](
+    *iterables: *Ts,
+    out res: _ChainedIterator[*_iterable_to_iterator[iterables.origin, *Ts]],
+) where _all_yield_same_ref[iterables.origin, *Ts]:
+    """Chain multiple iterables that return the same type.
+
+    Parameters:
+        Ts: The iterator types.
+
+    Args:
+        iterables: The iterables.
+
+    Returns:
+        The chained iterator.
+    """
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
+    res._idx = 0
+
+    comptime for i in range(res._Iterators.__len__()):
+        UnsafePointer(to=res._iterators[i]).init_pointee_move(
+            rebind_var[type_of(res._iterators[i])](iter(iterables[i]))
+        )
+
+
+def chain[
+    *Ts: IterableOwned
+](
+    var *iterables: *Ts,
+    out res: _ChainedIterator[*_iterable_owned_to_iterator[*Ts]],
+) where _all_yield_same_owned[*Ts]:
+    """Chain multiple iterables that return the same type.
+
+    Parameters:
+        Ts: The iterator types.
+
+    Args:
+        iterables: The iterables.
+
+    Returns:
+        The chained iterator.
+    """
+    __mlir_op.`lit.ownership.mark_initialized`(__get_mvalue_as_litref(res))
+    res._idx = 0
+
+    @parameter
+    def init_elt[idx: Int](var elt: iterables.element_types[idx]):
+        UnsafePointer(to=res._iterators[idx]).init_pointee_move(
+            rebind_var[type_of(res._iterators[idx])](iter(elt^))
+        )
+
+    iterables^.consume_elements[init_elt]()
 
 
 # ===-----------------------------------------------------------------------===#
