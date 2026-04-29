@@ -16,7 +16,7 @@ from std.random import rand, random_float64, seed
 from std.sys import has_amd_gpu_accelerator, simd_width_of
 
 from std.gpu import WARP_SIZE
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, get_gpu_target
 from layout import (
     Coord,
     Idx,
@@ -268,14 +268,24 @@ def test_gpu_softmax_large_vocab[test_type: DType](ctx: DeviceContext) raises:
     ](coords: IndexList[_rank]) -> SIMD[test_type, _simd_width]:
         return in_device_test.load[width=_simd_width](coords)
 
-    _softmax_gpu[ref_type, simd_width_of[ref_type](), rank, input_fn_ref](
+    _softmax_gpu[
+        ref_type,
+        simd_width_of[ref_type, target=get_gpu_target()](),
+        rank,
+        input_fn_ref,
+    ](
         shape,
         TileTensor(out_ref.device_data.value(), row_major(Coord(shape))),
         rank - 1,
         ctx,
     )
 
-    _softmax_gpu[test_type, simd_width_of[test_type](), rank, input_fn_test](
+    _softmax_gpu[
+        test_type,
+        simd_width_of[test_type, target=get_gpu_target()](),
+        rank,
+        input_fn_test,
+    ](
         shape,
         TileTensor(out_test.device_data.value(), row_major(Coord(shape))),
         rank - 1,

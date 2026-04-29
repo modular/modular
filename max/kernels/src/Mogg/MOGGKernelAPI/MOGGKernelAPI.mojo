@@ -4474,9 +4474,13 @@ struct Softmax:
                 rebind[IndexList[input.rank]](coords)
             )
 
+        comptime simd_width = simd_width_of[
+            output.dtype, target=get_gpu_target()
+        ]() if is_gpu[target]() else simd_width_of[output.dtype]()
+
         softmax[
             output.dtype,
-            simd_width_of[output.dtype](),
+            simd_width,
             output.rank,
             input_fn,
             target,

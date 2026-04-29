@@ -20,7 +20,7 @@ from std.sys import (
 )
 
 from std.benchmark import Bench, BenchConfig, Bencher, BenchId
-from std.gpu.host import DeviceContext
+from std.gpu.host import DeviceContext, get_gpu_target
 from internal_utils import get_defined_shape, int_list_to_tuple
 from layout import Coord, TileTensor, row_major
 from nn.softmax import softmax, softmax_with_temperature
@@ -63,7 +63,11 @@ def bench_softmax_gpu[
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
             softmax[
-                dtype, simd_width_of[dtype](), rank, input_fn, target="gpu"
+                dtype,
+                simd_width_of[dtype, target=get_gpu_target()](),
+                rank,
+                input_fn,
+                target="gpu",
             ](
                 rebind[IndexList[rank]](shape),
                 out_buf,
