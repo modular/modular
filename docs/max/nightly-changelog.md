@@ -22,6 +22,8 @@ This version is still a work in progress.
   `guidance_scale > 1.0` and a negative prompt were supplied. Wan now enables
   classical CFG whenever `guidance_scale > 1.0` and defaults an absent
   negative prompt to the empty string, matching the diffusers baseline.
+- Added `ModuleV3` version of Gemma3 and Gemma3multimodal, with multi-gpu
+  support.
 
 ## MAX framework {#26-3-max}
 
@@ -266,10 +268,28 @@ This version is still a work in progress.
   than `self_attn.qkv_proj.q_proj.weight`. This lets HuggingFace
   checkpoint names flow into models without per-architecture remapping
   in their `weight_adapters.py`.
-
-- `Module.compile()` now accepts a `custom_extensions` parameter for loading
-  custom Mojo kernel libraries at graph construction time, fixing validation
-  failures for kernels with struct-level parameters.
+- `max.experimental.nn.Module.compile()` now accepts a `custom_extensions`
+  parameter for loading custom Mojo kernel libraries at graph construction
+  time, fixing validation failures for kernels with struct-level parameters.
+- `max.experimental.nn.Module.compile()` now returns a `CompiledModel` instead
+  of a bare closure, which exposes `__call__()` (Tensor-in/Tensor-out,
+  backward compatible), `execute_raw(*buffers)` (Buffer-in/Buffer-out, skips
+  Tensor wrapping overhead), and the `engine_model` property (the underlying
+  `engine.Model` for CUDA graph capture/replay).
+- `max.experimental.nn.Module.load_state_dict()` and `Module.compile()` now
+  auto-shard single-device tensors or buffers into distributed weights based
+  on each parameter's `DeviceMapping`, allowing unsharded checkpoints to be
+  loaded directly into multi-GPU models without manual pre-sharding.
+- `max.experimental.nn.Module.to()` and `max.experimental.Tensor.to()`
+  now accept `DeviceMapping` and `DeviceMesh` inputs, enabling concise placement
+  of an entire module onto a multi-GPU mesh.
+- Added distributed `ModuleV3` common layers
+  (`max.experimental.nn.common_layers`): `VocabParallelEmbedding`, tensor-
+  parallelism support in `Linear`, `MLP` and `RMSNorm`. Used to
+  enable multi-GPU Gemma3 in MAX.
+- Added documentation and a usage example for
+  `max.experimental.nn.RotaryEmbedding`, including a detailed explanation
+  of the RoPE mechanism.
 - Fixed `torch.compile(fullgraph=True)` failing with an "Unsupported context
   manager" error when accessing `CustomOpLibrary` ops inside the compiled
   function. Ops are now eagerly compiled during library initialization.
