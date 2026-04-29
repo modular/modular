@@ -96,6 +96,7 @@ from max.serve.schemas.openai import (
     Logprobs2,
     Model,
     PromptItem,
+    PromptTokensDetails,
     ResponseFormatJsonObject,
     ResponseFormatJsonSchema,
     ResponseFormatText,
@@ -245,6 +246,7 @@ class OpenAIChatResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         status_code = 200
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
@@ -260,6 +262,9 @@ class OpenAIChatResponseGenerator(
 
                 if chunk.prompt_token_count:
                     n_prompt_tokens = chunk.prompt_token_count
+
+                if chunk.cached_token_count is not None:
+                    n_cached_prompt_tokens = chunk.cached_token_count
 
                 # We support N = 1 at the moment and will generate a single choice.
                 # The choice index is set to 0.
@@ -341,6 +346,9 @@ class OpenAIChatResponseGenerator(
                     total_tokens=n_prompt_tokens
                     + n_reasoning_tokens
                     + n_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=n_cached_prompt_tokens,
+                    ),
                 )
 
                 final_response = CreateChatCompletionStreamResponse(
@@ -401,6 +409,7 @@ class OpenAIChatResponseGenerator(
         n_reasoning_tokens = 0
         n_tokens = 0
         n_prompt_tokens = 0
+        n_cached_prompt_tokens = 0
         request_timer = StopWatch(start_ns=request.timestamp_ns)
         status_code = 200
         tool_use = request.tools is not None
@@ -414,6 +423,10 @@ class OpenAIChatResponseGenerator(
             n_tokens = sum(chunk.token_count for chunk in completed_outputs)
             if len(completed_outputs) > 0:
                 n_prompt_tokens = completed_outputs[0].prompt_token_count or 0
+                if completed_outputs[0].cached_token_count is not None:
+                    n_cached_prompt_tokens = completed_outputs[
+                        0
+                    ].cached_token_count
 
             response_message = "".join(
                 chunk.decoded_tokens
@@ -504,6 +517,9 @@ class OpenAIChatResponseGenerator(
                     total_tokens=n_prompt_tokens
                     + n_reasoning_tokens
                     + n_tokens,
+                    prompt_tokens_details=PromptTokensDetails(
+                        cached_tokens=n_cached_prompt_tokens,
+                    ),
                 )
 
             response = CreateChatCompletionResponse(

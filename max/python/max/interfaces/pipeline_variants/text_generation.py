@@ -424,6 +424,9 @@ class TextGenerationOutput:
     log_probabilities: list[LogProbabilities] | None = None
     """Optional list of log probabilities for each token."""
 
+    num_cached_tokens: int | None = None
+    """Number of prompt tokens served from the KV prefix cache."""
+
     @property
     def is_done(self) -> bool:
         """Indicates whether the text generation process is complete.
@@ -461,6 +464,7 @@ class TextGenerationOutput:
             ),
             log_probabilities=log_probabilities,
             final_status=outputs[-1].final_status,
+            num_cached_tokens=outputs[0].num_cached_tokens,
         )
 
 

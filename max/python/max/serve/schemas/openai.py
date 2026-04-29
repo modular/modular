@@ -448,6 +448,13 @@ class Choice3(BaseModel):
     )
 
 
+class PromptTokensDetails(BaseModel):
+    cached_tokens: int = Field(
+        default=0,
+        description='Number of prompt tokens served from the KV prefix cache.',
+    )
+
+
 class Usage(BaseModel):
     completion_tokens: int = Field(
         ..., description='Number of tokens in the generated completion.'
@@ -458,6 +465,10 @@ class Usage(BaseModel):
     total_tokens: int = Field(
         ...,
         description='Total number of tokens used in the request (prompt + completion).',
+    )
+    prompt_tokens_details: Optional[PromptTokensDetails] = Field(
+        default=None,
+        description='Breakdown of tokens used in the prompt.',
     )
 
 
@@ -1354,6 +1365,10 @@ class CompletionUsage(BaseModel):
     total_tokens: int = Field(
         ...,
         description='Total number of tokens used in the request (prompt + completion).',
+    )
+    prompt_tokens_details: Optional[PromptTokensDetails] = Field(
+        default=None,
+        description='Breakdown of tokens used in the prompt.',
     )
 
 

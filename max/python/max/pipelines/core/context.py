@@ -101,14 +101,17 @@ class TextContext:
     """
 
     cached_prefix_length: int | None = field(default=None)
-    """How many prompt tokens were served from the KV prefix cache.
+    """Number of prompt tokens served from the KV prefix cache.
 
     Set by the block manager when a request is admitted to a CE batch
-    (0 if the cache had no matching prefix). ``BatchMetrics.create``
-    consumes the value to emit a per-request cache hit rate observation,
-    then resets it to ``None`` so chunked-prefill follow-up calls do not
-    re-emit.
+    (0 if no matching prefix). ``BatchMetrics.create``
+    consumes the value to emit a per-request cache hit rate observation, and
+    uses ``_cache_metrics_emitted`` to guard against re-emitting on
+    chunked-prefill follow-up calls.
     """
+
+    _cache_metrics_emitted: bool = field(default=False)
+    """Set to ``True`` after the first CE batch to prevent re-emitting cache hit metrics on chunked-prefill follow-up calls."""
 
     def __post_init__(self) -> None:
         """Initialize context state after deserialization.
@@ -213,6 +216,7 @@ class TextContext:
                 tokens=[],
                 log_probabilities=None,
                 final_status=self.status,
+                num_cached_tokens=self.cached_prefix_length,
             )
 
         element_ids = range(
@@ -247,6 +251,7 @@ class TextContext:
             tokens=generated_tokens,
             log_probabilities=log_probabilities,
             final_status=self.status,
+            num_cached_tokens=self.cached_prefix_length,
         )
 
     def advance_token_buffer(

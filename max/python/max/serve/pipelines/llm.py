@@ -68,6 +68,7 @@ class TokenGeneratorOutput:
     token_log_probabilities: list[float] | None = None
     top_log_probabilities: list[dict[str, float]] | None = None
     prompt_token_count: int | None = None
+    cached_token_count: int | None = None
     reasoning_token_count: int | None = None
     stop_sequence: str | None = None
 
@@ -292,7 +293,8 @@ class TokenGeneratorPipeline(
                                 top_token_log_prob_values.extend(top_probs)
 
                     # Record metrics - one TTFT/ITL per chunk
-                    if not first_chunk_yielded:
+                    is_first_chunk = not first_chunk_yielded
+                    if is_first_chunk:
                         METRICS.ttft(itl.elapsed_ms)
                         first_chunk_yielded = True
                     else:
@@ -307,6 +309,9 @@ class TokenGeneratorPipeline(
                         token_log_probabilities=token_log_prob_values,
                         top_log_probabilities=top_token_log_prob_values,
                         prompt_token_count=context.tokens.prompt_length,
+                        cached_token_count=response.num_cached_tokens
+                        if is_first_chunk
+                        else None,
                         reasoning_token_count=reasoning_token_count,
                         stop_sequence=stop_sequence_match,
                     )

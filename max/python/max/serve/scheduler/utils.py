@@ -211,10 +211,13 @@ class BatchMetrics:
         admission_prompt_tokens = 0
         if inputs.batch_type == BatchType.CE:
             for ctx in inputs.flat_batch:
-                cached = ctx.cached_prefix_length
-                if cached is None:
+                if (
+                    ctx._cache_metrics_emitted
+                    or ctx.cached_prefix_length is None
+                ):
                     continue
-                ctx.cached_prefix_length = None
+                ctx._cache_metrics_emitted = True
+                cached = ctx.cached_prefix_length
                 prompt_length = ctx.tokens.prompt_length
                 if prompt_length > 0:
                     per_request_hit_rates.append(cached / prompt_length)
