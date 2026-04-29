@@ -2024,6 +2024,13 @@ CValue IREmitter::emitCallUnchecked(RValue callee,
     assert(callResult && "rebindValue always succeeds");
   }
 
+  // Apply type refinement to the call result if it has a parametric type
+  // that could be refined via where-clause constraints in the calling scope.
+  // This enables calling trait methods or passing aliased types to functions
+  // when the underlying type parameter is refined.
+  if (callResult)
+    callResult = maybeEmitRefinementRebind({callResult, callExpr}, *this);
+
   // Otherwise, register-passable results are the call result which may need to
   // be emitted into a ValueDest.
   return emitCResult(callResult, callExpr, dest);

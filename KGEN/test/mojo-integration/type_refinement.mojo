@@ -387,6 +387,76 @@ def test_register_passable():
     print(reg_conjunction(RegDescGreeter()))
 
 
+struct Wrapper[T: ImplicitlyDestructible & Movable]:
+    comptime Element = Self.T
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+    def get(ref self) -> ref[self.value] Self.Element:
+        return self.value
+
+
+struct DoubleAliasWrapper[T: ImplicitlyDestructible & Movable]:
+    comptime Inner = Self.T
+    comptime Element = Self.Inner
+    var value: Self.T
+
+    def __init__(out self, var value: Self.T):
+        self.value = value^
+
+    def get(ref self) -> ref[self.value] Self.Element:
+        return self.value
+
+
+struct Pair[
+    A: ImplicitlyDestructible & Movable, B: ImplicitlyDestructible & Movable
+]:
+    comptime First = Self.A
+    comptime Second = Self.B
+    var first: Self.A
+    var second: Self.B
+
+    def __init__(out self, var first: Self.A, var second: Self.B):
+        self.first = first^
+        self.second = second^
+
+    def get_first(ref self) -> ref[self.first] Self.First:
+        return self.first
+
+    def get_second(ref self) -> ref[self.second] Self.Second:
+        return self.second
+
+
+def greet_wrapper[
+    T: ImplicitlyDestructible & Movable
+](w: Wrapper[T],) -> String where conforms_to(T, Greetable):
+    return w.get().greet()
+
+
+def greet_double_alias[
+    T: ImplicitlyDestructible & Movable
+](w: DoubleAliasWrapper[T],) -> String where conforms_to(T, Greetable):
+    return w.get().greet()
+
+
+def greet_first[
+    A: ImplicitlyDestructible & Movable,
+    B: ImplicitlyDestructible & Movable,
+](p: Pair[A, B]) -> String where conforms_to(A, Greetable):
+    return p.get_first().greet()
+
+
+def test_comptime_aliases():
+    # CHECK: Woof! I'm Daisy
+    print(greet_wrapper(Wrapper(Dog("Daisy"))))
+    # CHECK: Meow! I'm Nala
+    print(greet_double_alias(DoubleAliasWrapper(Cat("Nala"))))
+    # CHECK: Meow! I'm Socks
+    print(greet_first(Pair(Cat("Socks"), Dog("Bear"))))
+
+
 trait SimpleIterator(ImplicitlyDestructible, Movable):
     comptime Element: Movable
 
@@ -450,6 +520,30 @@ def test_associated_type_chains():
     print(greet_and_describe_nested(DogContainer(Dog("Nova"))))
 
 
+def call_greet_ptr[
+    T: Copyable & ImplicitlyDestructible, O: Origin
+](p: Pointer[T, O]) -> String where conforms_to(T, Greetable):
+    return p[].greet()
+
+
+def ptr_eq[
+    T: Copyable & ImplicitlyDestructible, O: Origin
+](p: Pointer[T, O], value: T) -> Bool where conforms_to(T, Equatable):
+    return p[] == value
+
+
+def test_pointer_deref():
+    var d = Dog("Rex")
+    # CHECK: Woof! I'm Rex
+    print(call_greet_ptr(Pointer(to=d)))
+
+    var x = 42
+    # CHECK: True
+    print(ptr_eq(Pointer(to=x), 42))
+    # CHECK: False
+    print(ptr_eq(Pointer(to=x), 99))
+
+
 def local_ref_binding[
     T: AnyType
 ](read x: T) -> String where conforms_to(T, Greetable):
@@ -469,6 +563,13 @@ def local_var_move[
 ](var x: T) -> String where conforms_to(T, Greetable):
     var y: T = x^
     return y.greet()
+
+
+def tuple_from_refined_args[
+    T: Copyable & ImplicitlyDestructible
+](read a: T, read b: T) -> String where conforms_to(T, Greetable):
+    var t = (a.copy(), b.copy())
+    return t[0].greet() + " and " + t[1].greet()
 
 
 def nested_comptime_outer_binding_refinement[
@@ -510,6 +611,8 @@ def test_local_vars():
     print("copy:", local_var_copy(d))
     # CHECK: move: Woof! I'm Rex
     print("move:", local_var_move(Dog("Rex")))
+    # CHECK: tuple: Woof! I'm Rex and Woof! I'm Fido
+    print("tuple:", tuple_from_refined_args(d, Dog("Fido")))
     # CHECK: outer: Woof! I'm Rex
     # CHECK: outer-inner-greet: Woof! I'm Rex
     # CHECK: outer-inner-describe: Dog(Rex)
@@ -520,6 +623,94 @@ def test_local_vars():
     # CHECK: outer: Meow! I'm Luna
     # CHECK: inner-fallback: Meow! I'm Shadow
     nested_comptime_fallback_refinement(Cat("Luna"), Cat("Shadow"))
+
+
+trait DtorMarker:
+    pass
+
+
+def use_refined_dtor[T: AnyType](ref x: T):
+    print("use-dtor")
+
+
+struct DestructTracer(Copyable, ImplicitlyDestructible, Movable):
+    var tag: Int
+
+    def __init__(out self, tag: Int):
+        self.tag = tag
+        print("init-dtor", self.tag)
+
+    def __del__(deinit self, /):
+        print("del-dtor", self.tag)
+
+
+struct MarkedDestructTracer(
+    Copyable, DtorMarker, ImplicitlyDestructible, Movable
+):
+    var tag: Int
+
+    def __init__(out self, tag: Int):
+        self.tag = tag
+        print("init-dtor", self.tag)
+
+    def __del__(deinit self, /):
+        print("del-dtor", self.tag)
+
+
+def destroy_via_where[
+    T: Movable
+](var x: T) where conforms_to(T, ImplicitlyDestructible):
+    use_refined_dtor(x)
+
+
+def destroy_via_comptime_assert[T: Movable](var x: T):
+    comptime assert conforms_to(T, ImplicitlyDestructible)
+    use_refined_dtor(x)
+
+
+def destroy_via_comptime_if[T: Movable](var x: T):
+    comptime if conforms_to(T, ImplicitlyDestructible):
+        use_refined_dtor(x)
+    else:
+        # Keep both branches consuming `x` symmetrically.
+        _ = trait_downcast_var[ImplicitlyDestructible & Movable](x^)
+
+
+def destroy_via_chained_refinement[
+    T: Movable
+](var x: T) where conforms_to(T, DtorMarker):
+    comptime assert conforms_to(T, ImplicitlyDestructible)
+    use_refined_dtor(x)
+
+
+def test_refined_implicitly_destructible():
+    # CHECK-LABEL: dtor-where
+    print("dtor-where")
+    # CHECK:      init-dtor 1
+    # CHECK-NEXT: use-dtor
+    # CHECK-NEXT: del-dtor 1
+    destroy_via_where(DestructTracer(1))
+
+    # CHECK-LABEL: dtor-comptime-assert
+    print("dtor-comptime-assert")
+    # CHECK:      init-dtor 2
+    # CHECK-NEXT: use-dtor
+    # CHECK-NEXT: del-dtor 2
+    destroy_via_comptime_assert(DestructTracer(2))
+
+    # CHECK-LABEL: dtor-comptime-if
+    print("dtor-comptime-if")
+    # CHECK:      init-dtor 3
+    # CHECK-NEXT: use-dtor
+    # CHECK-NEXT: del-dtor 3
+    destroy_via_comptime_if(DestructTracer(3))
+
+    # CHECK-LABEL: dtor-chained-refinement
+    print("dtor-chained-refinement")
+    # CHECK:      init-dtor 4
+    # CHECK-NEXT: use-dtor
+    # CHECK-NEXT: del-dtor 4
+    destroy_via_chained_refinement(MarkedDestructTracer(4))
 
 
 # The scope-refinement machinery must not interfere with user-authored
@@ -601,6 +792,13 @@ def rebind_manual_ref[
     return y.greet()
 
 
+def greet_variadic_elements[*Ts: AnyType](*args: *Ts):
+    comptime for i in range(args.__len__()):
+        comptime element_type = Ts[i]
+        comptime assert conforms_to(element_type, Greetable)
+        print("variadic-refine:", args[i].greet())
+
+
 def test_rebind_refinement():
     var d = Dog("Rex")
     # CHECK: read: Dog(Rex) | Woof! I'm Rex | Dog(Rex)
@@ -616,6 +814,12 @@ def test_rebind_refinement():
     print("manual-ref:", rebind_manual_ref(d))
 
 
+def test_variadic_element_refinement():
+    # CHECK: variadic-refine: Woof! I'm Rex
+    # CHECK: variadic-refine: Meow! I'm Luna
+    greet_variadic_elements(Dog("Rex"), Cat("Luna"))
+
+
 def main():
     test_conventions()
     test_bound_preservation()
@@ -627,6 +831,10 @@ def main():
     test_struct_methods()
     test_comptime_scopes()
     test_register_passable()
+    test_comptime_aliases()
     test_associated_type_chains()
+    test_pointer_deref()
     test_local_vars()
+    test_refined_implicitly_destructible()
     test_rebind_refinement()
+    test_variadic_element_refinement()

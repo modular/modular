@@ -919,6 +919,25 @@ mergeOriginalAndRefinedBounds(TraitType origBound, TraitType refinedBound,
   return traitSymbols;
 }
 
+/// Return the concrete trait bound carried by a type value's metatype, if one
+/// is available.
+static TraitType getTypeValueTraitBound(Type metaType) {
+  if (auto traitType = dyn_cast<TraitType>(getCanonicalType(metaType)))
+    return traitType;
+
+  // A generic variadic element such as `Self.element_types[i]` has a parametric
+  // metatype like `!kgen.param<:!lit.anytrait<Base> element_trait>`.  The
+  // parameter value itself is not a concrete `TraitType`, but its metatype
+  // still records the bound that every element in the list satisfies.
+  if (auto paramType = dyn_cast<ParamType>(getCanonicalType(metaType))) {
+    Type paramMetaType = getCanonicalType(paramType.getParam().getType());
+    if (auto anyTrait = dyn_cast<AnyTraitType>(paramMetaType))
+      return anyTrait.getTraitType();
+  }
+
+  return {};
+}
+
 /// Refine a non-reference ParamType using assumptions in `declScope`.
 static Type maybeRefineParamType(Type varType, ParamType paramType,
                                  ASTDecl &declScope) {
@@ -951,18 +970,24 @@ static Type maybeRefineParamType(Type varType, ParamType paramType,
   // preserved. `DowncastAttr::get` canonicalizes `downcast(downcast(x))` to
   // `downcast(x)`, so wrapping an already-refined paramRef stays flat.
   //
-  // `paramRef` is type-valued (it came from a `ParamType`), and since we just
-  // proved a `conforms_to` assumption applies to it, its canonical metatype is
-  // always a `TraitType` (sugar forms like `AnyTraitType` are desugared by
-  // `getCanonicalAttr`).
-  TraitType origBound = cast<TraitType>(getCanonicalAttr(paramRef).getType());
+  // Preserve the bounds already visible on the incoming type value.  Plain type
+  // parameters have a concrete trait metatype (e.g. `T: Base`).  Generic
+  // variadic elements have a parametric metatype, but that metatype still
+  // records the element trait bound (e.g. `element_trait: type_of(Base)`).
+  //
+  // If we cannot recover an original trait bound, conservatively decline to
+  // refine.  Refining to only `refinedBound` would silently drop any original
+  // constraints that downstream type checking expects to remain visible.
+  TraitType origBound = getTypeValueTraitBound(paramRef.getType());
+  if (!origBound)
+    return varType;
+
   SmallVector<SymbolRefAttr> traitSymbols = mergeOriginalAndRefinedBounds(
       origBound, refinedBound, declScope.getShared());
   if (traitSymbols.empty())
     return varType;
 
-  MLIRContext *ctx = varType.getContext();
-  TraitType traitType = TraitType::get(ctx, traitSymbols);
+  TraitType traitType = TraitType::get(varType.getContext(), traitSymbols);
   TypedAttr downcast = DowncastAttr::get(traitType, paramRef);
   return ParamType::get(downcast);
 }
@@ -1056,18 +1081,18 @@ DeclRefNode::emitUnqualLookup(StringRef spelling, const ExprNode *expr,
       break;
     }
 
-    // Type refinement strategy by destination shape:
-    //
-    //   Ordinary var/ref/bind | declaration time
-    //   Tuple unpack element  | after the element store
-    //
-    // Tuple unpack is currently the only destructuring path that first forms an
-    // aggregate LValue from element destinations, then stores the RHS tuple by
-    // extracting each element. If we refined element bindings here, the
-    // aggregate LValue would expect `Tuple[refined T, ...]`, while the RHS
-    // still has type `Tuple[T, ...]`. Keep tuple element storage compatible
-    // with the extracted RHS elements; the store path updates the ASTDecl to a
-    // refined lookup view after each element is initialized.
+    // Tuple unpacking is currently the only aggregate destructuring path. It
+    // builds an aggregate LValue from element destinations before decomposing
+    // the RHS tuple. Keep those element destinations unrefined so the aggregate
+    // LHS remains store-compatible with `Tuple[T, ...]`; otherwise it would
+    // expect `Tuple[downcast(T, Trait), ...]`. Bare `downcast(T, Trait)` and
+    // `T` are convertible in targeted places, but we don't recursively treat
+    // arbitrary `Struct[T]` and `Struct[downcast(T, Trait)]` as
+    // interchangeable. The store path refines the individual bound elements
+    // after initialization instead.
+    // TODO: If we add other aggregate destructuring forms, model this as an
+    // explicit aggregate-destructure destination property instead of keying off
+    // `EC_TupleElement`.
     if (dest.getContext() != EC_TupleElement)
       varType = maybeRefineTypeWithAssumptions(varType, emitter.declScope);
 

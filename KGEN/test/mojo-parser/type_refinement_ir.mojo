@@ -31,6 +31,46 @@ def use_extra[T: Extra](read x: T):
     pass
 
 
+struct MiniPack[element_trait: type_of(AnyType), //, *element_types: element_trait]:
+    def get_element[
+        index: Int
+    ](self) -> ref[origin_of(self)] Self.element_types[index]:
+        while True:
+            pass
+
+    # CHECK-LABEL: lit.fn @"refine_param_list_get_after_assert
+    # CHECK: kgen.param.assert <{{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>, [{{.*}}@type_refinement_ir::@Extra]){{.*}}>
+    # CHECK: [[ITEM:%.*]] = lit.call tail @type_refinement_ir::@MiniPack::@"get_element
+    # CHECK: [[REBIND:%.*]] = kgen.rebind [[ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
+    # CHECK: lit.call{{.*}}@"use_extra{{.*}}([[REBIND]])
+    def refine_param_list_get_after_assert[i: Int](self):
+        comptime element_type = Self.element_types[i]
+        comptime assert conforms_to(element_type, Extra)
+        use_extra(self.get_element[i]())
+
+
+struct BaseMiniPack[element_trait: type_of(Base), //, *element_types: element_trait]:
+    def get_element[
+        index: Int
+    ](self) -> ref[origin_of(self)] Self.element_types[index]:
+        while True:
+            pass
+
+    # CHECK-LABEL: lit.fn @"refine_param_list_get_preserves_parametric_bound
+    # CHECK: kgen.param.assert <{{.*}}conforms_to(:!kgen.param<{{.*}}element_trait> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>, [{{.*}}@type_refinement_ir::@Extra]){{.*}}>
+    # CHECK: [[EXTRA_ITEM:%.*]] = lit.call tail @type_refinement_ir::@BaseMiniPack::@"get_element
+    # CHECK: [[EXTRA_REBIND:%.*]] = kgen.rebind [[EXTRA_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
+    # CHECK: lit.call{{.*}}@"use_extra{{.*}}([[EXTRA_REBIND]])
+    # CHECK: [[BASE_ITEM:%.*]] = lit.call tail @type_refinement_ir::@BaseMiniPack::@"get_element
+    # CHECK: [[BASE_REBIND:%.*]] = kgen.rebind [[BASE_ITEM]] : {{.*}}#kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>{{.*}} to {{.*}}Base_Extra downcast(:!kgen.param<{{.*}}> #kgen.param_list.get<{{.*}}element_types.values{{.*}}, #lit.struct.extract<:!Int i, "_mlir_value">>){{.*}}
+    # CHECK: lit.call{{.*}}@"use_base{{.*}}([[BASE_REBIND]])
+    def refine_param_list_get_preserves_parametric_bound[i: Int](self):
+        comptime element_type = Self.element_types[i]
+        comptime assert conforms_to(element_type, Extra)
+        use_extra(self.get_element[i]())
+        use_base(self.get_element[i]())
+
+
 # CHECK-LABEL: lit.fn @"refine_from_where
 # CHECK-SAME: ([[ARG:%.*]]: !lit.ref<:!Base T, imm *"x`"> read_mem)
 # CHECK: [[WHERE_REF:%.*]] = kgen.rebind [[ARG]] : {{.*}} to {{.*}}Base_Extra downcast(:!Base T){{.*}}

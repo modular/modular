@@ -37,6 +37,89 @@ using namespace M::KGEN;
 using namespace M::KGEN::LIT;
 
 //===----------------------------------------------------------------------===//
+// Store-Time Type Refinement
+//===----------------------------------------------------------------------===//
+
+/// Applies store-time type refinement to a finalized VarDeclOp.
+///
+/// Why this exists:
+/// - Declaration-time inference cannot always refine safely, because the final
+///   reference shape/origin is known only after store emission.
+/// - Some pattern bindings produce nested refs (`!lit.ref<!lit.ref<T>>`), so
+///   refinement must load then rebind to avoid refining a placeholder form.
+/// - We must update the matching ASTDecl entry (using operation identity) so
+///   shadowed names resolve to the correct refined value in later lookups.
+/// - Preserves value kind semantics (MLValue for `var`, MBValue otherwise).
+///
+/// If refinement does not change the element type, this is a no-op.
+static void maybeApplyTypeRefinement(VarDeclOp varOp, ASTDecl &declScope,
+                                     OpBuilder &builder) {
+  // 1. Extract element type from the VarDecl.
+  RefType refType = cast<RefType>(varOp.getType());
+  Type elementType = refType.getElementType();
+
+  // For bind/ref: element is !lit.ref<T, origin>, extract inner element.
+  RefType innerRef;
+  if ((innerRef = dyn_cast<RefType>(elementType)))
+    elementType = innerRef.getElementType();
+
+  // 2. Check if refinement applies.
+  Type refinedType = maybeRefineTypeWithAssumptions(elementType, declScope);
+  if (refinedType == elementType)
+    return; // No refinement needed.
+
+  if (varOp.getKind() == VarDeclKind::Synthesized)
+    return;
+
+  // 3. Look up the ASTDecl registered for this VarDeclOp. With variable
+  // shadowing, multiple decls can share a name in the same scope, so
+  // disambiguate by matching on the defining Operation*.
+  ASTDecl *varASTDecl = nullptr;
+  for (ASTDecl *decl : declScope.lookupInCurrentScope(varOp.getNameAttr())) {
+    if (decl->getIfOperation() == varOp.getOperation()) {
+      varASTDecl = decl;
+      break;
+    }
+  }
+  assert(varASTDecl &&
+         "non-synthetic VarDeclOp should have a matching ASTDecl");
+
+  // Use the VarDecl's own location which has proper debug scope.
+  Location mlirLoc = varOp.getLoc();
+
+  if (innerRef) {
+    // Double-ref case (bind/ref with ref-typed tuple elements):
+    // !lit.ref<!lit.ref<T, inner>, outer>
+    //
+    // Load the VarDecl to collapse to a single ref, then rebind. This mirrors
+    // what trait_downcast does naturally as a function call — the load peels
+    // the outer ref, and the rebind refines the element type.
+    //
+    // load: !lit.ref<!lit.ref<T, inner>, outer> -> !lit.ref<T, inner>
+    // rebind: !lit.ref<T, inner> -> !lit.ref<T(Trait), inner>
+    RefType refinedInner = innerRef.getWithElement(refinedType);
+    Value loaded = RefLoadOp::create(builder, mlirLoc, varOp.getResult());
+    Value reboundValue =
+        RebindOp::create(builder, mlirLoc, refinedInner, loaded);
+    varASTDecl->setIRValue(MBValue(reboundValue));
+  } else {
+    // Single-ref case (var patterns, function args):
+    // !lit.ref<T> -> !lit.ref<T(Trait)>
+    //
+    // Classify the rebound reference using canonical mutability-based
+    // classification. Keep Bound declarations as MBValue for consistency with
+    // DeclRef lookup behavior.
+    RefType refinedRefType = refType.getWithElement(refinedType);
+    Value reboundValue =
+        RebindOp::create(builder, mlirLoc, refinedRefType, varOp.getResult());
+    CValue refinedCValue = CValue::getMValueForRef(reboundValue);
+    if (varOp.getKind() == VarDeclKind::Bound)
+      refinedCValue = MBValue(reboundValue);
+    varASTDecl->setIRValue(refinedCValue);
+  }
+}
+
+//===----------------------------------------------------------------------===//
 // ExprContext
 //===----------------------------------------------------------------------===//
 
@@ -376,6 +459,10 @@ MLValue ValueDest::getDefinedMLValueIfExists(ASTType resultType,
       if (refOp.getKind() == VarDeclKind::Bind) {
         refOp.setKind(VarDeclKind::Bound);
         refOp.getResult().setType(refOp.getType().getWithElement(resultType));
+
+        // Type refinement is applied in emitStoreToLValue after the store
+        // completes, not here during type inference.
+
         representation = LValue(MLValue(refOp));
         return MLValue(refOp);
       }
@@ -442,6 +529,10 @@ LValue ValueDest::getLValueForResult(SMLoc loc, ASTType resultType,
           // instead of MLValues.
           refOp.setKind(VarDeclKind::Bound);
           refOp.getResult().setType(refOp.getType().getWithElement(resultType));
+
+          // Type refinement is applied in emitStoreToLValue after the store
+          // completes, not here during type inference.
+
           representation = MLValue(refOp);
         }
       }
@@ -1464,6 +1555,10 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
         refOp.setKind(VarDeclKind::Bound);
         refOp.getResult().setType(
             refOp.getType().getWithElement(value.ir.getRValueType()));
+
+        // Apply type refinement now that we have the final type.
+        maybeApplyTypeRefinement(refOp, declScope, *builder);
+
         // Now we store the value into the var decl.
         ValueDest bindDest(MLValue(refOp), context);
         emitBValue({value.ir, value.expr}, bindDest);
@@ -1489,8 +1584,14 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     // Now that we have the origin of the input, we can replace the placeholder
     // with the actual type so that uses of it will have the correct origin.
     refOp.getResult().setType(refOp.getType().getWithElement(mValue.getType()));
+
     RefStoreOp::create(*builder, translateLocation(value.expr->getLoc()),
                        mValue, refOp);
+
+    // Apply type refinement after the store so that any load emitted by
+    // the refinement (to collapse double-refs) reads initialized memory.
+    maybeApplyTypeRefinement(refOp, declScope, *builder);
+
     return CValue::getMValueForRef(mValue); // Return the input reference.
   }
 
@@ -1499,6 +1600,14 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
   assert(destRef && "No other known LValue");
   ASTType valueType = value.ir.getRValueType();
   SMLoc exprLoc = value.expr->getLoc();
+
+  // For tuple-element var patterns, type refinement is applied after the store
+  // completes (matching the store-time strategy used for bind/ref patterns).
+  auto applyRefinementIfVarDecl = [&] {
+    if (builder)
+      if (auto varOp = destRef.getDefiningOp<VarDeclOp>())
+        maybeApplyTypeRefinement(varOp, declScope, *builder);
+  };
 
   bool isRegisterPassable = valueType.isRegisterPassable(exprLoc, shared);
   bool isDefaultAS = cast<RefType>(destRef.getType()).isDefaultAddrSpace();
@@ -1523,6 +1632,8 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     auto result = emitCopyOfValue(value, dest);
     if (!result)
       dest.resetForError(*this);
+    else
+      applyRefinementIfVarDecl();
     return result;
   }
 
@@ -1542,6 +1653,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     val = emitRebindOpIfNeeded(
         val, ASTType(destRef.getType()).getReferenceElementType(), exprLoc);
     RefStoreOp::create(*builder, translateLocation(exprLoc), val, destRef);
+    applyRefinementIfVarDecl();
     // Must return a borrow of the result, use SBValue if we can to avoid a load
     // but otherwise we need a MBValue for non-trivial types.
     if (valueType.isTrivial(exprLoc, shared))
@@ -1558,6 +1670,7 @@ CValue IREmitter::emitStoreToLValue(ASTExprAnd<CValue> value, LValue destLV,
     operands.addKeyword(StringAttr::get(shared.getContext(), "take"), value);
     if (!emitConstructorCall(valueType, std::move(operands), moveDest))
       return {};
+    applyRefinementIfVarDecl();
     return MBValue(destRef);
   }
 
