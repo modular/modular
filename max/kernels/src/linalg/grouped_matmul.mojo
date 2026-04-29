@@ -897,6 +897,9 @@ def grouped_matmul_amd[
     comptime assert expert_ids.flat_rank == 1, "expert_ids must be rank 1"
     comptime assert b.flat_rank == 3, "b must be rank 3"
 
+    if num_active_experts == 0 or max_num_tokens_per_expert == 0:
+        return
+
     comptime num_experts = b.static_shape[0]
     comptime N = b.static_shape[1]
     comptime K = b.static_shape[2]
