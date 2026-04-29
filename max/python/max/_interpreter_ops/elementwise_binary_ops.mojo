@@ -24,7 +24,7 @@ from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-from std.reflection import get_base_type_name
+from std.reflection import reflect
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ElementwiseBinaryOp
 from MOGGKernelAPI.MOGGKernelAPI import (
@@ -64,7 +64,7 @@ comptime BINARY_BOOLEAN_OPS = TypeList.of[
 
 def _is_gpu_allowed_binary_op[op: ElementwiseBinaryOp]() -> Bool:
     """Check if a binary op is allowed on GPU at compile time."""
-    comptime name = get_base_type_name[op]()
+    comptime name = reflect[op]().base_name()
     # Arithmetic and boolean ops that work on GPU
     return (
         name == "Add"
@@ -95,7 +95,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         # Binary arithmetic operations
         comptime for i in range(BINARY_ARITHMETIC_OPS.size):
             comptime op = BINARY_ARITHMETIC_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op]().base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " with dtype dispatch"
             )
@@ -106,7 +106,7 @@ def PyInit_elementwise_binary_ops() -> PythonObject:
         # Binary boolean operations
         comptime for i in range(BINARY_BOOLEAN_OPS.size):
             comptime op = BINARY_BOOLEAN_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op]().base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " (boolean only)"
             )

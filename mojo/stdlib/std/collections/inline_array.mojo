@@ -37,8 +37,8 @@ from std.builtin.device_passable import DevicePassable
 from std.builtin.rebind import downcast
 from std.builtin.constrained import _constrained_conforms_to
 from std.collections import check_bounds
-from std.compile import get_type_name
 import std.format._utils as fmt
+from std.reflection import reflect
 from std.hashlib.hasher import Hasher
 from std.memory import UnsafeMaybeUninit, uninit_move_n
 
@@ -297,7 +297,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
         """
         return String(
             "InlineArray[",
-            get_type_name[Self.ElementType](),
+            reflect[Self.ElementType]().name(),
             ", ",
             Self.size,
             "]",

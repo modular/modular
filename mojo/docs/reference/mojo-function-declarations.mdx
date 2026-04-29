@@ -108,10 +108,10 @@ PEP 3102.
 compiler deduces inferred parameters from call-site arguments:
 
 ```mojo
-from std.reflection import get_type_name
+from std.reflection import reflect
 
 def inferred_type[T: Writable, //](value: T):
-    print(t"Value is {value}. Type is {get_type_name[T]()}.")
+    print(t"Value is {value}. Type is {reflect[T]().name()}.")
 
 def main():
     inferred_type(5)       # Value is 5. Type is Int.

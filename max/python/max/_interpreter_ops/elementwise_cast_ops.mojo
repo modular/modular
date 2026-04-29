@@ -25,7 +25,7 @@ from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-from std.reflection import get_base_type_name
+from std.reflection import reflect
 from std.runtime.asyncrt import DeviceContextPtr
 from std.sys.info import has_apple_gpu_accelerator
 from tensor import ElementwiseUnaryMixedOp
@@ -41,7 +41,7 @@ from op_utils import _get_dtype, _get_buffer_ptr, _get_size, _get_ctx
 
 def _is_gpu_allowed_mixed_unary_op[op: ElementwiseUnaryMixedOp]() -> Bool:
     """Check if a mixed-type unary op is allowed on GPU at compile time."""
-    comptime name = get_base_type_name[op]()
+    comptime name = reflect[op]().base_name()
     return name == "Cast"
 
 

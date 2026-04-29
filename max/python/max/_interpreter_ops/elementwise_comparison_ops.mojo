@@ -24,7 +24,7 @@ from std.sys.info import has_accelerator, simd_width_of
 
 from std.algorithm.functional import elementwise, IndexList
 from std.memory import OpaquePointer
-from std.reflection import get_base_type_name
+from std.reflection import reflect
 from std.runtime.asyncrt import DeviceContextPtr
 from tensor import ElementwiseBinaryComparisonOp
 from MOGGKernelAPI.MOGGKernelAPI import (
@@ -50,7 +50,7 @@ comptime BINARY_COMPARISON_OPS = TypeList.of[
 
 def _is_gpu_allowed_comparison_op[op: ElementwiseBinaryComparisonOp]() -> Bool:
     """Check if a comparison op is allowed on GPU at compile time."""
-    comptime name = get_base_type_name[op]()
+    comptime name = reflect[op]().base_name()
     return (
         name == "Equal"
         or name == "Greater"
@@ -74,7 +74,7 @@ def PyInit_elementwise_comparison_ops() -> PythonObject:
         # Binary comparison operations
         comptime for i in range(BINARY_COMPARISON_OPS.size):
             comptime op = BINARY_COMPARISON_OPS[i]
-            comptime name = get_base_type_name[op]()
+            comptime name = reflect[op]().base_name()
             comptime docstring = StaticString(
                 "Elementwise " + name + " comparison"
             )

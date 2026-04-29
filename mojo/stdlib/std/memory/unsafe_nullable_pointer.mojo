@@ -28,8 +28,8 @@ from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.collections import OptionalReg
-from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames
+from std.reflection import reflect
 from std.memory import memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
@@ -768,7 +768,7 @@ struct UnsafeNullablePointer[
         """
         return String(
             "UnsafeNullablePointer[",
-            get_type_name[Self.type](),
+            reflect[Self.type]().name(),
             ", mut=",
             Self.mut,
             ", address_space=",

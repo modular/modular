@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the unified `reflect[T]` / `Reflected[T]` reflection API."""
 
-from std.reflection import Reflected, get_type_name, reflect
+from std.reflection import Reflected, reflect
 from std.sys.info import size_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 
@@ -93,7 +93,7 @@ struct ContainerWithNonCopyable:
 def test_reflect_returns_handle() raises:
     comptime r = reflect[SimpleStruct]()
     # The handle's T parameter is the reflected type.
-    assert_equal(get_type_name[r.T](), "test_reflect.SimpleStruct")
+    assert_equal(reflect[r.T]().name(), "test_reflect.SimpleStruct")
     assert_equal(r.field_count(), 2)
 
 
@@ -189,8 +189,8 @@ def test_field_names_simple() raises:
 
 def test_field_types_match_get_type_name() raises:
     comptime types = reflect[SimpleStruct]().field_types()
-    assert_equal(get_type_name[types[0]](), "Int")
-    assert_equal(get_type_name[types[1]](), "SIMD[DType.float64, 1]")
+    assert_equal(reflect[types[0]]().name(), "Int")
+    assert_equal(reflect[types[1]]().name(), "SIMD[DType.float64, 1]")
 
 
 def test_field_iteration() raises:
@@ -236,10 +236,10 @@ def test_field_index_nested() raises:
 def test_field_type_by_name_simple() raises:
     comptime r = reflect[SimpleStruct]()
     comptime x_type = r.field_type["x"]()
-    assert_equal(get_type_name[x_type.T](), "Int")
+    assert_equal(x_type.name(), "Int")
 
     comptime y_type = r.field_type["y"]()
-    assert_equal(get_type_name[y_type.T](), "SIMD[DType.float64, 1]")
+    assert_equal(y_type.name(), "SIMD[DType.float64, 1]")
 
 
 def test_field_type_returns_reflected_handle() raises:
@@ -263,7 +263,7 @@ def test_field_type_matches_field_types_by_index() raises:
     comptime idx = r.field_index["x"]()
     comptime by_name = r.field_type["x"]()
     comptime by_idx = r.field_types()[idx]
-    assert_equal(get_type_name[by_name.T](), get_type_name[by_idx]())
+    assert_equal(by_name.name(), reflect[by_idx]().name())
 
 
 # ===----------------------------------------------------------------------=== #

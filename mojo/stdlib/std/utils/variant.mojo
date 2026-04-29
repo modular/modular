@@ -13,7 +13,6 @@
 """Defines a Variant type."""
 
 from std.builtin.rebind import downcast
-from std.compile import get_type_name
 from std.format._utils import (
     FormatStruct,
     TypeNames,

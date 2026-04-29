@@ -24,7 +24,7 @@ from std.sys import bit_width_of
 from std.ffi import _CPointer, c_double, c_long, c_size_t, c_ssize_t
 import std.format._utils as fmt
 
-from std.reflection import get_type_name
+from std.reflection import reflect
 
 from ._cpython import CPython, GILAcquired, PyObject, PyObjectPtr, PyTypeObject
 from .bindings import PyMojoObject, _get_type_name, lookup_py_type_object
@@ -1730,7 +1730,7 @@ struct PythonObject(
                         " '{}'"
                     ),
                     func[],
-                    get_type_name[T](),
+                    reflect[T]().name(),
                     _get_type_name(self),
                 )
             )
@@ -1738,7 +1738,7 @@ struct PythonObject(
             raise Error(
                 String.format(
                     "TypeError: expected Mojo '{}' type value, got '{}'",
-                    get_type_name[T](),
+                    reflect[T]().name(),
                     _get_type_name(self),
                 )
             )

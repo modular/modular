@@ -208,12 +208,12 @@ you assign an `Int`. It's the type behind loop counters, collection
 indices, and `len()` results:
 
 ```mojo
-from std.reflection import get_type_name
+from std.reflection import reflect
 
 def main():
     var a: Int = 42
 
-    comptime a_type = get_type_name[type_of(a)]()
+    comptime a_type = reflect[type_of(a)]().name()
 
     print("a:", a_type) # a: Int
 ```
@@ -272,12 +272,12 @@ print(SIMD[DType.int16, 1].MIN)  # -32768
 `SIMD`:
 
 ```mojo
-from std.reflection import get_type_name
+from std.reflection import reflect
 
 def main():
     var b: UInt = 42
 
-    comptime b_type = get_type_name[type_of(b)]()
+    comptime b_type = reflect[type_of(b)]().name()
 
     print("b:", b_type) # b: SIMD[DType.uint, 1]
 ```

@@ -53,7 +53,7 @@ from std.sys.defines import _is_bool_like
 from std.reflection import call_location, SourceLocation
 from std.builtin.device_passable import DevicePassable
 from std.compile.compile import CompiledFunctionInfo
-from std.reflection import get_linkage_name, get_type_name
+from std.reflection import get_linkage_name, reflect
 from std.gpu.host.compile import (
     _compile_code,
     _cross_compilation,
@@ -2412,7 +2412,7 @@ struct DeviceFunction[
                         declared_arg_type, DevicePassable
                     ].get_type_name()
                 else:
-                    return get_type_name[declared_arg_type]()
+                    return reflect[declared_arg_type]().name()
 
             # Now we'll check if the given argument's device_type is
             # what the kernel expects.

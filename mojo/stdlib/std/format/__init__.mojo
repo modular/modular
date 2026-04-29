@@ -75,7 +75,7 @@ print(repr(p)) # Point: x=1.5, y=2.7
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.memory import Span
-from std.reflection import get_type_name, reflect
+from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
 
 from .repr import repr

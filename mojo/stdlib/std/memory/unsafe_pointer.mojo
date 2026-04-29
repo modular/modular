@@ -34,8 +34,8 @@ from std.builtin.rebind import downcast
 from std.builtin.format_int import _write_int
 from std.builtin.simd import _simd_construction_checks
 from std.collections import OptionalReg
-from std.compile import get_type_name
 from std.format._utils import FormatStruct, Named, TypeNames
+from std.reflection import reflect
 from std.memory import memcpy
 from std.memory.memory import _free, _malloc
 from std.memory import UnsafeMaybeUninit
@@ -230,7 +230,7 @@ def alloc[
     ```
     """
     comptime size_of_t = size_of[type]()
-    comptime type_name = get_type_name[type]()
+    comptime type_name = reflect[type]().name()
     comptime assert size_of_t > 0, "size must be greater than zero"
     debug_assert(
         count >= 0,
@@ -1108,7 +1108,7 @@ struct UnsafePointer[
         """
         return String(
             "UnsafePointer[",
-            get_type_name[Self.type](),
+            reflect[Self.type]().name(),
             ", mut=",
             Self.mut,
             ", address_space=",

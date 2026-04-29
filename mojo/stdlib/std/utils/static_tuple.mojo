@@ -20,7 +20,7 @@ from std.utils import StaticTuple
 """
 
 from std.builtin.device_passable import DevicePassable
-from std.compile import get_type_name
+from std.reflection import reflect
 
 # ===-----------------------------------------------------------------------===#
 # StaticTuple
@@ -48,7 +48,7 @@ def _static_tuple_construction_checks[T: _StaticTupleTraits, size: Int]():
             "`StaticTuple` element type must have a trivial move/copy"
             " constructor and destructor: "
         ),
-        get_type_name[T](),
+        reflect[T]().name(),
     )
     comptime assert (
         size >= 0
@@ -86,7 +86,7 @@ struct StaticTuple[element_type: _StaticTupleTraits, size: Int](
         """
         return String(
             "StaticTuple[",
-            get_type_name[Self.element_type](),
+            reflect[Self.element_type]().name(),
             ", ",
             Self.size,
             "]",

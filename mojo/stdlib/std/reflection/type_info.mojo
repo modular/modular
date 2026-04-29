@@ -12,17 +12,21 @@
 # ===----------------------------------------------------------------------=== #
 """Provides type and function name introspection utilities.
 
-This module provides compile-time introspection of type and function names:
+This module provides compile-time introspection of type and function names.
 
-- `get_type_name[T]()` - returns the name of a type
+The type name APIs (`get_type_name`, `get_base_type_name`) are deprecated; use
+the methods on `Reflected[T]` (obtained via `reflect[T]()`) instead:
+
+- `reflect[T]().name()` - returns the name of a type (replaces `get_type_name`)
+- `reflect[T]().base_name()` - returns the unqualified name of a type's base
+   type (replaces `get_base_type_name`)
 - `get_function_name[func]()` - returns the source name of a function
 - `get_linkage_name[func]()` - returns the symbol/linkage name of a function
-- `get_base_type_name[T]()` - returns the unqualified name of a type's base type
 
 Example:
 
 ```mojo
-from std.reflection import get_type_name, get_function_name
+from std.reflection import reflect, get_function_name
 
 struct Point:
     var x: Int
@@ -32,13 +36,15 @@ def my_function():
     pass
 
 def main():
-    print(get_type_name[Point]())        # "Point"
+    print(reflect[Point]().name())           # "Point"
     print(get_function_name[my_function]())  # "my_function"
 ```
 """
 
 from std.sys.info import _current_target, _TargetType
 from std.collections.string.string_slice import get_static_string
+
+from .reflect import reflect
 
 
 def get_linkage_name[
@@ -88,12 +94,18 @@ def get_function_name[
     return StaticString(res)
 
 
+@deprecated(
+    "Use `reflect[T]().name()` (with optional"
+    " `name[qualified_builtins=True]()`) instead."
+)
 def get_type_name[
     type: AnyType,
     *,
     qualified_builtins: Bool = False,
 ]() -> StaticString:
     """Returns the struct name of the given type parameter.
+
+    Deprecated: use `reflect[type]().name[qualified_builtins=...]()` instead.
 
     Parameters:
         type: A mojo type.
@@ -117,7 +129,7 @@ def get_type_name[
 # For example, Generic[Foo] should return "Generic[Foo]" but currently returns
 # "Generic[module_name.Foo]".
 def _unqualified_type_name[type: AnyType]() -> StaticString:
-    comptime name = get_type_name[type]()
+    comptime name = reflect[type]().name()
     comptime parameter_list_start = name.find("[")
     if parameter_list_start == -1:
         # HACK: Split is evaluated twice because `List[StringSlice]` cannot
@@ -141,8 +153,11 @@ def _unqualified_type_name[type: AnyType]() -> StaticString:
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated("Use `reflect[T]().base_name()` instead.")
 def get_base_type_name[T: AnyType]() -> StaticString:
     """Returns the name of the base type of a parameterized type.
+
+    Deprecated: use `reflect[T]().base_name()` instead.
 
     For parameterized types like `List[Int]`, this returns `"List"`.
     For non-parameterized types, it returns the type's simple name.

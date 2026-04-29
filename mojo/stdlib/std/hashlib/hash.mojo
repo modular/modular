@@ -27,7 +27,7 @@ There are a few main tools in this module:
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.memory import Span
-from std.reflection import get_type_name, reflect
+from std.reflection import reflect
 
 from .hasher import Hasher, default_hasher
 

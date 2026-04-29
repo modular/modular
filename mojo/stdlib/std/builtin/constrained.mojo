@@ -15,7 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from std.collections.string.string_slice import _get_kgen_string
-from std.reflection import get_type_name, reflect
+from std.reflection import reflect
 from std.reflection.type_info import _unqualified_type_name
 
 
@@ -90,10 +90,10 @@ def _constrained_conforms_to[
     ParentConformsTo: StaticString,
     ElementConformsTo: StaticString = ParentConformsTo,
 ]():
-    comptime parent_type_name = get_type_name[Parent]()
-    comptime elem_type_name = get_type_name[Element]()
-    # TODO(MOCO-2901): Support traits in get_type_name
-    #   comptime trait_name = get_type_name[ParentConformsTo]()
+    comptime parent_type_name = reflect[Parent]().name()
+    comptime elem_type_name = reflect[Element]().name()
+    # TODO(MOCO-2901): Support traits in reflect[T]().name()
+    #   comptime trait_name = reflect[ParentConformsTo]().name()
     comptime parent_conforms_to_trait_name = ParentConformsTo
     comptime elem_conforms_to_trait_name = ElementConformsTo
 

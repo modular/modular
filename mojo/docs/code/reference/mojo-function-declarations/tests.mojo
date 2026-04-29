@@ -23,7 +23,7 @@
 #        (no enclosing struct), configure keyword-only (pass-only
 #        body).
 from std.testing import assert_equal
-from std.reflection import get_type_name
+from std.reflection import reflect
 
 
 # --- Basic function ---
@@ -82,7 +82,7 @@ def test_clamp() raises:
 
 
 def inferred_type[T: Writable, //](value: T):
-    print(t"Value is {value}. Type is {get_type_name[T]()}.")
+    print(t"Value is {value}. Type is {reflect[T]().name()}.")
 
 
 def test_inferred_type():

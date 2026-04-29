@@ -20,7 +20,7 @@ from std.memory import Span
 ```
 """
 from std.builtin.builtin_slice import ContiguousSlice
-from std.reflection import call_location
+from std.reflection import call_location, reflect
 from std.bit.mask import splat
 from std.bit import pop_count
 from std.memory import pack_bits, uninit_copy_n
@@ -32,7 +32,6 @@ from std.sys.info import simd_width_of
 from std.algorithm import vectorize
 from std.hashlib import Hasher
 from std.builtin.device_passable import DevicePassable
-from std.compile import get_type_name
 import std.format._utils as fmt
 
 
@@ -194,7 +193,7 @@ struct Span[
         """
         return String(
             "Span[",
-            get_type_name[Self.T](),
+            reflect[Self.T]().name(),
             "]",
         )
 

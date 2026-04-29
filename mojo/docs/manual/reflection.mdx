@@ -75,17 +75,16 @@ runtime, as long as the access itself is guided by compile-time information.
 
 The reflection calls used in the following example include:
 
-- `get_type_name[]()`: Returns the name of a type.
-- `reflect[T]()`: Returns a `Reflected[T]` handle that exposes struct
-  introspection through methods such as `field_count()`, `field_names()`,
-  and `field_types()`.
+- `reflect[T]()`: Returns a `Reflected[T]` handle that exposes type and struct
+  introspection through methods such as `name()`, `field_count()`,
+  `field_names()`, and `field_types()`.
 
 ```mojo
-from std.reflection import get_type_name, reflect
+from std.reflection import reflect
 
 def show_type[T: AnyType]():
     comptime r = reflect[T]()
-    comptime type_name = get_type_name[T]()
+    comptime type_name = r.name()         # name of the type
     comptime field_count = r.field_count() # count of fields
     comptime field_names = r.field_names() # indexed list of field names
     comptime field_types = r.field_types() # indexed list of field types
@@ -94,7 +93,7 @@ def show_type[T: AnyType]():
 
     comptime for idx in range(field_count):
         comptime field_name = field_names[idx]
-        comptime field_type = get_type_name[field_types[idx]]()
+        comptime field_type = reflect[field_types[idx]]().name()
         var intro = "├──" if idx < (field_count - 1) else "└──"
         print(intro, " var ", field_name, ": ", field_type, sep="")
 

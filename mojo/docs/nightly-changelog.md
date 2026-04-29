@@ -179,10 +179,11 @@ This version is still a work in progress.
 
 ## Library changes
 
-- Consolidated the struct reflection APIs in `std.reflection` behind a unified
-  entry point `reflect[T]()` returning a `Reflected[T]` handle. Methods on the
-  handle replace the family of `struct_field_*` free functions and drop the
-  `struct_` prefix (only structs have fields):
+- Consolidated the reflection APIs in `std.reflection` behind a unified entry
+  point `reflect[T]()` returning a `Reflected[T]` handle. Methods on the
+  handle replace the family of `struct_field_*` free functions (dropping the
+  `struct_` prefix — only structs have fields) and the `get_type_name` /
+  `get_base_type_name` free functions:
 
   ```mojo
   from std.reflection import reflect
@@ -193,23 +194,28 @@ This version is still a work in progress.
 
   def main():
       comptime r = reflect[Point]()
-      print(r.field_count())                    # 2
-      print(r.field_names()[0])                 # x
-      comptime y_type = r.field_type["y"]()     # Reflected[Float64]
+      print(r.name())                          # "Point"
+      print(r.field_count())                   # 2
+      print(r.field_names()[0])                # x
+      comptime y_type = r.field_type["y"]()    # Reflected[Float64]
+      print(y_type.name())                     # "SIMD[DType.float64, 1]"
+      print(reflect[List[Int]]().base_name())  # "List"
       var v: y_type.T = 3.14
   ```
 
-  Methods on `Reflected[T]`: `is_struct`, `field_count`, `field_names`,
-  `field_types`, `field_index[name]`, `field_type[name]`,
+  Methods on `Reflected[T]`: `name[qualified_builtins=]`, `base_name`,
+  `is_struct`, `field_count`, `field_names`, `field_types`,
+  `field_index[name]`, `field_type[name]`,
   `field_offset[name=]/[index=]`, and `field_ref[idx](s)`. The
-  `field_type[name]()` method returns a `Reflected[FieldT]`, so reflection is
-  fully composable.
+  `field_type[name]()` method returns a `Reflected[FieldT]`, so reflection
+  is fully composable.
 
-  The legacy free functions (`struct_field_count`, `struct_field_names`,
+  The legacy free functions — `struct_field_count`, `struct_field_names`,
   `struct_field_types`, `struct_field_index_by_name`,
   `struct_field_type_by_name`, `struct_field_ref`, `is_struct_type`,
-  `offset_of`) and the `ReflectedType[T]` wrapper are now `@deprecated` and
-  delegate to the new API. They will be removed in a future release.
+  `offset_of`, `get_type_name`, `get_base_type_name` — and the
+  `ReflectedType[T]` wrapper are now `@deprecated` and delegate to the new
+  API. They will be removed in a future release.
 
 - Added `struct_field_ref[idx, T](ref s)` to `std.reflection` for accessing
   struct fields by index without copying. The function returns a reference

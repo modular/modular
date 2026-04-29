@@ -168,17 +168,82 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect, get_type_name
+            from std.reflection import reflect
 
             def process_type[T: AnyType]():
                 comptime r = reflect[T]()
                 comptime if r.is_struct():
                     print("struct with", r.field_count(), "fields")
                 else:
-                    print("non-struct:", get_type_name[T]())
+                    print("non-struct:", r.name())
             ```
         """
         return __mlir_attr[`#kgen.is_struct_type<`, Self.T, `> : i1`]
+
+    def name[*, qualified_builtins: Bool = False](self) -> StaticString:
+        """Returns the struct name of `T`.
+
+        Parameters:
+            qualified_builtins: Whether to print fully qualified builtin type
+                names (e.g. `std.builtin.int.Int`) or shorten them
+                (e.g. `Int`).
+
+        Returns:
+            Type name.
+
+        Example:
+            ```mojo
+            from std.reflection import reflect
+
+            struct Point:
+                var x: Int
+                var y: Float64
+
+            def main():
+                comptime r = reflect[Point]()
+                print(r.name())  # "Point" (or module-qualified if defined)
+            ```
+        """
+        return StaticString(
+            __mlir_attr[
+                `#kgen.get_type_name<`,
+                Self.T,
+                `, `,
+                qualified_builtins._mlir_value,
+                `> : !kgen.string`,
+            ]
+        )
+
+    def base_name(self) -> StaticString:
+        """Returns the name of the base type of a parameterized type.
+
+        For parameterized types like `List[Int]`, this returns `"List"`.
+        For non-parameterized types, it returns the type's simple name.
+
+        Unlike `name`, this method strips type parameters and returns only the
+        unqualified base type name.
+
+        Returns:
+            The unqualified name of the base type as a `StaticString`.
+
+        Example:
+            ```mojo
+            from std.collections import List, Dict
+            from std.reflection import reflect
+
+            def main():
+                print(reflect[List[Int]]().base_name())          # "List"
+                print(reflect[Dict[String, Int]]().base_name())  # "Dict"
+                print(reflect[Int]().base_name())                # "Int"
+            ```
+        """
+        return StaticString(
+            __mlir_attr[
+                `#kgen.get_base_type_name<`,
+                Self.T,
+                `> : !kgen.string`,
+            ]
+        )
 
     @always_inline("builtin")
     def field_count(self) -> Int:
@@ -206,7 +271,7 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect, get_type_name
+            from std.reflection import reflect
 
             struct Point:
                 var x: Int
@@ -216,7 +281,7 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
                 comptime r = reflect[Point]()
                 comptime types = r.field_types()
                 comptime for i in range(r.field_count()):
-                    print(get_type_name[types[i]]())
+                    print(reflect[types[i]]().name())
             ```
         """
         return {}

@@ -14,11 +14,12 @@
 
 This module provides compile-time reflection capabilities including:
 
-- Type name introspection (`get_type_name`)
+- Unified type and struct reflection via `reflect[T]()` returning a
+  `Reflected[T]` handle (use `r.name()` and `r.base_name()` for type names)
 - Function name and linkage introspection (`get_function_name`, `get_linkage_name`)
-- Unified struct reflection via `reflect[T]()` returning a `Reflected[T]` handle
 - Source location introspection (`source_location`, `call_location`)
-- Base type reflection (`get_base_type_name`)
+- Deprecated free functions: `get_type_name` (use `reflect[T]().name()`) and
+  `get_base_type_name` (use `reflect[T]().base_name()`)
 
 Example:
 ```mojo

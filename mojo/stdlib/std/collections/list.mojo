@@ -20,7 +20,7 @@ from std.builtin.constrained import _constrained_conforms_to
 from std.builtin.rebind import downcast
 import std.format._utils as fmt
 from std.hashlib import Hasher
-from std.reflection import get_type_name
+from std.reflection import reflect
 from std.collections import check_bounds
 from std.collections._asan_annotations import (
     __sanitizer_annotate_contiguous_container,
