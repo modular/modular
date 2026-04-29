@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import logging
 import os
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from pathlib import Path
 
@@ -133,6 +133,7 @@ def run_sweep(
     config: ServingBenchmarkConfig,
     *,
     uploader: SweepUploader | None = None,
+    report_result: Callable[[BenchmarkRunResult], None] | None = None,
 ) -> list[BenchmarkRunResult]:
     """Set up CSV + upload infrastructure and delegate benchmarking to the library.
 
@@ -148,12 +149,19 @@ def run_sweep(
             per-iteration result JSON path.  Only consulted when
             ``config.upload_results`` is True and the run is not a dry
             run.
+        report_result: Optional callback invoked once per sweep iteration as
+            soon as that iteration's :class:`BenchmarkRunResult` is
+            produced. Used by the unified ``benchmark_serving`` binary to
+            stream rows into ``utils/benchmarking/results_publication``
+            during the run rather than after — preserves "live progress"
+            visibility and ensures partial results survive a mid-sweep
+            crash.
 
     Returns:
         The per-iteration :class:`BenchmarkRunResult` list produced by
-        :func:`benchmark_serving.main_with_parsed_args`, so callers can
-        publish results through additional reporters (e.g. the unified
-        ``results_publication`` framework) without re-running the benchmark.
+        :func:`benchmark_serving.main_with_parsed_args`, so legacy callers
+        that haven't migrated to ``report_result`` can still iterate the
+        whole sweep at once.
     """
     if config.upload_results and config.cluster_information_path is None:
         logger.warning("Warning: uploading results without cluster information")
@@ -187,14 +195,15 @@ def run_sweep(
 
     upload_active = uploader is not None and config.upload_results
 
-    # ---- Run benchmarks ----
-    # Materialize the iterator up front: benchmark_serving_main yields results
-    # lazily, but we want to both drive CSV + upload side effects here and
-    # return the list to callers (e.g. the unified ``benchmark_serving``
-    # binary) for downstream publication through ``results_publication``.
-    results = list(benchmark_serving_main(config))
-
     # ---- CSV output + upload ----
+    # Stream per-iteration: ``benchmark_serving_main`` yields one result per
+    # ``(max_concurrency, request_rate)`` step, and we drive CSV writes,
+    # upload side effects, and the optional ``report_result`` callback as
+    # each yields. Don't materialize the iterator here — batching at end
+    # would defeat the streaming guarantees of
+    # ``utils/benchmarking/results_publication`` (live BigQuery rows during
+    # the run + partial results surviving a mid-sweep crash).
+    results: list[BenchmarkRunResult] = []
     results_csv_path = log_dir / "results.csv"
     writer_cls = (
         TextToImageBenchmarkResultWriter
@@ -209,7 +218,8 @@ def run_sweep(
     )
 
     with result_writer:
-        for result in results:
+        for result in benchmark_serving_main(config):
+            results.append(result)
             # When uploading, save the median iteration's JSON so the
             # uploader has something to read.
             json_path: str | None = None
@@ -245,6 +255,13 @@ def run_sweep(
                 num_prompts=result.num_prompts,
                 result=sweep_result,
             )
+
+            # Stream the row to the results-publication reporter, if the
+            # caller wired one in. Fires here — after CSV/upload side
+            # effects, before the next iteration begins — so a crash
+            # mid-sweep still leaves rows 1..N-1 published downstream.
+            if report_result is not None:
+                report_result(result)
 
     result_file_path = results_csv_path.resolve()
     logger.info(
