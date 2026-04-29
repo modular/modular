@@ -15,6 +15,7 @@
 #include "mlir/IR/Attributes.h"
 #include "mlir/IR/BuiltinAttributeInterfaces.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/Support/raw_ostream.h"
 
 //===----------------------------------------------------------------------===//
 // DTypeValue
@@ -82,6 +83,16 @@ private:
 namespace detail {
 struct SIMDAttrStorage;
 } // namespace detail
+
+/// Format a single DTypeValue element to os according to dtype
+void printDTypeValue(llvm::raw_ostream &os, const DTypeValue &value,
+                     KGENDType dtype);
+
+/// Print an array of DTypeValues to os: a bare scalar for a single-element
+/// array, or a bracketed comma-separated list for wider ones.
+void printDTypeValues(llvm::raw_ostream &os, llvm::ArrayRef<DTypeValue> values,
+                      KGENDType dtype);
+
 } // namespace M::KGEN::POP
 
 //===----------------------------------------------------------------------===//
