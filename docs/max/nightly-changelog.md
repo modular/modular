@@ -50,6 +50,12 @@ This version is still a work in progress.
 
 ### Python API {#26-3-max-python}
 
+- Added `Model.release_captured_graph()`, which drops a previously captured
+  device graph identified by graph key (or per-device keys) and frees its
+  device-side working memory once any in-flight replay completes. Releasing a
+  key that was never captured is a no-op. Callers remain responsible for
+  dropping any output `Buffer` handles returned by the corresponding
+  `Model.capture()` call.
 - Added `ops.roi_align` graph op and `F.roi_align` functional wrapper for
   ROI Align pooling over NHWC inputs with configurable spatial scale, sampling
   ratio, alignment mode, and AVG/MAX pooling.

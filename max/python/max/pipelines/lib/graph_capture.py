@@ -317,6 +317,18 @@ class ServeGraphCaptureRunner:
 
         self.graph_entries: dict[GraphKey, GraphEntry] = {}
 
+    def release_graph(self, key: GraphKey) -> None:
+        """Releases a single captured graph and its working memory.
+
+        Drops the runner's entry for ``key`` (input + output buffer handles)
+        and asks the engine to release the underlying device graph. Safe to
+        call when ``key`` is not currently captured: the runner-side ``pop``
+        becomes a no-op and the engine-side release is itself a no-op for
+        unknown keys.
+        """
+        self.graph_entries.pop(key, None)
+        self._model.release_captured_graph(_pack_model_graph_key(key))
+
     def dispatch_metadata(
         self, batch_size: int, q_max_seq_len: int
     ) -> list[tuple[int, Buffer, Buffer | None]]:

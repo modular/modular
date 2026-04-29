@@ -321,3 +321,71 @@ def test_debug_verify_replay() -> None:
     np.testing.assert_allclose(
         output.to_numpy(), np.arange(4, dtype=np.float32) + 2
     )
+
+
+def test_release_captured_graph_allows_recapture_and_blocks_replay() -> None:
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    accelerator = Accelerator()
+    session = InferenceSession(devices=[accelerator])
+
+    with Graph(
+        "release_capture_test",
+        input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 5)
+
+    model = session.load(graph)
+    graph_key = 7
+    input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
+        model.input_devices[0]
+    )
+
+    (captured_output,) = model.capture(graph_key, input_tensor)
+    model.replay(graph_key, input_tensor)
+    np.testing.assert_allclose(
+        captured_output.to_numpy(), np.arange(4, dtype=np.float32) + 5
+    )
+
+    del captured_output
+    model.release_captured_graph(graph_key)
+
+    with pytest.raises(RuntimeError, match="No captured graph"):
+        model.replay(graph_key, input_tensor)
+
+    (recaptured_output,) = model.capture(graph_key, input_tensor)
+    model.replay(graph_key, input_tensor)
+    np.testing.assert_allclose(
+        recaptured_output.to_numpy(), np.arange(4, dtype=np.float32) + 5
+    )
+
+
+def test_release_captured_graph_unknown_key_is_noop() -> None:
+    if accelerator_count() == 0:
+        pytest.skip("GPU not available")
+
+    accelerator = Accelerator()
+    session = InferenceSession(devices=[accelerator])
+
+    with Graph(
+        "release_capture_unknown_key_test",
+        input_types=[TensorType(DType.float32, [4], device=DeviceRef.GPU(0))],
+    ) as graph:
+        graph.output(graph.inputs[0].tensor + 1)
+
+    model = session.load(graph)
+
+    # Releasing on a model with no captures yet is a no-op.
+    model.release_captured_graph(99)
+
+    input_tensor = Buffer.from_numpy(np.arange(4, dtype=np.float32)).to(
+        model.input_devices[0]
+    )
+    model.capture(1, input_tensor)
+
+    # Releasing an unknown key after some captures exist is also a no-op.
+    model.release_captured_graph(99)
+
+    # The original capture is unaffected.
+    model.replay(1, input_tensor)

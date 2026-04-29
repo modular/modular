@@ -233,6 +233,40 @@ def _Model_debug_verify_replay(
     self._debug_verify_replay(normalized_keys, list(inputs))
 
 
+def _Model_release_captured_graph(
+    self: Model, graph_keys: int | Sequence[int]
+) -> None:
+    """Releases a previously captured device graph and its working memory.
+
+    Drops the runtime-side reference for the given key(s); the underlying
+    device graph and its captured-time scratch buffers are freed once any
+    in-flight replay completes. Releasing a key that was never captured is
+    a no-op.
+
+    Note that the caller is still responsible for dropping any output
+    :class:`Buffer` handles returned by the corresponding
+    :meth:`Model.capture` call. Those buffers reference device memory that
+    the runtime cannot reclaim while Python references remain.
+
+    Args:
+        self: The model whose captured graph should be released.
+        graph_keys: Caller-provided graph key or per-device keys identifying
+            captured graphs to release.
+
+    Raises:
+        TypeError: If ``graph_keys`` is neither an int nor a sequence of ints.
+        ValueError: If any key in ``graph_keys`` is out of uint64 range.
+
+    Example:
+        >>> outputs = model.capture(42, input_tensor)
+        >>> model.replay(42, input_tensor)
+        >>> del outputs  # Drop Python-side handles first.
+        >>> model.release_captured_graph(42)
+    """
+    normalized_keys = _normalize_graph_keys(graph_keys)
+    self._release_captured_graph(normalized_keys)
+
+
 Model.execute = _Model_execute  # type: ignore[method-assign]
 Model.__call__ = _Model_call  # type: ignore[method-assign]
 Model.__repr__ = _Model_repr  # type: ignore[method-assign]
@@ -240,6 +274,7 @@ Model.signature = property(_Model_signature)  # type: ignore[assignment]
 Model.capture = _Model_capture  # type: ignore[method-assign]
 Model.replay = _Model_replay  # type: ignore[method-assign]
 Model.debug_verify_replay = _Model_debug_verify_replay  # type: ignore[method-assign]
+Model.release_captured_graph = _Model_release_captured_graph  # type: ignore[method-assign]
 
 
 def _TensorSpec_str(self: TensorSpec) -> str:

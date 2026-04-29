@@ -253,6 +253,19 @@ class Model:
             RuntimeError: If no graph captured or trace verification fails.
         """
 
+    def release_captured_graph(self, graph_keys: int | Sequence[int]) -> None:
+        """
+        Release a previously captured device graph.
+
+        Drops the device-side graph and its working memory once the last reference
+        held by the runtime is released. Releasing a key that was never captured
+        is a no-op.
+
+        Args:
+            graph_keys: Caller-provided graph key (or per-device keys) identifying
+                the captured graph to release.
+        """
+
     def _execute_device_tensors(
         self, tensors: Sequence[max._core.driver.Buffer]
     ) -> list[max._core.driver.Buffer]: ...
@@ -279,6 +292,9 @@ class Model:
 
     def _await_device_graphs(self) -> None:
         """Await all pending device graph instantiations."""
+
+    def _release_captured_graph(self, graph_keys: Sequence[int]) -> None:
+        """Release captured device graphs for the given keys."""
 
     def _export_mef(self, path: str) -> None:
         """
