@@ -213,12 +213,13 @@ denoising steps.
 
 The following parameters are available under `provider_options.image`:
 
-| Parameter          | Default | Description                                           |
-|--------------------|---------|-------------------------------------------------------|
-| `height` / `width` | 1024    | Output dimensions in pixels (must be multiples of 16) |
-| `steps`            | 28      | Number of denoising steps                             |
-| `guidance_scale`   | 3.5     | How closely the output follows the prompt             |
-| `negative_prompt`  | `""`    | Content to avoid in the output                        |
+| Parameter            | Default | Description                                                                         |
+|----------------------|---------|-------------------------------------------------------------------------------------|
+| `height` / `width`   | 1024    | Output dimensions in pixels (must be multiples of 16)                               |
+| `steps`              | 28      | Number of denoising steps                                                           |
+| `guidance_scale`     | 3.5     | How closely the output follows the prompt                                           |
+| `negative_prompt`    | `""`    | Content to avoid in the output                                                      |
+| `residual_threshold` | `null`  | First-block cache (FBCache) reuse threshold (see [Cache backends](#cache-backends)) |
 
 **Height and width**: You can generate images at different aspect ratios. Image
 dimensions must be a multiple of 16 and are automatically scaled to a multiple
@@ -243,6 +244,39 @@ number of denoising steps:
 
 ```json
 "provider_options": {"image": {"height": 512, "width": 512, "steps": 25}}
+```
+
+### Cache backends
+
+Diffusion pipelines can skip redundant transformer passes during the denoising
+loop to speed up generation. MAX exposes two cache backends, configured at
+server startup.
+
+**First-block cache (FBCache)**: enable with `--first-block-caching` on
+[`max serve`](/max/cli/serve). FBCache reuses transformer state from the
+previous step when the first-block residual is similar enough. Tune the reuse
+threshold per request with `provider_options.image.residual_threshold`. Lower
+values skip fewer steps and preserve more detail; higher values skip more
+aggressively. Leave it `null` to use the model-specific default.
+
+```bash
+max serve \
+  --model black-forest-labs/FLUX.2-dev \
+  --first-block-caching
+```
+
+**TaylorSeer**: enable with `--taylorseer` on
+[`max serve`](/max/cli/serve). Available on the FLUX.2 Klein pipeline,
+TaylorSeer uses a Taylor series approximation to skip full transformer passes
+on most denoising steps after a short warmup. The
+`--taylorseer-cache-interval`, `--taylorseer-warmup-steps`, and
+`--taylorseer-max-order` flags override the model defaults if you need finer
+control.
+
+```bash
+max serve \
+  --model black-forest-labs/FLUX.2-Klein \
+  --taylorseer
 ```
 
 ## Quickstart
