@@ -486,6 +486,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
   // Matches both DWARF form (@"Variant[...]) and REPL form (@Variant<...>).
   constexpr const char *kVariantRegex =
       R"(^!lit\.struct<@std::@utils::@variant::@"?Variant[\[<].*)";
+  // Matches both DWARF form (@"Optional[...]) and REPL form (@Optional<...>).
+  constexpr const char *kOptionalRegex =
+      R"(^!lit\.struct<@std::@collections::@optional::@"?Optional[\[<].*)";
 
   // Formatters are matched in reverse order (last registered = highest
   // priority). The _mlir_value elision is registered first so it has the
@@ -580,6 +583,9 @@ LoadLibMojoFormatters(const lldb::TypeCategoryImplSP &mojoCategorySP) {
                 summaryFlags, /*regex=*/true);
   AddCXXSummary(mojoCategorySP, mojoVariantSummaryProvider,
                 "Variant summary provider", kVariantRegex, summaryFlags,
+                /*regex=*/true);
+  AddCXXSummary(mojoCategorySP, mojoOptionalSummaryProvider,
+                "Optional summary provider", kOptionalRegex, summaryFlags,
                 /*regex=*/true);
 }
 

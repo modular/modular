@@ -49,6 +49,45 @@ TEST(StdlibTypesTest, testVariant) {
   EXPECT_STREQ(w.GetSummary(), "String(\"last arm\")");
 }
 
+TEST(StdlibTypesTest, testOptional) {
+  StopContext ctx = buildAndLaunch("optional.mojo");
+
+  // opt_int = Optional(42) — Some with an Int payload.
+  SBValue opt_int = ctx.frame.FindVariable("opt_int");
+  EXPECT_STREQ(opt_int.GetSummary(), "Some(42)");
+
+  ctx.resume();
+
+  // opt_none = Optional[Int](None) — empty Optional.
+  SBValue opt_none = ctx.frame.FindVariable("opt_none");
+  EXPECT_STREQ(opt_none.GetSummary(), "None");
+
+  ctx.resume();
+
+  // opt_str = Optional(String("hello, world")) — heap-encoded String payload.
+  SBValue opt_str = ctx.frame.FindVariable("opt_str");
+  EXPECT_STREQ(opt_str.GetSummary(), "Some(\"hello, world\")");
+
+  ctx.resume();
+
+  // opt_str_small = Optional(String("hi")) — inline/small-string form.
+  SBValue opt_str_small = ctx.frame.FindVariable("opt_str_small");
+  EXPECT_STREQ(opt_str_small.GetSummary(), "Some(\"hi\")");
+
+  ctx.resume();
+
+  // opt_str_none = Optional[String](None) — empty Optional[String].
+  SBValue opt_str_none = ctx.frame.FindVariable("opt_str_none");
+  EXPECT_STREQ(opt_str_none.GetSummary(), "None");
+
+  ctx.resume();
+
+  // opt_bool = Optional(True) — exercises the GetSummaryAsCString path in
+  // renderActivePayload (Bool has its own registered formatter).
+  SBValue opt_bool = ctx.frame.FindVariable("opt_bool");
+  EXPECT_STREQ(opt_bool.GetSummary(), "Some(True)");
+}
+
 TEST(StdlibTypesTest, testList) {
   /// Tests that List can be parsed correctly and its data formatter works
   /// correctly as well.

@@ -194,6 +194,62 @@ static void renderActivePayload(ValueObject &activeValue,
     out << raw;
 }
 
+/// Render `activeValue` into `stream` as `(payload)`, writing nothing if the
+/// payload cannot be decoded. Shared by the Optional and Variant providers.
+static void appendPayloadIfPresent(ValueObject &activeValue,
+                                   llvm::StringRef activeFQN,
+                                   const TypeSummaryOptions &options,
+                                   Stream &stream) {
+  StreamString payload;
+  renderActivePayload(activeValue, activeFQN, options, payload);
+  if (!payload.Empty())
+    stream.Format("({0})", payload.GetString());
+}
+
+bool M::KGEN::Mojo::mojoOptionalSummaryProvider(ValueObject &valobj,
+                                                Stream &stream,
+                                                TypeSummaryOptions options) {
+  // Optional[T] stores `_value: Variant[_NoneType, T]`.
+  // Discriminant 0 = _NoneType (None), discriminant 1 = T (Some value).
+  //
+  // Note: Optional[T] where T is UnsafeNicheable uses _NichedOptionalStorage,
+  // which has no `_impl` field. parseVariantInfo returns {} in that case, so
+  // this formatter falls back to LLDB's default display for those types (e.g.
+  // Optional[UnsafePointer[T]]). See _NichedOptionalStorage in variant.mojo.
+  ValueObjectSP obj = valobj.GetNonSyntheticValue();
+  if (!obj)
+    return false;
+
+  ValueObjectSP innerVariant = nonSyntheticChild(*obj, "_value");
+  if (!innerVariant)
+    return false;
+
+  auto info = parseVariantInfo(innerVariant);
+  if (!info)
+    return false;
+
+  if (info->discriminant == 0) {
+    stream << "None";
+    return true;
+  }
+
+  // Defensive: Optional is a 2-arm Variant; discriminant 0 is handled above,
+  // so discriminant must be 1 here. Guard against misapplication to other
+  // types.
+  if (info->discriminant != 1)
+    return false;
+
+  // Emit `Some` without `(...)` when there is nothing safe to put inside:
+  // either the union child was not exposed to LLDB (activeValue is null) or
+  // the payload decoded to an empty string.
+  stream << "Some";
+
+  if (info->activeValue)
+    appendPayloadIfPresent(*info->activeValue, info->typeNames[1].fullName,
+                           options, stream);
+  return true;
+}
+
 bool M::KGEN::Mojo::mojoVariantSummaryProvider(ValueObject &valobj,
                                                Stream &stream,
                                                TypeSummaryOptions options) {
@@ -207,12 +263,6 @@ bool M::KGEN::Mojo::mojoVariantSummaryProvider(ValueObject &valobj,
   if (!info->activeValue)
     return true;
 
-  // Buffer the payload so we only emit `(...)` when we actually have
-  // something to wrap — on any decode failure we fall through to just the
-  // type name rather than an empty `Foo()`.
-  StreamString payload;
-  renderActivePayload(*info->activeValue, active.fullName, options, payload);
-  if (!payload.Empty())
-    stream.Format("({0})", payload.GetString());
+  appendPayloadIfPresent(*info->activeValue, active.fullName, options, stream);
   return true;
 }
