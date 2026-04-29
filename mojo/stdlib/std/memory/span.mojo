@@ -430,9 +430,7 @@ struct Span[
             otherwise.
         """
         for i in range(len(self)):
-            if trait_downcast[Equatable](self[i]) == trait_downcast[Equatable](
-                value
-            ):
+            if self[i] == value:
                 return True
         return False
 
@@ -491,7 +489,7 @@ struct Span[
         """
         hasher._update_with_simd(Int64(len(self)))
         for i in range(len(self)):
-            trait_downcast[Hashable](self[i]).__hash__(hasher)
+            self[i].__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods

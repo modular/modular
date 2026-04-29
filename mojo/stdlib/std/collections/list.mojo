@@ -527,9 +527,7 @@ struct List[T: Copyable](
 
         var index = 0
         for element in self:
-            ref lhs = trait_downcast[Equatable](element)
-            ref rhs = trait_downcast[Equatable](other[index])
-            if lhs != rhs:
+            if element != other[index]:
                 return False
             index += 1
         return True
@@ -546,7 +544,7 @@ struct List[T: Copyable](
             hasher: The hasher instance.
         """
         for element in self:
-            trait_downcast[Hashable](element).__hash__(hasher)
+            element.__hash__(hasher)
 
     def __contains__(
         self, value: Self.T
@@ -566,10 +564,8 @@ struct List[T: Copyable](
         print("x contains 3" if 3 in x else "x does not contain 3")
         ```
         """
-        ref rhs = trait_downcast[Equatable](value)
         for i in self:
-            ref lhs = trait_downcast[Equatable](i)
-            if lhs == rhs:
+            if i == value:
                 return True
         return False
 
@@ -1199,10 +1195,8 @@ struct List[T: Copyable](
         start_normalized = _clip(start_normalized, 0, len(self))
         stop_normalized = _clip(stop_normalized, 0, len(self))
 
-        ref rhs = trait_downcast[Equatable](value)
         for i in range(start_normalized, stop_normalized):
-            ref lhs = trait_downcast[Equatable](self[i])
-            if lhs == rhs:
+            if self[i] == value:
                 return i
         raise "ValueError: Given element is not in list"
 
@@ -1392,11 +1386,9 @@ struct List[T: Copyable](
         print(list.count("b")) # 3
         ```
         """
-        ref rhs = trait_downcast[Equatable](value)
         var count = 0
         for elem in self:
-            ref lhs = trait_downcast[Equatable](elem)
-            if lhs == rhs:
+            if elem == value:
                 count += 1
         return count
 

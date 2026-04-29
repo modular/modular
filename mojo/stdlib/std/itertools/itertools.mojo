@@ -114,9 +114,7 @@ struct _Product2[IteratorTypeA: Iterator, IteratorTypeB: Copyable & Iterator](
     ) where conforms_to(Self.IteratorTypeA, Copyable):
         comptime assert conforms_to(Self.IteratorTypeA.Element, Copyable)
 
-        self._inner_a = rebind_var[Self.IteratorTypeA](
-            trait_downcast[Copyable](copy._inner_a).copy()
-        )
+        self._inner_a = copy._inner_a.copy()
         self._inner_b = copy._inner_b.copy()
         self._inner_a_elem = copy._inner_a_elem.copy()
         self._initial_inner_b = copy._initial_inner_b.copy()
@@ -776,9 +774,7 @@ struct _TakeWhileIterator[
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
         self._exhausted = copy._exhausted
 
     @always_inline
@@ -939,9 +935,7 @@ struct _DropWhileIterator[
     def __init__(
         out self, *, copy: Self
     ) where conforms_to(Self.InnerIteratorType, Copyable):
-        self._inner = rebind_var[Self.InnerIteratorType](
-            trait_downcast[Copyable](copy._inner).copy()
-        )
+        self._inner = copy._inner.copy()
         self._dropping = copy._dropping
 
     @always_inline

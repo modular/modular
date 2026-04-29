@@ -41,7 +41,7 @@ def paramfor_has_next[
     var result = it.copy()
     try:
         var elem = result.__next__()
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
+        _ = elem^
         return True
     except:
         return False
@@ -61,7 +61,7 @@ def paramfor_next_iter[
     # so recomputing it in the body of the loop is fine.
     try:
         var elem = result.__next__()
-        _ = trait_downcast_var[Movable & ImplicitlyDestructible](elem^)
+        _ = elem^
         return result.copy()
     except:
         abort()

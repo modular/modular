@@ -179,6 +179,15 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Removed explicit `trait_downcast`/`trait_downcast_var` across the standard
+  library sources, now that Mojo applies type refinement from comptime
+  assumptions. Public APIs are unchanged. Updated files:
+  - `stdlib/std/builtin/`: `_stubs.mojo`, `bool.mojo`
+  - `stdlib/std/collections/`: `deque.mojo`, `dict.mojo`, `inline_array.mojo`,
+    `linked_list.mojo`, `list.mojo`, `optional.mojo`, `set.mojo`
+  - `stdlib/std/iter/__init__.mojo`, `stdlib/std/itertools/itertools.mojo`
+  - `stdlib/std/memory/`: `arc_pointer.mojo`, `owned_pointer.mojo`, `span.mojo`
+
 - Consolidated the reflection APIs in `std.reflection` behind a unified entry
   point `reflect[T]()` returning a `Reflected[T]` handle. Methods on the
   handle replace the family of `struct_field_*` free functions (dropping the

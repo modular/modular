@@ -409,9 +409,7 @@ struct _ZipIterator[origin: Origin, *Ts: Iterator](
                     type_of(res[i]), ImplicitlyDestructible
                 )
                 if i < initialized:
-                    UnsafePointer(
-                        to=trait_downcast[ImplicitlyDestructible](res[i])
-                    ).destroy_pointee()
+                    UnsafePointer(to=res[i]).destroy_pointee()
 
             std.memory.forget_deinit(res^)
 

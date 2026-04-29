@@ -642,9 +642,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             True if all elements are equal, False otherwise.
         """
         comptime for i in range(Self.size):
-            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
-                Equatable
-            ](other.unsafe_get(i)):
+            if self.unsafe_get(i) != other.unsafe_get(i):
                 return False
         return True
 
@@ -661,9 +659,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             True if any elements are not equal, False otherwise.
         """
         comptime for i in range(Self.size):
-            if trait_downcast[Equatable](self.unsafe_get(i)) != trait_downcast[
-                Equatable
-            ](other.unsafe_get(i)):
+            if self.unsafe_get(i) != other.unsafe_get(i):
                 return True
         return False
 
@@ -679,7 +675,7 @@ struct InlineArray[ElementType: Copyable, size: Int](
             hasher: The hasher instance.
         """
         comptime for i in range(Self.size):
-            trait_downcast[Hashable](self.unsafe_get(i)).__hash__(hasher)
+            self.unsafe_get(i).__hash__(hasher)
 
     # ===------------------------------------------------------------------===#
     # Methods
@@ -784,9 +780,8 @@ struct InlineArray[ElementType: Copyable, size: Int](
             element for equality with the given value. The element type must
             implement the `Equatable` trait to support equality comparison.
         """
-        ref rhs = trait_downcast[Equatable](value)
         comptime for i in range(Self.size):
-            if trait_downcast[Equatable](self[i]) == rhs:
+            if self[i] == value:
                 return True
         return False
 

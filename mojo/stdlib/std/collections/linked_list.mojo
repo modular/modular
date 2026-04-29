@@ -94,7 +94,7 @@ struct Node[
         Args:
             writer: The writer to write the value to.
         """
-        writer.write(trait_downcast[Writable](self.value))
+        writer.write(self.value)
 
 
 def _make_node[
@@ -630,12 +630,10 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self) compares.
         """
-        ref rhs = trait_downcast[Equatable](elem)
         var current = self._head
         var count = 0
         while current:
-            ref lhs = trait_downcast[Equatable](current.value()[].value)
-            if lhs == rhs:
+            if current.value()[].value == elem:
                 count += 1
 
             current = current.value()[].next()
@@ -656,11 +654,9 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         Notes:
             Time Complexity: O(n) in len(self) compares.
         """
-        ref rhs = trait_downcast[Equatable](value)
         var current = self._head
         while current:
-            ref lhs = trait_downcast[Equatable](current.value()[].value)
-            if lhs == rhs:
+            if current.value()[].value == value:
                 return True
             current = current.value()[].next()
 
@@ -688,9 +684,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         var other_cursor = other._head
 
         while self_cursor:
-            ref lhs = trait_downcast[Equatable](self_cursor.value()[].value)
-            ref rhs = trait_downcast[Equatable](other_cursor.value()[].value)
-            if lhs != rhs:
+            if self_cursor.value()[].value != other_cursor.value()[].value:
                 return False
 
             self_cursor = self_cursor.value()[].next()
@@ -708,8 +702,7 @@ struct LinkedList[ElementType: Copyable & ImplicitlyDestructible](
         """
         var curr = self._head
         while curr:
-            ref elt = trait_downcast[Hashable](curr.value()[].value)
-            elt.__hash__(hasher)
+            curr.value()[].value.__hash__(hasher)
             curr = curr.value()[].next()
 
     @always_inline

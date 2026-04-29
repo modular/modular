@@ -370,9 +370,7 @@ struct Optional[T: Movable](
         """
         if self:
             if rhs:
-                return trait_downcast[Equatable](
-                    self.unsafe_value()
-                ) == trait_downcast[Equatable](rhs.unsafe_value())
+                return self.unsafe_value() == rhs.unsafe_value()
             return False
         return not rhs
 
@@ -503,9 +501,9 @@ struct Optional[T: Movable](
     ](self: Self, mut writer: Some[Writer]) where conforms_to(Self.T, Writable):
         if self:
             comptime if is_repr:
-                trait_downcast[Writable](self.value()).write_repr_to(writer)
+                self.value().write_repr_to(writer)
             else:
-                trait_downcast[Writable](self.value()).write_to(writer)
+                self.value().write_to(writer)
         else:
             writer.write_string("None")
 
@@ -552,7 +550,7 @@ struct Optional[T: Movable](
         if self:
             # Tag the hash so that hash(T) != hash(Optional[T](..)).
             hasher.update(UInt8(1))
-            trait_downcast[Hashable](self.value()).__hash__(hasher)
+            self.value().__hash__(hasher)
         else:
             hasher.update(UInt8(0))
 

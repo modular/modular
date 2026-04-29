@@ -20,7 +20,7 @@ from std.memory import OwnedPointer
 """
 
 from std.builtin.constrained import _constrained_conforms_to
-from std.builtin.rebind import downcast, trait_downcast
+from std.builtin.rebind import downcast
 from std.format._utils import (
     Repr,
     FormatStruct,
@@ -246,7 +246,7 @@ struct OwnedPointer[T: AnyType](
         Constraints:
             `T` must conform to Writable.
         """
-        trait_downcast[Writable](self[]).write_to(writer)
+        self[].write_to(writer)
 
     def write_repr_to(
         self, mut writer: Some[Writer]
@@ -261,4 +261,4 @@ struct OwnedPointer[T: AnyType](
         """
         FormatStruct(writer, "OwnedPointer").params(
             TypeNames[Self.T](),
-        ).fields(Repr(trait_downcast[Writable](self[])))
+        ).fields(Repr(self[]))

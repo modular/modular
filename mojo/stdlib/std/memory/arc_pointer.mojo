@@ -281,9 +281,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Returns:
             True if the managed values are equal, False otherwise.
         """
-        return trait_downcast[Equatable](self[]) == trait_downcast[Equatable](
-            rhs[]
-        )
+        return self[] == rhs[]
 
     def __hash__[
         H: Hasher
@@ -300,7 +298,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Args:
             hasher: The hasher instance to update.
         """
-        trait_downcast[Hashable](self[]).__hash__(hasher)
+        self[].__hash__(hasher)
 
     def write_to(
         self, mut writer: Some[Writer]
@@ -313,7 +311,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         Constraints:
             T must conform to Writable.
         """
-        trait_downcast[Writable](self[]).write_to(writer)
+        self[].write_to(writer)
 
     def write_repr_to(
         self, mut writer: Some[Writer]
@@ -328,4 +326,4 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
         """
         FormatStruct(writer, "ArcPointer").params(
             TypeNames[Self.T](),
-        ).fields(Repr(trait_downcast[Writable](self[])))
+        ).fields(Repr(self[]))

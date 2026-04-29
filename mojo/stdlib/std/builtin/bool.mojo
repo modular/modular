@@ -25,7 +25,6 @@ from std.python import (
     PythonObject,
 )
 
-from std.builtin.rebind import trait_downcast
 from std.utils._select import _select_register_value as select
 from std.utils._visualizers import lldb_formatter_wrapping_type
 
@@ -507,9 +506,7 @@ def any[
     """
 
     for var item0 in iterable:
-        var item = trait_downcast_var[
-            ImplicitlyDestructible & Boolable & Movable
-        ](item0^)
+        var item = item0^
         if item:
             return True
     return False
@@ -551,9 +548,7 @@ def all[
         `True` if **all** elements in the iterable are truthy, `False` otherwise.
     """
     for var item0 in iterable:
-        var item = trait_downcast_var[
-            ImplicitlyDestructible & Boolable & Movable
-        ](item0^)
+        var item = item0^
         if not item:
             return False
     return True

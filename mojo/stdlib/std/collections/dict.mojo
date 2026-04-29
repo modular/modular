@@ -926,9 +926,7 @@ struct Dict[
         for entry in self.items():
             try:
                 ref other_val = other._find_ref(entry.key)
-                ref lhs = trait_downcast[Equatable](entry.value)
-                ref rhs = trait_downcast[Equatable](other_val)
-                if lhs != rhs:
+                if entry.value != other_val:
                     return False
             except:
                 return False
@@ -955,8 +953,8 @@ struct Dict[
         var combined = UInt64(0)
         for entry in self.items():
             var entry_hasher = H2()
-            trait_downcast[Hashable](entry.key).__hash__(entry_hasher)
-            trait_downcast[Hashable](entry.value).__hash__(entry_hasher)
+            entry.key.__hash__(entry_hasher)
+            entry.value.__hash__(entry_hasher)
             var h = entry_hasher^.finish()
             h = ((h ^ 89869747) ^ (h << 16)) * 3644798167
             combined ^= h

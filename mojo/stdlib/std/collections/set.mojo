@@ -326,9 +326,9 @@ struct Set[T: KeyElement, H: Hasher = default_hasher](
             ref element = iterator.__next__()
 
             comptime if is_repr:
-                trait_downcast[Writable](element).write_repr_to(w)
+                element.write_repr_to(w)
             else:
-                trait_downcast[Writable](element).write_to(w)
+                element.write_to(w)
 
         write_sequence_to[ElementFn=iterate](writer, start="{", end="}")
         _ = iterator^

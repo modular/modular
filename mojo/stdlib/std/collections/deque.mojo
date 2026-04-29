@@ -289,8 +289,8 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         for i in range(len(self)):
             offset_self = self._physical_index(self._head + i)
             offset_other = other._physical_index(other._head + i)
-            ref lhs = trait_downcast[Equatable]((self._data + offset_self)[])
-            ref rhs = trait_downcast[Equatable]((other._data + offset_other)[])
+            ref lhs = (self._data + offset_self)[]
+            ref rhs = (other._data + offset_other)[]
             if lhs != rhs:
                 return False
         return True
@@ -308,7 +308,7 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         """
         for i in range(len(self)):
             var offset = self._physical_index(self._head + i)
-            trait_downcast[Hashable]((self._data + offset)[]).__hash__(hasher)
+            (self._data + offset)[].__hash__(hasher)
 
     def __contains__(
         self, value: Self.ElementType
@@ -321,11 +321,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             True if the value is contained in the deque, False otherwise.
         """
-        ref rhs = trait_downcast[Equatable](value)
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
-            if lhs == rhs:
+            if (self._data + offset)[] == value:
                 return True
         return False
 
@@ -519,12 +517,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Returns:
             The number of occurrences of the value in the deque.
         """
-        ref rhs = trait_downcast[Equatable](value)
         count = 0
         for i in range(len(self)):
             offset = self._physical_index(self._head + i)
-            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
-            if lhs == rhs:
+            if (self._data + offset)[] == value:
                 count += 1
         return count
 
@@ -636,11 +632,9 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         start_normalized = max(min(start_normalized, len(self)), 0)
         stop_normalized = max(min(stop_normalized, len(self)), 0)
 
-        ref rhs = trait_downcast[Equatable](value)
         for idx in range(start_normalized, stop_normalized):
             offset = self._physical_index(self._head + idx)
-            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
-            if lhs == rhs:
+            if (self._data + offset)[] == value:
                 return idx
         raise "ValueError: Given element is not in deque"
 
@@ -692,12 +686,10 @@ struct Deque[ElementType: Copyable & ImplicitlyDestructible](
         Raises:
             ValueError: If the value is not found in the deque.
         """
-        ref rhs = trait_downcast[Equatable](value)
         deque_len = len(self)
         for idx in range(deque_len):
             offset = self._physical_index(self._head + idx)
-            ref lhs = trait_downcast[Equatable]((self._data + offset)[])
-            if lhs == rhs:
+            if (self._data + offset)[] == value:
                 (self._data + offset).destroy_pointee()
 
                 if idx < deque_len // 2:
