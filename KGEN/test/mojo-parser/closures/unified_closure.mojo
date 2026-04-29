@@ -974,17 +974,6 @@ def repro_rebind_nonref_operand[
 
 # // -----
 
-# COM: Verify lazy conformance emission for captured param expression closures.
-
-# COM: Verify nested closure conformance for 2-arg closure (emitted before 1-arg).
-# CHECK: kgen.conformance @"def[T: Int, U: Int, #](x: Container[T], y: Container[U]) -> None" {
-# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
-# CHECK: kgen.witness "U" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}], y: Container[{{.*}}]) -> None", "{{.*}}">
-
-# CHECK: kgen.conformance @"def[T: Int, #](x: Container[T]) -> None" {
-# CHECK: kgen.witness "T" : !Int = #kgen.get_witness<:!{{.*}} impl, "def[{{.*}}](x: Container[{{.*}}]) -> None", "{{.*}}">
-
-
 trait Coord(ImplicitlyCopyable):
     comptime Dim: Int
 
@@ -1033,151 +1022,7 @@ def takes_w[T: Int, F: def(w: Container[T])](impl: F):
     impl(Container[T]())
 
 
-# CHECK-LABEL: lit.fn @"defines[
-def defines[T: Coord](foo: HasParam[T]):
-    # CHECK: kgen.param.declare E1: !Int
-    # CHECK-NOT: kgen.param.declare E2
-    comptime S = foo.P
-
-    def closure(x: Container[S]) {var}:
-        pass
-
-    takes[S, type_of(closure)](closure)
-
-
-# CHECK-LABEL: lit.fn @"defines_nested[
-def defines_nested[T: Coord, U: Coord](foo: HasParam[T], bar: HasParam[U]):
-    comptime S = foo.P
-
-    def closure(w: Container[S]) {var}:
-        comptime Q = bar.P
-
-        def closure2(x: Container[Q], y: Container[S]) {var}:
-            pass
-
-        takes2[Q, S, type_of(closure2)](closure2)
-
-    takes_w[S, type_of(closure)](closure)
-
-
 # // -----
-
-# COM: Parameter Expressions are Outlined properly
-
-
-trait Coord(ImplicitlyCopyable):
-    comptime Dim: Int
-
-    def prettyPrint(self):
-        pass
-
-
-@fieldwise_init
-struct Cartesian(Coord):
-    comptime Dim = 2
-    var x: Int
-    var y: Int
-
-    def prettyPrint(self):
-        pass
-
-
-@fieldwise_init
-struct HasParam[T: Coord](ImplicitlyCopyable):
-    comptime P = Self.T.Dim
-    var x: Self.T
-
-
-@fieldwise_init
-struct Container[N: Int]:
-    pass
-
-
-def takes[
-    T: Int, F: def[R: Coord](x: Container[T], r: HasParam[R])
-](impl: F):
-    impl[Cartesian](Container[T](), HasParam[Cartesian](Cartesian(1, 2)))
-
-
-# CHECK-LABEL: lit.fn @"foo
-# CHECK-NEXT: kgen.param.declare E1
-def foo[T: Coord](foo: HasParam[T]):
-    comptime S = foo.P
-
-    # CHECK: lit.closure.init
-    # CHECK-NEXT: kgen.param.declare E2
-    def closure[R: Coord](x: Container[S], r: HasParam[R]) {var}:
-        def closure2(x: Container[S]) {var}:
-            pass
-
-        comptime SS = r.P
-
-        def closure3[
-            R3: Coord
-        ](x: Container[SS], r3: HasParam[R3]) {var}:
-            pass
-
-        takes[SS, type_of(closure3)](closure3)
-
-    # CHECK-NOT: kgen.param.declare E3
-    def closure4[R4: Coord](x: Container[S], r4: HasParam[R4]) {var}:
-        pass
-
-    takes[S, type_of(closure)](closure)
-    takes[S, type_of(closure4)](closure4)
-
-
-# // -----
-
-# COM: ParamOperatorAttr expressions are lifted.
-
-
-@fieldwise_init
-struct Container[N: Int]:
-    pass
-
-
-def takes_w[T: Int, F: def(w: Container[T])](impl: F):
-    impl(Container[T]())
-
-
-# CHECK-LABEL: lit.fn @"defines_expression[
-def defines_expression[X: Int, Y: Int]():
-    # CHECK: kgen.param.declare E1: !Int
-    # CHECK-NOT: kgen.param.declare E1
-    def closure(ww: Container[X + Y]) {var}:
-        pass
-
-    takes_w[X + Y, type_of(closure)](closure)
-
-
-# // -----
-
-# COM: When the whole expression can be hoisted, do not emit child hoists.
-
-
-@fieldwise_init
-struct Container[N: Int]:
-    pass
-
-
-def takes_w[
-    F: def[X: Int, Y: Int](w: Container[(X + Y) + (X + Y)])
-](impl: F):
-    pass
-
-
-# CHECK-LABEL: lit.fn @"no_hoist
-def no_hoist():
-    # CHECK-NOT: kgen.param.declare E1
-    def closure[X: Int, Y: Int](ww: Container[(X + Y) + (X + Y)]) {var}:
-        pass
-
-    takes_w[type_of(closure)](closure)
-
-
-# // -----
-
 
 struct Foo(ImplicitlyCopyable, Movable):
     var x: Int
@@ -1694,8 +1539,7 @@ def repro_stencil_indirect_call[
 
 # COM: Stateless nested functions whose signature references both a captured
 # COM: parameter (dtype) and a free wildcard (alignment) are promoted to a
-# COM: top-level fn whose call site binds the captured params directly,
-# COM: without going through a lit.closure.init or a hoisted aux param.
+# COM: top-level fn whose call site binds the captured params directly.
 
 def _current_target() -> __mlir_type.`!kgen.target`:
     return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
@@ -1724,36 +1568,6 @@ def outer[
     # CHECK: lit.call tail @{{.*}}::@"inner{{.*}}"<:!DType dtype, :!Int *"a.alignment{{.*}}">(%a)
     var x = inner(a)
 
-
-# // -----
-
-# COM: Ensure Hoisted Parameters Persist In Signature for stateful nested
-# COM: closures (which still go through the lit.closure.init path).
-
-def _current_target() -> __mlir_type.`!kgen.target`:
-    return __mlir_attr.`#kgen.param.expr<current_target> : !kgen.target`
-
-
-def _align_of[dtype: DType, target: __mlir_type.`!kgen.target` = _current_target()]() -> Int:
-    return 1
-
-@fieldwise_init
-struct LayoutTensor[dtype:DType, alignment: Int = _align_of[dtype, _current_target()]()](TrivialRegisterPassable):
-   pass
-
-
-def outer[
-    dtype: DType
-](
-    a: LayoutTensor[dtype, ...]
-) raises:
-    var captured = 1
-    # CHECK: hoistedCaptures = #kgen<param.decls[E1 : !Int]>
-    def inner(
-        buf: LayoutTensor[dtype, ...]
-    ) {var captured} -> LayoutTensor[dtype]:
-        _ = captured
-        return LayoutTensor[dtype]()
 
 # // -----
 

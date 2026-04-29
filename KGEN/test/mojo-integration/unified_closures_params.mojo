@@ -130,6 +130,29 @@ def callTakesThin[T: ImplicitlyCopyable & Writable](x: T):
     takesThin[T, type_of(takesItem)](takesItem, x)
 
 
+@fieldwise_init
+struct HasParamRank[N: Int](ImplicitlyCopyable):
+    comptime rank = Self.N + Self.N
+
+    def printMe(self):
+        print(Self.rank)
+
+
+def consumeHasParamRank[
+    c: Int, r: Int, FuncType: def(a: HasParamRank[c]) -> HasParamRank[r]
+](impl: FuncType):
+    var p = impl(HasParamRank[c]())
+    p.printMe()
+
+
+def closureFromCapturedInt[a: Int, b: Int, c: Int](x: Int):
+    def nested(a: HasParamRank[a + b]) {var} -> HasParamRank[b + c]:
+        _ = x
+        return HasParamRank[b + c]()
+
+    consumeHasParamRank[a + b, b + c, type_of(nested)](nested)
+
+
 def main() raises:
     var one = atol(argv()[1])
     var four = atol(argv()[2])
@@ -157,3 +180,7 @@ def main() raises:
     # COM: Test thin closure with captured type parameter.
     # CHECK: 1
     callTakesThin[Int](one)
+
+    # COM: Test captured closure with param expressions in sugar-only space.
+    # CHECK: 10
+    closureFromCapturedInt[1, 2, 3](one)

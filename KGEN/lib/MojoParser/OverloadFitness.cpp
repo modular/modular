@@ -632,41 +632,17 @@ closureParamCapturesIfClosure(ASTDecl *funcIfDirect,
   return {};
 }
 
-OverloadFitness::VisibleParamDeclBindings
-OverloadFitness::collectVisibleParamDeclBindings(ASTDecl *callsiteScope) {
-  VisibleParamDeclBindings bindings;
-  if (!callsiteScope)
-    return bindings;
-  auto &index = callsiteScope->getShared()
-                    .getClosureEmitter()
-                    .getHoistedBindingsByScope();
-  for (ASTDecl *scope = callsiteScope; scope; scope = scope->getParentDecl()) {
-    auto it = index.find(scope);
-    if (it != index.end())
-      for (auto &[attr, paramDecl] : it->second)
-        bindings.try_emplace(paramDecl.getName(), attr);
-  }
-  return bindings;
-}
-
-static void injectVisibleParamDeclBindings(
-    const OverloadFitness::VisibleParamDeclBindings &bindings,
-    ParameterEvaluator &evaluator) {
-  for (const auto &[name, value] : bindings)
-    evaluator.setDeclBinding(name, value);
-}
-
 /// Determine whether the specified signature can be invoked with the
 /// parameter bindings specified in `callable` and the arguments specified in
 /// `callOperands`.
 ///
 /// The 'funcIfDirect' member is set if this is a direct call, or null if
 /// indirect.  It can be used to tune diagnostics.
-OverloadFitness OverloadFitness::evaluate(
-    FnTypeGeneratorType signature, ASTDecl *funcIfDirect,
-    const OverloadSet &callable, const CallOperands &operands,
-    bool allowImplicitConversions,
-    const VisibleParamDeclBindings *visibleParamDeclBindings) {
+OverloadFitness OverloadFitness::evaluate(FnTypeGeneratorType signature,
+                                          ASTDecl *funcIfDirect,
+                                          const OverloadSet &callable,
+                                          const CallOperands &operands,
+                                          bool allowImplicitConversions) {
   // We set up diagnostics.
   size_t numPosOperands = operands.getNumPositional();
   size_t numOperands = operands.size();
@@ -1038,25 +1014,12 @@ OverloadFitness OverloadFitness::evaluate(
 
   // Check that all def constraints are satisfied.
   SmallVector<ConstraintAttr> fnUnprovableConstraints;
-  bool hasHoistedBindings =
-      visibleParamDeclBindings && !visibleParamDeclBindings->empty();
-  std::optional<ParameterEvaluator> fnConstraintEvaluator;
-  if (hasHoistedBindings) {
-    const ParameterEvaluator &inferenceEvaluator = inference.getEvaluator();
-    fnConstraintEvaluator.emplace(inferenceEvaluator.getDeclBindings(),
-                                  inferenceEvaluator.getIndexBindings(),
-                                  inferenceEvaluator.getInputDepth());
-    fnConstraintEvaluator->setEvaluationContext(
-        inferenceEvaluator.getEvaluationContext());
-    injectVisibleParamDeclBindings(*visibleParamDeclBindings,
-                                   *fnConstraintEvaluator);
-  }
   checkConstraints(callable.paramBindings.declScope,
                    originalSignature.getMetadata(),
                    signature.getFnMetadata().getConstraints(),
                    originalSignature.getFnMetadata().getConstraints(),
                    inference.diag.getDiag(), &fnUnprovableConstraints,
-                   hasHoistedBindings ? &*fnConstraintEvaluator : nullptr);
+                   /*evaluator=*/nullptr);
   if (inference.diag.hasErrorEmitted())
     return std::move(*inference.diag.takeMojoDiag());
   if (!fnUnprovableConstraints.empty())
