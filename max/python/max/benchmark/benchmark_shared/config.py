@@ -513,9 +513,15 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    randomize_starting_turn: bool = Field(
+    warmup_to_steady_state: bool = Field(
         default=True,
-        description="Start each multi-turn session at a random turn offset. Prefix turns run densely (no inter-turn delay) to build KV cache context and are excluded from benchmark results.",
+        description="Attempt to start the benchmark in steady state by starting with a later turn distribution. Disable to start every session at turn 0.",
+        json_schema_extra={"group": "Traffic Control"},
+    )
+
+    warmup_oversample_factor: int = Field(
+        default=8,
+        description="Warmup-candidate pool multiplier (sessions per warmup slot). 0 disables length-biased warmup; 1 = uniform random turn warmup; >=2 = length-biased warmup.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
@@ -661,7 +667,7 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
 
     dry_run: bool = Field(
         default=False,
-        description="Dry run the benchmark. If true, the benchmark will not be run but all the commands that would have run will be printed.",
+        description="Build the dataset and print workload stats + warmup-sampling preview, then exit without contacting the server.",
         json_schema_extra={"group": "Control Flags"},
     )
 

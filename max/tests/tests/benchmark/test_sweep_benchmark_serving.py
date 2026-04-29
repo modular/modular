@@ -31,6 +31,8 @@ import pytest_mock
 import yaml
 from max.benchmark import sweep_benchmark_serving
 
+pytestmark = pytest.mark.usefixtures("offline_dryrun_mocks")
+
 
 @pytest.fixture
 def workload_config(tmp_path: Path) -> Path:

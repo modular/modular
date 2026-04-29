@@ -102,6 +102,11 @@ class ChatSession:
     messages: Sequence[ChatMessage]
     prefix_turns: int = 0
 
+    @property
+    def num_turns(self) -> int:
+        """Number of turns in the session (one (user, assistant) pair = one turn)."""
+        return len(self.messages) // 2
+
 
 @dataclass
 class RequestSamples:

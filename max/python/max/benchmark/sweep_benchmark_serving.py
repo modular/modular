@@ -167,14 +167,22 @@ def run_sweep(
         logger.warning("Warning: uploading results without cluster information")
 
     # ---- Log directory ----
+    # Skip auto-creating a sweep-serving-* directory under --dry-run when
+    # the user didn't explicitly ask for one. Tests that pass --log-dir
+    # still get a real on-disk CSV.
     if config.log_dir:
         log_dir = Path(config.log_dir)
-    else:
+        os.makedirs(log_dir, exist_ok=True)
+        config.log_dir = str(log_dir)
+        print(f"Saving logs to: {log_dir}")
+    elif not config.dry_run:
         timestamp = datetime.now().strftime("%Y.%m.%d-%H.%M.%S")
         log_dir = Path(f"sweep-serving-{timestamp}")
-    os.makedirs(log_dir, exist_ok=True)
-    config.log_dir = str(log_dir)
-    print(f"Saving logs to: {log_dir}")
+        os.makedirs(log_dir, exist_ok=True)
+        config.log_dir = str(log_dir)
+        print(f"Saving logs to: {log_dir}")
+    else:
+        log_dir = None
 
     # ---- Percentiles ----
     percentiles = [
@@ -204,6 +212,16 @@ def run_sweep(
     # ``utils/benchmarking/results_publication`` (live BigQuery rows during
     # the run + partial results surviving a mid-sweep crash).
     results: list[BenchmarkRunResult] = []
+
+    # No log directory configured (dry-run without --log-dir): skip CSV
+    # and per-result JSON output but still drive the benchmarks.
+    if log_dir is None:
+        for result in benchmark_serving_main(config):
+            results.append(result)
+            if report_result is not None:
+                report_result(result)
+        return results
+
     results_csv_path = log_dir / "results.csv"
     writer_cls = (
         TextToImageBenchmarkResultWriter

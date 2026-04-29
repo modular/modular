@@ -273,6 +273,7 @@ class TestServingConfigFileLoading:
 # ===----------------------------------------------------------------------=== #
 
 
+@pytest.mark.usefixtures("offline_dryrun_mocks")
 class TestWorkloadMaxConcurrency:
     """Tests that max-concurrency from a workload YAML is applied correctly."""
 
@@ -284,7 +285,7 @@ class TestWorkloadMaxConcurrency:
         workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
 
         config = ServingBenchmarkConfig(
-            model="test/model",
+            model="HuggingFaceTB/SmolLM2-135M",
             workload_config=str(workload),
             dry_run=True,
         )
@@ -301,7 +302,7 @@ class TestWorkloadMaxConcurrency:
         workload.write_text("max-concurrency: 1\nnum-prompts: 10\n")
 
         config = ServingBenchmarkConfig(
-            model="test/model",
+            model="HuggingFaceTB/SmolLM2-135M",
             workload_config=str(workload),
             max_concurrency="4",
             dry_run=True,
