@@ -14,7 +14,7 @@
 
 from std.sys import get_defined_bool
 
-from std.reflection import get_type_name, reflect
+from std.reflection import reflect
 
 
 struct TestStruct:
@@ -40,9 +40,7 @@ def test_nonexistent_field_type():
             "missing_field"
         ]()
         # Force evaluation by using the type
-        comptime assert (
-            get_type_name[field_type.T]() == "Int"
-        ), "should not reach here"
+        comptime assert field_type.name() == "Int", "should not reach here"
 
 
 # Test that field_offset[name=] produces an error for non-existent field.
