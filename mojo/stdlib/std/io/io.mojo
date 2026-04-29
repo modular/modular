@@ -15,6 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 
+from std._plugin import CurrentPlugin
 from std.collections.string.string_slice import get_static_string
 from std.format._utils import _WriteBufferHeap, _WriteBufferStack
 from std.sys import _libc as libc
@@ -422,7 +423,26 @@ def print[
         if flush:
             _flush(file=file)
     else:
-        comptime if is_gpu() and is_apple_gpu():
+        comptime if CurrentPlugin.print_emit_fn:
+            var buffer = _WriteBufferHeap()
+            comptime length = values.__len__()
+
+            comptime for i in range(length):
+                values[i].write_to(buffer)
+                if i < length - 1:
+                    sep.write_to(buffer)
+
+            end.write_to(buffer)
+            buffer.nul_terminate()
+
+            comptime _emit = CurrentPlugin.print_emit_fn.unsafe_value()
+            var slice = buffer.as_string_slice()
+            _emit(
+                slice.unsafe_ptr().bitcast[UInt8](),
+                slice.byte_length(),
+                file.value,
+            )
+        elif is_gpu() and is_apple_gpu():
             # Apple GPU: same formatting path as other GPUs but output
             # goes through Metal os_log via _metal_print_write.
             var buffer = _WriteBufferHeap()
