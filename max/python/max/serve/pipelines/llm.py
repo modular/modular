@@ -296,6 +296,7 @@ class TokenGeneratorPipeline(
                             )
 
                     # Check for stop sequences if configured (EOSTracker)
+                    status = response.final_status
                     stop_sequence_match = None
                     if has_stop_sequences and decoded_tokens is not None:
                         with Tracer("eos_tracker.is_eos_from_string"):
@@ -305,6 +306,7 @@ class TokenGeneratorPipeline(
                                     decoded_tokens
                                 )
                             ):
+                                status = GenerationStatus.END_OF_SEQUENCE
                                 self.model_worker.cancel(request.request_id)
 
                     # Collect log probability values if present (still per-token)
@@ -335,7 +337,7 @@ class TokenGeneratorPipeline(
                     itl.reset()
 
                     yield TokenGeneratorOutput(
-                        status=response.final_status,
+                        status=status,
                         decoded_tokens=decoded_tokens,
                         decoded_reasoning_tokens=decoded_reasoning_tokens,
                         token_count=token_count,

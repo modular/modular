@@ -510,3 +510,52 @@ async def test_next_token_chunk_stop_sequence_ignores_reasoning() -> None:
     assert chunks[0].decoded_reasoning_tokens == "STOP"
     assert chunks[0].decoded_tokens is None
     assert chunks[1].decoded_tokens == "hello"
+
+
+@pytest.mark.asyncio
+async def test_next_token_chunk_stop_sequence_sets_eos_status() -> None:
+    """Status is END_OF_SEQUENCE when a stop sequence matches, even if the
+    model response itself is still ACTIVE."""
+    from max.serve.pipelines.llm import TokenGeneratorPipeline
+
+    test_request_id = RequestID(value="test-request")
+
+    async def mock_stream(
+        request_id: str, context: Any
+    ) -> AsyncGenerator[list[TextGenerationOutput], None]:
+        yield [
+            TextGenerationOutput(
+                request_id=test_request_id,
+                tokens=[10],
+                final_status=GenerationStatus.ACTIVE,
+            )
+        ]
+
+    mock_context = Mock(
+        request_id=test_request_id,
+        tokens=Mock(prompt_length=5, prompt=[99]),
+    )
+    mock_context.eos_tracker.eos_stop_strings = ["stop_word"]
+    mock_context.eos_tracker.is_eos_from_string.return_value = "stop_word"
+
+    pipeline = Mock()
+    pipeline.tokenizer.new_context = AsyncMock(return_value=mock_context)
+    pipeline.tokenizer.decode = AsyncMock(return_value="stop_word")
+    pipeline.model_worker.stream = mock_stream
+    pipeline.debug_logging = False
+    pipeline._reasoning_parser = AsyncMock(return_value=None)
+
+    mock_request = Mock(
+        request_id=test_request_id,
+        tools=None,
+        sampling_params=Mock(stop=["stop_word"]),
+    )
+
+    with patch("max.serve.pipelines.llm.METRICS", MagicMock()):
+        bound = TokenGeneratorPipeline.next_token_chunk.__get__(
+            pipeline, type(pipeline)
+        )
+        chunks = [chunk async for chunk in bound(mock_request)]
+
+    assert len(chunks) == 1
+    assert chunks[0].status == GenerationStatus.END_OF_SEQUENCE
