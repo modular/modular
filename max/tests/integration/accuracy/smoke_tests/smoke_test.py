@@ -655,7 +655,7 @@ def smoke_test(
     all_samples = []
     if disable_timeouts:
         timeout = sys.maxsize
-    elif is_huge_moe(hf_model_path):
+    elif is_huge_moe(hf_model_path) or "step-3.5" in hf_model_path.casefold():
         # TODO(GEX-3508): Reduce timeout once model build time is optimized
         timeout = 2700
     else:
