@@ -35,7 +35,7 @@ from comm.sync import enable_p2p
 from comm.scatter import scatter
 from layout import Idx, TileTensor, row_major
 from comm import MAX_GPUS, Signal
-from std.gpu.host import DeviceBuffer, DeviceContext, get_gpu_target
+from std.gpu.host import DeviceBuffer, DeviceContext
 from internal_utils import arg_parse, CacheBustingBuffer
 
 from std.testing import assert_true
@@ -91,9 +91,10 @@ def bench_scatter[
     print("Running " + name)
 
     var num_bytes = num_elems * size_of[dtype]()
-    comptime simd_size = simd_width_of[dtype, target=get_gpu_target()]()
 
     # Create cache-busting input buffers for each DP chunk on GPU 0 (root).
+    # Use a conservative alignment that works across all GPU architectures.
+    comptime alignment = max(16, size_of[dtype]())
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
     var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
         capacity=dp_size
@@ -103,7 +104,7 @@ def bench_scatter[
         cb_inputs.append(
             CacheBustingBuffer[dtype](
                 num_elems,
-                simd_size,
+                alignment,
                 list_of_ctx[0],
                 cache_busting,
             )
