@@ -2180,24 +2180,31 @@ ParseResult DeclResolver::resolveBody(FnOp funcOp, Lexer &lexer,
       shared.notifyListenerOnArgumentDecl(argDecl, argName, argDecl.getLoc());
     };
 
+    // Emit type refinement rebind if the argument has a parametric type
+    // with known trait constraints from where clauses.
+    Value refinedArg = bbArg;
+    if (emitter.builder) {
+      Location loc = decl.getShared().translateLocation(decl.getLoc());
+      refinedArg =
+          maybeEmitRefinementRebind(bbArg, decl, *emitter.builder, loc);
+    }
+
     CValue argValue;
     if (convention == ArgConvention::ReadMem) {
-      setDecl(MBValue(bbArg)); // borrowed
+      setDecl(MBValue(refinedArg)); // borrowed (possibly refined)
       continue;
     }
     if (convention == ArgConvention::ReadReg) {
       // borrowed_in_reg is used for TrivialRegisterPassable types. Use
-      // SBValue (not SRValue) to preserve borrowed semantics, which matters
-      // for overload resolution: it ensures a borrowed self correctly prefers
-      // `ref self` over `var self` overloads. IREmitter upgrades SBValue to
-      // SRValue for trivial types during code generation as needed.
-      setDecl(SBValue(bbArg));
+      // SBValue (not SRValue) to preserve borrowed semantics, while still
+      // keeping any type refinement rebind visible in the function body.
+      setDecl(SBValue(refinedArg));
       continue;
     }
 
     // Ref convention works with registers and def functions without any funny
     // business.
-    setDecl(CValue::getMValueForRef(bbArg));
+    setDecl(CValue::getMValueForRef(refinedArg));
   }
 
   // If we had a named result in a register, create a var decl to hold the
