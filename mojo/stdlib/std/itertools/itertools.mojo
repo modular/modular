@@ -19,6 +19,8 @@ This module includes functions for creating specialized iterators:
 - `drop_while()` - Drops elements while predicate is true, then yields the rest
 - `product()` - Computes the Cartesian product of two, three, or four iterables
 - `repeat()` - Repeats an element a specified number of times
+- `drop()` - Drops the first n elements and yields the rest
+- `take()` - Yields the first n elements
 - `take_while()` - Yields elements while predicate is true
 
 These utilities enable functional-style iteration patterns and composable iterator
@@ -1137,3 +1139,289 @@ def repeat[
     """
     assert times >= 0, "The `times` argument must be non-negative"
     return {element.copy(), times}
+
+
+# ===-----------------------------------------------------------------------===#
+# take
+# ===-----------------------------------------------------------------------===#
+
+
+struct _TakeIterator[InnerIteratorType: Iterator](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
+    Iterator,
+):
+    """Iterator that yields the first `n` elements from an inner iterator.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _remaining: Int
+
+    def __init__(out self, var inner: Self.InnerIteratorType, *, count: Int):
+        """Creates a take iterator.
+
+        Args:
+            inner: The inner iterator to wrap.
+            count: The maximum number of elements to yield.
+        """
+        self._inner = inner^
+        self._remaining = count
+
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
+        self._inner = rebind_var[Self.InnerIteratorType](
+            trait_downcast[Copyable](copy._inner).copy()
+        )
+        self._remaining = copy._remaining
+
+    @always_inline
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
+        return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        if self._remaining <= 0:
+            raise StopIteration()
+        var value = next(self._inner)
+        self._remaining -= 1
+        return value^
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var remaining = max(0, self._remaining)
+        var lower, upper = self._inner.bounds()
+        lower = min(lower, remaining)
+        if upper:
+            return (lower, min(upper.value(), remaining))
+        return (lower, remaining)
+
+
+@always_inline
+def take[
+    IterableType: Iterable
+](ref iterable: IterableType, count: Int) -> _TakeIterator[
+    IterableType.IteratorType[origin_of(iterable)]
+]:
+    """Creates an iterator that yields the first `count` elements.
+
+    This function returns an iterator that yields at most `count` elements
+    from the input iterable, then stops.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to take elements from.
+        count: The maximum number of elements to yield.
+
+    Returns:
+        An iterator that yields at most `count` elements.
+
+    Examples:
+
+    ```mojo
+    from std.itertools import take
+
+    var nums = [1, 2, 3, 4, 5]
+    for num in take(nums, 3):
+        print(num)  # Prints: 1, 2, 3
+    ```
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    return _TakeIterator(iter(iterable), count=count)
+
+
+@always_inline
+def take[
+    IterableType: IterableOwned, //
+](var iterable: IterableType, count: Int) -> _TakeIterator[
+    IterableType.IteratorOwnedType
+]:
+    """Creates an iterator that yields the first `count` elements, consuming
+    the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to consume and take elements from.
+        count: The maximum number of elements to yield.
+
+    Returns:
+        An iterator that yields at most `count` elements.
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    return _TakeIterator(iter(iterable^), count=count)
+
+
+# ===-----------------------------------------------------------------------===#
+# drop
+# ===-----------------------------------------------------------------------===#
+
+
+struct _DropIterator[InnerIteratorType: Iterator](
+    Copyable where conforms_to(InnerIteratorType, Copyable),
+    Iterable where conforms_to(InnerIteratorType, Copyable),
+    IterableOwned,
+    Iterator,
+):
+    """Iterator that drops the first `n` elements and yields the rest.
+
+    Parameters:
+        InnerIteratorType: The type of the inner iterator.
+    """
+
+    comptime Element = Self.InnerIteratorType.Element
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    comptime IteratorOwnedType: Iterator = Self
+
+    var _inner: Self.InnerIteratorType
+    var _to_drop: Int
+
+    def __init__(out self, var inner: Self.InnerIteratorType, *, count: Int):
+        """Creates a drop iterator.
+
+        Args:
+            inner: The inner iterator to wrap.
+            count: The number of elements to drop.
+        """
+        self._inner = inner^
+        self._to_drop = count
+
+    def __init__(
+        out self, *, copy: Self
+    ) where conforms_to(Self.InnerIteratorType, Copyable):
+        self._inner = rebind_var[Self.InnerIteratorType](
+            trait_downcast[Copyable](copy._inner).copy()
+        )
+        self._to_drop = copy._to_drop
+
+    @always_inline
+    def __iter__(
+        ref self,
+    ) -> Self.IteratorType[origin_of(self)] where conforms_to(
+        Self.InnerIteratorType, Copyable
+    ):
+        return self.copy()
+
+    @always_inline
+    def __iter__(var self) -> Self.IteratorOwnedType:
+        return self^
+
+    @always_inline
+    def __next__(mut self) raises StopIteration -> Self.Element:
+        while self._to_drop > 0:
+            # Discard dropped elements. If `next` raises, `_to_drop` is not
+            # decremented, leaving the iterator in a consistent exhausted
+            # state.
+            var elem = next(self._inner)
+            _ = rebind_var[
+                downcast[Self.Element, Movable & ImplicitlyDestructible]
+            ](elem^)
+            self._to_drop -= 1
+        return next(self._inner)
+
+    def bounds(self) -> Tuple[Int, Optional[Int]]:
+        var to_drop = max(0, self._to_drop)
+        var lower, upper = self._inner.bounds()
+        lower = max(0, lower - to_drop)
+        if upper:
+            return (lower, max(0, upper.value() - to_drop))
+        return (lower, None)
+
+
+@always_inline
+def drop[
+    origin: ImmutOrigin,
+    IterableType: Iterable,
+    //,
+](ref[origin] iterable: IterableType, count: Int) -> _DropIterator[
+    IterableType.IteratorType[origin]
+] where conforms_to(
+    IterableType.IteratorType[origin].Element,
+    ImplicitlyDestructible,
+):
+    """Creates an iterator that drops the first `count` elements.
+
+    This function returns an iterator that drops the first `count` elements
+    from the input iterable, then yields all remaining elements.
+
+    Parameters:
+        origin: The origin of the iterable.
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to drop elements from.
+        count: The number of elements to drop.
+
+    Returns:
+        An iterator that drops the first `count` elements.
+
+    Examples:
+
+    ```mojo
+    from std.itertools import drop
+
+    var nums = [1, 2, 3, 4, 5]
+    for num in drop(nums, 2):
+        print(num)  # Prints: 3, 4, 5
+    ```
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _DropIterator(
+        rebind_var[IterableType.IteratorType[origin]](iter(iterable)),
+        count=count,
+    )
+
+
+@always_inline
+def drop[
+    IterableType: IterableOwned, //
+](var iterable: IterableType, count: Int) -> _DropIterator[
+    IterableType.IteratorOwnedType
+] where conforms_to(
+    IterableType.IteratorOwnedType.Element,
+    ImplicitlyDestructible,
+):
+    """Creates an iterator that drops the first `count` elements, consuming
+    the iterable.
+
+    Parameters:
+        IterableType: The type of the iterable.
+
+    Args:
+        iterable: The iterable to consume and drop elements from.
+        count: The number of elements to drop.
+
+    Returns:
+        An iterator that drops the first `count` elements.
+    """
+    assert count >= 0, "The `count` argument must be non-negative"
+    # FIXME(MOCO-3238): This rebind shouldn't be needed, something isn't getting
+    # substituted through associated types right.
+    return _DropIterator(
+        rebind_var[IterableType.IteratorOwnedType](iter(iterable^)),
+        count=count,
+    )
