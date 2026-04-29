@@ -131,10 +131,7 @@ def main() raises:
 
         comptime for j in range(len(filenames)):
             comptime fname = filenames[j]
-            # NOTE: fname is intentionally omitted from the bench ID so the
-            # per-language rows share a name and the aggregation loop below
-            # averages across languages (mirrors `bench_string.mojo`).
-            comptime suffix = String("[", length, "]")
+            comptime suffix = String("[", fname, ",", length, "]")
             m.bench_function[bench_count_codepoints[length, fname]](
                 BenchId(String("bench_count_codepoints", suffix))
             )

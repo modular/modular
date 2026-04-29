@@ -246,6 +246,15 @@ This version is still a work in progress.
   or whitespace, growing with the distance back to such a codepoint in long
   runs without them.
 
+- `count_graphemes()` now takes a fast path over runs of printable ASCII
+  (U+0020..U+007E). Each such byte has GBP `Other` and two consecutive
+  safe-ASCII bytes always have a grapheme-cluster break between them
+  (GB999), so safe-ASCII runs can be counted at one grapheme per byte
+  without entering the UAX #29 state machine. On pure-ASCII text this is
+  roughly 10x faster (~0.38 ms vs. ~3.85 ms for 1 MB of English), and
+  ~5-6x faster on ASCII-dominant mixed text (Spanish UN charter). Pure
+  non-ASCII text (Arabic, Russian, Chinese) is unchanged.
+
 - Variadics of types have been moved to the `TypeList` struct.
   One can write operations such as:
 

@@ -520,6 +520,71 @@ def test_reverse_matches_forward_various() raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# ASCII fast path
+# ===----------------------------------------------------------------------=== #
+
+
+def test_ascii_fast_path_count() raises:
+    # Pure safe-ASCII (U+0020..U+007E): every byte is one grapheme.
+    var s = (
+        String(
+            "The quick brown fox jumps over the lazy dog. 0123456789"
+            " !?.,;:'\"-_()[]{}<>"
+        )
+        * 20
+    )
+    assert_equal(s.count_graphemes(), s.byte_length())
+
+
+def test_ascii_fast_path_iter() raises:
+    # Iterating pure safe-ASCII returns one byte per grapheme.
+    var s = String("hello world")
+    var result = List[String]()
+    for g in s.graphemes():
+        assert_equal(g.byte_length(), 1)
+        result.append(String(g))
+    assert_equal(len(result), s.byte_length())
+    assert_equal(result[0], "h")
+    assert_equal(result[4], "o")
+    assert_equal(result[5], " ")
+
+
+def test_ascii_fast_path_with_embedded_nonascii() raises:
+    # ASCII run, then a combining-mark-carrying codepoint, then ASCII run.
+    # The character right before the combining mark must NOT be split off
+    # as its own grapheme.
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var s = String("caf") + e_acute + String("! ok")
+    var slc = StringSlice(s)
+    # Expected: c, a, f, e+́, !, space, o, k -> 8 graphemes
+    assert_equal(slc.count_graphemes(), 8)
+    var parts = List[String]()
+    for g in slc.graphemes():
+        parts.append(String(g))
+    assert_equal(parts[0], "c")
+    assert_equal(parts[1], "a")
+    assert_equal(parts[2], "f")
+    assert_equal(parts[3], e_acute)
+    assert_equal(parts[4], "!")
+    assert_equal(parts[5], " ")
+    assert_equal(parts[6], "o")
+    assert_equal(parts[7], "k")
+
+
+def test_ascii_fast_path_with_control_chars() raises:
+    # Tab (U+0009) is a Control codepoint, NOT in the fast-path range.
+    # "a\tb" should be three graphemes.
+    var s = StringSlice("a\tb")
+    assert_equal(s.count_graphemes(), 3)
+    var parts = List[String]()
+    for g in s.graphemes():
+        parts.append(String(g))
+    assert_equal(parts[0], "a")
+    assert_equal(parts[1], "\t")
+    assert_equal(parts[2], "b")
+
+
+# ===----------------------------------------------------------------------=== #
 # Test runner
 # ===----------------------------------------------------------------------=== #
 
