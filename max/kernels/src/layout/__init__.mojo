@@ -54,5 +54,6 @@ from .tile_tensor import (
     flatten_leading,
     stack_allocation,
     lt_to_tt,
+    lt_to_tt_idx,
     LTToTTLayout,
 )

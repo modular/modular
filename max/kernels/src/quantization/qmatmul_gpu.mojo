@@ -36,17 +36,25 @@ from std.gpu.memory import (
     async_copy_wait_group,
     external_memory,
 )
-from layout import IntTuple, LayoutTensor, RuntimeLayout, TileTensor
+from layout import (
+    IntTuple,
+    LayoutTensor,
+    RuntimeLayout,
+    TileTensor,
+    lt_to_tt,
+    lt_to_tt_idx,
+    row_major,
+)
 from layout.layout import *
 from layout.layout_tensor import (
     LayoutTensorIter,
     copy_dram_to_sram,
-    copy_dram_to_sram_async,
     copy_local_to_dram,
     copy_local_to_shared,
     copy_sram_to_dram,
 )
 from layout.swizzle import Swizzle, make_ldmatrix_swizzle, make_swizzle
+from layout.tile_io import GenericToSharedAsyncTileCopier
 from layout.tensor_core import TensorCore, get_fragment_size, get_mma_shape
 from linalg.matmul.gpu._multistage_gemm_gpu import warp_split_k_reduction
 from linalg.utils import GemmShape, apply_epilogue, elementwise_epilogue_type
@@ -168,14 +176,90 @@ def multistage_mma_q[
 
     comptime smem_reg_scales_layout = Layout.row_major(8, 4)
 
+    # Trait-based (`tile_layout.Layout`) thread layouts for the
+    # `tile_io` async copier. These mirror `async_copy_a_layout` and
+    # `async_copy_b_layout` above, but use `row_major[*Int]()` so the
+    # resulting type unifies with `GenericToSharedAsyncTileCopier`'s
+    # `thread_layout: Layout[shape_types, stride_types]` parameter
+    # (the legacy `Layout.row_major(...)` builder produces a different
+    # type that fails to unify).
+    # TODO: Once the remaining sync `copy_*` callsites in this kernel
+    # also migrate to `tile_io`, the legacy `async_copy_a_layout` /
+    # `async_copy_b_layout` declarations above can be removed and these
+    # become the single source of truth.
+    comptime async_copy_a_layout_tt = row_major[
+        num_threads * simd_size // BK, BK // simd_size
+    ]()
+    comptime async_copy_b_layout_tt = row_major[
+        ceildiv(num_threads * simd_b_size, b_smem_layout.stride[0].value()),
+        num_threads
+        // ceildiv(num_threads * simd_b_size, b_smem_layout.stride[0].value()),
+    ]()
+
+    # Swizzle the async A-tile copy if requested. `make_ldmatrix_swizzle`
+    # mirrors what `LayoutTensor.copy_dram_to_sram_async[swizzle=True]`
+    # constructs internally (see layout_tensor.mojo:6751); reproducing it
+    # here keeps the destination addressing identical across the
+    # migration. The destination's leading-dim stride is `BK`.
+    comptime async_swizzle_a = Optional[Swizzle](
+        make_ldmatrix_swizzle[a_type, BK, log2_floor(simd_size)]()
+    ) if swizzle_a else Optional[Swizzle]()
+
+    # `a_iter_arg` / `b_iter_arg` have an inferred dtype, so call sites must
+    # `.bitcast[a_type | b_type, target_address_space=AddressSpace.GENERIC]()`
+    # the iterator's dereferenced tile before passing it in. The helpers
+    # require concrete `a_type` / `b_type` arguments so the body can reference
+    # `simd_size` / `simd_b_size` and the captured swizzle without
+    # additional type unification.
+    #
+    # Both `dst` (SMEM) and `src` (DRAM) are converted with the same
+    # `linear_idx_type` -- the parent DRAM tile's
+    # `linear_idx_type`. Mixing `int32` SMEM offsets with `int64` DRAM
+    # offsets in a single cp.async-driven distribute() emits cross-width
+    # conversions (cvt.u64.u32 + mul.wide.u32 in the index computation)
+    # that measurably degrade performance on B200. Picking the parent
+    # tensor's index type for both sides gives uniform-width arithmetic
+    # and matches the pre-migration codegen pattern (bfe.u64/shl.b64
+    # when the parent has a runtime dim, bfe.u32/shl.b32 when the parent
+    # is fully static and small).
+    comptime a_idx_t = a_iter_arg.linear_idx_type
+    comptime b_idx_t = b_iter_arg.linear_idx_type
+
     @always_inline
     @parameter
-    def _copy_tensor_to_sram[
-        thread_layout: Layout, swizzle: Bool
-    ](dst: LayoutTensor[mut=True, ...], src: LayoutTensor):
-        copy_dram_to_sram_async[thread_layout=thread_layout, swizzle=swizzle](
-            dst.vectorize[1, simd_size](),
-            src.vectorize[1, simd_size](),
+    def _async_copy_a_tile(
+        dst: LayoutTensor[
+            mut=True, a_type, address_space=AddressSpace.SHARED, ...
+        ],
+        src: LayoutTensor[a_type, address_space=AddressSpace.GENERIC, ...],
+    ):
+        GenericToSharedAsyncTileCopier[
+            async_copy_a_layout_tt,
+            swizzle=async_swizzle_a,
+        ]().copy(
+            lt_to_tt_idx[linear_idx_type=a_idx_t](dst).vectorize[
+                1, simd_size
+            ](),
+            lt_to_tt_idx[linear_idx_type=a_idx_t](src).vectorize[
+                1, simd_size
+            ](),
+        )
+
+    @always_inline
+    @parameter
+    def _async_copy_b_tile(
+        dst: LayoutTensor[
+            mut=True, b_type, address_space=AddressSpace.SHARED, ...
+        ],
+        src: LayoutTensor[b_type, address_space=AddressSpace.GENERIC, ...],
+    ):
+        GenericToSharedAsyncTileCopier[async_copy_b_layout_tt]().copy(
+            lt_to_tt_idx[linear_idx_type=b_idx_t](dst).vectorize[
+                1, simd_b_size
+            ](),
+            lt_to_tt_idx[linear_idx_type=b_idx_t](src).vectorize[
+                1, simd_b_size
+            ](),
         )
 
     # Prefetch (num_pipeline_stages - 1) stages.
@@ -186,8 +270,11 @@ def multistage_mma_q[
                     a_smem_iter.linear_uint_type(stage)
                 )[]
 
-                _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
-                    a_smem_tile, a_iter[]
+                _async_copy_a_tile(
+                    a_smem_tile,
+                    a_iter[].bitcast[
+                        a_type, target_address_space=AddressSpace.GENERIC
+                    ](),
                 )
 
                 a_iter._incr()
@@ -197,16 +284,11 @@ def multistage_mma_q[
                     b_smem_iter.linear_uint_type(stage)
                 )[]
 
-                copy_dram_to_sram_async[
-                    thread_layout=async_copy_b_layout,
-                    swizzle=False,
-                ](
-                    b_smem_tile.vectorize[1, simd_b_size](),
-                    b_iter[]
-                    .bitcast[
+                _async_copy_b_tile(
+                    b_smem_tile,
+                    b_iter[].bitcast[
                         b_type, target_address_space=AddressSpace.GENERIC
-                    ]()
-                    .vectorize[1, simd_b_size](),
+                    ](),
                 )
 
                 b_iter._incr()
@@ -411,8 +493,12 @@ def multistage_mma_q[
                             )
                         )[]
 
-                        _copy_tensor_to_sram[async_copy_a_layout, swizzle_a](
-                            a_smem_prefetch_tile, a_iter[]
+                        _async_copy_a_tile(
+                            a_smem_prefetch_tile,
+                            a_iter[].bitcast[
+                                a_type,
+                                target_address_space=AddressSpace.GENERIC,
+                            ](),
                         )
 
                         a_iter._incr()
@@ -424,17 +510,12 @@ def multistage_mma_q[
                             )
                         )[]
 
-                        copy_dram_to_sram_async[
-                            thread_layout=async_copy_b_layout,
-                            swizzle=False,
-                        ](
-                            b_smem_prefetch_tile.vectorize[1, simd_b_size](),
-                            b_iter[]
-                            .bitcast[
+                        _async_copy_b_tile(
+                            b_smem_prefetch_tile,
+                            b_iter[].bitcast[
                                 b_type,
                                 target_address_space=AddressSpace.GENERIC,
-                            ]()
-                            .vectorize[1, simd_b_size](),
+                            ](),
                         )
 
                         b_iter._incr()

@@ -3571,6 +3571,14 @@ def lt_to_tt[
     LayoutTensor's legacy layout.  Pass an explicit ``ResultLayout`` to
     override which dimensions are static vs runtime.
 
+    The result's `linear_idx_type` is the `TileTensor` default
+    (`int32` for SHARED/CONSTANT or small static cosize, `int64`
+    otherwise). This may differ from `lt.linear_idx_type` -- in
+    particular, when the parent `LayoutTensor` has a runtime dimension
+    in GENERIC space, the parent uses `int64` but the converted tile
+    (with all dims static after tiling) defaults to `int32`. To force
+    the result to match `lt.linear_idx_type`, use `lt_to_tt_idx`.
+
     Parameters:
         dtype: Element type of the tensor.
         lt_layout: The legacy Layout of the LayoutTensor.
@@ -3608,6 +3616,84 @@ def lt_to_tt[
     ](unsafe_from_address=Int(lt.ptr))
     return TileTensor[
         dtype, ConcLayout, lt.origin, address_space=lt.address_space
+    ](
+        ptr=ptr,
+        layout=ConcLayout(shape_c, stride_c),
+    )
+
+
+@always_inline
+def lt_to_tt_idx[
+    dtype: DType,
+    lt_layout: _LegacyLayout,
+    //,
+    ResultLayout: TensorLayout = LTToTTLayout[lt_layout],
+    linear_idx_type: DType = DType.int64,
+](lt: _LayoutTensor[dtype, lt_layout, ...]) -> TileTensor[
+    dtype,
+    Layout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ],
+    lt.origin,
+    address_space=lt.address_space,
+    linear_idx_type=linear_idx_type,
+]:
+    """Like `lt_to_tt` but with an explicit `linear_idx_type` override.
+
+    Use this variant when the default `TileTensor` index-type heuristic
+    (`int32` for SHARED/CONSTANT or small static cosize, `int64`
+    otherwise) does not match what callers downstream want. The most
+    common reason is preserving `int64` indexing for DRAM tiles derived
+    from a tensor with runtime dimensions: the parent `LayoutTensor`
+    uses `int64` for its address arithmetic, but a tile coming out of
+    `lt_to_tt` (whose own layout is fully static post-tiling) defaults
+    to `int32` -- forcing `_distribute()` to do narrow-then-widen index
+    arithmetic for every offset, which is measurable in tight inner
+    loops.
+
+    Parameters:
+        dtype: Element type of the tensor.
+        lt_layout: The legacy Layout of the LayoutTensor.
+        ResultLayout: The target TileTensor layout type.
+        linear_idx_type: Integer type used for the result's offset
+            arithmetic. Defaults to `DType.int64`.
+
+    Args:
+        lt: The LayoutTensor to convert.
+
+    Returns:
+        A TileTensor with the same data and the requested
+        `linear_idx_type`.
+    """
+    comptime ConcLayout = Layout[
+        shape_types=ResultLayout._shape_types,
+        stride_types=ResultLayout._stride_types,
+    ]
+    comptime rank = ConcLayout.rank
+    var shape_c = Coord[*ConcLayout.shape_types]()
+    var stride_c = Coord[*ConcLayout.stride_types]()
+
+    comptime for i in range(rank):
+        comptime if not shape_c.element_types[i].is_static_value:
+            shape_c[i] = rebind[shape_c.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.shape.value[i])
+            )
+
+        comptime if not stride_c.element_types[i].is_static_value:
+            stride_c[i] = rebind[stride_c.element_types[i]](
+                Scalar[DType.int64](lt.runtime_layout.stride.value[i])
+            )
+
+    var ptr = UnsafePointer[
+        Scalar[dtype], lt.origin, address_space=lt.address_space
+    ](unsafe_from_address=Int(lt.ptr))
+    return TileTensor[
+        dtype,
+        ConcLayout,
+        lt.origin,
+        address_space=lt.address_space,
+        linear_idx_type=linear_idx_type,
     ](
         ptr=ptr,
         layout=ConcLayout(shape_c, stride_c),
