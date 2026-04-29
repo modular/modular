@@ -136,7 +136,7 @@ MODEL_ALIASES = CaseInsensitiveDict({
             "--num-speculative-tokens 3"
         ),
     },
-    "nvidia/Kimi-K2.5-NVFP4__eagle": {
+    "austinpowers/Kimi-K2.5-NVFP4-DeepseekV3__eagle": {
         "max_serve_args": (
             "--draft-model-path nvidia/Kimi-K2.5-Thinking-Eagle3 "
             "--speculative-method eagle "
