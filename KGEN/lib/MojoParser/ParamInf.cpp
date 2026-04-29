@@ -732,7 +732,18 @@ LogicalResult ParamInf::inferFromRVType(ASTExprAnd<AnyValue> operand,
       auto result = setInferredValue(paramIdx, value);
       assert(!failed(result) && "should always succeed");
       (void)result;
-      return inferFromRVType(operand, argIdx, expectedType, argPogs, syntax);
+      if (failed(
+              inferFromRVType(operand, argIdx, expectedType, argPogs, syntax)))
+        return failure();
+
+      TypedAttr newValue =
+          evaluator.getReboundAttribute(evaluator.getIndexBindings()[paramIdx]);
+      if (newValue != value) {
+        result = setInferredValue(paramIdx, value);
+        assert(!failed(result) && "should always succeed");
+        (void)result;
+      }
+      return success();
     }
   }
 
