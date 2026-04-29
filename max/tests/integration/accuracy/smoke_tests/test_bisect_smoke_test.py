@@ -17,7 +17,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from smoke_tests.bisect_smoke_test import parse_results
-from smoke_tests.smoke_test import (
+from smoke_tests.eval_runner import (
     TEXT_TASK,
     VISION_TASK,
     build_eval_summary,
@@ -60,7 +60,7 @@ def test_eval_metrics_roundtrip() -> None:
 
         # Mock GPU detection to avoid calling nvidia-smi
         with patch(
-            "smoke_tests.smoke_test.get_gpu_name_and_count",
+            "smoke_tests.eval_runner.get_gpu_name_and_count",
             return_value=("Test GPU", 1),
         ):
             summary = build_eval_summary(

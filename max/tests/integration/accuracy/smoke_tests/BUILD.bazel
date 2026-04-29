@@ -17,22 +17,48 @@ modular_py_library(
     ],
 )
 
-modular_py_binary(
-    name = "smoke_test",
+modular_py_library(
+    name = "eval_runner",
     testonly = True,
-    srcs = ["smoke_test.py"],
+    srcs = ["eval_runner.py"],
     data = glob([
         "tasks/**",
     ]),
     imports = [".."],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     deps = [
-        ":inference_server_harness",
-        requirement("click"),
         requirement("requests"),
         requirement("lm-eval"),
+    ],
+)
+
+modular_py_binary(
+    name = "smoke_test",
+    testonly = True,
+    srcs = ["smoke_test.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        ":eval_runner",
+        ":inference_server_harness",
+        requirement("click"),
         "//max/python/max/entrypoints:pipelines",
         "//max/tests/integration:hf_repo_lock",
+    ],
+)
+
+modular_py_binary(
+    name = "di_smoke_test",
+    testonly = True,
+    srcs = ["di_smoke_test.py"],
+    imports = [".."],
+    tags = ["no-pydeps"],  # TODO: Fix and re-enable
+    deps = [
+        ":eval_runner",
+        ":inference_server_harness",
+        requirement("click"),
+        requirement("pyyaml"),
+        requirement("requests"),
     ],
 )
 
@@ -87,7 +113,7 @@ modular_py_test(
     }),
     deps = [
         ":bisect_smoke_test",
-        ":smoke_test",
+        ":eval_runner",
     ],
 )
 
