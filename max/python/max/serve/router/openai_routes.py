@@ -945,6 +945,7 @@ async def openai_create_chat_completion(
                 top_p=completion_request.top_p,
                 min_p=completion_request.min_p,
                 temperature=completion_request.temperature,
+                thinking_temperature=completion_request.thinking_temperature,
                 frequency_penalty=completion_request.frequency_penalty,
                 presence_penalty=completion_request.presence_penalty,
                 repetition_penalty=completion_request.repetition_penalty,
@@ -957,6 +958,7 @@ async def openai_create_chat_completion(
             ),
             sampling_params_defaults=request.app.state.pipeline_config.model.sampling_params_defaults,
         )
+
         # For chat completions, logprobs is a bool and top_logprobs is the count.
         # We pass top_logprobs (or 1 if logprobs=True but top_logprobs not set).
         logprobs_count = 0
@@ -1542,6 +1544,7 @@ async def openai_create_completion(
                     top_p=completion_request.top_p,
                     min_p=completion_request.min_p,
                     temperature=completion_request.temperature,
+                    thinking_temperature=completion_request.thinking_temperature,
                     frequency_penalty=completion_request.frequency_penalty,
                     presence_penalty=completion_request.presence_penalty,
                     repetition_penalty=completion_request.repetition_penalty,

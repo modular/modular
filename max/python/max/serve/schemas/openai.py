@@ -3485,6 +3485,10 @@ class CreateCompletionRequest(BaseModel):
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
     )
+    thinking_temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
+        None,
+        description='Temperature override applied while generating tokens inside a `<think>...</think>` block. Only takes effect when the deployment is configured with a reasoning parser; ignored otherwise.\n',
+    )
     top_k: Optional[Annotated[int, Field(ge=-1, le=255)]] = Field(
         None,
         description='Integer that controls the number of top tokens to consider.\n',
@@ -4932,6 +4936,10 @@ class CreateChatCompletionRequest(BaseModel):
         None,
         description='What sampling temperature to use, between 0 and 2. Higher values like 0.8 will make the output more random, while lower values like 0.2 will make it more focused and deterministic.\n\nWe generally recommend altering this or `top_p` but not both.\n',
         examples=[1],
+    )
+    thinking_temperature: Optional[Annotated[float, Field(ge=0.0, le=2.0)]] = Field(
+        None,
+        description='Temperature override applied while generating tokens inside a `<think>...</think>` block. Only takes effect when the deployment is configured with a reasoning parser; ignored otherwise.\n',
     )
     top_k: Optional[Annotated[int, Field(ge=-1, le=255)]] = Field(
         None,

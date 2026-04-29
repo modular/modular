@@ -94,6 +94,7 @@ class FakeContext:
             max(total_length, 1), processed_length
         )
         self.cached_prefix_length: int | None = None
+        self.in_reasoning_phase: bool = False
 
     @property
     def request_id(self) -> RequestID:

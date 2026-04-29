@@ -159,6 +159,7 @@ class FakeRuntimeConfig(ConfigFileModel):
     device_graph_capture: bool = False
     max_batch_size: int = 999
     pipeline_role: str = "prefill_and_decode"
+    reasoning_parser: str | None = None
 
 
 class FakeSpeculativeConfig(ConfigFileModel):

@@ -757,6 +757,12 @@ class TextGenerationContext(BaseContext, Protocol):
     re-emit.
     """
 
+    in_reasoning_phase: bool
+    """Whether the latest committed tokens are inside a ``<think>...</think>``
+    block. Toggled host-side in the spec-decode commit step when a reasoning
+    parser is configured. Consumed by thinking-mode temperature scaling and
+    relaxed acceptance to gate per-row behavior."""
+
 
 @dataclass
 class SpecDecodingState:

@@ -50,6 +50,10 @@ class SamplingParamsInput:
     temperature: float | None = None
     """The temperature for controlling output randomness. Defaults to ``None`` (use class default)."""
 
+    thinking_temperature: float | None = None
+    """Temperature override for tokens inside a ``<think>...</think>`` block.
+    Requires a configured reasoning parser to resolve boundary token IDs."""
+
     frequency_penalty: float | None = None
     """The penalty applied proportionally to token frequency in the generated text. Defaults to ``None`` (use class default)."""
 
@@ -191,6 +195,11 @@ class SamplingParams:
     temperature: float = 1
     """Controls the randomness of the model's output; higher values produce more diverse responses.
     For greedy sampling, set to temperature to 0."""
+
+    thinking_temperature: float | None = None
+    """Temperature override for tokens inside a ``<think>...</think>`` block.
+    ``None`` falls back to ``temperature``. Requires a configured reasoning
+    parser; ignored otherwise."""
 
     frequency_penalty: float = 0.0
     """The frequency penalty to apply to the model's output. A positive value will penalize new tokens

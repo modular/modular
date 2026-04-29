@@ -91,6 +91,11 @@ class TextContext:
     _draft_offset: int = field(default=0)
     _spec_decoding_state: SpecDecodingState | None = field(default=None)
 
+    in_reasoning_phase: bool = field(default=False)
+    """Whether the latest committed tokens are inside a ``<think>...</think>``
+    block. Toggled host-side after each commit when a reasoning parser is
+    configured."""
+
     target_endpoint: str | None = field(default=None)
 
     external_block_metadata: Any = field(default=None)

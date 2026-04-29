@@ -203,6 +203,41 @@ def _get_draft_kv_blocks(
     return [per_dev.kv_blocks for per_dev in draft_kv_inputs.inputs]
 
 
+def _resolve_thinking_token_ids(
+    tokenizer: PipelineTokenizer[Any, Any, Any],
+) -> tuple[int, int]:
+    """Resolve ``<think>``/``</think>`` ids; returns ``(-1, -1)`` on failure."""
+    delegate = getattr(tokenizer, "delegate", None)
+    if delegate is None:
+        logger.warning(
+            "Reasoning parser is configured but tokenizer has no "
+            "'delegate'; thinking-mode temperature scaling disabled."
+        )
+        return (-1, -1)
+
+    def _encode_one(text: str) -> int:
+        try:
+            ids = delegate.encode(text, add_special_tokens=False)
+        except TypeError:
+            # TikToken delegates omit add_special_tokens.
+            ids = delegate.encode(text)
+        if len(ids) != 1:
+            raise ValueError(
+                f"Token {text!r} did not map to a single id (got {ids!r})"
+            )
+        return int(ids[0])
+
+    try:
+        return (_encode_one("<think>"), _encode_one("</think>"))
+    except Exception as exc:
+        logger.warning(
+            "Failed to resolve <think>/</think> token ids; "
+            "thinking-mode temperature scaling disabled (%s)",
+            exc,
+        )
+        return (-1, -1)
+
+
 @dataclass
 class SpecDecodeState:
     """Pipeline for unified EAGLE: single fused graph handles target + draft.
@@ -435,6 +470,10 @@ class AsyncBatch(Generic[TextGenerationContextType]):
     structured_output: StructuredOutputHelper | None = None
     """Helper for structured output operations (filling bitmasks)."""
 
+    think_start_token_id: int | None = None
+    think_end_token_id: int | None = None
+    """``None`` disables ``in_reasoning_phase`` tracking on commit."""
+
     @traced
     def sync_and_process_outputs(
         self,
@@ -535,6 +574,8 @@ class AsyncBatch(Generic[TextGenerationContextType]):
                 next_tokens=generated_tokens_np,
                 context_batch=self.inputs.flat_batch,
                 max_seq_len=max_seq_len,
+                think_start_token_id=self.think_start_token_id,
+                think_end_token_id=self.think_end_token_id,
             )
 
             batch_size = len(self.inputs.flat_batch)
@@ -1215,6 +1256,28 @@ class OverlapTextGenerationPipeline(
 
         self._eos_token_id = get_eos_tokens(huggingface_config, eos_token_id)
 
+        # -1 sentinel disables in_reasoning_phase tracking.
+        self._think_start_token_id: int = -1
+        self._think_end_token_id: int = -1
+        if pipeline_config.runtime.reasoning_parser is not None:
+            self._think_start_token_id, self._think_end_token_id = (
+                _resolve_thinking_token_ids(tokenizer)
+            )
+        if self._think_start_token_id >= 0 and self._think_end_token_id >= 0:
+            logger.info(
+                "[thinking-temp] enabled: <think>=%d </think>=%d",
+                self._think_start_token_id,
+                self._think_end_token_id,
+            )
+        else:
+            logger.info(
+                "[thinking-temp] disabled (reasoning_parser=%r, "
+                "think_start=%d, think_end=%d)",
+                pipeline_config.runtime.reasoning_parser,
+                self._think_start_token_id,
+                self._think_end_token_id,
+            )
+
         # Initialize structured output helper for constrained decoding.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
             self.tokenizer,
@@ -1611,8 +1674,30 @@ class OverlapTextGenerationPipeline(
         batch_size = len(context_batch)
         device0 = self._devices[0]
 
+        # Implicit reasoning pre-fill: Kimi/MiniMax chat templates start
+        # the assistant turn already inside <think>, so the model never
+        # emits the open token. Seed in_reasoning_phase=True at first
+        # decode step so the </think> toggle has something to flip.
+        if self._think_start_token_id >= 0 and self._think_end_token_id >= 0:
+            for ctx in context_batch:
+                if (
+                    ctx.tokens.generated_length == 0
+                    and not ctx.in_reasoning_phase
+                ):
+                    ctx.in_reasoning_phase = True
+
+        # Pick thinking_temperature for rows whose host-side
+        # ``in_reasoning_phase`` is True.
         temperature_np = np.fromiter(
-            (ctx.sampling_params.temperature for ctx in context_batch),
+            (
+                ctx.sampling_params.thinking_temperature
+                if (
+                    ctx.in_reasoning_phase
+                    and ctx.sampling_params.thinking_temperature is not None
+                )
+                else ctx.sampling_params.temperature
+                for ctx in context_batch
+            ),
             dtype=np.float32,
             count=batch_size,
         )
@@ -2055,6 +2140,16 @@ class OverlapTextGenerationPipeline(
                     num_accepted_draft_tokens_device=num_accepted_draft_tokens_device,
                     num_accepted_draft_tokens_host=num_accepted_draft_tokens_host,
                     max_seq_len=self._pipeline_model.max_seq_len,
+                ),
+                think_start_token_id=(
+                    self._think_start_token_id
+                    if self._think_start_token_id >= 0
+                    else None
+                ),
+                think_end_token_id=(
+                    self._think_end_token_id
+                    if self._think_end_token_id >= 0
+                    else None
                 ),
             )
 
