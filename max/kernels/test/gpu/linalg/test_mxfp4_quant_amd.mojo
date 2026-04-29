@@ -410,6 +410,64 @@ def test_quantize_negative(ctx: DeviceContext) raises:
     )
 
 
+def test_quantize_even_mode_boundary(ctx: DeviceContext) raises:
+    """Probe a block where even-mode scale and ceil(max/6) diverge."""
+    comptime M = 1
+    comptime K = 32
+    comptime packed_K = K // 2
+
+    print("  even-mode boundary test M=", M, " K=", K)
+
+    var input_dev = ctx.enqueue_create_buffer[DType.bfloat16](K)
+    with input_dev.map_to_host() as h:
+        h[0] = Float64(1.6).cast[DType.bfloat16]()
+        for i in range(1, K):
+            h[i] = Float64(0.4).cast[DType.bfloat16]()
+
+    var output_dev = ctx.enqueue_create_buffer[DType.uint8](packed_K)
+    var scales_dev = ctx.enqueue_create_buffer[DType.float8_e8m0fnu](1)
+    var input_tt = TileTensor(input_dev, row_major((Idx[M](), Idx[K]())))
+    var output_tt = TileTensor(
+        output_dev, row_major((Idx[M](), Idx[packed_K]()))
+    )
+    var scales_tt = TileTensor(scales_dev, row_major((Idx[M](), Idx[1]())))
+    quantize_mxfp4_amd(ctx, output_tt, scales_tt, input_tt)
+
+    var output_host = ctx.enqueue_create_host_buffer[DType.uint8](packed_K)
+    var scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](1)
+    ctx.enqueue_copy(output_host, output_dev)
+    ctx.enqueue_copy(scales_host, scales_dev)
+    ctx.synchronize()
+
+    var scale_bits = Int(rebind[UInt8](scales_host[0]))
+    var scale_f32 = _e8m0_to_float32(UInt8(scale_bits))
+    var max_dequanted = _dequant_element(output_host[0], True, scale_f32)
+    var small_dequanted = _dequant_element(output_host[0], False, scale_f32)
+    print(
+        "    scale_e8m0=",
+        scale_bits,
+        " scale=",
+        scale_f32,
+        " max_dequant=",
+        max_dequanted,
+        " small_dequant=",
+        small_dequanted,
+    )
+    assert_true(
+        scale_bits == 125,
+        "expected even-mode e8m0=125 (scale=0.25), got " + String(scale_bits),
+    )
+    assert_true(
+        abs(max_dequanted - 1.5) < 0.001,
+        "expected max value to dequantize to 1.5, got " + String(max_dequanted),
+    )
+    assert_true(
+        abs(small_dequanted - 0.375) < 0.001,
+        "expected small value to dequantize to 0.375, got "
+        + String(small_dequanted),
+    )
+
+
 def main() raises:
     seed(42)
     var ctx = DeviceContext()
@@ -434,6 +492,9 @@ def main() raises:
 
     print("test_quantize_negative:")
     test_quantize_negative(ctx)
+
+    print("test_quantize_even_mode_boundary:")
+    test_quantize_even_mode_boundary(ctx)
 
     print("test_quantize_min_k (K=32):")
     test_quantize_roundtrip[1, 32](ctx)

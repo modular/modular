@@ -13,6 +13,7 @@
 from std.sys._assembly import inlined_assembly
 from std.sys import is_nvidia_gpu, bit_width_of, llvm_intrinsic
 from std.sys.info import _is_sm_100x_or_newer, _cdna_4_or_newer, align_of
+from std.utils.numerics import FPUtils
 from std.utils.index import IndexList
 from std.memory import bitcast
 from layout import CoordLike, Idx, Layout, LayoutTensor, TileTensor
@@ -32,6 +33,9 @@ comptime NVFP4_SF_DTYPE = DType.float8_e4m3fn
 comptime MXFP4_SF_DTYPE = DType.float8_e8m0fnu
 comptime MXFP8_SF_DTYPE = DType.float8_e8m0fnu
 
+comptime FP4_E2M1_MANTISSA_WIDTH = 1
+comptime FP4_E2M1_MAX_EXPONENT = 2
+
 comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
     0.0,
     0.5,
@@ -50,6 +54,45 @@ comptime E2M1_TO_FLOAT32 = SIMD[DType.float32, 16](
     -4.0,
     -6.0,
 )
+
+
+@always_inline
+def compute_mxfp4_even_scale(max_val: Float32) -> Scalar[DType.float8_e8m0fnu]:
+    """Computes the OCP MXFP4 E8M0 scale using even-mode rounding.
+
+    Even-mode rounding rounds the block maximum before deriving the scale
+    exponent. This differs from ceil(max / 6) and preserves more precision for
+    smaller values in the same 32-element block.
+    """
+    comptime FP32_MANTISSA_WIDTH = FPUtils[DType.float32].mantissa_width()
+    # MXFP4 stores only a power-of-two scale. Pick the scale so the largest
+    # value in the block still fits in FP4 E2M1 after rounding, where the
+    # largest finite FP4 E2M1 value is 6.0 = 1.5 * 2^2.
+    #
+    # The add below rounds max_val at the FP4 mantissa boundary. If that
+    # rounded value crosses into the next power-of-two bucket, its Float32
+    # exponent increases. Subtracting 2 (the exponent of FP4's max value)
+    # turns that rounded-max exponent into the E8M0 scale exponent.
+    #
+    # Conceptually, for a block like [1.6, 0.4, ...], even-mode chooses
+    # scale 0.25: [1.6, 0.4] / 0.25 = [6.4, 1.6], which rounds to FP4
+    # [6.0, 1.5] and dequantizes to [1.5, 0.375]. Ceil(max / 6) would choose
+    # scale 0.5: [1.6, 0.4] / 0.5 = [3.2, 0.8], which rounds to FP4
+    # [3.0, 1.0] and dequantizes to [1.5, 0.5].
+    comptime ROUND_TO_FP4_E2M1_MANTISSA = 1 << (
+        FP32_MANTISSA_WIDTH - FP4_E2M1_MANTISSA_WIDTH - 1
+    )
+    var max_bits = FPUtils[DType.float32].bitcast_to_uint(max_val)
+    var rounded_max_bits = max_bits + type_of(max_bits)(
+        ROUND_TO_FP4_E2M1_MANTISSA
+    )
+    var rounded_max = bitcast[DType.float32](rounded_max_bits)
+    var scale_exp = (
+        FPUtils[DType.float32].get_exponent_biased(rounded_max)
+        - FP4_E2M1_MAX_EXPONENT
+    )
+    scale_exp = max(0, min(scale_exp, 254))
+    return bitcast[DType.float8_e8m0fnu](UInt8(scale_exp))
 
 
 def cast_uint_to_fp4e2m1[

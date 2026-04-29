@@ -27,6 +27,7 @@ from linalg.fp4_utils import (
     SF_MN_GROUP_SIZE,
     cast_fp32_to_fp4e2m1,
     cast_float_to_fp4e2m1_amd,
+    compute_mxfp4_even_scale,
     set_scale_factor,
 )
 
@@ -1341,9 +1342,11 @@ struct MXFP4TokenFormat[
                 thread_max
             )
 
-            # get the scale factor for these 32 elements by dividing it by the maximum value of fp4-e2m1
-            var scale_factor = group_max * recip(Float32(6.0))
-            var fp8_scale_factor = scale_factor.cast[Self.scales_dtype]()
+            # Use MXFP4 even-mode rounding for the E8M0 scale.
+            var fp8_scale_factor = compute_mxfp4_even_scale(group_max).cast[
+                Self.scales_dtype
+            ]()
+            var scale_f32 = fp8_scale_factor.cast[DType.float32]()
 
             # write back the scale factor
             comptime scale_bytes = size_of[Self.scales_dtype]()
@@ -1357,7 +1360,7 @@ struct MXFP4TokenFormat[
             var output_vector = bitcast[Self.fp4_dtype, byte_width](
                 cast_float_to_fp4e2m1_amd(
                     loaded_vec,
-                    fp8_scale_factor.cast[DType.float32](),
+                    scale_f32,
                 )
             )
             buf_p.store[alignment=byte_width](
@@ -4322,9 +4325,11 @@ def fused_silu_mxfp4_kernel[
                 thread_max
             )
 
-            # get the scale factor for these 32 elements by dividing it by the maximum value of fp4-e2m1
-            var scale_factor = group_max * recip(Float32(6.0))
-            var fp8_scale_factor = scale_factor.cast[scales_dtype]()
+            # Use MXFP4 even-mode rounding for the E8M0 scale.
+            var fp8_scale_factor = compute_mxfp4_even_scale(group_max).cast[
+                scales_dtype
+            ]()
+            var scale_f32 = fp8_scale_factor.cast[DType.float32]()
 
             # The first thread in each group stores the scale factor.
             if i % NUM_THREADS_PER_SF == 0:
@@ -4333,8 +4338,6 @@ def fused_silu_mxfp4_kernel[
                 )
 
             var output_vector = bitcast[fp4_dtype, byte_width](
-                cast_float_to_fp4e2m1_amd(
-                    output_val, fp8_scale_factor.cast[DType.float32]()
-                )
+                cast_float_to_fp4e2m1_amd(output_val, scale_f32)
             )
             output_tensor.store((Idx(m), Idx(k // 2)), output_vector)

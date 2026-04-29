@@ -42,6 +42,7 @@ from .fp4_utils import (
     cast_float_to_fp4e2m1_amd,
     cast_fp32_to_fp4e2m1,
     cast_f4e2m1x2_to_fp16x2,
+    compute_mxfp4_even_scale,
     SF_ATOM_M,
     SF_ATOM_K,
     SF_MN_GROUP_SIZE,
@@ -2161,17 +2162,9 @@ def _quantize_mxfp4_amd_kernel[
 
             var group_max = thread_max.cast[DType.float32]()
 
-            # 4. Derive E8M0 scale: round (max / 6.0) up to next power of two.
-            var raw_scale = group_max * recip(Float32(6.0))
-            var e8m0_scale = raw_scale.cast[DType.float8_e8m0fnu]()
+            # 4. Derive E8M0 scale with MXFP4 even-mode rounding.
+            var e8m0_scale = compute_mxfp4_even_scale(group_max)
             var scale_f32 = e8m0_scale.cast[DType.float32]()
-
-            # When all inputs are zero, avoid dividing by zero in the
-            # hardware intrinsic by using scale=1.0 (produces zero nibbles).
-            # Store e8m0=0 so dequant multiplies by 0, returning zeros.
-            if group_max == 0:
-                scale_f32 = Float32(1.0)
-                e8m0_scale = Scalar[DType.float8_e8m0fnu](0)
 
             # 5. Pack 8 BF16 -> 8 FP4 nibbles using AMD hardware intrinsic.
             var packed = cast_float_to_fp4e2m1_amd(
@@ -2304,8 +2297,8 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     var thread_max = abs(loaded_vec).reduce_max().cast[DType.float32]()
     var group_max = warp.lane_group_max[num_lanes=threads_per_group](thread_max)
 
-    var scale_factor = group_max * recip(Float32(6.0))
-    var fp8_scale_factor = scale_factor.cast[DType.float8_e8m0fnu]()
+    var fp8_scale_factor = compute_mxfp4_even_scale(group_max)
+    var scale_f32 = fp8_scale_factor.cast[DType.float32]()
 
     if thread_idx.x % threads_per_group == 0:
         output_scales_ptr[n // MXFP4_SF_VECTOR_SIZE] = fp8_scale_factor
@@ -2313,9 +2306,7 @@ def quantize_dynamic_block_scaled_mxfp4_kernel[
     output_ptr.store[alignment=4](
         n // 2,
         bitcast[DType.uint8, 4](
-            cast_float_to_fp4e2m1_amd(
-                loaded_vec, fp8_scale_factor.cast[DType.float32]()
-            )
+            cast_float_to_fp4e2m1_amd(loaded_vec, scale_f32)
         ),
     )
 
