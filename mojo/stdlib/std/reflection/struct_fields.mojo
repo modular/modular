@@ -10,116 +10,42 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""Provides struct field reflection and introspection utilities.
+"""Deprecated free-function reflection API.
 
-This module provides compile-time introspection of struct fields:
+The free functions and `ReflectedType[T]` wrapper in this module are
+**deprecated** in favor of the unified `reflect[T]() -> Reflected[T]` API.
+New code should use `reflect[T]()` from `std.reflection` directly:
 
-- `struct_field_count[T]()` - returns the number of fields
-- `struct_field_names[T]()` - returns an `InlineArray[StaticString, N]` of field names
-- `struct_field_types[T]()` - returns a variadic of field types
+| Deprecated                                | Replacement                              |
+|-------------------------------------------|------------------------------------------|
+| `struct_field_count[T]()`                 | `reflect[T]().field_count()`             |
+| `struct_field_names[T]()`                 | `reflect[T]().field_names()`             |
+| `struct_field_types[T]()`                 | `reflect[T]().field_types()`             |
+| `struct_field_index_by_name[T, name]()`   | `reflect[T]().field_index[name]()`       |
+| `struct_field_type_by_name[T, name]()`    | `reflect[T]().field_type[name]()`        |
+| `struct_field_ref[idx](s)`                | `reflect[T]().field_ref[idx](s)`         |
+| `is_struct_type[T]()`                     | `reflect[T]().is_struct()`               |
+| `offset_of[T, name=...]()`                | `reflect[T]().field_offset[name=...]()` |
+| `offset_of[T, index=...]()`               | `reflect[T]().field_offset[index=...]()`|
+| `ReflectedType[T]`                        | `Reflected[T]`                           |
 
-These APIs work with both concrete types and generic type parameters, enabling
-generic serialization, comparison, and other reflection-based utilities.
-
-For field lookup by name (concrete types only):
-
-- `struct_field_index_by_name[T, name]()` - returns the index of a field by name
-- `struct_field_type_by_name[T, name]()` - returns the type of a field by name
-
-Example iterating over all fields (works with generics):
-
-```mojo
-from std.reflection import struct_field_names, struct_field_count
-
-struct Point:
-    var x: Int
-    var y: Float64
-
-def print_fields[T: AnyType]():
-    comptime names = struct_field_names[T]()
-    comptime for i in range(struct_field_count[T]()):
-        print(names[i])
-
-def main():
-    print_fields[Point]()  # Works with any struct!
-```
-
-Example looking up a field by name:
-
-```mojo
-from std.reflection import (
-    struct_field_index_by_name,
-    struct_field_type_by_name,
-)
-
-struct Point:
-    var x: Int
-    var y: Float64
-
-def main():
-    comptime idx = struct_field_index_by_name[Point, "x"]()  # 0
-    comptime field_type = struct_field_type_by_name[Point, "y"]()
-    var value: field_type.T = 3.14  # field_type.T is Float64
-```
-
-For accessing struct field values by index (returns a reference, not a copy):
-
-- `struct_field_ref[idx](ref s)` - returns a reference to the field at index
-
-`struct_field_ref` enables reflection-based utilities to work with
-non-copyable types by returning references instead of copies. It works with
-both literal indices and parametric indices (such as loop variables in
-`comptime for` loops):
-
-```mojo
-from std.reflection import struct_field_ref
-
-@fieldwise_init
-struct Container:
-    var id: Int
-    var name: String
-
-def inspect(mut c: Container):
-    # Get references to fields without copying
-    ref id_ref = struct_field_ref[0](c)
-    ref name_ref = struct_field_ref[1](c)
-
-    # Mutation through reference
-    struct_field_ref[0](c) = 42
-
-def main():
-    var c = Container(id=1, name="test")
-    inspect(c)
-```
-
-For struct field byte offsets (useful for low-level memory operations):
-
-- `offset_of[T, name="field_name"]()` - get offset by field name
-- `offset_of[T, index=0]()` - get offset by field index
-
-Example:
-
-```mojo
-from std.reflection import offset_of
-
-struct Point:
-    var x: Int      # offset 0
-    var y: Float64  # offset 8 (aligned to 8 bytes)
-
-def main():
-    comptime x_off = offset_of[Point, name="x"]()  # 0
-    comptime y_off = offset_of[Point, index=1]()   # 8
-```
+Each wrapper here delegates to the new API; they remain to give external
+callers time to migrate and will be removed in a future release.
 """
 
 from std.sys.info import _current_target, _TargetType
 
+from .reflect import Reflected, reflect
 
+
+@deprecated("Use `reflect[T]().field_index[name]()` instead.")
 def struct_field_index_by_name[
     T: AnyType,
     name: StringLiteral,
 ]() -> Int:
-    """Returns the index of the field with the given name in struct `T`.
+    """Deprecated: use `reflect[T]().field_index[name]()` instead.
+
+    Returns the index of the field with the given name in struct `T`.
 
     This function provides compile-time lookup of a struct field's index by name.
     It produces a compile error if the field name does not exist in the struct.
@@ -147,8 +73,11 @@ def struct_field_index_by_name[
     )
 
 
+@deprecated("Use `Reflected[T]` from `std.reflection` instead.")
 struct ReflectedType[T: AnyType](TrivialRegisterPassable):
-    """Wrapper struct for compile-time type values from reflection.
+    """Deprecated: use `Reflected[T]` from `std.reflection` instead.
+
+    Wrapper struct for compile-time type values from reflection.
 
     This struct wraps a `!kgen.non_struct_type` value as a type parameter, allowing
     type values to be returned from functions and passed around at compile time.
@@ -178,10 +107,14 @@ struct ReflectedType[T: AnyType](TrivialRegisterPassable):
         pass
 
 
+@deprecated(
+    "Use `reflect[StructT]().field_type[name]()` instead. The returned"
+    " `Reflected[FieldT]` exposes the field type via its `T` parameter."
+)
 def struct_field_type_by_name[
     StructT: AnyType,
     name: StringLiteral,
-]() -> ReflectedType[
+]() -> Reflected[
     __mlir_attr[
         `#kgen.struct_field_type_by_name<`,
         StructT,
@@ -191,7 +124,9 @@ def struct_field_type_by_name[
         AnyType,
     ]
 ]:
-    """Returns the type of the field with the given name in struct `StructT`.
+    """Deprecated: use `reflect[StructT]().field_type[name]()` instead.
+
+    Returns the type of the field with the given name in struct `StructT`.
 
     This function provides compile-time lookup of a struct field's type by name.
     It produces a compile error if the field name does not exist in the struct.
@@ -252,9 +187,12 @@ def struct_field_type_by_name[
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated("Use `reflect[T]().field_count()` instead.")
 @always_inline("builtin")
 def struct_field_count[T: AnyType]() -> Int:
-    """Returns the number of fields in struct `T`.
+    """Deprecated: use `reflect[T]().field_count()` instead.
+
+    Returns the number of fields in struct `T`.
 
     This function works with both concrete types and generic type parameters.
 
@@ -287,9 +225,10 @@ def struct_field_count[T: AnyType]() -> Int:
             print(count_fields[MyStruct]())  # Prints field count
         ```
     """
-    return struct_field_types[T]().size
+    return reflect[T]().field_count()
 
 
+@deprecated("Use `reflect[T]().field_types()` instead.")
 comptime struct_field_types[
     T: AnyType,
 ] = TypeList[
@@ -297,7 +236,9 @@ comptime struct_field_types[
         `#kgen.struct_field_types<`, T, `> : !kgen.param_list<`, AnyType, `>`
     ]
 ]
-"""Returns the types of all fields in struct `T` as a TypeList.
+"""Deprecated: use `reflect[T]().field_types()` instead.
+
+Returns the types of all fields in struct `T` as a TypeList.
 
 This function works with both concrete types and generic type parameters.
 
@@ -337,10 +278,13 @@ comptime _struct_field_names_raw[
 ]
 
 
+@deprecated("Use `reflect[T]().field_names()` instead.")
 def struct_field_names[
     T: AnyType,
-]() -> InlineArray[StaticString, struct_field_count[T]()]:
-    """Returns the names of all fields in struct `T` as an InlineArray.
+]() -> InlineArray[StaticString, reflect[T]().field_count()]:
+    """Deprecated: use `reflect[T]().field_names()` instead.
+
+    Returns the names of all fields in struct `T` as an InlineArray.
 
     This function works with both concrete types and generic type parameters.
 
@@ -375,7 +319,7 @@ def struct_field_names[
             print_field_names[MyStruct]()  # Works with any struct!
         ```
     """
-    comptime count = struct_field_count[T]()
+    comptime count = reflect[T]().field_count()
     comptime raw = _struct_field_names_raw[T]()
 
     # Safety: uninitialized=True is safe here because the comptime for loop
@@ -388,8 +332,11 @@ def struct_field_names[
     return result^
 
 
+@deprecated("Use `reflect[T]().is_struct()` instead.")
 def is_struct_type[T: AnyType]() -> Bool:
-    """Returns `True` if `T` is a Mojo struct type, `False` otherwise.
+    """Deprecated: use `reflect[T]().is_struct()` instead.
+
+    Returns `True` if `T` is a Mojo struct type, `False` otherwise.
 
     This function distinguishes between Mojo struct types and MLIR primitive
     types (such as `__mlir_type.index` or `__mlir_type.i64`). This is useful
@@ -435,11 +382,7 @@ def is_struct_type[T: AnyType]() -> Bool:
                 print("Non-struct type:", get_type_name[T]())
         ```
     """
-    return __mlir_attr[
-        `#kgen.is_struct_type<`,
-        T,
-        `> : i1`,
-    ]
+    return reflect[T]().is_struct()
 
 
 # ===----------------------------------------------------------------------=== #
@@ -447,11 +390,14 @@ def is_struct_type[T: AnyType]() -> Bool:
 # ===----------------------------------------------------------------------=== #
 
 
+@deprecated("Use `reflect[T]().field_ref[idx](s)` instead.")
 @always_inline("nodebug")
 def struct_field_ref[
     idx: Int, T: AnyType
-](ref s: T) -> ref[s] struct_field_types[T]()[idx]:
-    """Returns a reference to the struct field at the given index.
+](ref s: T) -> ref[s] reflect[T]().field_types()[idx]:
+    """Deprecated: use `reflect[T]().field_ref[idx](s)` instead.
+
+    Returns a reference to the struct field at the given index.
 
     This function provides reference-based access to struct fields by index,
     enabling reflection-based utilities to work with non-copyable types by
@@ -495,23 +441,7 @@ def struct_field_ref[
             inspect(c)
         ```
     """
-    # Emit `lit.ref.struct.ger` with index-access form. The op accepts
-    # StructType, ParamType, and ClosureType element types, so this works for
-    # concrete structs, generic type parameters, and closures alike. Once `idx`
-    # and the struct type are both concrete, the canonicalizer rewrites this to
-    # field-name access.
-    return __get_litref_as_mvalue(
-        __mlir_op.`lit.ref.struct.ger`[
-            index=idx._int_mlir_index(),
-            _type=__mlir_type[
-                `!lit.ref<`,
-                struct_field_types[T]()[idx],
-                `, `,
-                origin_of(s)._mlir_origin,
-                `>`,
-            ],
-        ](__get_mvalue_as_litref(s))
-    )
+    return reflect[T]().field_ref[idx](s)
 
 
 # ===----------------------------------------------------------------------=== #
@@ -557,10 +487,13 @@ def _struct_field_offset_by_name[
     )
 
 
+@deprecated("Use `reflect[T]().field_offset[name=name]()` instead.")
 def offset_of[
     T: AnyType, *, name: StringLiteral, target: _TargetType = _current_target()
 ]() -> Int:
-    """Returns the byte offset of a field within a struct by name.
+    """Deprecated: use `reflect[T]().field_offset[name=name]()` instead.
+
+    Returns the byte offset of a field within a struct by name.
 
     This function computes the byte offset from the start of the struct to the
     named field, accounting for alignment padding between fields. The offset
@@ -598,10 +531,13 @@ def offset_of[
     return _struct_field_offset_by_name[T, name, target]()
 
 
+@deprecated("Use `reflect[T]().field_offset[index=index]()` instead.")
 def offset_of[
     T: AnyType, *, index: Int, target: _TargetType = _current_target()
 ]() -> Int:
-    """Returns the byte offset of a field within a struct by index.
+    """Deprecated: use `reflect[T]().field_offset[index=index]()` instead.
+
+    Returns the byte offset of a field within a struct by index.
 
     This function computes the byte offset from the start of the struct to the
     specified field, accounting for alignment padding between fields. The offset

@@ -75,13 +75,7 @@ print(repr(p)) # Point: x=1.5, y=2.7
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.memory import Span
-from std.reflection import (
-    struct_field_count,
-    struct_field_names,
-    struct_field_ref,
-    struct_field_types,
-    get_type_name,
-)
+from std.reflection import get_type_name, reflect
 from std.reflection.type_info import _unqualified_type_name
 
 from .repr import repr
@@ -281,8 +275,9 @@ def _reflection_write_to[
     //,
     f: def[FieldType: Writable](field: FieldType, mut writer: W) thin,
 ](this: T, mut writer: W,):
-    comptime names = struct_field_names[T]()
-    comptime types = struct_field_types[T]()
+    comptime r = reflect[T]()
+    comptime names = r.field_names()
+    comptime types = r.field_types()
     comptime type_name = _unqualified_type_name[T]()
     writer.write_string(type_name)
     writer.write_string("(")
@@ -301,7 +296,7 @@ def _reflection_write_to[
         writer.write_string(materialize[names[i]]())
         writer.write_string("=")
 
-        ref field = trait_downcast[Writable](struct_field_ref[i](this))
+        ref field = trait_downcast[Writable](r.field_ref[i](this))
         f(field, writer)
 
     writer.write_string(")")

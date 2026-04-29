@@ -11,17 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import (
-    struct_field_count,
-    struct_field_ref,
-    struct_field_types,
-)
+from std.reflection import reflect
 
 
 trait MakeCopyable:
     def copy_to(self, mut other: Self):
-        comptime field_count = struct_field_count[Self]()
-        comptime field_types = struct_field_types[Self]()
+        comptime r = reflect[Self]()
+        comptime field_count = r.field_count()
+        comptime field_types = r.field_types()
 
         comptime for idx in range(field_count):
             comptime field_type = field_types[idx]
@@ -32,10 +29,10 @@ trait MakeCopyable:
 
             # Perform copy
             ref p_value = trait_downcast[ImplicitlyCopyable](
-                struct_field_ref[idx](self)
+                r.field_ref[idx](self)
             )
             trait_downcast[ImplicitlyCopyable](
-                struct_field_ref[idx](other)
+                r.field_ref[idx](other)
             ) = p_value
 
 
@@ -51,8 +48,9 @@ struct MultiType(MakeCopyable, Writable):
 
 
 def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
-    comptime field_count = struct_field_count[T]()
-    comptime field_types = struct_field_types[T]()
+    comptime r = reflect[T]()
+    comptime field_count = r.field_count()
+    comptime field_types = r.field_types()
 
     comptime for idx in range(field_count):
         # Guard: field type must be equatable
@@ -62,8 +60,8 @@ def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
             continue
 
         # Fetch values
-        ref lhs_value = struct_field_ref[idx](lhs)
-        ref rhs_value = struct_field_ref[idx](rhs)
+        ref lhs_value = r.field_ref[idx](lhs)
+        ref rhs_value = r.field_ref[idx](rhs)
 
         # Early exit `False` when inequality found
         if trait_downcast[Equatable](lhs_value) != trait_downcast[Equatable](

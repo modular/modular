@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.rebind import downcast
-from std.reflection import struct_field_types
+from std.reflection import reflect
 from std.testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 
@@ -110,13 +110,14 @@ struct TestStructForRebindDowncast:
 def test_rebind_downcasted_struct_field_type() raises:
     """Test that rebind accepts downcasted struct field types.
 
-    When using struct_field_types with downcast and then rebinding back to the
-    original type, the compiler should recognize that the downcasted type is
-    semantically equivalent to the original for rebind purposes.
+    When using `reflect[T]().field_types()` with downcast and then rebinding
+    back to the original type, the compiler should recognize that the
+    downcasted type is semantically equivalent to the original for rebind
+    purposes.
     """
     comptime T = TestStructForRebindDowncast
     comptime TField = downcast[
-        struct_field_types[T]()[0], Defaultable & Movable
+        reflect[T]().field_types()[0], Defaultable & Movable
     ]
 
     # Test rebind_var with downcasted type

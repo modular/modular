@@ -154,6 +154,38 @@ This version is still a work in progress.
 
 ## Library changes
 
+- Consolidated the struct reflection APIs in `std.reflection` behind a unified
+  entry point `reflect[T]()` returning a `Reflected[T]` handle. Methods on the
+  handle replace the family of `struct_field_*` free functions and drop the
+  `struct_` prefix (only structs have fields):
+
+  ```mojo
+  from std.reflection import reflect
+
+  struct Point:
+      var x: Int
+      var y: Float64
+
+  def main():
+      comptime r = reflect[Point]()
+      print(r.field_count())                    # 2
+      print(r.field_names()[0])                 # x
+      comptime y_type = r.field_type["y"]()     # Reflected[Float64]
+      var v: y_type.T = 3.14
+  ```
+
+  Methods on `Reflected[T]`: `is_struct`, `field_count`, `field_names`,
+  `field_types`, `field_index[name]`, `field_type[name]`,
+  `field_offset[name=]/[index=]`, and `field_ref[idx](s)`. The
+  `field_type[name]()` method returns a `Reflected[FieldT]`, so reflection is
+  fully composable.
+
+  The legacy free functions (`struct_field_count`, `struct_field_names`,
+  `struct_field_types`, `struct_field_index_by_name`,
+  `struct_field_type_by_name`, `struct_field_ref`, `is_struct_type`,
+  `offset_of`) and the `ReflectedType[T]` wrapper are now `@deprecated` and
+  delegate to the new API. They will be removed in a future release.
+
 - Added `struct_field_ref[idx, T](ref s)` to `std.reflection` for accessing
   struct fields by index without copying. The function returns a reference
   with the same mutability as `s` and works with both concrete and generic

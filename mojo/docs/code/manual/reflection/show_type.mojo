@@ -11,12 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import (
-    struct_field_count,
-    struct_field_names,
-    get_type_name,
-    struct_field_types,
-)
+from std.reflection import get_type_name, reflect
 
 
 def show_type[T: AnyType]():
@@ -46,10 +41,11 @@ def show_type[T: AnyType]():
             # └── var y: Float64
     ```
     """
+    comptime r = reflect[T]()
     comptime type_name = get_type_name[T]()
-    comptime field_count = struct_field_count[T]()
-    comptime field_names = struct_field_names[T]()
-    comptime field_types = struct_field_types[T]()
+    comptime field_count = r.field_count()
+    comptime field_names = r.field_names()
+    comptime field_types = r.field_types()
     print("struct", type_name)
 
     comptime for idx in range(field_count):

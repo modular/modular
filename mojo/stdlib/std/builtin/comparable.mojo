@@ -14,11 +14,7 @@
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.builtin.range import _ZeroStartingRange
-from std.reflection import (
-    struct_field_names,
-    struct_field_ref,
-    struct_field_types,
-)
+from std.reflection import reflect
 
 
 trait Equatable(ImplicitlyDestructible):
@@ -70,8 +66,9 @@ trait Equatable(ImplicitlyDestructible):
         """
 
         # Default implementation using reflection: compare all fields
-        comptime names = struct_field_names[Self]()
-        comptime types = struct_field_types[Self]()
+        comptime r = reflect[Self]()
+        comptime names = r.field_names()
+        comptime types = r.field_types()
 
         comptime for i in range(names.size):
             comptime T = types[i]
@@ -82,8 +79,8 @@ trait Equatable(ImplicitlyDestructible):
                 ParentConformsTo="Equatable",
             ]()
             if trait_downcast[Equatable](
-                struct_field_ref[i](self)
-            ) != trait_downcast[Equatable](struct_field_ref[i](other)):
+                r.field_ref[i](self)
+            ) != trait_downcast[Equatable](r.field_ref[i](other)):
                 return False
         return True
 

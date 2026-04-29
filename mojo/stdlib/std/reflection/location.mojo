@@ -54,7 +54,7 @@ def main() raises:
 
 from std.memory import UnsafeMaybeUninit
 from std.utils._nicheable import UnsafeSingleNicheable
-from .struct_fields import offset_of
+from .reflect import reflect
 
 
 struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
@@ -162,7 +162,7 @@ struct SourceLocation(TrivialRegisterPassable, UnsafeSingleNicheable, Writable):
         writer.write(self._file_name, ":", self._line, ":", self._col)
 
     comptime _LineNiche = -1
-    comptime _LineByteOffset = offset_of[Self, name="_line"]()
+    comptime _LineByteOffset = reflect[Self]().field_offset[name="_line"]()
 
     @staticmethod
     @always_inline

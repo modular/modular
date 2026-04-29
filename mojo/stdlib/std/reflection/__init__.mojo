@@ -16,24 +16,22 @@ This module provides compile-time reflection capabilities including:
 
 - Type name introspection (`get_type_name`)
 - Function name and linkage introspection (`get_function_name`, `get_linkage_name`)
-- Type checking (`is_struct_type`)
-- Struct field reflection (`struct_field_count`, `struct_field_names`, `struct_field_types`)
-- Field lookup by name (`struct_field_index_by_name`, `struct_field_type_by_name`)
-- Field offset calculation (`offset_of`)
+- Unified struct reflection via `reflect[T]()` returning a `Reflected[T]` handle
 - Source location introspection (`source_location`, `call_location`)
 - Base type reflection (`get_base_type_name`)
 
 Example:
 ```mojo
-from std.reflection import struct_field_count, struct_field_names
+from std.reflection import reflect
 
 struct Point:
     var x: Int
     var y: Float64
 
 def print_fields[T: AnyType]():
-    comptime names = struct_field_names[T]()
-    comptime for i in range(struct_field_count[T]()):
+    comptime r = reflect[T]()
+    comptime names = r.field_names()
+    comptime for i in range(r.field_count()):
         print(names[i])
 
 def main():
@@ -42,6 +40,7 @@ def main():
 """
 
 from .location import SourceLocation, source_location, call_location
+from .reflect import Reflected, reflect
 from .type_info import (
     get_linkage_name,
     get_function_name,

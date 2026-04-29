@@ -27,12 +27,7 @@ There are a few main tools in this module:
 
 from std.builtin.constrained import _constrained_field_conforms_to
 from std.memory import Span
-from std.reflection import (
-    get_type_name,
-    struct_field_names,
-    struct_field_ref,
-    struct_field_types,
-)
+from std.reflection import get_type_name, reflect
 
 from .hasher import Hasher, default_hasher
 
@@ -89,8 +84,9 @@ trait Hashable:
         Args:
             hasher: The hasher instance to contribute to.
         """
-        comptime names = struct_field_names[Self]()
-        comptime types = struct_field_types[Self]()
+        comptime r = reflect[Self]()
+        comptime names = r.field_names()
+        comptime types = r.field_types()
 
         comptime for i in range(names.size):
             comptime T = types[i]
@@ -100,7 +96,7 @@ trait Hashable:
                 FieldIndex=i,
                 ParentConformsTo="Hashable",
             ]()
-            hasher.update(trait_downcast[Hashable](struct_field_ref[i](self)))
+            hasher.update(trait_downcast[Hashable](r.field_ref[i](self)))
 
 
 def hash[

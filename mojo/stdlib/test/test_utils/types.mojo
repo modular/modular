@@ -30,7 +30,7 @@
 
 from std.memory import UnsafeMaybeUninit
 from std.os import abort
-from std.reflection import offset_of, call_location
+from std.reflection import call_location, reflect
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 # ===----------------------------------------------------------------------=== #
@@ -614,7 +614,9 @@ struct Observable[
         Args:
             memory: Pointer to uninitialized storage sized and aligned for `Self`.
         """
-        comptime niche_offset = offset_of[Self, name="_always_zero"]()
+        comptime niche_offset = reflect[Self]().field_offset[
+            name="_always_zero"
+        ]()
         (memory.bitcast[Byte]() + niche_offset).store(Byte(index + 1))
 
     @staticmethod
@@ -630,7 +632,9 @@ struct Observable[
         Returns:
             The niche index of the memory.
         """
-        comptime niche_offset = offset_of[Self, name="_always_zero"]()
+        comptime niche_offset = reflect[Self]().field_offset[
+            name="_always_zero"
+        ]()
         var value = (memory.bitcast[Byte]() + niche_offset).load()
         if value == 0:
             return NicheIndex.NotANiche

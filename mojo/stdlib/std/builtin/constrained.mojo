@@ -15,12 +15,7 @@
 These are Mojo built-ins, so you don't need to import them.
 """
 from std.collections.string.string_slice import _get_kgen_string
-from std.reflection import (
-    get_type_name,
-    is_struct_type,
-    struct_field_names,
-    struct_field_types,
-)
+from std.reflection import get_type_name, reflect
 from std.reflection.type_info import _unqualified_type_name
 
 
@@ -142,10 +137,11 @@ def _constrained_field_conforms_to[
         FieldConformsTo: The trait the field must conform to
             (defaults to ParentConformsTo).
     """
-    comptime names = struct_field_names[Parent]()
+    comptime r = reflect[Parent]()
+    comptime names = r.field_names()
     comptime field_name = names[FieldIndex]
     comptime parent_type_name = _unqualified_type_name[Parent]()
-    comptime types = struct_field_types[Parent]()
+    comptime types = r.field_types()
     comptime FieldType = types[FieldIndex]
 
     # Construct a message like:
@@ -153,7 +149,7 @@ def _constrained_field_conforms_to[
     #     does not implement Equatable
     # For MLIR types, omit the type name since `_unqualified_type_name`
     # can't handle non-struct types.
-    comptime if is_struct_type[FieldType]():
+    comptime if reflect[FieldType]().is_struct():
         comptime field_type_name = _unqualified_type_name[FieldType]()
         comptime assert cond, StaticString(
             _get_kgen_string[
