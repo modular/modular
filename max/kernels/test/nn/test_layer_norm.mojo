@@ -53,19 +53,21 @@ def run_layer_norm_cpu[
     @always_inline
     @parameter
     def input_fn[
-        width: Int, _rank: Int
+        width: Int,
+        _rank: Int,
+        alignment: Int,
     ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
         var idx = input_buf.layout(Coord(coords))
-        return input_buf.raw_load[width=width](idx)
+        return input_buf.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(gamma)
     @always_inline
     @parameter
     def gamma_fn[
-        width: Int, rank: Int
+        width: Int, rank: Int, alignment: Int
     ](coords: IndexList[rank]) -> SIMD[dtype, width]:
         var idx = gamma.layout(Idx(coords[0]))
-        return gamma.raw_load[width=width](idx)
+        return gamma.raw_load[width=width, alignment=alignment](idx)
 
     @__copy_capture(output_buf)
     @always_inline

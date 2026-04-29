@@ -3171,18 +3171,20 @@ struct LayerNorm:
         @parameter
         @always_inline
         def input_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return input._lambda_load[width=width](
+            return input._lambda_load[width=width, element_alignment=alignment](
                 rebind[IndexList[input.rank]](coords)
             )
 
         @parameter
         @always_inline
         def gamma_fn[
-            width: Int, _rank: Int
+            width: Int, _rank: Int, alignment: Int
         ](coords: IndexList[_rank]) -> SIMD[dtype, width]:
-            return gamma._lambda_load[width=width](rebind[IndexList[1]](coords))
+            return gamma._lambda_load[width=width, element_alignment=alignment](
+                rebind[IndexList[1]](coords)
+            )
 
         @parameter
         @always_inline

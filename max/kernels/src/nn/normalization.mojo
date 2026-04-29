@@ -313,12 +313,12 @@ def layer_norm_gpu_warp_tiling[
     //,
     simd_width: Int,
     max_warps_per_block: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDSize, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
@@ -344,7 +344,7 @@ def layer_norm_gpu_warp_tiling[
         var row_var: Scalar[accum_type]
 
         if idx < num_cols:
-            vec_data = input_fn[simd_width](row, idx).cast[accum_type]()
+            vec_data = input_fn[simd_width, align](row, idx).cast[accum_type]()
 
         var thread_sum = vec_data.reduce_add()
         var n = Scalar[accum_type](num_cols)
@@ -377,7 +377,7 @@ def layer_norm_gpu_warp_tiling[
         var norm_factor = rsqrt(row_var + epsilon.cast[accum_type]())
 
         if idx < num_cols:
-            var gamma_val = gamma_fn[simd_width](Index(idx))
+            var gamma_val = gamma_fn[simd_width, 1, align](Index(idx))
             var beta_val = beta.load[width=simd_width](Coord(Idx(idx)))
             var norm_val = (vec_data - row_mean) * norm_factor * gamma_val.cast[
                 accum_type
@@ -393,12 +393,12 @@ def layer_norm_gpu_block[
     dtype: DType,
     //,
     simd_width: Int,
-    input_fn: def[width: Int](row: Int, col: Int) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int, alignment: Int](
+        row: Int, col: Int
+    ) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDSize, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
@@ -430,7 +430,7 @@ def layer_norm_gpu_block[
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
             if offset < num_cols:
-                var vec_data = input_fn[simd_width](row, offset).cast[
+                var vec_data = input_fn[simd_width, align](row, offset).cast[
                     accum_type
                 ]()
 
@@ -465,13 +465,13 @@ def layer_norm_gpu_block[
             var offset = x * block_dim.x * simd_width + tid * simd_width
 
             if offset < num_cols:
-                var gamma_val = gamma_fn[simd_width](Index(offset))
+                var gamma_val = gamma_fn[simd_width, 1, align](Index(offset))
                 var beta_offset = beta.layout(Idx(offset))
                 var beta_val = beta.raw_load[width=simd_width, alignment=align](
                     beta_offset
                 )
 
-                var vec_data = input_fn[simd_width](row, offset).cast[
+                var vec_data = input_fn[simd_width, align](row, offset).cast[
                     accum_type
                 ]()
                 var norm_val = (
@@ -499,12 +499,12 @@ def layer_norm_gpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDSize, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
@@ -532,12 +532,12 @@ def layer_norm_gpu[
     @parameter
     @always_inline
     def input_fn_2d[
-        simd_width: Int
+        simd_width: Int, alignment: Int
     ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
         # Translate a given 2D index back to the original n-D tensor
         var indices = _get_start_indices_of_nth_subvolume(row, shape)
         indices[rank - 1] = col
-        return input_fn[simd_width](indices.canonicalize())
+        return input_fn[simd_width, rank, alignment](indices.canonicalize())
 
     @parameter
     @always_inline
@@ -652,10 +652,12 @@ def _sum_to_mean[
 def layer_norm_cpu[
     dtype: DType,
     //,
-    input_fn: def[width: Int](Int, Int) capturing -> SIMD[dtype, width],
-    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
+    input_fn: def[width: Int, alignment: Int](Int, Int) capturing -> SIMD[
         dtype, width
     ],
+    gamma_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDSize, alignment: Int](
         row: Int, col: Int, val: SIMD[dtype, width]
     ) capturing -> None,
@@ -703,7 +705,7 @@ def layer_norm_cpu[
         def input_gen_wrapper[
             dtype: DType, simd_width: Int
         ](col: Int) -> SIMD[dtype, simd_width]:
-            return input_fn[simd_width](row, col).cast[dtype]()
+            return input_fn[simd_width, alignment=1](row, col).cast[dtype]()
 
         var sum_val = map_reduce[
             simd_width,
@@ -724,8 +726,8 @@ def layer_norm_cpu[
         var norm_factor = rsqrt(var_val + epsilon)
 
         def _normalize[simd_width: Int](col: Int) {beta, mut}:
-            var out_val = input_fn[simd_width](row, col)
-            var gamma_val = gamma_fn[simd_width, 1](Index(col))
+            var out_val = input_fn[simd_width, 1](row, col)
+            var gamma_val = gamma_fn[simd_width, 1, 1](Index(col))
             var beta_col = beta.layout(Idx(col))
 
             var norm_val = (
@@ -744,12 +746,12 @@ def layer_norm_cpu[
     dtype: DType,
     rank: Int,
     //,
-    input_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
-    gamma_fn: def[width: Int, rank: Int](IndexList[rank]) capturing -> SIMD[
-        dtype, width
-    ],
+    input_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
+    gamma_fn: def[width: Int, rank: Int, alignment: Int](
+        IndexList[rank]
+    ) capturing -> SIMD[dtype, width],
     output_fn: def[width: SIMDSize, rank: Int, alignment: Int](
         idx: IndexList[rank], val: SIMD[dtype, width]
     ) capturing -> None,
@@ -780,14 +782,14 @@ def layer_norm_cpu[
         @parameter
         @always_inline
         def input_fn_2d[
-            simd_width: Int
+            simd_width: Int, alignment: Int
         ](row: Int, col: Int) -> SIMD[dtype, simd_width]:
             # Translate a given 2D index back to the original n-D tensor
             var indices = _get_start_indices_of_nth_subvolume(
                 row_idx + row, shape
             )
             indices[rank - 1] = col
-            return input_fn[simd_width](indices.canonicalize())
+            return input_fn[simd_width, rank, alignment](indices.canonicalize())
 
         @__copy_capture(row_idx)
         @parameter
@@ -813,10 +815,10 @@ def layer_norm_cpu[
 def layer_norm[
     dtype: DType,
     rank: Int,
-    input_0_fn: def[_width: Int, _rank: Int](
+    input_0_fn: def[_width: Int, _rank: Int, alignment: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, _width],
-    input_1_fn: def[_width: Int, _rank: Int](
+    input_1_fn: def[_width: Int, _rank: Int, alignment: Int](
         IndexList[_rank]
     ) capturing -> SIMD[dtype, _width],
     output_0_fn: def[width: SIMDSize, rank: Int, alignment: Int](

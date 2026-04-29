@@ -165,20 +165,24 @@ def layer_norm_op[
                 @parameter
                 @__copy_capture(in_ptr, feature_dim)
                 def input_fn[
-                    width: Int, rank: Int
+                    width: Int, rank: Int, alignment: Int
                 ](coords: IndexList[rank]) -> SIMD[dtype, width]:
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]
-                    return in_ptr.load[width=width](flat_idx)
+                    return in_ptr.load[width=width, alignment=alignment](
+                        flat_idx
+                    )
 
                 @always_inline
                 @parameter
                 @__copy_capture(gamma_ptr)
                 def gamma_fn[
-                    width: Int, rank: Int
+                    width: Int, rank: Int, alignment: Int
                 ](coords: IndexList[rank]) -> SIMD[dtype, width]:
                     var c = rebind[IndexList[1]](coords)
-                    return gamma_ptr.load[width=width](c[0])
+                    return gamma_ptr.load[width=width, alignment=alignment](
+                        c[0]
+                    )
 
                 @always_inline
                 @parameter
@@ -188,7 +192,9 @@ def layer_norm_op[
                 ](coords: IndexList[rank], val: SIMD[dtype, width]):
                     var c = rebind[IndexList[2]](coords)
                     var flat_idx = c[0] * feature_dim + c[1]
-                    out_ptr.store[width=width](flat_idx, val)
+                    out_ptr.store[width=width, alignment=alignment](
+                        flat_idx, val
+                    )
 
                 # Create beta as InputTensor -> TileTensor for the kernel
                 comptime beta_spec = StaticTensorSpec[
