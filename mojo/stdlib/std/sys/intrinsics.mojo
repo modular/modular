@@ -672,6 +672,16 @@ def strided_load[
     comptime if simd_width == 1:
         return addr.load[invariant=invariant]() if mask else Scalar[dtype]()
 
+    comptime if is_apple_gpu():
+        # The `gather` path below would erase address space via
+        # `Int(addr)`; on Apple AIR the resulting GENERIC load silently
+        # reads zero (MOCO-3762).
+        var result = SIMD[dtype, simd_width]()
+        comptime for i in range(simd_width):
+            if mask[i]:
+                result[i] = (addr + i * stride).load[invariant=invariant]()
+        return result
+
     var offset = (
         SIMD[DType.int, simd_width](Int(addr))
         + SIMD[DType.int, simd_width](stride * size_of[dtype]())

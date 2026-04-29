@@ -20,7 +20,7 @@ low-level memory operations, interfacing with C code, and building custom data
 structures.
 """
 
-from std.sys import align_of, is_gpu, is_nvidia_gpu, size_of
+from std.sys import align_of, is_apple_gpu, is_gpu, is_nvidia_gpu, size_of
 from std.sys.intrinsics import (
     gather,
     scatter,
@@ -1659,6 +1659,15 @@ struct UnsafePointer[
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
 
+        comptime if is_apple_gpu():
+            # `Int(self)` would erase the address space; on Apple AIR the
+            # resulting GENERIC load silently reads zero (MOCO-3762).
+            var result = default
+            comptime for i in range(width):
+                if mask[i]:
+                    result[i] = self.load[alignment=alignment](Int(offset[i]))
+            return result
+
         var base = offset.cast[DType.int]().fma(
             SIMD[DType.int, width](size_of[dtype]()),
             SIMD[DType.int, width](Int(self)),
@@ -1714,6 +1723,13 @@ struct UnsafePointer[
         comptime assert (
             alignment.is_power_of_two()
         ), "alignment must be a power of two integer value"
+
+        comptime if is_apple_gpu():
+            # See `gather` for the address-space rationale (MOCO-3762).
+            comptime for i in range(width):
+                if mask[i]:
+                    self.store[alignment=alignment](Int(offset[i]), val[i])
+            return
 
         var base = offset.cast[DType.int]().fma(
             SIMD[DType.int, width](size_of[dtype]()),
