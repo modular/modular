@@ -512,9 +512,9 @@ OverallOpValueEffect LIT::getOperationEffects(
       // call to the move method of the captured type, which consumes the
       // operand.
       if (auto triple = dyn_cast<KGEN::MemSymbolTripleAttr>(captureAttribute)) {
-        operands.push_back({capture, triple.getCopy()
-                                         ? OperandEffect::memLoad
-                                         : OperandEffect::memConsume});
+        operands.push_back({capture, triple.getIsMove()
+                                         ? OperandEffect::memConsume
+                                         : OperandEffect::memLoad});
         continue;
       }
       if (isa<UnitAttr>(captureAttribute))

@@ -322,7 +322,7 @@ module {
 module {
   lit.fn @make_closure[imm Z](%z: !lit.ref<@S, imm Z> owned_in_mem) {
     // CHECK: [[Closure:%.*]] = lit.closure.init
-    %closure = lit.closure.init[#type_value](%z[@S::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<@S, imm *[0,1]> read_mem, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none>, @S::@__del__ !lit.generator<[1]("self": !lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none>])(%arg0: index) -> index {
+    %closure = lit.closure.init[#type_value](%z[@S::@__moveinit__ !lit.generator<[2]("existing": !lit.ref<@S, imm *[0,1]> read_mem, "self": !lit.ref<@S, mut *[0,0]> byref_result) -> !kgen.none>, @S::@__del__ !lit.generator<[1]("self": !lit.ref<@S, mut *[0,0]> owned_in_mem) -> !kgen.none> move])(%arg0: index) -> index {
       kgen.return %arg0 : index
     } : (!lit.ref<@S, imm Z>), !lit.ref<!kgen.closure<@make_closure, "foo" nonescaping>, mut C>
     // COM: it's expected that z is NOT destroyed here because the closure consumes it.

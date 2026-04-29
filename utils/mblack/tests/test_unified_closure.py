@@ -116,6 +116,19 @@ def test_unified_var_move_named_capture():
     assert_mojo_format(source, source)
 
 
+def test_unified_var_move_named_capture_trailing_caret():
+    """Preserves ``var name^`` (legacy move-marker position) tight."""
+    source = (
+        "def main() raises:\n"
+        "    var a: Int = 0\n"
+        "\n"
+        "    @always_inline\n"
+        "    def cb[]() unified raises {var a^}:\n"
+        "        var x = a\n"
+    )
+    assert_mojo_format(source, source)
+
+
 @pytest.mark.parametrize("raises_type", RAISES_TYPES)
 @pytest.mark.parametrize("space", ["", " "])
 def test_unified_raises_typed_exception_then_captures(raises_type, space):
