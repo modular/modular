@@ -70,6 +70,11 @@ This version is still a work in progress.
   eager-mode execution of group normalization without graph compilation.
 - Fixed tensor slicing with negative integer indices (e.g. `hidden[:, -1]`)
   which previously raised a `RuntimeError` at compile time.
+- Fixed `ops.reshape` / `TensorValue.reshape` rejecting valid `-1` reshapes
+  on tensors whose leading dim is a symbolic sum-of-products (e.g.
+  `[(batch_size * num_steps) + total_seq_len, 1536]` reshaped to
+  `[-1, n_heads, head_dim]` with `n_heads * head_dim == 1536`). The inferred
+  dim now simplifies without requiring a `rebind`.
 - Setting `MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true` (or the
   `max-debug.uninitialized-read-check` config key, or
   `InferenceSession.debug.uninitialized_read_check = True`) enables detection

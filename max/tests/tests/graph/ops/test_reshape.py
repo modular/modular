@@ -262,21 +262,30 @@ def test_reshape_needs_rebind_error_message() -> None:
     input_type = TensorType(
         DType.float32, ["n_patches", 2048], DeviceRef.from_device(CPU())
     )
-    expected_error = re.escape("""Failed to create op 'reshape':
-Inputs:
-    input = TensorValue(dtype=float32, shape=[Dim('n_patches'), Dim(2048)], device=cpu:0)
-    new_shape = ShapeAttr(#mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape)
-
-Diagnostics:
-    
-Operation creation failed:
-error: unknown: [reshape] input and output number of elements must match: #mosh<ape[n_patches, 2048]> : !mosh.ape != #mosh<ape[div(n_patches, 4), 4, 2048]> : !mosh.ape
-  If you are confident this is correct, consider a rebind to assert that the reshape is valid.
-  Ex: ```
-      n, m = x.shape
-      x = x.rebind([(n // 4) * 4, m])
-      x.reshape([n // 4, 4, m])
-  ```""")
+    # Written out without re.escape / whitespace-sensitive content, because
+    # pre-commit trailing-whitespace hooks strip the blank "Diagnostics:"
+    # line's leading spaces that would otherwise be required for a literal
+    # match.
+    expected_error = (
+        r"Failed to create op 'reshape':\n"
+        r"Inputs:\n"
+        r"    input = TensorValue\(dtype=float32, "
+        r"shape=\[Dim\('n_patches'\), Dim\(2048\)\], device=cpu:0\)\n"
+        r"    new_shape = ShapeAttr\("
+        r"\#mosh<ape\[div\(n_patches, 4\), 4, 2048\]> : !mosh\.ape\)\n"
+        r"\nDiagnostics:\n\s*\n"
+        r"Operation creation failed:\n"
+        r"error: unknown: \[reshape\] input and output number of elements "
+        r"must match: \#mosh<ape\[n_patches, 2048\]> : !mosh\.ape != "
+        r"\#mosh<ape\[div\(n_patches, 4\), 4, 2048\]> : !mosh\.ape\n"
+        r"  If you are confident this is correct, consider a rebind to "
+        r"assert that the reshape is valid\.\n"
+        r"  Ex: ```\n"
+        r"      n, m = x\.shape\n"
+        r"      x = x\.rebind\(\[\(n // 4\) \* 4, m\]\)\n"
+        r"      x\.reshape\(\[n // 4, 4, m\]\)\n"
+        r"  ```"
+    )
     with Graph("test_MAXPLAT_329", input_types=[input_type]) as graph:
         (x,) = graph.inputs
         n_patches, _ = x.tensor.shape
@@ -294,6 +303,26 @@ def test_reshape__minus_one__symbolic_algebraic() -> None:
         # Assert the computed shape is symbolic batch, 4 (no -1 present)
         assert y.shape == [Dim("batch"), 4]
         graph.output(y)
+
+
+def test_reshape__minus_one__sum_of_products_cancels_static_factor() -> None:
+    """GEX-3582: reshape(-1, h, d) on shape [(a*b)+c, D] with h*d == D.
+
+    The common static factor D must cancel without needing a rebind; otherwise
+    symbolic-shape simplification leaves ``div(add(mul(a,b,D), mul(c,D)), D)``
+    unreduced and the element-count check rejects a reshape that is valid.
+    """
+    input_type = TensorType(
+        DType.float32,
+        ["batch_size_times_num_steps_plus_total_seq_len", 1536],
+        device=DeviceRef.CPU(),
+    )
+    with Graph("gex3582", input_types=[input_type]) as graph:
+        x = graph.inputs[0].tensor
+        combined = Dim("batch_size") * Dim("num_steps") + Dim("total_seq_len")
+        x = x.rebind([combined, 1536])
+        y = x.reshape([-1, 8, 192])  # 8 * 192 == 1536
+        assert y.shape == [combined, 8, 192]
 
 
 def test_reshape__minus_one__zero_dimension_error() -> None:
