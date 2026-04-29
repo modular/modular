@@ -263,6 +263,37 @@ def _has_native_f8_support() -> Bool:
     return _is_sm_9x_or_newer() or is_nvidia_gpu["sm_89"]() or is_amd_gpu()
 
 
+# Apple's Metal AIR backend has no `llvm.vector.splice` lowering;
+# `SIMD.{rotate,shift}_{left,right}` use `shufflevector` masks instead.
+
+
+@always_inline("nodebug")
+def _apple_rotate_mask[size: Int, shift: Int]() -> IndexList[size]:
+    """Mask for `SIMD.rotate_left[shift]()` on Apple GPU; any sign of `shift`.
+    """
+    var res = IndexList[size]()
+    comptime for i in range(size):
+        res[i] = (i + shift + size) % size
+    return res
+
+
+@always_inline("nodebug")
+def _apple_shift_mask[size: Int, shift: Int]() -> IndexList[size]:
+    """Mask for `SIMD.shift_{left,right}[shift]()` on Apple GPU.
+
+    Sign of `shift` selects direction (positive=left, negative=right);
+    out-of-range lanes index `other`, which callers pass as zero.
+    """
+    var res = IndexList[size]()
+    comptime for i in range(size):
+        var src = i + shift
+        if 0 <= src < size:
+            res[i] = src
+        else:
+            res[i] = size
+    return res
+
+
 # ===----------------------------------------------------------------------=== #
 # FastMathFlag
 # ===----------------------------------------------------------------------=== #
@@ -3055,7 +3086,11 @@ struct SIMD[dtype: DType, size: Int](
         comptime if Self.size == 1:
             comptime assert shift == 0, "for scalars the shift must be 0"
             return self
-        elif shift >= 0:
+
+        comptime if is_apple_gpu():
+            return self.shuffle[mask=_apple_rotate_mask[Self.size, shift]()]()
+
+        comptime if shift >= 0:
             return llvm_intrinsic[
                 "llvm.vector.splice.left", Self, has_side_effect=False
             ](self, self, Int32(shift))
@@ -3121,6 +3156,11 @@ struct SIMD[dtype: DType, size: Int](
         elif shift == Self.size:
             return 0
 
+        comptime if is_apple_gpu():
+            return self.shuffle[mask=_apple_shift_mask[Self.size, shift]()](
+                Self()
+            )
+
         return llvm_intrinsic[
             "llvm.vector.splice.left", Self, has_side_effect=False
         ](self, Self(), Int32(shift))
@@ -3154,6 +3194,11 @@ struct SIMD[dtype: DType, size: Int](
             return self
         elif shift == Self.size:
             return 0
+
+        comptime if is_apple_gpu():
+            return self.shuffle[mask=_apple_shift_mask[Self.size, -shift]()](
+                Self()
+            )
 
         return llvm_intrinsic[
             "llvm.vector.splice.right", Self, has_side_effect=False
