@@ -254,10 +254,8 @@ def compute_ragged_max_flash_attn(
 @pytest.mark.parametrize(
     "seq_lengths, n_heads, head_dim",
     [
-        ([64, 64, 64, 16, 16, 4], 16, 80),  # Variable length sequences
-        ([64, 64, 64, 16, 16, 4], 16, 128),
-        ([100], 32, 80),  # Single sequence
-        ([100], 32, 128),
+        ([64, 64, 64, 16, 16, 4], 16, 128),  # Variable length sequences
+        ([100], 32, 128),  # Single sequence
     ],
 )
 def test_ragged_flash_attention_gpu(

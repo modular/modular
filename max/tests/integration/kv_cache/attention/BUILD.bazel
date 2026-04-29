@@ -83,10 +83,6 @@ modular_py_test(
         "conftest.py",
         "test_ragged_attention_gpu.py",
     ],
-    args = [
-        "-n",
-        "auto",
-    ],
     env = {
         "MODULAR_TORCH_MEMORY_PERCENT": "0.5",
     },
@@ -97,13 +93,8 @@ modular_py_test(
         "//:apple_gpu": ["@platforms//:incompatible"],  # FIXME: MOCO-2411
         "//conditions:default": [],
     }),
-    ignore_extra_deps = [
-        # Used for parallelizing tests
-        requirement("pytest-xdist"),
-    ],
     tags = [
         "gpu",
-        "manual",  # TODO(SERVSYS-1173): Re-enable once flakiness is fixed.
     ],
     deps = [
         "//max/python/max/driver",
@@ -115,7 +106,6 @@ modular_py_test(
         "//max/tests/integration/graph:modular_graph_test",
         requirement("torch"),
         requirement("hypothesis"),
-        requirement("pytest-xdist"),
     ],
 )
 
