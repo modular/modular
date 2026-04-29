@@ -885,12 +885,10 @@ def test_instruct_coder_multiturn_fit_distributions(
     mock_tokenizer.unk_token_id = None
     mock_tokenizer.convert_tokens_to_ids = Mock(return_value=99)
 
-    def _tok(text: str, add_special_tokens: bool = False) -> Mock:
-        out = Mock()
-        out.input_ids = list(range(max(4, len(text))))
-        return out
+    def _tok(text: str, add_special_tokens: bool = False) -> list[int]:
+        return list(range(max(4, len(text))))
 
-    mock_tokenizer.side_effect = _tok
+    mock_tokenizer.encode = Mock(side_effect=_tok)
     mock_tokenizer.decode = Mock(
         side_effect=lambda ids, skip_special_tokens=False: "Z" * len(ids)
     )

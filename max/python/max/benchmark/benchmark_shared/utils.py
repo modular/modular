@@ -17,10 +17,11 @@ from __future__ import annotations
 
 import resource
 from collections.abc import Callable
-from typing import TypeVar
+from typing import Any, TypeVar
 
 import numpy as np
 from transformers import (
+    AutoConfig,
     AutoTokenizer,
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
@@ -38,10 +39,24 @@ def get_tokenizer(
     }
     if model_max_length is not None:
         tokenizer_kwargs["model_max_length"] = model_max_length
-    return AutoTokenizer.from_pretrained(
+    tokenizer = AutoTokenizer.from_pretrained(
         pretrained_model_name_or_path,
         **tokenizer_kwargs,
     )
+    config = AutoConfig.from_pretrained(
+        pretrained_model_name_or_path, trust_remote_code=trust_remote_code
+    )
+    architectures = getattr(config, "architectures", None) or []
+    if "KimiK25ForConditionalGeneration" in architectures:
+        original_encode = tokenizer.encode
+
+        def encode(text: Any, *args: Any, **kwargs: Any) -> list[int]:
+            kwargs.pop("add_special_tokens", None)
+            kwargs["allow_special_tokens"] = True
+            return original_encode(text, *args, **kwargs)
+
+        tokenizer.encode = encode
+    return tokenizer
 
 
 # from https://github.com/sgl-project/sglang/blob/v0.4.0/python/sglang/bench_serving.py#L1283

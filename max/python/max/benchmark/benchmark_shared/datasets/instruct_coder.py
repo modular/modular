@@ -127,8 +127,8 @@ class InstructCoderBenchmarkDataset(HuggingFaceBenchmarkDataset):
                 break
 
             prompt, completion = pairs[i]
-            prompt_token_ids = tokenizer(prompt).input_ids
-            completion_token_ids = tokenizer(completion).input_ids
+            prompt_token_ids = tokenizer.encode(prompt)
+            completion_token_ids = tokenizer.encode(completion)
             prompt_len = len(prompt_token_ids)
             output_len = (
                 len(completion_token_ids)

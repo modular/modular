@@ -306,7 +306,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             if len(tokenized_prompts) == required_prompts:
                 break
 
-            token_ids = tokenizer(prompt).input_ids
+            token_ids = tokenizer.encode(prompt)
             if len(token_ids) < 4:
                 # Prune too short sequences.
                 continue
@@ -549,7 +549,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
                 ]
                 sys_prompt = tokenizer.decode(sys_prompt_ids)
                 sys_prompt_len = len(
-                    tokenizer(sys_prompt, add_special_tokens=False).input_ids
+                    tokenizer.encode(sys_prompt, add_special_tokens=False)
                 )
                 prev = warmup_dict.get(sys_prompt_idx)
                 if sys_prompt_len > 0 and (
@@ -577,7 +577,7 @@ class RandomBenchmarkDataset(LocalBenchmarkDataset):
             # int(input_lens[i]) that we randomly generated since multiple
             # input tokens may be bundled together in one pass
             input_len_actual = (
-                len(tokenizer(prompt, add_special_tokens=False).input_ids)
+                len(tokenizer.encode(prompt, add_special_tokens=False))
                 + image_token_len
             )
             input_requests.append(

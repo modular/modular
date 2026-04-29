@@ -41,12 +41,10 @@ def _make_mock_tokenizer(token_counts: dict[str, int]) -> MagicMock:
     """
     tokenizer = MagicMock()
 
-    def side_effect(text: str, add_special_tokens: bool = True) -> MagicMock:
-        result = MagicMock()
-        result.input_ids = list(range(token_counts.get(text, 0)))
-        return result
+    def encode(text: str, add_special_tokens: bool = True) -> list[int]:
+        return list(range(token_counts.get(text, 0)))
 
-    tokenizer.side_effect = side_effect
+    tokenizer.encode.side_effect = encode
     return tokenizer
 
 

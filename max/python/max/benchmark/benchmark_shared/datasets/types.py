@@ -119,7 +119,7 @@ Samples = RequestSamples | ChatSamples
 
 
 def estimate_num_tokens(tokenizer: PreTrainedTokenizerBase, text: str) -> int:
-    return len(tokenizer(text, add_special_tokens=False).input_ids)
+    return len(tokenizer.encode(text, add_special_tokens=False))
 
 
 def build_chat_message(

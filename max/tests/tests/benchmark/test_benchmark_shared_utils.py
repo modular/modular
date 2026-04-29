@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import resource
-from unittest.mock import patch, sentinel
+from unittest.mock import MagicMock, patch, sentinel
 
 import numpy as np
 import pytest
@@ -30,10 +30,17 @@ from max.benchmark.benchmark_shared.utils import (
 
 
 def test_get_tokenizer_passes_model_max_length_when_provided() -> None:
-    with patch(
-        "max.benchmark.benchmark_shared.utils.AutoTokenizer.from_pretrained",
-        return_value=sentinel.tokenizer,
-    ) as from_pretrained:
+    config = MagicMock(architectures=[])
+    with (
+        patch(
+            "max.benchmark.benchmark_shared.utils.AutoTokenizer.from_pretrained",
+            return_value=sentinel.tokenizer,
+        ) as from_pretrained,
+        patch(
+            "max.benchmark.benchmark_shared.utils.AutoConfig.from_pretrained",
+            return_value=config,
+        ),
+    ):
         tokenizer = get_tokenizer(
             "repo/model",
             model_max_length=4096,
@@ -49,10 +56,17 @@ def test_get_tokenizer_passes_model_max_length_when_provided() -> None:
 
 
 def test_get_tokenizer_omits_model_max_length_when_unspecified() -> None:
-    with patch(
-        "max.benchmark.benchmark_shared.utils.AutoTokenizer.from_pretrained",
-        return_value=sentinel.tokenizer,
-    ) as from_pretrained:
+    config = MagicMock(architectures=[])
+    with (
+        patch(
+            "max.benchmark.benchmark_shared.utils.AutoTokenizer.from_pretrained",
+            return_value=sentinel.tokenizer,
+        ) as from_pretrained,
+        patch(
+            "max.benchmark.benchmark_shared.utils.AutoConfig.from_pretrained",
+            return_value=config,
+        ),
+    ):
         tokenizer = get_tokenizer("repo/model", trust_remote_code=False)
 
     assert tokenizer is sentinel.tokenizer

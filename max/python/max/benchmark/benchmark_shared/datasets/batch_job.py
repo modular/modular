@@ -226,7 +226,7 @@ class BatchJobBenchmarkDataset(LocalBenchmarkDataset):
 
             # TODO: This should also include the image token count.
             prompt_len = len(
-                tokenizer(text_content, add_special_tokens=False).input_ids
+                tokenizer.encode(text_content, add_special_tokens=False)
             )
 
             # Get output length from the batch job's max_tokens

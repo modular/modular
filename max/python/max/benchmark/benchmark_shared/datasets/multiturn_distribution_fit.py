@@ -117,7 +117,7 @@ def _text_scaled_to_token_length(
     min_len: int = 4,
 ) -> tuple[str, int]:
     target_len = max(target_len, min_len)
-    ids = tokenizer(base_text, add_special_tokens=False).input_ids
+    ids = tokenizer.encode(base_text, add_special_tokens=False)
     ids = _sanitize_token_ids(tokenizer, ids)
     if not ids:
         rep = _replacement_token_id(tokenizer)

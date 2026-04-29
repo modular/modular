@@ -155,10 +155,10 @@ def compute_output_len(
     output: RequestFuncOutput,
 ) -> int:
     return len(
-        tokenizer(
+        tokenizer.encode(
             output.generated_text,
             add_special_tokens=False,
-        ).input_ids
+        )
     )
 
 
@@ -2298,7 +2298,7 @@ async def benchmark(
             # run_prefix_len is not needed there.
             assert tokenizer is not None
             run_prefix_len = len(
-                tokenizer(run_prefix, add_special_tokens=False).input_ids
+                tokenizer.encode(run_prefix, add_special_tokens=False)
             )
 
     request_driver_class: type[RequestDriver] = get_request_driver_class(
