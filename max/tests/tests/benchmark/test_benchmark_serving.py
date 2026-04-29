@@ -23,7 +23,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import numpy as np
 import pytest
 from max.benchmark.benchmark_serving import (
-    _add_spec_decode_result,
     _compute_steady_state_result,
     _ConcurrentTurnsRequestDriver,
     _log_warmup_sampling_report,
@@ -1123,9 +1122,8 @@ def test_calculate_spec_decode_stats_matches_vllm_math() -> None:
     )
 
 
-def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
+def test_spec_decode_stats_to_result_dict_uses_vllm_json_keys() -> None:
     """Spec decode stats are serialized under vLLM-compatible keys."""
-    result: dict[str, object] = {}
     stats = SpecDecodeStats(
         num_drafts=5,
         draft_tokens=18,
@@ -1135,9 +1133,7 @@ def test_add_spec_decode_result_uses_vllm_json_keys() -> None:
         per_position_acceptance_rates=[1.0, 0.6, 0.2],
     )
 
-    _add_spec_decode_result(result, stats)
-
-    assert result == {
+    assert stats.to_result_dict() == {
         "spec_decode_acceptance_rate": 50.0,
         "spec_decode_acceptance_length": 2.8,
         "spec_decode_num_drafts": 5,

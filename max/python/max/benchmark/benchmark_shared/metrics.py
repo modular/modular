@@ -809,6 +809,17 @@ class SpecDecodeStats:
     acceptance_length: float
     per_position_acceptance_rates: list[float]
 
+    def to_result_dict(self) -> dict[str, object]:
+        """Return a flat dict of spec-decode keys for the benchmark result."""
+        return {
+            "spec_decode_acceptance_rate": self.acceptance_rate,
+            "spec_decode_acceptance_length": self.acceptance_length,
+            "spec_decode_num_drafts": int(self.num_drafts),
+            "spec_decode_draft_tokens": int(self.draft_tokens),
+            "spec_decode_accepted_tokens": int(self.accepted_tokens),
+            "spec_decode_per_position_acceptance_rates": self.per_position_acceptance_rates,
+        }
+
 
 def calculate_spec_decode_stats(
     metrics_before: SpecDecodeMetrics,

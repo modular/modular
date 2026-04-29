@@ -416,27 +416,6 @@ def _is_vllm_backend(backend: Backend) -> bool:
     return backend in ("vllm", "vllm-chat")
 
 
-def _add_spec_decode_result(
-    result: dict[str, Any],
-    spec_decode_stats: SpecDecodeStats | None,
-) -> None:
-    """Add speculative decoding stats to the JSON result."""
-    if spec_decode_stats is None:
-        return
-    result["spec_decode_acceptance_rate"] = spec_decode_stats.acceptance_rate
-    result["spec_decode_acceptance_length"] = (
-        spec_decode_stats.acceptance_length
-    )
-    result["spec_decode_num_drafts"] = int(spec_decode_stats.num_drafts)
-    result["spec_decode_draft_tokens"] = int(spec_decode_stats.draft_tokens)
-    result["spec_decode_accepted_tokens"] = int(
-        spec_decode_stats.accepted_tokens
-    )
-    result["spec_decode_per_position_acceptance_rates"] = (
-        spec_decode_stats.per_position_acceptance_rates
-    )
-
-
 def print_lora_benchmark_results(
     lora_manager: LoRABenchmarkManager,
 ) -> None:
@@ -2315,7 +2294,8 @@ def _build_text_generation_result(
 
     result = text_metrics.to_result_dict()
 
-    _add_spec_decode_result(result, spec_decode_stats)
+    if spec_decode_stats is not None:
+        result.update(spec_decode_stats.to_result_dict())
 
     for warn in text_metrics.confidence_warnings():
         logger.warning(f"Confidence: {warn}")
