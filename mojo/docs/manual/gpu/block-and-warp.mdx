@@ -48,6 +48,23 @@ detailed explanations of the GPU execution model, see
 creation and device management, see [GPU programming
 fundamentals](/mojo/manual/gpu/fundamentals).
 
+The tiled matrix multiplication example later in this chapter uses
+[`TileTensor`](/mojo/layout/tile_tensor/TileTensor/) and
+[`stack_allocation()`](/mojo/layout/tile_tensor/stack_allocation/) to allocate
+shared memory tiles.
+
+{/* TODO(DOCS-1656/DOCS-1658/PR#82292): once Arthur's tile-tensor manual
+    section merges, uncomment the sentence below. Pick the final URL/anchor
+    based on what Arthur ships — most likely
+    /mojo/manual/tile-tensor/tensors (general background) or
+    /mojo/manual/tile-tensor/tensors#creating-a-tiletensor-in-shared-or-local-memory
+    (the specific pattern used in the example below). */}
+{/*
+For an introduction to `TileTensor` itself—including how to create one in
+global, shared, or local memory—see
+[Using TileTensor](/mojo/manual/tile-tensor/tensors).
+*/}
+
 We'll explore Mojo's synchronization and collective communication primitives
 for coordinating parallel work on the GPU. Key topics include:
 
@@ -238,8 +255,9 @@ from std.gpu.host import DeviceContext
 from std.gpu import thread_idx, block_idx
 from std.gpu.memory import AddressSpace
 
-# Layout tensor support from open source layout package
-from layout import Layout, LayoutTensor
+# TileTensor support from open source layout package
+from layout import TileTensor, stack_allocation
+from layout.tile_layout import row_major
 
 # Data type selection: float32 provides good balance of precision and performance
 comptime float_dtype = DType.float32
@@ -263,21 +281,21 @@ comptime NUM_TILES_PER_SIDE = MATRIX_SIZE // TILE_SIZE  # Number of tiles per ma
 comptime THREADS_PER_TILE = TILE_SIZE * TILE_SIZE  # Threads needed per tile (256)
 comptime TOTAL_TILES_TO_PROCESS = NUM_TILES_PER_SIDE  # Tiles to process in K dimension
 
-# LayoutTensor provides type-safe multi-dimensional data access with automatic memory layout handling
+# TileTensor provides type-safe multi-dimensional data access with automatic memory layout handling
 # Layout definitions using example matrix dimensions
-comptime matrix_a_layout = Layout.row_major(MATRIX_M, MATRIX_K)  # A: M x K
-comptime matrix_b_layout = Layout.row_major(MATRIX_K, MATRIX_N)  # B: K x N
-comptime matrix_c_layout = Layout.row_major(MATRIX_M, MATRIX_N)  # C: M x N
+comptime matrix_a_layout = row_major[MATRIX_M, MATRIX_K]()  # A: M x K
+comptime matrix_b_layout = row_major[MATRIX_K, MATRIX_N]()  # B: K x N
+comptime matrix_c_layout = row_major[MATRIX_M, MATRIX_N]()  # C: M x N
 
 # Layout definitions for tile access
-comptime tile_a_layout = Layout.row_major(TILE_M, TILE_K)
-comptime tile_b_layout = Layout.row_major(TILE_K, TILE_N)
+comptime tile_a_layout = row_major[TILE_M, TILE_K]()
+comptime tile_b_layout = row_major[TILE_K, TILE_N]()
 
 
 def tiled_matmul_kernel(
-    matrix_a: LayoutTensor[float_dtype, matrix_a_layout, MutAnyOrigin],
-    matrix_b: LayoutTensor[float_dtype, matrix_b_layout, MutAnyOrigin],
-    matrix_c: LayoutTensor[float_dtype, matrix_c_layout, MutAnyOrigin],
+    matrix_a: TileTensor[float_dtype, type_of(matrix_a_layout), MutAnyOrigin],
+    matrix_b: TileTensor[float_dtype, type_of(matrix_b_layout), MutAnyOrigin],
+    matrix_c: TileTensor[float_dtype, type_of(matrix_c_layout), MutAnyOrigin],
 ):
     # Thread and block indices
     var thread_x = thread_idx.x
@@ -294,22 +312,16 @@ def tiled_matmul_kernel(
     var tile_col_start = block_x * TILE_N
 
     # Allocate shared memory tiles for fast on-chip access
-    var tile_a_shared = LayoutTensor[
-        float_dtype,
-        tile_a_layout,
-        MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
+    var tile_a_shared = stack_allocation[
+        float_dtype, address_space=AddressSpace.SHARED
+    ](tile_a_layout)
 
-    var tile_b_shared = LayoutTensor[
-        float_dtype,
-        tile_b_layout,
-        MutAnyOrigin,
-        address_space = AddressSpace.SHARED,
-    ].stack_allocation()
+    var tile_b_shared = stack_allocation[
+        float_dtype, address_space=AddressSpace.SHARED
+    ](tile_b_layout)
 
     # Initialize accumulator and start tiling loop
-    var accumulator: matrix_c.element_type = 0.0
+    var accumulator: matrix_c.ElementType = 0.0
 
     # Iterate through tiles along K dimension
     # Use comptime for to unroll the loop at compile time

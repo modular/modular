@@ -22,7 +22,7 @@ developers learning GPU programming in Mojo.
 The implementation shows:
 - Basic tiling techniques for improved memory bandwidth utilization
 - Proper usage of gpu.sync.barrier() for thread synchronization
-- LayoutTensor usage for matrix representation
+- TileTensor usage for matrix representation
 - Shared memory optimization patterns
 
 This example uses only open source Mojo standard library and layout package.
@@ -37,8 +37,9 @@ from std.gpu.host import DeviceContext
 from std.gpu import thread_idx, block_idx
 from std.gpu.memory import AddressSpace
 
-# Layout tensor support from open source layout package
-from layout import Layout, LayoutTensor
+# TileTensor support from open source layout package
+from layout import TileTensor, stack_allocation
+from layout.tile_layout import row_major
 
 # Data type selection: float32 provides good balance of precision and performance
 comptime float_dtype = DType.float32
@@ -62,21 +63,21 @@ comptime NUM_TILES_PER_SIDE = MATRIX_SIZE // TILE_SIZE  # Number of tiles per ma
 comptime THREADS_PER_TILE = TILE_SIZE * TILE_SIZE  # Threads needed per tile (256)
 comptime TOTAL_TILES_TO_PROCESS = NUM_TILES_PER_SIDE  # Tiles to process in K dimension
 
-# LayoutTensor provides type-safe multi-dimensional data access with automatic memory layout handling
+# TileTensor provides type-safe multi-dimensional data access with automatic memory layout handling
 # Layout definitions using example matrix dimensions
-comptime matrix_a_layout = Layout.row_major(MATRIX_M, MATRIX_K)  # A: M x K
-comptime matrix_b_layout = Layout.row_major(MATRIX_K, MATRIX_N)  # B: K x N
-comptime matrix_c_layout = Layout.row_major(MATRIX_M, MATRIX_N)  # C: M x N
+comptime matrix_a_layout = row_major[MATRIX_M, MATRIX_K]()  # A: M x K
+comptime matrix_b_layout = row_major[MATRIX_K, MATRIX_N]()  # B: K x N
+comptime matrix_c_layout = row_major[MATRIX_M, MATRIX_N]()  # C: M x N
 
 # Layout definitions for tile access
-comptime tile_a_layout = Layout.row_major(TILE_M, TILE_K)
-comptime tile_b_layout = Layout.row_major(TILE_K, TILE_N)
+comptime tile_a_layout = row_major[TILE_M, TILE_K]()
+comptime tile_b_layout = row_major[TILE_K, TILE_N]()
 
 
 def tiled_matmul_kernel(
-    matrix_a: LayoutTensor[float_dtype, matrix_a_layout, MutAnyOrigin],
-    matrix_b: LayoutTensor[float_dtype, matrix_b_layout, MutAnyOrigin],
-    matrix_c: LayoutTensor[float_dtype, matrix_c_layout, MutAnyOrigin],
+    matrix_a: TileTensor[float_dtype, type_of(matrix_a_layout), MutAnyOrigin],
+    matrix_b: TileTensor[float_dtype, type_of(matrix_b_layout), MutAnyOrigin],
+    matrix_c: TileTensor[float_dtype, type_of(matrix_c_layout), MutAnyOrigin],
 ):
     # Thread and block indices
     var thread_x = thread_idx.x
@@ -93,25 +94,19 @@ def tiled_matmul_kernel(
     var tile_col_start = block_x * TILE_N
 
     # Allocate shared memory tiles for fast on-chip access
-    var tile_a_shared = LayoutTensor[
-        float_dtype,
-        tile_a_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var tile_a_shared = stack_allocation[
+        float_dtype, address_space=AddressSpace.SHARED
+    ](tile_a_layout)
 
-    var tile_b_shared = LayoutTensor[
-        float_dtype,
-        tile_b_layout,
-        MutAnyOrigin,
-        address_space=AddressSpace.SHARED,
-    ].stack_allocation()
+    var tile_b_shared = stack_allocation[
+        float_dtype, address_space=AddressSpace.SHARED
+    ](tile_b_layout)
 
     # Initialize accumulator and start tiling loop
-    var accumulator: matrix_c.element_type = 0.0
+    var accumulator: matrix_c.ElementType = 0.0
 
     # Iterate through tiles along K dimension
-    # Use @parameter to unroll the loop at compile time
+    # Use comptime for to unroll the loop at compile time
     comptime for k_tile in range(0, MATRIX_K, TILE_K):
         # Cooperative tile loading
         # Calculate global coordinates for tile loading
@@ -202,17 +197,13 @@ def main() raises:
         )
         ctx.synchronize()
 
-        var host_matrix_a = LayoutTensor[float_dtype, matrix_a_layout](
-            host_matrix_a_buffer
-        )
+        var host_matrix_a = TileTensor(host_matrix_a_buffer, matrix_a_layout)
         for i in range(MATRIX_M):
             for j in range(MATRIX_K):
                 host_matrix_a[i, j] = Float32(i + 1)
         print("Matrix A initialized with simple test pattern (A[i,j] = i + 1)")
 
-        var host_matrix_b = LayoutTensor[float_dtype, matrix_b_layout](
-            host_matrix_b_buffer
-        )
+        var host_matrix_b = TileTensor(host_matrix_b_buffer, matrix_b_layout)
         for i in range(MATRIX_K):
             for j in range(MATRIX_N):
                 host_matrix_b[i, j] = Float32(j + 1)
@@ -223,16 +214,10 @@ def main() raises:
         ctx.enqueue_copy(src_buf=host_matrix_b_buffer, dst_buf=matrix_b_buffer)
         print("Input data transferred from host to device")
 
-        # Wrap device buffers in LayoutTensors
-        var device_matrix_a = LayoutTensor[float_dtype, matrix_a_layout](
-            matrix_a_buffer
-        )
-        var device_matrix_b = LayoutTensor[float_dtype, matrix_b_layout](
-            matrix_b_buffer
-        )
-        var device_matrix_c = LayoutTensor[float_dtype, matrix_c_layout](
-            matrix_c_buffer
-        )
+        # Wrap device buffers in TileTensors
+        var device_matrix_a = TileTensor(matrix_a_buffer, matrix_a_layout)
+        var device_matrix_b = TileTensor(matrix_b_buffer, matrix_b_layout)
+        var device_matrix_c = TileTensor(matrix_c_buffer, matrix_c_layout)
 
         # Calculate grid and block dimensions
         comptime num_blocks_x = ceildiv(MATRIX_N, TILE_N)
@@ -270,9 +255,7 @@ def main() raises:
         ctx.enqueue_copy(src_buf=matrix_c_buffer, dst_buf=host_matrix_c_buffer)
         ctx.synchronize()
 
-        var result_matrix = LayoutTensor[float_dtype, matrix_c_layout](
-            host_matrix_c_buffer
-        )
+        var result_matrix = TileTensor(host_matrix_c_buffer, matrix_c_layout)
 
         print("Matrix multiplication completed!")
         print("Result matrix C (first few elements):")
