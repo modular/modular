@@ -29,12 +29,12 @@ class Placement(ABC):
 
     Every placement describes what a single mesh axis does to a tensor:
 
-    * :class:`Replicated` — full copy on every device.
-    * :class:`Sharded` — split along a tensor dimension.
-    * :class:`Partial` — partial result needing reduction.
+    * :class:`Replicated`: full copy on every device.
+    * :class:`Sharded`: split along a tensor dimension.
+    * :class:`Partial`: partial result needing reduction.
 
-    Custom subclasses (e.g. ``StridedShard``, ``InterleavedShard``) can
-    extend the vocabulary for non-standard partitioning patterns.
+    Custom subclasses (for example, ``StridedShard`` or ``InterleavedShard``)
+    can extend the vocabulary for non-standard partitioning patterns.
     """
 
     @abstractmethod
@@ -44,7 +44,7 @@ class Placement(ABC):
 class Replicated(Placement):
     """Every device on this mesh axis holds the same copy of the data.
 
-    Singleton — ``Replicated() is Replicated()`` is always ``True``.
+    Singleton: ``Replicated() is Replicated()`` is always ``True``.
     """
 
     _instance: Replicated | None = None
@@ -84,9 +84,11 @@ class ReduceOp(str, Enum):
 
     Matches the standard set from PyTorch's ``c10d::ReduceOp``.
 
-    Note: Only ``SUM`` is currently used in eager dispatch.  The others
-    are defined for forward-compatibility but do not yet have
-    corresponding MAX reduce op implementations.
+    .. note::
+
+       Only ``SUM`` is currently used in eager dispatch. The others are
+       defined for forward-compatibility but do not yet have corresponding
+       MAX reduce op implementations.
     """
 
     SUM = "sum"
@@ -98,7 +100,7 @@ class ReduceOp(str, Enum):
 class Partial(Placement):
     """Every device holds a partial result that must be reduced.
 
-    Cached per ``reduce_op`` — ``Partial() is Partial()`` is ``True``.
+    Cached per ``reduce_op``, so ``Partial() is Partial()`` is ``True``.
 
     Args:
         reduce_op: The reduction operation to apply. Defaults to sum.

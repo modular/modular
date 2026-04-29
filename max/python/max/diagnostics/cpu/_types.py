@@ -20,18 +20,19 @@ from dataclasses import dataclass
 
 @dataclass
 class CPUMetrics:
-    """CPU metrics collected during benchmarking.
-
-    Attributes:
-        user: Total user CPU time in seconds.
-        user_percent: User CPU utilization as a percentage.
-        system: Total system CPU time in seconds.
-        system_percent: System CPU utilization as a percentage.
-        elapsed: Elapsed wall-clock time in seconds.
-    """
+    """CPU metrics collected during benchmarking."""
 
     user: float
+    """The total user CPU time in seconds."""
+
     user_percent: float
+    """The user CPU utilization as a percentage."""
+
     system: float
+    """The total system CPU time in seconds."""
+
     system_percent: float
+    """The system CPU utilization as a percentage."""
+
     elapsed: float
+    """The elapsed wall-clock time in seconds."""

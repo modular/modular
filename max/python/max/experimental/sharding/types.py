@@ -13,10 +13,11 @@
 
 """Distributed type descriptors for graph compilation.
 
-* :class:`DistributedTensorType` — symbolic type for a tensor distributed
-  across a device mesh.  Analogous to :class:`~max.graph.TensorType`.
-* :class:`DistributedBufferType` — symbolic type for a mutable buffer
-  distributed across a device mesh.  Analogous to :class:`~max.graph.BufferType`.
+* :class:`DistributedTensorType`: symbolic type for a tensor distributed
+  across a device mesh. Analogous to :class:`~max.graph.TensorType`.
+* :class:`DistributedBufferType`: symbolic type for a mutable buffer
+  distributed across a device mesh. Analogous to
+  :class:`~max.graph.BufferType`.
 """
 
 from __future__ import annotations
@@ -47,7 +48,7 @@ T = TypeVar("T", TensorType, BufferType)
 class DistributedType(Generic[T], ABC):
     """Shared state and shard-shape logic for distributed type descriptors.
 
-    Not intended for direct use — see :class:`DistributedTensorType` and
+    Not intended for direct use. See :class:`DistributedTensorType` and
     :class:`DistributedBufferType`.
     """
 
@@ -121,7 +122,7 @@ class DistributedType(Generic[T], ABC):
     @property
     @abstractmethod
     def local_types(self) -> list[T]:
-        """Per-device types in mesh order."""
+        """The per-device types in mesh order."""
         ...
 
 
@@ -147,7 +148,7 @@ class DistributedTensorType(DistributedType[TensorType]):
 
     @property
     def local_types(self) -> list[TensorType]:
-        """Per-device :class:`~max.graph.TensorType` objects in mesh order."""
+        """The per-device :class:`~max.graph.TensorType` objects in mesh order."""
         local_shape = self._local_shard_shape()
         return [
             TensorType(self.dtype, local_shape, DeviceRef.from_device(device))
@@ -179,7 +180,7 @@ class DistributedBufferType(DistributedType[BufferType]):
 
     @property
     def local_types(self) -> list[BufferType]:
-        """Per-device :class:`~max.graph.BufferType` objects in mesh order."""
+        """The per-device :class:`~max.graph.BufferType` objects in mesh order."""
         local_shape = self._local_shard_shape()
         return [
             BufferType(self.dtype, local_shape, DeviceRef.from_device(device))
@@ -204,17 +205,22 @@ class DistributedBufferType(DistributedType[BufferType]):
 class TensorLayout:
     """Metadata snapshot of a distributed tensor for rule evaluation.
 
-    Bundles the tensor's dtype, shape, and distribution mapping.
-    The mapping stays abstract (DeviceMapping) — rules work with
-    any concrete mapping type (PlacementMapping, NamedMapping, etc.).
+    Bundles the tensor's dtype, shape, and distribution mapping. The mapping
+    stays abstract (:class:`DeviceMapping`) so rules work with any concrete
+    mapping type, such as :class:`PlacementMapping` or :class:`NamedMapping`.
 
-    The shape is a Shape (list[Dim]), supporting both static and
-    symbolic dimensions for graph compilation compatibility.
+    The shape is a :class:`~max.graph.Shape` (``list[Dim]``), supporting both
+    static and symbolic dimensions for graph compilation compatibility.
     """
 
     dtype: DType
+    """The element data type of the tensor."""
+
     shape: Shape
+    """The global shape of the tensor."""
+
     mapping: DeviceMapping
+    """The distribution mapping over the device mesh."""
 
     def __init__(
         self, dtype: DType, shape: ShapeLike, mapping: DeviceMapping
@@ -225,12 +231,12 @@ class TensorLayout:
 
     @property
     def rank(self) -> int:
-        """Number of dimensions."""
+        """The number of dimensions."""
         return len(self.shape)
 
     @property
     def mesh(self) -> DeviceMesh:
-        """The device mesh from the mapping."""
+        """The device mesh derived from the mapping."""
         return self.mapping.mesh
 
     def __repr__(self) -> str:

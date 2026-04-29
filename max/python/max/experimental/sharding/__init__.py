@@ -14,24 +14,24 @@
 """Placement types and sharding specifications for distributed tensors.
 
 This package is the single source of truth for describing how tensor data is
-distributed across a :class:`DeviceMesh`.  It contains:
+distributed across a :class:`DeviceMesh`. It contains:
 
 **Placement types** (mesh-axis-indexed primitives):
 
-* :class:`Replicated` — every device holds a full copy.
-* :class:`Sharded` — tensor is split along a dimension.
-* :class:`Partial` — each device holds a partial result needing reduction.
+* :class:`Replicated`: every device holds a full copy.
+* :class:`Sharded`: tensor is split along a dimension.
+* :class:`Partial`: each device holds a partial result needing reduction.
 
 **Sharding specifications** (high-level wrappers):
 
-* :class:`PlacementMapping` — **mesh-axis-indexed** (PyTorch DTensor style).
-  One :class:`Placement` per mesh axis.  Suitable for eager dispatch.
-* :class:`NamedMapping` — **tensor-dimension-indexed** (JAX PartitionSpec
-  style).  One entry per tensor dimension names the mesh axis that shards it.
+* :class:`PlacementMapping`, **mesh-axis-indexed** (PyTorch DTensor style).
+  One :class:`Placement` per mesh axis. Suitable for eager dispatch.
+* :class:`NamedMapping`, **tensor-dimension-indexed** (JAX PartitionSpec
+  style). One entry per tensor dimension names the mesh axis that shards it.
   Suitable for compiler-driven sharding propagation.
 
 Both spec types share the same :class:`DeviceMesh` and can be converted to
-each other for the standard placement vocabulary.  Conversions that would
+each other for the standard placement vocabulary. Conversions that would
 lose information raise :class:`ConversionError`.
 """
 

@@ -33,9 +33,17 @@ def shard_shape(
     """Computes the per-shard shape from a global shape and placements.
 
     For each ``Sharded(axis=k)`` placement on mesh axis ``i``, dimension
-    ``k`` is divided by ``mesh_shape[i]``.  Replicated and Partial
-    placements leave the shape unchanged.  Works with both static and
-    symbolic dimensions.
+    ``k`` is divided by ``mesh_shape[i]``. :class:`Replicated` and
+    :class:`Partial` placements leave the shape unchanged. Works with both
+    static and symbolic dimensions.
+
+    Args:
+        global_shape: The global shape of the tensor.
+        placements: One :class:`Placement` per mesh axis.
+        mesh_shape: The size of each mesh axis.
+
+    Returns:
+        The per-shard dimensions after applying every sharded placement.
     """
     result = [Dim(d) for d in global_shape]
     for mesh_axis, p in enumerate(placements):
@@ -49,7 +57,21 @@ def global_shape_from_local(
     mesh: DeviceMesh,
     placements: Sequence[Placement],
 ) -> Shape:
-    """Derives the global shape from one local shard's shape and placements."""
+    """Derives the global shape from one local shard's shape and placements.
+
+    Args:
+        local_shape: The shape of one local shard.
+        mesh: The device mesh.
+        placements: One :class:`Placement` per mesh axis.
+
+    Returns:
+        The reconstructed global tensor shape.
+
+    Raises:
+        NotImplementedError: If ``placements`` contains a placement type
+            other than :class:`Sharded`, :class:`Replicated`, or
+            :class:`Partial`.
+    """
     shape = list(local_shape)
     for axis_idx, placement in enumerate(placements):
         if isinstance(placement, Sharded):
@@ -86,21 +108,33 @@ def local_shard_shape_from_global(
     Dispatch on the parent dim subtype (mirrors
     :meth:`sharding.types.DistributedTensorType._local_shard_shape`):
 
-    - :class:`StaticDim`: standard strided decomposition — when the parent
-      size is not divisible by the mesh axis size, shard extents differ by
-      at most one element.
-    - :class:`SymbolicDim`: emit a fresh named symbolic dim
-      ``"{name}_{axis_name}"`` — every shard gets the same symbolic size.
-    - :class:`AlgebraicDim` (and any other non-static case): divide
-      symbolically via ``parent // mesh_axis_size``; the resulting
+    - :class:`~max.graph.StaticDim`: standard strided decomposition. When the
+      parent size is not divisible by the mesh axis size, shard extents
+      differ by at most one element.
+    - :class:`~max.graph.SymbolicDim`: emit a fresh named symbolic dim
+      ``"{name}_{axis_name}"``, where every shard gets the same symbolic
+      size.
+    - :class:`~max.graph.AlgebraicDim` (and any other non-static case):
+      divide symbolically via ``parent // mesh_axis_size``. The resulting
       ``AlgebraicDim`` folds eagerly when operands are static.
 
     Device flat indices follow the same row-major order as
     :attr:`DeviceMesh.devices`.
 
+    Args:
+        global_shape: The global tensor shape.
+        mesh: The device mesh.
+        placements: One :class:`Placement` per mesh axis.
+
+    Returns:
+        One :class:`~max.graph.Shape` per device, in row-major mesh order.
+
     Raises:
-        ValueError: If ``placements`` length does not match ``mesh.ndim`` or a
-            sharded axis is out of range.
+        ValueError: If ``placements`` length does not match ``mesh.ndim`` or
+            a sharded axis is out of range.
+        NotImplementedError: If ``placements`` contains a placement type
+            other than :class:`Sharded`, :class:`Replicated`, or
+            :class:`Partial`.
     """
     if len(placements) != mesh.ndim:
         raise ValueError(

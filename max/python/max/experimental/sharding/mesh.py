@@ -26,14 +26,21 @@ class DeviceMesh:
     """An N-dimensional logical grid of devices.
 
     Args:
-        devices: Flat tuple of devices in row-major order.
-        mesh_shape: Shape of the logical grid, e.g. ``(2, 4)`` for DP=2, TP=4.
-        axis_names: Human-readable names for each axis, e.g. ``("dp", "tp")``.
+        devices: A flat tuple of devices in row-major order.
+        mesh_shape: The shape of the logical grid (for example, ``(2, 4)``
+            for DP=2, TP=4).
+        axis_names: The human-readable names for each axis (for example,
+            ``("dp", "tp")``).
     """
 
     devices: tuple[Device, ...]
+    """The devices in the mesh, in row-major order."""
+
     mesh_shape: tuple[int, ...]
+    """The shape of the logical grid."""
+
     axis_names: tuple[str, ...]
+    """The human-readable name for each mesh axis."""
 
     def __post_init__(self) -> None:
         if len(self.devices) == 0:
@@ -70,16 +77,28 @@ class DeviceMesh:
 
     @property
     def ndim(self) -> int:
-        """Returns the number of mesh dimensions."""
+        """The number of mesh dimensions."""
         return len(self.mesh_shape)
 
     @property
     def num_devices(self) -> int:
-        """Returns the total number of devices."""
+        """The total number of devices."""
         return len(self.devices)
 
     def axis_size(self, axis: str | int) -> int:
-        """Returns the size of a mesh axis by name or index."""
+        """Returns the size of a mesh axis by name or index.
+
+        Args:
+            axis: The mesh axis to look up, either by name or by integer
+                index.
+
+        Returns:
+            The number of devices along the requested axis.
+
+        Raises:
+            ValueError: If ``axis`` is a name that doesn't exist on the mesh.
+            IndexError: If ``axis`` is an integer outside ``[0, ndim)``.
+        """
         idx = self._resolve_axis(axis)
         return self.mesh_shape[idx]
 
@@ -109,7 +128,11 @@ class DeviceMesh:
 
     @staticmethod
     def single(device: Device) -> DeviceMesh:
-        """Creates a trivial single-device mesh."""
+        """Creates a trivial single-device mesh.
+
+        Args:
+            device: The single device the mesh wraps.
+        """
         return DeviceMesh(devices=(device,), mesh_shape=(1,), axis_names=("_",))
 
     @staticmethod

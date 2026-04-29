@@ -24,7 +24,7 @@ from ._types import CPUMetrics
 
 
 def collect_pids_for_port(port: int) -> list[int]:
-    """Collect PIDs of processes (and their children) listening on *port*.
+    """Collects PIDs of processes (and their children) listening on a port.
 
     Args:
         port: The port number to check.
@@ -56,6 +56,9 @@ class CPUMetricsCollector:
 
     Call :meth:`start` before the workload, :meth:`stop` after, then
     :meth:`dump_stats` to obtain the :class:`CPUMetrics` summary.
+
+    Args:
+        pids: The PIDs of the processes to collect CPU times from.
     """
 
     def __init__(self, pids: list[int]) -> None:
@@ -66,6 +69,11 @@ class CPUMetricsCollector:
         self.cpu_times_end: dict[int, Any] = {}
 
     def start(self) -> None:
+        """Records the start clock and per-PID CPU times.
+
+        Processes that no longer exist record ``None`` and are skipped in
+        :meth:`dump_stats`.
+        """
         self.clock_start = time.monotonic()
         for pid in self.pids:
             try:
@@ -75,6 +83,11 @@ class CPUMetricsCollector:
                 self.cpu_times_start[pid] = None
 
     def stop(self) -> None:
+        """Records the stop clock and per-PID CPU times.
+
+        Processes that no longer exist record ``None`` and are skipped in
+        :meth:`dump_stats`.
+        """
         self.clock_end = time.monotonic()
         for pid in self.pids:
             try:
@@ -84,11 +97,11 @@ class CPUMetricsCollector:
                 self.cpu_times_end[pid] = None
 
     def dump_stats(self) -> CPUMetrics:
-        """Compute and return CPU metrics.
+        """Computes and returns CPU metrics aggregated across the tracked PIDs.
 
         Returns:
-            CPUMetrics containing user/system CPU time and utilization
-            percentages.
+            The aggregated user and system CPU times along with their
+            utilization percentages over the elapsed wall-clock interval.
 
         Raises:
             RuntimeError: If :meth:`start` and :meth:`stop` were not called,
