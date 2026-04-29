@@ -31,6 +31,31 @@ This version is still a work in progress.
 
 ## Language enhancements
 
+- Added type refinement based on compile time assumptions, enabling Mojo to
+  narrow types from `where` clauses, `comptime if` statements, and
+  `comptime assert` statements. Refinements in a scope are driven by
+  `conforms_to()` expressions.
+
+  Before:
+
+  ```mojo
+  def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable):
+      for item in self:
+          if trait_downcast[Equatable](item) == trait_downcast[Equatable](value):
+              return True
+      return False
+  ```
+
+  After:
+
+  ```mojo
+  def __contains__(self, value: Self.T) -> Bool where conforms_to(Self.T, Equatable):
+      for item in self:
+          if item == value:
+              return True
+      return False
+  ```
+
 - Improved diagnostics for onboarding-priority parser errors in Mojo
   for clarity and UX.
 
