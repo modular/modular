@@ -47,15 +47,28 @@ def bench_softmax_gpu[
 
     ctx.enqueue_copy(data_d, data_h)
 
+    # The no-lambda `softmax` overload defaults to target="cpu".
+    @parameter
+    @__copy_capture(data_buf)
+    def input_fn[
+        _simd_width: Int, _rank: Int
+    ](coords: IndexList[_rank]) -> SIMD[dtype, _simd_width]:
+        return data_buf.load_linear[width=_simd_width, alignment=1](coords)
+
     @always_inline
-    @__copy_capture(shape, data_buf, out_buf)
+    @__copy_capture(shape, out_buf)
     @parameter
     def bench_fn(mut b: Bencher) raises:
         @parameter
         @always_inline
         def kernel_launch(ctx: DeviceContext) raises:
-            softmax[dtype, simd_width_of[dtype](), rank](
-                data_buf, out_buf, rank - 1
+            softmax[
+                dtype, simd_width_of[dtype](), rank, input_fn, target="gpu"
+            ](
+                rebind[IndexList[rank]](shape),
+                out_buf,
+                rank - 1,
+                ctx,
             )
 
         b.iter_custom[kernel_launch](ctx)
@@ -137,7 +150,7 @@ def main() raises:
             bench_softmax_with_temperature_gpu[dtype, shape](
                 ctx, m, "softmax_with_temperature_gpu", temperature
             )
-        elif len(shape) == 3:
+        else:
             bench_softmax_gpu[dtype, shape](ctx, m, "softmax_gpu")
 
     m.dump_report()
