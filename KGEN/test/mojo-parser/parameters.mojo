@@ -958,6 +958,22 @@ def test_infer_with_default_arg():
     # lit.call {{.*}}::@"infer_with_default_arg[TrivialRegisterPassable]($0,::Int)"<:non_struct_type !Int>
     infer_with_default_arg(128)
 
+
+struct InferredDefaultType[dtype: DType = DType.uint32]:
+    var value: SIMD[Self.dtype, 1]
+    
+    # This default depends on a previous default (on the struct).
+    def __init__[v_dtype: DType = Self.dtype](
+        out self: InferredDefaultType[v_dtype], value: SIMD[v_dtype, 1]
+    ):
+        self.value = value
+
+
+# CHECK-LABEL: lit.fn @"test_dependent_default_param_inference()"() -> !kgen.none
+def test_dependent_default_param_inference():
+    # CHECK: lit.call {{.*}}@InferredDefaultType::@"__init__[::DType](::SIMD[$1, ::Int(1)])"{{.*}}<:!DType {:dtype ui32}, :!DType {:dtype ui32}>
+    _ = InferredDefaultType(3)
+
 # CHECK-LABEL: lit.fn @"indirect_call_infer_params
 def indirect_call_infer_params[callee: def[x: Int](y: Abstraction[x]) thin -> None]():
     # CHECK: lit.call tail[!lit.generator<("y": {{.*}}#Abstraction <:!Int {2}>
