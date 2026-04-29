@@ -2520,7 +2520,7 @@ struct DeviceFunction[
         # Space to store the arguments to the kernel that have been converted
         # from host dtype to device dtype.
         var translated_args = InlineArray[Byte, args_size](uninitialized=True)
-        var start_addr = UInt(Int(translated_args.unsafe_ptr()))
+        var start_addr = Int(translated_args.unsafe_ptr())
         var extra_align = align_up(start_addr, 8) - start_addr
 
         # NOTE: Manual short buffer optimization. We could use a
@@ -2560,7 +2560,7 @@ struct DeviceFunction[
                 comptime actual_arg_type = Ts[i]
                 var first_word_addr = UnsafePointer(
                     to=translated_args.unsafe_ptr()[
-                        translated_arg_offset + Int(extra_align)
+                        translated_arg_offset + extra_align
                     ]
                 ).bitcast[NoneType]()
                 args[i]._to_device_type(first_word_addr)

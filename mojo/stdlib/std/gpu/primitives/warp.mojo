@@ -1295,7 +1295,7 @@ def broadcast(val: UInt) -> UInt:
     Returns:
         The broadcast unsigned integer value, where all lanes receive a copy of the input from lane 0.
     """
-    return UInt(Int(shuffle_idx(Int32(val), 0)))
+    return UInt(shuffle_idx(Int32(val), 0))
 
 
 # ===-----------------------------------------------------------------------===#

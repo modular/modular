@@ -915,7 +915,7 @@ struct Span[
         var length = UInt(len(self))
         var value = needle - Scalar[dtype](1)  # just to make it different
         while length > 0:
-            var half = length >> UInt(Int(length > 1))
+            var half = length >> 1 if length > 1 else length
             length -= half
             value = self.unsafe_get(cursor + half - 1)
             cursor += UInt(splat(value < needle)) & half
