@@ -817,6 +817,19 @@ logit_verification_pipelines:
     cos_dist_threshold: 3.1e-01
     kl_div_threshold: 1.0e-01
 
+  lukealonso/MiniMax-M2.7-NVFP4:
+    pre_submit_agents: []
+    post_submit_agents: [*b200_8x]
+    pipeline: "lukealonso/MiniMax-M2.7-NVFP4"
+    compatible_with: [gpu]
+    encoding: float4_e2m1fnx2
+    tags: [nvidia-multi, 8xb200]
+    pregenerated_torch_goldens:
+      tar_file: "s3://modular-bazel-artifacts-public/artifacts/lukealonso_MiniMax-M2.7-NVFP4_golden/1/8cfc279e6ad212cc92f7f91fd4e5654dadf00ea4316e775fefbb6dd20f8d74ca/vllm_lukealonso_MiniMax-M2.7-NVFP4_float4_e2m1fnx2_golden.json.tar.gz"
+      json_file: "vllm_lukealonso_MiniMax-M2.7-NVFP4_float4_e2m1fnx2_golden.json"
+    cos_dist_threshold: 9.0e-04
+    kl_div_threshold: 3.5e-01
+
   deepseek-ai/DeepSeek-V3.1-Terminus:
     pre_submit_agents: []
     post_submit_agents: [*b200_8x]
