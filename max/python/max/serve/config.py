@@ -126,6 +126,11 @@ class Settings(BaseSettings):
         default=20 * 1024 * 1024,  # 20MiB
         alias="MAX_SERVE_MAX_LOCAL_IMAGE_BYTES",
     )
+    generated_media_storage_mb: int = Field(
+        description="Maximum amount of local disk space in MiB to use for generated image/video artifacts served via /content routes.",
+        default=512,
+        alias="MAX_SERVE_GENERATED_MEDIA_STORAGE_MB",
+    )
 
     # Telemetry and logging configuration
     logs_console_level: str | None = Field(
