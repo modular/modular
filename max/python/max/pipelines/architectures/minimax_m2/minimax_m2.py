@@ -34,7 +34,7 @@ from max.graph import (
     TensorType,
     TensorValue,
     TensorValueLike,
-    Type,
+    Value,
     ops,
 )
 from max.graph.quantization import QuantizationEncoding
@@ -48,6 +48,7 @@ from max.nn.linear import ColumnParallelLinear, Linear
 from max.nn.moe import MoE, MoEQuantized, forward_moe_sharded_layers
 from max.nn.norm import RMSNorm
 from max.nn.rotary_embedding import RotaryEmbedding
+from max.nn.transformer import forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
     DistributedLogitsPostprocessMixin,
     forward_sharded_layers,
@@ -417,77 +418,32 @@ class MiniMaxM2(DistributedLogitsPostprocessMixin, Module):
             dispatch_metadata_tensors,
         ) = _unpack_kv_collections(kv_collections)
 
-        # Build subgraphs (compiled once, called per-layer with different
-        # weight prefixes — reduces compile time significantly).
-        subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
-            TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
-            [hidden.type for hidden in h],
-            [signal_buffer.type for signal_buffer in signal_buffers],
-            [block.type for block in kv_blocks],
-            [length.type for length in cache_lengths],
-            [table.type for table in lookup_tables],
-            [length.type for length in max_lengths],
-            [m.type for m in dispatch_metadata_tensors],
-            [freq.type for freq in freqs_cis],
-            [offset.type for offset in input_row_offsets_list],
-        ]
-        if ep_inputs is not None:
-            subgraph_input_types.append([inp.type for inp in ep_inputs])
+        def inputs_for_layer(
+            idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            values: list[Value[Any] | Sequence[Value[Any]]] = [
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                h,
+                signal_buffers,
+                kv_blocks,
+                cache_lengths,
+                lookup_tables,
+                max_lengths,
+                dispatch_metadata_tensors,
+                freqs_cis,
+                input_row_offsets_list,
+            ]
+            if ep_inputs is not None:
+                values.append(ep_inputs)
+            return values
 
-        subgraphs = []
-        for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-            assert len(layer_group) > 0
-            subgraph_layer = self.layers[layer_group[0]]
-            assert isinstance(subgraph_layer, MiniMaxM2TransformerBlock)
-            subgraphs.append(
-                subgraph_layer.build_subgraph(
-                    f"transformer_block_{group_idx}",
-                    subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
-                )
-            )
-
-        # Process through transformer layers
-        for idx, layer in enumerate(self.layers):
-            has_subgraph = False
-            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-                if idx in layer_group:
-                    has_subgraph = True
-                    h = [
-                        x.tensor
-                        for x in ops.call(
-                            subgraphs[group_idx],
-                            ops.constant(
-                                idx, DType.uint32, device=DeviceRef.CPU()
-                            ),
-                            *h,
-                            *signal_buffers,
-                            *kv_blocks,
-                            *cache_lengths,
-                            *lookup_tables,
-                            *max_lengths,
-                            *dispatch_metadata_tensors,
-                            *freqs_cis,
-                            *input_row_offsets_list,
-                            *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
-                        )
-                    ]
-                    break
-            if not has_subgraph:
-                h = layer(
-                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                    h,
-                    signal_buffers,
-                    kv_blocks,
-                    cache_lengths,
-                    lookup_tables,
-                    max_lengths,
-                    dispatch_metadata_tensors,
-                    freqs_cis,
-                    input_row_offsets_list,
-                    ep_inputs,
-                )
+        h = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+            subgraph_layer_groups=self.subgraph_layer_groups or None,
+            initial_hidden_states=h,
+        )
 
         # DP logit postprocessing: allgather last tokens then lm_head
         last_token_per_dev = [

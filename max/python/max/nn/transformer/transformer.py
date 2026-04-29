@@ -15,10 +15,17 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from enum import Enum
-from typing import TypeVar
+from typing import Any, TypeVar
 
 from max.dtype import DType
-from max.graph import DeviceRef, TensorValue, TensorValueLike, ops
+from max.graph import (
+    DeviceRef,
+    Graph,
+    TensorValue,
+    TensorValueLike,
+    Value,
+    ops,
+)
 
 from ..embedding import Embedding
 from ..kv_cache import KVCacheParams, PagedCacheValues
@@ -47,6 +54,111 @@ def forward_sharded_layers(
         f"Number of layers ({len(layers)}) must match number of inputs ({len(xs)})"
     )
     return [layer(x) for layer, x in zip(layers, xs, strict=True)]
+
+
+def _call_layer_directly(
+    layer: Module,
+    values: list[Value[Any] | Sequence[Value[Any]]],
+) -> list[TensorValue]:
+    result = layer(*values)
+    if isinstance(result, tuple):
+        return list(result)
+    return result if isinstance(result, list) else [result]
+
+
+def forward_sequential_layers(
+    layers: Sequence[Module],
+    *,
+    inputs_for_layer: Callable[
+        [int, list[TensorValue]],
+        list[Value[Any] | Sequence[Value[Any]]],
+    ],
+    initial_hidden_states: list[TensorValue],
+    on_layer_output: Callable[[int, list[TensorValue]], None] | None = None,
+    subgraph_layer_groups: list[list[int]] | None = None,
+    name_for_subgraph: Callable[
+        [int], str
+    ] = lambda i: f"transformer_block_{i}",
+    weight_prefix_for_layer: Callable[[int], str] | None = None,
+) -> list[TensorValue]:
+    """Forward pass through sequential layers with optional subgraph groups.
+
+    Args:
+        layers: The sequence of layers to forward through.
+        inputs_for_layer: A callable that takes the layer index and previous
+            hidden states and returns a list of values.
+        initial_hidden_states: The hidden states to provide to the first layer.
+        on_layer_output: An optional callable invoked after each layer with
+            the layer index and output hidden states.
+        subgraph_layer_groups: A sequence of layer index groups. Each group is
+            a sequence of layer indices that should share a single compiled
+            subgraph. If `None` or empty, all layers are called directly
+            without subgraphs. Layers not listed in any group also fall through
+            to direct call.
+        name_for_subgraph: A callable that takes the group index and returns
+            the subgraph name.
+        weight_prefix_for_layer: A callable that takes the layer index and
+            returns the weight prefix string for that layer. Required when using
+            subgraphs.
+
+    Returns:
+        The output hidden states of the last layer.
+    """
+
+    h = initial_hidden_states
+
+    if subgraph_layer_groups is None:
+        for layer_idx, layer in enumerate(layers):
+            values = inputs_for_layer(layer_idx, h)
+            h = _call_layer_directly(layer, values)
+            if on_layer_output is not None:
+                on_layer_output(layer_idx, h)
+        return h
+
+    assert weight_prefix_for_layer is not None, (
+        "`weight_prefix_for_layer` is required when using subgraphs"
+    )
+
+    layer_idx_to_group_idx: dict[int, int] = {}
+    for group_idx, layer_group in enumerate(subgraph_layer_groups):
+        for layer_idx in layer_group:
+            assert layer_idx < len(layers), (
+                f"Layer index {layer_idx} is out of range for {len(layers)} layers"
+            )
+            layer_idx_to_group_idx[layer_idx] = group_idx
+
+    group_idx_to_subgraph: dict[int, Graph] = {}
+    for layer_idx, layer in enumerate(layers):
+        values = inputs_for_layer(layer_idx, h)
+        if layer_idx not in layer_idx_to_group_idx:
+            h = _call_layer_directly(layer, values)
+        else:
+            group_idx = layer_idx_to_group_idx[layer_idx]
+            if group_idx not in group_idx_to_subgraph:
+                group_idx_to_subgraph[group_idx] = layer.build_subgraph(
+                    name=name_for_subgraph(group_idx),
+                    input_types=[
+                        v.type if isinstance(v, Value) else [x.type for x in v]
+                        for v in values
+                    ],
+                    weight_prefix=weight_prefix_for_layer(layer_idx),
+                )
+
+            call_results = ops.call(
+                group_idx_to_subgraph[group_idx],
+                *[
+                    x
+                    for v in values
+                    for x in (v if isinstance(v, list) else [v])
+                ],
+                prefix=weight_prefix_for_layer(layer_idx),
+            )
+            h = [x.tensor for x in call_results]
+
+        if on_layer_output is not None:
+            on_layer_output(layer_idx, h)
+
+    return h
 
 
 def extract_hs(

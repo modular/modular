@@ -27,7 +27,6 @@ from max.graph import (
     ShardingStrategy,
     TensorType,
     TensorValue,
-    Type,
     Value,
     ops,
 )
@@ -52,7 +51,7 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRopeScalingParams,
     DeepseekYarnRotaryEmbedding,
 )
-from max.nn.transformer import ReturnLogits
+from max.nn.transformer import ReturnLogits, forward_sequential_layers
 from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
@@ -587,109 +586,41 @@ class DeepseekV3_2(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
-        subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
-            TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
-            [hidden.type for hidden in h],
-            [signal_buffer.type for signal_buffer in signal_buffers],
-            [block.type for block in mla_kv_blocks],
-            [length.type for length in mla_cache_lengths],
-            [table.type for table in mla_lookup_tables],
-            [length.type for length in mla_max_lengths],
-            [scale.type for scale in mla_kv_scales],
-            [block.type for block in indexer_kv_blocks],
-            [length.type for length in indexer_cache_lengths],
-            [table.type for table in indexer_lookup_tables],
-            [length.type for length in indexer_max_lengths],
-            [scale.type for scale in indexer_kv_scales],
-            [freq.type for freq in freqs_cis],
-            [val.type for val in mla_prefill_metadata_flat],
-            [offset.type for offset in input_row_offsets_],
-        ]
+        def inputs_for_layer(
+            idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            values: list[Value[Any] | Sequence[Value[Any]]] = [
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                h,
+                signal_buffers,
+                mla_kv_blocks,
+                mla_cache_lengths,
+                mla_lookup_tables,
+                mla_max_lengths,
+                mla_kv_scales,
+                indexer_kv_blocks,
+                indexer_cache_lengths,
+                indexer_lookup_tables,
+                indexer_max_lengths,
+                indexer_kv_scales,
+                freqs_cis,
+                mla_prefill_metadata_flat,
+                input_row_offsets_,
+            ]
+            if mla_decode_scalar_args is not None:
+                values.append(mla_decode_scalar_args)
+            if ep_inputs is not None:
+                values.append(ep_inputs)
+            return values
 
-        if mla_decode_scalar_args is not None:
-            subgraph_input_types.append(
-                [m.type for m in mla_decode_scalar_args]
-            )
-
-        if self.ep_manager is not None:
-            subgraph_input_types.append(list(self.ep_manager.input_types()))
-
-        subgraphs = []
-        for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-            assert len(layer_group) > 0, (
-                "Subgraph layer groups must contain at least one layer"
-            )
-            subgraph_layer = self.layers[layer_group[0]]
-            assert isinstance(subgraph_layer, DeepseekV3_2DecoderLayer), (
-                "Subgraph layer must be a DeepseekV3_2DecoderLayer"
-            )
-            subgraphs.append(
-                subgraph_layer.build_subgraph(
-                    f"dist_transformer_block_{group_idx}",
-                    subgraph_input_types,
-                    f"layers.{layer_group[0]}.",
-                )
-            )
-
-        for idx, layer in enumerate(self.layers):
-            has_subgraph = False
-            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-                if idx in layer_group:
-                    has_subgraph = True
-                    h = [
-                        x.tensor
-                        for x in ops.call(
-                            subgraphs[group_idx],
-                            ops.constant(
-                                idx, DType.uint32, device=DeviceRef.CPU()
-                            ),
-                            *h,
-                            *signal_buffers,
-                            *mla_kv_blocks,
-                            *mla_cache_lengths,
-                            *mla_lookup_tables,
-                            *mla_max_lengths,
-                            *mla_kv_scales,
-                            *indexer_kv_blocks,
-                            *indexer_cache_lengths,
-                            *indexer_lookup_tables,
-                            *indexer_max_lengths,
-                            *indexer_kv_scales,
-                            *freqs_cis,
-                            *mla_prefill_metadata_flat,
-                            *input_row_offsets_,
-                            *(
-                                mla_decode_scalar_args
-                                if mla_decode_scalar_args is not None
-                                else ()
-                            ),
-                            *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"layers.{idx}.",
-                        )
-                    ]
-                    break
-            if not has_subgraph:
-                h = layer(
-                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                    h,
-                    signal_buffers,
-                    mla_kv_blocks,
-                    mla_cache_lengths,
-                    mla_lookup_tables,
-                    mla_max_lengths,
-                    mla_kv_scales,
-                    indexer_kv_blocks,
-                    indexer_cache_lengths,
-                    indexer_lookup_tables,
-                    indexer_max_lengths,
-                    indexer_kv_scales,
-                    freqs_cis=freqs_cis,
-                    mla_prefill_metadata_flat=mla_prefill_metadata_flat,
-                    input_row_offsets=input_row_offsets_,
-                    mla_decode_scalar_args=mla_decode_scalar_args,
-                    ep_inputs=ep_inputs,
-                )
-                assert isinstance(h, list)
+        h = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=lambda i: f"layers.{i}.",
+            subgraph_layer_groups=self.subgraph_layer_groups,
+            name_for_subgraph=lambda g: f"dist_transformer_block_{g}",
+            initial_hidden_states=h,
+        )
 
         if self.config.data_parallel_degree > 1:
             last_token_per_dev: list[TensorValue] = []

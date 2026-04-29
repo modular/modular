@@ -28,7 +28,6 @@ from max.graph import (
     ShardingStrategy,
     TensorType,
     TensorValue,
-    Type,
     Value,
     ops,
 )
@@ -55,7 +54,11 @@ from max.nn.rotary_embedding import (
     DeepseekYarnRotaryEmbedding,
     RotaryEmbedding,
 )
-from max.nn.transformer import ReturnHiddenStates, ReturnLogits
+from max.nn.transformer import (
+    ReturnHiddenStates,
+    ReturnLogits,
+    forward_sequential_layers,
+)
 from max.nn.transformer.distributed_transformer import (
     extract_hs,
     forward_sharded_layers,
@@ -863,45 +866,6 @@ class DeepseekV3(Module):
                 if kv.attention_dispatch_metadata is not None
             ]
 
-        subgraph_input_types: list[Type[Any] | list[Type[Any]]] = [
-            TensorType(DType.uint32, shape=(), device=DeviceRef.CPU()),
-            [hidden.type for hidden in h],
-            [signal_buffer.type for signal_buffer in signal_buffers],
-            [block.type for block in kv_blocks],
-            [length.type for length in cache_lengths],
-            [table.type for table in lookup_tables],
-            [length.type for length in max_lengths],
-            [scale.type for scale in kv_scales],
-            [freq.type for freq in freqs_cis],
-            [val.type for val in mla_prefill_metadata_flat],
-            [offset.type for offset in input_row_offsets_],
-        ]
-
-        if mla_decode_scalar_args is not None:
-            subgraph_input_types.append(
-                [m.type for m in mla_decode_scalar_args]
-            )
-
-        if self.ep_manager is not None:
-            subgraph_input_types.append(list(self.ep_manager.input_types()))
-
-        subgraphs = []
-        for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-            assert len(layer_group) > 0, (
-                "Subgraph layer groups must contain at least one layer"
-            )
-            subgraph_layer = self.layers[layer_group[0]]
-            assert isinstance(subgraph_layer, DeepseekV3DecoderLayer), (
-                "Subgraph layer must be a DeepseekV3DecoderLayer"
-            )
-            subgraphs.append(
-                subgraph_layer.build_subgraph(
-                    f"dist_transformer_block_{group_idx}",
-                    subgraph_input_types,
-                    f"{self.subgraph_layer_prefix}.{layer_group[0]}.",
-                )
-            )
-
         # For EAGLE3 mode, capture hidden states
         eagle3_captured: list[list[TensorValue]] = []
         eagle3_capture_ids: set[int] = set()
@@ -915,58 +879,44 @@ class DeepseekV3(Module):
                 self.config.eagle_aux_hidden_state_layer_ids
             )
 
-        for idx, layer in enumerate(self.layers):
-            has_subgraph = False
-            for group_idx, layer_group in enumerate(self.subgraph_layer_groups):
-                if idx in layer_group:
-                    has_subgraph = True
-                    h = [
-                        x.tensor
-                        for x in ops.call(
-                            subgraphs[group_idx],
-                            ops.constant(
-                                idx, DType.uint32, device=DeviceRef.CPU()
-                            ),
-                            *h,
-                            *signal_buffers,
-                            *kv_blocks,
-                            *cache_lengths,
-                            *lookup_tables,
-                            *max_lengths,
-                            *kv_scales,
-                            *freqs_cis,
-                            *mla_prefill_metadata_flat,
-                            *input_row_offsets_,
-                            *(
-                                mla_decode_scalar_args
-                                if mla_decode_scalar_args is not None
-                                else ()
-                            ),
-                            *(ep_inputs if ep_inputs is not None else ()),
-                            prefix=f"{self.subgraph_layer_prefix}.{idx}.",
-                        )
-                    ]
-                    break
-            if not has_subgraph:
-                h = layer(
-                    ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
-                    h,
-                    signal_buffers,
-                    kv_blocks,
-                    cache_lengths,
-                    lookup_tables,
-                    max_lengths,
-                    kv_scales,
-                    freqs_cis=freqs_cis,
-                    mla_prefill_metadata_flat=mla_prefill_metadata_flat,
-                    input_row_offsets=input_row_offsets_,
-                    mla_decode_scalar_args=mla_decode_scalar_args,
-                    ep_inputs=ep_inputs,
-                )
-                assert isinstance(h, list)
+        def inputs_for_layer(
+            idx: int, h: list[TensorValue]
+        ) -> list[Value[Any] | Sequence[Value[Any]]]:
+            values: list[Value[Any] | Sequence[Value[Any]]] = [
+                ops.constant(idx, DType.uint32, device=DeviceRef.CPU()),
+                h,
+                signal_buffers,
+                kv_blocks,
+                cache_lengths,
+                lookup_tables,
+                max_lengths,
+                kv_scales,
+                freqs_cis,
+                mla_prefill_metadata_flat,
+                input_row_offsets_,
+            ]
 
+            if mla_decode_scalar_args is not None:
+                values.append(mla_decode_scalar_args)
+
+            if ep_inputs is not None:
+                values.append(ep_inputs)
+
+            return values
+
+        def capture_for_eagle3(idx: int, h_out: list[TensorValue]) -> None:
             if idx in eagle3_capture_ids:
-                eagle3_captured.append(list(h))
+                eagle3_captured.append(list(h_out))
+
+        h = forward_sequential_layers(
+            list(self.layers),
+            inputs_for_layer=inputs_for_layer,
+            weight_prefix_for_layer=lambda i: f"{self.subgraph_layer_prefix}.{i}.",
+            subgraph_layer_groups=self.subgraph_layer_groups,
+            name_for_subgraph=lambda g: f"dist_transformer_block_{g}",
+            on_layer_output=capture_for_eagle3 if eagle3_capture_ids else None,
+            initial_hidden_states=h,
+        )
 
         return deepseek_logits_postprocess(
             h=h,
