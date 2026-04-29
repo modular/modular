@@ -34,6 +34,7 @@ from std.collections.string.format import _FormatUtils
 from std.collections.string.iterators import (
     CodepointSliceIter,
     CodepointsIter,
+    GraphemeIndicesIter,
     GraphemeSliceIter,
 )
 from std.hashlib.hasher import Hasher
@@ -1288,6 +1289,120 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         ```
         """
         return GraphemeSliceIter[Self.origin, False](self)
+
+    def grapheme_indices(self) -> GraphemeIndicesIter[Self.origin]:
+        """Return an iterator over grapheme clusters paired with their byte
+        offsets.
+
+        Each yielded element is a `Tuple[Int, StringSlice]` where the first
+        element is the byte offset (relative to the start of this string)
+        at which the grapheme begins, and the second is the grapheme slice.
+
+        Mirrors the shape of Rust's `str::grapheme_indices`.
+
+        Returns:
+            An iterator yielding `(byte_offset, grapheme)` pairs.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        # "café" decomposed: 'c','a','f','e' + combining acute (U+0301)
+        var s = StringSlice("cafe\\u{0301}")
+        var offsets = List[Int]()
+        for off, _ in s.grapheme_indices():
+            offsets.append(off)
+        # Offsets land at 0, 1, 2, 3; the 4th grapheme spans 3 bytes.
+        assert_equal(len(offsets), 4)
+        assert_equal(offsets[3], 3)
+        ```
+        """
+        return GraphemeIndicesIter[Self.origin](self)
+
+    def nth_grapheme(self, n: Int) -> Optional[Self]:
+        """Return the `n`-th grapheme cluster (0-indexed), or `None` if out
+        of range.
+
+        Args:
+            n: The zero-based grapheme index. Must be non-negative.
+
+        Returns:
+            The `n`-th grapheme cluster, or `None` if `n` is out of range.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal, assert_true
+
+        var s = StringSlice("abc")
+        assert_equal(s.nth_grapheme(0).value(), "a")
+        assert_equal(s.nth_grapheme(2).value(), "c")
+        assert_true(s.nth_grapheme(3) is None)
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            n >= 0, "grapheme index must be non-negative"
+        )
+        var iter = self.graphemes()
+        for _ in range(n):
+            if not iter.next():
+                return None
+        return iter.next()
+
+    def split_at_grapheme(
+        self, n: Int
+    ) -> Tuple[Self.Immutable, Self.Immutable]:
+        """Split this string at the `n`-th grapheme-cluster boundary.
+
+        Returns two slices: the first covers grapheme clusters `[0, n)` and
+        the second covers `[n, count)` in a single forward pass.
+
+        `n == 0` yields `("", self)`; `n >= count_graphemes()` yields
+        `(self, "")`. Negative `n` is rejected in safe builds.
+
+        Args:
+            n: The grapheme-cluster boundary at which to split. Must be
+                non-negative.
+
+        Returns:
+            A tuple `(prefix, suffix)` of `StringSlice`s.
+
+        Example:
+
+        ```mojo
+        from std.testing import assert_equal
+
+        var s = StringSlice("Hello, World!")
+        var prefix, suffix = s.split_at_grapheme(5)
+        assert_equal(prefix, "Hello")
+        assert_equal(suffix, ", World!")
+        ```
+        """
+        debug_assert[assert_mode="safe"](
+            n >= 0, "grapheme split index must be non-negative"
+        )
+        var iter = self.graphemes()
+        var split_bytes = 0
+        for _ in range(n):
+            var g = iter.next()
+            if not g:
+                break
+            split_bytes += g.unsafe_value().byte_length()
+
+        var total = len(self._slice)
+        var prefix = Self.Immutable(
+            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+                ptr=self._slice.unsafe_ptr(), length=split_bytes
+            )
+        )
+        var suffix = Self.Immutable(
+            unsafe_from_utf8=Span[Byte, ImmutOrigin(Self.origin)](
+                ptr=self._slice.unsafe_ptr() + split_bytes,
+                length=total - split_bytes,
+            )
+        )
+        return (prefix, suffix)
 
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.

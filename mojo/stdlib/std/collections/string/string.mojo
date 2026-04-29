@@ -20,6 +20,7 @@ from std.collections.string._utf8 import UTF8Chunks, _is_valid_utf8
 from std.collections.string.format import _FormatUtils
 from std.collections.string.string_slice import (
     CodepointSliceIter,
+    GraphemeIndicesIter,
     GraphemeSliceIter,
     _to_string_list,
     _unsafe_strlen,
@@ -1187,6 +1188,48 @@ struct String(
             `StringSlice`.
         """
         return StringSlice(self).graphemes_reversed()
+
+    def grapheme_indices(self) -> GraphemeIndicesIter[origin_of(self)]:
+        """Return an iterator over grapheme clusters paired with their byte
+        offsets.
+
+        Each yielded element is a `Tuple[Int, StringSlice]` where the first
+        element is the byte offset at which the grapheme begins.
+
+        Returns:
+            An iterator yielding `(byte_offset, grapheme)` pairs.
+        """
+        return StringSlice(self).grapheme_indices()
+
+    def nth_grapheme(self, n: Int) -> Optional[StringSlice[origin_of(self)]]:
+        """Return the `n`-th grapheme cluster (0-indexed), or `None` if out
+        of range.
+
+        Args:
+            n: The zero-based grapheme index. Must be non-negative.
+
+        Returns:
+            The `n`-th grapheme cluster, or `None` if `n` is out of range.
+        """
+        return StringSlice(self).nth_grapheme(n)
+
+    def split_at_grapheme(
+        self, n: Int
+    ) -> Tuple[
+        StringSlice[ImmutOrigin(origin_of(self))],
+        StringSlice[ImmutOrigin(origin_of(self))],
+    ]:
+        """Split this string at the `n`-th grapheme-cluster boundary.
+
+        Args:
+            n: The grapheme-cluster boundary at which to split. Must be
+                non-negative.
+
+        Returns:
+            A tuple `(prefix, suffix)` of `StringSlice`s. The prefix covers
+            grapheme clusters `[0, n)` and the suffix covers the rest.
+        """
+        return StringSlice(self).split_at_grapheme(n)
 
     def count_graphemes(self) -> Int:
         """Count the number of grapheme clusters in this string.

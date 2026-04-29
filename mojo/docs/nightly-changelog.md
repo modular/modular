@@ -246,6 +246,17 @@ This version is still a work in progress.
   or whitespace, growing with the distance back to such a codepoint in long
   runs without them.
 
+- Added grapheme-aware algorithms on `String` and `StringSlice`:
+  - `grapheme_indices()` returns a `GraphemeIndicesIter` that yields
+    `(byte_offset, grapheme)` pairs, mirroring Rust's
+    `str::grapheme_indices`. Useful for text editors or UIs that need to
+    map cursor byte positions back to grapheme boundaries.
+  - `nth_grapheme(n)` returns the `n`-th grapheme cluster as an
+    `Optional[StringSlice]`, or `None` when `n` is out of range.
+  - `split_at_grapheme(n)` returns `Tuple[StringSlice, StringSlice]`
+    holding the prefix `[0, n)` and suffix `[n, count)` of grapheme
+    clusters in a single pass, clamping `n` to the total count.
+
 - `count_graphemes()` now takes a fast path over runs of printable ASCII
   (U+0020..U+007E). Each such byte has GBP `Other` and two consecutive
   safe-ASCII bytes always have a grapheme-cluster break between them

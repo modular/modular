@@ -520,6 +520,186 @@ def test_reverse_matches_forward_various() raises:
 
 
 # ===----------------------------------------------------------------------=== #
+# grapheme_indices()
+# ===----------------------------------------------------------------------=== #
+
+
+def test_grapheme_indices_ascii() raises:
+    var s = StringSlice("abc")
+    var offs = List[Int]()
+    var parts = List[String]()
+    for off, g in s.grapheme_indices():
+        offs.append(off)
+        parts.append(String(g))
+    assert_equal(len(offs), 3)
+    assert_equal(offs[0], 0)
+    assert_equal(offs[1], 1)
+    assert_equal(offs[2], 2)
+    assert_equal(parts[0], "a")
+    assert_equal(parts[1], "b")
+    assert_equal(parts[2], "c")
+
+
+def test_grapheme_indices_empty() raises:
+    var count = 0
+    for _, _ in StringSlice("").grapheme_indices():
+        count += 1
+    assert_equal(count, 0)
+
+
+def test_grapheme_indices_combining_mark() raises:
+    # "caf" + e+̀ (combining acute, 2 codepoints, 3 bytes).
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var s = String("caf") + e_acute
+    var offs = List[Int]()
+    var widths = List[Int]()
+    for off, g in StringSlice(s).grapheme_indices():
+        offs.append(off)
+        widths.append(g.byte_length())
+    assert_equal(len(offs), 4)
+    assert_equal(offs[0], 0)
+    assert_equal(offs[1], 1)
+    assert_equal(offs[2], 2)
+    assert_equal(offs[3], 3)
+    assert_equal(widths[3], 3)  # e (1 byte) + combining acute (2 bytes)
+
+
+def test_grapheme_indices_emoji_zwj() raises:
+    # family ZWJ sequence = 1 grapheme spanning many bytes.
+    var family = _string_from_codepoints(
+        0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466
+    )
+    var s = String("a") + family + String("b")
+    var offs = List[Int]()
+    var widths = List[Int]()
+    for off, g in StringSlice(s).grapheme_indices():
+        offs.append(off)
+        widths.append(g.byte_length())
+    assert_equal(len(offs), 3)
+    assert_equal(offs[0], 0)
+    assert_equal(offs[1], 1)
+    assert_equal(widths[1], family.byte_length())
+    assert_equal(offs[2], 1 + family.byte_length())
+    assert_equal(widths[2], 1)
+
+
+def test_grapheme_indices_crlf() raises:
+    # CR+LF is a single grapheme spanning 2 bytes.
+    var offs = List[Int]()
+    var widths = List[Int]()
+    for off, g in StringSlice("a\r\nb").grapheme_indices():
+        offs.append(off)
+        widths.append(g.byte_length())
+    assert_equal(len(offs), 3)
+    assert_equal(offs[0], 0)
+    assert_equal(offs[1], 1)
+    assert_equal(widths[1], 2)
+    assert_equal(offs[2], 3)
+
+
+# ===----------------------------------------------------------------------=== #
+# nth_grapheme()
+# ===----------------------------------------------------------------------=== #
+
+
+def test_nth_grapheme_ascii() raises:
+    var s = StringSlice("abc")
+    assert_equal(s.nth_grapheme(0).value(), "a")
+    assert_equal(s.nth_grapheme(1).value(), "b")
+    assert_equal(s.nth_grapheme(2).value(), "c")
+    assert_true(s.nth_grapheme(3) is None)
+    assert_true(s.nth_grapheme(99) is None)
+
+
+def test_nth_grapheme_empty() raises:
+    var s = StringSlice("")
+    assert_true(s.nth_grapheme(0) is None)
+
+
+def test_nth_grapheme_combining_mark() raises:
+    # 4 graphemes: c, a, f, e+́
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var s = String("caf") + e_acute
+    var slc = StringSlice(s)
+    assert_equal(slc.nth_grapheme(3).value(), e_acute)
+    assert_true(slc.nth_grapheme(4) is None)
+
+
+def test_nth_grapheme_flag_emoji() raises:
+    var flag = _string_from_codepoints(0x1F1FA, 0x1F1F8)
+    var s = String("A") + flag + String("B")
+    var slc = StringSlice(s)
+    assert_equal(slc.nth_grapheme(0).value(), "A")
+    assert_equal(slc.nth_grapheme(1).value(), flag)
+    assert_equal(slc.nth_grapheme(2).value(), "B")
+    assert_true(slc.nth_grapheme(3) is None)
+
+
+# ===----------------------------------------------------------------------=== #
+# split_at_grapheme()
+# ===----------------------------------------------------------------------=== #
+
+
+def test_split_at_grapheme_ascii() raises:
+    var s = StringSlice("Hello, World!")
+    var prefix, suffix = s.split_at_grapheme(5)
+    assert_equal(prefix, "Hello")
+    assert_equal(suffix, ", World!")
+
+
+def test_split_at_grapheme_zero() raises:
+    var s = StringSlice("Hello")
+    var prefix, suffix = s.split_at_grapheme(0)
+    assert_equal(prefix, "")
+    assert_equal(suffix, "Hello")
+
+
+def test_split_at_grapheme_end() raises:
+    var s = StringSlice("Hello")
+    var prefix, suffix = s.split_at_grapheme(5)
+    assert_equal(prefix, "Hello")
+    assert_equal(suffix, "")
+
+
+def test_split_at_grapheme_past_end() raises:
+    var s = StringSlice("Hi")
+    var prefix, suffix = s.split_at_grapheme(99)
+    assert_equal(prefix, "Hi")
+    assert_equal(suffix, "")
+
+
+def test_split_at_grapheme_empty_string() raises:
+    var s = StringSlice("")
+    var prefix, suffix = s.split_at_grapheme(0)
+    assert_equal(prefix, "")
+    assert_equal(suffix, "")
+    var p2, s2 = s.split_at_grapheme(5)
+    assert_equal(p2, "")
+    assert_equal(s2, "")
+
+
+def test_split_at_grapheme_combining_mark() raises:
+    # 4 graphemes: c, a, f, e+́. Splitting at 3 must put the whole
+    # e+combining acute in the suffix, not split the cluster.
+    var e_acute = _string_from_codepoints(0x65, 0x0301)
+    var s = String("caf") + e_acute
+    var prefix, suffix = StringSlice(s).split_at_grapheme(3)
+    assert_equal(prefix, "caf")
+    assert_equal(suffix, e_acute)
+
+
+def test_split_at_grapheme_emoji_zwj() raises:
+    # 3 graphemes: "a", family, "b". Split at 2 → ("a" + family, "b").
+    var family = _string_from_codepoints(
+        0x1F468, 0x200D, 0x1F469, 0x200D, 0x1F467, 0x200D, 0x1F466
+    )
+    var s = String("a") + family + String("b")
+    var prefix, suffix = StringSlice(s).split_at_grapheme(2)
+    assert_equal(prefix, String("a") + family)
+    assert_equal(suffix, "b")
+
+
+# ===----------------------------------------------------------------------=== #
 # ASCII fast path
 # ===----------------------------------------------------------------------=== #
 

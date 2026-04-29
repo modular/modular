@@ -747,3 +747,90 @@ struct GraphemeSliceIter[
                 last_boundary = pos
             pos += num_bytes
         return last_boundary
+
+
+struct GraphemeIndicesIter[mut: Bool, //, origin: Origin[mut=mut]](
+    ImplicitlyCopyable, Iterable, Iterator
+):
+    """Iterator over grapheme clusters paired with their starting byte offset.
+
+    Each call to `__next__()` yields a `Tuple[Int, StringSlice[origin]]` where
+    the first element is the byte offset (relative to the original string)
+    at which the grapheme begins, and the second is the grapheme slice
+    itself.
+
+    Parameters:
+        mut: Whether the slice is mutable.
+        origin: The origin of the underlying string data.
+
+    Mirrors `str::grapheme_indices` from Rust's `unicode-segmentation` crate.
+    Useful for text editors and UIs that need to map cursor byte positions
+    back to grapheme boundaries.
+
+    Example:
+
+    ```mojo
+    %# from testing import assert_equal
+    var s = StringSlice("abc")
+    var pairs = List[Tuple[Int, String]]()
+    for off, g in s.grapheme_indices():
+        pairs.append((off, String(g)))
+    assert_equal(len(pairs), 3)
+    assert_equal(pairs[0][0], 0)
+    assert_equal(pairs[1][0], 1)
+    assert_equal(pairs[2][0], 2)
+    ```
+    """
+
+    comptime IteratorType[
+        iterable_mut: Bool, //, iterable_origin: Origin[mut=iterable_mut]
+    ]: Iterator = Self
+    """The iterator type for this grapheme indices iterator.
+
+    Parameters:
+        iterable_mut: Whether the iterable is mutable.
+        iterable_origin: The origin of the iterable.
+    """
+
+    comptime Element = Tuple[Int, StringSlice[Self.origin]]
+    """The element type yielded by iteration."""
+
+    var _inner: GraphemeSliceIter[Self.origin]
+    """Underlying grapheme slice iterator."""
+
+    var _byte_offset: Int
+    """Running byte offset of the next grapheme, relative to the original
+    string."""
+
+    @doc_hidden
+    def __init__(out self, str_slice: StringSlice[Self.origin]):
+        self._inner = GraphemeSliceIter(str_slice)
+        self._byte_offset = 0
+
+    def __iter__(ref self) -> Self.IteratorType[origin_of(self)]:
+        """Iterate over the grapheme indices in the underlying string slice.
+
+        Returns:
+            An iterator yielding `(byte_offset, grapheme)` pairs.
+        """
+        return self.copy()
+
+    @always_inline
+    def __next__(
+        mut self,
+    ) raises StopIteration -> Tuple[Int, StringSlice[Self.origin]]:
+        """Get the next `(byte_offset, grapheme)` pair.
+
+        Returns:
+            The byte offset at which the next grapheme starts and the
+            grapheme slice itself.
+
+        Raises:
+            `StopIteration` if the iterator has been exhausted.
+        """
+        var g = self._inner.next()
+        if not g:
+            raise StopIteration()
+        var offset = self._byte_offset
+        self._byte_offset += g.unsafe_value().byte_length()
+        return (offset, g.unsafe_value())
