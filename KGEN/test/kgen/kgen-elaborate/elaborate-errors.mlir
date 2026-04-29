@@ -498,3 +498,29 @@ kgen.generator export @use_negative_alloc_size() {
   kgen.param.constant: !kgen.pointer<index> = <apply(:() -> !kgen.pointer<index> @negative_alloc_size)>
   kgen.return
 }
+
+// -----
+
+// Test that SIMD-typed parameter values are printed in call expansion failure
+// messages (MOCO-3651).
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @simd_param_inner<a: !pop.scalar<si32>>() {
+  // expected-note @below {{constraint failed: always fails}}
+  kgen.param.assert <0>, "always fails"
+  kgen.return
+}
+
+// expected-note @below {{function instantiation failed}}
+kgen.generator @simd_param_outer<a: !pop.scalar<si32>>() {
+  // expected-note @below {{call expansion failed with parameter value(s): ("a": 42)}}
+  kgen.call @simd_param_inner<a>() : () -> ()
+  kgen.return
+}
+
+// expected-error @below {{function instantiation failed}}
+kgen.generator export @simd_param_main() {
+  // expected-note @below {{call expansion failed with parameter value(s): ("a": 42)}}
+  kgen.call @simd_param_outer<:!pop.scalar<si32> #pop<simd 42>>() : () -> ()
+  kgen.return
+}

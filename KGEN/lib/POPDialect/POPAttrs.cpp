@@ -429,6 +429,38 @@ static void printSplatOrVector(AsmPrinter &p, ArrayRef<DTypeValue> values,
   p << '>';
 }
 
+void POP::printDTypeValue(raw_ostream &os, const DTypeValue &value,
+                          KGENDType dtype) {
+  if (dtype.isInt())
+    os << value.getIntVal();
+  else if (dtype.isFloat()) {
+    SmallString<64> s;
+    value.getFloatVal().toString(s);
+    os << s;
+  } else if (dtype.isBool())
+    os << (value.getBoolVal() ? "True" : "False");
+  else if (dtype.isIndex())
+    os << value.getIndexVal();
+  else {
+    // uindex / address: unsigned interpretation of the stored bits.
+    assert(dtype.isUIndex() || dtype.isAddress());
+    os << static_cast<uint64_t>(value.getIndexVal());
+  }
+}
+
+void POP::printDTypeValues(raw_ostream &os, ArrayRef<DTypeValue> values,
+                           KGENDType dtype) {
+  if (values.size() == 1) {
+    printDTypeValue(os, values[0], dtype);
+  } else {
+    os << "[";
+    llvm::interleaveComma(values, os, [&](const DTypeValue &v) {
+      printDTypeValue(os, v, dtype);
+    });
+    os << "]";
+  }
+}
+
 /// Custom directive parse hook for SIMDAttr assembly format.
 static ParseResult
 parseSIMDValues(AsmParser &p, SmallVector<DTypeValue> &values, SIMDType type) {

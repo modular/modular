@@ -514,26 +514,6 @@ FailureOr<TypedAttr> IREvaluatorContext::evaluateCompileOffloadClosureAttr(
   return {populateFnRef};
 }
 
-/// Print a single SIMD value.
-static void printSIMDValue(raw_ostream &os, const POP::DTypeValue &value,
-                           KGENDType dtype) {
-  if (dtype.isInt()) {
-    os << value.getIntVal();
-  } else if (dtype.isFloat()) {
-    SmallString<256> strVal;
-    value.getFloatVal().toString(strVal);
-    os << StringRef(strVal.data(), strVal.size());
-  } else if (dtype.isBool()) {
-    os << (value.getBoolVal() ? "True" : "False");
-  } else {
-    assert(dtype.isIndex() || dtype.isUIndex() || dtype.isAddress());
-    if (dtype.isIndex())
-      os << value.getIndexVal();
-    else
-      os << uint64_t(value.getIndexVal());
-  }
-}
-
 /// Print a KGENDType, following the naming scheme in the Mojo DType struct.
 /// NOTE: It would be better to have custom type name printing that can be
 /// implemented on the struct directly.
@@ -595,16 +575,7 @@ void IREvaluatorContext::printParamValue(raw_ostream &os, ParamDeclAttr decl,
       .Case<POP::SIMDAttr>([&](auto simdAttr) {
         ArrayRef<POP::DTypeValue> values = simdAttr.getValues();
         KGENDType dType = *simdAttr.getType().getResolvedDType();
-        if (values.size() == 1) {
-          // We handle scalars specially for improved readability.
-          printSIMDValue(os, values[0], dType);
-        } else {
-          os << "[";
-          llvm::interleaveComma(values, os, [&](const POP::DTypeValue &value) {
-            printSIMDValue(os, value, dType);
-          });
-          os << "]";
-        }
+        POP::printDTypeValues(os, values, dType);
         os << " : ";
         if (qualifiedBuiltins)
           os << "std.builtin.simd.";

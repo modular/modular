@@ -17,6 +17,7 @@
 #include "KGEN/KGENDialect/KGENTypeInterfaces.h"
 #include "KGEN/KGENDialect/KGENTypes.h"
 #include "KGEN/KGENDialect/ParameterEvaluator.h"
+#include "KGEN/POPDialect/POPAttrs.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "MLRT/AsyncRT/CompilerSupport/Context.h"
 #include "Support/Compiler/VerifyUtils.h"
@@ -2450,6 +2451,14 @@ std::string KGEN::printSimpleParamAttrValues(
           std::string str;
           llvm::raw_string_ostream os(str);
           os << param.getName() << ": " << attr.getValue();
+          result.push_back(str);
+        })
+        .Case<POP::SIMDAttr>([&](auto &attr) {
+          std::string str;
+          llvm::raw_string_ostream os(str);
+          os << param.getName() << ": ";
+          POP::printDTypeValues(os, attr.getValues(),
+                                *attr.getType().getResolvedDType());
           result.push_back(str);
         })
         .Default([&](auto &attr) {
