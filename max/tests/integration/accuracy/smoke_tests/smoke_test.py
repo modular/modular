@@ -43,7 +43,7 @@ from dataclasses import asdict, dataclass
 from functools import cache
 from pathlib import Path
 from pprint import pformat
-from subprocess import DEVNULL, check_call, check_output
+from subprocess import DEVNULL, TimeoutExpired, check_call, check_output
 from tempfile import TemporaryDirectory
 from typing import Any
 
@@ -421,7 +421,14 @@ def call_eval(
 
         args = [interpreter, "-m", *eval_cmd]
         logger.info(f"Running eval with:\n {' '.join(args)}")
-        check_call(args, timeout=None if disable_timeouts else 600)
+        eval_timeout = None if disable_timeouts else 600
+        try:
+            check_call(args, timeout=eval_timeout)
+        except TimeoutExpired:
+            raise RuntimeError(
+                f"Evals did not finish within the expected timeout={eval_timeout}s. "
+                "You can pass --disable-timeouts to opt-out of this."
+            ) from None
 
         return parse_eval_results(Path(tempdir))
 
