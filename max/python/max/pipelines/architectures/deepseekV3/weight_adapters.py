@@ -36,6 +36,12 @@ def convert_safetensor_state_dict(
         max_name = name
         for before, after in DEEPSEEK_SAFETENSOR_MAP.items():
             max_name = max_name.replace(before, after)
+        # Drop FP8 KV-cache static scales emitted by modelopt NVFP4
+        # checkpoints (e.g. `k_proj.k_scale`, `v_proj.v_scale`). MAX reads
+        # KV cache scales from a separate configuration path, so these keys
+        # would otherwise trigger a strict load_state_dict failure.
+        if max_name.endswith(".k_scale") or max_name.endswith(".v_scale"):
+            continue
         new_state_dict[max_name] = value.data()
 
     # TODO(E2EOPT-673): Support MTP. We currently delete the MTP weights
