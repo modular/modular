@@ -630,6 +630,7 @@ def run_test_sparse[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        rope_aware_kv_sparse=True,
     ](
         out_tt,
         q_tt,
@@ -1330,6 +1331,7 @@ def run_test_sparse_blockscale[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        rope_aware_kv_sparse=True,
     ](
         out_tt,
         q_tt,
@@ -1817,6 +1819,7 @@ def run_test_sparse_variable_topk[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        rope_aware_kv_sparse=True,
     ](
         out_tt,
         q_tt,
@@ -2326,6 +2329,7 @@ def run_test_sparse_attn_sink[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        rope_aware_kv_sparse=True,
     ](
         out_tt,
         q_tt,
@@ -3014,6 +3018,7 @@ def run_test_sparse_extra_kv[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        rope_aware_kv_sparse=True,
     ](
         out_tt,
         q_tt,
@@ -3547,6 +3552,7 @@ def run_test_sparse_topk_clamping[
         config=MHAConfig[q_type](num_heads, Q_DEPTH),
         ragged=True,
         sparse=True,
+        rope_aware_kv_sparse=True,
     ](
         out_tt,
         q_tt,
