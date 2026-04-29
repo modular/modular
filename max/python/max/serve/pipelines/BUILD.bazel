@@ -3,9 +3,28 @@ load("//bazel:api.bzl", "modular_py_library", "requirement")
 package(default_visibility = ["//max:consumers"])
 
 modular_py_library(
-    name = "pipelines",
-    srcs = glob(["*.py"]),
+    name = "incremental_detokenizer",
+    srcs = ["incremental_detokenizer.py"],
+    # tokenizers is a transitive dependency of transformers but doesn't have
+    # an unversioned bazel alias, so we need to ignore its unresolved imports
+    ignore_unresolved_imports = [
+        "tokenizers.Tokenizer",
+        "tokenizers.decoders.DecodeStream",
+    ],
     deps = [
+        requirement("numpy"),
+        requirement("transformers"),
+    ],
+)
+
+modular_py_library(
+    name = "pipelines",
+    srcs = glob(
+        ["*.py"],
+        exclude = ["incremental_detokenizer.py"],
+    ),
+    deps = [
+        ":incremental_detokenizer",
         "//max/python/max/driver",
         "//max/python/max/dtype",
         "//max/python/max/interfaces",

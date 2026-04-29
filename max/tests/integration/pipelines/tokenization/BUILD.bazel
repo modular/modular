@@ -8,6 +8,28 @@ package(default_visibility = [
 ])
 
 modular_py_test(
+    name = "test_incremental_detokenizer",
+    size = "medium",
+    srcs = [
+        "test_incremental_detokenizer.py",
+    ],
+    env = {
+        "MODULAR_PATH": ".",
+        "MODULAR_TELEMETRY_ENABLED": "true",
+    },
+    env_inherit = ["HF_TOKEN"],
+    tags = [
+        "manual",
+        "no-sandbox",
+        "requires-network",
+    ],
+    deps = [
+        "//max/python/max/serve/pipelines:incremental_detokenizer",
+        requirement("transformers"),
+    ],
+)
+
+modular_py_test(
     name = "tests",
     size = "large",
     srcs = [
