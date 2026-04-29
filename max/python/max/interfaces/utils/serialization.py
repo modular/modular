@@ -105,7 +105,7 @@ def numpy_encoder_hook(
                 "type": obj.__class__.__module__
                 + "."
                 + obj.__class__.__qualname__,
-                "data": obj.model_dump(mode="json"),
+                "data": obj.model_dump(mode="python"),
             }
 
         if isinstance(obj, np.ndarray):
@@ -311,6 +311,18 @@ def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
     Raises:
         ValueError: If a Pydantic type is not registered in the type registry.
     """
+
+    def _decode_nested(value: Any) -> Any:
+        if isinstance(value, dict):
+            if any(
+                key in value for key in ("__pydantic__", "__np__", "__shm__")
+            ):
+                return decode_numpy_array(type_, value, copy)
+            return {k: _decode_nested(v) for k, v in value.items()}
+        if isinstance(value, list):
+            return [_decode_nested(item) for item in value]
+        return value
+
     # Handle Pydantic BaseModel instances
     if isinstance(obj, dict) and obj.get("__pydantic__") is True:
         type_key = obj["type"]
@@ -329,7 +341,9 @@ def decode_numpy_array(type_: type, obj: Any, copy: bool) -> Any:
         try:
             # Reconstruct the Pydantic model from the dumped data
             # Type ignore needed because mypy can't infer that registry contains BaseModel subclasses
-            return pydantic_class.model_validate(obj["data"])  # type: ignore[attr-defined]
+            return pydantic_class.model_validate(  # type: ignore[attr-defined]
+                _decode_nested(obj["data"])
+            )
         except Exception as e:
             logger.error(f"Failed to validate Pydantic model data: {e}")
             raise

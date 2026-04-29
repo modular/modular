@@ -117,7 +117,12 @@ class VaeWrapper:
             width: Target output width.
 
         Returns:
-            Decoded video as uint8 numpy array, shape ``(B*T, H, W, C)``.
+            Decoded output as uint8 numpy array.
+
+            - Multi-frame video requests return ``(B, C, T, H, W)`` so the
+              pixel-generation pipeline can emit ``OutputVideoContent``.
+            - Single-frame requests return ``(B, H, W, C)`` so they continue
+              through the image path.
         """
         logger.info("Decoding Wan output")
         # Denormalize: latents * std + mean, cast to model dtype.
@@ -140,9 +145,14 @@ class VaeWrapper:
             decoded_np = np.from_dlpack(decoded_u8_buf)
             target_num_frames = min(decoded_np.shape[1], num_frames)
             decoded_np = decoded_np[:, :target_num_frames, :height, :width, :]
-            b, t, h, w, c = decoded_np.shape
-            decoded_np = decoded_np.reshape(b * t, h, w, c)
-        return decoded_np
+
+            if target_num_frames > 1:
+                video_batch = np.transpose(decoded_np, (0, 4, 1, 2, 3))
+                return np.ascontiguousarray(video_batch)
+
+            # Preserve image behavior for single-frame requests.
+            image_batch = decoded_np[:, 0, :, :, :]
+            return np.ascontiguousarray(image_batch)
 
     @traced(message="VaeWrapper.encode_i2v_condition")
     def encode_i2v_condition(

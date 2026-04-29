@@ -44,7 +44,15 @@ class WanArchConfig(ArchConfig):
         pipeline_config: PipelineConfig,
         model_config: MAXModelConfig | None = None,
     ) -> Self:
-        model_config = model_config or pipeline_config.model
+        if model_config is None:
+            model_config = pipeline_config.models.get("transformer")
+        if model_config is None and "main" in pipeline_config.models:
+            model_config = pipeline_config.model
+        if model_config is None:
+            raise ValueError(
+                "Wan requires a 'transformer' model component in "
+                "pipeline_config.models."
+            )
         if len(model_config.device_specs) != 1:
             raise ValueError("Wan is only supported on a single device")
         return cls(pipeline_config=pipeline_config)

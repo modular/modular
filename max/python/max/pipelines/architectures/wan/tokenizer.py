@@ -53,8 +53,13 @@ class WanTokenizer(PixelGenerationTokenizer):
 
         video_options = request.body.provider_options.video
 
-        num_frames: int | None = (
-            video_options.num_frames if video_options else None
+        # Wan's execution path always expects 5D latents. Keep image requests
+        # image-like at the API layer, but represent them internally as a
+        # single-frame video so the transformer and VAE follow the same path.
+        num_frames: int = (
+            video_options.num_frames
+            if video_options and video_options.num_frames is not None
+            else 1
         )
         guidance_scale_2: float | None = (
             video_options.guidance_scale_2 if video_options else None
@@ -104,19 +109,16 @@ class WanTokenizer(PixelGenerationTokenizer):
         if hasattr(self._scheduler, "build_step_coefficients"):
             step_coefficients = self._scheduler.build_step_coefficients()
 
-        # Build 5D video latents when frame count is specified.
-        latents = base.latents
-        if num_frames is not None:
-            vae_scale_factor_temporal = 4
-            latent_frames = (num_frames - 1) // vae_scale_factor_temporal + 1
-            shape_5d = (
-                base.num_images_per_prompt,
-                self._num_channels_latents,
-                latent_frames,
-                latent_height,
-                latent_width,
-            )
-            latents = self._randn_tensor(shape_5d, request.body.seed)
+        vae_scale_factor_temporal = 4
+        latent_frames = (num_frames - 1) // vae_scale_factor_temporal + 1
+        shape_5d = (
+            base.num_images_per_prompt,
+            self._num_channels_latents,
+            latent_frames,
+            latent_height,
+            latent_width,
+        )
+        latents = self._randn_tensor(shape_5d, request.body.seed)
 
         # Build WanContext from base fields + Wan-specific overrides.
         base_fields = {

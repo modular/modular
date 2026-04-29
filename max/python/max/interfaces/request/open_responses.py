@@ -461,7 +461,6 @@ class OutputVideoContent(BaseModel):
     )
     frames: SkipJsonSchema[npt.NDArray[np.uint8] | None] = Field(
         None,
-        exclude=True,
         description="Internal raw video frames in [T, H, W, C] uint8 layout.",
     )
 
