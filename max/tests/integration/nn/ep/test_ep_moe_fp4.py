@@ -199,10 +199,24 @@ def _simulate_bf16_to_fp4_roundtrip(val: torch.Tensor) -> torch.Tensor:
     return qdq_val.view(float_type)
 
 
+def _mxfp4_even_scale(abs_max: torch.Tensor) -> torch.Tensor:
+    """Computes MXFP4 E8M0 scales with OCP even-mode scale selection."""
+    assert abs_max.dtype == torch.float32
+    scale_bits = torch.clamp(
+        ((abs_max.view(torch.int32) + (1 << 21)) >> 23) - 2,
+        min=0,
+        max=254,
+    ).to(torch.uint8)
+    return scale_bits.view(torch.float8_e8m0fnu).to(torch.float32)
+
+
 def simulate_fp4_blockwise_quantize(
-    x: torch.Tensor, *, block_size: int
+    x: torch.Tensor,
+    *,
+    block_size: int,
+    scale_dtype: torch.dtype = torch.float8_e4m3fn,
 ) -> torch.Tensor:
-    """Simulate NVFP4 blockwise quantization on a BF16 tensor."""
+    """Simulate blockwise FP4 quantization on a BF16 tensor."""
     assert x.dtype == torch.bfloat16
     orig_shape = x.shape
     *batch, last = orig_shape
@@ -213,8 +227,10 @@ def simulate_fp4_blockwise_quantize(
     abs_max = x_blocks.float().abs().amax(dim=-1, keepdim=True).clamp(min=1e-12)
     scale_f32 = abs_max / _FP4_MAX
 
-    scale_fp8 = scale_f32.to(torch.float8_e4m3fn)
-    scale_restored = scale_fp8.to(torch.float32)
+    if scale_dtype == torch.float8_e8m0fnu:
+        scale_restored = _mxfp4_even_scale(abs_max)
+    else:
+        scale_restored = scale_f32.to(scale_dtype).to(torch.float32)
 
     x_scaled = (x_blocks.float() / scale_restored).to(torch.bfloat16)
     x_fp4_rt = _simulate_bf16_to_fp4_roundtrip(x_scaled)
@@ -230,12 +246,13 @@ def torch_moe(
     topk_scores: torch.Tensor,
     *,
     block_size: int,
+    scale_dtype: torch.dtype,
 ) -> torch.Tensor:
     """Single-token MoE reference with FP4 quantization simulation."""
     assert input_token.shape[0] == 1
 
     input_token = simulate_fp4_blockwise_quantize(
-        input_token, block_size=block_size
+        input_token, block_size=block_size, scale_dtype=scale_dtype
     )
 
     top_k = topk_indices.shape[1]
@@ -253,6 +270,7 @@ def torch_moe(
         down_input = simulate_fp4_blockwise_quantize(
             torch.nn.functional.silu(expert_gate) * expert_up,
             block_size=block_size,
+            scale_dtype=scale_dtype,
         )
         expert_output = down_input @ down_weight.T
 
@@ -266,6 +284,7 @@ def torch_moe(
     shared_down_input = simulate_fp4_blockwise_quantize(
         torch.nn.functional.silu(shared_expert_gate) * shared_expert_up,
         block_size=block_size,
+        scale_dtype=scale_dtype,
     )
     shared_expert_output = shared_down_input @ shared_down_weight.T
     result += shared_expert_output
@@ -491,6 +510,7 @@ def test_ep_moe_nvfp4(
             all_topk_idxs[tok_idx : tok_idx + 1],
             all_topk_weights[tok_idx : tok_idx + 1],
             block_size=16,
+            scale_dtype=torch.float8_e4m3fn,
         )
         cos_sim = torch.nn.functional.cosine_similarity(
             all_outputs[tok_idx : tok_idx + 1].float(),
@@ -714,12 +734,13 @@ def test_ep_moe_mxfp4(
             all_topk_idxs[tok_idx : tok_idx + 1],
             all_topk_weights[tok_idx : tok_idx + 1],
             block_size=32,
+            scale_dtype=torch.float8_e8m0fnu,
         )
         cos_sim = torch.nn.functional.cosine_similarity(
             all_outputs[tok_idx : tok_idx + 1].float(),
             torch_output.float(),
             dim=-1,
         )
-        assert cos_sim.min() > 0.94, (
-            f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f} < 0.94"
+        assert cos_sim.min() > 0.99, (
+            f"token {tok_idx}: cosine similarity {cos_sim.min().item():.6f} < 0.99"
         )
