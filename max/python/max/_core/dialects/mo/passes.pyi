@@ -237,6 +237,27 @@ def InvokeShapePackingFunctions(
     calculations.
     """
 
+def MergeAdjacentParallels() -> max._core.Pass:
+    """
+    Peephole merge pass: when an `mo.parallel` `%B` takes as input one or more
+    bundle results of another `mo.parallel` `%A`, fuses them into a single
+    merged parallel.  Shared inputs are short-circuited via A's yield
+    operands; B's body ops are spliced into A's body; A's yield list is
+    extended with B's yield operands.
+
+    Strict buffer and chain rules apply:
+
+      * If both A and B have buffers + chain, the buffer operand lists must
+        be structurally identical, and B's in-chain must be A's out-chain
+        with no other external users.  The merged op inherits A's buffers
+        and in-chain; its out-chain replaces B's out-chain.
+      * If only one side has buffers + chain, the merged op inherits that
+        side's buffers and chain.
+      * Neither: the merged op is chainless.
+
+    Match candidates that fail any of these are left unmerged.
+    """
+
 def MergeDuplicateShapeMaterializations() -> max._core.Pass:
     """
     This pass goes through ops that implement the Staticization interface and
