@@ -286,6 +286,12 @@ This version is still a work in progress.
   is O(n) in the byte length — prefer `byte=` slicing when you already have
   byte offsets.
 
+- `GraphemeSliceIter` exposes a new `remaining_byte_length()` accessor that
+  reports the byte length of the iterator's remaining range in O(1). This
+  lets callers compute how many bytes the iterator has produced so far
+  without summing per-grapheme byte lengths, and is now used by
+  `StringSlice[grapheme=...]` for an ~1.4x speedup on ASCII-heavy inputs.
+
 - `GraphemeSliceIter` now supports reverse iteration. `next_back()` and
   `peek_back()` return the last grapheme cluster in the remaining range, and
   `StringSlice.graphemes_reversed()` / `String.graphemes_reversed()` return a

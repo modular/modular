@@ -779,23 +779,24 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             start_idx >= 0, "grapheme start index must be non-negative"
         )
 
+        var total_bytes = len(self._slice)
         var iter = self.graphemes()
-        var start_bytes = 0
         var i = 0
 
-        # Skip `start_idx` graphemes to find the starting byte offset.
+        # Skip `start_idx` graphemes. Compute the byte offset once at the end
+        # by subtracting the iterator's remaining byte length, instead of
+        # summing each grapheme's `byte_length()` per iteration.
         while i < start_idx:
-            var g = iter.next()
-            if not g:
+            if not iter.next():
                 break
-            start_bytes += g.unsafe_value().byte_length()
             i += 1
+        var start_bytes = total_bytes - iter.remaining_byte_length()
 
         if not grapheme.end:
             return Self(
                 unsafe_from_utf8=Span[Byte, Self.origin](
                     ptr=self._slice.unsafe_ptr() + start_bytes,
-                    length=self._slice.__len__() - start_bytes,
+                    length=total_bytes - start_bytes,
                 )
             )
 
@@ -805,13 +806,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
             "grapheme end index must be >= start index",
         )
 
-        var end_bytes = start_bytes
         while i < end_idx:
-            var g = iter.next()
-            if not g:
+            if not iter.next():
                 break
-            end_bytes += g.unsafe_value().byte_length()
             i += 1
+        var end_bytes = total_bytes - iter.remaining_byte_length()
 
         return Self(
             unsafe_from_utf8=Span[Byte, Self.origin](

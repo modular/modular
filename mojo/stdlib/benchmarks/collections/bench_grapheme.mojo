@@ -111,6 +111,25 @@ def bench_grapheme_iter[
     b.iter(call_fn)
 
 
+@parameter
+def bench_grapheme_slice[
+    length: Int = 0, filename: StaticString = "UN_charter_EN"
+](mut b: Bencher) raises:
+    var items = make_string[length](filename + ".txt")
+    # Pick a middle range that exercises both scan loops.
+    var total = items.count_graphemes()
+    var start = total // 4
+    var end = (3 * total) // 4
+
+    @always_inline
+    def call_fn() {read}:
+        var slice = StringSlice(black_box(items))
+        var s = slice[grapheme=start:end]
+        keep(s.byte_length())
+
+    b.iter(call_fn)
+
+
 # ===-----------------------------------------------------------------------===#
 # Benchmark Main
 # ===-----------------------------------------------------------------------===#
@@ -140,6 +159,9 @@ def main() raises:
             )
             m.bench_function[bench_grapheme_iter[length, fname]](
                 BenchId(String("bench_grapheme_iter", suffix))
+            )
+            m.bench_function[bench_grapheme_slice[length, fname]](
+                BenchId(String("bench_grapheme_slice", suffix))
             )
 
     var results = Dict[String, Tuple[Float64, Int]]()

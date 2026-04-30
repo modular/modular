@@ -602,6 +602,20 @@ struct GraphemeSliceIter[
     # Methods
     # ===-------------------------------------------------------------------===#
 
+    @always_inline
+    def remaining_byte_length(self) -> Int:
+        """Returns the number of bytes not yet consumed by the iterator.
+
+        This is O(1): it reports the size of the remaining range without
+        scanning grapheme boundaries. Combined with the original byte length
+        of the source slice, callers can compute how many bytes the iterator
+        has produced so far without summing per-grapheme byte lengths.
+
+        Returns:
+            The byte length of the iterator's remaining range.
+        """
+        return self._slice.byte_length()
+
     def next(mut self) -> Optional[StringSlice[Self.origin]]:
         """Get the next grapheme cluster, or `None` if exhausted.
 
