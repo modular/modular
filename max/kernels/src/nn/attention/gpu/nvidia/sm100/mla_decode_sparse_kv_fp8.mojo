@@ -14,7 +14,6 @@
 from std.collections import OptionalReg
 from std.math import ceildiv, clamp
 from std.math.constants import log2e
-from std.memory.unsafe_pointer import pointer_offset
 from std.sys import size_of
 from std.gpu import (
     MAX_THREADS_PER_BLOCK_METADATA,
@@ -765,14 +764,14 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
                 # activates in the epilogue), so we use it to
                 # transform d_indices → TMA rows and load scales
                 # into SMEM, one tile ahead of warp 8's TMA loads.
-                var batch_d_indices_w11 = pointer_offset(
-                    d_indices, offset_position.batch_idx * indices_stride
+                var batch_d_indices_w11 = d_indices.unsafe_value() + (
+                    offset_position.batch_idx * indices_stride
                 )
                 var batch_extra_d_indices_w11 = extra_d_indices
                 comptime if Self.has_extra_kv:
-                    batch_extra_d_indices_w11 = pointer_offset(
-                        extra_d_indices,
-                        offset_position.batch_idx * extra_indices_stride,
+                    batch_extra_d_indices_w11 = (
+                        extra_d_indices.unsafe_value()
+                        + (offset_position.batch_idx * extra_indices_stride)
                     )
                 Self.idx_producer(
                     idx_bars,
@@ -1377,13 +1376,13 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             # Read encoded index and convert to TMA row via the KV cache.
             var raw_index = d_indices.unsafe_value()[Int(clamped_pos)]
             var gmem_row = Int(kv_lut.get_tma_row(raw_index))
-            var row_base = pointer_offset(
-                scales_ptr, gmem_row * scales_per_token
+            var row_base = scales_ptr.unsafe_value() + (
+                gmem_row * scales_per_token
             )
             var smem_off = row_in_tile * scales_per_token
 
             comptime for s in range(scales_per_token):
-                var fp32_val = row_base.unsafe_value()[s]
+                var fp32_val = row_base[s]
                 scale_smem_stage[smem_off + s] = bitcast[DType.uint8](
                     fp32_val.cast[DType.float8_e8m0fnu]()
                 )

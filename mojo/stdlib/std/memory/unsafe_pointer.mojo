@@ -113,18 +113,6 @@ struct _UnsafePointerNicheStorage[
         )
 
 
-@always_inline("nodebug")
-@doc_hidden
-def pointer_offset[
-    T: AnyType, origin: Origin, address_space: AddressSpace, //
-](
-    pointer: OptionalReg[UnsafePointer[T, origin, address_space=address_space]],
-    idx: Some[Indexer],
-) -> type_of(pointer):
-    var offset = UnsafePointer(to=pointer).bitcast[type_of(pointer).T]()[] + idx
-    return UnsafePointer(to=offset).bitcast[type_of(pointer)]()[]
-
-
 # ===----------------------------------------------------------------------=== #
 # unsafe_cast
 # ===----------------------------------------------------------------------=== #
