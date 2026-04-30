@@ -991,21 +991,6 @@ LogicalResult KGENCompiler::runCheckLITPipeline(ModuleOp module) {
   return pm.run(module);
 }
 
-LogicalResult KGENCompiler::runMOGGPreElabPipeline(ModuleOp module) {
-  mlir::PassManager pm =
-      createPassManager(pmConfigOptions.operationName, &context);
-
-  ErrorOrSuccess configPM = pmConfigOptions.configurePassManager(pm);
-  if (configPM) {
-    return Error(std::string("configure PassManager in "
-                             "KGENCompiler::runMOGGPreElabPipeline failed, ") +
-                 configPM.getError());
-  }
-
-  buildMOGGPreElabPipeline(pm, options);
-  return pm.run(module);
-}
-
 /// Run the compilation pipeline till the end of elaboration to produce a fully
 /// concrete KGEN module. This allows the transform to be cached.
 /// Note that this function also awaits the AsyncValue because it uses

@@ -171,11 +171,6 @@ public:
   bool warnOnUnstableAPIs = false;
   bool ignoreIncompatiblePackageErrors = false;
 
-  // Whether or not to run the MOGGPreElab pipeline. This is necessary to avoid
-  // false errors like a missing `execute` function on graph generated mojo
-  // text.
-  bool runMOGGPreElab = true;
-
   // Extra handle name to separate cache base between mojo, kgen, kgen-opt,
   // to avoid internal test cache pruning races caused by different binary IDs.
   // Set default value to be "mojo", will be overwritten with other tool names

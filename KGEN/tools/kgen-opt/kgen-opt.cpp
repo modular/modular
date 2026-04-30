@@ -9,7 +9,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "Init/Init.h"
-#include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/Support/CompilerProfiling.h"
 #include "KGEN/Support/ForceLinkMLIRC.h"
 #include "KGEN/Support/MojoPackage.h"
