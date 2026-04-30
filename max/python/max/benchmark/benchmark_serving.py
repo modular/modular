@@ -2542,10 +2542,7 @@ async def benchmark(
     trace_path: str | None = None,
     trace_session: str | None = None,
     force_unique_runs: bool = False,
-) -> tuple[
-    dict[str, object],
-    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult,
-]:
+) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
     if (
         ignore_first_turn_stats
         and skip_first_n_requests
@@ -2996,7 +2993,6 @@ async def benchmark(
             )
     if lora_manager is not None:
         result.lora_metrics = lora_manager.metrics
-    result_dict = result.to_result_dict()
 
     print_benchmark_summary(
         metrics=result.metrics,
@@ -3009,7 +3005,7 @@ async def benchmark(
         lora_manager=lora_manager,
     )
 
-    return result_dict, result
+    return result
 
 
 def validate_task_and_endpoint(
@@ -3129,8 +3125,9 @@ class BenchmarkRunResult:
     max_concurrency: int | None
     request_rate: float
     num_prompts: int
-    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics | None = None
-    result_dict: dict[str, Any] | None = None
+    result: (
+        TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult | None
+    ) = None
 
 
 @dataclass
@@ -3161,11 +3158,8 @@ def _execute_benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> tuple[
-    dict[str, Any],
-    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult,
-]:
-    """Run a single benchmark invocation and return *(result_dict, metrics)*.
+) -> TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult:
+    """Run a single benchmark invocation.
 
     ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
     user-supplied values (``None`` = auto-derive from *max_concurrency*).
@@ -3216,7 +3210,7 @@ def _execute_benchmark(
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
-    benchmark_result_dict, benchmark_result = asyncio.run(
+    benchmark_result = asyncio.run(
         benchmark(
             backend=backend,
             benchmark_task=session.benchmark_task,
@@ -3268,7 +3262,7 @@ def _execute_benchmark(
         sys.exit(1)
 
     logger.info("finished benchmark run: Success.")
-    return benchmark_result_dict, benchmark_result
+    return benchmark_result
 
 
 def _session_sort_key(sid: str) -> tuple[int, int, str]:
@@ -3282,8 +3276,8 @@ def _session_sort_key(sid: str) -> tuple[int, int, str]:
 def save_result_json(
     result_filename: str | None,
     args: ServingBenchmarkConfig,
-    benchmark_result: dict[str, Any],
-    benchmark_metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
+    benchmark_result: TextGenerationBenchmarkResult
+    | PixelGenerationBenchmarkResult,
     *,
     benchmark_task: BenchmarkTask,
     model_id: str,
@@ -3296,14 +3290,13 @@ def save_result_json(
     backend: Backend = args.backend
     client_args = args.model_dump()
     client_args["request_rate"] = str(client_args["request_rate"])
-
-    result_json: dict[str, Any] = {
+    result_json: dict[str, object] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "backend": backend,
         "benchmark_task": benchmark_task,
         "model_id": model_id,
         "tokenizer_id": tokenizer_id,
-        "num_prompts": benchmark_metrics.completed,
+        "num_prompts": benchmark_result.metrics.completed,
         "dataset_name": args.dataset_name,
         "client_args": client_args,
         "request_rate": (
@@ -3313,7 +3306,7 @@ def save_result_json(
         "max_concurrency": args.max_concurrency,
         "max_concurrent_conversations": args.max_concurrent_conversations,
         **_parse_metadata(args.metadata),
-        **benchmark_result,
+        **benchmark_result.to_result_dict(),
     }
     logger.info(f"Writing file: {result_filename}")
     if os.path.isfile(result_filename):
@@ -3328,7 +3321,8 @@ def save_result_json(
 
 def _save_output_lengths(
     args: ServingBenchmarkConfig,
-    benchmark_result: dict[str, Any],
+    benchmark_result: TextGenerationBenchmarkResult
+    | PixelGenerationBenchmarkResult,
     benchmark_task: BenchmarkTask,
 ) -> None:
     """Save output lengths to a YAML file if configured."""
@@ -3339,6 +3333,7 @@ def _save_output_lengths(
             "--record-output-lengths is only supported for text-generation"
         )
         return
+    assert isinstance(benchmark_result, TextGenerationBenchmarkResult)
     args_to_save = (
         "backend",
         "burstiness",
@@ -3357,7 +3352,7 @@ def _save_output_lengths(
     output_lens_dict: dict[str, object] = {}
     args_dict = args.model_dump()
     output_lens_dict["args"] = {x: args_dict[x] for x in args_to_save}
-    output_lens_dict["output_lengths"] = benchmark_result["output_lens"]
+    output_lens_dict["output_lengths"] = benchmark_result.metrics.output_lens
     with open(args.record_output_lengths, "w") as f:
         yaml.dump(output_lens_dict, f)
 
@@ -3973,11 +3968,7 @@ def main_with_parsed_args(
             args.request_rate = str(rr)
 
             iteration_results: list[
-                tuple[
-                    dict[str, Any],
-                    TextGenerationBenchmarkResult
-                    | PixelGenerationBenchmarkResult,
-                ]
+                TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult
             ] = []
             for _iteration in range(args.num_iters):
                 if args.flush_prefix_cache:
@@ -3987,27 +3978,24 @@ def main_with_parsed_args(
 
                 args.seed = int(np.random.randint(0, 10000))
 
-                result_dict, result_obj = _execute_benchmark(
-                    args, session, mc, rr
-                )
-                iteration_results.append((result_dict, result_obj))
+                result = _execute_benchmark(args, session, mc, rr)
+                iteration_results.append(result)
 
             # Median selection when running multiple iterations.
             if len(iteration_results) > 1:
                 throughputs = np.asarray(
-                    [r.metrics.request_throughput for _, r in iteration_results]
+                    [r.metrics.request_throughput for r in iteration_results]
                 )
                 idx = argmedian(throughputs)
             else:
                 idx = 0
-            best_result_dict, best_result_obj = iteration_results[idx]
+            best_result = iteration_results[idx]
 
             # JSON result file (for the median iteration).
             save_result_json(
                 args.result_filename,
                 args,
-                best_result_dict,
-                best_result_obj.metrics,
+                best_result,
                 benchmark_task=session.benchmark_task,
                 model_id=session.model_id,
                 tokenizer_id=session.tokenizer_id,
@@ -4015,17 +4003,10 @@ def main_with_parsed_args(
             )
 
             # Output lengths recording (for the median iteration).
-            _save_output_lengths(args, best_result_dict, session.benchmark_task)
+            _save_output_lengths(args, best_result, session.benchmark_task)
 
-            # TODO: In the future, probably BenchmarkRunResult should hold the
-            # TextGenerationBenchmarkResult or PixelGenerationBenchmarkResult
-            # object directly, rather than just the metrics object.
             yield BenchmarkRunResult(
-                mc,
-                rr,
-                args.num_prompts or 0,
-                metrics=best_result_obj.metrics,
-                result_dict=best_result_dict,
+                mc, rr, args.num_prompts or 0, result=best_result
             )
 
 

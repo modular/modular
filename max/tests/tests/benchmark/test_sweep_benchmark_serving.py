@@ -655,14 +655,18 @@ def test_save_result_json_writes_valid_json(
         ]
     )
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
+    mock_result = MagicMock()
+    mock_result.metrics.completed = 5
+    mock_result.to_result_dict.return_value = {
+        "duration": 1.0,
+        "completed": 5,
+        "failures": 0,
+    }
 
     save_result_json(
         config.result_filename,
         config,
-        {"duration": 1.0, "completed": 5, "failures": 0},
-        mock_metrics,
+        mock_result,
         benchmark_task="text-generation",
         model_id="myorg/mymodel",
         tokenizer_id="myorg/mymodel",
@@ -912,23 +916,18 @@ def test_upload_path_writes_one_json_per_concurrency(
     """Upload mode must call save_result_json once per concurrency level."""
     from max.benchmark.benchmark_serving import BenchmarkRunResult
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
-
     fake_results = [
         BenchmarkRunResult(
             max_concurrency=1,
             request_rate=float("inf"),
             num_prompts=10,
-            metrics=mock_metrics,
-            result_dict={"duration": 1.0},
+            result=MagicMock(),
         ),
         BenchmarkRunResult(
             max_concurrency=2,
             request_rate=float("inf"),
             num_prompts=10,
-            metrics=mock_metrics,
-            result_dict={"duration": 0.8},
+            result=MagicMock(),
         ),
     ]
 
@@ -1011,9 +1010,6 @@ def test_upload_writes_correct_data_to_correct_files(
     )
     from max.benchmark.benchmark_shared.config import ServingBenchmarkConfig
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
-
     MC1_SENTINEL = "mc1_data"
     MC2_SENTINEL = "mc2_data"
 
@@ -1022,7 +1018,9 @@ def test_upload_writes_correct_data_to_correct_files(
     ) -> Iterator[BenchmarkRunResult]:
         assert config.model is not None
         for mc, sentinel in [(1, MC1_SENTINEL), (2, MC2_SENTINEL)]:
-            result_dict = {
+            mock_result = MagicMock()
+            mock_result.metrics.completed = 5
+            mock_result.to_result_dict.return_value = {
                 "duration": float(mc),
                 "completed": 5,
                 "failures": 0,
@@ -1031,8 +1029,7 @@ def test_upload_writes_correct_data_to_correct_files(
             save_result_json(
                 config.result_filename,
                 config,
-                result_dict,
-                mock_metrics,
+                mock_result,
                 benchmark_task="text-generation",
                 model_id=config.model,
                 tokenizer_id=config.model,
@@ -1042,8 +1039,7 @@ def test_upload_writes_correct_data_to_correct_files(
                 max_concurrency=mc,
                 request_rate=float(mc),
                 num_prompts=10,
-                metrics=mock_metrics,
-                result_dict=result_dict,
+                result=mock_result,
             )
 
     mocker.patch(
@@ -1113,16 +1109,12 @@ def test_upload_path_single_run_no_max_concurrency(
     """
     from max.benchmark.benchmark_serving import BenchmarkRunResult
 
-    mock_metrics = MagicMock()
-    mock_metrics.completed = 5
-
     fake_results = [
         BenchmarkRunResult(
             max_concurrency=None,
             request_rate=float("inf"),
             num_prompts=10,
-            metrics=mock_metrics,
-            result_dict={"duration": 1.0},
+            result=MagicMock(),
         )
     ]
 

@@ -67,11 +67,11 @@ def _build_sweep_result(
     is_pixel_gen: bool = False,
 ) -> SweepServingBenchmarkResult:
     """Convert a :class:`BenchmarkRunResult` to the CSV-writable form."""
-    metrics = result.metrics
-    if metrics is None:
+    if result.result is None:
         if is_pixel_gen:
             return TextToImageBenchmarkResult.zeros(percentiles)
         return LLMBenchmarkResult.zeros(percentiles)
+    metrics = result.result.metrics
     if isinstance(metrics, PixelGenerationBenchmarkMetrics):
         return TextToImageBenchmarkResult.from_metrics(metrics, percentiles)
     assert isinstance(metrics, BenchmarkMetrics)
@@ -241,11 +241,7 @@ def run_sweep(
             # When uploading, save the median iteration's JSON so the
             # uploader has something to read.
             json_path: str | None = None
-            if (
-                upload_active
-                and result.result_dict is not None
-                and result.metrics is not None
-            ):
+            if upload_active and result.result is not None:
                 assert config.model is not None
                 json_path = str(
                     log_dir / f"results-{result.max_concurrency}-median.json"
@@ -253,8 +249,7 @@ def run_sweep(
                 save_result_json(
                     json_path,
                     config,
-                    result.result_dict,
-                    result.metrics,
+                    result.result,
                     benchmark_task=config.benchmark_task,
                     model_id=config.model,
                     tokenizer_id=config.tokenizer or config.model,
