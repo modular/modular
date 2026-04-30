@@ -197,7 +197,7 @@ def materialize[T: AnyType, //, value: T](out result: T):
     )
 
 
-trait Defaultable(ImplicitlyDestructible):
+trait Defaultable:
     """The `Defaultable` trait describes a type with a default constructor.
 
     Implementing the `Defaultable` trait requires the type to define

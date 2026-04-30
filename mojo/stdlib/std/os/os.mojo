@@ -248,7 +248,11 @@ def abort() -> Never:
 @always_inline
 def _abort_impl[
     *, prefix: StaticString
-](message: Some[Writable], *, location: Optional[SourceLocation] = {}) -> Never:
+](
+    message: Some[Writable],
+    *,
+    location: Optional[SourceLocation] = {},
+) -> Never:
     var loc = location.or_else(call_location[inline_count=2]())
 
     comptime if is_apple_gpu():
@@ -288,6 +292,13 @@ def _abort_impl[
             )
     else:
         print(prefix, " ", loc, ": ", message, sep="", flush=True)
+
+    # FIXME(MOCO-3858): Mark `message` destroyed to work around a spurious
+    # lifetime-checker error when a `Some[Writable]` value (without an
+    # `ImplicitlyDestructible` bound) is consumed via `print(...)` before a
+    # no-return tail like `abort()`. We can't use `forget_deinit()` because
+    # that takes a `var` argument. Remove this once the compiler bug is fixed.
+    __mlir_op.`lit.ownership.mark_destroyed`(__get_mvalue_as_litref(message))
 
     abort()
 

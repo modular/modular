@@ -134,7 +134,7 @@ struct Unsound:
     var item: Writable  # Error: dynamic traits not supported
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable]:
+struct Sound[T: Writable & Copyable & ImplicitlyDestructible]:
     var item: Self.T    # OK: concrete at compile time
 
 def main():

@@ -140,7 +140,7 @@ trait Writer(ImplicitlyDestructible):
 # ===-----------------------------------------------------------------------===#
 
 
-trait Writable(ImplicitlyDestructible):
+trait Writable:
     """A trait for types that can format themselves as text.
 
     The `Writable` trait provides a simple, straightforward interface for types

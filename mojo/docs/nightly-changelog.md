@@ -232,6 +232,11 @@ This version is still a work in progress.
   default implementations of `Hashable`, `Equatable`, and `Writable` now use
   this library function instead of the `__struct_field_ref` magic.
 
+- The `Boolable`, `Defaultable`, and `Writable` traits no longer inherit from
+  `ImplicitlyDestructible`. Generic code that relied on receiving the
+  destructor bound transitively through these traits must now spell it out
+  explicitly, for example `T: Writable & ImplicitlyDestructible`.
+
 - The `Variadic` suite of low-level operation has been refactored and migrated
   to being members of the `TypeList` and `ParameterList` types, making them more
   ergonomic to work with and more accessible.

@@ -664,7 +664,7 @@ struct PythonTypeBuilder(Copyable):
         self._slots[Int(slot.slot)] = slot.pfunc
 
     def def_init_defaultable[
-        T: Defaultable & Movable,
+        T: Defaultable & Movable & ImplicitlyDestructible,
     ](mut self) raises -> ref[self] Self:
         """Declare a binding for the `__init__` method of the type which
         initializes the type with a default value.

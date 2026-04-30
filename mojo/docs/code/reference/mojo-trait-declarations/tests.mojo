@@ -228,7 +228,7 @@ trait PrettyPrintable(Printable):
 
 
 @fieldwise_init
-struct Box_2[T: Copyable & Writable](PrettyPrintable):
+struct Box_2[T: Copyable & Writable & ImplicitlyDestructible](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:
@@ -267,7 +267,7 @@ def test_parameter_level_bounds():
 
 
 @fieldwise_init
-struct Pair_1[T: Writable & Copyable](Writable):
+struct Pair_1[T: Writable & Copyable & ImplicitlyDestructible](Writable):
     var first: Self.T
     var second: Self.T
 

@@ -385,7 +385,7 @@ trait PrettyPrintable(Printable):
         ...
 
 @fieldwise_init
-struct Box[T: Copyable & Writable](PrettyPrintable):
+struct Box[T: Copyable & Writable & ImplicitlyDestructible](PrettyPrintable):
     var value: Self.T
 
     def to_string(self) -> String:

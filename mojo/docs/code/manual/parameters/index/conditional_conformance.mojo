@@ -17,7 +17,7 @@ struct Container[ElementType: Movable & ImplicitlyDestructible]:
     var element: Self.ElementType
 
     def __str__[
-        StrElementType: Writable & Copyable, //
+        StrElementType: Writable & Copyable & ImplicitlyDestructible, //
     ](self: Container[StrElementType]) -> String:
         return String(self.element)
 

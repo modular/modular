@@ -592,7 +592,7 @@ a constructor or static method.
 For example, consider the following struct:
 
 ```mojo
-struct One[Type: Writable & Copyable]:
+struct One[Type: Writable & Copyable & ImplicitlyDestructible]:
     var value: Self.Type
 
     def __init__(out self, value: Self.Type):
@@ -611,7 +611,7 @@ You can also infer parameters from a parameterized type passed to a constructor
 or static method:
 
 ```mojo
-struct Two[Type: Writable & Copyable]:
+struct Two[Type: Writable & Copyable & ImplicitlyDestructible]:
     var val1: Self.Type
     var val2: Self.Type
 

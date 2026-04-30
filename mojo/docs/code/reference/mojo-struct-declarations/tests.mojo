@@ -80,7 +80,7 @@ def test_color_manual() raises:
 
 
 @fieldwise_init
-struct Sound[T: Writable & Copyable]:
+struct Sound[T: Writable & Copyable & ImplicitlyDestructible]:
     var item: Self.T
 
 
