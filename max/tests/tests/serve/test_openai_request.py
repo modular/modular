@@ -209,8 +209,8 @@ def test_openai_user_message_content_nullable_schema() -> None:
     }
     request = CreateChatCompletionRequest.model_validate(request_data)
     assert len(request.messages) == 1
-    assert request.messages[0].root.role == "user"
-    assert request.messages[0].root.content is None
+    assert request.messages[0]["role"] == "user"
+    assert request.messages[0].get("content") is None
 
     # Test with omitted content field
     request_data_no_content = {
@@ -221,8 +221,8 @@ def test_openai_user_message_content_nullable_schema() -> None:
         request_data_no_content
     )
     assert len(request.messages) == 1
-    assert request.messages[0].root.role == "user"
-    assert request.messages[0].root.content is None
+    assert request.messages[0]["role"] == "user"
+    assert request.messages[0].get("content") is None
 
     # Test mixed messages with null user content
     request_data_mixed = {
@@ -236,7 +236,7 @@ def test_openai_user_message_content_nullable_schema() -> None:
     }
     request = CreateChatCompletionRequest.model_validate(request_data_mixed)
     assert len(request.messages) == 4
-    assert request.messages[0].root.content == "You are a helpful assistant."
-    assert request.messages[1].root.content is None
-    assert request.messages[2].root.content == "How can I help you?"
-    assert request.messages[3].root.content == "Hello!"
+    assert request.messages[0]["content"] == "You are a helpful assistant."
+    assert request.messages[1].get("content") is None
+    assert request.messages[2]["content"] == "How can I help you?"
+    assert request.messages[3]["content"] == "Hello!"

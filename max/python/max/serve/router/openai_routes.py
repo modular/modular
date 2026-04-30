@@ -65,16 +65,16 @@ from max.serve.pipelines.llm import (
     TokenGeneratorPipeline,
 )
 from max.serve.schemas.openai import (
+    ChatCompletionLogprobs,
     ChatCompletionMessageToolCall,
-    ChatCompletionMessageToolCalls,
+    ChatCompletionMessageToolCallFunction,
+    ChatCompletionResponseChoice,
     ChatCompletionResponseMessage,
-    ChatCompletionStreamOptions,
+    ChatCompletionStreamResponseChoice,
     ChatCompletionStreamResponseDelta,
     ChatCompletionTokenLogprob,
-    ChatCompletionTool,
-    Choice,
-    Choice1,
-    Choice3,
+    CompletionLogprobs,
+    CompletionResponseChoice,
     CompletionUsage,
     CreateAudioGenerationRequest,
     CreateAudioGenerationResponse,
@@ -88,24 +88,37 @@ from max.serve.schemas.openai import (
     Embedding,
     Error,
     ErrorResponse,
-    Function1,
-    InputItem,
     ListModelsResponse,
     LoadLoraRequest,
-    Logprobs,
-    Logprobs2,
     Model,
-    PromptItem,
     PromptTokensDetails,
-    ResponseFormatJsonObject,
-    ResponseFormatJsonSchema,
-    ResponseFormatText,
     TopLogprob,
     UnloadLoraRequest,
-    Usage,
 )
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
+from openai.types.chat.chat_completion_chunk import (
+    ChoiceLogprobs as ChunkChoiceLogprobs,
+)
+from openai.types.chat.chat_completion_function_tool_param import (
+    ChatCompletionFunctionToolParam,
+)
+from openai.types.chat.chat_completion_message_tool_call import (
+    ChatCompletionMessageToolCallUnion,
+)
+from openai.types.chat.chat_completion_stream_options_param import (
+    ChatCompletionStreamOptionsParam,
+)
+from openai.types.create_embedding_response import Usage as EmbeddingUsage
+from openai.types.shared_params import (
+    ResponseFormatJSONObject as ResponseFormatJsonObject,
+)
+from openai.types.shared_params import (
+    ResponseFormatJSONSchema as ResponseFormatJsonSchema,
+)
+from openai.types.shared_params import (
+    ResponseFormatText as ResponseFormatText,
+)
 from pydantic import AnyUrl, BaseModel, Field, ValidationError
 from sse_starlette.sse import EventSourceResponse
 from starlette.datastructures import State
@@ -228,7 +241,7 @@ class OpenAIChatResponseGenerator(
     def __init__(
         self,
         pipeline: TokenGeneratorPipeline,
-        stream_options: ChatCompletionStreamOptions | None = None,
+        stream_options: ChatCompletionStreamOptionsParam | None = None,
         parser: ToolParser | None = None,
     ) -> None:
         super().__init__(pipeline)
@@ -270,19 +283,23 @@ class OpenAIChatResponseGenerator(
                 # The choice index is set to 0.
                 # https://platform.openai.com/docs/api-reference/chat/object
 
-                # Process log probabilities for this chunk
+                # Process log probabilities for this chunk. The streaming
+                # ``Choice`` lives in the chunk module and uses its own
+                # ``ChoiceLogprobs`` class, so we re-validate against the
+                # streaming type here.
                 chunk_logprobs = _process_chat_log_probabilities([chunk])
-                # Only include logprobs if there's content
-                logprobs_response = (
-                    chunk_logprobs if chunk_logprobs.content else None
-                )
+                logprobs_response: ChunkChoiceLogprobs | None = None
+                if chunk_logprobs.content:
+                    logprobs_response = ChunkChoiceLogprobs.model_validate(
+                        chunk_logprobs.model_dump()
+                    )
 
                 if (
                     chunk.decoded_tokens is not None
                     or chunk.decoded_reasoning_tokens is not None
                 ):
                     choices = [
-                        Choice3(
+                        ChatCompletionStreamResponseChoice(
                             index=0,
                             delta=ChatCompletionStreamResponseDelta(
                                 content=chunk.decoded_tokens,
@@ -300,7 +317,7 @@ class OpenAIChatResponseGenerator(
                 else:
                     # If we do not have output tokens, we should guarantee we have a finish_reason.
                     choices = [
-                        Choice3(
+                        ChatCompletionStreamResponseChoice(
                             index=0,
                             delta=ChatCompletionStreamResponseDelta(
                                 content="",
@@ -338,8 +355,8 @@ class OpenAIChatResponseGenerator(
             )
 
             # If `include_usage=True`, send a final chunk with usage statistics
-            if self.stream_options and self.stream_options.include_usage:
-                final_usage = Usage(
+            if self.stream_options and self.stream_options.get("include_usage"):
+                final_usage = CompletionUsage(
                     # TODO: (MODELS-1116) add reasoning token usage under completion_tokens_details
                     prompt_tokens=n_prompt_tokens,
                     completion_tokens=n_reasoning_tokens + n_tokens,
@@ -467,7 +484,7 @@ class OpenAIChatResponseGenerator(
                     completed_outputs[-1].status, allow_none=False
                 )
 
-            response_choices: list[Choice1] = []
+            response_choices: list[ChatCompletionResponseChoice] = []
             if tool_use and request.response_format is None:
                 try:
                     parsed = self.parser.parse_complete(response_message)
@@ -556,13 +573,13 @@ class OpenAIChatResponseGenerator(
     def _handle_text_response(
         self,
         response_message: str,
-        response_choices: list[Choice1],
+        response_choices: list[ChatCompletionResponseChoice],
         finish_reason: Literal["stop", "length"],
-        logprobs: Logprobs2 | None = None,
+        logprobs: ChatCompletionLogprobs | None = None,
     ) -> None:
         """Handle regular text response by appending to response_choices."""
         response_choices.append(
-            Choice1(
+            ChatCompletionResponseChoice(
                 index=0,
                 message=ChatCompletionResponseMessage(
                     content=response_message,
@@ -572,7 +589,8 @@ class OpenAIChatResponseGenerator(
                     refusal="",
                 ),
                 finish_reason=finish_reason,
-                logprobs=logprobs or Logprobs2(content=[], refusal=[]),
+                logprobs=logprobs
+                or ChatCompletionLogprobs(content=[], refusal=[]),
             )
         )
 
@@ -588,7 +606,7 @@ class OpenAIChatResponseGenerator(
             tool_call = ChatCompletionMessageToolCall(
                 id=f"call_{short_uuid}",
                 type="function",
-                function=Function1(
+                function=ChatCompletionMessageToolCallFunction(
                     name=function_name,
                     arguments=json.dumps(tool_data["parameters"]),
                 ),
@@ -598,34 +616,32 @@ class OpenAIChatResponseGenerator(
     def _tool_response_to_choices(
         self,
         parsed: ParsedToolResponse,
-        logprobs: Logprobs2 | None = None,
-    ) -> list[Choice1]:
-        """Translates a ParsedToolResponse to OpenAI Choice1 list."""
-        tool_calls_list = [
+        logprobs: ChatCompletionLogprobs | None = None,
+    ) -> list[ChatCompletionResponseChoice]:
+        """Translates a ParsedToolResponse to a list of chat completion choices."""
+        tool_calls_list: list[ChatCompletionMessageToolCallUnion] = [
             ChatCompletionMessageToolCall(
                 id=tc.id,
                 type="function",
-                function=Function1(name=tc.name, arguments=tc.arguments),
+                function=ChatCompletionMessageToolCallFunction(
+                    name=tc.name, arguments=tc.arguments
+                ),
             )
             for tc in parsed.tool_calls
         ]
-        tool_calls = (
-            ChatCompletionMessageToolCalls(root=tool_calls_list)
-            if tool_calls_list
-            else None
-        )
         return [
-            Choice1(
+            ChatCompletionResponseChoice(
                 index=0,
                 message=ChatCompletionResponseMessage(
                     content=parsed.content or "",
                     role="assistant",
-                    tool_calls=tool_calls,
+                    tool_calls=tool_calls_list or None,
                     function_call=None,
                     refusal="",
                 ),
                 finish_reason="tool_calls",
-                logprobs=logprobs or Logprobs2(content=[], refusal=[]),
+                logprobs=logprobs
+                or ChatCompletionLogprobs(content=[], refusal=[]),
             )
         ]
 
@@ -664,7 +680,9 @@ class OpenAIEmbeddingsResponseGenerator:
                 data=embeddings_data,
                 model=self.pipeline.model_name,
                 object="list",
-                usage=None,
+                # OpenAI requires usage; MAX doesn't yet track embedding token
+                # counts so report zeros until we wire that through.
+                usage=EmbeddingUsage(prompt_tokens=0, total_tokens=0),
             )
             return response
         finally:
@@ -711,40 +729,47 @@ async def openai_parse_chat_completion_request(
     image_refs: list[AnyUrl] = []
     video_refs: list[AnyUrl] = []
     for m in completion_request.messages:
-        if isinstance(m.root.content, list):
-            message_content: list[MessageContent] = []
-            for content_part in m.root.content:
-                if content_part.root.type == "image_url":
-                    image_refs.append(content_part.root.image_url.url)
+        # ``CreateChatCompletionRequest.messages`` carries OpenAI's
+        # ``ChatCompletionMessageParam`` TypedDicts (plus a MAX-specific
+        # ``video_url`` content part); access via dict keys.
+        content = m.get("content")
+        if isinstance(content, list):
+            # ``TextGenerationRequestMessage`` accepts plain dicts here and
+            # coerces them into ``MessageContent`` parts via a field
+            # validator, so we hand it a list of dicts when not wrapping.
+            message_content: list[MessageContent | dict[str, Any]] = []
+            for content_part in content:
+                part_type = content_part.get("type")
+                if part_type == "image_url":
+                    image_refs.append(AnyUrl(content_part["image_url"]["url"]))
                     if wrap_content:
                         message_content.append(ImageContentPart())
                     else:
-                        message_content.append(content_part.model_dump())
-                elif content_part.root.type == "video_url":
-                    video_url = getattr(content_part.root, "video_url", None)
-                    if video_url is not None:
-                        video_refs.append(video_url.url)
+                        message_content.append(dict(content_part))
+                elif part_type == "video_url":
+                    video_refs.append(AnyUrl(content_part["video_url"]["url"]))
                     if wrap_content:
                         message_content.append(VideoContentPart())
                     else:
-                        message_content.append(content_part.model_dump())
-                elif content_part.root.type == "text":
+                        message_content.append(dict(content_part))
+                elif part_type == "text":
                     if wrap_content:
                         message_content.append(
-                            TextContentPart(text=content_part.root.text)
+                            TextContentPart(text=content_part["text"])
                         )
                     else:
-                        message_content.append(content_part.model_dump())
+                        message_content.append(dict(content_part))
             messages.append(
                 TextGenerationRequestMessage(
-                    role=m.root.role, content=message_content
+                    role=m["role"],
+                    content=cast(list[MessageContent], message_content),
                 )
             )
         else:
             messages.append(
                 TextGenerationRequestMessage(
-                    role=m.root.role,
-                    content=m.root.content if m.root.content else "",
+                    role=m["role"],
+                    content=content if content else "",
                 )
             )
 
@@ -921,7 +946,7 @@ async def openai_create_chat_completion(
         tools = None
         if (
             completion_request.tool_choice is None
-            or completion_request.tool_choice.root != "none"
+            or completion_request.tool_choice != "none"
         ):
             tools = _convert_chat_completion_tools_to_token_generator_tools(
                 completion_request.tools
@@ -1027,7 +1052,7 @@ async def openai_create_chat_completion(
 
 
 def _convert_chat_completion_tools_to_token_generator_tools(
-    chat_tools: list[ChatCompletionTool] | None,
+    chat_tools: list[ChatCompletionFunctionToolParam] | None,
 ) -> list[TextGenerationRequestTool] | None:
     """Convert ChatCompletionTool list to TextGenerationRequestTool list."""
     if not chat_tools:
@@ -1035,18 +1060,13 @@ def _convert_chat_completion_tools_to_token_generator_tools(
 
     token_generator_tools = []
     for tool in chat_tools:
-        parameters = (
-            tool.function.parameters.model_dump()
-            if tool.function.parameters
-            else {}
-        )
-
+        function = tool["function"]
         token_generator_tool = TextGenerationRequestTool(
-            type=tool.type,
+            type=tool["type"],
             function=TextGenerationRequestFunction(
-                name=tool.function.name,
-                description=tool.function.description,
-                parameters=parameters,
+                name=function["name"],
+                description=function.get("description"),
+                parameters=dict(function.get("parameters") or {}),
             ),
         )
         token_generator_tools.append(token_generator_tool)
@@ -1066,8 +1086,9 @@ def _create_response_format(
 
     json_schema: dict[Any, Any] = {}
 
-    response_type = response_format.type
-    if response_format.type == "json_object":
+    # ``response_format`` is an OpenAI TypedDict, accessed via keys.
+    response_type = response_format["type"]
+    if response_type == "json_object":
         # For json_object mode (any valid JSON), use a permissive schema that
         # accepts any JSON object. llguidance's grammar_from_json_schema supports
         # this - an empty or minimal schema means "any valid JSON".
@@ -1075,11 +1096,15 @@ def _create_response_format(
         # Normalize type to json_schema for the internal representation since both
         # json_object and json_schema use grammar-based constrained decoding.
         response_type = "json_schema"
-    elif (
-        response_format.type == "json_schema"
-        and response_format.json_schema.schema_ is not None
-    ):
-        json_schema = response_format.json_schema.schema_.model_dump()
+    elif response_type == "json_schema":
+        # ``response_format`` is one of OpenAI's ``ResponseFormat*Param``
+        # TypedDicts; cast to ``dict`` so mypy lets us key into it without
+        # narrowing the discriminated union by hand.
+        json_schema_param = cast(dict[str, Any], response_format).get(
+            "json_schema", {}
+        )
+        if (schema := json_schema_param.get("schema")) is not None:
+            json_schema = dict(schema)
 
     return TextGenerationResponseFormat(
         type=response_type, json_schema=json_schema
@@ -1120,6 +1145,8 @@ async def openai_create_embeddings(
         embedding_inputs: Sequence[StringPrompt | IntPrompt] = (
             get_prompts_from_openai_request(embeddings_request.input)
         )
+        # ``encode`` requires at least one entry; this matches the OpenAI
+        # behavior of rejecting empty ``input`` arrays.
 
         embedding_requests = [
             TextGenerationRequest(
@@ -1159,7 +1186,7 @@ async def openai_create_embeddings(
 class CompletionResponseStreamChoice(BaseModel):
     index: int
     text: str
-    logprobs: Logprobs | None = None
+    logprobs: CompletionLogprobs | None = None
     finish_reason: Literal["stop", "length", "content_filter"] | None = None
 
 
@@ -1174,7 +1201,7 @@ class CompletionStreamResponse(BaseModel):
 
 def _process_log_probabilities(
     token_generator_outputs: list[TokenGeneratorOutput],
-) -> Logprobs:
+) -> CompletionLogprobs:
     token_log_probabilities = []
     top_log_probabilities = []
     for output in token_generator_outputs:
@@ -1183,7 +1210,7 @@ def _process_log_probabilities(
         if output.top_log_probabilities:
             top_log_probabilities.extend(output.top_log_probabilities)
 
-    return Logprobs(
+    return CompletionLogprobs(
         token_logprobs=token_log_probabilities,
         top_logprobs=top_log_probabilities,
     )
@@ -1191,7 +1218,7 @@ def _process_log_probabilities(
 
 def _process_chat_log_probabilities(
     token_generator_outputs: list[TokenGeneratorOutput],
-) -> Logprobs2:
+) -> ChatCompletionLogprobs:
     """Convert token generator outputs to chat completion log probabilities format.
 
     Args:
@@ -1199,7 +1226,8 @@ def _process_chat_log_probabilities(
             log probability information.
 
     Returns:
-        Logprobs2 object with content tokens and their log probabilities.
+        ChatCompletionLogprobs object with content tokens and their log
+        probabilities.
     """
     content: list[ChatCompletionTokenLogprob] = []
 
@@ -1252,7 +1280,7 @@ def _process_chat_log_probabilities(
                 )
             )
 
-    return Logprobs2(content=content, refusal=[])
+    return ChatCompletionLogprobs(content=content, refusal=[])
 
 
 def get_app_pipeline_config(app: FastAPI) -> PipelineConfig:
@@ -1422,7 +1450,7 @@ class OpenAICompletionResponseGenerator(
                     for chunk in req_outputs
                 )
                 response_choices.append(
-                    Choice(
+                    CompletionResponseChoice(
                         index=i,
                         text=response_message,
                         finish_reason=get_finish_reason_from_status(
@@ -1476,12 +1504,7 @@ def _is_seq_of_seq_of_int(
 
 
 def get_prompts_from_openai_request(
-    prompt: str
-    | list[str]
-    | list[PromptItem]
-    | list[InputItem]
-    | list[int]
-    | list[list[int]],
+    prompt: str | list[str] | list[int] | list[list[int]],
 ) -> Sequence[StringPrompt] | Sequence[IntPrompt]:
     """Extract the prompts from a CreateCompletionRequest
 
@@ -1494,10 +1517,6 @@ def get_prompts_from_openai_request(
         return []
     if _is_sequence_of(prompt, str):
         return prompt
-    if _is_sequence_of(prompt, PromptItem):
-        return [p.root for p in prompt]
-    if _is_sequence_of(prompt, InputItem):
-        return [p.root for p in prompt]
     if _is_sequence_of(prompt, int):
         return [prompt]
     if _is_seq_of_seq_of_int(prompt):
@@ -1624,13 +1643,16 @@ async def health() -> Response:
 @router.get("/models", response_model=None)
 async def openai_get_models(request: Request) -> ListModelsResponse:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
+    created = int(datetime.now().timestamp())
     model_list = [
-        Model(id=pipeline.model_name, object="model", created=None, owned_by="")
+        Model(
+            id=pipeline.model_name, object="model", created=created, owned_by=""
+        )
     ]
 
     if lora_queue := request.app.state.pipeline.lora_queue:
         model_list += [
-            Model(id=lora, object="model", created=None, owned_by="")
+            Model(id=lora, object="model", created=created, owned_by="")
             for lora in lora_queue.list_loras()
         ]
 
@@ -1641,7 +1663,10 @@ async def openai_get_models(request: Request) -> ListModelsResponse:
 async def openai_get_model(model_id: str, request: Request) -> Model:
     pipeline: TokenGeneratorPipeline = request.app.state.pipeline
     pipeline_model = Model(
-        id=pipeline.model_name, object="model", created=None, owned_by=""
+        id=pipeline.model_name,
+        object="model",
+        created=int(datetime.now().timestamp()),
+        owned_by="",
     )
 
     if model_id == pipeline.model_name:

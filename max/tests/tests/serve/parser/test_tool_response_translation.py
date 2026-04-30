@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Tests for translating ParsedToolResponse to OpenAI Choice1 schema."""
+"""Tests for translating ParsedToolResponse to OpenAI chat completion choices."""
 
 import json
 from unittest.mock import MagicMock
@@ -19,12 +19,11 @@ from unittest.mock import MagicMock
 from max.interfaces import ParsedToolCall, ParsedToolResponse
 from max.serve.router.openai_routes import OpenAIChatResponseGenerator
 from max.serve.schemas.openai import (
+    ChatCompletionLogprobs,
     ChatCompletionMessageToolCall,
-    ChatCompletionMessageToolCalls,
+    ChatCompletionMessageToolCallFunction,
+    ChatCompletionResponseChoice,
     ChatCompletionResponseMessage,
-    Choice1,
-    Function1,
-    Logprobs2,
 )
 
 
@@ -37,7 +36,7 @@ def create_response_generator() -> OpenAIChatResponseGenerator:
 
 
 def test_single_tool_call_translation() -> None:
-    """Test translating a single tool call to OpenAI Choice1 format."""
+    """Test translating a single tool call."""
     generator = create_response_generator()
 
     parsed = ParsedToolResponse(
@@ -55,10 +54,10 @@ def test_single_tool_call_translation() -> None:
 
     assert len(result) == 1
     choice = result[0]
-    assert isinstance(choice, Choice1)
+    assert isinstance(choice, ChatCompletionResponseChoice)
     assert choice.index == 0
     assert choice.finish_reason == "tool_calls"
-    assert isinstance(choice.logprobs, Logprobs2)
+    assert isinstance(choice.logprobs, ChatCompletionLogprobs)
     assert choice.logprobs.content == []
     assert choice.logprobs.refusal == []
 
@@ -70,16 +69,16 @@ def test_single_tool_call_translation() -> None:
     assert message.refusal == ""
 
     tool_calls = message.tool_calls
-    assert isinstance(tool_calls, ChatCompletionMessageToolCalls)
-    assert len(tool_calls.root) == 1
+    assert tool_calls is not None
+    assert len(tool_calls) == 1
 
-    tool_call = tool_calls.root[0]
+    tool_call = tool_calls[0]
     assert isinstance(tool_call, ChatCompletionMessageToolCall)
     assert tool_call.id == "call_abc123"
     assert tool_call.type == "function"
 
     function = tool_call.function
-    assert isinstance(function, Function1)
+    assert isinstance(function, ChatCompletionMessageToolCallFunction)
     assert function.name == "get_weather"
     assert json.loads(function.arguments) == {
         "location": "New York",
@@ -88,7 +87,7 @@ def test_single_tool_call_translation() -> None:
 
 
 def test_multiple_tool_calls_translation() -> None:
-    """Test translating multiple tool calls to OpenAI Choice1 format."""
+    """Test translating multiple tool calls."""
     generator = create_response_generator()
 
     parsed = ParsedToolResponse(
@@ -113,16 +112,16 @@ def test_multiple_tool_calls_translation() -> None:
     choice = result[0]
     tool_calls = choice.message.tool_calls
     assert tool_calls is not None
-    assert len(tool_calls.root) == 2
+    assert len(tool_calls) == 2
 
-    # Check first tool call
-    tool_call1 = tool_calls.root[0]
+    tool_call1 = tool_calls[0]
+    assert isinstance(tool_call1, ChatCompletionMessageToolCall)
     assert tool_call1.id == "call_001"
     assert tool_call1.function.name == "get_weather"
     assert json.loads(tool_call1.function.arguments) == {"location": "New York"}
 
-    # Check second tool call
-    tool_call2 = tool_calls.root[1]
+    tool_call2 = tool_calls[1]
+    assert isinstance(tool_call2, ChatCompletionMessageToolCall)
     assert tool_call2.id == "call_002"
     assert tool_call2.function.name == "get_time"
     assert json.loads(tool_call2.function.arguments) == {"timezone": "EST"}
@@ -152,8 +151,9 @@ def test_tool_call_with_content_translation() -> None:
 
     tool_calls = choice.message.tool_calls
     assert tool_calls is not None
-    assert len(tool_calls.root) == 1
-    assert tool_calls.root[0].function.name == "get_weather"
+    assert len(tool_calls) == 1
+    assert isinstance(tool_calls[0], ChatCompletionMessageToolCall)
+    assert tool_calls[0].function.name == "get_weather"
 
 
 def test_empty_tool_calls_translation() -> None:
@@ -203,9 +203,10 @@ def test_complex_parameters_translation() -> None:
     assert len(result) == 1
     tool_calls = result[0].message.tool_calls
     assert tool_calls is not None
-    assert len(tool_calls.root) == 1
+    assert len(tool_calls) == 1
 
-    tool_call = tool_calls.root[0]
+    tool_call = tool_calls[0]
+    assert isinstance(tool_call, ChatCompletionMessageToolCall)
     assert tool_call.function.name == "search_articles"
     parsed_args = json.loads(tool_call.function.arguments)
     assert parsed_args == complex_params
@@ -226,7 +227,7 @@ def test_custom_logprobs_translation() -> None:
         ],
     )
 
-    custom_logprobs = Logprobs2(
+    custom_logprobs = ChatCompletionLogprobs(
         content=[],
         refusal=[],
     )
@@ -263,7 +264,7 @@ def test_tool_call_type_is_function() -> None:
 
     tool_calls = result[0].message.tool_calls
     assert tool_calls is not None
-    for tc in tool_calls.root:
+    for tc in tool_calls:
         assert tc.type == "function"
 
 
@@ -284,23 +285,23 @@ def test_response_structure_matches_openai_spec() -> None:
 
     result = generator._tool_response_to_choices(parsed)
 
-    # Verify the full structure matches what OpenAI expects
     assert isinstance(result, list)
     assert len(result) == 1
 
     choice = result[0]
-    assert isinstance(choice, Choice1)
+    assert isinstance(choice, ChatCompletionResponseChoice)
     assert choice.index == 0
     assert choice.finish_reason == "tool_calls"
-    assert isinstance(choice.logprobs, Logprobs2)
+    assert isinstance(choice.logprobs, ChatCompletionLogprobs)
 
     message = choice.message
     assert isinstance(message, ChatCompletionResponseMessage)
     assert message.role == "assistant"
     assert message.function_call is None
     assert message.refusal == ""
-    assert isinstance(message.tool_calls, ChatCompletionMessageToolCalls)
+    assert message.tool_calls is not None
+    assert len(message.tool_calls) == 1
 
-    tool_call = message.tool_calls.root[0]
+    tool_call = message.tool_calls[0]
     assert isinstance(tool_call, ChatCompletionMessageToolCall)
-    assert isinstance(tool_call.function, Function1)
+    assert isinstance(tool_call.function, ChatCompletionMessageToolCallFunction)

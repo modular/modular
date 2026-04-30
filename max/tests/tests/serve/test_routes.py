@@ -23,7 +23,6 @@ from max.serve.pipelines.echo_gen import (
     EchoTokenGenerator,
 )
 from max.serve.router import openai_routes
-from max.serve.schemas.openai import InputItem, PromptItem
 
 
 @pytest.fixture(autouse=True)
@@ -96,27 +95,5 @@ def test_prompts() -> None:
 
     prompts = openai_routes.get_prompts_from_openai_request(
         [[1, 2, 3], [4, 5, 6]]
-    )
-    assert len(prompts) == 2
-
-    # prompt item (explicit)
-    prompts = openai_routes.get_prompts_from_openai_request(
-        [PromptItem(root=[1, 2, 3])]
-    )
-    assert len(prompts) == 1
-
-    prompts = openai_routes.get_prompts_from_openai_request(
-        [PromptItem(root=[1, 2, 3]), PromptItem(root=[4, 5, 6])]
-    )
-    assert len(prompts) == 2
-
-    # input item (explicit)
-    prompts = openai_routes.get_prompts_from_openai_request(
-        [InputItem(root=[1, 2, 3])]
-    )
-    assert len(prompts) == 1
-
-    prompts = openai_routes.get_prompts_from_openai_request(
-        [InputItem(root=[1, 2, 3]), InputItem(root=[4, 5, 6])]
     )
     assert len(prompts) == 2

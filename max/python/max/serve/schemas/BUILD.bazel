@@ -6,8 +6,8 @@ modular_py_library(
     name = "schemas",
     srcs = glob(["*.py"]),
     deps = [
+        requirement("openai"),
         requirement("pydantic"),
-        requirement("typing-extensions"),
     ],
 )
 

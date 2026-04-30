@@ -49,19 +49,16 @@ from max.serve.router.openai_routes import (
     openai_create_chat_completion,
 )
 from max.serve.schemas.openai import (
-    ChatCompletionStreamOptions,
+    ChatCompletionLogprobs,
     ChatCompletionTokenLogprob,
     CreateChatCompletionRequest,
     CreateChatCompletionResponse,
     CreateChatCompletionStreamResponse,
-    JsonSchema,
-    Logprobs2,
-    ResponseFormatJsonObject,
-    ResponseFormatJsonSchema,
-    ResponseFormatJsonSchemaSchema,
-    ResponseFormatText,
 )
 from max.serve.worker_interface.zmq_interface import ZmqModelWorkerProxy
+from openai.types.chat.chat_completion_stream_options_param import (
+    ChatCompletionStreamOptionsParam,
+)
 
 if sys.version_info >= (3, 11):
     from asyncio import TaskGroup
@@ -213,7 +210,7 @@ def test_create_chat_completion_request_with_target_endpoint() -> None:
     assert parsed_request.target_endpoint == "endpoint-instance-123"
     assert parsed_request.model == "gpt-3.5-turbo"
     assert len(parsed_request.messages) == 1
-    assert parsed_request.messages[0].root.content == "Hello, world!"
+    assert parsed_request.messages[0]["content"] == "Hello, world!"
 
     # Test without target_endpoint (should default to None)
     request_without_target = {
@@ -267,7 +264,7 @@ def test_process_chat_log_probabilities_empty_outputs() -> None:
     outputs: list[TokenGeneratorOutput] = []
     result = _process_chat_log_probabilities(outputs)
 
-    assert isinstance(result, Logprobs2)
+    assert isinstance(result, ChatCompletionLogprobs)
     assert result.content == []
     assert result.refusal == []
 
@@ -285,7 +282,7 @@ def test_process_chat_log_probabilities_no_logprobs() -> None:
     ]
     result = _process_chat_log_probabilities(outputs)
 
-    assert isinstance(result, Logprobs2)
+    assert isinstance(result, ChatCompletionLogprobs)
     assert result.content == []
     assert result.refusal == []
 
@@ -310,19 +307,21 @@ def test_process_chat_log_probabilities_with_logprobs() -> None:
     ]
     result = _process_chat_log_probabilities(outputs)
 
-    assert isinstance(result, Logprobs2)
-    assert len(result.content) == 2
+    assert isinstance(result, ChatCompletionLogprobs)
+    content = result.content
+    assert content is not None
+    assert len(content) == 2
     assert result.refusal == []
 
     # Check first token
-    first_token = result.content[0]
+    first_token = content[0]
     assert isinstance(first_token, ChatCompletionTokenLogprob)
     assert first_token.logprob == -0.5
     assert first_token.token == "hello"  # Should match the sampled token
     assert len(first_token.top_logprobs) == 3
 
     # Check second token
-    second_token = result.content[1]
+    second_token = content[1]
     assert isinstance(second_token, ChatCompletionTokenLogprob)
     assert second_token.logprob == -1.2
     assert second_token.token == "bar"  # Should match the sampled token
@@ -349,16 +348,18 @@ def test_process_chat_log_probabilities_multiple_outputs() -> None:
     ]
     result = _process_chat_log_probabilities(outputs)
 
-    assert isinstance(result, Logprobs2)
-    assert len(result.content) == 2
+    assert isinstance(result, ChatCompletionLogprobs)
+    content = result.content
+    assert content is not None
+    assert len(content) == 2
 
     # First chunk's token
-    assert result.content[0].logprob == -0.1
-    assert result.content[0].token == "a"
+    assert content[0].logprob == -0.1
+    assert content[0].token == "a"
 
     # Second chunk's token
-    assert result.content[1].logprob == -0.2
-    assert result.content[1].token == "b"
+    assert content[1].logprob == -0.2
+    assert content[1].token == "b"
 
 
 def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
@@ -374,8 +375,10 @@ def test_process_chat_log_probabilities_top_logprobs_sorted() -> None:
     ]
     result = _process_chat_log_probabilities(outputs)
 
-    assert len(result.content) == 1
-    top_logprobs = result.content[0].top_logprobs
+    content = result.content
+    assert content is not None
+    assert len(content) == 1
+    top_logprobs = content[0].top_logprobs
 
     # Should be sorted by logprob descending: y (-0.5), x (-1.0), z (-2.0)
     assert len(top_logprobs) == 3
@@ -400,8 +403,10 @@ def test_process_chat_log_probabilities_bytes_encoding() -> None:
     ]
     result = _process_chat_log_probabilities(outputs)
 
-    assert len(result.content) == 1
-    token_info = result.content[0]
+    content = result.content
+    assert content is not None
+    assert len(content) == 1
+    token_info = content[0]
     assert token_info.token == "é"
     # "é" in UTF-8 is [195, 169]
     assert token_info.bytes == [195, 169]
@@ -430,7 +435,8 @@ def test_create_chat_completion_request_with_logprobs() -> None:
     parsed_default = CreateChatCompletionRequest.model_validate(
         request_without_logprobs
     )
-    assert parsed_default.logprobs is False
+    # OpenAI defaults ``logprobs`` to ``None`` (omitted), not ``False``.
+    assert parsed_default.logprobs is None
     assert parsed_default.top_logprobs is None
 
     # Test with logprobs=True but no top_logprobs specified
@@ -493,10 +499,12 @@ def test_max_server_response_with_logprobs() -> None:
     assert len(response.choices) == 1
     choice = response.choices[0]
     assert choice.logprobs is not None
-    assert len(choice.logprobs.content) == 1
-    assert choice.logprobs.content[0].token == "Hello"
-    assert choice.logprobs.content[0].logprob == -0.5
-    assert len(choice.logprobs.content[0].top_logprobs) == 2
+    content = choice.logprobs.content
+    assert content is not None
+    assert len(content) == 1
+    assert content[0].token == "Hello"
+    assert content[0].logprob == -0.5
+    assert len(content[0].top_logprobs) == 2
 
 
 # ============================================================================
@@ -762,8 +770,9 @@ async def test_openai_chat_completion_reasoning(
     generator = OpenAIChatResponseGenerator(mock_pipeline)
     response = await generator.complete([mock_request])
 
-    assert response.choices[0].message.reasoning == expected_reasoning
-    assert response.choices[0].message.content == expected_content
+    message = response.choices[0].message
+    assert message.reasoning == expected_reasoning
+    assert message.content == expected_content
     assert response.usage is not None
     assert response.usage.completion_tokens == expected_completion_tokens
 
@@ -771,7 +780,7 @@ async def test_openai_chat_completion_reasoning(
 async def _run_stream(
     chunks: list[TokenGeneratorOutput],
     *,
-    stream_options: ChatCompletionStreamOptions | None = None,
+    stream_options: ChatCompletionStreamOptionsParam | None = None,
 ) -> list[CreateChatCompletionStreamResponse]:
     """Run streaming generator and return parsed responses."""
     mock_pipeline = Mock()
@@ -834,7 +843,7 @@ async def test_openai_chat_stream_usage_includes_reasoning_tokens(
     """Test streaming usage with stream_options.include_usage=True."""
     responses = await _run_stream(
         _STREAM_REASONING_CHUNKS,
-        stream_options=ChatCompletionStreamOptions(include_usage=True),
+        stream_options={"include_usage": True},
     )
     usage = responses[-1].usage
     assert usage is not None
@@ -888,8 +897,7 @@ async def test_openai_chat_stream_reasoning_finish_reason(
 
 def test_create_response_format_json_object() -> None:
     """Test that json_object format is converted to json_schema with permissive schema."""
-    response_format = ResponseFormatJsonObject(type="json_object")
-    result = _create_response_format(response_format)
+    result = _create_response_format({"type": "json_object"})
 
     assert result is not None
     # json_object should be normalized to json_schema internally
@@ -900,26 +908,21 @@ def test_create_response_format_json_object() -> None:
 
 def test_create_response_format_json_schema() -> None:
     """Test that json_schema format preserves the provided schema."""
-    # Use model_validate to construct schema with extra fields (extra='allow')
-    person_schema = ResponseFormatJsonSchemaSchema.model_validate(
+    person_schema: dict[str, object] = {
+        "type": "object",
+        "properties": {
+            "name": {"type": "string"},
+            "age": {"type": "integer"},
+        },
+        "required": ["name", "age"],
+    }
+
+    result = _create_response_format(
         {
-            "type": "object",
-            "properties": {
-                "name": {"type": "string"},
-                "age": {"type": "integer"},
-            },
-            "required": ["name", "age"],
+            "type": "json_schema",
+            "json_schema": {"name": "person", "schema": person_schema},
         }
     )
-
-    response_format = ResponseFormatJsonSchema(
-        type="json_schema",
-        json_schema=JsonSchema(
-            name="person",
-            schema=person_schema,  # Use 'schema' alias, not 'schema_'
-        ),
-    )
-    result = _create_response_format(response_format)
 
     assert result is not None
     assert result["type"] == "json_schema"
@@ -931,8 +934,7 @@ def test_create_response_format_json_schema() -> None:
 
 def test_create_response_format_text() -> None:
     """Test that text format returns empty json_schema."""
-    response_format = ResponseFormatText(type="text")
-    result = _create_response_format(response_format)
+    result = _create_response_format({"type": "text"})
 
     assert result is not None
     assert result["type"] == "text"
