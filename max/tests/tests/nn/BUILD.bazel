@@ -42,7 +42,11 @@ modular_py_test(
         "conftest.py",
         "test_sampling_gpu.py",
     ],
-    gpu_constraints = ["//:has_gpu"],
+    gpu_constraints = ["//:has_gpu"] + select({
+        # FIXME(MODELS-1389): Test is hitting 10 min timeout on B200
+        "//:b200_gpu": ["@platforms//:incompatible"],
+        "//conditions:default": [],
+    }),
     tags = ["gpu"],
     target_compatible_with = select({
         # FIXME(KERN-2604): topk kernel uses external_memory unsupported on Apple GPU
