@@ -761,6 +761,23 @@ def mla_decode_sm100_dispatch[
         var max_extra_topk = extra_indices_stride
         effective_split_len = max_topk + max_extra_topk
 
+    # Sliding-window split-K shrink : cap the effective cache length at
+    # window_size + q_max_seq_len so partition heuristics don't
+    # over-split a region the kernel will skip anyway.
+    comptime if mask_t.get_type_name() == "SlidingWindowCausalMask":
+        # BM/BN values are immaterial for window_size extraction; use the
+        # MLA decode tile shape (BM=64, BN=64) for consistency.
+        comptime _sw_window_size: Int = Int(
+            mask_t.mask_strategies[64, 64]()[0]._upper_triangular_window_size
+        )
+        var sw_cap: Int = _sw_window_size + q_max_seq_len
+        # at high batch (bs>=64) with a small SW cap
+        # (<=2048), shrinking the effective_split_len to sw_cap forces the
+        # partition heuristic into np=1.
+        if batch_size >= 64 and sw_cap <= 2048:
+            sw_cap = 2048
+        effective_split_len = min(effective_split_len, sw_cap)
+
     var use_small_split_pages = effective_split_len <= 512 and batch_size >= 32
     var split_page_size = 64 if use_small_split_pages else 128
     comptime sm_count = ctx.default_device_info.sm_count
@@ -776,10 +793,11 @@ def mla_decode_sm100_dispatch[
         sm_count,
     )
 
-    # When sparse mode changes num_partitions, the GPU scalar_args_buf
-    # (which was pre-computed from cache_len by the caller) must be updated
-    # so the kernel reads the same value the host uses for grid/buffers.
-    comptime if sparse:
+    # When sparse mode or sliding-window changes num_partitions, the GPU
+    # scalar_args_buf (which was pre-computed from cache_len by the caller)
+    # must be updated so the kernel reads the same value the host uses for
+    # grid/buffers.
+    comptime if sparse or (mask_t.get_type_name() == "SlidingWindowCausalMask"):
         var corrected_args = InlineArray[Int64, 3](uninitialized=True)
         corrected_args[0] = Int64(batch_size)
         corrected_args[1] = Int64(q_max_seq_len)

@@ -206,6 +206,16 @@ struct MLA_SM100_Decode_KV_BF16[
             MutAnyOrigin,
         ],
     ):
+        # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
+        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+        ), (
+            "MLA_SM100_Decode_KV_BF16 only supports NullMask and CausalMask."
+            " Sliding window is supported only by MLA_SM100_Decode_QKV_FP8"
+            " (native FP8)."
+        )
         comptime num_reg_softmax = 192
         comptime num_reg_correction = 184
         comptime num_reg_other = 112

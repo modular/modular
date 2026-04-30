@@ -320,6 +320,17 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             MutAnyOrigin,
         ],
     ):
+        # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
+        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+        ), (
+            "MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware only supports"
+            " NullMask and CausalMask. Sliding window is supported only by"
+            " MLA_SM100_Decode_QKV_FP8 (native FP8)."
+        )
+
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))

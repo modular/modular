@@ -64,7 +64,7 @@ from std.memory import bitcast
 from nn.attention.gpu.nvidia.sm90.attention import (
     OptionalPointer,
 )
-from nn.attention.mha_mask import MHAMask
+from nn.attention.mha_mask import MHAMask, MASK_VALUE
 from nn.attention.mha_operand import MHAOperand
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type, min_or_neg_inf
@@ -3072,6 +3072,11 @@ struct MLA_SM100_Decode_Common[
         # and derived from (score_row // fold_q_num_heads) + cache_len + 1,
         # treating score_row as the fold tile's per-thread row index.
         fold_q_num_heads: Int = 0,
+        # When > 0, additionally mask out keys that are MORE than
+        # SlidingWindowSize positions before the current query (i.e. clear
+        # the low bits of mask_bits below `causal_limit - SlidingWindowSize`).
+        # Implies causal upper bound (CausalMask must be True).
+        SlidingWindowSize: Int = 0,
     ](
         tiles_done: Int,
         col0: Int,
@@ -3115,20 +3120,39 @@ struct MLA_SM100_Decode_Common[
         var mask_bits_64: UInt64 = (UInt64(1) << UInt64(n_valid)) - UInt64(1)
         var mask_bits: UInt32 = UInt32(mask_bits_64 & UInt64(0xFFFF_FFFF))
 
-        var current_max: Scalar[Self.AccumType] = min_or_neg_inf[
-            Self.AccumType
-        ]()
+        # Sliding window: also clear bits BELOW the per-row lower limit.
+        # Per-row lower limit (in global KV index) = causal_limit -
+        # SlidingWindowSize.  Bits in mask_bits correspond to columns
+        # [col_base, col_base + half_load), so bit i maps to global key
+        # index `col_base + i`.  Clear bits where `col_base + i <
+        # per_row_lo`, i.e. `i < per_row_lo - col_base`.  Clamp to
+        # [0, half_load].
+        comptime if SlidingWindowSize > 0:
+            var per_row_lo: Int = causal_limit - SlidingWindowSize
+            var n_invalid_low: Int = max(per_row_lo - col_base, 0)
+            n_invalid_low = min(n_invalid_low, half_load)
+            var low_mask_64: UInt64 = (
+                UInt64(1) << UInt64(n_invalid_low)
+            ) - UInt64(1)
+            var low_mask: UInt32 = UInt32(low_mask_64 & UInt64(0xFFFF_FFFF))
+            mask_bits &= ~low_mask
+
+        # Initialize the per-row running max to the finite mask sentinel so
+        # an all-masked tile produces a finite `current_max` (= MASK_VALUE)
+        # instead of true -inf — keeps later softmax math NaN-free.
+        var current_max: Scalar[Self.AccumType] = MASK_VALUE
 
         comptime for i in range(0, half_load):
             # rank1-style mask_r2p: turn bit into predicate and use it to select
             var bit: UInt32 = (mask_bits >> UInt32(i)) & UInt32(1)
             var in_bound: Bool = bit != UInt32(0)
             # masked_val = s_row[i]      if in_bound
-            #            = -inf          otherwise
+            #            = MASK_VALUE    otherwise (finite sentinel; see
+            #            module-level comment on MASK_VALUE for why)
             var val: Scalar[Self.AccumType] = s_row[i][0]
-            var masked_val = val if in_bound else min_or_neg_inf[
+            var masked_val: Scalar[
                 Self.AccumType
-            ]()
+            ] = val if in_bound else MASK_VALUE
 
             comptime if NonCausalMask:
                 var v: SIMD[Self.AccumType, 1] = masked_val
@@ -3229,10 +3253,27 @@ struct MLA_SM100_Decode_Common[
         ),
     ):
         comptime MaskName: String = Self.MaskType.name()
+        comptime MaskTypeName: String = Self.MaskType.get_type_name()
         comptime assert Self.AccumType.is_floating_point()
 
         comptime NoMask: Bool = (MaskName == "NullMask")
         comptime CausalMask: Bool = (MaskName == "CausalMask")
+        # Sliding window: SlidingWindowCausalMask is causal + lower bound at
+        # `causal_limit - window_size`.  Detected via get_type_name (since
+        # name() embeds the window value, e.g. "SlidingWindowCausalMask[64]").
+        comptime SlidingWindowMask: Bool = (
+            MaskTypeName == "SlidingWindowCausalMask"
+        )
+        # Window size: 0 if not sliding.  Recovered from the trait-defined
+        # `mask_strategies()` method (the same channel SM100 MHA uses for
+        # sliding-window peeling) so we never touch `Self.MaskType.window_size`
+        # — that struct parameter is not exposed on the `MHAMask` trait and
+        # would fail type-checking even inside the comptime if guard.
+        comptime _sliding_window_size: Int = Int(
+            Self.MaskType.mask_strategies[Self.config.BM, Self.config.BN]()[
+                0
+            ]._upper_triangular_window_size
+        )
 
         # Same S base / stride as in mma()
         var s0_tmem = tmem_addr + UInt32(Self.config.TMEM_S0)
@@ -3318,6 +3359,26 @@ struct MLA_SM100_Decode_Common[
         var tiles_done: Int = 0
         # Use num_keys_this_split for loop bounds (each split processes its portion)
         var num_k_tiles = ceildiv(num_keys_this_split, Self.config.BN)
+        # Sliding-window leading-tile skip + empty guard (comptime-gated;
+        # entire block compiles away for non-sliding masks).  MUST match the
+        # producer (load/mmaQK/mmaPV) skip exactly so barrier counts agree.
+        comptime if SlidingWindowMask:
+            var _W_sw: Int = _sliding_window_size
+            var _global_lo_sw = max(cache_len + 1 - _W_sw, 0)
+            var _local_lo_sw = max(_global_lo_sw - kv_start_row, 0)
+            var _tile_skip_sw = _local_lo_sw // Self.config.BN
+            # tiles_done starts at the skip count so apply_mask sees the
+            # correct global key position via `kv_start_row + tiles_done * BN`.
+            tiles_done = _tile_skip_sw
+            # Empty-split guard: split lies entirely below the window.
+            if _tile_skip_sw >= num_k_tiles:
+                num_k_tiles = _tile_skip_sw  # loop condition false
+        # Index of the FIRST tile processed by this Softmax invocation.
+        # Used to skip the c_prod.commit() on the very first tile (no prior
+        # O accumulator to correct).  For non-sliding masks this is 0,
+        # recovering the original `tiles_done > 0` semantics.  For sliding
+        # window it equals `tiles_done`'s initial value above.
+        var first_processed_tile_sw: Int = tiles_done
         while tiles_done < num_k_tiles:
             # Wait for an S slot to become ready
             var slot_idx: UInt32 = s_cons.wait()
@@ -3417,12 +3478,16 @@ struct MLA_SM100_Decode_Common[
             comptime _fold_q_num_heads: Int = (
                 Self.config.num_q_heads if fold_q else 0
             )
-            comptime if NoMask or CausalMask:
+            # Sliding window is causal + per-row lower bound; so the fast
+            # path treats it as CausalMask=True with SlidingWindowSize set.
+            comptime _causal_for_apply: Bool = CausalMask or SlidingWindowMask
+            comptime if NoMask or CausalMask or SlidingWindowMask:
                 current_max = Self.apply_mask[
                     half_load,
                     NonCausalMask=False,
-                    CausalMask=CausalMask,
+                    CausalMask=_causal_for_apply,
                     fold_q_num_heads=_fold_q_num_heads,
+                    SlidingWindowSize=_sliding_window_size,
                 ](
                     tiles_done,
                     col0,
@@ -3479,6 +3544,10 @@ struct MLA_SM100_Decode_Common[
             current_max = max(current_max, other_half_max)
             var new_max: Scalar[Self.AccumType] = max(mi, current_max)
             var diff = sub_ftz(rebind[Float32](mi), rebind[Float32](new_max))
+            # `current_max` is initialized to
+            # the finite MASK_VALUE in apply_mask, so `new_max >= MASK_VALUE`
+            # (finite) on every iteration.  First-iter `mi=-inf` gives
+            # `diff = -inf - finite = -inf`, exp2(-inf)=0 (finite), no NaN.
             var scale_for_old_max: Scalar[Self.AccumType]
             if _vote_nvidia_helper(diff < rescale_threshold) != 0:
                 scale_for_old_max = rebind[Scalar[Self.AccumType]](exp2(diff))
@@ -3488,6 +3557,11 @@ struct MLA_SM100_Decode_Common[
             var float2_register = s_row.vectorize[2]()
             var float2_current_sum: SIMD[Self.AccumType, 2] = 0.0
 
+            # With the finite MASK_VALUE in apply_mask, both `score` and
+            # `new_max` are >= MASK_VALUE, so `score - new_max` is finite
+            # (worst case `MASK_VALUE - MASK_VALUE = 0` for fully-masked rows,
+            # giving `exp2(0) = 1` and `li = N`; the resulting partial_lse is
+            # so negative that the combine kernel weights this split as 0).
             comptime for i in range(0, half_load // 2):
                 var element = float2_register[i]
                 float2_register[i] = exp2(element.fma(log2e_f32, -new_max))
@@ -3496,8 +3570,11 @@ struct MLA_SM100_Decode_Common[
                 )
 
             # compute softmax using S_tmem_slot -> produce probabilities in regs
-            # Expose correction scalars in SMEM for Correction warpgroup
-            if tiles_done > 0:
+            # Expose correction scalars in SMEM for Correction warpgroup.
+            # Skip the FIRST processed tile since there's no prior O
+            # accumulator to correct.  For non-sliding masks
+            # `first_processed_tile_sw` is 0 (original `tiles_done > 0`).
+            if tiles_done > first_processed_tile_sw:
                 c_prod.acquire()
                 # write back the exp2f(mi - new_max); to the correction_max_smem
                 # corr_max_Smem_Tensor[lane_id] = scale_for_old
@@ -3850,6 +3927,30 @@ struct MLA_SM100_Decode_Common[
         var num_k_tiles = ceildiv(
             offset_position.num_keys_this_split, Self.config.BN
         )
+
+        # Sliding-window leading-tile skip — comptime-gated; entire block
+        # compiles away for non-sliding masks.  Correction starts AFTER
+        # Softmax's first processed tile, i.e. at `tile_skip + 1`.  Must
+        # match the load skip exactly so producer/consumer iterations align.
+        # Empty-split (tile_skip >= num_k_tiles) cannot reach here in
+        # split-K mode because the kernel-level pdl_early_exit fires first.
+        comptime _sliding_window_mask_corr: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask_corr:
+            comptime _W_corr: Int = Int(
+                Self.MaskType.mask_strategies[Self.config.BM, Self.config.BN]()[
+                    0
+                ]._upper_triangular_window_size
+            )
+            var _global_lo_corr = max(
+                offset_position.cache_len() + 1 - _W_corr, 0
+            )
+            var _local_lo_corr = max(
+                _global_lo_corr - offset_position.kv_start_row, 0
+            )
+            var _tile_skip_corr = _local_lo_corr // Self.config.BN
+            tiles_done = _tile_skip_corr + 1
 
         while tiles_done < num_k_tiles:
             # after computing per-row c_scalar from max/li:

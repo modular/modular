@@ -155,6 +155,37 @@ struct MLA_SM100_Decode_QKV_FP8[
     comptime num_stages = Self.config.num_kv_stages
 
     # --------------------------------------------------------------------------
+    # Sliding-window k-tile skip (only callable when MaskType is
+    # SlidingWindowCausalMask).  All warpgroups call this with the same
+    # `offset_position` to avoid barriers deadlock.
+    #
+    # For SlidingWindowCausalMask with window_size W:
+    #   global_lo = max(cache_len + 1 - W, 0)   # 0-based key index
+    #   local_lo  = max(global_lo - kv_start_row, 0)
+    #   tile_skip = local_lo // BN
+    # --------------------------------------------------------------------------
+    @staticmethod
+    @always_inline
+    def sliding_window_tile_skip(
+        offset_position: OffsetPosition[
+            Self.config,
+            Self.KVLUTType,
+            Self.ragged,
+            Self._is_cache_length_accurate,
+            Self.ValidLengthType,
+            Self.config.decoding_warp_split_k,
+        ],
+    ) -> Int:
+        comptime _W: Int = Int(
+            Self.MaskType.mask_strategies[Self.config.BM, Self.config.BN]()[
+                0
+            ]._upper_triangular_window_size
+        )
+        var global_lo = max(offset_position.cache_len() + 1 - _W, 0)
+        var local_lo = max(global_lo - offset_position.kv_start_row, 0)
+        return local_lo // Self.config.BN
+
+    # --------------------------------------------------------------------------
     # Main kernel function — 3 Warpgroups, 384 threads
     # --------------------------------------------------------------------------
     #    Softmax WG (warps 0-3), Correction WG (warps 4-7),
@@ -220,6 +251,19 @@ struct MLA_SM100_Decode_QKV_FP8[
             MutAnyOrigin,
         ],
     ):
+        # MaskType assertion: native FP8 backend supports NullMask, CausalMask,
+        # and SlidingWindowCausalMask.  Sliding window support is exclusive to
+        # this backend.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask"
+            or _mask_type_name == "CausalMask"
+            or _mask_type_name == "SlidingWindowCausalMask"
+        ), (
+            "MLA_SM100_Decode_QKV_FP8 supports NullMask, CausalMask, and"
+            " SlidingWindowCausalMask only."
+        )
+
         # Extract scalar launch args from the stable device buffer.
         var batch_size = Int(scalar_args.raw_load(0))
         var q_max_seq_len = Int(scalar_args.raw_load(1))
@@ -261,6 +305,44 @@ struct MLA_SM100_Decode_QKV_FP8[
                     # pass explicit seq_idx=q_local so each
                     # slot's LSE is written; otherwise q_local>=1 slots stay
                     # uninitialized and poison the combine kernel.
+                    comptime for q_local in range(Self.q_len_fold):
+                        Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
+                            offset_position.split_idx,
+                            offset_position.batch_idx,
+                            offset_position.max_seq_len,
+                            offset_position.out_row_offset_at(q_local),
+                            batch_size,
+                            lse_accum_split_ptr,
+                            o_tma,
+                            seq_idx_fold=UInt32(q_local),
+                        )
+                else:
+                    Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
+                        offset_position.split_idx,
+                        offset_position.batch_idx,
+                        offset_position.max_seq_len,
+                        offset_position.out_row_offset,
+                        batch_size,
+                        lse_accum_split_ptr,
+                        o_tma,
+                    )
+                return
+
+        # Sliding-window split-K: a CTA whose entire split lies BELOW the
+        # per-row lower bound (causal_limit - W) has nothing to compute and
+        # must take the same -inf-LSE early-exit path as `num_keys_this_split
+        # == 0`.  Comptime-gated so non-sliding builds compile to byte-
+        # identical PTX.
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask and Self.config.decoding_warp_split_k:
+            var _num_k_tiles_total = ceildiv(
+                offset_position.num_keys_this_split, Self.config.BN
+            )
+            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= _num_k_tiles_total:
+                comptime if Self.fold_q:
                     comptime for q_local in range(Self.q_len_fold):
                         Self.Common_MLA_Op.pdl_early_exit[fold_q=Self.fold_q](
                             offset_position.split_idx,
@@ -556,6 +638,19 @@ struct MLA_SM100_Decode_QKV_FP8[
             offset_position.num_keys_this_split, Self.config.BN
         )
 
+        # Sliding-window early exit + leading-tile skip (comptime-gated;
+        # entire block compiles away for non-sliding masks).
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        # Lives only inside the comptime SW block.
+        var _tile_skip: Int = 0
+        comptime if _sliding_window_mask:
+            _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= num_k_tiles:
+                return
+            num_k_tiles -= _tile_skip
+
         var kv_prod = DecodeKVProducer[Self.kv_type, Self.config](
             kv_pipeline, kv_smem.bitcast[Scalar[Self.kv_type]]()
         )
@@ -563,6 +658,9 @@ struct MLA_SM100_Decode_QKV_FP8[
         var is_leader = elect_mask != 0
         var row: Int = offset_position.q_row_offset
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
+        # Advance the starting KV row past skipped sliding-window tiles.
+        comptime if _sliding_window_mask:
+            kv_row += UInt32(_tile_skip * Self.config.BN)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
         var paged_rows = kv_lut.populate[Self.config.BN](
@@ -690,6 +788,18 @@ struct MLA_SM100_Decode_QKV_FP8[
         if num_k_tiles == 0:
             return
 
+        # Sliding-window early exit + leading-tile skip (comptime-gated;
+        # entire block compiles away for non-sliding masks).  Must match
+        # `load` exactly so consumer iterations equal producer iterations.
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask:
+            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= num_k_tiles:
+                return
+            num_k_tiles -= _tile_skip
+
         var kv_cons = DecodeKVConsumer[Self.fp8_type, Self.config](
             kv_pipeline, kv_smem
         )
@@ -768,6 +878,18 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         if num_k_tiles == 0:
             return
+
+        # Sliding-window early exit + leading-tile skip (comptime-gated;
+        # entire block compiles away for non-sliding masks).  Must match
+        # `load` exactly so consumer iterations equal producer iterations.
+        comptime _sliding_window_mask: Bool = (
+            Self.MaskType.get_type_name() == "SlidingWindowCausalMask"
+        )
+        comptime if _sliding_window_mask:
+            var _tile_skip = Self.sliding_window_tile_skip(offset_position)
+            if _tile_skip >= num_k_tiles:
+                return
+            num_k_tiles -= _tile_skip
 
         comptime s_stride = UInt32(Self.config.TMEM_S1 - Self.config.TMEM_S0)
         var kv_cons = DecodeKVConsumer[Self.fp8_type, Self.config](

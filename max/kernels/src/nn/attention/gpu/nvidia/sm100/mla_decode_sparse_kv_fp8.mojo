@@ -356,6 +356,16 @@ struct MLA_SM100_Decode_Sparse_KV_FP8[
             DType.int64, RowMajorLayout[ComptimeInt[3]], MutAnyOrigin
         ],
     ):
+        # SlidingWindowCausalMask is supported ONLY by the native FP8 backend
+        # (MLA_SM100_Decode_QKV_FP8).  Reject it here at comptime.
+        comptime _mask_type_name: String = Self.MaskType.get_type_name()
+        comptime assert (
+            _mask_type_name == "NullMask" or _mask_type_name == "CausalMask"
+        ), (
+            "MLA_SM100_Decode_Sparse_KV_FP8 only supports NullMask and"
+            " CausalMask. Sliding window is supported only by"
+            " MLA_SM100_Decode_QKV_FP8 (native FP8)."
+        )
         # Softmax now includes the epilogue, so it needs more registers
         # Correction does less work now (no epilogue), so it needs fewer
         comptime num_reg_softmax = 184
