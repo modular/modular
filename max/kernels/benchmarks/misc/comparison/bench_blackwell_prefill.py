@@ -479,8 +479,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         "--causal",
-        type=bool,
-        default=False,
+        type=int,
+        default=1,
         help="Causal",
     )
 

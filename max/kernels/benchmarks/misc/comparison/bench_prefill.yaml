@@ -18,8 +18,8 @@ deepseek-v2-commons: &deepseek-v2-commons
   $num_q_heads: 32
   $num_kv_heads: 4
   $head_dim: 128
-  $causal: [True]
-  # $causal: [True, False]
+  $causal: [1]
+  # $causal: [1, 0]
   # $dtype: [bfloat16]
   # $engine: ["tridao", "modular_max"]
   $engine: ["flashinfer", "tridao", "modular_max"]
