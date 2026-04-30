@@ -87,16 +87,26 @@ def test_mxfp4_grouped_matmul[
     )
 
     # --- Host allocations ---
-    var a_host = alloc[Scalar[DType.uint8]](total_tokens * packed_K)
-    var b_host = alloc[Scalar[DType.uint8]](num_experts * N * packed_K)
-    var a_scales_host = alloc[Scalar[DType.float8_e8m0fnu]](
-        total_tokens * scale_K
+    var a_host = List(
+        length=total_tokens * packed_K, fill=Scalar[DType.uint8](0)
     )
-    var b_scales_host = alloc[Scalar[DType.float8_e8m0fnu]](
-        num_experts * N * scale_K
+    var b_host = List(
+        length=num_experts * N * packed_K, fill=Scalar[DType.uint8](0)
     )
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_scales_host = List(
+        length=total_tokens * scale_K,
+        fill=Scalar[DType.float8_e8m0fnu](0),
+    )
+    var b_scales_host = List(
+        length=num_experts * N * scale_K,
+        fill=Scalar[DType.float8_e8m0fnu](0),
+    )
+    var a_offsets_host = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
 
     # Random packed FP4 data.
     for i in range(total_tokens * packed_K):
@@ -228,15 +238,17 @@ def test_mxfp4_grouped_matmul[
     ctx.synchronize()
 
     # --- Compare ---
-    var c_host = alloc[Scalar[DType.float32]](total_tokens * N)
-    var c_ref_host = alloc[Scalar[DType.float32]](total_tokens * N)
+    var c_host = List(length=total_tokens * N, fill=Scalar[DType.float32](0))
+    var c_ref_host = List(
+        length=total_tokens * N, fill=Scalar[DType.float32](0)
+    )
     ctx.enqueue_copy(c_host, c_dev)
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_ref_host,
+        c_host.unsafe_ptr(),
+        c_ref_host.unsafe_ptr(),
         total_tokens * N,
         atol=0.05,
         rtol=0.05,
@@ -245,14 +257,6 @@ def test_mxfp4_grouped_matmul[
     print("    PASS")
 
     # Cleanup
-    a_host.free()
-    b_host.free()
-    a_scales_host.free()
-    b_scales_host.free()
-    a_offsets_host.free()
-    expert_ids_host.free()
-    c_host.free()
-    c_ref_host.free()
     _ = a_dev^
     _ = b_dev^
     _ = a_scales_dev^
@@ -261,6 +265,14 @@ def test_mxfp4_grouped_matmul[
     _ = expert_ids_dev^
     _ = c_dev^
     _ = c_ref_dev^
+    _ = c_ref_host^
+    _ = c_host^
+    _ = expert_ids_host^
+    _ = a_offsets_host^
+    _ = b_scales_host^
+    _ = a_scales_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def main() raises:

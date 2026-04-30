@@ -112,10 +112,10 @@ def test[
     var c_size = m * n
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[dtype]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -309,14 +309,14 @@ def test[
             assert_almost_equal(actual, expect, rtol=rtol)
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device_buffer^
     _ = b_device_buffer^
     _ = c_device_buffer^
     _ = c_device_ref_buffer^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

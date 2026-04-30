@@ -212,10 +212,10 @@ def test_existing_kernel_single_group[
     var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -261,8 +261,12 @@ def test_existing_kernel_single_group[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_scales_host_ptr = List(
+        length=a_scales_total, fill=Scalar[scales_dtype](0)
+    )
+    var b_scales_host_ptr = List(
+        length=b_scales_total, fill=Scalar[scales_dtype](0)
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -274,11 +278,8 @@ def test_existing_kernel_single_group[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Initialize with random data
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0 (using cast from float32)
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -388,12 +389,12 @@ def test_existing_kernel_single_group[
         raise Error("Test failed - kernel output does not match cuBLAS")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def test_grouped_kernel_single_group[
@@ -439,10 +440,10 @@ def test_grouped_kernel_single_group[
     var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
 
     # Device allocations
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -475,8 +476,12 @@ def test_grouped_kernel_single_group[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_scales_host_ptr = List(
+        length=a_scales_total, fill=Scalar[scales_dtype](0)
+    )
+    var b_scales_host_ptr = List(
+        length=b_scales_total, fill=Scalar[scales_dtype](0)
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -488,11 +493,8 @@ def test_grouped_kernel_single_group[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Test with random data
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -545,7 +547,7 @@ def test_grouped_kernel_single_group[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
+    var problem_sizes_host = List(length=max_groups * 4, fill=Int32(0))
     problem_sizes_host[0] = Int32(Int(m.value()))  # M
     problem_sizes_host[1] = Int32(Int(n.value()))  # N
     problem_sizes_host[2] = Int32(Int(k.value()))  # K
@@ -581,11 +583,11 @@ def test_grouped_kernel_single_group[
     print("  Computed total_tiles on host:", total_tiles)
 
     # Pointer arrays: (max_groups, 1)
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
+    var a_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var b_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var c_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var sfa_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var sfb_ptrs_host = List(length=max_groups, fill=UInt64(0))
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))
@@ -703,18 +705,18 @@ def test_grouped_kernel_single_group[
         raise Error("Grouped kernel output does not match cuBLAS")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    _ = sfb_ptrs_host^
+    _ = sfa_ptrs_host^
+    _ = c_ptrs_host^
+    _ = b_ptrs_host^
+    _ = a_ptrs_host^
+    _ = problem_sizes_host^
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def test_grouped_kernel_multi_group_same_ptr[
@@ -763,10 +765,10 @@ def test_grouped_kernel_multi_group_same_ptr[
     )
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
 
     # Shapes
     var a_shape = row_major(Coord(m, k))
@@ -804,8 +806,12 @@ def test_grouped_kernel_multi_group_same_ptr[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a_scales_host_ptr = List(
+        length=a_scales_total, fill=Scalar[scales_dtype](0)
+    )
+    var b_scales_host_ptr = List(
+        length=b_scales_total, fill=Scalar[scales_dtype](0)
+    )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
         a_scales_total
@@ -817,11 +823,8 @@ def test_grouped_kernel_multi_group_same_ptr[
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
     # Test with random data
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -876,7 +879,7 @@ def test_grouped_kernel_multi_group_same_ptr[
     comptime max_groups = num_groups
 
     # Problem sizes tensor: (max_groups, 4) with [M, N, K, L=1]
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
+    var problem_sizes_host = List(length=max_groups * 4, fill=Int32(0))
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))  # M
         problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))  # N
@@ -889,11 +892,11 @@ def test_grouped_kernel_multi_group_same_ptr[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer tensors - ALL groups point to the SAME tensors
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
+    var a_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var b_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var c_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var sfa_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var sfb_ptrs_host = List(length=max_groups, fill=UInt64(0))
 
     for g in range(max_groups):
         a_ptrs_host[g] = UInt64(Int(a_device.unsafe_ptr()))
@@ -1016,18 +1019,18 @@ def test_grouped_kernel_multi_group_same_ptr[
         )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    _ = sfb_ptrs_host^
+    _ = sfa_ptrs_host^
+    _ = c_ptrs_host^
+    _ = b_ptrs_host^
+    _ = a_ptrs_host^
+    _ = problem_sizes_host^
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def test_grouped_kernel_two_groups_different_ptrs[
@@ -1112,12 +1115,12 @@ def test_grouped_kernel_two_groups_different_ptrs[
     )
 
     # ========== Group 0 allocations ==========
-    var a0_host = alloc[Scalar[a_type]](a_size)
-    var b0_host = alloc[Scalar[b_type]](b_size)
-    var c0_host = alloc[Scalar[c_type]](c_size)
-    var c0_ref_host = alloc[Scalar[c_type]](c_size)
-    var sfa0_host = alloc[Scalar[scales_dtype]](a_scales_total)
-    var sfb0_host = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a0_host = List(length=a_size, fill=Scalar[a_type](0))
+    var b0_host = List(length=b_size, fill=Scalar[b_type](0))
+    var c0_host = List(length=c_size, fill=Scalar[c_type](0))
+    var c0_ref_host = List(length=c_size, fill=Scalar[c_type](0))
+    var sfa0_host = List(length=a_scales_total, fill=Scalar[scales_dtype](0))
+    var sfb0_host = List(length=b_scales_total, fill=Scalar[scales_dtype](0))
 
     var a0_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b0_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -1127,12 +1130,12 @@ def test_grouped_kernel_two_groups_different_ptrs[
     var sfb0_device = ctx.enqueue_create_buffer[scales_dtype](b_scales_total)
 
     # ========== Group 1 allocations ==========
-    var a1_host = alloc[Scalar[a_type]](a_size)
-    var b1_host = alloc[Scalar[b_type]](b_size)
-    var c1_host = alloc[Scalar[c_type]](c_size)
-    var c1_ref_host = alloc[Scalar[c_type]](c_size)
-    var sfa1_host = alloc[Scalar[scales_dtype]](a_scales_total)
-    var sfb1_host = alloc[Scalar[scales_dtype]](b_scales_total)
+    var a1_host = List(length=a_size, fill=Scalar[a_type](0))
+    var b1_host = List(length=b_size, fill=Scalar[b_type](0))
+    var c1_host = List(length=c_size, fill=Scalar[c_type](0))
+    var c1_ref_host = List(length=c_size, fill=Scalar[c_type](0))
+    var sfa1_host = List(length=a_scales_total, fill=Scalar[scales_dtype](0))
+    var sfb1_host = List(length=b_scales_total, fill=Scalar[scales_dtype](0))
 
     var a1_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b1_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -1143,18 +1146,11 @@ def test_grouped_kernel_two_groups_different_ptrs[
 
     # Initialize with DIFFERENT random data for each group
     seed(42)  # Reproducible
-    rand(a0_host, a_size)
-    rand(b0_host, b_size)
+    rand(a0_host.unsafe_ptr(), a_size)
+    rand(b0_host.unsafe_ptr(), b_size)
     seed(123)  # Different seed for group 1
-    rand(a1_host, a_size)
-    rand(b1_host, b_size)
-
-    # Zero C outputs
-    for i in range(c_size):
-        c0_host[i] = 0
-        c0_ref_host[i] = 0
-        c1_host[i] = 0
-        c1_ref_host[i] = 0
+    rand(a1_host.unsafe_ptr(), a_size)
+    rand(b1_host.unsafe_ptr(), b_size)
 
     # Set scale factors to 1.0
     var scale_one = Float32(1.0).cast[scales_dtype]()
@@ -1251,7 +1247,7 @@ def test_grouped_kernel_two_groups_different_ptrs[
     print("  Setting up grouped kernel inputs...")
 
     # Problem sizes: both groups have same size
-    var problem_sizes_host = alloc[Int32](max_groups * 4)
+    var problem_sizes_host = List(length=max_groups * 4, fill=Int32(0))
     for g in range(max_groups):
         problem_sizes_host[g * 4 + 0] = Int32(Int(m.value()))
         problem_sizes_host[g * 4 + 1] = Int32(Int(n.value()))
@@ -1264,11 +1260,11 @@ def test_grouped_kernel_two_groups_different_ptrs[
     ctx.enqueue_copy(problem_sizes_device, problem_sizes_host)
 
     # Pointer arrays - DIFFERENT pointers per group
-    var a_ptrs_host = alloc[UInt64](max_groups)
-    var b_ptrs_host = alloc[UInt64](max_groups)
-    var c_ptrs_host = alloc[UInt64](max_groups)
-    var sfa_ptrs_host = alloc[UInt64](max_groups)
-    var sfb_ptrs_host = alloc[UInt64](max_groups)
+    var a_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var b_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var c_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var sfa_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var sfb_ptrs_host = List(length=max_groups, fill=UInt64(0))
 
     # Group 0 pointers
     a_ptrs_host[0] = UInt64(Int(a0_device.unsafe_ptr()))
@@ -1412,24 +1408,24 @@ def test_grouped_kernel_two_groups_different_ptrs[
         raise Error("Multi-group different pointers test failed")
 
     # Cleanup
-    a0_host.free()
-    b0_host.free()
-    c0_host.free()
-    c0_ref_host.free()
-    sfa0_host.free()
-    sfb0_host.free()
-    a1_host.free()
-    b1_host.free()
-    c1_host.free()
-    c1_ref_host.free()
-    sfa1_host.free()
-    sfb1_host.free()
-    problem_sizes_host.free()
-    a_ptrs_host.free()
-    b_ptrs_host.free()
-    c_ptrs_host.free()
-    sfa_ptrs_host.free()
-    sfb_ptrs_host.free()
+    _ = problem_sizes_host^
+    _ = a_ptrs_host^
+    _ = b_ptrs_host^
+    _ = c_ptrs_host^
+    _ = sfa_ptrs_host^
+    _ = sfb_ptrs_host^
+    _ = a0_host^
+    _ = b0_host^
+    _ = c0_host^
+    _ = c0_ref_host^
+    _ = sfa0_host^
+    _ = sfb0_host^
+    _ = a1_host^
+    _ = b1_host^
+    _ = c1_host^
+    _ = c1_ref_host^
+    _ = sfa1_host^
+    _ = sfb1_host^
 
 
 def main() raises:

@@ -261,7 +261,7 @@ def run_im2col_test[
 
     # Allocate input tensor
     comptime input_size = batch * in_height * in_width * in_channels
-    var input_host = alloc[Scalar[dtype]](input_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
 
     # Initialize with sequential pattern
     for i in range(input_size):
@@ -315,14 +315,14 @@ def run_im2col_test[
 
     # Allocate output buffer
     comptime tile_size = BM * BK
-    var output_host = alloc[Scalar[dtype]](tile_size)
+    var output_host = List(length=tile_size, fill=Scalar[dtype](0))
     var output_device = ctx.enqueue_create_buffer[dtype](tile_size)
-    var ref_host = alloc[Scalar[dtype]](tile_size)
+    var ref_host = List(length=tile_size, fill=Scalar[dtype](0))
 
     # Compute reference on CPU for tile at (k=0, m=0)
     im2col_reference[dtype](
-        ref_host,
-        input_host,
+        ref_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
         batch,
         in_height,
         in_width,
@@ -417,13 +417,13 @@ def run_im2col_test[
         print()
 
     # Cleanup
-    input_host.free()
-    output_host.free()
-    ref_host.free()
     _ = input_device
     _ = output_device
 
     return errors == 0
+    _ = input_host^
+    _ = output_host^
+    _ = ref_host^
 
 
 def main() raises:

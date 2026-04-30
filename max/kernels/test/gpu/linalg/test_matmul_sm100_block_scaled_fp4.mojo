@@ -109,13 +109,13 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     var b_size = Int(n.value()) * (KType.static_value // 2)
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -149,9 +149,13 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_total)
+    var a_scales_host_ptr = List(
+        length=a_scales_total, fill=Scalar[scales_dtype](0)
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_total)
+    var b_scales_host_ptr = List(
+        length=b_scales_total, fill=Scalar[scales_dtype](0)
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_dtype](
@@ -340,18 +344,18 @@ def _test_blackwell_block_scaled_matmul_tma_umma_warp_specialized_impl[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
     _ = a_scales_device^
     _ = b_scales_device^
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def run_matmul_sm100_block_scaled_fp4_suite[

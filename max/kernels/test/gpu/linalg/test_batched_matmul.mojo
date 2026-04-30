@@ -225,10 +225,10 @@ def test_dynamic_shapes[
     var c_size = b * m * n
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[dtype]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
 
     var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx(k)))
     var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx(n)))
@@ -244,11 +244,10 @@ def test_dynamic_shapes[
     run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
         a_host, b_host, c_host, c_host_ref, ctx, rtol
     )
-
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
+    _ = a_host_ptr^
+    _ = b_host_ptr^
+    _ = c_host_ptr^
+    _ = c_host_ref_ptr^
 
 
 def test_static_NK[
@@ -274,10 +273,10 @@ def test_static_NK[
     var c_size = b * m * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[dtype]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
 
     var a_host = TileTensor(a_host_ptr, row_major(Idx(b), Idx(m), Idx[K]()))
     var c_host = TileTensor(c_host_ptr, row_major(Idx(b), Idx(m), Idx[N]()))
@@ -300,11 +299,10 @@ def test_static_NK[
         run_bmm_and_check_result[transpose_b=transpose_b, lambda_fn=lambda_fn](
             a_host, b_host, c_host, c_host_ref, ctx, rtol
         )
-
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
+    _ = a_host_ptr^
+    _ = b_host_ptr^
+    _ = c_host_ptr^
+    _ = c_host_ref_ptr^
 
 
 def test_non_row_major_layout[
@@ -331,10 +329,10 @@ def test_non_row_major_layout[
     var c_size = B * m * N
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[dtype]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
 
     var a_layout = Layout(
         (Idx[B](), Idx(m), Idx[K]()), (Idx[K](), Idx[B * K](), Idx(1))
@@ -351,11 +349,10 @@ def test_non_row_major_layout[
     run_bmm_and_check_result[
         transpose_b=True, lambda_fn=lambda_fn, check_against_naive_kernel=True
     ](a_host, b_host, c_host, c_host_ref, ctx, rtol)
-
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
+    _ = a_host_ptr^
+    _ = b_host_ptr^
+    _ = c_host_ptr^
+    _ = c_host_ref_ptr^
 
 
 def main() raises:

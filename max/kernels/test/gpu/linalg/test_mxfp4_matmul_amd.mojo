@@ -177,12 +177,12 @@ def test_mxfp4_matmul[
     comptime a_scales_shape = row_major[M_static, K_SCALES]()
     comptime b_scales_shape = row_major[N_static, K_SCALES]()
 
-    var a_host = alloc[Scalar[input_dtype]](a_size)
-    var b_host = alloc[Scalar[input_dtype]](b_size)
-    var a_scales_host = alloc[Scalar[scales_dtype]](a_scales_size)
-    var b_scales_host = alloc[Scalar[scales_dtype]](b_scales_size)
-    var c_host = alloc[Scalar[output_dtype]](c_size)
-    var c_host_ref = alloc[Scalar[output_dtype]](c_size)
+    var a_host = List(length=a_size, fill=Scalar[input_dtype](0))
+    var b_host = List(length=b_size, fill=Scalar[input_dtype](0))
+    var a_scales_host = List(length=a_scales_size, fill=Scalar[scales_dtype](0))
+    var b_scales_host = List(length=b_scales_size, fill=Scalar[scales_dtype](0))
+    var c_host = List(length=c_size, fill=Scalar[output_dtype](0))
+    var c_host_ref = List(length=c_size, fill=Scalar[output_dtype](0))
 
     for i in range(a_size):
         a_host[i] = UInt8(random_ui64(0, 255))
@@ -257,21 +257,20 @@ def test_mxfp4_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host,
-        c_host_ref,
+        c_host.unsafe_ptr(),
+        c_host_ref.unsafe_ptr(),
         c_size,
         atol=0.05,
         rtol=0.05,
     )
 
     print("  PASSED")
-
-    a_host.free()
-    b_host.free()
-    a_scales_host.free()
-    b_scales_host.free()
-    c_host.free()
-    c_host_ref.free()
+    _ = a_host^
+    _ = b_host^
+    _ = a_scales_host^
+    _ = b_scales_host^
+    _ = c_host^
+    _ = c_host_ref^
 
 
 def main() raises:

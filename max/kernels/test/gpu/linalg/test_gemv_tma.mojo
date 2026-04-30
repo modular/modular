@@ -327,16 +327,13 @@ def test_gemv_tma[
     var b_size = K
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[dtype]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[dtype]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[dtype]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
 
-    rand[dtype](a_host_ptr, M * K)
-    rand[dtype](b_host_ptr, K * N)
-    for i in range(c_size):
-        c_host_ptr[i] = 0
-        c_host_ref_ptr[i] = 0
+    rand[dtype](a_host_ptr.unsafe_ptr(), M * K)
+    rand[dtype](b_host_ptr.unsafe_ptr(), K * N)
 
     var a_device = ctx.enqueue_create_buffer[dtype](a_size)
     var b_device = ctx.enqueue_create_buffer[dtype](b_size)
@@ -427,18 +424,18 @@ def test_gemv_tma[
 
         comptime rtol = 1e-2
         assert_almost_equal(
-            c_host_ptr,
-            c_host_ref_ptr,
+            c_host_ptr.unsafe_ptr(),
+            c_host_ref_ptr.unsafe_ptr(),
             c_size,
             atol=0.0001,
             rtol=rtol,
         )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
+    _ = a_host_ptr^
+    _ = b_host_ptr^
+    _ = c_host_ptr^
+    _ = c_host_ref_ptr^
 
 
 def main() raises:

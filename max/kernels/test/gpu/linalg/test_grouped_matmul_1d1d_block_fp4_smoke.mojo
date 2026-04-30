@@ -77,9 +77,15 @@ def _test_grouped_1d1d_block_fp4_impl[
     var total_tokens = num_active_experts * tokens_per_expert
 
     # Offsets and expert IDs
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var a_scale_offsets_host = List(
+        length=num_active_experts, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
 
     var a_scale_dim0 = 0
     a_offsets_host[0] = 0
@@ -92,10 +98,10 @@ def _test_grouped_1d1d_block_fp4_impl[
         expert_ids_host[i] = Int32(i)
 
     # Host-side data init (rand for uint8 produces proper [0, 255] values)
-    var a_host = alloc[Scalar[a_type]](total_tokens * packed_K)
-    var b_host = alloc[Scalar[b_type]](num_experts * N * packed_K)
-    rand(a_host, total_tokens * packed_K, min=0, max=255)
-    rand(b_host, num_experts * N * packed_K, min=0, max=255)
+    var a_host = List(length=total_tokens * packed_K, fill=Scalar[a_type](0))
+    var b_host = List(length=num_experts * N * packed_K, fill=Scalar[b_type](0))
+    rand(a_host.unsafe_ptr(), total_tokens * packed_K, min=0, max=255)
+    rand(b_host.unsafe_ptr(), num_experts * N * packed_K, min=0, max=255)
 
     # Scale factors
     comptime k_groups = ceildiv(K, sf_vector_size * SF_ATOM_K)
@@ -111,10 +117,10 @@ def _test_grouped_1d1d_block_fp4_impl[
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
-    var a_sf_host = alloc[Scalar[sf_dtype]](a_sf_size)
-    var b_sf_host = alloc[Scalar[sf_dtype]](b_sf_size)
-    rand(a_sf_host, a_sf_size)
-    rand(b_sf_host, b_sf_size)
+    var a_sf_host = List(length=a_sf_size, fill=Scalar[sf_dtype](0))
+    var b_sf_host = List(length=b_sf_size, fill=Scalar[sf_dtype](0))
+    rand(a_sf_host.unsafe_ptr(), a_sf_size)
+    rand(b_sf_host.unsafe_ptr(), b_sf_size)
 
     # Device buffers
     var a_buf = ctx.enqueue_create_buffer[a_type](total_tokens * packed_K)
@@ -139,9 +145,7 @@ def _test_grouped_1d1d_block_fp4_impl[
 
     # Expert scales
     var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = alloc[Scalar[DType.float32]](num_experts)
-    for i in range(num_experts):
-        es_host[i] = 1.0
+    var es_host = List(length=num_experts, fill=Scalar[DType.float32](1.0))
     ctx.enqueue_copy(es_buf, es_host)
 
     # Construct TileTensors directly from pointers and layouts
@@ -249,14 +253,6 @@ def _test_grouped_1d1d_block_fp4_impl[
 
     print("    PASSED")
 
-    a_host.free()
-    b_host.free()
-    a_sf_host.free()
-    b_sf_host.free()
-    a_offsets_host.free()
-    a_scale_offsets_host.free()
-    expert_ids_host.free()
-    es_host.free()
     _ = a_buf^
     _ = b_buf^
     _ = c_buf^
@@ -266,6 +262,14 @@ def _test_grouped_1d1d_block_fp4_impl[
     _ = a_sf_buf^
     _ = b_sf_buf^
     _ = es_buf^
+    _ = es_host^
+    _ = expert_ids_host^
+    _ = a_scale_offsets_host^
+    _ = a_offsets_host^
+    _ = b_sf_host^
+    _ = a_sf_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def _test_grouped_1d1d_mixed_experts[
@@ -313,9 +317,15 @@ def _test_grouped_1d1d_mixed_experts[
         mma_n,
     )
 
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var a_scale_offsets_host = List(
+        length=num_active_experts, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
 
     var a_scale_dim0 = 0
     a_offsets_host[0] = 0
@@ -328,10 +338,10 @@ def _test_grouped_1d1d_mixed_experts[
         a_scale_dim0 += ceildiv(tpe, SF_MN_GROUP_SIZE)
         expert_ids_host[i] = Int32(i)
 
-    var a_host = alloc[Scalar[a_type]](total_tokens * packed_K)
-    var b_host = alloc[Scalar[b_type]](num_experts * N * packed_K)
-    rand(a_host, total_tokens * packed_K, min=0, max=255)
-    rand(b_host, num_experts * N * packed_K, min=0, max=255)
+    var a_host = List(length=total_tokens * packed_K, fill=Scalar[a_type](0))
+    var b_host = List(length=num_experts * N * packed_K, fill=Scalar[b_type](0))
+    rand(a_host.unsafe_ptr(), total_tokens * packed_K, min=0, max=255)
+    rand(b_host.unsafe_ptr(), num_experts * N * packed_K, min=0, max=255)
 
     comptime k_groups = ceildiv(K, sf_vector_size * SF_ATOM_K)
     comptime n_groups = ceildiv(N, SF_MN_GROUP_SIZE)
@@ -346,10 +356,10 @@ def _test_grouped_1d1d_mixed_experts[
         * SF_ATOM_M[1]
         * SF_ATOM_K
     )
-    var a_sf_host = alloc[Scalar[sf_dtype]](a_sf_size)
-    var b_sf_host = alloc[Scalar[sf_dtype]](b_sf_size)
-    rand(a_sf_host, a_sf_size)
-    rand(b_sf_host, b_sf_size)
+    var a_sf_host = List(length=a_sf_size, fill=Scalar[sf_dtype](0))
+    var b_sf_host = List(length=b_sf_size, fill=Scalar[sf_dtype](0))
+    rand(a_sf_host.unsafe_ptr(), a_sf_size)
+    rand(b_sf_host.unsafe_ptr(), b_sf_size)
 
     var a_buf = ctx.enqueue_create_buffer[a_type](total_tokens * packed_K)
     var b_buf = ctx.enqueue_create_buffer[b_type](num_experts * N * packed_K)
@@ -371,9 +381,7 @@ def _test_grouped_1d1d_mixed_experts[
     ctx.enqueue_copy(b_sf_buf, b_sf_host)
 
     var es_buf = ctx.enqueue_create_buffer[DType.float32](num_experts)
-    var es_host = alloc[Scalar[DType.float32]](num_experts)
-    for i in range(num_experts):
-        es_host[i] = 1.0
+    var es_host = List(length=num_experts, fill=Scalar[DType.float32](1.0))
     ctx.enqueue_copy(es_buf, es_host)
 
     var a_tt = TileTensor(
@@ -463,14 +471,6 @@ def _test_grouped_1d1d_mixed_experts[
 
     print("    PASSED")
 
-    a_host.free()
-    b_host.free()
-    a_sf_host.free()
-    b_sf_host.free()
-    a_offsets_host.free()
-    a_scale_offsets_host.free()
-    expert_ids_host.free()
-    es_host.free()
     _ = a_buf^
     _ = b_buf^
     _ = c_buf^
@@ -480,6 +480,14 @@ def _test_grouped_1d1d_mixed_experts[
     _ = a_sf_buf^
     _ = b_sf_buf^
     _ = es_buf^
+    _ = es_host^
+    _ = expert_ids_host^
+    _ = a_scale_offsets_host^
+    _ = a_offsets_host^
+    _ = b_sf_host^
+    _ = a_sf_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def run_grouped_1d1d_block_fp4_smoke_suite[
@@ -651,7 +659,7 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
         mma_n: Int = 8,
         AB_swapped: Bool = False,
     ](ctx: DeviceContext, t0: Int, t1: Int, t2: Int, t3: Int) raises:
-        var tpe = alloc[Int](4)
+        var tpe = List(length=4, fill=Int(0))
         tpe[0] = t0
         tpe[1] = t1
         tpe[2] = t2
@@ -665,8 +673,8 @@ def run_grouped_1d1d_block_fp4_smoke_suite[
             sf_dtype=sf_dtype,
             sf_vector_size=sf_vector_size,
             scaling_kind=scaling_kind,
-        ](ctx, 4, tpe)
-        tpe.free()
+        ](ctx, 4, tpe.unsafe_ptr())
+        _ = tpe^
 
     # experts 0,2: cp.async (gs=4,1); experts 1,3: TMA (gs=256,200)
     mixed4[4, 1024, 1024, 8](ctx, 4, 256, 1, 200)

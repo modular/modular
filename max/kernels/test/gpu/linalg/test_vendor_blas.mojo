@@ -25,10 +25,10 @@ from std.testing import assert_almost_equal
 def test_vendor_blas[
     dtype: DType, transpose_b: Bool
 ](*, M: Int, N: Int, K: Int, ctx: DeviceContext) raises:
-    var a_host = alloc[Scalar[dtype]](M * K)
-    var b_host = alloc[Scalar[dtype]](K * N)
-    var c_host = alloc[Scalar[dtype]](M * N)
-    var c_host_ref = alloc[Scalar[dtype]](M * N)
+    var a_host = List(length=M * K, fill=Scalar[dtype](0))
+    var b_host = List(length=K * N, fill=Scalar[dtype](0))
+    var c_host = List(length=M * N, fill=Scalar[dtype](0))
+    var c_host_ref = List(length=M * N, fill=Scalar[dtype](0))
 
     for m in range(M):
         for k in range(K):
@@ -129,11 +129,10 @@ def test_vendor_blas[
     _ = b_device
     _ = c_device
     _ = c_device_ref
-
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    c_host_ref.free()
+    _ = a_host^
+    _ = b_host^
+    _ = c_host^
+    _ = c_host_ref^
 
 
 def dispatch_test_vendor_blas[

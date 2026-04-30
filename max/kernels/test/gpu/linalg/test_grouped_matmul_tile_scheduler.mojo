@@ -39,7 +39,9 @@ def test(ctx: DeviceContext) raises:
     comptime group_len = 3
 
     # Host allocation
-    var host_group_offsets_ptr = alloc[Scalar[DType.uint32]](group_len + 1)
+    var host_group_offsets_ptr = List(
+        length=group_len + 1, fill=Scalar[DType.uint32](0)
+    )
     host_group_offsets_ptr[0] = 0
     host_group_offsets_ptr[1] = 18
     host_group_offsets_ptr[2] = 24
@@ -135,8 +137,8 @@ def test(ctx: DeviceContext) raises:
     ctx.synchronize()
 
     # Cleanup
-    host_group_offsets_ptr.free()
     _ = dev_group_offsets_buffer^
+    _ = host_group_offsets_ptr^
 
 
 def main() raises:

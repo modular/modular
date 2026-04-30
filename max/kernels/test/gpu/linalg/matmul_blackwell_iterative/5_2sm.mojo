@@ -637,9 +637,9 @@ def test_blackwell_kernel_5[
     ) if transpose_b else Layout.row_major(K, N)
     comptime c_layout = Layout.row_major(M, N)
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
+    var a_host_ptr = List(length=M * K, fill=Scalar[a_type](0))
     var a_host = LayoutTensor[a_type, a_layout](a_host_ptr)
-    var b_host_ptr = alloc[Scalar[b_type]](N * K)
+    var b_host_ptr = List(length=N * K, fill=Scalar[b_type](0))
     var b_host = LayoutTensor[b_type, b_layout](b_host_ptr)
     var c_host = ManagedLayoutTensor[c_type, c_layout](ctx)
     var c_host_ref = ManagedLayoutTensor[c_type, c_layout](ctx)
@@ -756,9 +756,8 @@ def test_blackwell_kernel_5[
         )
 
     print("\n=== TEST PASSED ===")
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
+    _ = a_host_ptr^
+    _ = b_host_ptr^
 
 
 def get_dic_of_shapes(

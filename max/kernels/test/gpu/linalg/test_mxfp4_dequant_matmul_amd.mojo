@@ -329,8 +329,8 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
 
     print("  Dequant-only: N=", N, " K=", K)
 
-    var b_packed_host = alloc[UInt8](N * packed_K)
-    var b_scales_host = alloc[UInt8](N * scale_K)
+    var b_packed_host = List(length=N * packed_K, fill=UInt8(0))
+    var b_scales_host = List(length=N * scale_K, fill=UInt8(0))
 
     for i in range(N * packed_K):
         b_packed_host[i] = UInt8(random_ui64(0, 255))
@@ -394,13 +394,12 @@ def test_dequant_only[N: Int, K: Int](ctx: DeviceContext) raises:
                     )
                 mismatches += 1
 
-    b_packed_host.free()
-    b_scales_host.free()
-
     if mismatches > 0:
         print("    DEQUANT FAIL:", mismatches, "mismatches")
         raise Error("Dequant test failed")
     print("    DEQUANT PASS")
+    _ = b_packed_host^
+    _ = b_scales_host^
 
 
 def test_fp8_kernel_vs_blas[

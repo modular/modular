@@ -41,16 +41,18 @@ def test_split_k_reduce_rank3[
         N,
     )
 
-    var c_host = alloc[Scalar[c_type]](M * N)
-    var c_host_ref = alloc[Scalar[c_type]](M * N)
+    var c_host = List(length=M * N, fill=Scalar[c_type](0))
+    var c_host_ref = List(length=M * N, fill=Scalar[c_type](0))
 
     # Random buffer for host computation.
-    var epilogue_data_host = alloc[Scalar[c_type]](M * N)
-    rand[c_type](epilogue_data_host, M * N)
+    var epilogue_data_host = List(length=M * N, fill=Scalar[c_type](0))
+    rand[c_type](epilogue_data_host.unsafe_ptr(), M * N)
 
     var work_space_size = num_partitions * M * N
-    var work_space_host = alloc[Scalar[work_space_type]](work_space_size)
-    rand[work_space_type](work_space_host, work_space_size)
+    var work_space_host = List(
+        length=work_space_size, fill=Scalar[work_space_type](0)
+    )
+    rand[work_space_type](work_space_host.unsafe_ptr(), work_space_size)
 
     # Naive host reduction. The accumulation is in FP32 since CPU may not have
     # native BF16 instructions.
@@ -112,11 +114,10 @@ def test_split_k_reduce_rank3[
                 abs((c_host[i] - c_host_ref[i]) / c_host_ref[i]),
             )
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
-
-    c_host.free()
-    c_host_ref.free()
-    epilogue_data_host.free()
-    work_space_host.free()
+    _ = work_space_host^
+    _ = epilogue_data_host^
+    _ = c_host_ref^
+    _ = c_host^
 
 
 def main() raises:

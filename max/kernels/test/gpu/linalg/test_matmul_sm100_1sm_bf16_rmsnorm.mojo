@@ -90,15 +90,15 @@ def test_rmsnorm_then_matmul[
     var c_size = M * N
 
     # --- Host allocations ---
-    var a_raw_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var gamma_host_ptr = alloc[Scalar[a_type]](K)
-    var c_vendor_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_ours_host_ptr = alloc[Scalar[c_type]](c_size)
+    var a_raw_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var gamma_host_ptr = List(length=K, fill=Scalar[a_type](0))
+    var c_vendor_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_ours_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
 
     # Random A and B; gamma[i] = (i + K) / K
-    rand(a_raw_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_raw_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
     for i in range(K):
         gamma_host_ptr[i] = (Float64(i + K) / Float64(K)).cast[a_type]()
 
@@ -239,8 +239,8 @@ def test_rmsnorm_then_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_ours_host_ptr,
-        c_vendor_host_ptr,
+        c_ours_host_ptr.unsafe_ptr(),
+        c_vendor_host_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=1e-2,
@@ -248,11 +248,6 @@ def test_rmsnorm_then_matmul[
     print("\n=== TEST PASSED ===\n")
 
     # Cleanup
-    a_raw_host_ptr.free()
-    b_host_ptr.free()
-    gamma_host_ptr.free()
-    c_vendor_host_ptr.free()
-    c_ours_host_ptr.free()
     _ = a_raw_device^
     _ = b_device^
     _ = gamma_device^
@@ -260,6 +255,11 @@ def test_rmsnorm_then_matmul[
     _ = a_normed_ours_device^
     _ = c_vendor_device^
     _ = c_ours_device^
+    _ = c_ours_host_ptr^
+    _ = c_vendor_host_ptr^
+    _ = gamma_host_ptr^
+    _ = b_host_ptr^
+    _ = a_raw_host_ptr^
 
 
 def main() raises:

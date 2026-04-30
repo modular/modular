@@ -69,11 +69,15 @@ def test_mxfp4_grouped_matmul[
     )
 
     # Allocate host buffers
-    var a_host = alloc[Scalar[DType.bfloat16]](total_tokens * K)
-    var b_packed_host = alloc[UInt8](num_experts * N * packed_K)
-    var b_scales_host = alloc[UInt8](num_experts * N * scale_K)
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_host = List(length=total_tokens * K, fill=Scalar[DType.bfloat16](0))
+    var b_packed_host = List(length=num_experts * N * packed_K, fill=UInt8(0))
+    var b_scales_host = List(length=num_experts * N * scale_K, fill=UInt8(0))
+    var a_offsets_host = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
 
     # Initialize with random data
     for i in range(total_tokens * K):
@@ -92,7 +96,9 @@ def test_mxfp4_grouped_matmul[
         expert_ids_host[i] = Int32(expert_ids_list[i])
 
     # Compute reference: per-expert dequant + vendor BLAS
-    var c_ref_host = alloc[Scalar[DType.bfloat16]](total_tokens * N)
+    var c_ref_host = List(
+        length=total_tokens * N, fill=Scalar[DType.bfloat16](0)
+    )
 
     for i in range(num_active_experts):
         var token_start = Int(a_offsets_host[i])
@@ -294,18 +300,18 @@ def test_mxfp4_grouped_matmul[
     print("    PASS max_rel_err=", max_rel_err)
 
     # Cleanup
-    a_host.free()
-    b_packed_host.free()
-    b_scales_host.free()
-    a_offsets_host.free()
-    expert_ids_host.free()
-    c_ref_host.free()
     _ = a_dev^
     _ = b_packed_dev^
     _ = b_scales_dev^
     _ = a_offsets_dev^
     _ = expert_ids_dev^
     _ = c_dev^
+    _ = c_ref_host^
+    _ = expert_ids_host^
+    _ = a_offsets_host^
+    _ = b_scales_host^
+    _ = b_packed_host^
+    _ = a_host^
 
 
 def test_dequant_all_experts[
@@ -321,8 +327,8 @@ def test_dequant_all_experts[
     )
 
     # Allocate and fill random packed data
-    var bp_host = alloc[UInt8](num_experts * N * packed_K)
-    var bs_host = alloc[UInt8](num_experts * N * scale_K)
+    var bp_host = List(length=num_experts * N * packed_K, fill=UInt8(0))
+    var bs_host = List(length=num_experts * N * scale_K, fill=UInt8(0))
     for i in range(num_experts * N * packed_K):
         bp_host[i] = UInt8(random_ui64(0, 255))
     for i in range(num_experts * N * scale_K):
@@ -402,12 +408,12 @@ def test_dequant_all_experts[
         raise Error("Multi-expert dequant test failed")
     print("    PASS (byte-identical)")
 
-    bp_host.free()
-    bs_host.free()
     _ = bp_dev^
     _ = bs_dev^
     _ = all_fp8_dev^
     _ = single_fp8_dev^
+    _ = bs_host^
+    _ = bp_host^
 
 
 def main() raises:

@@ -135,13 +135,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
         Int(k.value()), BLOCK_SCALE_K
     )
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -153,9 +153,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
+    var a_scales_host_ptr = List(
+        length=a_scales_size, fill=Scalar[scales_type](0)
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var b_scales_host_ptr = List(
+        length=b_scales_size, fill=Scalar[scales_type](0)
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
@@ -163,8 +167,8 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     var b_scales_device = ctx.enqueue_create_buffer[scales_type](b_scales_size)
     var b_scales_tensor = TileTensor(b_scales_device, b_scales_shape)
 
-    memset_zero(c_host_ptr, c_size)
-    memset_zero(c_host_ref_ptr, c_size)
+    memset_zero(c_host_ptr.unsafe_ptr(), c_size)
+    memset_zero(c_host_ref_ptr.unsafe_ptr(), c_size)
 
     # Initialize matmul operands
     if simple_init():
@@ -265,18 +269,18 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
     _ = a_scales_device^
     _ = b_scales_device^
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

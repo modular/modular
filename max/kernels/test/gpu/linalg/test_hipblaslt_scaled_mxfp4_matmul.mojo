@@ -127,9 +127,13 @@ def test_block_scaled_mxfp4_hipblaslt[
     var a_scales_size = M * k_scales_dim
     var b_scales_size = N * k_scales_dim
 
-    var a_scales_host_ptr = alloc[Scalar[scales_dtype]](a_scales_size)
+    var a_scales_host_ptr = List(
+        length=a_scales_size, fill=Scalar[scales_dtype](0)
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = alloc[Scalar[scales_dtype]](b_scales_size)
+    var b_scales_host_ptr = List(
+        length=b_scales_size, fill=Scalar[scales_dtype](0)
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
     rand(a_scales_host.ptr, a_scales_host.num_elements())
@@ -144,13 +148,13 @@ def test_block_scaled_mxfp4_hipblaslt[
     var b_size = N * (K // 2)
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[input_dtype]](a_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[input_dtype](0))
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = alloc[Scalar[input_dtype]](b_size)
+    var b_host_ptr = List(length=b_size, fill=Scalar[input_dtype](0))
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = alloc[Scalar[output_dtype]](c_size)
+    var c_host_ptr = List(length=c_size, fill=Scalar[output_dtype](0))
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = alloc[Scalar[output_dtype]](c_size)
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[output_dtype](0))
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[input_dtype](a_size)
@@ -244,12 +248,12 @@ def test_block_scaled_mxfp4_hipblaslt[
     )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

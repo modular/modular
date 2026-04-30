@@ -707,14 +707,14 @@ def test_block_scaled_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
-        ref_a_scales_size
+    var a_scales_host_ref_ptr = List(
+        length=ref_a_scales_size, fill=Scalar[ref_scales_type](0)
     )
     var a_scales_host_ref = TileTensor(
         a_scales_host_ref_ptr, row_major(ref_a_scales_shape)
     )
-    var b_scales_host_ref_ptr = alloc[Scalar[ref_scales_type]](
-        ref_b_scales_size
+    var b_scales_host_ref_ptr = List(
+        length=ref_b_scales_size, fill=Scalar[ref_scales_type](0)
     )
     var b_scales_host_ref = TileTensor(
         b_scales_host_ref_ptr, row_major(ref_b_scales_shape)
@@ -802,9 +802,13 @@ def test_block_scaled_mxfp8[
         * atom_k
     )
 
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_total)
+    var a_scales_host_ptr = List(
+        length=a_scales_total, fill=Scalar[scales_type](0)
+    )
     var a_scales_host = TileTensor(a_scales_host_ptr, row_major(a_scales_shape))
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_total)
+    var b_scales_host_ptr = List(
+        length=b_scales_total, fill=Scalar[scales_type](0)
+    )
     var b_scales_host = TileTensor(b_scales_host_ptr, row_major(b_scales_shape))
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_total)
@@ -814,10 +818,10 @@ def test_block_scaled_mxfp8[
     var b_size = N * k
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -848,8 +852,8 @@ def test_block_scaled_mxfp8[
             for k in range(K):
                 b_host_tt[n, k] = Float32(1 if n == k else 0).cast[b_type]()
     else:
-        rand(a_host_ptr, a_size)
-        rand(b_host_ptr, b_size)
+        rand(a_host_ptr.unsafe_ptr(), a_size)
+        rand(b_host_ptr.unsafe_ptr(), b_size)
 
     # Move operands to the Device
     ctx.enqueue_copy(a_device, a_host_ptr)
@@ -896,22 +900,20 @@ def test_block_scaled_mxfp8[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=rtol,
     )
-
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
-    a_scales_host_ref_ptr.free()
-    b_scales_host_ref_ptr.free()
+    _ = b_scales_host_ref_ptr^
+    _ = a_scales_host_ref_ptr^
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

@@ -120,14 +120,22 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
     )
 
     # Host allocations
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[b_type]](b_size)
-    var c_host_ptr = alloc[Scalar[c_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[c_type]](c_size)
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
-    var a_scales_host_ptr = alloc[Scalar[scales_type]](a_scales_size)
-    var b_scales_host_ptr = alloc[Scalar[scales_type]](b_scales_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_offsets_host_ptr = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host_ptr = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
+    var a_scales_host_ptr = List(
+        length=a_scales_size, fill=Scalar[scales_type](0)
+    )
+    var b_scales_host_ptr = List(
+        length=b_scales_size, fill=Scalar[scales_type](0)
+    )
 
     var a_host = TileTensor(a_host_ptr, a_tt_shape)
     var b_host = TileTensor(b_host_ptr, b_tt_shape)
@@ -289,14 +297,14 @@ def test_grouped_matmul_sm100_blockwise_scaled_fp8[
             )
 
     # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_offsets_host_ptr.free()
-    expert_ids_host_ptr.free()
-    a_scales_host_ptr.free()
-    b_scales_host_ptr.free()
+    _ = b_scales_host_ptr^
+    _ = a_scales_host_ptr^
+    _ = expert_ids_host_ptr^
+    _ = a_offsets_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

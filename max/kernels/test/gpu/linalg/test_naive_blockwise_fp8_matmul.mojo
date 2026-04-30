@@ -82,23 +82,27 @@ def test_naive_blockwise_fp8_matmul[
     var a_scale_size = ceildiv(K, BLOCK_SCALE_K) * ceildiv(M, BLOCK_SCALE_M)
     var b_scale_size = ceildiv(N, BLOCK_SCALE_N) * ceildiv(K, BLOCK_SCALE_K)
 
-    var a_host_ptr = alloc[Scalar[input_type]](a_size)
-    var b_host_ptr = alloc[Scalar[input_type]](b_size)
-    var c_host_ptr = alloc[Scalar[DType.float32]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[input_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[input_type](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[DType.float32](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[DType.float32](0))
 
-    rand(a_host_ptr, a_size)
-    rand(b_host_ptr, b_size)
+    rand(a_host_ptr.unsafe_ptr(), a_size)
+    rand(b_host_ptr.unsafe_ptr(), b_size)
 
     for i in range(c_size):
         c_host_ptr[i] = 0
         c_host_ref_ptr[i] = 0
 
-    var a_scale_host_ptr = alloc[Scalar[DType.float32]](a_scale_size)
-    var b_scale_host_ptr = alloc[Scalar[DType.float32]](b_scale_size)
+    var a_scale_host_ptr = List(
+        length=a_scale_size, fill=Scalar[DType.float32](0)
+    )
+    var b_scale_host_ptr = List(
+        length=b_scale_size, fill=Scalar[DType.float32](0)
+    )
 
-    rand(a_scale_host_ptr, a_scale_size)
-    rand(b_scale_host_ptr, b_scale_size)
+    rand(a_scale_host_ptr.unsafe_ptr(), a_scale_size)
+    rand(b_scale_host_ptr.unsafe_ptr(), b_scale_size)
 
     var a_host = TileTensor(a_host_ptr, row_major(a_shape))
     var b_host = TileTensor(b_host_ptr, row_major(b_shape))
@@ -188,19 +192,18 @@ def test_naive_blockwise_fp8_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=0.0001,
     )
-
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
-    a_scale_host_ptr.free()
-    b_scale_host_ptr.free()
+    _ = b_scale_host_ptr^
+    _ = a_scale_host_ptr^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:
