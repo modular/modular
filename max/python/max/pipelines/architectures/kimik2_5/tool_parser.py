@@ -27,14 +27,18 @@ Reference: https://vllm.ai/blog/Kimi-K2-Accuracy
 from __future__ import annotations
 
 import json
+import logging
 import re
 import uuid
+from dataclasses import dataclass, field
 
 from max.interfaces import (
     ParsedToolCall,
     ParsedToolCallDelta,
     ParsedToolResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 # Structural tags used by Kimi K2.5
 TOOL_CALLS_SECTION_BEGIN = "<|tool_calls_section_begin|>"
@@ -52,6 +56,27 @@ _TOOL_CALL_PATTERN = re.compile(
     rf"{re.escape(TOOL_CALL_END)}",
     re.DOTALL,
 )
+
+
+def _partial_tag_overlap(text: str, tag: str) -> int:
+    """Returns the length of partial overlap between end of text and start of tag.
+
+    This detects when the end of accumulated text might be the beginning of
+    a marker tag, so we can hold back those bytes to avoid leaking partial
+    markers into content.
+
+    Args:
+        text: The accumulated text to check.
+        tag: The marker tag to check for partial overlap.
+
+    Returns:
+        The number of characters at the end of text that match the start of tag.
+    """
+    max_overlap = min(len(text), len(tag) - 1)
+    for i in range(max_overlap, 0, -1):
+        if text[-i:] == tag[:i]:
+            return i
+    return 0
 
 
 def _parse_function_id(function_id: str) -> tuple[str, str]:
@@ -95,6 +120,23 @@ def _parse_function_id(function_id: str) -> tuple[str, str]:
     return function_id, f"call_{short_uuid}"
 
 
+@dataclass
+class _StreamingToolCallState:
+    """State for a single tool call being streamed."""
+
+    id: str = ""
+    name: str = ""
+    arguments_sent: str = ""
+
+
+@dataclass
+class _StreamingState:
+    """Internal state for streaming tool call parsing."""
+
+    sent_content_idx: int = 0
+    tool_calls: list[_StreamingToolCallState] = field(default_factory=list)
+
+
 class KimiToolParser:
     """Parses Kimi K2.5-style tool calls from model responses.
 
@@ -104,6 +146,7 @@ class KimiToolParser:
 
     def __init__(self) -> None:
         self._buffer: str = ""
+        self._state: _StreamingState = _StreamingState()
 
     def parse_complete(self, response: str) -> ParsedToolResponse:
         """Parses a complete response into tool calls."""
@@ -162,13 +205,208 @@ class KimiToolParser:
     def parse_delta(self, delta: str) -> list[ParsedToolCallDelta] | None:
         """Parses incremental deltas for streaming tool calls.
 
-        Note: Streaming tool call parsing for Kimi is not yet implemented.
-        This method accumulates tokens but does not emit chunks.
+        Accumulates tokens in an internal buffer and emits tool call deltas
+        when complete or partial tool calls can be extracted. Uses argument
+        diffing to only send new content.
+
+        Args:
+            delta: The incremental token(s) to process.
+
+        Returns:
+            A list of tool call deltas if any can be extracted,
+            or None if more tokens are needed.
         """
         self._buffer += delta
-        # TODO(SERVOPT-1180): Implement streaming delta parsing
+        deltas: list[ParsedToolCallDelta] = []
+
+        try:
+            # Extract content before tool calls section
+            content_delta = self._extract_content_delta()
+            if content_delta:
+                deltas.append(
+                    ParsedToolCallDelta(index=0, content=content_delta)
+                )
+
+            # Extract tool calls from the buffer
+            tool_call_bodies = self._extract_tool_call_bodies()
+
+            for i, body in enumerate(tool_call_bodies):
+                # Ensure we have state for this tool call index
+                while i >= len(self._state.tool_calls):
+                    self._state.tool_calls.append(_StreamingToolCallState())
+
+                tc_state = self._state.tool_calls[i]
+
+                # Parse header and arguments from body
+                header, args = self._split_tool_call_body(body)
+
+                # Stream the tool name/id if not yet sent
+                if not tc_state.name and header is not None:
+                    tool_id, tool_name = self._extract_tool_id_and_name(header)
+                    if tool_id and tool_name:
+                        tc_state.id = tool_id
+                        tc_state.name = tool_name
+                        deltas.append(
+                            ParsedToolCallDelta(
+                                index=i,
+                                id=tool_id,
+                                name=tool_name,
+                            )
+                        )
+
+                # Stream new arguments by diffing against what was sent
+                if args is not None:
+                    args_diff = self._compute_args_diff(i, args)
+                    if args_diff:
+                        deltas.append(
+                            ParsedToolCallDelta(
+                                index=i,
+                                arguments=args_diff,
+                            )
+                        )
+
+            return deltas if deltas else None
+
+        except Exception:
+            logger.exception("Error parsing streaming tool call delta")
+            raise
+
+    def _extract_content_delta(self) -> str | None:
+        """Extracts unsent content before the tool-calls section.
+
+        Holds back any trailing suffix that partially matches the tool calls
+        section begin marker to avoid leaking marker bytes into content.
+
+        Returns:
+            New content to send, or None if nothing to send.
+        """
+        if TOOL_CALLS_SECTION_BEGIN not in self._buffer:
+            # Check for partial marker overlap at the end
+            overlap = _partial_tag_overlap(
+                self._buffer, TOOL_CALLS_SECTION_BEGIN
+            )
+            sendable_idx = len(self._buffer) - overlap
+        else:
+            sendable_idx = self._buffer.index(TOOL_CALLS_SECTION_BEGIN)
+
+        if sendable_idx > self._state.sent_content_idx:
+            content = self._buffer[self._state.sent_content_idx : sendable_idx]
+            self._state.sent_content_idx = sendable_idx
+            return content
         return None
+
+    def _extract_tool_call_bodies(self) -> list[str]:
+        """Extracts raw bodies from tool call blocks.
+
+        Finds complete and partial ``<|tool_call_begin|>...<|tool_call_end|>``
+        blocks and returns their inner content.
+
+        Returns:
+            List of tool call body strings (may include incomplete ones).
+        """
+        if TOOL_CALLS_SECTION_BEGIN not in self._buffer:
+            return []
+
+        results: list[str] = []
+        pos = self._buffer.index(TOOL_CALLS_SECTION_BEGIN)
+
+        while True:
+            start = self._buffer.find(TOOL_CALL_BEGIN, pos)
+            if start == -1:
+                break
+
+            tc_start = start + len(TOOL_CALL_BEGIN)
+            end = self._buffer.find(TOOL_CALL_END, tc_start)
+
+            if end != -1:
+                # Complete tool call block
+                tool_call = self._buffer[tc_start:end]
+                pos = end + len(TOOL_CALL_END)
+            else:
+                # Incomplete - might still be streaming
+                tool_call = self._buffer[tc_start:]
+                # Hold back partial end marker
+                overlap = _partial_tag_overlap(tool_call, TOOL_CALL_END)
+                if overlap:
+                    tool_call = tool_call[:-overlap]
+                results.append(tool_call)
+                break
+
+            results.append(tool_call)
+
+        return results
+
+    def _split_tool_call_body(self, body: str) -> tuple[str | None, str | None]:
+        """Splits a tool-call body into (header, arguments).
+
+        The body format is: ``header<|tool_call_argument_begin|>arguments``
+
+        Args:
+            body: The tool call body string.
+
+        Returns:
+            Tuple of (header, arguments), either may be None if not found.
+        """
+        arg_pos = body.find(TOOL_CALL_ARGUMENT_BEGIN)
+        if arg_pos == -1:
+            return None, None
+
+        header = body[:arg_pos].strip()
+        args = body[arg_pos + len(TOOL_CALL_ARGUMENT_BEGIN) :]
+        return header, args
+
+    def _extract_tool_id_and_name(
+        self, header: str
+    ) -> tuple[str | None, str | None]:
+        """Parses tool ID and name from a header like ``functions.get_weather:0``.
+
+        Args:
+            header: The header string to parse.
+
+        Returns:
+            Tuple of (tool_id, tool_name).
+        """
+        if not header:
+            return None, None
+
+        # Match pattern like "functions.name:idx" or "name:idx"
+        match = re.match(r"(.+:\d+)", header)
+        if not match:
+            return None, None
+
+        raw_id = match.group(1).strip()
+        # Extract name: split on ':' and take everything before, then after last '.'
+        name_part = raw_id.split(":")[0]
+        tool_name = name_part.split(".")[-1]
+
+        # Generate a unique call ID
+        short_uuid = str(uuid.uuid4()).replace("-", "")[:8]
+        idx = raw_id.split(":")[-1] if ":" in raw_id else "0"
+        tool_id = f"call_{short_uuid}_{idx}"
+
+        return tool_id, tool_name
+
+    def _compute_args_diff(self, index: int, args: str) -> str | None:
+        """Computes new argument text not yet sent for the tool at index.
+
+        Args:
+            index: The tool call index.
+            args: The current full arguments string.
+
+        Returns:
+            The new portion of arguments to send, or None if nothing new.
+        """
+        tc_state = self._state.tool_calls[index]
+        prev_len = len(tc_state.arguments_sent)
+
+        if len(args) <= prev_len:
+            return None
+
+        diff = args[prev_len:]
+        tc_state.arguments_sent = args
+        return diff
 
     def reset(self) -> None:
         """Resets internal state for a new streaming session."""
         self._buffer = ""
+        self._state = _StreamingState()

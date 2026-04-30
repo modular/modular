@@ -12,9 +12,15 @@
 # ===----------------------------------------------------------------------=== #
 
 import json
+import uuid
+from unittest.mock import patch
 
 import pytest
-from max.interfaces import ParsedToolCall, ParsedToolResponse
+from max.interfaces import (
+    ParsedToolCall,
+    ParsedToolCallDelta,
+    ParsedToolResponse,
+)
 from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 
 
@@ -332,29 +338,236 @@ def test_whitespace_handling() -> None:
 
 
 def test_reset_clears_buffer() -> None:
-    """Test that reset() clears the internal buffer."""
+    """Test that reset() clears the internal buffer and streaming state."""
+    from max.pipelines.architectures.kimik2_5.tool_parser import (
+        _StreamingToolCallState,
+    )
+
     parser = KimiToolParser()
 
     # Simulate accumulating some data
     parser._buffer = "some accumulated data"
+    parser._state.sent_content_idx = 10
+    parser._state.tool_calls.append(_StreamingToolCallState())
 
     parser.reset()
 
     assert parser._buffer == ""
+    assert parser._state.sent_content_idx == 0
+    assert len(parser._state.tool_calls) == 0
 
 
 def test_parse_delta_accumulates() -> None:
     """Test that parse_delta accumulates tokens in buffer."""
     parser = KimiToolParser()
 
-    # Note: parse_delta is a stub that returns None
-    # but should accumulate tokens
+    # parse_delta should accumulate tokens
     result1 = parser.parse_delta("<|tool_calls")
     result2 = parser.parse_delta("_section_begin|>")
 
     assert result1 is None
     assert result2 is None
     assert parser._buffer == "<|tool_calls_section_begin|>"
+
+
+def test_parse_delta_single_tool_call_streaming() -> None:
+    """Test streaming a single tool call token by token."""
+    fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
+    with patch(
+        "max.pipelines.architectures.kimik2_5.tool_parser.uuid.uuid4",
+        return_value=fixed_uuid,
+    ):
+        parser = KimiToolParser()
+
+        # Simulate streaming a complete tool call
+        chunks = [
+            "<|tool_calls_section_begin|>",
+            "<|tool_call_begin|>",
+            "functions.get_weather:0",
+            "<|tool_call_argument_begin|>",
+            '{"loc',
+            'ation": "',
+            'New York"}',
+            "<|tool_call_end|>",
+            "<|tool_calls_section_end|>",
+        ]
+
+        all_deltas: list[ParsedToolCallDelta] = []
+        for chunk in chunks:
+            result = parser.parse_delta(chunk)
+            if result:
+                all_deltas.extend(result)
+
+        assert all_deltas == [
+            ParsedToolCallDelta(
+                index=0,
+                id="call_12345678_0",
+                name="get_weather",
+            ),
+            ParsedToolCallDelta(index=0, arguments='{"loc'),
+            ParsedToolCallDelta(index=0, arguments='ation": "'),
+            ParsedToolCallDelta(index=0, arguments='New York"}'),
+        ]
+
+
+def test_parse_delta_multiple_tool_calls_streaming() -> None:
+    """Test streaming multiple tool calls."""
+
+    uuid_first = uuid.UUID("11111111-1111-1111-1111-111111111111")
+    uuid_second = uuid.UUID("22222222-2222-2222-2222-222222222222")
+    with patch(
+        "max.pipelines.architectures.kimik2_5.tool_parser.uuid.uuid4",
+        side_effect=[uuid_first, uuid_second],
+    ):
+        parser = KimiToolParser()
+
+        # Complete response with two tool calls
+        response = """<|tool_calls_section_begin|>
+<|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>
+{"location": "NYC"}
+<|tool_call_end|>
+<|tool_call_begin|>functions.get_time:1<|tool_call_argument_begin|>
+{"zone": "EST"}
+<|tool_call_end|>
+<|tool_calls_section_end|>"""
+
+        result = parser.parse_delta(response)
+
+        assert result == [
+            ParsedToolCallDelta(
+                index=0,
+                id="call_11111111_0",
+                name="get_weather",
+            ),
+            ParsedToolCallDelta(
+                index=0,
+                arguments='\n{"location": "NYC"}\n',
+            ),
+            ParsedToolCallDelta(
+                index=1,
+                id="call_22222222_1",
+                name="get_time",
+            ),
+            ParsedToolCallDelta(
+                index=1,
+                arguments='\n{"zone": "EST"}\n',
+            ),
+        ]
+
+
+def test_parse_delta_with_content_before_tools() -> None:
+    """Test streaming when there's content before tool calls section."""
+    fixed_uuid = uuid.UUID("12345678-1234-5678-9abc-def012345678")
+    with patch(
+        "max.pipelines.architectures.kimik2_5.tool_parser.uuid.uuid4",
+        return_value=fixed_uuid,
+    ):
+        parser = KimiToolParser()
+
+        # Stream content then tool call
+        chunks = [
+            "I'll check the weather for you.\n\n",
+            "<|tool_calls_section_begin|>",
+            "<|tool_call_begin|>functions.get_weather:0<|tool_call_argument_begin|>",
+            '{"location": "Boston"}',
+            "<|tool_call_end|>",
+            "<|tool_calls_section_end|>",
+        ]
+
+        all_deltas: list[ParsedToolCallDelta] = []
+        for chunk in chunks:
+            result = parser.parse_delta(chunk)
+            if result:
+                all_deltas.extend(result)
+
+        assert all_deltas == [
+            ParsedToolCallDelta(
+                index=0,
+                content="I'll check the weather for you.\n\n",
+            ),
+            ParsedToolCallDelta(
+                index=0,
+                id="call_12345678_0",
+                name="get_weather",
+            ),
+            ParsedToolCallDelta(
+                index=0,
+                arguments='{"location": "Boston"}',
+            ),
+        ]
+
+
+def test_parse_delta_argument_diffing() -> None:
+    """Test that argument deltas are properly diffed."""
+
+    parser = KimiToolParser()
+
+    # Start the tool call
+    parser.parse_delta("<|tool_calls_section_begin|>")
+    parser.parse_delta(
+        "<|tool_call_begin|>functions.test:0<|tool_call_argument_begin|>"
+    )
+
+    # Send arguments in small chunks
+    result1 = parser.parse_delta('{"key')
+    result2 = parser.parse_delta('": "val')
+    result3 = parser.parse_delta('ue"}')
+
+    # Each result should only contain the new portion
+    all_args = []
+    for r in [result1, result2, result3]:
+        if r:
+            for delta in r:
+                if delta.arguments:
+                    all_args.append(delta.arguments)
+
+    # Concatenated should form the full arguments
+    full = "".join(all_args)
+    assert '{"key": "value"}' in full or full == '{"key": "value"}'
+
+
+def test_parse_delta_reset_clears_state() -> None:
+    """Test that reset() clears all streaming state."""
+    parser = KimiToolParser()
+
+    # Accumulate some state
+    parser.parse_delta("<|tool_calls_section_begin|>")
+    parser.parse_delta(
+        "<|tool_call_begin|>functions.test:0<|tool_call_argument_begin|>"
+    )
+    parser.parse_delta('{"key": "value"}')
+
+    # Verify state exists
+    assert parser._buffer != ""
+    assert len(parser._state.tool_calls) > 0
+
+    # Reset
+    parser.reset()
+
+    # Verify state is cleared
+    assert parser._buffer == ""
+    assert len(parser._state.tool_calls) == 0
+    assert parser._state.sent_content_idx == 0
+
+
+def test_parse_delta_partial_marker_handling() -> None:
+    """Test that partial markers at buffer end are held back."""
+    parser = KimiToolParser()
+
+    # Send content that ends with partial marker
+    result1 = parser.parse_delta("Hello world<|tool")
+
+    # Should not emit the partial marker as content
+    if result1:
+        for delta in result1:
+            if delta.content:
+                assert "<|tool" not in delta.content
+
+    # Complete the marker
+    parser.parse_delta("_calls_section_begin|>")
+
+    # Buffer should now contain the complete marker
+    assert "<|tool_calls_section_begin|>" in parser._buffer
 
 
 def test_multiple_tool_calls_same_function() -> None:

@@ -98,6 +98,10 @@ from max.serve.schemas.openai import (
 from max.serve.telemetry.metrics import METRICS
 from max.serve.telemetry.stopwatch import StopWatch
 from openai.types.chat.chat_completion_chunk import (
+    ChoiceDeltaToolCall,
+    ChoiceDeltaToolCallFunction,
+)
+from openai.types.chat.chat_completion_chunk import (
     ChoiceLogprobs as ChunkChoiceLogprobs,
 )
 from openai.types.chat.chat_completion_function_tool_param import (
@@ -243,12 +247,14 @@ class OpenAIChatResponseGenerator(
         pipeline: TokenGeneratorPipeline,
         stream_options: ChatCompletionStreamOptionsParam | None = None,
         parser: ToolParser | None = None,
+        tool_use: bool = False,
     ) -> None:
         super().__init__(pipeline)
         self.stream_options = stream_options
         self.parser: ToolParser = (
             parser if parser is not None else LlamaToolParser()
         )
+        self.tool_use = tool_use
 
     async def stream(
         self, request: TextGenerationRequest
@@ -261,6 +267,12 @@ class OpenAIChatResponseGenerator(
         n_prompt_tokens = 0
         n_cached_prompt_tokens = 0
         status_code = 200
+        has_emitted_tool_calls = False
+
+        # Reset parser state for new streaming session
+        if self.tool_use:
+            self.parser.reset()
+
         try:
             async for chunk in self.pipeline.next_token_chunk(request):
                 self.logger.debug(
@@ -294,19 +306,64 @@ class OpenAIChatResponseGenerator(
                         chunk_logprobs.model_dump()
                     )
 
+                # Handle streaming tool calls if enabled
+                merged_stream_content: str | None = None
+                tool_call_chunks: list[ChoiceDeltaToolCall] = []
+                if self.tool_use and chunk.decoded_tokens:
+                    tool_deltas = self.parser.parse_delta(chunk.decoded_tokens)
+                    if tool_deltas:
+                        stream_content_parts: list[str] = []
+                        for delta in tool_deltas:
+                            if delta.content is not None:
+                                stream_content_parts.append(delta.content)
+                            if delta.id or delta.name or delta.arguments:
+                                has_emitted_tool_calls = True
+                                tool_call_chunks.append(
+                                    ChoiceDeltaToolCall(
+                                        index=delta.index,
+                                        id=delta.id,
+                                        type="function" if delta.id else None,
+                                        function=ChoiceDeltaToolCallFunction(
+                                            name=delta.name,
+                                            arguments=delta.arguments,
+                                        )
+                                        if delta.name or delta.arguments
+                                        else None,
+                                    )
+                                )
+
+                        merged_stream_content = (
+                            "".join(stream_content_parts)
+                            if stream_content_parts
+                            else None
+                        )
+
                 if (
                     chunk.decoded_tokens is not None
                     or chunk.decoded_reasoning_tokens is not None
+                    or tool_call_chunks
+                    or merged_stream_content is not None
                 ):
+                    # Parsed streaming deltas may carry assistant text in
+                    # ``content`` separate from tool-call argument deltas.
+                    content = chunk.decoded_tokens
+                    if merged_stream_content is not None:
+                        content = merged_stream_content
+                    elif tool_call_chunks:
+                        content = None
+
                     choices = [
                         ChatCompletionStreamResponseChoice(
                             index=0,
                             delta=ChatCompletionStreamResponseDelta(
-                                content=chunk.decoded_tokens,
+                                content=content,
                                 function_call=None,
                                 role="assistant",
                                 refusal=None,
                                 reasoning=chunk.decoded_reasoning_tokens,
+                                tool_calls=tool_call_chunks
+                                if tool_call_chunks
+                                else None,
                             ),
                             logprobs=logprobs_response,
                             finish_reason=get_finish_reason_from_status(
@@ -316,15 +373,22 @@ class OpenAIChatResponseGenerator(
                     ]
                 else:
                     # If we do not have output tokens, we should guarantee we have a finish_reason.
+                    # If tool calls were emitted, use "tool_calls" as finish_reason
+                    finish_reason: Literal["stop", "length", "tool_calls"] = (
+                        get_finish_reason_from_status(
+                            chunk.status, allow_none=False
+                        )
+                    )
+                    if has_emitted_tool_calls and finish_reason == "stop":
+                        finish_reason = "tool_calls"
+
                     choices = [
                         ChatCompletionStreamResponseChoice(
                             index=0,
                             delta=ChatCompletionStreamResponseDelta(
                                 content="",
                             ),
-                            finish_reason=get_finish_reason_from_status(
-                                chunk.status, allow_none=False
-                            ),
+                            finish_reason=finish_reason,
                         )
                     ]
 
@@ -961,8 +1025,12 @@ async def openai_create_chat_completion(
             stream_options = completion_request.stream_options
 
         parser = get_tool_parser(request.app)
+        tool_use = tools is not None
         response_generator = OpenAIChatResponseGenerator(
-            pipeline, stream_options=stream_options, parser=parser
+            pipeline,
+            stream_options=stream_options,
+            parser=parser,
+            tool_use=tool_use,
         )
         sampling_params = SamplingParams.from_input_and_generation_config(
             SamplingParamsInput(
@@ -1014,13 +1082,6 @@ async def openai_create_chat_completion(
         )
 
         if completion_request.stream:
-            # Currently, tools are not supported in streaming mode.
-            if tools:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Tools are not supported in streaming mode.",
-                )
-
             # We set a large timeout for ping otherwise benchmarking scripts
             # such as sglang will fail in parsing the ping message.
             return EventSourceResponse(

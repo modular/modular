@@ -32,6 +32,7 @@ from max.interfaces import (
     PipelineTask,
     RequestID,
 )
+from max.pipelines.architectures.kimik2_5.tool_parser import KimiToolParser
 from max.pipelines.core import TextContext
 from max.pipelines.lib import PIPELINE_REGISTRY, PipelineConfig
 from max.serve.api_server import ServingTokenGeneratorSettings, fastapi_app
@@ -803,6 +804,32 @@ async def _run_stream(
     ]
 
 
+async def _run_stream_with_kimi_tool_parser(
+    chunks: list[TokenGeneratorOutput],
+) -> list[CreateChatCompletionStreamResponse]:
+    """Stream with tool_use + KimiToolParser (same path as OpenAI + tools)."""
+    mock_pipeline = Mock()
+    mock_pipeline.model_name = "test-model"
+
+    async def mock_next_token_chunk(request: Any) -> Any:
+        for chunk in chunks:
+            yield chunk
+
+    mock_pipeline.next_token_chunk = mock_next_token_chunk
+    mock_request = _make_mock_request()
+
+    generator = OpenAIChatResponseGenerator(
+        mock_pipeline,
+        parser=KimiToolParser(),
+        tool_use=True,
+    )
+    return [
+        CreateChatCompletionStreamResponse.model_validate_json(p)
+        async for p in generator.stream(mock_request)
+        if isinstance(p, str) and p != "[DONE]"
+    ]
+
+
 _STREAM_REASONING_CHUNKS = [
     TokenGeneratorOutput(
         status=GenerationStatus.ACTIVE,
@@ -888,6 +915,58 @@ async def test_openai_chat_stream_reasoning_finish_reason(
     assert responses[0].choices[0].finish_reason is None
     assert responses[1].choices[0].finish_reason is None
     assert responses[2].choices[0].finish_reason == "stop"
+
+
+@pytest.mark.asyncio
+async def test_openai_chat_stream_kimi_tool_prefix_maps_to_delta_content(
+    patch_openai_metrics: None,
+) -> None:
+    """Integration: prose before tool markers maps to ``delta.content``, not arguments."""
+    intro = "I'll check the weather for you.\n\n"
+    section_begin = "<|tool_calls_section_begin|>"
+    tool_body_end = (
+        "<|tool_call_begin|>functions.get_weather:0"
+        "<|tool_call_argument_begin|>"
+        '{"location": "Boston"}'
+        "<|tool_call_end|>"
+        "<|tool_calls_section_end|>"
+    )
+
+    chunks = [
+        TokenGeneratorOutput(
+            status=GenerationStatus.ACTIVE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=intro + section_begin,
+            token_count=1,
+            prompt_token_count=5,
+        ),
+        TokenGeneratorOutput(
+            status=GenerationStatus.END_OF_SEQUENCE,
+            decoded_reasoning_tokens=None,
+            reasoning_token_count=0,
+            decoded_tokens=tool_body_end,
+            token_count=1,
+            prompt_token_count=5,
+        ),
+    ]
+    responses = await _run_stream_with_kimi_tool_parser(chunks)
+
+    content_chunks = [
+        r.choices[0].delta.content
+        for r in responses
+        if r.choices and r.choices[0].delta.content is not None
+    ]
+    assert "".join(content_chunks) == intro
+
+    all_arguments_parts: list[str] = []
+    for r in responses:
+        assert r.choices
+        for tc in r.choices[0].delta.tool_calls or []:
+            if tc.function is not None and tc.function.arguments is not None:
+                all_arguments_parts.append(tc.function.arguments)
+                assert intro not in tc.function.arguments
+    assert "".join(all_arguments_parts) == '{"location": "Boston"}'
 
 
 # ============================================================================

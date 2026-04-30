@@ -58,6 +58,14 @@ class ParsedToolCallDelta:
     arguments: str | None = None
     """The partial arguments string, streamed incrementally."""
 
+    content: str | None = None
+    """Assistant message text before the tool-calls section (streaming only).
+
+    When present, this is normal assistant output and must not be interpreted
+    as tool-call arguments. The serving layer maps this to the chat completion
+    ``content`` field, not to ``tool_calls``.
+    """
+
 
 @dataclass
 class ParsedToolResponse:
