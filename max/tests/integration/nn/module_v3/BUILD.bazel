@@ -9,20 +9,11 @@ package(default_visibility = [
 
 modular_py_test(
     name = "tests",
-    timeout = "long",
     srcs = glob(["**/*.py"]),
-    args = [
-        "-n",
-        "auto",
-    ],
     data = ["//max/tests/integration/Inputs/kernel_verification_ops"],
     env = {
         "MODULAR_KERNEL_VERIFICATION_OPS_PATH": "$(rootpath //max/tests/integration/Inputs/kernel_verification_ops)",
     },
-    ignore_extra_deps = [
-        # Used for parallelization (-n auto above)
-        requirement("pytest-xdist"),
-    ],
     per_test_tags = {
         "rope/test_rope.py": ["skip-external-ci"],
         "rope/test_yarn.py": ["manual"],
@@ -40,7 +31,6 @@ modular_py_test(
         "//max/python/max/experimental",
         "//max/python/max/experimental/nn",
         "//max/python/max/graph",
-        requirement("pytest-xdist"),
         requirement("torch"),
     ],
 )
