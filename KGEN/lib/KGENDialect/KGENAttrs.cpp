@@ -355,8 +355,8 @@ TypedAttr ParamListGetAttr::get(TypedAttr variadic, TypedAttr index) {
   // To: upcast<variadic_get<Copyable> : !Copyable> : !AnyType
   if (auto upcast = sugarDynCast<UpcastAttr>(variadic)) {
     TypedAttr originalVA = upcast.getInputTypeValue();
-    assert(isa<ParamListType>(originalVA.getType()) &&
-           "must casted from a variadic type to a variadic type");
+    if (!isa<ParamListType>(originalVA.getType()))
+      return {};
     auto beforeCast = ParamListGetAttr::get(originalVA, index);
     return UpcastAttr::get(resultType, beforeCast);
   }
