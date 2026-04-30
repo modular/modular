@@ -238,10 +238,9 @@ def run_sweep(
     with result_writer:
         for result in benchmark_serving_main(config):
             results.append(result)
-            # When uploading, save the median iteration's JSON so the
-            # uploader has something to read.
+            # Save per-concurrency JSON with full metrics.
             json_path: str | None = None
-            if upload_active and result.result is not None:
+            if result.result is not None:
                 assert config.model is not None
                 json_path = str(
                     log_dir / f"results-{result.max_concurrency}-median.json"
