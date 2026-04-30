@@ -9,7 +9,7 @@
 #include "Demangle/mojo-demangle.h"
 #include "Doc/mojo-doc.h"
 #include "Format/mojo-format.h"
-#include "Package/mojo-package.h"
+#include "Precompile/mojo-precompile.h"
 #include "REPL/mojo-repl.h"
 #include "Run/mojo-run.h"
 
@@ -77,7 +77,7 @@ int main(int argc, char **argv) {
   registerDemangleSubcommand(registry);
   registerDocSubcommand(registry);
   registerFormatSubcommand(registry);
-  registerPackageSubcommand(registry);
+  registerPrecompileSubcommand(registry);
   registerREPLSubcommand(registry);
   registerDebugSubcommand(registry);
   registerRunSubcommand(registry);

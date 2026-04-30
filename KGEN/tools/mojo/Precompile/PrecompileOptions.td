@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-include "Package/PackageDescription.td"
+include "Precompile/PrecompileDescription.td"
 
 include "Common/DiagnosticFormatOptions.td"
 include "Common/DiagnosticOptions.td"

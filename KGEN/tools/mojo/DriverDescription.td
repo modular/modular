@@ -10,7 +10,7 @@ include "Debug/DebugDescription.td"
 include "Demangle/DemangleDescription.td"
 include "Doc/DocDescription.td"
 include "Format/FormatDescription.td"
-include "Package/PackageDescription.td"
+include "Precompile/PrecompileDescription.td"
 include "REPL/REPLDescription.td"
 include "Run/RunDescription.td"
 

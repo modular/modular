@@ -599,7 +599,7 @@ distributed and imported without the original source code.
 
 ### Location in Codebase
 
-- `KGEN/tools/mojo/Package/` - Package command implementation
+- `KGEN/tools/mojo/Precompile/` - Precompile command implementation
 - `KGEN/lib/MojoParser/SharedState.cpp` - Import logic for both source and
   binary packages
 - `KGEN/lib/MojoParser/EntryPoint.cpp` - Package parsing entry points
@@ -1313,7 +1313,7 @@ def foo():
 | `KGEN/lib/Transforms/`                      | Optimization passes                               |
 | `KGEN/lib/MOGGPreElab/`                     | GPU kernel annotation passes                      |
 | `KGEN/lib/Compiler/Pipeline/`               | Pass pipeline construction                        |
-| `KGEN/tools/mojo/Package/`                  | Package command implementation                    |
+| `KGEN/tools/mojo/Precompile/`               | Precompile command implementation                 |
 | `Support/lib/DebugInfoDialect/`             | Debug info dialect implementation                 |
 | `Support/include/Support/DebugInfoDialect/` | Debug info dialect headers and TableGen           |
 | `KGEN/include/KGEN/*/`                      | Headers and TableGen definitions                  |
