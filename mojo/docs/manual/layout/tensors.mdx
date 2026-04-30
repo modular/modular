@@ -4,7 +4,7 @@ sidebar_position: 2
 description: Using LayoutTensor to manipulate multidimensional data.
 ---
 
-A [`LayoutTensor`](/mojo/layout/layout_tensor/LayoutTensor/)
+A [`LayoutTensor`](/docs/layout/layout_tensor/LayoutTensor/)
 provides a view of multi-dimensional data stored in a linear
 array. `LayoutTensor` abstracts the logical organization of multi-dimensional
 data from its actual arrangement in memory. You can generate new tensor "views"
@@ -26,7 +26,7 @@ CPU-based algorithms.
 
 A `LayoutTensor` consists of three main properties:
 
-- A [layout](/mojo/manual/layout/layouts), defining how the elements are
+- A [layout](/docs/manual/layout/layouts), defining how the elements are
   laid out in memory.
 - A `DType`, defining the data type stored in the tensor.
 - A pointer to memory where the data is stored.
@@ -116,7 +116,7 @@ tensor.store(row, col, elements)
 ### Tensor indexing and nested layouts
 
 A tensor's layout may have nested modes (or sub-layouts), as described in
-[Introduction to layouts](/mojo/manual/layout/layouts#modes). These layouts have
+[Introduction to layouts](/docs/manual/layout/layouts#modes). These layouts have
 one or more of their dimensions divided into sub-layouts. For example, Figure 2
 shows a tensor with a nested layout:
 
@@ -177,7 +177,7 @@ tensors for use on the CPU.
 To create a `LayoutTensor` for use on the CPU, you need a `Layout` and a block
 of memory to store the tensor data. A common way to allocate memory for a
 `LayoutTensor` is to use an
-[`InlineArray`](/mojo/std/collections/inline_array/InlineArray/):
+[`InlineArray`](/docs/std/collections/inline_array/InlineArray/):
 
 ```mojo
 comptime rows = 8
@@ -204,7 +204,7 @@ memset(ptr, 0, buf_size)
 var tensor = LayoutTensor[DType.float32, layout](ptr)
 ```
 
-Note that this example uses [`memset()`](/mojo/std/memory/memory/memset/)
+Note that this example uses [`memset()`](/docs/std/memory/memory/memset/)
 instead of the `LayoutTensor` `fill()` method. The `fill()` method performs
 elementwise initialization of the tensor, so it may be slow for large tensors.
 
@@ -220,7 +220,7 @@ memory space the tensor data will be stored in:
 #### Creating a `LayoutTensor` in global memory
 
 You must allocate global memory from the host side, by allocating a
-[`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer/). You can
+[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer/). You can
 either construct a `LayoutTensor` using this memory on the host side, before
 invoking a GPU kernel, or you can construct a LayoutTensor inside the kernel
 itself:
@@ -236,9 +236,9 @@ itself:
 
 In both cases, if you want to initialize data for the tensor from the CPU, you
 can call
-[`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 or
-[`enqueue_memset()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_memset)
+[`enqueue_memset()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_memset)
 on the buffer prior to invoking the kernel. The following example shows
 initializing a `LayoutTensor` from the CPU and passing it to a GPU kernel.
 
@@ -362,7 +362,7 @@ dimensions at runtime.
 ### Extracting a tile
 
 The
-[`LayoutTensor.tile()`](/mojo/layout/layout_tensor/LayoutTensor/#tile)
+[`LayoutTensor.tile()`](/docs/layout/layout_tensor/LayoutTensor/#tile)
 method extracts a tile with a given size at a given set of coordinates:
 
 ```mojo
@@ -422,7 +422,7 @@ for i in range (rows):
 
 ### Tiled iterators
 
-The [`LayoutTensorIter`](/mojo/layout/layout_tensor/LayoutTensorIter/)
+The [`LayoutTensorIter`](/docs/layout/layout_tensor/LayoutTensorIter/)
 struct provides a way to iterate through a block of memory, generating a layout
 tensor for each position. There are two ways to use `LayoutTensorIter`:
 
@@ -482,7 +482,7 @@ beginning.
 ### Tiling a `LayoutTensor`
 
 To iterate over an existing tensor, call the
-[`tiled_iterator()`](/mojo/layout/layout_tensor/LayoutTensor/#tiled_iterator)
+[`tiled_iterator()`](/docs/layout/layout_tensor/LayoutTensor/#tiled_iterator)
 method, which produces a `LayoutTensorIter`:
 
 ```mojo
@@ -515,7 +515,7 @@ example, if you're working with 4 byte values and the GPU supports 16 byte copy
 operations, you can use a vector width of 4.) The `LayoutTensor` copy operations
 support copy sizes up to 16 bytes.
 
-The [`vectorize()`](/mojo/layout/layout_tensor/LayoutTensor/#vectorize)
+The [`vectorize()`](/docs/layout/layout_tensor/LayoutTensor/#vectorize)
 method creates a new view of the tensor where each element of the tensor is a
 vector of values.
 
@@ -540,7 +540,7 @@ layout and element layout changes, as shown in Figure 4.
 
 When working with tensors on the GPU, it's sometimes desirable to distribute the
 elements of a tensor across the threads in a thread block. The
-[`distribute()`](/mojo/layout/layout_tensor/LayoutTensor/#distribute)
+[`distribute()`](/docs/layout/layout_tensor/LayoutTensor/#distribute)
 method takes a thread layout and a thread ID and returns a thread-specific
 *fragment* of the tensor.
 
@@ -585,10 +585,10 @@ can transform a tensor by copying it to a tensor with a different layout.
 
 `LayoutTensor` itself provides two methods for copying tensor data:
 
-- [`copy_from()`](/mojo/layout/layout_tensor/LayoutTensor/#copy_from)
+- [`copy_from()`](/docs/layout/layout_tensor/LayoutTensor/#copy_from)
   copies data from a source tensor to the current tensor, which may be in a
   different memory space.
-- [`copy_from_async()`](/mojo/layout/layout_tensor/LayoutTensor/#copy_from_async)
+- [`copy_from_async()`](/docs/layout/layout_tensor/LayoutTensor/#copy_from_async)
   is an optimized copy mechanism for asynchronously copying from GPU global
   memory to shared memory.
 
@@ -675,7 +675,7 @@ def copy_from_async_example():
 
 ### Thread-aware copy functions
 
-The [`layout_tensor` package](/mojo/layout/layout_tensor/) also includes
+The [`layout_tensor` package](/docs/layout/layout_tensor/) also includes
 a number of specialized copy functions for different scenarios, such as copying
 from shared memory to local memory. These functions are all *thread-aware*:
 instead of passing in tensor fragments, you pass in a thread layout which the

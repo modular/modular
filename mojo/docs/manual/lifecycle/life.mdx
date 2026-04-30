@@ -8,12 +8,12 @@ The life of a value in Mojo begins when a variable is initialized and continues
 up until the value is last used, at which point Mojo destroys it. This page
 describes how every value in Mojo is created, copied, and moved. (The next
 page describes [how values are
-destroyed](/mojo/manual/lifecycle/death).)
+destroyed](/docs/manual/lifecycle/death).)
 
 All data types in Mojo—including basic types in the standard library such as
-[`Bool`](/mojo/std/builtin/bool/Bool), [`Int`](/mojo/std/builtin/int/Int),
-and [`String`](/mojo/std/collections/string/string/String)—are defined as
-[structs](/mojo/manual/structs). This means the creation and destruction of any
+[`Bool`](/docs/std/builtin/bool/Bool), [`Int`](/docs/std/builtin/int/Int),
+and [`String`](/docs/std/collections/string/string/String)—are defined as
+[structs](/docs/manual/structs). This means the creation and destruction of any
 piece of data follows the same lifecycle rules, and you can define your own data
 types that work exactly the same way.
 
@@ -78,7 +78,7 @@ implementing the copy and move constructors.
 The pattern shown above—a constructor that takes an argument for each of the
 struct's fields and initializes the fields directly from the arguments—is called
 a *field-wise constructor*. It's a common enough pattern that Mojo includes a
-[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator to
+[`@fieldwise_init`](/docs/manual/decorators/fieldwise-init) decorator to
 synthesize the field-wise constructor. So you can rewrite the previous example
 like this:
 
@@ -94,8 +94,8 @@ struct MyPet:
 Mojo does not require a destructor to destroy an instance. But in some cases,
 you may need to define a custom destructor to release resources (for example, if
 a struct dynamically allocates memory using
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)). We'll discuss
-that more in [Death of a value](/mojo/manual/lifecycle/death).
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer)). We'll discuss
+that more in [Death of a value](/docs/manual/lifecycle/death).
 
 :::
 
@@ -112,14 +112,14 @@ always call `__init__()` the constructor.
 ### Overloading the constructor
 
 Like any other function/method, you can
-[overload](/mojo/manual/functions#overloaded-functions) the
+[overload](/docs/manual/functions#overloaded-functions) the
 `__init__()` constructor to initialize the object with different arguments. For
 example, you might want a default constructor that sets some default values and
 takes no arguments, and then additional constructors that accept more arguments.
 
 Just be aware that, in order to modify any fields, each constructor must
 declare the `self` argument with the [`out`
-convention](/mojo/manual/values/ownership#argument-conventions). If you
+convention](/docs/manual/values/ownership#argument-conventions). If you
 want to call one constructor from another, you simply call upon that
 constructor as you would externally (you don't need to pass `self`).
 
@@ -343,7 +343,7 @@ where you need to define a custom copy constructor:
 
 - One or more of the struct's fields is not `Copyable`.
 - The struct includes a non-owning type (like
-  [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer)), and you
+  [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer)), and you
   want to make a deep copy of the data.
 - The struct holds other resources (like file descriptors or network sockets)
   that need to be managed.
@@ -352,7 +352,7 @@ where you need to define a custom copy constructor:
 
 What makes Mojo's copy behavior different, compared to other languages, is that
 copy constructor is designed to perform a deep copy of all fields in the type
-(as per [value semantics](/mojo/manual/values/value-semantics)). That is,
+(as per [value semantics](/docs/manual/values/value-semantics)). That is,
 it copies heap-allocated values, rather than just copying the pointer.
 
 However, the Mojo compiler doesn't enforce this, so it's the type author's
@@ -437,7 +437,7 @@ Two other things to note from the copy constructor:
   best practice to avoid any mistakes when referring to the current struct name.
 
 - The `copy` argument is immutable because the default [argument
-   convention](/mojo/manual/values/ownership#argument-conventions) is
+   convention](/docs/manual/values/ownership#argument-conventions) is
    `read`—this is a good thing because this function should not modify the
    contents of the value being copied.
 
@@ -446,7 +446,7 @@ Two other things to note from the copy constructor:
 In `HeapArray`, we must use the `__del__()` destructor to free the
 heap-allocated data when the `HeapArray` lifetime ends, but Mojo automatically
 destroys all other fields when their respective lifetimes end. We'll discuss
-this destructor more in [Death of a value](/mojo/manual/lifecycle/death).
+this destructor more in [Death of a value](/docs/manual/lifecycle/death).
 
 :::
 
@@ -460,7 +460,7 @@ copy constructor.
 
 Mojo also calls upon the copy constructor when a value is passed to a
 function that takes the argument as
-[`var`](/mojo/manual/values/ownership#transfer-arguments-var-and-)
+[`var`](/docs/manual/values/ownership#transfer-arguments-var-and-)
 *and* when the lifetime of the given value does *not* end at that point. If the
 lifetime of the value does end there (usually indicated with the transfer
 sigil `^`), then Mojo instead invokes the move constructor.
@@ -508,7 +508,7 @@ resources probably shouldn't be implicitly copyable.
 ## Move constructor
 
 Although copying values provides predictable behavior that matches Mojo's
-[value semantics](/mojo/manual/values/value-semantics), copying some data
+[value semantics](/docs/manual/values/value-semantics), copying some data
 types can be a significant hit on performance.
 
 Mojo uses the move constructor to transfer ownership of a value from one
@@ -559,10 +559,10 @@ def __init__(out self, *, deinit take: Self):
 ```
 
 The move constructor takes its `take` argument using the `deinit`
-[argument convention](/mojo/manual/values/ownership#argument-conventions), which
+[argument convention](/docs/manual/values/ownership#argument-conventions), which
 grants exclusive ownership of the value and marks it as destroyed at the end of
 the function. (For more information on the `deinit` convention, see
-[Field lifetimes during destruct and move](/mojo/manual/lifecycle/death#field-lifetimes-during-destruct-and-move)).
+[Field lifetimes during destruct and move](/docs/manual/lifecycle/death#field-lifetimes-during-destruct-and-move)).
 
 The move constructor uses the transfer sigil (`^`) to indicate that
 ownership of the `name` value transfers from `take` to `self`. For
@@ -583,7 +583,7 @@ A move constructor is *not required* to transfer ownership of a
 value. Mojo can copy the value and
 invalidate the original instance. You can learn more in the section about
 [ownership
-transfer](/mojo/manual/values/ownership#transfer-arguments-var-and-).
+transfer](/docs/manual/values/ownership#transfer-arguments-var-and-).
 
 If copying a type is expensive, moving it with a move constructor is much
 more efficient. For example, if a type has heap-allocated data, a copy
@@ -605,7 +605,7 @@ fields, for example, since the struct's location in memory changes when it's
 moved.
 
 The move constructor performs a consuming move: it [transfers
-ownership](/mojo/manual/values/ownership#transfer-arguments-var-and-) of a
+ownership](/docs/manual/values/ownership#transfer-arguments-var-and-) of a
 value from one variable to another when the original variable's lifetime ends
 (also called a "destructive move").
 
@@ -616,7 +616,7 @@ move (during ownership transfer), the `take` argument is guaranteed to be a
 mutable reference to the original value, *not a copy* (unlike other methods that
 may declare an argument as `var`, but might receive the value as a copy if the
 method is called without the
-[`^` transfer sigil](/mojo/manual/values/ownership#transfer-arguments-var-and-)).
+[`^` transfer sigil](/docs/manual/values/ownership#transfer-arguments-var-and-)).
 That is, Mojo calls this move constructor *only* when the original variable's
 lifetime actually ends at the point of transfer.
 
@@ -628,12 +628,12 @@ passed to other variables and passed into functions with any argument convention
 (`read`, `mut`, and `var`)—the only catch is that you must use the `^`
 transfer sigil to end the lifetime of a move-only type when assigning it to a
 new variable or when passing it as a `var` argument. The
-[`OwnedPointer`](/mojo/std/memory/owned_pointer/OwnedPointer/) is an
+[`OwnedPointer`](/docs/std/memory/owned_pointer/OwnedPointer/) is an
 example of a move-only type: because it is designed to provide clear single
 ownership of a stored value, the `OwnedPointer` can be moved, but not copied.
 
 In some (rare) cases, you may not want a type to be copyable *or* movable. The
-[`Atomic`](/mojo/std/os/atomic/Atomic/) type is an example of a type that's
+[`Atomic`](/docs/std/os/atomic/Atomic/) type is an example of a type that's
 neither copyable nor movable.
 
 :::note Trivial types

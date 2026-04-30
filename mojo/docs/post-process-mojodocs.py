@@ -211,45 +211,10 @@ def replace_relative_paths(docs_path, file_path) -> None:  # noqa: ANN001
                     f.write(new_content)
 
 
-def remove_docs_domain(file_path) -> None:  # noqa: ANN001
-    for root, _, files in os.walk(file_path):
-        for filename in files:
-            if filename.endswith((".md", ".ipynb")):
-                file_path = os.path.join(root, filename)
-                with open(file_path, "r+") as file:
-                    content = file.read()
-                    updated_content = re.sub(
-                        r"https://docs.modular.com/", "/", content
-                    )
-                    file.seek(0)
-                    file.write(updated_content)
-                    file.truncate()
-
-
-def rewrite_mojo_path_prefix(docs_path: str) -> None:
-    """Rewrite '/mojo/' to '/docs/' in hyperlinks and JSX props across all doc files."""
-    for root, _, files in os.walk(docs_path):
-        for filename in files:
-            if not filename.endswith((".md", ".mdx")):
-                continue
-            file_path = os.path.join(root, filename)
-            with open(file_path, "r+") as f:
-                content = f.read()
-                updated = re.sub(
-                    r"(\]\(|href=[\"']|url=[\"'])/mojo/", r"\1/docs/", content
-                )
-                if updated != content:
-                    f.seek(0)
-                    f.write(updated)
-                    f.truncate()
-
-
 if __name__ == "__main__":
     if len(sys.argv) != 2:
         print("Usage: python3 post-process-mojodocs.py <directory>")
         sys.exit(1)
 
     replace_relative_paths(sys.argv[1], "/stdlib")
-    remove_docs_domain(sys.argv[1])
     assemble_changelog(sys.argv[1])
-    rewrite_mojo_path_prefix(sys.argv[1])

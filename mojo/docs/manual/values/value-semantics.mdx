@@ -12,7 +12,7 @@ designed with argument behaviors that default to value semantics, and it
 provides tight controls for reference semantics that avoid memory errors.
 
 The controls over reference semantics are provided by the [value ownership
-model](/mojo/manual/values/ownership), but before we get into the syntax
+model](/docs/manual/values/ownership), but before we get into the syntax
 and rules for that, it's important that you understand the principles of value
 semantics. Generally, it means that each variable has unique access to a value,
 and any code outside the scope of that variable cannot modify its value.
@@ -54,8 +54,8 @@ are cheap to copy.
 
 Value semantics also apply to function arguments in Mojo by default. However,
 the way in which they apply differs depending on the [argument
-convention](/mojo/manual/values/ownership#argument-conventions), which is
-discussed in the [Ownership](/mojo/manual/values/ownership) page.
+convention](/docs/manual/values/ownership#argument-conventions), which is
+discussed in the [Ownership](/docs/manual/values/ownership) page.
 
 For example, in the following function, the `y` argument is immutable by
 default, so if the function wants to modify the value in the local scope, it
@@ -102,6 +102,6 @@ The way we do that in Mojo is, instead of enforcing that every variable have
 "exclusive access" to a value, we ensure that every value has an "exclusive
 owner," and destroy each value when the lifetime of its owner ends.
 
-On the next page about [value ownership](/mojo/manual/values/ownership), you'll
+On the next page about [value ownership](/docs/manual/values/ownership), you'll
 learn how to modify the default argument conventions, and safely use reference
 semantics so every value has only one owner at a time.

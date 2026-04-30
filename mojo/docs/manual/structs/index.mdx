@@ -24,8 +24,8 @@ members:
   provide constants, or create specialized instances.
 - **Dunder methods** are named for their _d_ouble _under_-scored form, with
   `__` on both sides. Also called "special methods", [they help define
-  behaviors](/mojo/manual/structs/#special-methods) such as initialization
-  and allow structs to conform to [traits](/mojo/manual/traits/).
+  behaviors](/docs/manual/structs/#special-methods) such as initialization
+  and allow structs to conform to [traits](/docs/manual/traits/).
 - **`comptime` members** enable compile-time references that can be used for
   optimization.
 
@@ -74,14 +74,14 @@ refer to "itself"). _When you call the constructor, you never pass a value
 for `self`—Mojo passes it in automatically._
 
 The `out` portion of `out self` is an [argument
-convention](/mojo/manual/values/ownership#argument-conventions) that declares
+convention](/docs/manual/values/ownership#argument-conventions) that declares
 `self` as a mutable reference that starts out as uninitialized and must be
 initialized before the function returns.
 
 Many types use a field-wise constructor like the one shown for `MyPair` above:
 it takes an argument for each field, and initializes the fields directly from
 the arguments. To save typing, Mojo provides a
-[`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init) decorator, which
+[`@fieldwise_init`](/docs/manual/decorators/fieldwise-init) decorator, which
 generates a field-wise constructor for the struct. So you can rewrite the
 `MyPair` example above like this:
 
@@ -159,7 +159,7 @@ struct MyStruct:
 
 :::info
 Read more about mutable arguments and the `mut` keyword:
-[Mutable arguments (`mut`)](/mojo/manual/values/ownership/#mutable-arguments-mut)
+[Mutable arguments (`mut`)](/docs/manual/values/ownership/#mutable-arguments-mut)
 :::
 
 ## Making a struct Copyable {#making-a-struct-copyable-and-movable}
@@ -185,7 +185,7 @@ var d = a^  # value of type 'MyPair' cannot be copied or moved; consider
 ```
 
 In most cases, you can make a struct copyable (and movable) just by adding the
-`Copyable` [trait](/mojo/manual/traits).
+`Copyable` [trait](/docs/manual/traits).
 
 ### Movability
 
@@ -199,7 +199,7 @@ To make a struct move-only, add the `Movable` trait:
 Mojo will generate a move constructor for you. You rarely need to
 write your own custom move constructor. For more information,
 see the section on
-[move constructors](/mojo/manual/lifecycle/life#move-constructor).
+[move constructors](/docs/manual/lifecycle/life#move-constructor).
 
 ### Copyability
 
@@ -214,7 +214,7 @@ In most cases, that's all you need to do. Mojo will generate a copy constructor
 (`__init__(out self, *, copy: Self)` method) for you. You don't need to write
 your own unless you need custom logic in the copy constructor; for example, if
 your struct dynamically allocates memory. For more information, see the section
-on [copy constructors](/mojo/manual/lifecycle/life#copy-constructor).
+on [copy constructors](/docs/manual/lifecycle/life#copy-constructor).
 
 The `Copyable` trait provides two ways to copy a value: the `copy()`
 instance method and the copy initializer.
@@ -311,7 +311,7 @@ struct MyStruct:
     comptime bar = 10 # Yes
 ```
 
-[`comptime` members](/mojo/manual/parameters/#comptime-members)
+[`comptime` members](/docs/manual/parameters/#comptime-members)
 are compile-time constants (not fields) and don't occupy instance
 storage, so they can be initialized at the point of declaration.
 
@@ -429,7 +429,7 @@ their key differences are as follows:
   while being safe and easy to use.
 
 - Mojo structs do not support inheritance ("sub-classing"), but a struct can
-  implement [traits](/mojo/manual/traits).
+  implement [traits](/docs/manual/traits).
 
 - Python classes support class attributes—values that are shared by all
   instances of the class, equivalent to class variables or static data members
@@ -484,7 +484,7 @@ and they usually accomplish one of two types of tasks:
 - Operator overloading: A lot of special methods are designed to overload
   operators such as `<` (less-than), `+` (add), and `|` (or) so they work
   appropriately with each type. For more information, see
-  [Implement operators for custom types](/mojo/manual/operators#implement-operators-for-custom-types).
+  [Implement operators for custom types](/docs/manual/operators#implement-operators-for-custom-types).
 
 - Lifecycle event handling: These special methods deal with the lifecycle and
   value ownership of an instance. For example, `__init__()` and `__del__()`
@@ -493,7 +493,7 @@ and they usually accomplish one of two types of tasks:
   move a value.
 
 You can learn all about the lifecycle special methods in the [Value
-lifecycle](/mojo/manual/lifecycle/) section. However, most structs are simple
+lifecycle](/docs/manual/lifecycle/) section. However, most structs are simple
 aggregations of other types, so unless your type requires custom behaviors when
 an instance is created, copied, moved, or destroyed, you can synthesize the
 essential lifecycle methods you need (and save yourself some time) using the

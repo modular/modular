@@ -67,7 +67,7 @@ def map[
 
     :::note
     Don't confuse `algorithm.map` (this eager, index-based helper) with
-    [`iter.map`](https://docs.modular.com/mojo/std/iter/map/),
+    [`iter.map`](https://www.mojolang.org/docs/std/iter/map/),
     which returns a lazy iterator that applies a function to each element.
     :::
 

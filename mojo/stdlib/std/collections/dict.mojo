@@ -23,9 +23,9 @@ It uses a Swiss Table implementation with SIMD group probing for fast lookups:
   items have a deterministic order based on insertion.
 
 - For more information on the Mojo `Dict` type, see the
-  [Mojo `Dict` manual](/mojo/manual/types/#dict). To learn more about using
+  [Mojo `Dict` manual](/docs/manual/types/#dict). To learn more about using
   Python dictionaries from Mojo, see
-  [Python types in Mojo](/mojo/manual/python/types/#python-types-in-mojo).
+  [Python types in Mojo](/docs/manual/python/types/#python-types-in-mojo).
 
 Key elements must implement the `KeyElement` trait composition, which includes
 `Hashable`, `Equatable`, and `Copyable`. The `Copyable`
@@ -509,7 +509,7 @@ struct Dict[
       ```
 
       However, you can get around this by defining your dictionary key and/or
-      value type as [`Variant`](/mojo/std/utils/variant/Variant). This is
+      value type as [`Variant`](/docs/std/utils/variant/Variant). This is
       a discriminated union type, meaning it can store any number of different
       types that can vary at runtime.
 
@@ -533,7 +533,7 @@ struct Dict[
 
       This is different from Python, where assignment creates a reference to
       the same dictionary. For more information, read about [value
-      semantics](/mojo/manual/values/value-semantics).
+      semantics](/docs/manual/values/value-semantics).
 
     - **Iteration uses immutable references**: When iterating over keys, values,
       or items, you get immutable references unless you specify `ref` or `var`:
@@ -558,7 +558,7 @@ struct Dict[
 
       Note that indexing into a `Dict` with a key that's a reference to the
       key owned by the `Dict` produces a confusing error related to
-      [argument exclusivity](/mojo/manual/values/ownership#argument-exclusivity).
+      [argument exclusivity](/docs/manual/values/ownership#argument-exclusivity).
       Using `var key` in the previous example creates an owned copy of the key,
       avoiding the error.
 

@@ -40,7 +40,7 @@ struct OwnedPointer[T: AnyType](
     may exist.
 
     For a comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/) in the Mojo Manual.
+    pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
         T: The type to be stored in the `OwnedPointer`.

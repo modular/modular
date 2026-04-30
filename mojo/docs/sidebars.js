@@ -200,7 +200,7 @@ const mojoSidebars = {
     {
       type: 'link',
       label: '⬅ Latest changelog',
-      href: '/mojo/changelog',
+      href: '/docs/changelog',
     },
     {
       type: 'category',

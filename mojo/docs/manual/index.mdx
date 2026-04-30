@@ -7,7 +7,7 @@ description: A comprehensive guide to the Mojo programming language.
 Welcome to the Mojo Manual, your complete guide to the Mojo🔥 programming
 language!
 
-Combined with the [Mojo API reference](/mojo/lib), this documentation provides
+Combined with the [Mojo API reference](/docs/lib), this documentation provides
 everything you need to write high-performance Mojo code for CPUs and GPUs. If
 you see anything that can be improved, please
 [file an issue](https://github.com/modular/modular/issues/new?assignees=&labels=documentation%2Cmodular-repo%2Cmojo&projects=&template=doc_issue.yaml&title=%5BDocs%5D)
@@ -17,7 +17,7 @@ or send a pull request for the
 import { Button } from '@mantine/core';
 import DocLink from '@site/src/components/DocLink';
 
-<Button component={DocLink} to='/mojo/manual/get-started'>
+<Button component={DocLink} to='/docs/manual/get-started'>
   Get started with a tutorial
 </Button>
 
@@ -35,7 +35,7 @@ and other AI ASICs. That means you can use one language to write all your code,
 from high-level AI applications all the way down to low-level GPU kernels,
 without using any hardware-specific libraries (such as CUDA and ROCm).
 
-Learn more about it in the [Mojo vision](/mojo/vision) doc.
+Learn more about it in the [Mojo vision](/docs/vision) doc.
 
 ## Key features
 
@@ -43,20 +43,20 @@ Learn more about it in the [Mojo vision](/mojo/vision) doc.
 integrates with existing Python code. Mojo's interoperability works in both
 directions, so you can import Python libraries into Mojo and create Mojo
 bindings to call from Python. [Read about Python
-interop](/mojo/manual/python/).
+interop](/docs/manual/python/).
 
 - **Struct-based types**: All data types—including basic types such as `String`
 and `Int`—are defined as structs. No types are built into the language itself.
 That means you can define your own types that have all the same
 capabilities as the standard library types. [Read about
-structs](/mojo/manual/structs).
+structs](/docs/manual/structs).
 
 - **Zero-cost traits**: Mojo's trait system solves the problem of static typing
 by letting you define a shared set of behaviors that types (structs) can
 implement. It allows you to write functions that depend on traits rather than
 specific types, similar to interfaces in Java or protocols in Swift, except
 with compile-time type checking and no run-time performance cost. [Read about
-traits](/mojo/manual/traits).
+traits](/docs/manual/traits).
 
 - **Value semantics**: Mojo supports both value and reference semantics, but
 generally defaults to value semantics. With value semantics, each copy is
@@ -65,20 +65,20 @@ semantics, multiple variables can point to the same instance (sometimes called
 an object), so changes made through one variable are visible through all others.
 Mojo-native types predominantly use value semantics, which prevents multiple
 variables from unexpectedly sharing the same data. Read about [value
-semantics](/mojo/manual/values/value-semantics/).
+semantics](/docs/manual/values/value-semantics/).
 
 - **Value ownership**: Mojo's ownership system ensures that only one variable
 "owns" a specific value at a given time—such that Mojo can safely deallocate
 the value when the owner's lifetime ends—while still allowing you to share
 references to the value. This provides safety from errors such as
 use-after-free, double-free, and memory leaks without the overhead cost of a
-garbage collector. [Read about ownership](/mojo/manual/values).
+garbage collector. [Read about ownership](/docs/manual/values).
 
 - **Compile-time metaprogramming**: Mojo's parameterization system enables
 powerful metaprogramming in which the compiler generates a unique version of a
 type or function based on parameter values, similar to C++ templates, but more
 intuitive.
-[Read about parameterization](/mojo/manual/parameters/).
+[Read about parameterization](/docs/manual/parameters/).
 
 - **Hardware portability**: Mojo is designed from the ground up to support
 heterogeneous hardware—the Mojo compiler makes no assumptions about whether
@@ -86,7 +86,7 @@ your code is written for CPUs, GPUs, or something else. Instead, hardware
 behaviors are handled by Mojo libraries, as demonstrated by types such as
 `SIMD` that allows you to write vectorized code for CPUs, and the `gpu`
 package that enables hardware-agnostic GPU programming. [Read about GPU
-programming](/mojo/manual/gpu/fundamentals).
+programming](/docs/manual/gpu/fundamentals).
 
 ## Get started
 
@@ -95,10 +95,10 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 
 <ListingCards>
   <ListingCard title="Get started with Mojo"
-    url="/mojo/manual/get-started"
+    url="/docs/manual/get-started"
     description="Install Mojo and learn the language basics by building a complete Mojo program" />
   <ListingCard title="Get started with GPU programming"
-    url="/mojo/manual/gpu/intro-tutorial"
+    url="/docs/manual/gpu/intro-tutorial"
     description="Learn the basics of GPU programming with Mojo" />
   <ListingCard title="GPU Puzzles"
     url="https://puzzles.modular.com/introduction.html"
@@ -108,7 +108,7 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 :::tip
 
 **Tip:** To use AI coding assistants with Mojo, see our guide for
-[using Mojo AI skills](/mojo/tools/skills/).
+[using Mojo AI skills](/docs/tools/skills/).
 
 :::
 
@@ -116,7 +116,7 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 
 <ListingCards>
   <ListingCard title="Mojo API reference"
-    url="/mojo/lib"
+    url="/docs/lib"
     description="Mojo standard library and other references" />
   <ListingCard title="Code examples"
     url="https://github.com/modular/modular/tree/main/mojo/examples"

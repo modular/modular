@@ -27,7 +27,7 @@ GitHub](https://github.com/modular/modular/tree/main/mojo/examples/life).
 :::note System requirements
 
 You can use Mac, Linux, or Windows with WSL. For details, see the
-[system requirements](/mojo/requirements).
+[system requirements](/docs/requirements).
 
 :::
 
@@ -59,7 +59,7 @@ and up to date.
 ## 1. Create a Mojo project
 
 To install Mojo, we recommend using [`pixi`](https://pixi.sh/latest/) (for
-other options, see the [install guide](/mojo/manual/install)).
+other options, see the [install guide](/docs/manual/install)).
 
 1. If you don't have `pixi`, you can install it with this command:
 
@@ -159,7 +159,7 @@ support. For [Cursor](https://cursor.com/) and other editors that support VS
 Code extensions, you can install the
 [Mojo for Visual Studio Code extension](https://open-vsx.org/extension/modular-mojotools/vscode-mojo)
 from the [Open VSX Registry](https://open-vsx.org/). See
-[Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension) for
+[Add the VS Code extension](/docs/manual/install/#add-the-vs-code-extension) for
 more information.
 
 :::
@@ -170,7 +170,7 @@ If you've programmed in Python before, this should look familiar.
 - You can use any number of spaces or tabs for indentation as long as you use
   the same indentation for the entire code block. We'll follow the [Python style
   guide](https://peps.python.org/pep-0008/) and use 4 spaces.
-- This [`print()`](/mojo/std/io/io/print) function is a Mojo built-in,
+- This [`print()`](/docs/std/io/io/print) function is a Mojo built-in,
   so it doesn't require an import.
 
 An executable Mojo program *requires* you to define a no-argument `main()`
@@ -202,7 +202,7 @@ compilation](https://en.wikipedia.org/wiki/Just-in-time_compilation) (JIT) and
 then runs the result.
 
 We can also compile our program into an executable file using [`mojo
-build`](/mojo/cli/build) like this:
+build`](/docs/cli/build) like this:
 
 ```bash
 mojo build life.mojo
@@ -222,8 +222,8 @@ Hello, World!
 
 Let's extend this basic program by prompting the user for their name and
 including it in the greeting. The built-in
-[`input()`](/mojo/std/io/io/input) function accepts an optional
-[`String`](/mojo/std/collections/string/string/String) argument to use as a
+[`input()`](/docs/std/io/io/input) function accepts an optional
+[`String`](/docs/std/collections/string/string/String) argument to use as a
 prompt and returns a `String` consisting of the characters the user entered
 (with the newline character at the end stripped off).
 
@@ -271,7 +271,7 @@ automatically infers from the initial value assignment. In this example, both
 `name` and `greeting` are inferred as `String` type variables. If you then try
 to assign an integer value like 42 to the `name` variable, you'll get a
 compile-time error because of the type mismatch. You can learn more about Mojo
-variables in the [Variables](/mojo/manual/variables) section of the Mojo manual.
+variables in the [Variables](/docs/manual/variables) section of the Mojo manual.
 
 ## 4. Use Mojo `Int` and `List` types to represent the game state
 
@@ -286,7 +286,7 @@ column. This will come into play later when we implement the algorithm for
 calculating each subsequent generation.
 
 To keep track of the height and width of our grid, we'll use
-[`Int`](/mojo/std/builtin/int/Int), which represents a signed integer of the
+[`Int`](/docs/std/builtin/int/Int), which represents a signed integer of the
 [word size](https://en.wikipedia.org/wiki/Word_(computer_architecture)) of the
 CPU, typically 32 or 64 bits.
 
@@ -296,8 +296,8 @@ populated neighbors surrounding a cell, we can simply add the values of the
 neighboring cells.
 
 To represent the state of the entire grid, we need a [collection
-type](/mojo/manual/types#collection-types). The most appropriate for this use
-case is [`List`](/mojo/std/collections/list/List), which is a
+type](/docs/manual/types#collection-types). The most appropriate for this use
+case is [`List`](/docs/std/collections/list/List), which is a
 dynamically-sized sequence of values.
 
 All values in a Mojo `List` must be the same type so the Mojo compiler can
@@ -306,7 +306,7 @@ the compiler knows the value is an `Int` and can verify that we use it
 correctly.) Mojo collections are implemented as [generic
 types](https://en.wikipedia.org/wiki/Generic_programming), so we can indicate
 the type of values the specific collection will hold by specifying a
-[type parameter](/mojo/manual/parameters/#parameterized-structs) in square
+[type parameter](/docs/manual/parameters/#parameterized-structs) in square
 brackets like this:
 
 ```mojo
@@ -383,7 +383,7 @@ keyword. Mojo functions are non-raising by default—you only need
 `raises` when a function can propagate an error to its caller. Since
 `main()` no longer calls
 any raising functions, we can omit it. For more about error handling, see
-[Errors, error handling, and context managers](/mojo/manual/errors).
+[Errors, error handling, and context managers](/docs/manual/errors).
 
 ```mojo title="life.mojo"
 def main():
@@ -442,17 +442,17 @@ important when we define and use our own custom types later in this tutorial.
 
 You can determine whether a type is explicitly or implicitly copyable by
 checking its API documentation to see what *traits* it conforms to. A Mojo
-[trait](/mojo/manual/traits) is a set of requirements that a type must
+[trait](/docs/manual/traits) is a set of requirements that a type must
 implement, usually in the form of one or more method signatures.
 
 - The `List` type and other Mojo collection types like
-  [`Dict`](/mojo/std/collections/dict/Dict/) and
-  [`Set`](/mojo/std/collections/set/Set/) conform to the
-  [`Copyable`](/mojo/std/builtin/value/Copyable/) trait, which indicates that
+  [`Dict`](/docs/std/collections/dict/Dict/) and
+  [`Set`](/docs/std/collections/set/Set/) conform to the
+  [`Copyable`](/docs/std/builtin/value/Copyable/) trait, which indicates that
   they are **explicitly copyable**.
 
 - The `String`, `Int` and other numeric types conform to the
-  [`ImplicitlyCopyable`](/mojo/std/builtin/value/ImplicitlyCopyable/) trait,
+  [`ImplicitlyCopyable`](/docs/std/builtin/value/ImplicitlyCopyable/) trait,
   which indicates that they are **implicitly copyable**. Additionally, the
   `ImplicitlyCopyable` trait refines the `Copyable` and `Movable` traits, so you
   can also use types that conform to the `ImplicitlyCopyable` trait in the same
@@ -465,7 +465,7 @@ implement, usually in the form of one or more method signatures.
 Now let's create a function using the `def` keyword to generate a
 string representation of the game grid so we can print it to the
 terminal. To learn more about defining functions in Mojo, see
-[Functions](/mojo/manual/functions).
+[Functions](/docs/manual/functions).
 
 Let's add the following definition of a function named `grid_str()` to our
 program. The Mojo compiler doesn't care whether we add our function before or
@@ -494,7 +494,7 @@ argument is treated as a *read-only reference* to the value. This is
 particularly useful for values like `List`s, where copying them could be
 expensive. As we'll see later, we can specify different behavior by including an
 explicit [argument
-convention](/mojo/manual/values/ownership#argument-conventions).
+convention](/docs/manual/values/ownership#argument-conventions).
 
 Each argument name is followed by a type annotation indicating the type of value
 you can pass to the argument. Just like when assigning a value to a variable,
@@ -506,16 +506,16 @@ In the body of the function, we generate a `String` by appending an asterisk for
 each populated cell and a space for each unpopulated cell, separating each row
 of the grid with a newline character. We use nested `for` loops to iterate
 through each row and column of the grid, using
-[`range()`](/mojo/std/builtin/range/range) to generate a sequence of integers
+[`range()`](/docs/std/builtin/range/range) to generate a sequence of integers
 from 0 up to (but not including) the given end value. Then we append the correct
 characters to the `String` representation. See [Control
-flow](/mojo/manual/control-flow) for more information about `if`, `for`, and
+flow](/docs/manual/control-flow) for more information about `if`, `for`, and
 other control flow structures in Mojo.
 
 :::note
 
 As described in [The `for`
-statement](/mojo/manual/control-flow#the-for-statement) section of the Mojo
+statement](/docs/manual/control-flow#the-for-statement) section of the Mojo
 manual, it's possible to iterate over the elements of a `List` directly instead
 of iterating over the values of a `range()` and then accessing the `List`
 elements by their numeric index.
@@ -565,7 +565,7 @@ type that encapsulates all information about the grid. Then any function that
 needs to manipulate a grid can accept a single argument. We can do this by
 defining a Mojo *struct*, which is a custom data structure.
 
-A [Mojo struct](/mojo/manual/structs) is a custom type consisting of:
+A [Mojo struct](/docs/manual/structs) is a custom type consisting of:
 
 - *Fields*, which are variables containing the data associated with the
   structure
@@ -584,7 +584,7 @@ We could define the struct in our existing `life.mojo` source file, but let's
 create a separate *module* for the struct. A module is simply a Mojo source file
 containing struct and function definitions that can be imported into other Mojo
 source files. To learn more about creating and importing modules, see the
-[Modules and packages](/mojo/manual/packages) section of the Mojo manual.
+[Modules and packages](/docs/manual/packages) section of the Mojo manual.
 
 Create a new source file named `gridv1.mojo` in the project directory containing
 the following definition of a struct named `Grid` with three fields:
@@ -601,7 +601,7 @@ Mojo requires you to declare all fields in the struct definition. You
 can't add fields dynamically at run-time. You must declare the type for each
 field, but you cannot assign a value as part of the field declaration.
 
-The [constructor](/mojo/manual/lifecycle/life#constructor) is responsible for
+The [constructor](/docs/manual/lifecycle/life#constructor) is responsible for
 initializing the value of all fields, as well as allocating additional resources
 and performing any other configuration required by a new instance of the struct.
 You implement a constructor by defining a method named `__init__()` in the
@@ -619,13 +619,13 @@ The first argument of a constructor is the newly created instance of the struct,
 which by convention is named `self`. The Mojo compiler automatically passes the
 instance to the constructor when you create a new instance of the struct. Note
 that in a constructor, you must include the `out` [argument
-convention](/mojo/manual/values/ownership#argument-conventions) for the `self`
+convention](/docs/manual/values/ownership#argument-conventions) for the `self`
 argument. The values of the remaining arguments are assigned to the
 corresponding fields of the new instance. (Don't worry about the `var` keyword
 and `^` character for now. We'll discuss both of them in more detail later.)
 
 To reduce the amount of boilerplate code you need to write, Mojo provides a
-decorator called [`@fieldwise_init`](/mojo/manual/decorators/fieldwise-init)
+decorator called [`@fieldwise_init`](/docs/manual/decorators/fieldwise-init)
 that automatically generates a constructor for you that performs "field-wise"
 initialization. The constructor's arguments have the same names and types as the
 struct's fields and appear in the same order. This means that given our original
@@ -647,13 +647,13 @@ Rows: 2
 
 However, we also need to be able to copy and move instances of `Grid`—for
 example, when we pass an instance of `Grid` to a function or method. Mojo
-structs support several different [lifecycle methods](/mojo/manual/lifecycle/)
+structs support several different [lifecycle methods](/docs/manual/lifecycle/)
 that define the behavior when an instance of the struct is created, moved,
 copied, and destroyed.
 
-Structs that conform to the [`Movable`](/mojo/std/builtin/value/Movable/)
-[trait](/mojo/manual/traits) denote a type whose value can be moved, and structs
-that conform to the [`Copyable`](/mojo/std/builtin/value/Copyable/) trait
+Structs that conform to the [`Movable`](/docs/std/builtin/value/Movable/)
+[trait](/docs/manual/traits) denote a type whose value can be moved, and structs
+that conform to the [`Copyable`](/docs/std/builtin/value/Copyable/) trait
 denote a type whose value can be *explicitly* copied and/or moved. You can then
 implement custom move and copy constructors that perform the necessary
 operations to move or copy the instance.
@@ -676,7 +676,7 @@ that your struct conforms to the `ImplicitlyCopyable` trait instead of the
 `Copyable` trait. However, our `Grid` struct uses a `List[List[Int]]` field,
 which is not implicitly copyable.
 
-Also see the [Life of a value](/mojo/manual/lifecycle/life) section of the Mojo
+Also see the [Life of a value](/docs/manual/lifecycle/life) section of the Mojo
 Manual for more information about the different lifecycle methods and how to
 implement them.
 
@@ -741,7 +741,7 @@ instead use the `^` transfer sigil to *transfer ownership* of the list to the
 corresponding argument of the `Grid` constructor. After the transfer, the
 `glider` variable is uninitialized. You would need to assign a new value to it
 if you want to use the variable again. For more information about ownership and
-the `^` transfer sigil, see the [Ownership](/mojo/manual/values/ownership)
+the `^` transfer sigil, see the [Ownership](/docs/manual/values/ownership)
 section of the Mojo manual.
 
 At this point, we've made several changes to improve the structure of our
@@ -812,7 +812,7 @@ other changes we've made:
   first argument of the method is an instance of the struct, so it doesn't
   require an explicit type annotation.
 - We don't need to add an explicit [argument
-  convention](/mojo/manual/values/ownership#argument-conventions) to the `self`
+  convention](/docs/manual/values/ownership#argument-conventions) to the `self`
   argument because we're using it as a read-only reference to the instance,
   which is the default behavior for a method argument.
 
@@ -851,12 +851,12 @@ can accept a value only if its type implements some required behavior—in this
 case, it only accepts types that can generate a `String` representation.
 
 To enforce this, the `String()` constructors require a type to conform to the
-[`Writable`](/mojo/std/format/Writable) trait. (This type of function is
+[`Writable`](/docs/std/format/Writable) trait. (This type of function is
 sometimes referred to as a
-[*generic* function](/mojo/manual/parameters/#parameters-and-generics).) Each
+[*generic* function](/docs/manual/parameters/#parameters-and-generics).) Each
 trait requires a conforming type to implement a `write_to()` method that writes
 its `String` representation. (To learn more, read
-[The `Writable` trait](/mojo/manual/traits#the-writable-trait).)
+[The `Writable` trait](/docs/manual/traits#the-writable-trait).)
 
 Notice that `write_to()` takes a `mut writer: Some[Writer]` argument. The
 `Writer` trait represents anything that can be written to—`String` buffers,
@@ -939,7 +939,7 @@ This will be useful when we implement support for evolving the state of the
 grid.
 
 As described in [Operators, expressions, and dunder
-methods](/mojo/manual/operators), Mojo allows us to define the behavior of many
+methods](/docs/manual/operators), Mojo allows us to define the behavior of many
 built-in operators for a custom type by implementing special *dunder*
 (double underscore) methods. In the case of indexing, the two methods are
 `__getitem__()` and `__setitem__()`. Let's add the following methods to the
@@ -965,7 +965,7 @@ The body of `__setitem__()` is similarly straightforward. We just take the given
 thing in the declaration is that we set the return type to `None` to indicate
 that the method doesn't have a return value. More notable is that we've added
 the `mut`
-[argument convention](/mojo/manual/values/ownership#argument-conventions) to the
+[argument convention](/docs/manual/values/ownership#argument-conventions) to the
 `self` argument to explicitly tell the Mojo compiler that we want to mutate the
 state of the current instance. If we were to omit `mut`, we would get an error
 because the compiler would default to read-only access for the argument.
@@ -1075,14 +1075,14 @@ unique value every time.
 
 Then we create `data` as an empty `List[List[Int]]`, which we'll populate with a
 random initial state. For each cell, we call
-[`random.random_si64()`](/mojo/std/random/random/random_si64), which returns
+[`random.random_si64()`](/docs/std/random/random/random_si64), which returns
 a random integer value from the provided minimum and maximum values of 0 and 1,
 respectively. This function actually returns a value of type `Int64`, which is a
 signed 64-bit integer value. As described in [Numeric
-types](/mojo/manual/types#numeric-types), this is *not* the same as the `Int`
+types](/docs/manual/types#numeric-types), this is *not* the same as the `Int`
 type, whose precision is dependent on the native word size of the system.
 Therefore, we're passing this value to the
-[`Int()`](/mojo/std/builtin/int/Int/#__init__) constructor, which explicitly
+[`Int()`](/docs/std/builtin/int/Int/#__init__) constructor, which explicitly
 converts a numeric value to an `Int`.
 
 After creating a complete row of random values, we append it to `data`. The
@@ -1103,7 +1103,7 @@ use the `^` transfer sigil to transfer ownership of the newly created
 :::note
 
 The `for` loops in the code above assign the loop value to "`_`", the [*discard
-pattern*](/mojo/manual/lifecycle/death#explicit-lifetime-extension), to indicate
+pattern*](/docs/manual/lifecycle/death#explicit-lifetime-extension), to indicate
 that it's intentionally not used. Without this, the Mojo compiler would
 report a warning that the loop variable is unused.
 
@@ -1235,7 +1235,7 @@ we used the default
 binding to the original `Grid` instance. In that case, we'd get a compile-time
 error when we tried to assign the result of `grid.evolve()` to `grid` because
 Mojo doesn't allow you to re-bind a reference to a different value. See
-[Reference bindings](/mojo/manual/variables#reference-bindings) for more
+[Reference bindings](/docs/manual/variables#reference-bindings) for more
 information.
 
 Then we'll update `main()` to create a random initial `Grid` and pass it to
@@ -1295,7 +1295,7 @@ and run your Mojo executable in a virtual environment, such as one managed by
 :::
 
 You can import a Python module in Mojo using
-[`Python.import_module()`](/mojo/std/python/python/Python#import_module).
+[`Python.import_module()`](/docs/std/python/python/Python#import_module).
 This returns a reference to the module in the form of a `PythonObject` wrapper.
 You must store the reference in a variable so that you can then access the
 functions and objects in the module. For example:
@@ -1320,7 +1320,7 @@ Python module into each Mojo function that needs to use it or pass the
 :::
 
 You can learn more about importing and using Python modules in Mojo by reading
-[Python integration](/mojo/manual/python/).
+[Python integration](/docs/manual/python/).
 
 Once we import `pygame`, we can call its APIs as if we were writing Python code.
 For this project, we'll use `pygame` to create a new window and draw the entire
@@ -1416,10 +1416,10 @@ pygame subsystems.
 
 The `set_mode()` function creates and initializes a window with the width and
 height passed as a Python tuple of two values. This returns a
-[`PythonObject`](/mojo/std/python/python_object/PythonObject) wrapper for the
+[`PythonObject`](/docs/std/python/python_object/PythonObject) wrapper for the
 window, which we can then use to call functions and set attributes to manipulate
 the window. (For more information about interacting with Python objects from
-Mojo, see [Python types](/mojo/manual/python/types).)
+Mojo, see [Python types](/docs/manual/python/types).)
 
 The bulk of the `run_display()` function is a loop that uses `pygame` to poll
 for events like key presses and mouse clicks. If it detects that the user
@@ -1477,7 +1477,7 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 <ListingCards>
   <ListingCard
     title="Get started with GPUs"
-    url="/mojo/manual/gpu/intro-tutorial"
+    url="/docs/manual/gpu/intro-tutorial"
     description="Learn the basics of GPU programming with Mojo"
   />
 
@@ -1498,6 +1498,6 @@ import ListingCards from '@site/src/components/Listing/ListingCards';
 :::tip
 
 To use AI coding assistants with Mojo, see our guide on
-[using Mojo AI skills](/mojo/tools/skills/).
+[using Mojo AI skills](/docs/tools/skills/).
 
 :::

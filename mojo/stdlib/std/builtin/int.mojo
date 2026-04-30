@@ -88,7 +88,7 @@ trait Intable(ImplicitlyDestructible):
     """The `Intable` trait describes a type that can be converted to an Int.
 
     Any type that conforms to `Intable` or
-    [`IntableRaising`](/mojo/std/builtin/int/IntableRaising) can construct an
+    [`IntableRaising`](/docs/std/builtin/int/IntableRaising) can construct an
     `Int`.
 
     This trait requires the type to implement the `__int__()` method. For
@@ -119,7 +119,7 @@ trait Intable(ImplicitlyDestructible):
     ```
 
     **Note:** If the `__int__()` method can raise an error, use the
-    [`IntableRaising`](/mojo/std/builtin/int/intableraising) trait
+    [`IntableRaising`](/docs/std/builtin/int/intableraising) trait
     instead.
     """
 
@@ -137,7 +137,7 @@ trait IntableRaising:
     The `IntableRaising` trait describes a type can be converted to an Int, but
     the conversion might raise an error.
 
-    Any type that conforms to [`Intable`](/mojo/std/builtin/int/Intable)
+    Any type that conforms to [`Intable`](/docs/std/builtin/int/Intable)
     or `IntableRaising` can construct an `Int`.
 
     This trait requires the type to implement the `__int__()` method, which can

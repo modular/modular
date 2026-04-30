@@ -30,7 +30,7 @@ def constrained[cond: Bool, msg: StaticString, *extra: StaticString]():
     is displayed.
 
     This is similar to `static_assert` in C++. It differs from
-    [`debug_assert()`](/mojo/std/builtin/debug_assert/debug_assert), which
+    [`debug_assert()`](/docs/std/builtin/debug_assert/debug_assert), which
     is a run-time assertion.
 
     Example:
@@ -69,11 +69,11 @@ def constrained[cond: Bool]():
     message is displayed.
 
     This is similar to `static_assert` in C++. It differs from
-    [`debug_assert()`](/mojo/std/builtin/debug_assert/debug_assert), which
+    [`debug_assert()`](/docs/std/builtin/debug_assert/debug_assert), which
     is a run-time assertion.
 
     For an example, see the
-    [first overload](/mojo/std/builtin/constrained/constrained).
+    [first overload](/docs/std/builtin/constrained/constrained).
 
     Parameters:
         cond: The bool value to assert.

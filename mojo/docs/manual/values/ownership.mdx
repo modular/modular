@@ -14,7 +14,7 @@ error, or a "leaked memory" error, any one of which can be catastrophic.
 Mojo helps avoid these errors by ensuring there is only one variable that owns
 each value at a time, while still allowing you to share references with other
 functions. When the life span of the owner ends, Mojo [destroys the
-value](/mojo/manual/lifecycle/death). Programmers are still responsible for
+value](/docs/manual/lifecycle/death). Programmers are still responsible for
 making sure any type that allocates resources (including memory) also
 deallocates those resources in its destructor. Mojo's ownership system ensures
 that destructors are called promptly.
@@ -57,7 +57,7 @@ immutable, has a series of consequences that define the readability,
 performance, and safety of the language.
 
 In Mojo, we want to provide full [value
-semantics](/mojo/manual/values/value-semantics) by default, which provides
+semantics](/docs/manual/values/value-semantics) by default, which provides
 consistent and predictable behavior. But as a systems programming language, we
 also need to offer full control over memory optimizations, which generally
 requires reference semantics. The trick is to introduce reference semantics in
@@ -87,11 +87,11 @@ keyword at the beginning of an argument declaration:
   the reference is either mutable or immutable. You can think of `ref`
   arguments as a generalization of the `read` and `mut` conventions.
   `ref` arguments are an advanced topic, and they're described in more detail in
-  [Lifetimes, origins, and references](/mojo/manual/values/lifetimes).
+  [Lifetimes, origins, and references](/docs/manual/values/lifetimes).
 
 - `out`: A special convention used for the `self` argument in
-  [constructors](/mojo/manual/lifecycle/life#constructor) and for
-  [named results](/mojo/manual/functions#named-results). An `out`
+  [constructors](/docs/manual/lifecycle/life#constructor) and for
+  [named results](/docs/manual/functions#named-results). An `out`
   argument is uninitialized at the beginning of the function, and must be
   initialized before the function returns. Although `out` arguments show up in
   the argument list, they're never passed in by the caller.
@@ -231,7 +231,7 @@ mutable reference from an immutable reference.
 :::note
 
 You can't define [default
-values](/mojo/manual/functions#optional-arguments) for `mut`
+values](/docs/manual/functions#optional-arguments) for `mut`
 arguments.
 
 :::
@@ -392,7 +392,7 @@ operation"—these aren't strictly the same thing.
 There are multiple ways that Mojo transfers ownership of a value:
 
 - If a type implements the [move
-  constructor](/mojo/manual/lifecycle/life#move-constructor),
+  constructor](/docs/manual/lifecycle/life#move-constructor),
   `__init__(take=)`, Mojo may invoke this method *if* a value of that type is
   transferred into a function as a `var` argument, *and* the original
   variable's lifetime ends at the same point (with or without use of the `^`

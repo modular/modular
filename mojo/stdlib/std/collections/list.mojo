@@ -192,7 +192,7 @@ struct List[T: Copyable](
       ```
 
       However, you can get around this by defining your list type as
-      [`Variant`](/mojo/std/utils/variant/Variant). This is a discriminated
+      [`Variant`](/docs/std/utils/variant/Variant). This is a discriminated
       union type, meaning it can store any number of different types that can
       vary at runtime.
 
@@ -209,7 +209,7 @@ struct List[T: Copyable](
 
       This is different from Python, where assignment creates a reference to
       the same list. For more information, read about [value
-      semantics](/mojo/manual/values/value-semantics).
+      semantics](/docs/manual/values/value-semantics).
 
     - **Reference iteration uses immutable references**: When iterating a list
       by reference, you get immutable references to the actual elements, unless

@@ -17,7 +17,7 @@ This section includes the Mojo API references:
 
 ## How to read the Mojo API docs
 
-Mojo syntax is covered in detail in the [Mojo manual](/mojo/manual/). Here's a
+Mojo syntax is covered in detail in the [Mojo manual](/docs/manual/). Here's a
 quick cheat-sheet on reading struct and function signatures.
 
 ### Arguments
@@ -32,14 +32,14 @@ def example_fn(pos: Int, /, pos_or_kw: Int, *, kw_only: Bool = False):
 Here's a quick overview of some special syntax in the argument list:
 
 - Slash (`/`): arguments declared before a slash are
-  [positional-only arguments](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
+  [positional-only arguments](/docs/manual/functions#positional-only-and-keyword-only-arguments).
 
 - Star (`*`): a star by itself in place of an argument indicates that the
   arguments after the star are
-  [keyword-only](/mojo/manual/functions#positional-only-and-keyword-only-arguments).
+  [keyword-only](/docs/manual/functions#positional-only-and-keyword-only-arguments).
 
 - An equals sign (`=`) introduces a default value for an
-  [optional argument](/mojo/manual/functions#optional-arguments).
+  [optional argument](/docs/manual/functions#optional-arguments).
 
 You may also see argument names prefixed with one or two stars (`*`):
 
@@ -48,10 +48,10 @@ def myfunc2(*names, **attributes):
 ```
 
 - An argument name prefixed by a single star character, like `*names` identifies
-  a [variadic argument](/mojo/manual/functions/#variadic-arguments).
+  a [variadic argument](/docs/manual/functions/#variadic-arguments).
 
 - An argument name prefixed with a double star, like `**attributes` identifies a
-  [variadic keyword-only argument](/mojo/manual/functions/#variadic-keyword-arguments).
+  [variadic keyword-only argument](/docs/manual/functions/#variadic-keyword-arguments).
 
 An argument may also be preceded by an _argument convention_, which indicates
 how the value is passed:
@@ -67,7 +67,7 @@ The most common conventions are:
 - `owned`: the callee receives ownership of a value.
 
 For details and a complete list of argument conventions, see
-[Argument conventions](/mojo/manual/values/ownership#argument-conventions).
+[Argument conventions](/docs/manual/values/ownership#argument-conventions).
 
 ### Parameters
 
@@ -80,7 +80,7 @@ struct ExampleStruct[size: Int, //, thing: Thing[size]]:
 ```
 
 Parameters that occur before a double-slash (`//`) in the parameter list are
-[infer-only parameters](/mojo/manual/parameters/#infer-only-parameters). You
+[infer-only parameters](/docs/manual/parameters/#infer-only-parameters). You
 usually don't need to specify infer-only parameters; as the name suggests,
 they're usually inferred.
 
@@ -93,11 +93,11 @@ lists.
 
 The Mojo standard library provides nearly everything you'll need for
 writing Mojo programs, including basic data types like
-[`Int`](/mojo/std/builtin/int/Int) and
-[`SIMD`](/mojo/std/builtin/simd/SIMD), collection types like
-[`List`](/mojo/std/collections/list/List), reusable
-[algorithms](/mojo/std/algorithm/) and modules to support
-[GPU programming](/mojo/std/gpu).
+[`Int`](/docs/std/builtin/int/Int) and
+[`SIMD`](/docs/std/builtin/simd/SIMD), collection types like
+[`List`](/docs/std/collections/list/List), reusable
+[algorithms](/docs/std/algorithm/) and modules to support
+[GPU programming](/docs/std/gpu).
 
 Top-level packages:
 
@@ -120,8 +120,8 @@ data and build high-performance GPU kernels on top of those layouts. It maps
 multidimensional coordinates to linear offsets in memory and provides tensor
 views that support tiling, vectorization, and distribution of work across GPU
 threads—all without copying the underlying data. To learn more, see
-[Introduction to layouts](/mojo/manual/layout/layouts) and [Using
-LayoutTensor](/mojo/manual/layout/tensors).
+[Introduction to layouts](/docs/manual/layout/layouts) and [Using
+LayoutTensor](/docs/manual/layout/tensors).
 
 Top-level packages:
 
@@ -143,7 +143,7 @@ The MAX AI kernels library provides a collection of highly optimized, reusable
 compute kernels for high-performance numerical and AI workloads. These kernels
 serve as the foundational building blocks for writing [MAX custom
 operations](/max/develop/custom-ops/) or standalone [GPU
-kernels](/mojo/manual/gpu/basics) that are portable across CPUs and GPUs.
+kernels](/docs/manual/gpu/basics) that are portable across CPUs and GPUs.
 
 Top-level packages:
 

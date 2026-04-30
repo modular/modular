@@ -19,9 +19,9 @@ Key topics covered in this guide:
 - Organizing threads and thread blocks for optimal performance.
 
 Before diving into GPU programming, ensure you have a [compatible
-GPU](/mojo/requirements#gpu-compatibility) and the necessary development
+GPU](/docs/requirements#gpu-compatibility) and the necessary development
 environment installed. And if you're new to GPU programming, we suggest you
-read the [Intro to GPU architectures](/mojo/manual/gpu/architecture).
+read the [Intro to GPU architectures](/docs/manual/gpu/architecture).
 
 ## Overview of GPU programming in Mojo
 
@@ -30,20 +30,20 @@ library, allow you to develop GPU-enabled applications.
 
 ### GPU support in the Mojo standard library
 
-The [`gpu`](/mojo/std/gpu/) package of the Mojo standard library includes
+The [`gpu`](/docs/std/gpu/) package of the Mojo standard library includes
 several subpackages for interacting with GPUs, with the
-[`gpu.host`](/mojo/std/gpu/host/) package providing most of the commonly used
-APIs. However, the [`sys`](/mojo/std/sys/info/) package contains a few basic
+[`gpu.host`](/docs/std/gpu/host/) package providing most of the commonly used
+APIs. However, the [`sys`](/docs/std/sys/info/) package contains a few basic
 introspection functions for determining whether a system has a supported GPU:
 
-- [`has_accelerator()`](/mojo/std/sys/info/has_accelerator): Returns `True`
+- [`has_accelerator()`](/docs/std/sys/info/has_accelerator): Returns `True`
   if the host system has an accelerator and `False` otherwise.
-- [`has_amd_gpu_accelerator()`](/mojo/std/sys/info/has_amd_gpu_accelerator):
+- [`has_amd_gpu_accelerator()`](/docs/std/sys/info/has_amd_gpu_accelerator):
   Returns `True` if the host system has an AMD GPU and `False` otherwise.
-- [`has_apple_gpu_accelerator()`](/mojo/std/sys/info/has_apple_gpu_accelerator):
+- [`has_apple_gpu_accelerator()`](/docs/std/sys/info/has_apple_gpu_accelerator):
   Returns `True` if the host system has an Apple silicon GPU and `False`
   otherwise.
-- [`has_nvidia_gpu_accelerator()`](/mojo/std/sys/info/has_nvidia_gpu_accelerator):
+- [`has_nvidia_gpu_accelerator()`](/docs/std/sys/info/has_nvidia_gpu_accelerator):
   Returns `True` if the host system has an NVIDIA GPU and `False` otherwise.
 
 These functions are useful for conditional compilation or execution depending on
@@ -64,10 +64,10 @@ def main():
 :::note
 
 Mojo requires a
-[compatible GPU development environment](/mojo/requirements#gpu-compatibility)
+[compatible GPU development environment](/docs/requirements#gpu-compatibility)
 to compile kernel functions, otherwise it raises a compile-time error. In this
 example, we're using the
-[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+[`comptime if`](/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
 statement to evaluate the `has_accelerator()` function at compile time and
 compile only the corresponding branch of the `if` statement. As a result, if you
 don't have a compatible GPU development environment, you'll see the following
@@ -218,8 +218,8 @@ Modified host buffer: HostBuffer([20.0, 21.0, 22.0, 23.0, 24.0, 25.0, 26.0, 27.0
 
 ## Accessing and managing GPUs with `DeviceContext`
 
-The [`gpu.host`](/mojo/std/gpu/host/) package includes the
-[`DeviceContext`](/mojo/std/gpu/host/device_context/DeviceContext/) struct,
+The [`gpu.host`](/docs/std/gpu/host/) package includes the
+[`DeviceContext`](/docs/std/gpu/host/device_context/DeviceContext/) struct,
 which represents a logical instance of a GPU device. It provides methods for
 allocating memory on the device, copying data between the host CPU and the GPU,
 and compiling and running functions (also known as *kernels*) on the device.
@@ -229,7 +229,7 @@ and compiling and running functions (also known as *kernels*) on the device.
 Mojo supports systems with multiple GPUs. GPUs are uniquely identified by
 integer indices starting with `0`, which is considered the "default" device. You
 can determine the number of GPUs available by invoking the
-[`DeviceContext.number_of_devices()`](/mojo/std/gpu/host/device_context/DeviceContext#number_of_devices)
+[`DeviceContext.number_of_devices()`](/docs/std/gpu/host/device_context/DeviceContext#number_of_devices)
 static method.
 
 The `DeviceContext()` constructor returns an instance for interacting with a
@@ -251,7 +251,7 @@ stream of queued operations to execute on the GPU. Operations within a stream
 execute in the order they are enqueued.
 
 The
-[`synchronize()`](/mojo/std/gpu/host/device_context/DeviceContext#synchronize)
+[`synchronize()`](/docs/std/gpu/host/device_context/DeviceContext#synchronize)
 method blocks execution of the current CPU thread until all queued operations on
 the associated `DeviceContext` stream have completed. Most commonly, you use
 this to wait until the result of a kernel function is copied from device memory
@@ -269,7 +269,7 @@ data elements an individual thread should process.
 ### Multidimensional grids and thread organization
 
 As discussed in [GPU execution
-model](/mojo/manual/gpu/architecture#gpu-execution-model), a *grid* is the
+model](/docs/manual/gpu/architecture#gpu-execution-model), a *grid* is the
 top-level organizational structure of the threads executing a kernel function on
 a GPU. A grid consists of multiple *thread blocks*, which are organized across
 one, two, or three dimensions. Each thread block is further divided into
@@ -279,7 +279,7 @@ dimensions.
 You specify the grid and thread block dimensions with the `grid_dim` and
 `block_dim` keyword arguments when you enqueue a kernel function to execute
 using the
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. For example:
 
 ```mojo
@@ -291,7 +291,7 @@ ctx.enqueue_function[print_threads, print_threads](
 ```
 
 For both `grid_dim` and `block_dim`, you express the size in the `x`, `y`, and
-`z` dimensions as a [`Dim`](/mojo/std/gpu/host/dim/Dim/) or a `Tuple`. The
+`z` dimensions as a [`Dim`](/docs/std/gpu/host/dim/Dim/) or a `Tuple`. The
 `y` and `z` dimensions default to 1 if you don't explicitly provide them (that
 is, `(2, 2)` is treated as `(2, 2, 1)` and `(8,)` is treated as `(8, 1, 1)`).
 You can also provide just an `Int` value to specify only the `x` dimension (that
@@ -313,16 +313,16 @@ threads executing the kernel using the following structures:
 
 | Comptime value                                          | Description                                                                                                                                                                                                                                                |
 |---------------------------------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`grid_dim`](/mojo/std/gpu/primitives/id/#grid_dim)     | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`).                                                                                                                                                                            |
-| [`block_dim`](/mojo/std/gpu/primitives/id/#block_dim)   | Dimensions of the thread block as `x`, `y`, and `z` values.                                                                                                                                                                                                |
-| [`block_idx`](/mojo/std/gpu/primitives/id/#block_idx)   | Index of the block within the grid as `x`, `y`, and `z` values.                                                                                                                                                                                            |
-| [`thread_idx`](/mojo/std/gpu/primitives/id/#thread_idx) | Index of the thread within the block as `x`, `y`, and `z` values.                                                                                                                                                                                          |
-| [`global_idx`](/mojo/std/gpu/primitives/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
+| [`grid_dim`](/docs/std/gpu/primitives/id/#grid_dim)     | Dimensions of the grid as `x`, `y`, and `z` values (for example, `grid_dim.y`).                                                                                                                                                                            |
+| [`block_dim`](/docs/std/gpu/primitives/id/#block_dim)   | Dimensions of the thread block as `x`, `y`, and `z` values.                                                                                                                                                                                                |
+| [`block_idx`](/docs/std/gpu/primitives/id/#block_idx)   | Index of the block within the grid as `x`, `y`, and `z` values.                                                                                                                                                                                            |
+| [`thread_idx`](/docs/std/gpu/primitives/id/#thread_idx) | Index of the thread within the block as `x`, `y`, and `z` values.                                                                                                                                                                                          |
+| [`global_idx`](/docs/std/gpu/primitives/id/#global_idx) | The global offset of the thread as `x`, `y`, and `z` values. That is, `global_idx.x = block_dim.x * block_idx.x + thread_idx.x`, `global_idx.y = block_dim.y * block_idx.y + thread_idx.y`, and `global_idx.z = block_dim.z * block_idx.z + thread_idx.z`. |
 
 :::note
 
 All of these dimensions and indices are
-[`Int`](/mojo/std/builtin/int/Int) values.
+[`Int`](/docs/std/builtin/int/Int) values.
 
 :::
 
@@ -401,19 +401,19 @@ apply to NVIDIA or AMD GPUs.
 ### Writing a kernel function
 
 Kernel functions must be
-[non-raising](/mojo/manual/functions/#raising-and-non-raising-functions).
+[non-raising](/docs/manual/functions/#raising-and-non-raising-functions).
 
 :::note
 
 For functions called from GPU kernels that need error handling, Mojo supports
 typed errors with types that don't allocate heap memory. See
-[Define a custom error type](/mojo/manual/errors#define-a-custom-error-type)
+[Define a custom error type](/docs/manual/errors#define-a-custom-error-type)
 for details.
 
 :::
 
 Argument values must be of types that conform to the
-[`DevicePassable`](/mojo/std/builtin/device_passable/DevicePassable/) trait.
+[`DevicePassable`](/docs/std/builtin/device_passable/DevicePassable/) trait.
 Additionally, a kernel function can't have a return value. Instead, you must
 write any result of a kernel function to a memory buffer passed in as an
 argument. The next two sections, [Passing data between CPU and
@@ -422,7 +422,7 @@ GPU](#passing-data-between-cpu-and-gpu) and
 detail on how to pass values to a kernel function and get back results.
 
 As discussed in [GPU execution
-model](/mojo/manual/gpu/architecture#gpu-execution-model), when the GPU executes
+model](/docs/manual/gpu/architecture#gpu-execution-model), when the GPU executes
 a kernel, it assigns the grid's thread blocks to various streaming
 multiprocessors (SMs) for execution. The SM then divides the thread block into
 subsets of threads called a *warp*. The size of a warp depends on the GPU
@@ -469,19 +469,19 @@ def process_vector(vector: UnsafePointer[Float32, MutAnyOrigin], size: Int):
 ### Passing data between CPU and GPU
 
 All values passed to a kernel function must be of types that conform to the
-[`DevicePassable`](/mojo/std/builtin/device_passable/DevicePassable/) trait.
+[`DevicePassable`](/docs/std/builtin/device_passable/DevicePassable/) trait.
 The trait declares a
-[`comptime` member](/mojo/manual/traits/#comptime-members-for-generics) named
+[`comptime` member](/docs/manual/traits/#comptime-members-for-generics) named
 `device_type` that maps the type as used on the CPU host to a corresponding type
 used on the GPU device.
 
 As an example,
-[`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer) is a
+[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer) is a
 host-side representation of a buffer located in the GPU's global memory space.
 But it defines its `device_type` member as `UnsafePointer`, so the
 data represented by a `DeviceBuffer` is actually passed to the kernel function
 as a value of type
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer). The next
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer). The next
 section, [`DeviceBuffer` and `HostBuffer`](#devicebuffer-and-hostbuffer),
 describes in more detail how to allocate memory buffers on the host and device
 and to exchange blocks of data between host and device.
@@ -491,10 +491,10 @@ that conform to the `DevicePassable` trait.
 
 | Host type                                                               | Device Type                                                                       | Description                                                                                                                                                                          |
 |-------------------------------------------------------------------------|-----------------------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| [`Int`](/mojo/std/builtin/int/Int)                                      | `Int`                                                                             | Signed integer                                                                                                                                                                       |
-| [`SIMD[dtype, width]`](/mojo/std/builtin/simd/SIMD)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                                                                                     |
-| [`DeviceBuffer[dtype]`](/mojo/std/gpu/host/device_context/DeviceBuffer) | [`UnsafePointer[SIMD[dtype, 1]]`](/mojo/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                                                                                      |
-| [`TileTensor`](/mojo/layout/tile_tensor/TileTensor/)                    | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. {/* TODO(DOCS-1656): add a "See Using `TileTensor`" cross-link once Arthur's tile-tensor/ manual content lands via PR #82292. */} |
+| [`Int`](/docs/std/builtin/int/Int)                                      | `Int`                                                                             | Signed integer                                                                                                                                                                       |
+| [`SIMD[dtype, width]`](/docs/std/builtin/simd/SIMD)                     | `SIMD[dtype, width]`                                                              | Small vector backed by a hardware vector element                                                                                                                                     |
+| [`DeviceBuffer[dtype]`](/docs/std/gpu/host/device_context/DeviceBuffer) | [`UnsafePointer[SIMD[dtype, 1]]`](/docs/std/memory/unsafe_pointer/UnsafePointer/) | Memory buffer of `dtype` values                                                                                                                                                      |
+| [`TileTensor`](/docs/layout/tile_tensor/TileTensor/)                    | `TileTensor`                                                                      | A powerful abstraction for multi-dimensional data. {/* TODO(DOCS-1656): add a "See Using `TileTensor`" cross-link once Arthur's tile-tensor/ manual content lands via PR #82292. */} |
 
 ### `DeviceBuffer` and `HostBuffer`
 
@@ -505,7 +505,7 @@ host memory.
 #### Creating a `DeviceBuffer`
 
 The
-[`DeviceBuffer`](/mojo/std/gpu/host/device_context/DeviceBuffer)
+[`DeviceBuffer`](/docs/std/gpu/host/device_context/DeviceBuffer)
 type represents a block of device memory associated with a particular
 `DeviceContext`. Specifically, the buffer is located in the device's *global
 memory* space. As such, the buffer is accessible by all threads of all kernel
@@ -519,11 +519,11 @@ by the function is of type `UnsafePointer`. Attempting to use the `DeviceBuffer`
 type directly from within a kernel function results in an error.
 
 The
-[`DeviceContext.enqueue_create_buffer()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
+[`DeviceContext.enqueue_create_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_buffer)
 method creates a `DeviceBuffer` associated with that `DeviceContext`. It accepts
-the data type as a compile-time [`DType`](/mojo/std/builtin/dtype/DType/)
+the data type as a compile-time [`DType`](/docs/std/builtin/dtype/DType/)
 parameter and the size of the buffer as a run-time argument. So to create a
-buffer for 1,024 [`Float32`](/mojo/std/builtin/simd/#float32) values, you would
+buffer for 1,024 [`Float32`](/docs/std/builtin/simd/#float32) values, you would
 execute:
 
 ```mojo
@@ -536,16 +536,16 @@ operations](#asynchronous-operation-and-synchronizing-the-cpu-and-gpu).
 
 #### Creating a `HostBuffer`
 
-The [`HostBuffer`](/mojo/std/gpu/host/device_context/HostBuffer) type is
+The [`HostBuffer`](/docs/std/gpu/host/device_context/HostBuffer) type is
 analogous to `DeviceBuffer`, but represents a block of host memory associated
 with a particular `DeviceContext`. It supports methods for transferring data
 between host and device memory, as well as a basic set of methods for accessing
 data elements by index and for printing the buffer.
 
 The
-[`DeviceContext.enqueue_create_host_buffer()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
+[`DeviceContext.enqueue_create_host_buffer()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_create_host_buffer)
 method accepts the data type as a compile-time
-[`DType`](/mojo/std/builtin/dtype/DType/) parameter and the size of the buffer
+[`DType`](/docs/std/builtin/dtype/DType/) parameter and the size of the buffer
 as a run-time argument and returns a `HostBuffer`. As with all `DeviceContext`
 methods whose name starts with `enqueue_`, the method is asynchronous and
 returns immediately, adding the operation to the queue to be executed by the
@@ -567,7 +567,7 @@ for i in range(1024):
 #### Copying data between host and device memory
 
 The
-[`enqueue_copy()`](/mojo/std/gpu/host/device_context/DeviceContext#enqueue_copy)
+[`enqueue_copy()`](/docs/std/gpu/host/device_context/DeviceContext#enqueue_copy)
 method is overloaded to support copying from host to device, device to host, or
 even device to device for systems that have multiple GPUs. Typically, you'll use
 it to copy data that you've staged in a `HostBuffer` to a `DeviceBuffer` before
@@ -581,7 +581,7 @@ from the device. However, you can allocate a separate `DeviceBuffer` and
 original data.
 
 In addition to copying data between a `HostBuffer` to a `DeviceBuffer`, you can
-use an [`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer) as
+use an [`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer) as
 the source or destination of a copy. However, the `UnsafePointer` must reference
 host memory for this operation. Attempting to use an `UnsafePointer` referencing
 device memory results in an error. For example, this is useful if you have data
@@ -590,9 +590,9 @@ an `UnsafePointer`. In that case you would not need to copy the data from the
 data structure to a `HostBuffer` before copying it to the `DeviceBuffer`.
 
 Both `DeviceBuffer` and `HostBuffer` also include
-[`enqueue_copy_to()`](/mojo/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
+[`enqueue_copy_to()`](/docs/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_to)
 and
-[`enqueue_copy_from()`](/mojo/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
+[`enqueue_copy_from()`](/docs/std/gpu/host/device_context/DeviceBuffer#enqueue_copy_from)
 methods. These are simply convenience methods that call the `enqueue_copy()`
 method on their corresponding `DeviceContext`. For example, the following two
 method calls are interchangeable:
@@ -605,10 +605,10 @@ host_buffer.enqueue_copy_to(dst=device_buffer)
 ```
 
 Finally, as a convenience for testing or prototyping, you can use the
-[`DeviceBuffer.map_to_host()`](/mojo/std/gpu/host/device_context/DeviceBuffer#map_to_host)
+[`DeviceBuffer.map_to_host()`](/docs/std/gpu/host/device_context/DeviceBuffer#map_to_host)
 method to create a host-accessible view of the device buffer's contents. This
 returns `HostBuffer` as a
-[context manager](/mojo/manual/errors#use-a-context-manager) that contains a
+[context manager](/docs/manual/errors#use-a-context-manager) that contains a
 copy of the data from the corresponding `DeviceBuffer`. Additionally, any
 modifications that you make to the `HostBuffer` are automatically copied back to
 the `DeviceBuffer` when the `with` statement exits. For example:
@@ -653,21 +653,21 @@ and lifecycle mechanisms. The Mojo compiler analyzes our program to determine
 the last point that the owner of or a reference to an object is used and
 automatically adds a call to the object's destructor. This means that you don't
 explicitly call any method to free the memory represented by a `DeviceBuffer` or
-`HostBuffer` instance. See the [Ownership](/mojo/manual/values/ownership) and
-[Intro to value lifecycle](/mojo/manual/lifecycle) sections of the Mojo Manual
+`HostBuffer` instance. See the [Ownership](/docs/manual/values/ownership) and
+[Intro to value lifecycle](/docs/manual/lifecycle) sections of the Mojo Manual
 for more information on Mojo value ownership and value lifecycle management, and
-the [Death of a value](/mojo/manual/lifecycle/death) section for a detailed
+the [Death of a value](/docs/manual/lifecycle/death) section for a detailed
 explanation of object destruction.
 
 ### Compiling and enqueuing a kernel function for execution
 
 The
-[`compile_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#compile_function)
+[`compile_function()`](/docs/std/gpu/host/device_context/DeviceContext/#compile_function)
 method accepts a kernel function as a compile-time
-[parameter](/mojo/manual/parameters) and then compiles it for the associated
+[parameter](/docs/manual/parameters) and then compiles it for the associated
 `DeviceContext`. Then you can enqueue the compiled kernel for execution by
 passing it to the
-[`enqueue_function()`](/mojo/std/gpu/host/device_context/DeviceContext/#enqueue_function)
+[`enqueue_function()`](/docs/std/gpu/host/device_context/DeviceContext/#enqueue_function)
 method. The example in the [GPU programming model](#gpu-programming-model)
 demonstrated this pattern:
 

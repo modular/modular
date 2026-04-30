@@ -171,7 +171,7 @@ def debug_assert[
     ```
 
     For compile-time assertions, see
-    [`constrained()`](/mojo/std/builtin/constrained/constrained).
+    [`constrained()`](/docs/std/builtin/constrained/constrained).
 
     Parameters:
         cond: The function to invoke to check if the assertion holds.
@@ -182,7 +182,7 @@ def debug_assert[
         cpu_only: If true, only run the assert on CPU.
 
     Args:
-        messages: A set of [`Writable`](/mojo/std/format/Writable/)
+        messages: A set of [`Writable`](/docs/std/format/Writable/)
             arguments to convert to a `String` message.
         location: Source location to report on assertion failure.
     """
@@ -292,7 +292,7 @@ def debug_assert[
     ```
 
     For compile-time assertions, see
-    [`constrained()`](/mojo/std/builtin/constrained/constrained).
+    [`constrained()`](/docs/std/builtin/constrained/constrained).
 
     Parameters:
         assert_mode: Determines when the assert is turned on.
@@ -306,7 +306,7 @@ def debug_assert[
 
     Args:
         cond: The bool value to assert.
-        messages: A set of [`Writable`](/mojo/std/format/Writable/)
+        messages: A set of [`Writable`](/docs/std/format/Writable/)
             arguments to convert to a `String` message.
         location: Source location to report on assertion failure.
     """
@@ -419,7 +419,7 @@ def debug_assert[
     ```
 
     For compile-time assertions, see
-    [`constrained()`](/mojo/std/builtin/constrained/constrained).
+    [`constrained()`](/docs/std/builtin/constrained/constrained).
 
     Parameters:
         assert_mode: Determines when the assert is turned on.

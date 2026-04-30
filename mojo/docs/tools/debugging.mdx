@@ -12,11 +12,11 @@ You can install the Mojo extension from either the
 [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 or the
 [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
-See [Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension)
+See [Add the VS Code extension](/docs/manual/install/#add-the-vs-code-extension)
 for more information.
 
 To use the Mojo extension, you must also
-[install the `mojo` package](/mojo/manual/install)—or, if you're developing for
+[install the `mojo` package](/docs/manual/install)—or, if you're developing for
 the MAX framework, [install the `modular` package](/max/packages), which
 includes the `mojo` package.
 
@@ -42,7 +42,7 @@ in VS Code.
 The `mojo` package also includes support for debugging Mojo programs running on
 GPU. This requires some extra software and configuration. Currently GPU
 debugging only works with NVIDIA GPUs. For details, see
-[GPU debugging](/mojo/tools/gpu-debugging).
+[GPU debugging](/docs/tools/gpu-debugging).
 
 ## Start debugging
 
@@ -201,7 +201,7 @@ inside VS Code via the GUI, the environment is defined by the VS Code
 :::
 
 For a full list of command-line options, see the [`mojo debug` reference
-page](/mojo/cli/debug).
+page](/docs/cli/debug).
 
 ### Start a debug session from the command line
 
@@ -221,7 +221,7 @@ mojo debug --vscode myproject
 For best results, build with the `-O0 -g` command-line options when you build a
 binary that you intend to debug—this produces a binary with full debug info.
 (When you call `mojo debug` on a Mojo source file, it includes debug
-information by default.) See the [`mojo build` reference page](/mojo/cli/build)
+information by default.) See the [`mojo build` reference page](/docs/cli/build)
 for details on compilation options.
 
 ### Attach the debugger to a running process from the command line
@@ -323,7 +323,7 @@ For more information, see the VS Code documentation for
 
 Mojo launch configurations don't allow you to specify compilation options. If
 you need to specify compilation options, you can build the binary using [`mojo
-build`](/mojo/cli/build), then use a launch configuration with the `program`
+build`](/docs/cli/build), then use a launch configuration with the `program`
 option to launch the compiled binary. Or if you [start the debugger from the
 command line](#starting-the-debugger-from-the-command-line), you can pass
 compilation options to the `mojo debug` command.
@@ -515,7 +515,7 @@ to the debugger, but which can help you debug your programs. These include:
 ### Set a programmatic breakpoint
 
 To break at a specific point in your code, you can use the built-in
-[`breakpoint()`](/mojo/std/builtin/breakpoint/breakpoint) function:
+[`breakpoint()`](/docs/std/builtin/breakpoint/breakpoint) function:
 
 ```mojo
 if some_value.is_valid():
@@ -531,7 +531,7 @@ triggers the debugger.
 
 :::note Assertions
 
-The [`testing`](/mojo/std/testing/testing/) module includes a number of
+The [`testing`](/docs/std/testing/testing/) module includes a number of
 ways to specify assertions. Assertions also trigger an error, so can open the
 debugger in the same way that a `breakpoint()` call will.
 
@@ -539,7 +539,7 @@ debugger in the same way that a `breakpoint()` call will.
 
 ### Set parameters from the Mojo command line
 
-You can use the [`sys`](/mojo/std/sys/) module to retrieve
+You can use the [`sys`](/docs/std/sys/) module to retrieve
 parameter values specified on the Mojo command line. Among other things, this
 is an easy way to switch debugging logic on and off. For example:
 
@@ -553,7 +553,7 @@ def some_function_with_issues():
 ```
 
 To activate this code, use the [`-D` command-line
-option](/mojo/cli/debug#compilation-options) to define `DEBUG_ME`:
+option](/docs/cli/debug#compilation-options) to define `DEBUG_ME`:
 
 ```bash
 mojo debug -D DEBUG_ME main.mojo
@@ -561,7 +561,7 @@ mojo debug -D DEBUG_ME main.mojo
 
 The `is_defined()` function returns a compile-time true or false value based on
 whether the specified name is defined. Since the `breakpoint()` call is inside a
-[`comptime if` statement](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if),
+[`comptime if` statement](/docs/manual/metaprogramming/comptime-evaluation/#comptime-if),
 it is only included in the compiled code when the `DEBUG_ME` name is defined on
 the command line.
 

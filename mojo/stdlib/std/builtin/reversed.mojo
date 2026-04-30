@@ -36,7 +36,7 @@ trait ReversibleRange:
     The `ReversibleRange` trait describes a range that can be reversed.
 
     Any type that conforms to `ReversibleRange` works with the builtin
-    [`reversed()`](/mojo/std/builtin/reversed.html) functions.
+    [`reversed()`](/docs/std/builtin/reversed/reversed/) functions.
 
     The `ReversibleRange` trait requires the type to define the `__reversed__()`
     method.

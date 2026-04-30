@@ -11,9 +11,9 @@ You can add the `@parameter` decorator on a nested function to create a
 
 The `@parameter` decorator also works to create compile-time `if` and `for`
 statements, but this usage is deprecated in favor of the
-[`comptime if`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if)
+[`comptime if`](/docs/manual/metaprogramming/comptime-evaluation/#comptime-if)
 and
-[`comptime for`](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for)
+[`comptime for`](/docs/manual/metaprogramming/comptime-evaluation/#comptime-for)
 statements.
 
 :::
@@ -55,7 +55,7 @@ def use_closure[func: fn(Int) capturing [_] -> Int](num: Int) -> Int:
 This origin specifier represents the set of origins for the values captured by
 the parametric closure. This allows the compiler to correctly extend the
 lifetimes of those values. For more information on lifetimes and origins, see
-[Lifetimes, origins and references](/mojo/manual/values/lifetimes).
+[Lifetimes, origins and references](/docs/manual/values/lifetimes).
 
 If you leave the `@parameter` decorator off the `add()` function above, you'll
 get a compiler error:
@@ -68,10 +68,10 @@ invalid call to 'use_closure': failed to infer parameter '__origins__'
 
 The `@parameter if` syntax is deprecated, please use `comptime if` instead. For
 more information, see the section on
-[compile-time conditionals](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-if).
+[compile-time conditionals](/docs/manual/metaprogramming/comptime-evaluation/#comptime-if).
 
 ## Parametric `for` statement
 
 The `@parameter for` syntax is deprecated, please use `comptime for` instead.
 For details, see the section on
-[compile-time loop unrolling](/mojo/manual/metaprogramming/comptime-evaluation/#comptime-for).
+[compile-time loop unrolling](/docs/manual/metaprogramming/comptime-evaluation/#comptime-for).

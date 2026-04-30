@@ -197,7 +197,7 @@ struct Pointer[
     """Defines a non-nullable safe pointer.
 
     For a comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/) in the Mojo Manual.
+    pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Parameters:
         mut: Whether the pointee data may be mutated through this.

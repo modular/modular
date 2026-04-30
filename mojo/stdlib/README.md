@@ -11,10 +11,10 @@ We have written down the principles that inform our decisions about what
 features we work on and what bugs we prioritize. Before you consider making
 contributions, please see the following docs.
 
-- Our [Vision document](https://docs.modular.com/mojo/vision) describes the
+- Our [Vision document](https://www.mojolang.org/docs/vision) describes the
   guiding principles that guide our development efforts.
 
-- Our [Roadmap](https://docs.modular.com/mojo/roadmap/) identifies
+- Our [Roadmap](https://www.mojolang.org/docs/roadmap/) identifies
   concrete development goals as we work towards an even more robust and
   feature-rich standard library.
 

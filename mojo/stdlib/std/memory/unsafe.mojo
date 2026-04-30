@@ -40,7 +40,7 @@ def bitcast[
     """Bitcasts a SIMD value to another SIMD value.
 
     For a discussion of byte order, see
-    [Converting data: bitcasting and byte order](/mojo/manual/pointers/unsafe-pointers#converting-data-bitcasting-and-byte-order)
+    [Converting data: bitcasting and byte order](/docs/manual/pointers/unsafe-pointers#converting-data-bitcasting-and-byte-order)
     in the Mojo Manual.
 
     Examples:

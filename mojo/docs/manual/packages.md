@@ -7,10 +7,10 @@ description: Learn how to organize Mojo code into modules and packages.
 
 This page describes how to organize your project into modules (files) and
 packages (directories) that you can import into other Mojo code (and
-[into Python code](/mojo/manual/python/mojo-from-python/)).
+[into Python code](/docs/manual/python/mojo-from-python/)).
 
 If you want to package your project for distribution, instead see the
-[Packaging guide](/mojo/tools/packaging/).
+[Packaging guide](/docs/tools/packaging/).
 
 ## Mojo modules
 
@@ -94,7 +94,7 @@ from a compiled `.mojopkg` file. It makes no real difference to Mojo
 which way you import a package. When importing from source files, the directory
 name works as the package name, whereas when importing from a compiled package,
 the filename is the package name (which you specify with the [`mojo
-package`](/mojo/cli/precompile) command—it can differ from the directory
+package`](/docs/cli/precompile) command—it can differ from the directory
 name).
 
 For example, consider a project with these files:
@@ -225,7 +225,7 @@ from mypackage import MyPair
 This feature explains why some members in the Mojo standard library can be
 imported from their package name, while others required the
 `<package_name>.<module_name>` notation. For example, the
-[`functional`](/mojo/std/algorithm/functional/) module resides in the
+[`functional`](/docs/std/algorithm/functional/) module resides in the
 `algorithm` package, so you can import members of that module (such as the
 `map()` function) like this:
 
@@ -252,6 +252,6 @@ from algorithm import map
 
 Which modules in the standard library are imported to the package
 scope varies, and is subject to change. Refer to the [documentation for each
-module](/mojo/lib) to see how you can import its members.
+module](/docs/lib) to see how you can import its members.
 
 :::

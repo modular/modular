@@ -58,9 +58,9 @@ struct Node[ElementType: ImplicitlyCopyable & Writable](Movable):
 ```
 
 The code defines a type-specific `NodePointer` type alias built on
-[`UnsafePointer`](/mojo/std/memory/unsafe_pointer/UnsafePointer/).
+[`UnsafePointer`](/docs/std/memory/unsafe_pointer/UnsafePointer/).
 
-[`MutExternalOrigin`](/mojo/manual/values/lifetimes/)
+[`MutExternalOrigin`](/docs/manual/values/lifetimes/)
 lets the pointer represent dynamically-allocated memory that
 won't be tracked by the lifetime checker. You'll need to both allocate
 and deallocate memory as needed.
@@ -69,7 +69,7 @@ The `next` field is an `Optional[Self.NodePointer]` because a node may or may
 not link to another node. `UnsafePointer` is non-nullable, so `Optional`
 provides the null state. `Optional[UnsafePointer]` has the same memory layout as
 a raw pointer, so there's no overhead. For more on this pattern, see
-[Working with nullability](/mojo/manual/pointers/unsafe-pointers#working-with-nullability).
+[Working with nullability](/docs/manual/pointers/unsafe-pointers#working-with-nullability).
 
 The optional `value` lets you create "empty" nodes, enabling you to move
 new `Node` memory allocations into place.
@@ -179,7 +179,7 @@ When you build real Mojo data structures, you usually want a safe API that
 hides raw pointers from users. In a complete linked-list type (rather than
 a small demo of linkable nodes) the parent list handles node allocation and
 freeing. Because it owns the nodes, it also performs cleanup in its
-[destructor](/mojo/manual/lifecycle/death/).
+[destructor](/docs/manual/lifecycle/death/).
 
 Here's a small example that shows how to deinitialize `self`:
 
@@ -310,10 +310,10 @@ one one two three five eight
 ## What next?
 
 - Learn more about **pointers and memory safety** in Mojo's
-  [UnsafePointer](/mojo/std/memory/unsafe_pointer/UnsafePointer/)
-  and [lifetime and origin rules](/mojo/manual/values/lifetimes/) guides.
+  [UnsafePointer](/docs/std/memory/unsafe_pointer/UnsafePointer/)
+  and [lifetime and origin rules](/docs/manual/values/lifetimes/) guides.
 - Learn more about how to **manage cleanup** in the Mojo
-  [destructor](/mojo/manual/lifecycle/death/) documentation.
+  [destructor](/docs/manual/lifecycle/death/) documentation.
 - Learn more about
-  [generic structures with traits](/mojo/manual/traits/#generic-structs-with-traits)
+  [generic structures with traits](/docs/manual/traits/#generic-structs-with-traits)
   and how they let you build **reusable node and list types**.

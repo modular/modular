@@ -52,7 +52,7 @@ run at compile time:
 - File I/O.
 - Foreign function calls (for example, to external libraries).
 - Functions that can
-  [raise errors](/mojo/manual/functions/#raising-and-non-raising-functions).
+  [raise errors](/docs/manual/functions/#raising-and-non-raising-functions).
 
 In addition, the compiler can't run functions on the GPU. Compile-time functions
 in GPU code are actually run on the CPU.
@@ -61,7 +61,7 @@ When running code, the compiler can allocate memory and instantiate types that
 allocate memory, such as strings and collections. With some limitations, it can
 pass compile-time values on to run-time code, a process called
 _materialization_. For more information, see the section on
-[materialization](/mojo/manual/metaprogramming/materialization).
+[materialization](/docs/manual/metaprogramming/materialization).
 
 ## `comptime` values
 
@@ -95,11 +95,11 @@ var x: Float16 = 0  # Float16 works like a "typedef"
 ```
 
 (These aliases and others are actually defined in the
-[`simd` module](/mojo/std/builtin/simd/#comptime-values).)
+[`simd` module](/docs/std/builtin/simd/#comptime-values).)
 
 You can also parameterize a `comptime` value to express more complicated
 relationships. For details, see
-[Parameterized `comptime` values](/mojo/manual/parameters/index/#parameterized-comptime-values).
+[Parameterized `comptime` values](/docs/manual/parameters/index/#parameterized-comptime-values).
 
 ### Compile-time scope
 
@@ -200,7 +200,7 @@ b[3] = a[4] + a[3]
 This unrolled loop compiles to branchless machine code, unlike a normal `for`
 loop, which includes a bounds test at every iteration. This can be especially
 important on GPU, to avoid
-[thread divergence](/mojo/manual/gpu/block-and-warp/#warp-level-synchronization).
+[thread divergence](/docs/manual/gpu/block-and-warp/#warp-level-synchronization).
 
 The `comptime for` construct unrolls at the beginning of compilation, which can
 greatly expand both the code size and the compilation time.

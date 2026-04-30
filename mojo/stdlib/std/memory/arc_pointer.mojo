@@ -100,7 +100,7 @@ struct ArcPointer[T: Movable & ImplicitlyDestructible](
     `ArcPointer`, are unsafe and may result in memory errors.
 
     For a comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/) in the Mojo Manual.
+    pointers](/docs/manual/pointers/) in the Mojo Manual.
 
     Examples:
 

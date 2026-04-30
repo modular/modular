@@ -29,7 +29,7 @@ with blazing-fast execution for the Modular Platform. That said, the north star
 is for Mojo to support the whole gamut of general-purpose programming over
 time.
 
-For more detail, see the [Mojo vision](/mojo/vision).
+For more detail, see the [Mojo vision](/docs/vision).
 
 ### Why is it called Mojo?
 
@@ -93,7 +93,7 @@ We’re thrilled to see a big push to improve the performance of
 as to deploy onto GPUs and other accelerators) requires a fundamentally
 different architecture and compiler approach. That said, CPython is still a
 critical part of our compatibility approach and powers [Mojo's Python
-interoperability](/mojo/manual/python).
+interoperability](/docs/manual/python).
 
 ### Why not enhance another Python implementation (like Codon, PyPy, etc)?
 
@@ -139,9 +139,9 @@ you to try Mojo and if you find it useful, then that's great too.
 
 ### Where can I learn more about Mojo’s features?
 
-The best place to start is the [Mojo Manual](/mojo/manual). And if you want to
+The best place to start is the [Mojo Manual](/docs/manual). And if you want to
 see what features are coming in the future, take a look at [the
-roadmap](/mojo/roadmap).
+roadmap](/docs/roadmap).
 
 ### What are the benefits of building Mojo with MLIR?
 
@@ -184,9 +184,9 @@ much more.
 
 ### Is Mojo interpreted or compiled?
 
-Mojo is a compiled language. [`mojo build`](/mojo/cli/build) performs
+Mojo is a compiled language. [`mojo build`](/docs/cli/build) performs
 ahead-of-time (AOT) compilation to save an executable program. [`mojo
-run`](/mojo/cli/run) performs just-in-time (JIT) compilation to execute a Mojo
+run`](/docs/cli/run) performs just-in-time (JIT) compilation to execute a Mojo
 source file without saving the compiled result.
 
 ### How does Mojo compare to Triton Lang?
@@ -212,14 +212,14 @@ transformations and heterogeneous compute, which is provided by
 
 You can migrate parts of a Python project to Mojo
 by building Mojo bindings for Python. See the documentation about how to [call
-Mojo from Python](/mojo/manual/python/mojo-from-python).
+Mojo from Python](/docs/manual/python/mojo-from-python).
 
 ### What about interoperability with other languages like C/C++?
 
 Yes, we want to enable developers to port code from languages other than Python
 to Mojo as well. We expect that due to Mojo’s similarity to the C/C++ type
 systems, migrating code from C/C++ should work well and it’s in [our
-roadmap](/mojo/roadmap#cc-interop).
+roadmap](/docs/roadmap#cc-interop).
 
 ### How does Mojo support hardware lowering?
 
@@ -252,7 +252,7 @@ For details about our end-to-end model performance, read about
 
 You can get Mojo and all the developer tools by installing `mojo` with
 any Python or Conda package manager. For details, see the
-[Mojo installation guide](/mojo/manual/install).
+[Mojo installation guide](/docs/manual/install).
 
 ### What's included in the Mojo SDK?
 
@@ -261,24 +261,24 @@ We actually offer two Mojo packages: `mojo` and `mojo-compiler`.
 The `mojo` package gives you everything you need for Mojo development.
 It includes:
 
-- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
-- [Mojo standard library](/mojo/lib)
+- [`mojo` CLI](/docs/cli) (includes the Mojo compiler)
+- [Mojo standard library](/docs/lib)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 - Mojo language server (LSP) for IDE/editor integration
-- [Mojo debugger](/mojo/tools/debugging) (includes LLDB)
-- [Mojo code formatter](/mojo/cli/format)
-- [Mojo REPL](/mojo/cli/repl)
+- [Mojo debugger](/docs/tools/debugging) (includes LLDB)
+- [Mojo code formatter](/docs/cli/format)
+- [Mojo REPL](/docs/cli/repl)
 
 The `mojo-compiler` package is smaller and is useful for environments where you
 only need to call or build existing Mojo code. For example, this is good if
 you're running Mojo in a production environment or when you're programming in
 Python and [calling a Mojo
-package](/mojo/manual/python/mojo-from-python)—situations where you don't need
+package](/docs/manual/python/mojo-from-python)—situations where you don't need
 the LSP and debugger tools. It includes:
 
-- [`mojo` CLI](/mojo/cli) (includes the Mojo compiler)
-- [Mojo standard library](/mojo/lib)
+- [`mojo` CLI](/docs/cli) (includes the Mojo compiler)
+- [Mojo standard library](/docs/lib)
 - [`mojo` Python
   package](https://github.com/modular/modular/tree/main/mojo/python/mojo)
 
@@ -295,7 +295,7 @@ available for Linux and Mac, Mojo Playground usage steadily declined.
 The trickle of users we get now no longer justifies the maintenance
 and hosting costs.
 
-See how to [install Mojo](/mojo/manual/install).
+See how to [install Mojo](/docs/manual/install).
 
 ### What are the license terms for the SDK?
 
@@ -304,7 +304,7 @@ Please read the [Terms of use](https://www.modular.com/legal/terms).
 ### What operating systems are supported?
 
 Mac and Linux. For details, see the
-[Mojo system requirements](/mojo/requirements/).
+[Mojo system requirements](/docs/requirements/).
 
 ### Is there IDE Integration?
 
@@ -319,7 +319,7 @@ You can obtain the extension from either the
 [Visual Studio Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo)
 or the
 [Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
-See [Add the VS Code extension](/mojo/manual/install/#add-the-vs-code-extension)
+See [Add the VS Code extension](/docs/manual/install/#add-the-vs-code-extension)
 for more information.
 
 ### Does the Mojo SDK collect telemetry?
@@ -353,7 +353,7 @@ to build better products for you.
 
 Mojo is still in early development and not at a 1.0 version yet. It’s
 still missing many foundational features, but please take a look at our
-[roadmap](/mojo/roadmap) to understand where things are headed. As such,
+[roadmap](/docs/roadmap) to understand where things are headed. As such,
 the language is evolving rapidly and source stability is not guaranteed.
 
 ### How often will you be releasing new versions of Mojo?
@@ -386,7 +386,7 @@ Clang, Swift, MLIR, etc.).
 ### Where can I ask more questions or share feedback?
 
 If you have questions about upcoming features or have suggestions for the
-language, be sure you first read the [Mojo roadmap](/mojo/roadmap), which
+language, be sure you first read the [Mojo roadmap](/docs/roadmap), which
 provides important information about our current priorities.
 
 To get in touch with the Mojo team and developer community, use the resources

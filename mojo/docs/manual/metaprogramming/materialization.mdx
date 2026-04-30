@@ -71,7 +71,7 @@ because it is not 'ImplicitlyCopyable'
 Just like Mojo forces you to explicitly copy a value that's expensive to
 copy, it forces you to explicitly materialize values that are expensive to
 materialize, by calling the
-[`materialize()`](/mojo/std/builtin/value/materialize/) function.
+[`materialize()`](/docs/std/builtin/value/materialize/) function.
 
 Here's the code above with explicit materialization added:
 
@@ -122,7 +122,7 @@ static data. This is a problem for some performance-sensitive code where you
 want to use a static lookup table. Even if you declare the table as a `comptime`
 value, you need to materialize it each time you want to use the data.
 
-The [`global_constant()`](/mojo/std/builtin/globals/global_constant/) function
+The [`global_constant()`](/docs/std/builtin/globals/global_constant/) function
 provides a solution for storing a compile-time value into static global storage,
 so you can access it without repeatedly materializing the value. However, this
 currently only works for self-contained values which don't include pointers to
@@ -130,7 +130,7 @@ other locations in memory. That rules out using collection types like `List` and
 `Dict`.
 
 The easiest way to use `global_constant()` is with
-[`InlineArray`](/mojo/std/collections/inline_array/InlineArray/), which
+[`InlineArray`](/docs/std/collections/inline_array/InlineArray/), which
 allocates a statically sized array of elements on the stack. The following code
 uses `global_constant()` to create a static lookup table.
 

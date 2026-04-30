@@ -167,7 +167,7 @@ x @= y     # x = x @ y
 
 **Traits:**
 
-[`Powable`](/mojo/std/math/math/Powable) requires `__pow__()`, doesn't
+[`Powable`](/docs/std/math/math/Powable) requires `__pow__()`, doesn't
 provide a default.
 
 ### Bitwise
@@ -250,11 +250,11 @@ Implement the methods directly on your struct to use
 
 **Traits:**
 
-[`Equatable`](/mojo/std/builtin/comparable/Equatable) provides
+[`Equatable`](/docs/std/builtin/comparable/Equatable) provides
 `__eq__()` if all your struct's fields conform to `Equatable` using
 pairwise field comparison. `__ne__()` derives from `__eq__()`.
 
-[`Comparable`](/mojo/std/builtin/comparable/Comparable) provides
+[`Comparable`](/docs/std/builtin/comparable/Comparable) provides
 `__le__()`, `__gt__()`, and `__ge__()`, all derived from `__lt__()` and
 `__eq__()`. You implement `__lt__()`.
 
@@ -283,7 +283,7 @@ checks).
 
 **Traits:**
 
-[`Identifiable`](/mojo/std/builtin/identifiable/Identifiable) requires
+[`Identifiable`](/docs/std/builtin/identifiable/Identifiable) requires
 `__is__()`. `__isnot__()` is provided (calls `not (self is rhs)`).
 
 ### Subscript operators

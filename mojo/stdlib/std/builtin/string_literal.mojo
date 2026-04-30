@@ -747,7 +747,7 @@ struct StringLiteral[value: __mlir_type.`!kgen.string`](
         representations of the `args` arguments.
 
         For more information, see the discussion in the
-        [`format` module](/mojo/std/collections/string/format/).
+        [`format` module](/docs/std/collections/string/format/).
 
         Parameters:
             Ts: The types of substitution values that implement `Writable`.

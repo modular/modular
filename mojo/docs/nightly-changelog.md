@@ -635,9 +635,9 @@ This version is still a work in progress.
 
 - Removed the `store_release`, `store_relaxed`, `load_acquire`, and
   `load_relaxed` helpers from `std.gpu.intrinsics`. Use
-  [`Atomic[dtype, scope=...].store`](/mojo/std/atomic/atomic/Atomic/#store) and
-  [`Atomic[dtype, scope=...].load`](/mojo/std/atomic/atomic/Atomic/#load) with
-  the desired [`Ordering`](/mojo/std/atomic/atomic/Ordering/) instead:
+  [`Atomic[dtype, scope=...].store`](/docs/std/atomic/atomic/Atomic/#store) and
+  [`Atomic[dtype, scope=...].load`](/docs/std/atomic/atomic/Atomic/#load) with
+  the desired [`Ordering`](/docs/std/atomic/atomic/Ordering/) instead:
 
   ```mojo
   # Before

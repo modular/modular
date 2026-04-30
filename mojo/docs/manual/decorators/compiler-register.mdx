@@ -72,7 +72,7 @@ so they both have the same API.
 In addition to input and output tensors, the function can take the following
 arguments:
 
-- Any arguments of type [`Scalar`](/mojo/manual/types#scalar-values).
+- Any arguments of type [`Scalar`](/docs/manual/types#scalar-values).
 
 - A single argument of type `DeviceContextPtr`. This opaque pointer is
   currently required for GPU support.
@@ -117,7 +117,7 @@ output shapes when building a graph.
 
 The function takes the same arguments as the `execute()` function, minus the
 output tensors and `DeviceContextPtr`. It must return an
-[`IndexList`](/mojo/std/utils/index_/IndexList/) specifying the dimensions of
+[`IndexList`](/docs/std/utils/index_/IndexList/) specifying the dimensions of
 the output tensor.
 
 For example, if the operation takes two input tensors, and the shape of the

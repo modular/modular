@@ -394,9 +394,9 @@ struct UnsafePointer[
       Use these to manage lifecycles when working with uninitialized memory.
 
     For more information see [Unsafe
-    pointers](/mojo/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
+    pointers](/docs/manual/pointers/unsafe-pointers) in the Mojo Manual. For a
     comparison with other pointer types, see [Intro to
-    pointers](/mojo/manual/pointers/).
+    pointers](/docs/manual/pointers/).
 
     Examples:
 

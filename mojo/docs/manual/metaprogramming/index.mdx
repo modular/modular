@@ -26,7 +26,7 @@ The `comptime` keyword identifies a statement or expression that needs to be
 evaluated at compile time. For example, the `comptime` keyword is used to
 declare compile-time constant values and to introduce compile-time conditionals
 and loops. For information on compile-time assignments and control flow, see
-[Compile-time evaluation](/mojo/manual/metaprogramming/comptime-evaluation/).
+[Compile-time evaluation](/docs/manual/metaprogramming/comptime-evaluation/).
 
 ## Compile-time parameters
 
@@ -40,7 +40,7 @@ parameters. At compile time, Mojo *specializes* parameterized code to make
 For example, a matrix multiplication function parameterized on its matrix
 dimensions can be specialized at compile time to select the most efficient
 algorithm based on those dimensions. For information on parameterization, see
-[Parameters](/mojo/manual/parameters/index/).
+[Parameters](/docs/manual/parameters/index/).
 
 ## Traits and generics
 
@@ -53,5 +53,5 @@ parameterized on *types*.
   traits to identify the behaviors it requires. For example, instead of being
   bound to a specific type, a sort function could require that the type being
   sorted is `Movable` and `Comparable`. For more information, see the sections
-  on [traits](/mojo/manual/traits/) and
-  [generics](/mojo/manual/generics/generics/).
+  on [traits](/docs/manual/traits/) and
+  [generics](/docs/manual/generics/generics/).

@@ -61,7 +61,7 @@ comptime StaticString = StringSlice[StaticConstantOrigin]
 """An immutable static string slice.
 
 This is a type of
-[`StringSlice`](/mojo/std/collections/string/string_slice/StringSlice)
+[`StringSlice`](/docs/std/collections/string/string_slice/StringSlice)
 that's immutable and statically allocated. You might use this for situations
 that could also be done with a `String` type, but when you want to
 optimize memory usage with zero heap allocations.
@@ -103,7 +103,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     A `StringSlice` is a lightweight view into string data that lets you look
     at part (or all) of an string without copying the data. Unlike a
-    [`String`](/mojo/std/collections/string/string/String), a `StringSlice`
+    [`String`](/docs/std/collections/string/string/String), a `StringSlice`
     doesn't own the string data, but it knows where to find it and how long it
     is. It's designed for efficient zero-copy string operations without memory
     allocation, while maintaining memory safety and UTF-8 awareness.
@@ -140,11 +140,11 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
 
     Related types:
 
-    - [`String`](/mojo/std/collections/string/String): An owning,
+    - [`String`](/docs/std/collections/string/String): An owning,
       mutable string that allocates and manages its own memory.
-    - [`StaticString`](/mojo/std/collections/string/string_slice/#StaticString): An
+    - [`StaticString`](/docs/std/collections/string/string_slice/#StaticString): An
       alias for an immutable constant `StringSlice`.
-    - [`StringLiteral`](/mojo/std/builtin/string_literal/StringLiteral/): A
+    - [`StringLiteral`](/docs/std/builtin/string_literal/StringLiteral/): A
       string literal. String literals are compile-time values.
 
     Parameters:
@@ -1708,7 +1708,7 @@ struct StringSlice[mut: Bool, //, origin: Origin[mut=mut]](
         representations of the `args` arguments.
 
         For more information, see the discussion in the
-        [`format` module](/mojo/std/collections/string/format/).
+        [`format` module](/docs/std/collections/string/format/).
 
         Args:
             args: The substitution values.
