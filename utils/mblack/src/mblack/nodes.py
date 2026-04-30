@@ -550,8 +550,8 @@ def whitespace(
             return NO
 
     elif p.type in {syms.convention, syms.result_type}:
-        # No space between ref and [origin] (e.g., ref[x] not ref [x])
-        if t == token.LSQB and prev and prev.type == token.REF:
+        # No space between ref/out and [origin] (e.g., ref[x] not ref [x])
+        if t == token.LSQB and prev and prev.type in {token.REF, token.OUT}:
             return NO
 
     elif p.type == syms.capture_item:

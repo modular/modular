@@ -293,6 +293,13 @@ public:
   /// Parse a 'suite' production into the declaration specified by `decl`.
   ParseResult parseSuite(ASTDecl &decl);
 
+  /// Parse the optional '[exprlist]' production used by specifiers like
+  /// 'ref [...]' or 'out [...]'.  On success, `expr` is set to the parsed
+  /// expression list, or to null if no bracketed form is present.
+  /// `specifierName` is used in diagnostics (e.g. "ref" or "out").
+  ParseResult parseOptionalSpecifierExprList(ExprNode *&expr,
+                                             StringRef specifierName);
+
   /// Parse a 'ref [exprlist]' production into expr, with the expression set to
   /// the exprlist if specified, otherwise set to null if absent.  This returns
   /// failure on a parse error.
