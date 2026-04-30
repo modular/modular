@@ -916,7 +916,7 @@ trait RegisterPassable(Movable):
     pass
 
 
-trait Defaultable(ImplicitlyDestructible):
+trait Defaultable:
     def __init__(out self):
         ...
 
