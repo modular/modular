@@ -5,7 +5,6 @@
 //===----------------------------------------------------------------------===//
 
 #include "KGEN/Compiler/KGENCompiler.h"
-#include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -68,10 +67,6 @@ void KGEN::registerDefaultKGENPasses(const std::string &cacheBaseExtra) {
   KGEN::registerStripParserMetadata();
   DebugInfo::registerDebugInfoToLLVM();
   DebugInfo::registerDebugInfoStrip();
-
-  KGEN::MOGGPreElab::registerAnnotateKernels();
-  KGEN::MOGGPreElab::registerVerifyKernels();
-  KGEN::MOGGPreElab::registerDumpKernels();
 
   // Passes that require a runtime.
   mlir::registerPass([cacheBaseExtra] {

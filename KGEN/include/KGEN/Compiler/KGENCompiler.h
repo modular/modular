@@ -47,10 +47,6 @@ public:
   /// LIT constructs.
   LogicalResult runCheckLITPipeline(ModuleOp module);
 
-  /// Run post-parser pipeline that annotates the IR to register mojo kernels
-  /// for the Graph Compiler.
-  LogicalResult runMOGGPreElabPipeline(ModuleOp module);
-
   /// Run the elaboration and post-elaboration pipeline
   /// This doesn't not include check LIT and pre-elaboration passes.
   /// This allows the transform to be cached if chain is provided.

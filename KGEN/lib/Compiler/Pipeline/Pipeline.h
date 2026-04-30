@@ -23,15 +23,6 @@ void buildCheckLITPipeline(mlir::PassManager &pm,
                            const CompilationOptions &options);
 
 //===----------------------------------------------------------------------===//
-// MOGGPreElabPipeline
-//===----------------------------------------------------------------------===//
-
-/// This populates part of the post-parser pipeline that annotates the IR to
-/// register mojo kernels for the Graph Compiler.
-void buildMOGGPreElabPipeline(mlir::PassManager &pm,
-                              const CompilationOptions &options);
-
-//===----------------------------------------------------------------------===//
 // GenerateLibraryPipeline
 //===----------------------------------------------------------------------===//
 

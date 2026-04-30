@@ -504,9 +504,6 @@ gentbl_modular_passes(
 
 modular_cc_library(
     name = "MOGGPreElab",
-    srcs = glob([
-        "lib/MOGGPreElab/*.cpp",
-    ]),
     hdrs = glob(["include/KGEN/MOGGPreElab/*.h"]),
     deps = [
         ":KGENDialect",

@@ -6,7 +6,6 @@
 
 #include "Pipeline.h"
 #include "KGEN/KGENDialect/KGENOps.h"
-#include "KGEN/MOGGPreElab/Passes.h"
 #include "KGEN/ToolCommon/KGENPasses.h"
 #include "Support/DebugInfoDialect/DebugInfoToLLVM/DebugInfoToLLVM.h"
 #include "Support/DebugInfoDialect/Transforms/Passes.h"
@@ -20,9 +19,6 @@ using namespace KGEN;
 
 void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
                                  const CompilationOptions &options) {
-  if (options.runMOGGPreElab)
-    buildMOGGPreElabPipeline(pm, options);
-
   // Lower semantic control flow operations like lit.return to terminators and
   // diagnose unreachable code.
   pm.addPass(createLowerSemanticCF());
@@ -34,12 +30,6 @@ void KGEN::buildCheckLITPipeline(mlir::PassManager &pm,
   // Insert calls to destructors, reject use before free, and borrow check.
   pm.addPass(createCheckLifetimes(
       {/*extendTrivialDebugLifetimes=*/options.optimizationLevel == 0}));
-}
-
-void KGEN::buildMOGGPreElabPipeline(mlir::PassManager &pm,
-                                    const CompilationOptions &options) {
-  pm.addPass(MOGGPreElab::createAnnotateKernels());
-  pm.addPass(MOGGPreElab::createVerifyKernels());
 }
 
 /// This populates the early pipeline passes of the KGEN compiler that lowers

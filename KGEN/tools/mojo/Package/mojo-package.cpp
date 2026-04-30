@@ -528,13 +528,9 @@ static int package(const State &subcommandState) {
     return EXIT_SUCCESS;
   }
 
-  // Run the MOGGPreElabPipeline
-  KGENCompiler compiler(*module->get()->getContext(),
-                        packageArgs.compileOptions);
-  if (failed(compiler.runMOGGPreElabPipeline(**module)))
-    return state.reportError("MOGGPreElab failed");
-
   if (packageArgs.exportKgenModule) {
+    KGENCompiler compiler(*module->get()->getContext(),
+                          packageArgs.compileOptions);
     if (failed(compiler.runGenerateLibraryPipeline(**module)))
       return state.reportError("compilation failed");
 
