@@ -18,6 +18,7 @@
 #include "mlir/Analysis/SymbolTableAnalysis.h"
 #include "mlir/IR/BuiltinOps.h"
 #include "mlir/Transforms/RegionUtils.h"
+#include "llvm/ADT/DenseSet.h"
 
 using namespace M;
 using namespace KGEN;
@@ -63,6 +64,40 @@ static Value allocateHeapMemory(PointerType ptrType, OpBuilder &b,
       b, loc, ParamOperatorAttr::get(POC::GetAlignOf, {elementType, target}));
   return POP::AlignedAllocOp::create(b, loc, ptrType,
                                      ValueRange{alignOf, sizeOf});
+}
+
+/// Stack lifetime markers are valid only for pointers produced by
+/// pop.stack_allocation. When outlining closures, captured values are rewritten
+/// to closure storage (struct fields), so any lifetime markers attached to the
+/// original capture become invalid and must be dropped from the outlined body.
+static void
+eraseStackLifetimeMarkersForCaptures(Region &region,
+                                     const llvm::DenseSet<Value> &captures) {
+  if (captures.empty())
+    return;
+
+  SmallVector<Operation *> markers;
+  region.walk([&](Operation *op) {
+    if (isa<POP::StackAllocLifetimeStartOp, POP::StackAllocLifetimeEndOp>(op))
+      markers.push_back(op);
+  });
+
+  SmallVector<Value> kept;
+  for (Operation *op : markers) {
+    kept.clear();
+    kept.reserve(op->getNumOperands());
+    for (Value value : op->getOperands())
+      if (!captures.contains(value))
+        kept.push_back(value);
+
+    if (kept.size() == op->getNumOperands())
+      continue;
+    if (kept.empty()) {
+      op->erase();
+      continue;
+    }
+    op->setOperands(kept);
+  }
 }
 
 /// Given a location, erase any parameter references by inserting unresolved
@@ -659,10 +694,17 @@ Value ClosureLifter::liftClosure(
       (unsigned)0, selfType,
       DebugInfo::extractSourceLoc(closureInitData.getLiftedLocation()));
   b.setInsertionPointToStart(&region.front());
-  for (auto [index, capture] : llvm::enumerate(captureMechanisms))
+  llvm::DenseSet<Value> capturedOrigins;
+  capturedOrigins.reserve(captureMechanisms.size());
+  for (const Capture &capture : captureMechanisms)
+    capturedOrigins.insert(capture.origin);
+  eraseStackLifetimeMarkersForCaptures(region, capturedOrigins);
+
+  for (auto [index, capture] : llvm::enumerate(captureMechanisms)) {
     replaceAllUsesInRegionWith(capture.origin,
                                replacementFn(capture, index, captureStructArg),
                                region);
+  }
   // Synthesize methods.
   if (failed(liftCallFunction(b, closureInitData, loweredClosureType)))
     return {};

@@ -1035,3 +1035,39 @@ kgen.generator @hoisted<E: index>(%arg0: index) {
   } : (index), !kgen.closure<@hoisted, "fn" trivial> {hoistedCaptures = #kgen<param.decls[E1 : index]>}
   kgen.return
 }
+
+// -----
+
+// COM: Verify that stack lifetime markers referencing captured values are
+// COM: pruned from the outlined closure body while preserving non-capture
+// COM: marker operands.
+
+kgen.struct.generator @"prune::fn"<CAPTURES: !kgen.param_closure<@prune "fn">> = !kgen.closure<@prune, "fn" nonescaping> {
+  kgen.conformance @closure_trait {
+    kgen.witness "__call__" : (!kgen.pointer<!kgen.closure<@prune, "fn" nonescaping>> read_mem) -> index = #kgen.closure.symbol<@prune, "fn", #kgen.closure_method<call>, <:!kgen.param_closure<@prune "fn"> CAPTURES>>
+  }
+  kgen.conformance @AnyType {
+    kgen.witness "__del__" : (!kgen.pointer<!kgen.closure<@prune, "fn" nonescaping>> owned_in_mem) -> !kgen.none = #kgen.closure.symbol<@prune, "fn", #kgen.closure_method<del>, <:!kgen.param_closure<@prune "fn"> CAPTURES>>
+  }
+  kgen.conformance @Movable {
+    kgen.witness "__moveinit__" : (!kgen.pointer<!kgen.closure<@prune, "fn" nonescaping>> owned_in_mem, !kgen.pointer<!kgen.closure<@prune, "fn" nonescaping>> byref_result) -> !kgen.none = #kgen.closure.symbol<@prune, "fn", #kgen.closure_method<move>, <:!kgen.param_closure<@prune "fn"> CAPTURES>>
+  }
+}
+
+// CHECK-LABEL: kgen.generator @prune_fn
+// CHECK: %[[TMP:.*]] = pop.stack_allocation 1 x index marked
+// CHECK: pop.stack_alloc.lifetime.start(%[[TMP]]) : !kgen.pointer<index>
+// CHECK: pop.stack_alloc.lifetime.end(%[[TMP]]) : !kgen.pointer<index>
+// CHECK-NOT: pop.stack_alloc.lifetime.start(%{{.*}}, %{{.*}})
+// CHECK-NOT: pop.stack_alloc.lifetime.end(%{{.*}}, %{{.*}})
+kgen.generator @prune() {
+  %outer = pop.stack_allocation 1 x index marked
+  %0 = kgen.closure.init(%outer)() -> index {
+    %tmp = pop.stack_allocation 1 x index marked
+    pop.stack_alloc.lifetime.start(%outer, %tmp) : !kgen.pointer<index>, !kgen.pointer<index>
+    pop.stack_alloc.lifetime.end(%outer, %tmp) : !kgen.pointer<index>, !kgen.pointer<index>
+    %c0 = kgen.param.constant: index = <0>
+    kgen.return %c0 : index
+  } : (!kgen.pointer<index>), !kgen.pointer<!kgen.closure<@prune, "fn" nonescaping>>
+  kgen.return
+}
