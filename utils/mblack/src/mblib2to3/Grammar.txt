@@ -68,7 +68,7 @@ result_type: [REF '[' test [',' test [',']] ']'] (functype | or_expr)
 #
 # It needs to be fully expanded to allow our LL(1) parser to work on it.
 
-convention: VAR | OUT | READ | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
+convention: VAR | (OUT ['[' test [',' test [',']] ']']) | READ | MUT | DEINIT | (REF ['[' test [',' test [',']] ']'])
 #tname: NAME [metaparams] [':' test]
 
 typedargslist: ((([convention] ['**'|'*'] tfpdef ['=' test])|'/'|'*'|'//') [','])*

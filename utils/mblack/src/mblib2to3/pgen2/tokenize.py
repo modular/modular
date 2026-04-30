@@ -792,7 +792,7 @@ def generate_tokens(
         # checks for validity.  This is because we can't get things like 'out'
         # handled properly as soft tokens.  This returns true if this can be
         # handled as a normal Mojo token.
-        def check_mojo_token():  # noqa: ANN202
+        def check_mojo_token(token_value: str, token_end: int):  # noqa: ANN202
             assert grammar is not None
             # In Mojo, keywords can be used as function/struct names.
             # After a def-like keyword or '.', treat the token as a
@@ -801,9 +801,23 @@ def generate_tokens(
                 return False
             # Context sensitive arg conventions are only a keyword if followed
             # by an identifier letter or a variadic.
-            if token not in ["out", "read", "mut", "deinit"]:  # noqa: B023
+            if token_value not in ["out", "read", "mut", "deinit"]:
                 return True
-            next_token = line[end:].lstrip()  # noqa: B023
+            next_token = line[token_end:].lstrip()  # noqa: B023
+            if token_value == "out" and next_token.startswith("["):
+                bracket_depth = 0
+                for idx, char in enumerate(next_token):
+                    if char == "[":
+                        bracket_depth += 1
+                    elif char == "]":
+                        bracket_depth -= 1
+                        if bracket_depth == 0:
+                            after_bracket = next_token[idx + 1 :].lstrip()
+                            return (
+                                bool(after_bracket)
+                                and after_bracket[0].isidentifier()
+                            )
+                return False
             return next_token and (
                 next_token[0].isidentifier() or next_token[0] == "*"
             )
@@ -924,7 +938,7 @@ def generate_tokens(
                     if (
                         has_mojo_keywords
                         and token in mojo_keyword_tokens
-                        and check_mojo_token()
+                        and check_mojo_token(token, end)
                     ):
                         tok_type = mojo_keyword_tokens[token]
                         # comptime followed by '(' is the expression form

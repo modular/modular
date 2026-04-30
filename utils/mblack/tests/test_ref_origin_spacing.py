@@ -125,3 +125,17 @@ def test_ref_origin_untyped_param_with_extra_spaces():
         "        pass\n"
     )
     assert_mojo_format(source, expected)
+
+
+def test_out_address_space_in_initializer():
+    """No space between out and [address_space] in initializers."""
+    source = "def __init__(out[addrspace] self): pass"
+    expected = "def __init__(out[addrspace] self):\n    pass\n"
+    assert_mojo_format(source, expected)
+
+
+def test_out_address_space_in_initializer_with_space():
+    """Space between out and [address_space] should be removed."""
+    source = "def __init__(out [addrspace] self): pass"
+    expected = "def __init__(out[addrspace] self):\n    pass\n"
+    assert_mojo_format(source, expected)
