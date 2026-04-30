@@ -4,7 +4,7 @@
 //
 //===----------------------------------------------------------------------===//
 
-#include "mojo-package.h"
+#include "mojo-precompile.h"
 #include "../Common/Compilation.h"
 
 #include "Cache/CachedTransform.h"
@@ -59,12 +59,12 @@ using namespace M::KGEN;
 // Options includes + OptTable
 //===----------------------------------------------------------------------===//
 
-#define DRIVER_OPTIONS_PATH "Package/PackageOptions.inc"
+#define DRIVER_OPTIONS_PATH "Precompile/PrecompileOptions.inc"
 #include "Support/Driver/OptTable.inc"
 
 namespace {
-struct PackageOptTable : public llvm::opt::PrecomputedOptTable {
-  PackageOptTable()
+struct PrecompileOptTable : public llvm::opt::PrecomputedOptTable {
+  PrecompileOptTable()
       : llvm::opt::PrecomputedOptTable(OptionStrTable, OptionPrefixesTable,
                                        InfoTable, OptionPrefixesUnion) {}
 };
@@ -172,13 +172,13 @@ buildPackageModule(ModuleOp theModule, LIT::PackageOp parsedPackageOp) {
 }
 
 //===----------------------------------------------------------------------===//
-// parsePackageArgs
+// parsePrecompileArgs
 //===----------------------------------------------------------------------===//
 
 namespace {
 /// This struct provides an in-memory representation of the arguments passed to
-/// the `package` subcommand for structured access.
-struct PackageArgs {
+/// the `precompile` subcommand for structured access.
+struct PrecompileArgs {
   /// The name of the package being output.
   std::string name;
   /// The path to the Mojo package source directory to parse and output as a
@@ -216,11 +216,11 @@ static ErrorOr<bool> isExistingDirectory(const std::filesystem::path &path) {
   return isDirectory;
 }
 
-/// Parse the `package` subcommand arguments into a struct.
-static ErrorOrSuccess parsePackageArgs(const State &state,
-                                       const llvm::opt::InputArgList &args,
-                                       llvm::SourceMgr &sourceMgr,
-                                       PackageArgs &pkgArgs) {
+/// Parse the `precompile` subcommand arguments into a struct.
+static ErrorOrSuccess parsePrecompileArgs(const State &state,
+                                          const llvm::opt::InputArgList &args,
+                                          llvm::SourceMgr &sourceMgr,
+                                          PrecompileArgs &pkgArgs) {
   if (!args.hasArg(options::OPT_INPUT))
     return Error("no input directory provided");
   if (args.hasMultipleArgs(options::OPT_INPUT))
@@ -363,7 +363,7 @@ internalizeBitcodeLibs(LLVMBitcodeLibArrayAttr bitcodeLibsAttr,
 /// may be written to a `.mojopkg` file that can be deserialized and imported
 /// into Mojo programs.
 static ErrorOr<OwningOpRef<ModuleOp>>
-buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
+buildPackage(const PrecompileArgs &precompileArgs, ModuleOp theModule,
              LIT::PackageOp parsedPackageOp, MLRT::Runtime &runtime) {
   // Add the dependencies of the package to the package itself, and strip out
   // any post parser metadata for other package.
@@ -391,11 +391,11 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
   thePackage.setPostParseModuleAttr(postParseModuleAttr);
 
   // Process bitcode libraries if any were specified
-  if (!packageArgs.compileOptions.bitcodeLibs.empty()) {
+  if (!precompileArgs.compileOptions.bitcodeLibs.empty()) {
     SmallVector<DenseResourceElementsAttr> bitcodeAttrs;
 
     for (const std::string &bitcodeFile :
-         packageArgs.compileOptions.bitcodeLibs) {
+         precompileArgs.compileOptions.bitcodeLibs) {
       DenseResourceElementsAttr bitcodeAttr =
           writeLLVMBitcodeToDenseAttr(theModule.getContext(), bitcodeFile);
       if (!bitcodeAttr)
@@ -411,28 +411,28 @@ buildPackage(const PackageArgs &packageArgs, ModuleOp theModule,
 
   // Run various check passes now to propagate warnings and errors up to the
   // user.
-  KGENCompiler compiler(*theModule.getContext(), packageArgs.compileOptions);
+  KGENCompiler compiler(*theModule.getContext(), precompileArgs.compileOptions);
   if (failed(compiler.runCheckLITPipeline(theModule)))
     return Error("errors occurred during compilation");
   return std::move(packageModule);
 }
 
 //===----------------------------------------------------------------------===//
-// package
+// precompile
 //===----------------------------------------------------------------------===//
 
 /// Given the path to a mojo directory, compiles it into a precompiled mojo
 /// package op by generating an archive and attaching those bytes to a new
 /// top-level `lit.package`, suitable for consumption by other mojo
 /// programs.
-static int package(const State &subcommandState) {
+static int precompile(const State &subcommandState) {
   //===--------------------------------------------------------------------===//
   // Options Parsing
   //===--------------------------------------------------------------------===//
 
   // Parse command line arguments.
   State state = subcommandState;
-  PackageOptTable options;
+  PrecompileOptTable options;
   unsigned missingIndex = 0;
   unsigned missingCount = 0;
   llvm::opt::InputArgList args =
@@ -440,11 +440,11 @@ static int package(const State &subcommandState) {
 
   if (args.hasArg(options::OPT_help)) {
     return state.printHelp(
-#include "Package/PackageOptionsHelpText.inc"
+#include "Precompile/PrecompileOptionsHelpText.inc"
     );
   } else if (args.hasArg(options::OPT_help_hidden)) {
     return state.printHelp(
-#include "Package/PackageOptionsHelpHiddenText.inc"
+#include "Precompile/PrecompileOptionsHelpHiddenText.inc"
     );
   }
 
@@ -457,18 +457,18 @@ static int package(const State &subcommandState) {
 
   llvm::SourceMgr sourceMgr;
   sourceMgr.setDiagHandler(getDiagHandler(state.diagnosticFormat));
-  PackageArgs packageArgs;
-  if (auto err = parsePackageArgs(state, args, sourceMgr, packageArgs))
+  PrecompileArgs precompileArgs;
+  if (auto err = parsePrecompileArgs(state, args, sourceMgr, precompileArgs))
     return state.reportError(err.getError());
 
   // Create our context (including the runtime).
   ErrorOr<ContextRef> ctxOr = Init::createContext(
       "mojo", Init::Options().withRuntimeOptions(MLRT::RuntimeOptions()),
-      "package");
+      "precompile");
   if (ctxOr.isError())
     return state.reportError(ctxOr.getError());
   ContextRef ctx = std::move(*ctxOr);
-  registerContext(packageArgs.ctx, ctx);
+  registerContext(precompileArgs.ctx, ctx);
 
   //===--------------------------------------------------------------------===//
   // Build the package
@@ -477,7 +477,7 @@ static int package(const State &subcommandState) {
   // Open the output file, or exit with an error.
   std::string outputError;
   std::unique_ptr<llvm::ToolOutputFile> out =
-      mlir::openOutputFile(packageArgs.outputPath, &outputError);
+      mlir::openOutputFile(precompileArgs.outputPath, &outputError);
   if (!out)
     return state.reportError(outputError);
 
@@ -486,25 +486,25 @@ static int package(const State &subcommandState) {
   MLRT::Runtime &runtime = *ctx->get<MLRT::Runtime>();
   LIT::PackageOp packageOp;
   mlir::SourceMgrDiagnosticHandler sourceMgrHandler(sourceMgr,
-                                                    &packageArgs.ctx);
+                                                    &precompileArgs.ctx);
   bool isKgenModule = args.hasArg(options::OPT_kgenModule);
   // TODO: fix debug info for kgen modules.
   if (isKgenModule) {
-    packageArgs.compileOptions.debugLevel = CompilationOptions::kNoDebug;
-    packageArgs.compileOptions.optimizationLevel = 3;
+    precompileArgs.compileOptions.debugLevel = CompilationOptions::kNoDebug;
+    precompileArgs.compileOptions.optimizationLevel = 3;
   }
 
   if (args.hasArg(options::OPT_bitcode_libs)) {
-    packageArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
+    precompileArgs.compileOptions.bitcodeLibs = llvm::to_vector_of<std::string>(
         args.getAllArgValues(options::OPT_bitcode_libs));
   }
 
   ScopedMLIRWarningHandler warningHandler(
-      &packageArgs.ctx, packageArgs.compileOptions.disableWarnings,
-      packageArgs.compileOptions.warningsAsErrors);
+      &precompileArgs.ctx, precompileArgs.compileOptions.disableWarnings,
+      precompileArgs.compileOptions.warningsAsErrors);
 
   ErrorOr<OwningOpRef<ModuleOp>> module = invokeMojoParser(
-      state, args, packageArgs.compileOptions, &packageArgs.ctx, runtime,
+      state, args, precompileArgs.compileOptions, &precompileArgs.ctx, runtime,
       options::OPT_diagnose_missing_doc_strings, options::OPT_max_notes,
       /*definesId=*/llvm::opt::OptSpecifier(), options::OPT_strip_file_prefix,
       options::OPT_disable_builtins, options::OPT_mojo_search_paths,
@@ -512,9 +512,9 @@ static int package(const State &subcommandState) {
       [&](LIT::ParserConfig &parserConfig, mlir::TimingScope &ts) {
         parserConfig.exportKgenModule = isKgenModule;
         OwningOpRef<ModuleOp> moduleOp;
-        std::tie(moduleOp, packageOp) =
-            LIT::importMojoPackage(ctx, packageArgs.inputPath, packageArgs.name,
-                                   sourceMgr, parserConfig, ts);
+        std::tie(moduleOp, packageOp) = LIT::importMojoPackage(
+            ctx, precompileArgs.inputPath, precompileArgs.name, sourceMgr,
+            parserConfig, ts);
         return moduleOp;
       });
   if (failed(module))
@@ -528,9 +528,9 @@ static int package(const State &subcommandState) {
     return EXIT_SUCCESS;
   }
 
-  if (packageArgs.exportKgenModule) {
+  if (precompileArgs.exportKgenModule) {
     KGENCompiler compiler(*module->get()->getContext(),
-                          packageArgs.compileOptions);
+                          precompileArgs.compileOptions);
     if (failed(compiler.runGenerateLibraryPipeline(**module)))
       return state.reportError("compilation failed");
 
@@ -556,7 +556,7 @@ static int package(const State &subcommandState) {
 
   // Build a new package op based off of the parsed package op. This new op is
   // suitable for serialization as MLIR bytecode.
-  auto builtOrErr = buildPackage(packageArgs, **module, packageOp, runtime);
+  auto builtOrErr = buildPackage(precompileArgs, **module, packageOp, runtime);
   if (failed(builtOrErr))
     return state.reportError(builtOrErr.getError());
   OwningOpRef<ModuleOp> builtPackageModule = builtOrErr.takeValue();
@@ -574,6 +574,6 @@ static int package(const State &subcommandState) {
   return warningHandler.wasErrorEmitted() ? EXIT_FAILURE : EXIT_SUCCESS;
 }
 
-void M::registerPackageSubcommand(SubcommandRegistry &registry) {
-  registry.addCallback("package", package);
+void M::registerPrecompileSubcommand(SubcommandRegistry &registry) {
+  registry.addCallback("package", precompile);
 }

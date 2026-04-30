@@ -6,7 +6,7 @@
 
 include "DescriptionBase.td"
 
-def PackageDescription : MojoCommandDescription<
+def PrecompileDescription : MojoCommandDescription<
   "package", "Compiles a Mojo package.",
   "Compiles a directory of Mojo source files into a binary package suitable "
   "to share and import into other Mojo programs and modules. A Mojo package "
