@@ -3,8 +3,6 @@ title: Model pipeline
 description: Learn how to integrate your model into a pipeline for serving with MAX.
 ---
 
-import MDXListing from '@site/src/components/Listing/MDXListing';
-
 When you build models in MAX, whether it's a GPT, Llama, or a
 custom architecture, you're creating the layers, attention mechanisms, and
 forward pass logic that define how the model processes inputs. But to actually
@@ -510,76 +508,6 @@ inputs:
 - **KV cache manager** owns the allocation and lifecycle of cached key-value
   pairs across all requests. The pipeline uses the cache manager but doesn't
   own it.
-
-## Custom architecture registration
-
-Now let's see how you can extend MAX with your own model architectures. MAX
-uses a convention-based registration system. When you point MAX at a custom
-architecture directory, it imports the module and looks for an `ARCHITECTURES`
-list to register.
-
-### Custom architecture structure
-
-A custom architecture directory typically contains these files:
-
-```text
-my_model/
-├── __init__.py           # Exports ARCHITECTURES list
-├── arch.py               # Defines SupportedArchitecture config
-├── model.py              # Implements PipelineModel subclass with model architecture
-├── model_config.py       # (Optional) Custom model configuration
-└── weight_adapters.py    # (Optional) Functions to convert weight formats
-```
-
-The `__init__.py` file exports an `ARCHITECTURES` list that MAX discovers:
-
-```python
-# my_model/__init__.py
-from .arch import my_arch
-
-ARCHITECTURES = [my_arch]
-```
-
-The `arch.py` file defines the architecture configuration:
-
-```python
-# my_model/arch.py
-from max.graph.weights import WeightsFormat
-from max.interfaces import PipelineTask
-from max.pipelines.lib import (
-    SupportedArchitecture,
-    TextTokenizer,
-)
-from .model import MyModel
-
-my_arch = SupportedArchitecture(
-    name="MyModelForCausalLM",  # Must match HuggingFace config
-    task=PipelineTask.TEXT_GENERATION,
-    default_encoding="bfloat16",
-    supported_encodings={
-        "bfloat16",
-    },
-    pipeline_model=MyModel,
-    tokenizer=TextTokenizer,
-    default_weights_format=WeightsFormat.safetensors,
-)
-```
-
-### Load custom architectures
-
-Use the `--custom-architectures` flag to load your architecture:
-
-```bash
-max serve --custom-architectures ./my_model --model path/to/weights
-```
-
-MAX imports your module, finds the `ARCHITECTURES` list, and registers each
-architecture with `PIPELINE_REGISTRY`. Your custom architecture then overrides
-any built-in architecture with the same name.
-
-For a complete working example, see the
-[custom-models example](https://github.com/modular/modular/tree/main/max/examples/custom-models)
-in the Modular repository.
 
 ## Configuration flow
 

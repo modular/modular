@@ -95,16 +95,8 @@
           "items": [
             "max/develop/model-bringup-workflow",
             "max/develop/pipelines",
-            {
-              "type": "doc",
-              "id": "max/develop/serve-custom-model-architectures",
-              "label": "Serve a custom architecture"
-            },
-            {
-              "type": "doc",
-              "id": "max/develop/max-pipeline-bring-your-own-model",
-              "label": "Use custom weights"
-            },
+            "max/develop/serve-custom-model-architectures",
+            "max/develop/max-pipeline-bring-your-own-model",
             "max/graph/quantize"
           ]
         },
