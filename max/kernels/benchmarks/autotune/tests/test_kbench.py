@@ -82,7 +82,7 @@ def _invoke_cli(
             )
 
 
-@pytest.mark.xdist_group("kbench_e2e")
+@pytest.mark.shard_group("kbench_e2e")
 def test_kbench() -> None:
     _invoke_cli(
         kbench_cli,
@@ -162,7 +162,7 @@ def test_kbench_cache() -> None:
     )
 
 
-@pytest.mark.xdist_group("kbench_e2e")
+@pytest.mark.shard_group("kbench_e2e")
 def test_kplot() -> None:
     _invoke_cli(
         kplot_cli,
@@ -232,7 +232,7 @@ def test_resolve_ytext_unit(
     assert base_unit == expected_base
 
 
-@pytest.mark.xdist_group("kbench_e2e")
+@pytest.mark.shard_group("kbench_e2e")
 def test_kprofile() -> None:
     _invoke_cli(
         kprofile_cli,
@@ -774,6 +774,7 @@ def test_group_by_binary_hash() -> None:
 # --- Shared-lib failure / recovery tests ---
 
 
+@pytest.mark.unique_shard
 def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
     """Timed-out shared lib executions are killed; remaining items still run.
 
@@ -819,6 +820,7 @@ def test_shared_lib_timeout_recovery(tmp_path: Path) -> None:
     )
 
 
+@pytest.mark.unique_shard
 def test_shared_lib_crash_recovery(tmp_path: Path) -> None:
     """Crashed benchmarks don't prevent subsequent items from running.
 

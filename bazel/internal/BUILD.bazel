@@ -166,3 +166,11 @@ toolchain(
     toolchain = ":_mojo_copts_toolchain",
     toolchain_type = "@rules_mojo//:copts_toolchain_type",
 )
+
+modular_py_library(
+    name = "pytest-shard",
+    testonly = True,
+    srcs = ["pytest-shard.py"],
+    imports = ["."],
+    deps = [requirement("pytest")],
+)
