@@ -295,7 +295,7 @@ def _printf[
             # print buffer. Metal doesn't support printf-style variadic args.
             var buf = _WriteBufferHeap()
             buf.write_string(fmt)
-            buf.nul_terminate()
+            _ = buf.nul_terminate()
             var s = buf.as_string_slice()
             _metal_print_write(
                 s.unsafe_ptr().bitcast[UInt8](),
@@ -433,15 +433,12 @@ def print[
                     sep.write_to(buffer)
 
             end.write_to(buffer)
-            buffer.nul_terminate()
+            var cstr = buffer.nul_terminate()
 
             comptime _emit = CurrentPlugin.print_emit_fn.unsafe_value()
-            var slice = buffer.as_string_slice()
-            _emit(
-                slice.unsafe_ptr().bitcast[UInt8](),
-                slice.byte_length(),
-                file.value,
-            )
+
+            # FIXME: The origin param of `_emit` should be inferred from `cstr`.
+            _emit[origin_of(buffer).unsafe_mut_cast[False]()](cstr, file)
         elif is_gpu() and is_apple_gpu():
             # Apple GPU: same formatting path as other GPUs but output
             # goes through Metal os_log via _metal_print_write.
@@ -454,7 +451,7 @@ def print[
                     sep.write_to(buffer)
 
             end.write_to(buffer)
-            buffer.nul_terminate()
+            _ = buffer.nul_terminate()
 
             var slice = buffer.as_string_slice()
             _metal_print_write(
@@ -471,7 +468,7 @@ def print[
                     sep.write_to(buffer)
 
             end.write_to(buffer)
-            buffer.nul_terminate()
+            _ = buffer.nul_terminate()
 
             var slice = buffer.as_string_slice()
 

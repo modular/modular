@@ -20,7 +20,7 @@ pick up the plugin implementation.
 Do not define new logic here — put it on `PluginHooks` in `std._plugin`.
 """
 
-from ._trait import DefaultPlugin
+from ._trait import PluginHooks, DefaultPlugin
 
-comptime CurrentPlugin = DefaultPlugin
+comptime CurrentPlugin: PluginHooks = DefaultPlugin
 """The active `PluginHooks`."""

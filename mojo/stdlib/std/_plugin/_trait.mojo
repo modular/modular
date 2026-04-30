@@ -12,23 +12,10 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.sys.info import _TargetType, _current_target
+from std.io import FileDescriptor
+from std.ffi import CStringSlice
 
 from std.utils.index import Index, IndexList, StaticTuple
-
-
-# Named function-type alias so trait and DefaultPlugin reference the *same*
-# nominal type for `print_emit_fn` — Mojo's trait conformance treats freshly
-# spelled-out `def[O: Origin](...)` types as distinct even when syntactically
-# identical, so duplicating the signature in both places fails to conform.
-#
-# `file_value` is `FileDescriptor.value` (raw integer fd) rather than
-# `FileDescriptor` itself — referencing `FileDescriptor` here would cycle
-# through `std.io`, which imports `CurrentPlugin` from this package.
-comptime _PrintEmitFn = def[O: Origin](
-    ptr: UnsafePointer[UInt8, O],
-    length: Int,
-    file_value: Int,
-) thin -> None
 
 
 trait PluginHooks:
@@ -69,13 +56,20 @@ trait PluginHooks:
         ]
     ]
 
+    comptime print_emit_fn: Optional[PrintEmitFnType]
+    """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
+    descriptor."""
+
     comptime reduce_generator_fn[target: StaticString]: Optional[
         ReduceGeneratorFnType
     ]
 
-    comptime print_emit_fn: Optional[_PrintEmitFn]
-    """Plugin hook for emitting a `print()` UTF-8 byte buffer to a file
-    descriptor."""
+
+# FIXME(MOCO-3871): Alias is to workaround function type comparision bug.
+comptime PrintEmitFnType = def[O: Origin](
+    cstr: CStringSlice[O],
+    file_value: FileDescriptor,
+) thin -> None
 
 
 comptime ReduceGeneratorFnType = (
@@ -125,8 +119,8 @@ struct DefaultPlugin(PluginHooks):
         ]
     ] = None
 
+    comptime print_emit_fn: Optional[PrintEmitFnType] = None
+
     comptime reduce_generator_fn[target: StaticString]: Optional[
         ReduceGeneratorFnType
     ] = None
-
-    comptime print_emit_fn: Optional[_PrintEmitFn] = None

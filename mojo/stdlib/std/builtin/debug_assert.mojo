@@ -196,7 +196,7 @@ def debug_assert[
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
-        message.nul_terminate()
+        _ = message.nul_terminate()
 
         var slice = message.as_string_slice()
         _debug_assert_msg(
@@ -320,7 +320,7 @@ def debug_assert[
         comptime for i in range(messages.__len__()):
             messages[i].write_to(message)
 
-        message.nul_terminate()
+        _ = message.nul_terminate()
 
         var slice = message.as_string_slice()
 

@@ -24,6 +24,7 @@ from std.reflection.type_info import _unqualified_type_name
 from std.sys import align_of, size_of
 from std.sys.info import is_gpu
 from std.sys.defines import get_defined_int
+from std.ffi import CStringSlice
 
 from std.bit import byte_swap
 from std.memory import Span, bitcast, memcpy
@@ -447,7 +448,9 @@ struct _WriteBufferHeap(Writable, Writer):
             StringSlice(unsafe_from_utf8=Span(ptr=self._data, length=self._pos))
         )
 
-    def nul_terminate(mut self):
+    def nul_terminate(
+        mut self,
+    ) -> CStringSlice[origin_of(self).unsafe_mut_cast[False]()]:
         if self._pos + 1 > HEAP_BUFFER_BYTES:
             _printf[
                 "HEAP_BUFFER_BYTES exceeded, increase with: `mojo -D"
@@ -456,6 +459,12 @@ struct _WriteBufferHeap(Writable, Writer):
             abort()
         self._data[self._pos] = 0
         self._pos += 1
+
+        return CStringSlice(
+            unsafe_from_ptr=self._data.bitcast[Int8]()
+            .as_immutable()
+            .unsafe_origin_cast[origin_of(self).unsafe_mut_cast[False]()]()
+        )
 
     def as_string_slice[
         mut: Bool, origin: Origin[mut=mut], //
