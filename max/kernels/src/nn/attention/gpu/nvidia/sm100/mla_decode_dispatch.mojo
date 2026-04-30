@@ -847,10 +847,24 @@ def mla_decode_sm100_dispatch[
             extra_scales_ptr=extra_scales_ptr,
         )
 
-    if use_small_split_pages:
+    comptime if k_t.page_size == 0 or k_t.page_size >= 128:
+        # Non-paged (page_size=0) and page_size>=128 both satisfy the
+        # `page_size % split_page_size == 0` assertion for both 64 and
+        # 128 split granularities, so the full routing is emittable.
+        if use_small_split_pages:
+            launch_impl[64]()
+        else:
+            launch_impl[128]()
+    elif k_t.page_size == 64:
+        # page_size=64: only split_page_size=64 satisfies the divisibility
+        # assertion. The 128 branch would fail instantiation.
         launch_impl[64]()
     else:
-        launch_impl[128]()
+        # page_size < 64 (e.g. 16, 32): split_page_size = page_size so each
+        # split aligns with a whole number of physical pages. Dispatch the
+        # split_page_size at comptime so only the valid instantiation is
+        # emitted.
+        launch_impl[k_t.page_size]()
 
 
 # ------------------------------------------------------------------------------

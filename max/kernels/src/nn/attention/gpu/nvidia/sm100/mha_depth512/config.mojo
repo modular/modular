@@ -129,7 +129,14 @@ struct Depth512SM100Config[
                 Self.MMA_K,
             ),
         )
-        if page_size % self.BN != 0:
+        # page_size == 0 means non-paged (no constraint).
+        # page_size >= BN: page contains full tile (page_size % BN == 0).
+        # page_size < BN: tile spans multiple pages (BN % page_size == 0).
+        if (
+            page_size != 0
+            and page_size % self.BN != 0
+            and self.BN % page_size != 0
+        ):
             self.BN = prev_power_of_two(self.BN)
 
         # BK sub-tile sizes

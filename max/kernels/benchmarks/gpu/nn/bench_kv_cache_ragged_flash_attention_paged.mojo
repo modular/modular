@@ -95,6 +95,7 @@ def _get_run_name[
 
 def execute_kv_cache_ragged_flash_attention[
     dtype: DType,
+    *,
     head_dim: Int,
     num_q_heads: Int,
     num_kv_heads: Int,
@@ -389,6 +390,7 @@ def main() raises:
     comptime head_dim = get_defined_int["head_dim", 128]()
     comptime num_q_heads = get_defined_int["num_q_heads", 32]()
     comptime num_kv_heads = get_defined_int["num_kv_heads", 8]()
+    comptime page_size = get_defined_int["page_size", 256]()
 
     var batch_size = arg_parse("batch_size", 1)
     var use_random_seq_lengths = arg_parse("use_random_seq_lengths", False)
@@ -405,10 +407,10 @@ def main() raises:
             # benchmarking flash attention
             execute_kv_cache_ragged_flash_attention[
                 dtype,
-                head_dim,
-                num_q_heads,
-                num_kv_heads,
-                512,
+                head_dim=head_dim,
+                num_q_heads=num_q_heads,
+                num_kv_heads=num_kv_heads,
+                page_size=page_size,
             ](
                 ctx,
                 m,

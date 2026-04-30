@@ -56,6 +56,7 @@ from std.gpu.memory import (
     cp_async_bulk_tensor_global_shared_cta,
     cp_async_bulk_tensor_reduce_global_shared_cta,
     cp_async_bulk_tensor_shared_cluster_global,
+    cp_async_bulk_tensor_shared_cluster_global_elect,
     cp_async_bulk_tensor_shared_cluster_global_im2col,
     cp_async_bulk_tensor_shared_cluster_global_im2col_multicast,
     cp_async_bulk_tensor_shared_cluster_global_multicast,
@@ -866,6 +867,82 @@ struct TMATensorTile[
                 )
 
     @always_inline
+    def async_copy_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[_, _, address_space=AddressSpace.SHARED, ...],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated overload of `async_copy` (2D).
+
+        Each unrolled `cp_async_bulk_tensor_shared_cluster_global` issue is
+        predicated in-PTX on `elect`: the TMA fires only on the elected lane.
+        All lanes follow the same PTX control flow — no warp-divergent
+        `if elect != 0:` is needed at the call site.
+
+        Parameters:
+            cta_group: If the TMA is issued with `cta_group == 2`, only the
+                leader CTA is notified on completion. Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory. Must be 128-byte
+                aligned.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 2D coordinates in the source tensor.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
+        """
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime assert (
+            type_of(dst).dtype == Self.dtype
+        ), "Input tensor has a different type than the TMA op"
+
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = Self.tile_shape[
+            Int(not Self.is_k_major)
+        ] // copy_dim0
+        comptime num_copies_dim1 = Self.tile_shape[
+            Int(Self.is_k_major)
+        ] // copy_dim1
+
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+
+                comptime assert (
+                    copy_offset * UInt32(size_of[Self.dtype]())
+                ) % 128 == 0, (
+                    "TMA async_copy requires 128B-aligned copy offset (offset="
+                    + String(copy_offset)
+                    + ")"
+                )
+                cp_async_bulk_tensor_shared_cluster_global_elect[
+                    cta_group=cta_group,
+                    eviction_policy=eviction_policy,
+                ](
+                    dst.ptr.mut_cast[True]() + copy_offset,
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    mem_barrier.unsafe_ptr(),
+                    Index(
+                        coords[0] + (j * copy_dim1),
+                        coords[1] + (i * copy_dim0),
+                    ),
+                    elect,
+                )
+
+    @always_inline
     def async_copy[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -920,8 +997,70 @@ struct TMATensorTile[
                     ),
                 )
 
+    @always_inline
+    def async_copy_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated TileTensor overload of `async_copy` (2D).
+
+        See the `LayoutTensor` overload of `async_copy_elect` for semantics.
+
+        Parameters:
+            cta_group: If the TMA is issued with `cta_group == 2`, only the
+                leader CTA is notified on completion. Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 2D coordinates in the source tensor.
+            elect: `0` on non-elected lanes (skip the TMA), non-zero on the
+                single elected lane (issue the TMA).
+        """
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = Self.tile_shape[
+            Int(not Self.is_k_major)
+        ] // copy_dim0
+        comptime num_copies_dim1 = Self.tile_shape[
+            Int(Self.is_k_major)
+        ] // copy_dim1
+
+        comptime for i in range(num_copies_dim0):
+            comptime for j in range(num_copies_dim1):
+                comptime copy_offset: UInt32 = UInt32(
+                    (i * num_copies_dim1 + j) * copy_size
+                )
+                cp_async_bulk_tensor_shared_cluster_global_elect[
+                    cta_group=cta_group,
+                    eviction_policy=eviction_policy,
+                ](
+                    dst.ptr.mut_cast[True]() + copy_offset,
+                    UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                    mem_barrier.unsafe_ptr(),
+                    Index(
+                        coords[0] + (j * copy_dim1),
+                        coords[1] + (i * copy_dim0),
+                    ),
+                    elect,
+                )
+
     @always_inline("nodebug")
     def async_copy_3d[
+        cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
@@ -945,8 +1084,12 @@ struct TMATensorTile[
             coords: The 3D coordinates in the source tensor from which to copy data.
 
         Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
+                mbarrier arrival routes to the leader CTA's barrier — required
+                for pair-CTA kernels that share one barrier across the pair.
+                Defaults to 1.
             eviction_policy: Optional cache eviction policy that controls how the data is handled
-                in the cache hierarchy. Defaults to EVICT_FIRST.
+                in the cache hierarchy. Defaults to EVICT_NORMAL.
 
         Constraints:
 
@@ -992,7 +1135,8 @@ struct TMATensorTile[
                     )
 
                     cp_async_bulk_tensor_shared_cluster_global[
-                        eviction_policy=eviction_policy
+                        cta_group=cta_group,
+                        eviction_policy=eviction_policy,
                     ](
                         dst.ptr.mut_cast[True]() + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -1004,8 +1148,84 @@ struct TMATensorTile[
                         ),
                     )
 
+    @always_inline("nodebug")
+    def async_copy_3d_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated overload of `async_copy_3d`.
+
+        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        predicated in-PTX on `elect`.
+
+        Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
+                mbarrier arrival routes to the leader CTA's barrier.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory. Must be 128-byte
+                aligned.
+            mem_barrier: The memory barrier used to synchronize the
+                transfer.
+            coords: The 3D coordinates in the source tensor.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
+                    comptime copy_offset: UInt32 = UInt32(
+                        _desc_offset[
+                            3,
+                            Index(
+                                num_copies_dim0,
+                                num_copies_dim1,
+                                num_copies_dim2,
+                            ),
+                            Self.is_k_major,
+                        ](Index(m, i, j))
+                        * copy_size
+                    )
+
+                    cp_async_bulk_tensor_shared_cluster_global_elect[
+                        cta_group=cta_group,
+                        eviction_policy=eviction_policy,
+                    ](
+                        dst.ptr.mut_cast[True]() + copy_offset,
+                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        mem_barrier.unsafe_ptr(),
+                        Index(
+                            coords[0] + (j * copy_dim2),
+                            coords[1] + (i * copy_dim1),
+                            coords[2] + (m * copy_dim0),
+                        ),
+                        elect,
+                    )
+
     @always_inline
     def async_copy_3d[
+        cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
     ](
         self,
@@ -1024,6 +1244,10 @@ struct TMATensorTile[
         alignment by the caller's SMEM layout).
 
         Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX so the
+                mbarrier arrival routes to the leader CTA's barrier — required
+                for pair-CTA kernels that share one barrier across the pair.
+                Defaults to 1.
             eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
 
         Args:
@@ -1057,7 +1281,8 @@ struct TMATensorTile[
                     )
 
                     cp_async_bulk_tensor_shared_cluster_global[
-                        eviction_policy=eviction_policy
+                        cta_group=cta_group,
+                        eviction_policy=eviction_policy,
                     ](
                         dst.ptr.mut_cast[True]() + copy_offset,
                         UnsafePointer(to=self.descriptor).bitcast[NoneType](),
@@ -1067,6 +1292,77 @@ struct TMATensorTile[
                             coords[1] + (i * copy_dim1),
                             coords[2] + (m * copy_dim0),
                         ),
+                    )
+
+    @always_inline
+    def async_copy_3d_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated TileTensor overload of `async_copy_3d`.
+
+        See the `LayoutTensor` overload of `async_copy_3d_elect` for
+        semantics.
+
+        Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 3D coordinates in the source tensor.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+
+        comptime for m in range(num_copies_dim0):
+            comptime for i in range(num_copies_dim1):
+                comptime for j in range(num_copies_dim2):
+                    comptime copy_offset: UInt32 = UInt32(
+                        _desc_offset[
+                            3,
+                            Index(
+                                num_copies_dim0,
+                                num_copies_dim1,
+                                num_copies_dim2,
+                            ),
+                            Self.is_k_major,
+                        ](Index(m, i, j))
+                        * copy_size
+                    )
+
+                    cp_async_bulk_tensor_shared_cluster_global_elect[
+                        cta_group=cta_group,
+                        eviction_policy=eviction_policy,
+                    ](
+                        dst.ptr.mut_cast[True]() + copy_offset,
+                        UnsafePointer(to=self.descriptor).bitcast[NoneType](),
+                        mem_barrier.unsafe_ptr(),
+                        Index(
+                            coords[0] + (j * copy_dim2),
+                            coords[1] + (i * copy_dim1),
+                            coords[2] + (m * copy_dim0),
+                        ),
+                        elect,
                     )
 
     @always_inline
@@ -1157,6 +1453,85 @@ struct TMATensorTile[
                         )
 
     @always_inline
+    def async_copy_4d_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated overload of `async_copy_4d`.
+
+        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        predicated in-PTX on `elect`.
+
+        Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory. Must be 128-byte
+                aligned.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 4D coordinates in the source tensor.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_dim3 = Self.desc_shape[3]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+        comptime num_copies_dim3 = ceildiv(Self.tile_shape[3], copy_dim3)
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
+                        comptime copy_offset: UInt32 = UInt32(
+                            _desc_offset[
+                                4,
+                                Index(
+                                    num_copies_dim0,
+                                    num_copies_dim1,
+                                    num_copies_dim2,
+                                    num_copies_dim3,
+                                ),
+                                Self.is_k_major,
+                            ](Index(n, m, i, j))
+                            * copy_size
+                        )
+
+                        cp_async_bulk_tensor_shared_cluster_global_elect[
+                            cta_group=cta_group,
+                            eviction_policy=eviction_policy,
+                        ](
+                            dst.ptr.mut_cast[True]() + copy_offset,
+                            UnsafePointer(to=self.descriptor).bitcast[
+                                NoneType
+                            ](),
+                            mem_barrier.unsafe_ptr(),
+                            Index(
+                                coords[0] + (j * copy_dim3),
+                                coords[1] + (i * copy_dim2),
+                                coords[2] + (m * copy_dim1),
+                                coords[3] + (n * copy_dim0),
+                            ),
+                            elect,
+                        )
+
+    @always_inline
     def async_copy_4d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -1230,6 +1605,83 @@ struct TMATensorTile[
                                 coords[2] + (m * copy_dim1),
                                 coords[3] + (n * copy_dim0),
                             ),
+                        )
+
+    @always_inline
+    def async_copy_4d_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated TileTensor overload of `async_copy_4d`.
+
+        See the `LayoutTensor` overload of `async_copy_4d_elect` for
+        semantics.
+
+        Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 4D coordinates in the source tensor.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_dim3 = Self.desc_shape[3]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+        comptime num_copies_dim3 = ceildiv(Self.tile_shape[3], copy_dim3)
+        comptime for n in range(num_copies_dim0):
+            comptime for m in range(num_copies_dim1):
+                comptime for i in range(num_copies_dim2):
+                    comptime for j in range(num_copies_dim3):
+                        comptime copy_offset: UInt32 = UInt32(
+                            _desc_offset[
+                                4,
+                                Index(
+                                    num_copies_dim0,
+                                    num_copies_dim1,
+                                    num_copies_dim2,
+                                    num_copies_dim3,
+                                ),
+                                Self.is_k_major,
+                            ](Index(n, m, i, j))
+                            * copy_size
+                        )
+
+                        cp_async_bulk_tensor_shared_cluster_global_elect[
+                            cta_group=cta_group,
+                            eviction_policy=eviction_policy,
+                        ](
+                            dst.ptr.mut_cast[True]() + copy_offset,
+                            UnsafePointer(to=self.descriptor).bitcast[
+                                NoneType
+                            ](),
+                            mem_barrier.unsafe_ptr(),
+                            Index(
+                                coords[0] + (j * copy_dim3),
+                                coords[1] + (i * copy_dim2),
+                                coords[2] + (m * copy_dim1),
+                                coords[3] + (n * copy_dim0),
+                            ),
+                            elect,
                         )
 
     @always_inline
@@ -1325,6 +1777,90 @@ struct TMATensorTile[
                             )
 
     @always_inline
+    def async_copy_5d_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int, Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated overload of `async_copy_5d`.
+
+        See `async_copy_elect` for semantics — each unrolled TMA issue is
+        predicated in-PTX on `elect`.
+
+        Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory. Must be 128-byte
+                aligned.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 5D coordinates in the source tensor.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime assert (
+            type_of(dst).alignment % 128 == 0
+        ), "TMA requires 128B alignment in shared memory"
+
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_dim3 = Self.desc_shape[3]
+        comptime copy_dim4 = Self.desc_shape[4]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+        comptime num_copies_dim3 = ceildiv(Self.tile_shape[3], copy_dim3)
+        comptime num_copies_dim4 = ceildiv(Self.tile_shape[4], copy_dim4)
+        comptime for o in range(num_copies_dim0):
+            comptime for n in range(num_copies_dim1):
+                comptime for m in range(num_copies_dim2):
+                    comptime for i in range(num_copies_dim3):
+                        comptime for j in range(num_copies_dim4):
+                            comptime copy_offset: UInt32 = UInt32(
+                                _desc_offset[
+                                    5,
+                                    Index(
+                                        num_copies_dim0,
+                                        num_copies_dim1,
+                                        num_copies_dim2,
+                                        num_copies_dim3,
+                                        num_copies_dim4,
+                                    ),
+                                    Self.is_k_major,
+                                ](Index(o, n, m, i, j))
+                                * copy_size
+                            )
+
+                            cp_async_bulk_tensor_shared_cluster_global_elect[
+                                cta_group=cta_group,
+                                eviction_policy=eviction_policy,
+                            ](
+                                dst.ptr.mut_cast[True]() + copy_offset,
+                                UnsafePointer(to=self.descriptor).bitcast[
+                                    NoneType
+                                ](),
+                                mem_barrier.unsafe_ptr(),
+                                Index(
+                                    coords[0] + (j * copy_dim4),
+                                    coords[1] + (i * copy_dim3),
+                                    coords[2] + (m * copy_dim2),
+                                    coords[3] + (n * copy_dim1),
+                                    coords[4] + (o * copy_dim0),
+                                ),
+                                elect,
+                            )
+
+    @always_inline
     def async_copy_5d[
         cta_group: Int = 1,
         eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
@@ -1405,6 +1941,88 @@ struct TMATensorTile[
                                 ),
                             )
 
+    @always_inline
+    def async_copy_5d_elect[
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: Tuple[Int, Int, Int, Int, Int],
+        elect: Int32,
+    ):
+        """Elect-predicated TileTensor overload of `async_copy_5d`.
+
+        See the `LayoutTensor` overload of `async_copy_5d_elect` for
+        semantics.
+
+        Parameters:
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The 5D coordinates in the source tensor.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime copy_dim0 = Self.desc_shape[0]
+        comptime copy_dim1 = Self.desc_shape[1]
+        comptime copy_dim2 = Self.desc_shape[2]
+        comptime copy_dim3 = Self.desc_shape[3]
+        comptime copy_dim4 = Self.desc_shape[4]
+        comptime copy_size = _idx_product[Self.rank, Self.desc_shape]()
+        comptime num_copies_dim0 = ceildiv(Self.tile_shape[0], copy_dim0)
+        comptime num_copies_dim1 = ceildiv(Self.tile_shape[1], copy_dim1)
+        comptime num_copies_dim2 = ceildiv(Self.tile_shape[2], copy_dim2)
+        comptime num_copies_dim3 = ceildiv(Self.tile_shape[3], copy_dim3)
+        comptime num_copies_dim4 = ceildiv(Self.tile_shape[4], copy_dim4)
+        comptime for o in range(num_copies_dim0):
+            comptime for n in range(num_copies_dim1):
+                comptime for m in range(num_copies_dim2):
+                    comptime for i in range(num_copies_dim3):
+                        comptime for j in range(num_copies_dim4):
+                            comptime copy_offset: UInt32 = UInt32(
+                                _desc_offset[
+                                    5,
+                                    Index(
+                                        num_copies_dim0,
+                                        num_copies_dim1,
+                                        num_copies_dim2,
+                                        num_copies_dim3,
+                                        num_copies_dim4,
+                                    ),
+                                    Self.is_k_major,
+                                ](Index(o, n, m, i, j))
+                                * copy_size
+                            )
+
+                            cp_async_bulk_tensor_shared_cluster_global_elect[
+                                cta_group=cta_group,
+                                eviction_policy=eviction_policy,
+                            ](
+                                dst.ptr.mut_cast[True]() + copy_offset,
+                                UnsafePointer(to=self.descriptor).bitcast[
+                                    NoneType
+                                ](),
+                                mem_barrier.unsafe_ptr(),
+                                Index(
+                                    coords[0] + (j * copy_dim4),
+                                    coords[1] + (i * copy_dim3),
+                                    coords[2] + (m * copy_dim2),
+                                    coords[3] + (n * copy_dim1),
+                                    coords[4] + (o * copy_dim0),
+                                ),
+                                elect,
+                            )
+
     @always_inline("nodebug")
     def async_copy[
         coord_rank: Int,
@@ -1446,17 +2064,21 @@ struct TMATensorTile[
         comptime assert coord_rank in (2, 3, 4, 5)
 
         comptime if coord_rank == 2:
-            self.async_copy[eviction_policy=eviction_policy](
-                dst, mem_barrier, (Int(coords[0]), Int(coords[1]))
-            )
+            self.async_copy[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
         elif coord_rank == 3:
-            self.async_copy_3d[eviction_policy=eviction_policy](
+            self.async_copy_3d[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
                 dst,
                 mem_barrier,
                 (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
         elif coord_rank == 4:
-            self.async_copy_4d[eviction_policy=eviction_policy](
+            self.async_copy_4d[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
                 dst,
                 mem_barrier,
                 (
@@ -1467,7 +2089,9 @@ struct TMATensorTile[
                 ),
             )
         elif coord_rank == 5:
-            self.async_copy_5d[eviction_policy=eviction_policy](
+            self.async_copy_5d[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
                 dst,
                 mem_barrier,
                 (
@@ -1477,6 +2101,84 @@ struct TMATensorTile[
                     Int(coords[3]),
                     Int(coords[4]),
                 ),
+            )
+
+    @always_inline("nodebug")
+    def async_copy_elect[
+        coord_rank: Int,
+        //,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: LayoutTensor[
+            Self.dtype, _, address_space=AddressSpace.SHARED, ...
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: StaticTuple[UInt32, coord_rank],
+        elect: Int32,
+    ):
+        """Elect-predicated rank-dispatched overload of `async_copy`.
+
+        Dispatches to the rank-specific `async_copy_*_elect` methods. Each
+        underlying TMA issue is predicated in-PTX on `elect`.
+
+        Parameters:
+            coord_rank: The dimensionality (must be 2, 3, 4, or 5).
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: The destination tensor in shared memory. Must be 128-byte
+                aligned.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The N-dimensional coordinates as `StaticTuple`.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime assert coord_rank in (2, 3, 4, 5)
+
+        comptime if coord_rank == 2:
+            self.async_copy_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])), elect)
+        elif coord_rank == 3:
+            self.async_copy_3d_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                dst,
+                mem_barrier,
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
+                elect,
+            )
+        elif coord_rank == 4:
+            self.async_copy_4d_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                dst,
+                mem_barrier,
+                (
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                ),
+                elect,
+            )
+        elif coord_rank == 5:
+            self.async_copy_5d_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                dst,
+                mem_barrier,
+                (
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                    Int(coords[4]),
+                ),
+                elect,
             )
 
     @always_inline("nodebug")
@@ -1516,13 +2218,17 @@ struct TMATensorTile[
                 cta_group=cta_group, eviction_policy=eviction_policy
             ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])))
         elif coord_rank == 3:
-            self.async_copy_3d[eviction_policy=eviction_policy](
+            self.async_copy_3d[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
                 dst,
                 mem_barrier,
                 (Int(coords[0]), Int(coords[1]), Int(coords[2])),
             )
         elif coord_rank == 4:
-            self.async_copy_4d[eviction_policy=eviction_policy](
+            self.async_copy_4d[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
                 dst,
                 mem_barrier,
                 (
@@ -1533,7 +2239,9 @@ struct TMATensorTile[
                 ),
             )
         else:
-            self.async_copy_5d[eviction_policy=eviction_policy](
+            self.async_copy_5d[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
                 dst,
                 mem_barrier,
                 (
@@ -1543,6 +2251,84 @@ struct TMATensorTile[
                     Int(coords[3]),
                     Int(coords[4]),
                 ),
+            )
+
+    @always_inline("nodebug")
+    def async_copy_elect[
+        coord_rank: Int,
+        //,
+        cta_group: Int = 1,
+        eviction_policy: CacheEviction = CacheEviction.EVICT_NORMAL,
+    ](
+        self,
+        dst: TileTensor[
+            mut=True,
+            dtype=Self.dtype,
+            address_space=AddressSpace.SHARED,
+            ...,
+        ],
+        ref[AddressSpace.SHARED] mem_barrier: SharedMemBarrier,
+        coords: StaticTuple[UInt32, coord_rank],
+        elect: Int32,
+    ):
+        """Elect-predicated TileTensor rank-dispatched overload of
+        `async_copy`. Dispatches to the rank-specific `_elect` methods.
+
+        Parameters:
+            coord_rank: The dimensionality (must be 2, 3, 4, or 5).
+            cta_group: If set to 2, the TMA emits `cta_group::2` PTX.
+                Defaults to 1.
+            eviction_policy: Cache eviction policy. Defaults to EVICT_NORMAL.
+
+        Args:
+            dst: TileTensor in shared memory where data will be copied.
+            mem_barrier: The memory barrier for synchronization.
+            coords: The N-dimensional coordinates as `StaticTuple`.
+            elect: `0` on non-elected lanes, non-zero on the elected lane.
+        """
+        comptime assert coord_rank in (2, 3, 4, 5)
+
+        comptime if coord_rank == 2:
+            self.async_copy_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](dst, mem_barrier, (Int(coords[0]), Int(coords[1])), elect)
+        elif coord_rank == 3:
+            self.async_copy_3d_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                dst,
+                mem_barrier,
+                (Int(coords[0]), Int(coords[1]), Int(coords[2])),
+                elect,
+            )
+        elif coord_rank == 4:
+            self.async_copy_4d_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                dst,
+                mem_barrier,
+                (
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                ),
+                elect,
+            )
+        else:
+            self.async_copy_5d_elect[
+                cta_group=cta_group, eviction_policy=eviction_policy
+            ](
+                dst,
+                mem_barrier,
+                (
+                    Int(coords[0]),
+                    Int(coords[1]),
+                    Int(coords[2]),
+                    Int(coords[3]),
+                    Int(coords[4]),
+                ),
+                elect,
             )
 
     @always_inline("nodebug")

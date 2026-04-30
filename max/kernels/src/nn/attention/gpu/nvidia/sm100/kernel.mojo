@@ -40,6 +40,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SM100TensorAccumulatorTS,
     elect,
     FA4MiscMBars,
+    kv_sub_tile_rows,
 )
 from nn.attention.gpu.nvidia.sm90.attention import (
     get_seq_info,
@@ -207,13 +208,13 @@ struct SM100MHA2Q[
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.k_rows_per_cta(),
+            BN=kv_sub_tile_rows(Self.config.k_rows_per_cta(), Self.page_size),
             BK=Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.BN,
+            BN=kv_sub_tile_rows(Self.config.BN, Self.page_size),
             BK=Self.config.v_cols_per_cta(),
         ],
         ragged_tma_store: RaggedTMA3DTile[
@@ -424,25 +425,62 @@ struct SM100MHA2Q[
                         kv_input_row_offsets,
                         max_seq_len,
                     )
-                    fa4_load[
-                        Self.KVLUTType,
-                        Self.MaskType,
-                        Self.config,
-                        Self.ValidLengthType,
-                        Self._is_cache_length_accurate,
-                        Self.MaxSeqLenType,
-                    ](
-                        smem,
-                        pos.score_row,
-                        pos.num_keys,
-                        seq_info,
-                        max_seq_len,
-                        mask,
-                        q_tma_op,
-                        k_tma_op,
-                        v_tma_op,
-                        kv_lut,
-                    )
+                    comptime if not Self.pair_cta:
+                        fa4_load[
+                            Self.config,
+                            ValidLengthType=Self.ValidLengthType,
+                            _is_cache_length_accurate=Self._is_cache_length_accurate,
+                            is_leader=True,
+                        ](
+                            smem,
+                            pos.score_row,
+                            pos.num_keys,
+                            seq_info,
+                            max_seq_len,
+                            mask,
+                            q_tma_op,
+                            k_tma_op,
+                            v_tma_op,
+                            kv_lut,
+                        )
+                    else:
+                        var cta_rank = block_rank_in_cluster() % 2
+                        if cta_rank == 0:
+                            fa4_load[
+                                Self.config,
+                                ValidLengthType=Self.ValidLengthType,
+                                _is_cache_length_accurate=Self._is_cache_length_accurate,
+                                is_leader=True,
+                            ](
+                                smem,
+                                pos.score_row,
+                                pos.num_keys,
+                                seq_info,
+                                max_seq_len,
+                                mask,
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                kv_lut,
+                            )
+                        else:
+                            fa4_load[
+                                Self.config,
+                                ValidLengthType=Self.ValidLengthType,
+                                _is_cache_length_accurate=Self._is_cache_length_accurate,
+                                is_leader=False,
+                            ](
+                                smem,
+                                pos.score_row,
+                                pos.num_keys,
+                                seq_info,
+                                max_seq_len,
+                                mask,
+                                q_tma_op,
+                                k_tma_op,
+                                v_tma_op,
+                                kv_lut,
+                            )
 
             elif warp_idx == 12:  # Q @ K', P @ V
                 warpgroup_reg_dealloc[num_reg_other]()

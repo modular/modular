@@ -69,6 +69,7 @@ from std.utils.static_tuple import StaticTuple
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
     elect_mma_arrive,
+    expect_bytes_pred,
     SharedMemPointer,
     MBarType,
     ProducerPipeline,
@@ -1171,14 +1172,14 @@ struct MLA_SM100_Decode_Sparse[
             )
             num_orig_tiles = ceildiv(orig_tokens_in_split, Self.config.BN)
 
+        expect_bytes_pred(
+            mbar_q,
+            Int32(
+                Self.config.BM * Self.config.q_depth * size_of[Self.q_type]()
+            ),
+            elect_mask,
+        )
         if is_leader:
-            mbar_q[].expect_bytes(
-                Int32(
-                    Self.config.BM
-                    * Self.config.q_depth
-                    * size_of[Self.q_type]()
-                )
-            )
             Self.Common_MLA_Op.load_q(q_tma, q_smem, mbar_q, 0, row)
 
         comptime kv_nope_bytes = Self.config.BN * Self.nope_gather4_box_w * size_of[
@@ -1334,9 +1335,10 @@ struct MLA_SM100_Decode_Sparse[
             Self.config.BN
         )
 
+        expect_bytes_pred(
+            k_mbar, Int32(kv_nope_bytes + kv_rope_bytes), Int32(is_leader)
+        )
         if is_leader:
-            k_mbar[].expect_bytes(Int32(kv_nope_bytes + kv_rope_bytes))
-
             cur_nope_tma.async_copy_gather4_tile[
                 tile_width=Self.config.padded_depth // 8,
                 eviction_policy=CacheEviction.EVICT_LAST,
@@ -1413,9 +1415,10 @@ struct MLA_SM100_Decode_Sparse[
                 Self.config.BN
             )
 
+            expect_bytes_pred(
+                k_mbar, Int32(kv_nope_bytes + kv_rope_bytes), Int32(is_leader)
+            )
             if is_leader:
-                k_mbar[].expect_bytes(Int32(kv_nope_bytes + kv_rope_bytes))
-
                 cur_nope_tma.async_copy_gather4_tile[
                     tile_width=Self.config.padded_depth // 8,
                     eviction_policy=CacheEviction.EVICT_LAST,

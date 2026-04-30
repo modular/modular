@@ -38,10 +38,6 @@ _EXTRA_CONSTRAINTS = {
         "//:apple_gpu": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
-    "test_mla_decode_paged_variable.mojo": select({
-        "//:b200_gpu": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     "test_mla_decode_blockwise_fp8.mojo": select({
         "//:b200_gpu": [],
         "//conditions:default": ["@platforms//:incompatible"],
@@ -261,6 +257,11 @@ _FILECHECK_TESTS = [
         exclude = _FILECHECK_TESTS + [
             "test_mha_causal_mask.mojo",
             "test_mha_causal_mask_amd.mojo",
+            "test_mla_decode_paged_variable.mojo",
+            "test_mla_prefill_generic_paged.mojo",
+            "test_mla_prefill_blockscale_paged.mojo",
+            "test_mla_prefill_per_token_scale_paged.mojo",
+            "_paged_prefill_test_utils.mojo",
         ],
     )
 ]
@@ -423,4 +424,126 @@ _MHA_CAUSAL_MASK_AMD_DTYPES = {
         ],
     )
     for dtype, copts in _MHA_CAUSAL_MASK_AMD_DTYPES.items()
+]
+
+# test_mla_decode_paged_variable.mojo split by page_size. Each page_size
+# gets its own target. MLA decode is B200-only (SM100).
+#
+# page_size < 64 (the decode tile row count BK1=64) would exercise
+# multi-sub-tile TMA emission, but the decode TMA descriptor's `BN` is
+# currently hardcoded to BK1=64 (see create_tma_tile sites in
+# mla_decode_dispatch.mojo and the kernel struct signatures). Supporting
+# page_size < BK1 requires threading `kv_sub_tile_rows(BK1, page_size)`
+# through the kernel TMA signatures — follow-up work.
+_MLA_DECODE_PAGED_CONFIGS = [
+    "256",
+    "128",
+    "64",
+]
+
+[
+    mojo_test(
+        name = "test_mla_decode_paged_variable_ps{}.mojo.test".format(page_size),
+        size = "large",
+        srcs = ["test_mla_decode_paged_variable.mojo"],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "5",
+        },
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for page_size in _MLA_DECODE_PAGED_CONFIGS
+]
+
+# MLA prefill paged-KV tests. These are a NEW set of tests that
+# exercise the production MLA prefill code path: ``flare_mla_prefill``
+# with a ``KVCacheT`` for K_rope, dispatched to ``mla_sm100_prefill_*``
+# on B200. The existing
+# ``test_mla.mojo``/``test_mla_prefill_*_fp8.mojo`` tests cover only the
+# contiguous K_rope path (``LayoutTensorMHAOperand``) and so do not
+# exercise the sub-tile TMA loops in the kernel.
+#
+# When ``page_size < BN`` (= 128 for MLA prefill) AND a tile's sub-tile
+# page indices exceed ``ceildiv(num_keys, page_size)``, the kernel emits
+# sub-tile TMAs whose comptime page loop reads stale lookup-table
+# entries past the end of the sequence (LUT padding slots) — the
+# silent partial-page bug. The kernel-side ``debug_assert`` in each
+# K_rope sub-tile loop fires on those configs pre-fix; post-fix, all
+# combinations pass.
+#
+# ``page_size`` is a compile-time parameter (it flows into
+# ``PagedKVCacheCollection[..., page_size]`` and the kernel's TMA
+# descriptors), so each value here gets its own binary. ``num_keys`` is
+# iterated at runtime — see ``num_keys_to_test`` in
+# ``_paged_prefill_test_utils.mojo``. Each binary tests the full
+# cartesian product {this page_size} × {all num_keys}.
+_MLA_PREFILL_PAGED_PAGE_SIZES = [
+    "16",
+    "32",
+    "64",
+    "128",
+    "256",
+]
+
+# (test_file_basename, test_label_prefix) — paged-prefill tests share
+# the same ``_paged_prefill_test_utils.mojo`` helper and the same
+# ``page_size`` parameterisation. Each variant has its own entry so
+# the BUILD rule only needs to differ by srcs/name prefix.
+_MLA_PREFILL_PAGED_VARIANTS = [
+    ("test_mla_prefill_generic_paged.mojo", "test_mla_prefill_generic_paged"),
+    (
+        "test_mla_prefill_blockscale_paged.mojo",
+        "test_mla_prefill_blockscale_paged",
+    ),
+    (
+        "test_mla_prefill_per_token_scale_paged.mojo",
+        "test_mla_prefill_per_token_scale_paged",
+    ),
+]
+
+[
+    mojo_test(
+        name = "{}_ps{}.mojo.test".format(label, page_size),
+        size = "large",
+        srcs = [
+            src,
+            "_paged_prefill_test_utils.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+        ],
+        exec_properties = {
+            "test.resources:gpu-memory": "5",
+        },
+        main = src,
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "@mojo//:std",
+        ],
+    )
+    for (src, label) in _MLA_PREFILL_PAGED_VARIANTS
+    for page_size in _MLA_PREFILL_PAGED_PAGE_SIZES
 ]

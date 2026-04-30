@@ -40,6 +40,7 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
+from nn.attention.gpu.nvidia.sm100.attention_utils import kv_sub_tile_rows
 from .config import Depth512SM100Config
 from .kernel import SM100MHADepth512
 
@@ -130,17 +131,19 @@ def mha_sm100_depth512_dispatch[
     ](ctx, q, num_rows_q)
 
     # K: each CTA loads BN//2 rows, BK0 depth per stage.
+    comptime k_sub_BN = kv_sub_tile_rows(d512_config.BN // 2, KVType.page_size)
     k_tma_op = k.create_tma_tile[
         d512_config.swizzle_mode,
-        BN=d512_config.BN // 2,
+        BN=k_sub_BN,
         depth=d512_config.qk_depth,
         BK=d512_config.BK0,
     ](ctx)
 
     # V: BK1 rows x v_cols_per_cta columns (heavily sub-tiled for SMEM).
+    comptime v_sub_BN = kv_sub_tile_rows(d512_config.BK1, KVType.page_size)
     v_tma_op = v.create_tma_tile[
         d512_config.swizzle_mode,
-        BN=d512_config.BK1,
+        BN=v_sub_BN,
         depth=d512_config.ov_depth,
         BK=d512_config.v_cols_per_cta,
     ](ctx)

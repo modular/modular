@@ -40,7 +40,10 @@ from layout import (
     lt_to_tt,
     row_major,
 )
-from layout.tile_layout import Layout as InternalLayout
+from layout.tile_layout import (
+    Layout as InternalLayout,
+    row_major as tt_row_major,
+)
 from layout.layout_tensor import copy_local_to_shared
 from layout.swizzle import Swizzle
 from layout.tensor_core_async import st_matrix_n_layout, tile_layout_k_major
@@ -52,7 +55,12 @@ from layout.tma_async import (
     TMATensorTile,
 )
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
-from nn.attention.mha_operand import MHAOperand
+from nn.attention.mha_operand import (
+    MHAOperand,
+    PagedRowIndices,
+    kv_sub_tile_rows,
+    kv_num_sub_tiles,
+)
 from nn.attention.gpu.nvidia.mha_tile_scheduler import (
     MHASchedulerSynchronization,
     MHATileScheduler,
@@ -1112,13 +1120,13 @@ def produce[
     k_tma_op: KVTMATile[
         qkv_type,
         swizzle_mode,
-        BN=BN,
+        BN=kv_sub_tile_rows(BN, KVLUTType.page_size),
         BK=padded_depth,
     ],
     v_tma_op: KVTMATile[
         qkv_type,
         swizzle_mode,
-        BN=BN,
+        BN=kv_sub_tile_rows(BN, KVLUTType.page_size),
         BK=padded_depth,
     ],
     q_smem: UnsafePointer[
@@ -1218,39 +1226,123 @@ def produce[
         comptime sz = BN * padded_depth
         tile = {kv_smem + UInt32(sz) * idx}
 
+    comptime kv_sub_BN = kv_sub_tile_rows(BN, KVLUTType.page_size)
+
     comptime KVTMA = KVTMATile[
         qkv_type,
         swizzle_mode,
-        BN=BN,
+        BN=kv_sub_BN,
         BK=padded_depth,
     ]
+    comptime KVPagedRows = PagedRowIndices[BN, KVLUTType.page_size]
+    comptime page_size = KVLUTType.page_size
+    comptime needs_partial = page_size > 0 and page_size < BN
+    comptime kv_bytes_pp = padded_depth * KVPagedRows.eff_page * size_of[
+        qkv_type
+    ]()
+
+    @parameter
+    @always_inline("nodebug")
+    def _num_valid_pages(end_row: UInt32, current_kv_row: UInt32) -> UInt32:
+        return min(
+            UInt32(ceildiv(Int(end_row - current_kv_row), page_size)),
+            UInt32(KVPagedRows.num_pages),
+        )
 
     @parameter
     @always_inline("nodebug")
     def produce_kv[
-        wait: Bool
+        is_k_side: Bool,
+        wait: Bool,
     ](
         tma_op: KVTMA,
         mut state: PipelineState[pipeline_stages],
-        row: UInt32,
+        prompt_idx: UInt32,
+        kv_tile_row: UInt32,
         kv_head_idx: UInt32,
     ):
         var write_idx: UInt32 = state.index()
         var write_phase: UInt32 = state.phase()
 
         ref p_mbar = produced_mbar_kv[write_idx]
-        k_sub = kv_tile(write_idx)
 
         comptime if wait:
             consumed_mbar_kv[write_idx].wait(write_phase)
             comptime bytes = BN * padded_depth * size_of[qkv_type]()
             p_mbar.expect_bytes(Int32(bytes))
 
-        tma_op.async_copy(
-            k_sub,
-            p_mbar,
-            kv_coord[depth=depth](row, kv_head_idx),
-        )
+        comptime stage_sz = BN * padded_depth
+        var paged_rows = kv_lut.populate[BN](prompt_idx, kv_tile_row)
+        # SM90's producer runs only on thread 0 (gated by `if thread_idx.x == 0:`
+        # in `sm90/mha.mojo`), so we hard-code `elect=1` — the lone producer
+        # thread is always "elected" and must issue the TMA.
+        comptime if is_k_side:
+            paged_rows.tma_copy_k[needs_partial=False](
+                tma_op,
+                kv_smem + UInt32(stage_sz) * write_idx,
+                p_mbar,
+                kv_head_idx=kv_head_idx,
+                elect=Int32(1),
+            )
+        else:
+            paged_rows.tma_copy_v[needs_partial=False](
+                tma_op,
+                kv_smem + UInt32(stage_sz) * write_idx,
+                p_mbar,
+                kv_head_idx=kv_head_idx,
+                elect=Int32(1),
+            )
+        state.step()
+
+    @parameter
+    @always_inline("nodebug")
+    def produce_kv_partial[
+        is_k_side: Bool,
+        wait: Bool,
+    ](
+        tma_op: KVTMA,
+        mut state: PipelineState[pipeline_stages],
+        prompt_idx: UInt32,
+        kv_tile_row: UInt32,
+        kv_head_idx: UInt32,
+        num_valid_pages: UInt32,
+    ):
+        """Like `produce_kv` but with runtime-bounded page loops.
+
+        Uses `populate` + `tma_copy_{k,v}[needs_partial=True]` so the
+        row-index lookup (one SIMD LUT load for the paged case) is
+        amortized across all TMA copies issued by this call.
+        """
+        var write_idx: UInt32 = state.index()
+        var write_phase: UInt32 = state.phase()
+
+        ref p_mbar = produced_mbar_kv[write_idx]
+
+        comptime if wait:
+            consumed_mbar_kv[write_idx].wait(write_phase)
+            p_mbar.expect_bytes(Int32(kv_bytes_pp * Int(num_valid_pages)))
+
+        comptime stage_sz = BN * padded_depth
+        # See `produce_kv`: SM90 producer is single-threaded, so `elect=1`.
+        var paged_rows = kv_lut.populate[BN](prompt_idx, kv_tile_row)
+        comptime if is_k_side:
+            paged_rows.tma_copy_k[needs_partial=True](
+                tma_op,
+                kv_smem + UInt32(stage_sz) * write_idx,
+                p_mbar,
+                kv_head_idx=kv_head_idx,
+                elect=Int32(1),
+                k_num_valid_pages=num_valid_pages,
+            )
+        else:
+            paged_rows.tma_copy_v[needs_partial=True](
+                tma_op,
+                kv_smem + UInt32(stage_sz) * write_idx,
+                p_mbar,
+                kv_head_idx=kv_head_idx,
+                elect=Int32(1),
+                num_valid_pages=num_valid_pages,
+            )
         state.step()
 
     @parameter
@@ -1289,7 +1381,9 @@ def produce[
         start = 0
         end = 0
 
-    produced_mbar_kv[0].expect_bytes(Int32(qk_bytes))
+    comptime q_bytes = q_copy_rows * padded_depth * size_of[qkv_type]()
+    comptime if not needs_partial:
+        produced_mbar_kv[0].expect_bytes(Int32(qk_bytes))
 
     comptime if decoding:
         ref q_mbar = produced_mbar_kv[0]
@@ -1333,14 +1427,45 @@ def produce[
     ):
         kv_tile_start_row += UInt32(BN)
 
-    var kv_row: UInt32 = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
     var kv_head_idx: UInt32 = position.kv_head_idx()
 
-    produce_kv[False](k_tma_op, write_pipeline_states, kv_row, kv_head_idx)
+    # When needs_partial, nvp0 tracks the valid page count for K0.
+    # Initialize to num_pages (full) and overwrite inside the comptime if.
+    var nvp0: UInt32 = UInt32(KVPagedRows.num_pages)
+    comptime if needs_partial:
+        nvp0 = _num_valid_pages(end, kv_tile_start_row)
+        produced_mbar_kv[0].expect_bytes(
+            Int32(q_bytes + kv_bytes_pp * Int(nvp0))
+        )
+        if nvp0 < UInt32(KVPagedRows.num_pages):
+            produce_kv_partial[is_k_side=True, wait=False](
+                k_tma_op,
+                write_pipeline_states,
+                position.prompt_idx,
+                kv_tile_start_row,
+                kv_head_idx,
+                nvp0,
+            )
+        else:
+            produce_kv[is_k_side=True, wait=False](
+                k_tma_op,
+                write_pipeline_states,
+                position.prompt_idx,
+                kv_tile_start_row,
+                kv_head_idx,
+            )
+    else:
+        produce_kv[is_k_side=True, wait=False](
+            k_tma_op,
+            write_pipeline_states,
+            position.prompt_idx,
+            kv_tile_start_row,
+            kv_head_idx,
+        )
 
-    var kv_row_prev: UInt32 = kv_row
     var kv_head_idx_prev: UInt32 = kv_head_idx
     var kv_tile_start_row_prev: UInt32 = kv_tile_start_row
+    var nvp_prev: UInt32 = nvp0
     # wait to flip phase, but only bother after producing
     # there isn't any memory we can throttle
     # the order of the consumer's arrivals determines the
@@ -1417,24 +1542,99 @@ def produce[
             == TileMaskStatus.FULL_MASK
         ):
             continue
-        kv_row = kv_lut.row_idx(position.prompt_idx, kv_tile_start_row)
-        produce_kv[True](k_tma_op, write_pipeline_states, kv_row, kv_head_idx)
-        produce_kv[True](
-            v_tma_op,
-            write_pipeline_states,
-            kv_row_prev,
-            kv_head_idx_prev,
-        )
-        kv_row_prev = kv_row
+
+        comptime if needs_partial:
+            # Compute valid page count for current K tile.
+            var nvp_cur: UInt32
+            if kv_tile_start_row + UInt32(BN) > end:
+                nvp_cur = _num_valid_pages(end, kv_tile_start_row)
+            else:
+                nvp_cur = UInt32(KVPagedRows.num_pages)
+
+            # K: use partial if this tile doesn't fill all pages.
+            if nvp_cur < UInt32(KVPagedRows.num_pages):
+                produce_kv_partial[is_k_side=True, wait=True](
+                    k_tma_op,
+                    write_pipeline_states,
+                    position.prompt_idx,
+                    kv_tile_start_row,
+                    kv_head_idx,
+                    nvp_cur,
+                )
+            else:
+                produce_kv[is_k_side=True, wait=True](
+                    k_tma_op,
+                    write_pipeline_states,
+                    position.prompt_idx,
+                    kv_tile_start_row,
+                    kv_head_idx,
+                )
+
+            # V: for previous K's tile. Use partial if that K was partial.
+            if nvp_prev < UInt32(KVPagedRows.num_pages):
+                produce_kv_partial[is_k_side=False, wait=True](
+                    v_tma_op,
+                    write_pipeline_states,
+                    position.prompt_idx,
+                    kv_tile_start_row_prev,
+                    kv_head_idx_prev,
+                    nvp_prev,
+                )
+            else:
+                produce_kv[is_k_side=False, wait=True](
+                    v_tma_op,
+                    write_pipeline_states,
+                    position.prompt_idx,
+                    kv_tile_start_row_prev,
+                    kv_head_idx_prev,
+                )
+
+            nvp_prev = nvp_cur
+        else:
+            produce_kv[is_k_side=True, wait=True](
+                k_tma_op,
+                write_pipeline_states,
+                position.prompt_idx,
+                kv_tile_start_row,
+                kv_head_idx,
+            )
+            produce_kv[is_k_side=False, wait=True](
+                v_tma_op,
+                write_pipeline_states,
+                position.prompt_idx,
+                kv_tile_start_row_prev,
+                kv_head_idx_prev,
+            )
         kv_head_idx_prev = kv_head_idx
         kv_tile_start_row_prev = kv_tile_start_row
 
-    produce_kv[True](
-        v_tma_op,
-        write_pipeline_states,
-        kv_row_prev,
-        kv_head_idx_prev,
-    )
+    # Exit: V for the last K tile.
+    comptime if needs_partial:
+        if nvp_prev < UInt32(KVPagedRows.num_pages):
+            produce_kv_partial[is_k_side=False, wait=True](
+                v_tma_op,
+                write_pipeline_states,
+                position.prompt_idx,
+                kv_tile_start_row_prev,
+                kv_head_idx_prev,
+                nvp_prev,
+            )
+        else:
+            produce_kv[is_k_side=False, wait=True](
+                v_tma_op,
+                write_pipeline_states,
+                position.prompt_idx,
+                kv_tile_start_row_prev,
+                kv_head_idx_prev,
+            )
+    else:
+        produce_kv[is_k_side=False, wait=True](
+            v_tma_op,
+            write_pipeline_states,
+            position.prompt_idx,
+            kv_tile_start_row_prev,
+            kv_head_idx_prev,
+        )
 
 
 @always_inline

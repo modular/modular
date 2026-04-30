@@ -43,7 +43,10 @@ def get_blocks_from_kv_tuple(
 # Runtime lookup tables are padded with sentinel `total_num_pages` in any
 # unused columns, so tests should compare only assigned block ids.
 def assigned_blocks(kv_tuple: KVCacheInputs[Buffer, Buffer]) -> list[list[int]]:
-    total_num_pages = kv_tuple.inputs[0].lookup_table.shape[1]
+    # ``kv_blocks`` has shape ``[total_num_pages, ...]``; ``lookup_table``'s
+    # inner dim is now padded beyond ``total_num_pages`` for SIMD over-reads
+    # in the populate kernel, so we can no longer use it as the sentinel.
+    total_num_pages = kv_tuple.inputs[0].kv_blocks.shape[0]
     return [
         [block for block in row if block != total_num_pages]
         for row in get_blocks_from_kv_tuple(kv_tuple)

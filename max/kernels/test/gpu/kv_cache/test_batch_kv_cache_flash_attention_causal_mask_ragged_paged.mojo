@@ -12,8 +12,9 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.collections import Set
-from std.math import ceildiv, rsqrt
+from std.math import align_up, ceildiv, rsqrt
 from std.random import random_ui64, seed
+from std.sys.defines import get_defined_int
 from layout._utils import ManagedLayoutTensor
 from std.gpu.host import DeviceContext
 from kv_cache.types import (
@@ -45,7 +46,7 @@ def execute_ragged_flash_attention[
     comptime if dtype == DType.float32 and kv_params.head_size == 256:
         return
 
-    comptime page_size = 256
+    comptime page_size = get_defined_int["page_size", 256]()
 
     var batch_size = len(valid_lengths)
     assert len(valid_lengths) == len(
@@ -163,8 +164,13 @@ def execute_ragged_flash_attention[
         kv_params.num_heads,
         kv_params.head_size,
     )
+    # Pad LUT inner dim to a multiple of 8 with at least 16 extra slots so
+    # the SIMD `populate` in PagedKVCache can safely load up to 16 uint32s
+    # past any valid `first_lut_idx` (partial-tile tails) — matches the
+    # padding rule in `max/python/max/kv_cache/paged_kv_cache/cache_manager.py`.
     var paged_lut_shape = IndexList[2](
-        batch_size, ceildiv(max_full_context_length, page_size)
+        batch_size,
+        align_up(ceildiv(max_full_context_length, page_size), 8) + 16,
     )
 
     # KV block runtime layouts
@@ -484,9 +490,23 @@ def execute_flash_attention_suite[
 
 
 def main() raises:
+    comptime head_size_val = get_defined_int["head_size", 128]()
+    comptime num_q_heads = 32 if head_size_val <= 128 else 8
+    comptime kv_num_heads = 8 if head_size_val <= 128 else 4
+
     with DeviceContext() as ctx:
-        # Stress test group=16 paged decode with many seeds
+        # Stress test paged decode with many seeds
         var fail_count = 0
+        print(
+            "Paged Decode Stress [num_q_heads=",
+            num_q_heads,
+            ", num_heads=",
+            kv_num_heads,
+            ", depth=",
+            head_size_val,
+            "]:",
+            sep="",
+        )
         for s in range(20):
             seed(s)
             tg_cache_sizes = List[Int]()
@@ -496,9 +516,11 @@ def main() raises:
                 tg_cache_sizes.append(Int(random_ui64(1, 1024)))
             try:
                 execute_ragged_flash_attention[
-                    16,
+                    num_q_heads,
                     DType.bfloat16,
-                    KVCacheStaticParams(num_heads=1, head_size=128),
+                    KVCacheStaticParams(
+                        num_heads=kv_num_heads, head_size=head_size_val
+                    ),
                 ](tg_seq_lens, tg_cache_sizes, 2, 0, ctx)
             except e:
                 print("FAIL seed=", s, "caches=", tg_cache_sizes)
@@ -509,19 +531,9 @@ def main() raises:
 
         # Then run the full suite
         seed(42)
-        # depth=64
         execute_flash_attention_suite[
-            32, KVCacheStaticParams(num_heads=8, head_size=64)
-        ](ctx)
-        # depth=128
-        execute_flash_attention_suite[
-            32, KVCacheStaticParams(num_heads=8, head_size=128)
-        ](ctx)
-        # depth=256
-        execute_flash_attention_suite[
-            8, KVCacheStaticParams(num_heads=4, head_size=256)
-        ](ctx)
-        # depth=512
-        execute_flash_attention_suite[
-            8, KVCacheStaticParams(num_heads=4, head_size=512)
+            num_q_heads,
+            KVCacheStaticParams(
+                num_heads=kv_num_heads, head_size=head_size_val
+            ),
         ](ctx)

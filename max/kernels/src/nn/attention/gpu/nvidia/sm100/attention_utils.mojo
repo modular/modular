@@ -54,6 +54,12 @@ from layout.tma_async import PipelineState, SharedMemBarrier
 from std.memory import bitcast
 from nn.attention.gpu.nvidia.sm100.attention import FA4Config
 from nn.attention.mha_mask import MHAMask, MASK_VALUE, MaskStrategy
+from nn.attention.mha_operand import (
+    MHAOperand,
+    PagedRowIndices,
+    kv_sub_tile_rows,
+    kv_num_sub_tiles,
+)
 from std.utils.index import Index, IndexList
 from std.utils.static_tuple import StaticTuple
 from linalg.arch.sm100.mma import smem_descriptor
@@ -96,6 +102,10 @@ comptime SharedMemPointer[type: AnyType] = UnsafePointer[
     type, MutAnyOrigin, address_space=AddressSpace.SHARED
 ]
 comptime MBarType = SharedMemPointer[SharedMemBarrier]
+
+
+# PagedRowIndices, kv_sub_tile_rows, kv_num_sub_tiles are now defined in
+# nn.attention.mha_operand and re-exported via the import above.
 
 
 def extract_power_of_two(N: Int, i: Int) -> Int:
@@ -1237,6 +1247,47 @@ def elect_mma_arrive[
         NoneType,
         constraints="r, r",
     ](Int32(Int(mbar_ptr)), elect)
+
+
+@always_inline
+def expect_bytes_pred(
+    mbar_ptr: UnsafePointer[address_space=AddressSpace.SHARED, ...],
+    bytes: Int32,
+    pred: Int32,
+):
+    """Issue `mbarrier.arrive.expect_tx.shared::cta.b64` predicated on
+    `pred != 0`.
+
+    Equivalent to:
+
+        if pred != 0:
+            mbar_ptr[].expect_bytes(bytes)
+
+    but folds the runtime branch into a single PTX `@%p` predicate
+    on the `mbarrier.arrive.expect_tx` instruction — no Mojo-level
+    `if`, no SASS branch, no warp divergence.
+
+    Args:
+        mbar_ptr: Pointer to the shared-memory mbarrier (8-byte slot).
+        bytes: Expected transaction byte count for this barrier.
+        pred: Runtime predicate (typically the result of `elect()` or
+            an `elect()`-derived `elect_mask`); the PTX instruction is
+            skipped when this is 0.
+    """
+
+    comptime type = mbar_ptr.type
+    comptime assert size_of[type]() == 8, "mbar_ptr must be 8 bytes"
+
+    inlined_assembly[
+        """{
+        .reg .pred %p;
+        .reg .b64 %state;
+        setp.ne.s32 %p, $2, 0;
+        @%p mbarrier.arrive.expect_tx.shared::cta.b64 %state, [$0], $1;
+        }""",
+        NoneType,
+        constraints="r,r,r",
+    ](Int32(Int(mbar_ptr)), bytes, pred)
 
 
 @always_inline

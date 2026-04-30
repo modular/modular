@@ -12,11 +12,20 @@
 # ===----------------------------------------------------------------------=== #
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapL2Promotion, TensorMapSwizzle
-from kv_cache.types import KVCacheT, swizzle_granularity, padded_depth
+from kv_cache.types import (
+    KVCacheT,
+    PagedRowIndices,
+    _populate_via_row_idx,
+    kv_num_sub_tiles,
+    kv_sub_tile_rows,
+    padded_depth,
+    swizzle_granularity,
+)
 from layout import Layout, LayoutTensor, UNKNOWN_VALUE
 from layout.tile_layout import TensorLayout
 from layout.tma_async import (
     SplitLastDimTMATensorTile,
+    SharedMemBarrier,
     _gather4_box_width,
     create_split_tma,
     RaggedTMA3DTile,
@@ -122,6 +131,35 @@ trait MHAOperand(DevicePassable, TrivialRegisterPassable):
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         ...
+
+    @always_inline
+    def populate[
+        BN: Int,
+        pair_cta: Bool = False,
+        is_leader: Bool = True,
+    ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
+        BN, Self.page_size, pair_cta, is_leader
+    ]:
+        """Populate a full `PagedRowIndices[BN, ...]` for a BN-row tile.
+
+        Returns the precomputed physical row indices for the `num_pages`
+        sub-tile pages covering the BN-row range starting at
+        `base_kv_row` for `batch_idx`. Both K's TMA (which may cover only
+        a subset in `pair_cta` mode) and V's TMA (which covers the full
+        range) can then consume the result without any lazy LUT lookup.
+
+        Default implementation: scalar loop over `num_pages` calls to
+        `row_idx`. Overrides (e.g. `PagedKVCache`) replace this with a
+        single SIMD load from the underlying lookup table.
+        """
+
+        @parameter
+        def _row(batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
+            return self.row_idx(batch_idx, start_tok_idx)
+
+        return _populate_via_row_idx[
+            BN, Self.page_size, pair_cta, is_leader, _row
+        ](batch_idx, base_kv_row)
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:
@@ -393,6 +431,24 @@ struct KVCacheMHAOperand[
     def row_idx(self, batch_idx: UInt32, start_tok_idx: UInt32) -> UInt32:
         """Returns the row idx when viewing the memory as a matrix."""
         return self.cache.row_idx(batch_idx, start_tok_idx)
+
+    @always_inline
+    def populate[
+        BN: Int,
+        pair_cta: Bool = False,
+        is_leader: Bool = True,
+    ](self, batch_idx: UInt32, base_kv_row: UInt32) -> PagedRowIndices[
+        BN, Self.page_size, pair_cta, is_leader
+    ]:
+        """Delegate to the underlying cache's `populate`.
+
+        `PagedKVCache.populate` overrides with a SIMD lookup-table read;
+        other cache types fall through to the scalar default on
+        `KVCacheT.populate`.
+        """
+        return self.cache.populate[BN, pair_cta, is_leader](
+            batch_idx, base_kv_row
+        )
 
     @always_inline
     def get_tma_row(self, encoded_index: Int32) -> Int32:

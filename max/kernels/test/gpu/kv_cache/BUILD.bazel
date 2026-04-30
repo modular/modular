@@ -68,8 +68,239 @@ _EXTRA_CONSTRAINTS = {
         exclude = [
             "kv_cache_test_utils.mojo",  # Imported source, not a test
             "test_mha_inflight_batching_gemma3_hang.mojo",  # KERN-2734: manual repro test
+            "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",  # Split by page_size below
         ],
     )
+]
+
+# test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo
+# split by (page_size, head_size, pair_cta) via -D defines.
+# One row per test target; constraints are pre-composed.
+#
+# page_size:
+#   256: default, all GPUs (except Apple).
+#   64:  sub-tile paged loads, B200 only.
+#
+# head_size:
+#   64, 128: all GPUs (subject to page_size).
+#   256:     depth512 kernel, H100 and B200 only.
+#   512:     depth512 kernel, B200 only.
+#
+# pair_cta=True sets -D ENABLE_MHA_PREFILL_PAIR_CTA=True, the SM100 FA4
+# prefill optimization for 64 < depth <= 128 (see
+# max/kernels/src/nn/attention/gpu/mha.mojo). B200 only. Only
+# head_size=128 is meaningful; other head sizes bypass the code path.
+_PAGED_FA_CONFIGS = [
+    # (page_size, head_size, pair_cta, extra_constraints)
+    ("256", "64", False, _APPLE_GPU_INCOMPATIBLE),
+    ("256", "128", False, _APPLE_GPU_INCOMPATIBLE),
+    (
+        "256",
+        "256",
+        False,
+        select({
+            "//:h100_gpu": [],
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "256",
+        "512",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "128",
+        "64",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "128",
+        "128",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "128",
+        "256",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "128",
+        "512",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "64",
+        "64",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "64",
+        "128",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "64",
+        "256",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "64",
+        "512",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "16",
+        "64",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "16",
+        "128",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "16",
+        "256",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "16",
+        "512",
+        False,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    # Pair-CTA variants (head_size=128 only; B200-only for SM100).
+    (
+        "256",
+        "128",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "128",
+        "128",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "64",
+        "128",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+    (
+        "16",
+        "128",
+        True,
+        select({
+            "//:b200_gpu": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+    ),
+]
+
+[
+    mojo_test(
+        name = "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged_ps{}_hs{}{}.mojo.test".format(
+            page_size,
+            head_size,
+            "_pair_cta" if pair_cta else "",
+        ),
+        size = "large",
+        srcs = [
+            "kv_cache_test_utils.mojo",
+            "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",
+        ],
+        copts = [
+            "-D",
+            "page_size={}".format(page_size),
+            "-D",
+            "head_size={}".format(head_size),
+        ] + ([
+            "-D",
+            "ENABLE_MHA_PREFILL_PAIR_CTA=True",
+        ] if pair_cta else []),
+        enable_assertions = select({
+            "//:b200_gpu": True,
+            "//conditions:default": False,  # KERN-2339
+        }),
+        exec_properties = {
+            "test.resources:gpu-memory": "5",
+        },
+        main = "test_batch_kv_cache_flash_attention_causal_mask_ragged_paged.mojo",
+        tags = ["gpu"],
+        target_compatible_with = ["//:has_gpu"] + constraints,
+        deps = [
+            "//max:internal_utils",
+            "//max:kv_cache",
+            "//max:linalg",
+            "//max:nn",
+            "//max:quantization",
+            "@mojo//:std",
+        ],
+    )
+    for page_size, head_size, pair_cta, constraints in _PAGED_FA_CONFIGS
 ]
 
 # TODO(KERN-2734): Remove "manual" tag once the FA4 TMA barrier deadlock is fixed.

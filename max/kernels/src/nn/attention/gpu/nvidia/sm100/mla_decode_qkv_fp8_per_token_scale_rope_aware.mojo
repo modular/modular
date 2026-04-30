@@ -711,9 +711,16 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(
+        var paged_rows = kv_lut.populate[Self.config.BN](
             UInt32(offset_position.batch_idx), kv_row
         )
+        # For the scale TMA (flat 2D layout), we still need a single
+        # base row index. `paged_rows.rows[0]` matches the old
+        # `kv_lut.row_idx(...)` result. The scale TMA assumes
+        # `page_size >= BN` (tokens within a tile are contiguous in the
+        # global scales array); small pages are not supported in this
+        # kernel.
+        var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])
 
         # Q bytes: content FP8 (BM*512*1) + rope BF16 (BM*64*2)
         comptime q_content_bytes = Self.config.BM * Self.config.depth * Self.fp8_bytes_per_element
@@ -738,12 +745,6 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
         ).tile_shape[1]
         comptime q_rope_elems = type_of(q_rope_tma).tile_shape[0] * type_of(
             q_rope_tma
-        ).tile_shape[1]
-        comptime content_elems = type_of(k_content_tma).tile_shape[0] * type_of(
-            k_content_tma
-        ).tile_shape[1]
-        comptime rope_elems = type_of(k_rope_tma).tile_shape[0] * type_of(
-            k_rope_tma
         ).tile_shape[1]
         comptime scale_elems = type_of(scale_tma).tile_shape[0] * type_of(
             scale_tma
@@ -780,25 +781,23 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var content_stage_ptr = kv_content_smem + stage0_idx * UInt32(
                 Self.ContentStageElems
             )
-            var content_tensor = _smem_tt[Self.fp8_type, content_elems](
-                content_stage_ptr, tt_row_major[content_elems]()
-            )
-            k_content_tma.async_copy_3d(
-                content_tensor,
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_content_tma,
+                content_stage_ptr,
                 k0_bar[],
-                (0, 0, Int(kv_gmem_row)),
+                kv_head_idx=UInt32(0),
+                elect=Int32(1),
             )
             # K_rope TMA: load BF16 rope into kv_rope_smem
             var rope_stage_ptr = kv_rope_smem + stage0_idx * UInt32(
                 Self.RopeStageElems
             )
-            var rope_tensor = _smem_tt[Self.bf16_type, rope_elems](
-                rope_stage_ptr, tt_row_major[rope_elems]()
-            )
-            k_rope_tma.async_copy_3d(
-                rope_tensor,
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_rope_tma,
+                rope_stage_ptr,
                 k0_bar[],
-                (0, 0, Int(kv_gmem_row)),
+                kv_head_idx=UInt32(0),
+                elect=Int32(1),
             )
             # Scale TMA: load BN float32 per-token scales into scale SMEM.
             # The scale TMA treats scales as a flat [1, total_elements] 2D
@@ -827,9 +826,10 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
             var stage_idx = kv_prod.stage_index[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(
+            var paged_rows = kv_lut.populate[Self.config.BN](
                 UInt32(offset_position.batch_idx), kv_row
             )
+            var kv_gmem_row: UInt32 = UInt32(paged_rows.rows[0])
 
             if is_leader:
                 comptime if Self.has_per_token_scales:
@@ -844,25 +844,23 @@ struct MLA_SM100_Decode_QKV_FP8_PerTokenScale_RopeAware[
                 var content_stage_ptr = kv_content_smem + stage_idx * UInt32(
                     Self.ContentStageElems
                 )
-                var content_tensor = _smem_tt[Self.fp8_type, content_elems](
-                    content_stage_ptr, tt_row_major[content_elems]()
-                )
-                k_content_tma.async_copy_3d(
-                    content_tensor,
+                paged_rows.tma_copy_k[needs_partial=False](
+                    k_content_tma,
+                    content_stage_ptr,
                     k_mbar[],
-                    (0, 0, Int(kv_gmem_row)),
+                    kv_head_idx=UInt32(0),
+                    elect=Int32(1),
                 )
                 # K_rope TMA
                 var rope_stage_ptr = kv_rope_smem + stage_idx * UInt32(
                     Self.RopeStageElems
                 )
-                var rope_tensor = _smem_tt[Self.bf16_type, rope_elems](
-                    rope_stage_ptr, tt_row_major[rope_elems]()
-                )
-                k_rope_tma.async_copy_3d(
-                    rope_tensor,
+                paged_rows.tma_copy_k[needs_partial=False](
+                    k_rope_tma,
+                    rope_stage_ptr,
                     k_mbar[],
-                    (0, 0, Int(kv_gmem_row)),
+                    kv_head_idx=UInt32(0),
+                    elect=Int32(1),
                 )
                 # Scale TMA
                 comptime if Self.has_per_token_scales:

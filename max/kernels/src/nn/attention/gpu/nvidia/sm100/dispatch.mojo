@@ -34,6 +34,7 @@ from nn.attention.mha_utils import (
     OptionallyStaticInt,
     _is_decoding,
 )
+from .attention_utils import kv_sub_tile_rows
 from .kernel import SM100MHA2Q
 
 comptime logger = Logger()
@@ -125,13 +126,13 @@ def mha_sm100_dispatch[
     ](ctx, q, num_rows_q)
     k_tma_op = k.create_tma_tile[
         fa4_config.swizzle_mode,
-        BN=fa4_config.k_rows_per_cta(),
+        BN=kv_sub_tile_rows(fa4_config.k_rows_per_cta(), KVType.page_size),
         depth=fa4_config.qk_depth,
         BK=fa4_config.BK0,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         fa4_config.swizzle_mode,
-        BN=fa4_config.BN,
+        BN=kv_sub_tile_rows(fa4_config.BN, KVType.page_size),
         depth=fa4_config.ov_depth,
         BK=fa4_config.v_cols_per_cta(),
     ](ctx)

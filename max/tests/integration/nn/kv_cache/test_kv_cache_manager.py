@@ -19,6 +19,7 @@ from max.engine import InferenceSession
 from max.graph import DeviceRef
 from max.interfaces import RequestID
 from max.kv_cache import PagedKVCacheManager
+from max.kv_cache.paged_kv_cache.cache_manager import _padded_lut_cols
 from max.nn.kv_cache import KVCacheParams, MultiKVCacheParams
 from test_common.context_utils import create_text_context
 
@@ -171,14 +172,14 @@ async def test_fetch_paged_lookup_table_tracks_required_page_capacity() -> None:
 
     kv_manager.alloc(short_context, replica_idx=0, num_steps=1)
     first_inputs = kv_manager.runtime_inputs([[short_context]]).inputs[0]
-    assert tuple(first_inputs.lookup_table.shape) == (1, 1)
+    assert tuple(first_inputs.lookup_table.shape) == (1, _padded_lut_cols(1))
 
     long_context = create_text_context(np.zeros(256, dtype=np.int64))
     kv_manager.claim(long_context.request_id, replica_idx=0)
 
     kv_manager.alloc(long_context, replica_idx=0, num_steps=1)
     second_inputs = kv_manager.runtime_inputs([[long_context]]).inputs[0]
-    assert tuple(second_inputs.lookup_table.shape) == (1, 2)
+    assert tuple(second_inputs.lookup_table.shape) == (1, _padded_lut_cols(2))
 
 
 @pytest.mark.asyncio
@@ -193,14 +194,17 @@ async def test_runtime_inputs_lookup_table_uses_explicit_max_cache_length() -> (
     kv_manager.alloc(context, replica_idx=0, num_steps=1)
 
     runtime_inputs = kv_manager.runtime_inputs([[context]]).inputs[0]
-    assert tuple(runtime_inputs.lookup_table.shape) == (1, 1)
+    assert tuple(runtime_inputs.lookup_table.shape) == (1, _padded_lut_cols(1))
 
     explicit_inputs = kv_manager.runtime_inputs(
         [[context]],
         max_cache_length=1024,
         num_steps=1,
     ).inputs[0]
-    assert tuple(explicit_inputs.lookup_table.shape) == (1, total_num_pages)
+    assert tuple(explicit_inputs.lookup_table.shape) == (
+        1,
+        _padded_lut_cols(total_num_pages),
+    )
 
 
 @pytest.mark.asyncio

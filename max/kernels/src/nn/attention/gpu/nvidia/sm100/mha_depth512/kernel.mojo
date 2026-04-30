@@ -52,6 +52,7 @@ from nn.attention.gpu.nvidia.sm100.attention_utils import (
     SharedMemPointer,
     MBarType,
     elect,
+    kv_sub_tile_rows,
 )
 from nn.attention.gpu.nvidia.sm90.attention import (
     get_seq_info,
@@ -111,6 +112,8 @@ struct SM100MHADepth512[
     comptime PairBM_mask: Int = Self.BM_eff * 2
     comptime ragged = not Self.ValidLengthType.is_null
     comptime page_size = Self.KVLUTType.page_size
+    comptime k_sub_BN: Int = kv_sub_tile_rows(Self.BN // 2, Self.page_size)
+    comptime v_sub_BN: Int = kv_sub_tile_rows(Self.config.BK1, Self.page_size)
 
     comptime SmemType = Depth512AttentionSMem[Self.config]
 
@@ -154,13 +157,13 @@ struct SM100MHADepth512[
         k_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.BN // 2,
+            BN=Self.k_sub_BN,
             BK=Self.config.BK0,
         ],
         v_tma_op: KVTMATile[
             Self.KVLUTType.dtype,
             Self.config.swizzle_mode,
-            BN=Self.config.BK1,
+            BN=Self.v_sub_BN,
             BK=Self.config.v_cols_per_cta,
         ],
         ragged_tma_store: RaggedTMA3DTile[
@@ -386,26 +389,54 @@ struct SM100MHADepth512[
                 kv_input_row_offsets,
                 max_seq_len,
             )
-            depth512_load[
-                Self.KVLUTType,
-                Self.MaskType,
-                Self.qkv_type,
-                Self.config,
-                Self.ValidLengthType,
-                Self._is_cache_length_accurate,
-                Self.MaxSeqLenType,
-            ](
-                smem,
-                pos.score_row,
-                pos.num_keys,
-                seq_info,
-                max_seq_len,
-                mask,
-                q_tma_op,
-                k_tma_op,
-                v_tma_op,
-                kv_lut,
-            )
+            # Hoist the pair-CTA rank branch to dispatch to two
+            # comptime specializations of `depth512_load` (is_leader=
+            # True for the even CTA, False for the odd one). Mirrors
+            # the pattern at `sm100/kernel.mojo:447-483`.
+            if cta_rank == UInt32(0):
+                depth512_load[
+                    Self.KVLUTType,
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.config,
+                    Self.ValidLengthType,
+                    Self._is_cache_length_accurate,
+                    Self.MaxSeqLenType,
+                    is_leader=True,
+                ](
+                    smem,
+                    pos.score_row,
+                    pos.num_keys,
+                    seq_info,
+                    max_seq_len,
+                    mask,
+                    q_tma_op,
+                    k_tma_op,
+                    v_tma_op,
+                    kv_lut,
+                )
+            else:
+                depth512_load[
+                    Self.KVLUTType,
+                    Self.MaskType,
+                    Self.qkv_type,
+                    Self.config,
+                    Self.ValidLengthType,
+                    Self._is_cache_length_accurate,
+                    Self.MaxSeqLenType,
+                    is_leader=False,
+                ](
+                    smem,
+                    pos.score_row,
+                    pos.num_keys,
+                    seq_info,
+                    max_seq_len,
+                    mask,
+                    q_tma_op,
+                    k_tma_op,
+                    v_tma_op,
+                    kv_lut,
+                )
 
         else:
             # Spare warps 10-11 (no-op).

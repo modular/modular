@@ -47,6 +47,7 @@ from layout.tma_async import (
     SharedMemBarrier,
     RaggedTMA3DTile,
 )
+from nn.attention.mha_operand import kv_sub_tile_rows as _kv_sub_tile_rows
 from nn.attention.gpu.nvidia.sm90.attention import (
     _apply_mask,
     _get_position,
@@ -195,15 +196,18 @@ def mha_sm90_dispatch[
             decoding=decoding,
         ](ctx, q, num_rows_q)
     )
+    comptime kv_sub_BN = _kv_sub_tile_rows(
+        new_config.block_n(), KVType.page_size
+    )
     k_tma_op = k.create_tma_tile[
         swizzle_mode,
-        BN=new_config.block_n(),
+        BN=kv_sub_BN,
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
     v_tma_op = v.create_tma_tile[
         swizzle_mode,
-        BN=new_config.block_n(),
+        BN=kv_sub_BN,
         depth=new_config.depth,
         BK=new_config.padded_depth,
     ](ctx)
@@ -380,13 +384,13 @@ def _mha_sm90_sink_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -513,13 +517,13 @@ def _mha_sm90_kv_input_row_offset_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -641,13 +645,13 @@ def _mha_sm90_valid_length_dispatch[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -763,13 +767,13 @@ def _mha_sm90_enqueue[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: DeviceBuffer[output_type],
@@ -884,13 +888,13 @@ def _mha_sm90[
     k_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     v_tma_op: KVTMATile[
         KVLUTType.dtype,
         swizzle_mode,
-        BN=config.block_n(),
+        BN=_kv_sub_tile_rows(config.block_n(), KVLUTType.page_size),
         BK=config.padded_depth,
     ],
     o_ptr_arg: UnsafePointer[Scalar[output_type], MutAnyOrigin],

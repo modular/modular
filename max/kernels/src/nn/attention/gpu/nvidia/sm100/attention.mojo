@@ -192,8 +192,14 @@ struct FA4Config[
                 Self.MMA_K,
             ),
         )
-        # TODO : delete this as soon as we define splitting BN across the pages
-        if page_size % self.BN != 0:
+        # page_size == 0 means non-paged (no constraint).
+        # page_size >= BN: page contains full tile (page_size % BN == 0).
+        # page_size < BN: tile spans multiple pages (BN % page_size == 0).
+        if (
+            page_size != 0
+            and page_size % self.BN != 0
+            and self.BN % page_size != 0
+        ):
             self.BN = prev_power_of_two(self.BN)
         self.TMEM_S1 = Self.TMEM_S0 + self.BN
         self.TMEM_P0 = Self.TMEM_S0

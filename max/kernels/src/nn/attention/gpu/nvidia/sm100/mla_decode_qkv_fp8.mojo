@@ -59,6 +59,7 @@ from std.utils.static_tuple import StaticTuple
 
 from nn.attention.gpu.nvidia.sm100.attention_utils import (
     elect,
+    expect_bytes_pred,
     SharedMemPointer,
     MBarType,
 )
@@ -564,19 +565,21 @@ struct MLA_SM100_Decode_QKV_FP8[
         var kv_row: UInt32 = UInt32(offset_position.kv_start_row)
         var num_keys_u32 = UInt32(offset_position.num_keys)
         kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-        var kv_gmem_row: UInt32 = kv_lut.row_idx(
+        var paged_rows = kv_lut.populate[Self.config.BN](
             UInt32(offset_position.batch_idx), kv_row
         )
 
         # Load Q via TMA as FP8 (no conversion needed)
+        expect_bytes_pred(
+            mbar_q,
+            Int32(
+                Self.config.BM
+                * Self.config.q_depth
+                * Self.fp8_bytes_per_element
+            ),
+            elect_mask,
+        )
         if is_leader:
-            mbar_q[].expect_bytes(
-                Int32(
-                    Self.config.BM
-                    * Self.config.q_depth
-                    * Self.fp8_bytes_per_element
-                )
-            )
             # Q TMA: load FP8 Q directly into q_smem
             comptime q_elems = type_of(q_tma).tile_shape[0] * type_of(
                 q_tma
@@ -592,18 +595,23 @@ struct MLA_SM100_Decode_QKV_FP8[
 
         # Load first KV tile (FP8)
         var k0_bar: MBarType = kv_prod.producer_mbar[qk_stage=0]()
-        if is_leader:
-            k0_bar[].expect_bytes(
-                Int32(
-                    Self.config.BN
-                    * Self.config.q_depth
-                    * Self.fp8_bytes_per_element
-                )
-            )
-            var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
-            Self.Common_MLA_Op.load_kv(
-                k_tma, stage_ptr, k0_bar, 0, Int(kv_gmem_row)
-            )
+        expect_bytes_pred(
+            k0_bar,
+            Int32(
+                Self.config.BN
+                * Self.config.q_depth
+                * Self.fp8_bytes_per_element
+            ),
+            elect_mask,
+        )
+        var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
+        paged_rows.tma_copy_k[needs_partial=False](
+            k_tma,
+            stage_ptr,
+            k0_bar[],
+            kv_head_idx=UInt32(0),
+            elect=elect_mask,
+        )
         kv_prod.commit_step()
         kv_row += UInt32(Self.config.BN)
 
@@ -617,21 +625,26 @@ struct MLA_SM100_Decode_QKV_FP8[
             var stage_ptr = kv_prod.stage_base_ptr[qk_stage=0]()
             var k_mbar = kv_prod.producer_mbar[qk_stage=0]()
             kv_row = min(kv_row, max(num_keys_u32, UInt32(1)) - 1)
-            var kv_gmem_row: UInt32 = kv_lut.row_idx(
+            var paged_rows = kv_lut.populate[Self.config.BN](
                 UInt32(offset_position.batch_idx), kv_row
             )
 
-            if is_leader:
-                k_mbar[].expect_bytes(
-                    Int32(
-                        Self.config.BN
-                        * Self.config.q_depth
-                        * Self.fp8_bytes_per_element
-                    )
-                )
-                Self.Common_MLA_Op.load_kv(
-                    k_tma, stage_ptr, k_mbar, 0, Int(kv_gmem_row)
-                )
+            expect_bytes_pred(
+                k_mbar,
+                Int32(
+                    Self.config.BN
+                    * Self.config.q_depth
+                    * Self.fp8_bytes_per_element
+                ),
+                elect_mask,
+            )
+            paged_rows.tma_copy_k[needs_partial=False](
+                k_tma,
+                stage_ptr,
+                k_mbar[],
+                kv_head_idx=UInt32(0),
+                elect=elect_mask,
+            )
 
             kv_row += UInt32(Self.config.BN)
             kv_prod.commit_step()

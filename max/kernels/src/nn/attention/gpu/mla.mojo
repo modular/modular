@@ -2119,6 +2119,170 @@ def flare_mla_prefill[
         )
 
 
+# entrypoint for paged K_rope (KVCacheT) with per-token Q/K scales,
+# used by tests. Mirrors the contiguous per-token-scale entrypoint
+# above but swaps K_rope from a TileTensor to a paged KVCacheT
+# operand (matching the generic paged entrypoint at ~:1517).
+@always_inline
+def flare_mla_prefill[
+    rank: Int,
+    cache_t: KVCacheT,
+    mask_t: MHAMask,
+    dtype: DType,
+    scale_dtype: DType,
+    //,
+](
+    output: TileTensor[mut=True, address_space=AddressSpace.GENERIC, ...],
+    q_nope: TileTensor[dtype, address_space=AddressSpace.GENERIC, ...],
+    q_rope: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    q_scale: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
+    k: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    k_scales: TileTensor[scale_dtype, address_space=AddressSpace.GENERIC, ...],
+    v: TileTensor[address_space=AddressSpace.GENERIC, ...],
+    k_rope: cache_t,
+    mask_functor: mask_t,
+    valid_length: TileTensor[
+        DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    cache_row_offsets: TileTensor[
+        mut=True, DType.uint32, address_space=AddressSpace.GENERIC, ...
+    ],
+    scale: Float32,
+    ctx: DeviceContext,
+    q_max_seq_len: OptionalReg[Int] = None,
+    cache_offsets: OptionalReg[
+        LayoutTensor[
+            DType.uint32, Layout.row_major(UNKNOWN_VALUE), MutAnyOrigin
+        ]
+    ] = None,
+) raises:
+    @always_inline
+    @parameter
+    def description_fn() -> String:
+        return String(";").join(
+            Span(
+                [
+                    trace_arg(
+                        "q_nope",
+                        coord_to_index_list(q_nope.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "q_rope",
+                        coord_to_index_list(q_rope.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "k",
+                        coord_to_index_list(k.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "v",
+                        coord_to_index_list(v.layout.shape_coord()),
+                    ),
+                    trace_arg(
+                        "output",
+                        coord_to_index_list(output.layout.shape_coord()),
+                    ),
+                ]
+            )
+        )
+
+    with Trace[TraceLevel.OP, target=ctx.default_device_info.api](
+        "flare_mla_prefill",
+        Trace[
+            TraceLevel.OP, target=ctx.default_device_info.api
+        ]._get_detail_str[description_fn](),
+        task_id=Int(ctx.id()),
+    ):
+        var max_prompt_len: Int
+
+        if q_max_seq_len:
+            max_prompt_len = q_max_seq_len.value()
+        else:
+            max_prompt_len = Int(k_rope.max_prompt_length())
+
+        comptime assert q_scale.rank == 2, (
+            "q_scale must be a per token scale 2D tensor of [batch_size *"
+            " seq_len, 1]"
+        )
+        comptime assert k_scales.rank == 2, (
+            "k_scales must be a per token scale 2D tensor of [batch_size *"
+            " num_keys, 1]"
+        )
+
+        var cache_row_offsets_lt = cache_row_offsets.to_layout_tensor()
+        var k_lt = k.to_layout_tensor()
+        var k_scales_lt = k_scales.to_layout_tensor()
+        var v_lt = v.to_layout_tensor()
+        var q_rope_lt = q_rope.to_layout_tensor()
+        var q_scale_lt = q_scale.to_layout_tensor()
+        var k_operand = RaggedMHAOperand(
+            LayoutTensor[k_lt.dtype, k_lt.layout, k_lt.origin](
+                k_lt.ptr,
+                RuntimeLayout[k_lt.layout].row_major(
+                    k_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            LayoutTensor[k_scales_lt.dtype, k_scales_lt.layout, ImmutAnyOrigin](
+                k_scales_lt.ptr,
+                RuntimeLayout[k_scales_lt.layout].row_major(
+                    k_scales_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+
+        var v_operand = RaggedMHAOperand(
+            LayoutTensor[v_lt.dtype, v_lt.layout, v_lt.origin](
+                v_lt.ptr,
+                RuntimeLayout[v_lt.layout].row_major(
+                    v_lt.runtime_layout.shape.value.canonicalize()
+                ),
+            ),
+            cache_row_offsets_lt,
+        )
+        var k_rope_operand = KVCacheMHAOperand(k_rope)
+
+        var batch_size: Int = Int(valid_length.dim[0]()) - 1
+
+        if batch_size == 0 or max_prompt_len == 0:
+            return
+
+        comptime kv_num_heads = cache_t.kv_params.num_heads
+        comptime cache_depth = cache_t.kv_params.head_size
+        comptime q_depth = type_of(q_nope).static_shape[
+            q_nope.rank - 1
+        ] + type_of(q_rope).static_shape[q_rope.rank - 1]
+        comptime num_keys_per_block = 64
+        comptime mha_config = MHAConfig[dtype](
+            type_of(q_nope).static_shape[rank - 2],
+            type_of(k).static_shape[rank - 1],
+            num_keys_per_block=num_keys_per_block,
+            WN=num_keys_per_block,
+            algorithm=FlashAttentionAlgorithm.FLASH_ATTENTION_2,
+        )
+        mla_sm100_prefill_per_token_scale[
+            config=mha_config,
+            group=mha_config.num_heads // kv_num_heads,
+            q_depth=q_depth,
+            cache_depth=cache_depth,
+            _ndbuffer_mha_operand=False,
+        ](
+            output,
+            q_nope,
+            q_rope_lt,
+            q_scale_lt,
+            k_operand,
+            k_rope_operand,
+            v_operand,
+            mask_functor,
+            valid_length,
+            DynamicInt(max_prompt_len),
+            scale,
+            batch_size,
+            ctx,
+        )
+
+
 @always_inline
 def flare_mla_prefill_dispatch[
     k_t: MHAOperand,

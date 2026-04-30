@@ -24,9 +24,9 @@ The key stress scenarios:
   - Extreme disparity in cache lengths within the same batch
 """
 
-from std.math import ceildiv
+from std.math import align_up, ceildiv
 from std.random import randn, seed
-from std.sys import argv, has_nvidia_gpu_accelerator
+from std.sys import argv, get_defined_int, has_nvidia_gpu_accelerator
 
 from std.gpu.host import DeviceContext
 from kv_cache.types import KVCacheStaticParams, PagedKVCacheCollection
@@ -59,7 +59,7 @@ from std.utils.index import Index, IndexList
 
 comptime DEPTH = 576  # Q/K head dimension
 comptime V_DEPTH = 512  # Output head dimension (depth - 64)
-comptime PAGE_SIZE = 128  # Standard page size
+comptime PAGE_SIZE = get_defined_int["page_size", 128]()
 comptime NUM_LAYERS = 1  # Single layer for testing
 comptime KV_NUM_HEADS = 1  # MLA has 1 KV head
 
@@ -167,7 +167,11 @@ def run_test_paged_variable[
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     # Match production: pages cover cache_len + new token
-    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    # Pad to multiple of 8 so the LUT row stride is chunk-aligned for the
+    # `PagedKVCache.populate` SIMD path (chunk = min(num_pages, 8)).
+    var max_pages_per_batch = align_up(
+        ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
+    )
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
@@ -618,7 +622,11 @@ def run_test_paged_variable_multiq[
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     # Match production: pages cover cache_len + new tokens
-    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    # Pad to multiple of 8 so the LUT row stride is chunk-aligned for the
+    # `PagedKVCache.populate` SIMD path (chunk = min(num_pages, 8)).
+    var max_pages_per_batch = align_up(
+        ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
+    )
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
@@ -1107,7 +1115,10 @@ def run_test_paged_variable_ragged_q[
         var nk = cache_lengths[i] + seq_lens[i]
         if nk > max_num_keys_any_batch:
             max_num_keys_any_batch = nk
-    var max_pages_per_batch = ceildiv(max_num_keys_any_batch, PAGE_SIZE)
+    # Pad to multiple of 8 for LUT row stride alignment (SIMD populate).
+    var max_pages_per_batch = align_up(
+        ceildiv(max_num_keys_any_batch, PAGE_SIZE), 8
+    )
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
@@ -1552,7 +1563,11 @@ def run_bench_paged_variable[
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
     # Match production: pages cover cache_len + new token
-    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    # Pad to multiple of 8 so the LUT row stride is chunk-aligned for the
+    # `PagedKVCache.populate` SIMD path (chunk = min(num_pages, 8)).
+    var max_pages_per_batch = align_up(
+        ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
+    )
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
@@ -1855,7 +1870,11 @@ def run_test_paged_variable_native_fp8[
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
-    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    # Pad to multiple of 8 so the LUT row stride is chunk-aligned for the
+    # `PagedKVCache.populate` SIMD path (chunk = min(num_pages, 8)).
+    var max_pages_per_batch = align_up(
+        ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
+    )
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
@@ -2290,7 +2309,11 @@ def run_bench_paged_variable_native_fp8[
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
-    var max_pages_per_batch = ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE)
+    # Pad to multiple of 8 so the LUT row stride is chunk-aligned for the
+    # `PagedKVCache.populate` SIMD path (chunk = min(num_pages, 8)).
+    var max_pages_per_batch = align_up(
+        ceildiv(max_cache_len + q_max_seq_len, PAGE_SIZE), 8
+    )
     var lut_size = batch_size * max_pages_per_batch
     var lookup_table_host = alloc[UInt32](lut_size)
     for i in range(lut_size):
