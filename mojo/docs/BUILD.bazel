@@ -40,21 +40,18 @@ genrule(
 
   # TODO: Refactor all this after new site launch
   # Restructure for new site layout:
-  #   internal/ content → root (stripping internal/ prefix)
+  #   docs_root/ content → root (stripping docs_root/ prefix)
   #   everything else   → docs/
-  mv mojosite/internal internal_tmp
+  mv mojosite/docs_root docs_root_tmp
   mkdir docs_tmp
   mv mojosite/* docs_tmp/
   mkdir -p mojosite/docs
   mv docs_tmp/* mojosite/docs/
   rm -rf docs_tmp
-  rm -f mojosite/docs/redirects.js
-  cp -r internal_tmp/* mojosite/
-  rm -rf internal_tmp
-  mv mojosite/redirects.js mojosite/docs/redirects.js
-  rm mojosite/docs/lib.mdx
+  cp -r docs_root_tmp/* mojosite/
+  rm -rf docs_root_tmp
   rm -f mojosite/docs/nightly-changelog.md
-  rm -f mojosite/docs/sidebars.js
+  rm -rf mojosite/docs/changelog
 
   # Generate final output
   cd mojosite
@@ -80,7 +77,7 @@ genrule(
 pkg_tar(
     name = "mojosite",
     srcs = [
-        ":internal-docs",
+        ":docs_root-docs",
         ":mojo",
         ":mojo-layout-public-docs",
         ":mojo-std-public-docs",
@@ -99,7 +96,7 @@ pkg_files(
             "README.md",
             "BUILD.bazel",
             "code/**",
-            "internal/**",
+            "docs_root/**",
             "post-process-mojodocs.py",
         ],
     ),
@@ -108,9 +105,9 @@ pkg_files(
 )
 
 pkg_files(
-    name = "internal-docs",
+    name = "docs_root-docs",
     srcs = glob(
-        ["internal/**"],
+        ["docs_root/**"],
         allow_empty = True,
     ),
     prefix = "mojo",

@@ -1,0 +1,39 @@
+---
+title: Packages
+hide_table_of_contents: true
+description: Discover Mojo packages you can install and how to create your own.
+---
+
+import PackagesTable from '@site/src/components/PackagesTable';
+
+You can install and distribute Mojo packages as conda packages.
+
+The packages below are all available in the
+[modular-community](https://prefix.dev/channels/modular-community) conda
+channel. To distribute your own Mojo packages, see the [Packaging
+guide](/docs/tools/packaging/).
+
+:::note
+
+We're also working on plans for a native Mojo package manager. If you'd like to
+learn more and provide feedback, join the
+[forum discussion](https://forum.modular.com/t/open-question-what-would-you-like-to-see-from-a-mojo-package-manager/2799).
+
+:::
+
+## Community packages
+
+To install these packages with [`pixi
+add`](https://pixi.prefix.dev/latest/reference/cli/pixi/add/), include the
+modular-community channel in your `pixi.toml` file:
+
+```toml
+[workspace]
+channels = [
+  "https://conda.modular.com/max-nightly",
+  "https://repo.prefix.dev/modular-community",
+  "conda-forge",
+]
+```
+
+<PackagesTable />

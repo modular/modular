@@ -1,0 +1,86 @@
+---
+title: Install Mojo
+hide_table_of_contents: true
+description: You can install Mojo using pixi, uv, conda, pip, or other Python/Conda package managers.
+---
+
+import Tabs from '@theme/Tabs';
+import TabItem from '@theme/TabItem';
+import ConditionalVersionDocs from '@site/src/components/ConditionalVersionDocs'
+import Tooltip from '@site/src/components/Tooltip/tooltip';
+
+export const tooltipNightly = (<Tooltip
+  parent="nightly build"
+  content="To get the stable build, change the version in the website header."
+/>);
+export const tooltipStable = (<Tooltip
+  parent="stable build"
+  content="To get the nightly build, change the version in the website header."
+/>);
+
+You can install Mojo using any Python/Conda package manager and it's compatible
+with macOS and Linux. For details, see the [system
+requirements](/docs/requirements/).
+
+<ConditionalVersionDocs version="nightly">
+
+Use the following command to install the {tooltipNightly}:
+
+<Tabs groupId="install">
+<TabItem value="uv" label="uv">
+
+    ```sh
+    uv pip install mojo \
+      --index https://whl.modular.com/nightly/simple/ \
+      --prerelease allow
+    ```
+
+</TabItem>
+<TabItem value="pixi" label="pixi">
+
+    ```sh
+    pixi add mojo
+    ```
+
+</TabItem>
+</Tabs>
+
+</ConditionalVersionDocs>
+
+<ConditionalVersionDocs version="stable">
+
+Use the following command to install the {tooltipStable}:
+
+<Tabs groupId="install">
+<TabItem value="uv" label="uv">
+
+    ```sh
+    uv pip install mojo
+    ```
+
+</TabItem>
+<TabItem value="pixi" label="pixi">
+
+    ```sh
+    pixi add "mojo==0.26.2"
+    ```
+
+</TabItem>
+</Tabs>
+
+</ConditionalVersionDocs>
+
+For syntax highlighting, code completion, and debugging support, install the
+Mojo extension
+[from the VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=modular-mojotools.vscode-mojo),
+or
+[from the Open VSX Registry](https://open-vsx.org/extension/modular-mojotools/vscode-mojo).
+
+## Get Mojo skills
+
+Use our Mojo skills with your AI tools to generate high-performance Mojo code
+that follows best practices.
+
+```sh
+npx skills add modular/skills
+```
