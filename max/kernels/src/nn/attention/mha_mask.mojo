@@ -550,7 +550,7 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
 
     @staticmethod
     def count_nonfull_sets(BM: Int, BN: Int) -> Int:
-        return 1
+        return 2
 
     @always_inline
     def masked_set_ends[
@@ -558,19 +558,22 @@ struct NullMask(MHAMask, TrivialRegisterPassable):
     ](self, row: UInt32, num_cols: UInt32) -> StaticTuple[
         UInt32, Self.count_nonfull_sets(BM, BN)
     ]:
-        return {self.total_iters[BM, BN, page_size](row, num_cols)}
+        return {
+            num_cols // UInt32(BN),
+            self.total_iters[BM, BN, page_size](row, num_cols),
+        }
 
     @staticmethod
     def nonfull_sets[
         BM: Int, BN: Int
     ]() -> StaticTuple[TileMaskStatus, Self.count_nonfull_sets(BM, BN)]:
-        return {TileMaskStatus.NO_MASK}
+        return {TileMaskStatus.NO_MASK, TileMaskStatus.NO_MASK}
 
     @staticmethod
     def mask_strategies[
         BM: Int, BN: Int
     ]() -> StaticTuple[MaskStrategy, Self.count_nonfull_sets(BM, BN)]:
-        return {MaskStrategy.OUT_OF_BOUNDS}
+        return {MaskStrategy.NO_MASK, MaskStrategy.OUT_OF_BOUNDS}
 
 
 # ===-----------------------------------------------------------------------===#
