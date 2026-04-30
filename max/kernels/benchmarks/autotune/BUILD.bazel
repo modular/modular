@@ -41,7 +41,13 @@ modular_py_binary(
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
-        # FIXME: PAQ-2245
+        # FIXME: MOTO-1576 — partially mitigated by adding `-shared-libsan`
+        # to ubsan_link_args (so the .so resolves UBSan handler symbols), but
+        # the inner Mojo benchmark binaries built via `mojo build --emit
+        # shared-lib` still hit additional runtime issues when loaded via
+        # ctypes (silent return-1 with no captured output, distinct from the
+        # original target-compat error in PAQ-2245).  Keep skipped on UBSan
+        # until MOTO-1576 lands a complete fix.
         "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),

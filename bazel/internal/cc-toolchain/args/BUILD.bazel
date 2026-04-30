@@ -309,6 +309,14 @@ cc_args(
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
     args = [
         "-fsanitize=undefined",
+        # Link the shared UBSan runtime (libclang_rt.ubsan_standalone.so)
+        # rather than statically linking it into each binary. The shared
+        # variant is required for UBSan-instrumented shared libraries that
+        # are loaded via dlopen by a non-instrumented executable (e.g.
+        # Python via ctypes); without it, the loaded .so has unresolved
+        # __ubsan_handle_*_abort references and fails to dlopen.
+        # Tracks MOTO-1576.
+        "-shared-libsan",
     ],
 )
 
