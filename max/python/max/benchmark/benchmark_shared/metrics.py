@@ -20,7 +20,7 @@ import math
 from abc import ABC, abstractmethod
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 import numpy as np
 
@@ -611,25 +611,41 @@ class SteadyStateResult:
         return d
 
 
+_BenchmarkMetricT = TypeVar("_BenchmarkMetricT", bound=BaseBenchmarkMetrics)
+
+
 @dataclass(kw_only=True)
-class TextGenerationBenchmarkResult:
+class BaseBenchmarkResult(Generic[_BenchmarkMetricT]):
+    """Base class for benchmark result objects."""
+
+    metrics: _BenchmarkMetricT
+    lora_metrics: LoRAMetrics | None = None
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = self.metrics.to_result_dict()
+        if self.lora_metrics is not None:
+            d["lora_metrics"] = self.lora_metrics.to_result_dict()
+        return d
+
+    def validate(self) -> tuple[bool, list[str]]:
+        return self.metrics.validate()
+
+
+@dataclass(kw_only=True)
+class TextGenerationBenchmarkResult(BaseBenchmarkResult[BenchmarkMetrics]):
     """Result from a text-generation benchmark iteration."""
 
-    metrics: BenchmarkMetrics
     steady_state_result: SteadyStateResult | None = None
-    lora_metrics: LoRAMetrics | None = None
     spec_decode_stats: SpecDecodeStats | None = None
     session_server_stats: dict[str, list[dict[str, Any]]] | None = None
     aggregate_server_stats: list[dict[str, Any]] | None = None
 
     def to_result_dict(self) -> dict[str, object]:
-        d = self.metrics.to_result_dict()
+        d = super().to_result_dict()
         if self.steady_state_result is not None:
             d.update(self.steady_state_result.to_result_dict())
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
-        if self.lora_metrics is not None:
-            d["lora_metrics"] = self.lora_metrics.to_result_dict()
         if self.session_server_stats is not None:
             d["session_server_stats"] = self.session_server_stats
         if self.aggregate_server_stats is not None:
@@ -640,7 +656,7 @@ class TextGenerationBenchmarkResult:
         # TODO: Mirroring previous behavior, we only validate the normal
         # metrics.  Perhaps we should validate the steady-state metrics too,
         # but that would be a change in behavior.
-        return self.metrics.validate()
+        return super().validate()
 
 
 @dataclass(kw_only=True)
@@ -670,20 +686,10 @@ class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
 
 
 @dataclass(kw_only=True)
-class PixelGenerationBenchmarkResult:
+class PixelGenerationBenchmarkResult(
+    BaseBenchmarkResult[PixelGenerationBenchmarkMetrics]
+):
     """Result from a pixel generation benchmark iteration."""
-
-    metrics: PixelGenerationBenchmarkMetrics
-    lora_metrics: LoRAMetrics | None = None
-
-    def to_result_dict(self) -> dict[str, object]:
-        d = self.metrics.to_result_dict()
-        if self.lora_metrics is not None:
-            d["lora_metrics"] = self.lora_metrics.to_result_dict()
-        return d
-
-    def validate(self) -> tuple[bool, list[str]]:
-        return self.metrics.validate()
 
 
 @dataclass
