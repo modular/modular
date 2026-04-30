@@ -217,18 +217,31 @@ def test_variant_linear_type_take() raises:
 def test_variant_linear_type_destroy_with() raises:
     # Test destroying a linear variant element in-place
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
-    v1^.destroy_with(ExplicitDelOnly.destroy)
+    v1^.destroy_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
 
     # Test destroying a non-linear variant element in-place
     var v2 = Variant[ExplicitDelOnly, String]("notlinear")
-    v2^.destroy_with(String.__del__)
+    v2^.destroy_with[String](String.__del__)
 
 
 def test_variant_linear_type_move() raises:
     var v1 = Variant[ExplicitDelOnly, String](ExplicitDelOnly(5))
     var v2 = v1^
 
-    v2^.destroy_with(ExplicitDelOnly.destroy)
+    v2^.destroy_with[ExplicitDelOnly](ExplicitDelOnly.destroy)
+
+
+def test_variant_destroy_with_stateful_closure() raises:
+    # Verify a closure capturing local state can be passed as
+    # `destroy_func` (not just a thin function reference).
+    var counter = 0
+
+    def increment_counter(var _value: Int) {mut counter}:
+        counter += 1
+
+    var v = Variant[Int, String](42)
+    v^.destroy_with[Int](increment_counter)
+    assert_equal(counter, 1)
 
 
 def test_variant_trivial_del() raises:

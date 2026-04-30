@@ -259,6 +259,16 @@ This version is still a work in progress.
   _ = atom.load[ordering=Ordering.RELAXED]()
   ```
 
+- Added `Optional.destroy_with(destroy_func)`, which destroys an `Optional[T]`
+  in-place using a caller-provided destructor. This enables `Optional` to hold
+  element types that are not `ImplicitlyDestructible` (for example, types
+  marked `@explicit_destroy`), mirroring `Variant.destroy_with`. Both
+  `Optional.destroy_with` and `Variant.destroy_with` now accept closures that
+  capture local state in addition to plain function references. Note that
+  `Variant.destroy_with` callers must now pass the destroyed type explicitly
+  (for example, `v^.destroy_with[Int](destroy_func)`) since `T` can no longer
+  be inferred from the closure type.
+
 - `assert_raises` now catches custom `Writable` error types, not just `Error`.
 
 - Added UAX #29 grapheme cluster segmentation to `String` and `StringSlice`.

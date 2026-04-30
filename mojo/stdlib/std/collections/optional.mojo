@@ -721,6 +721,52 @@ struct Optional[T: Movable](
         assert self.__bool__(), "`.unsafe_take()` on empty `Optional`"
         return self._value.unsafe_replace[_NoneType, Self.T](_NoneType())
 
+    def destroy_with[F: def(var Self.T)](deinit self, destroy_func: F):
+        """Destroy the value contained in this `Optional` in-place using a
+        caller-provided destructor function.
+
+        This method can be used to destroy `Optional` values whose element
+        type is not `ImplicitlyDestructible` (for example, types
+        marked `@explicit_destroy`). The `__del__` on `Optional`
+        requires `T: ImplicitlyDestructible`, so explicit-destroy users must
+        destroy an `Optional[T]` through this API instead.
+
+        If `self` is empty, `destroy_func` is not called. Otherwise
+        `destroy_func` is called exactly once on the moved-out value.
+
+        Parameters:
+            F: The type of the caller-provided destructor function.
+
+        Args:
+            destroy_func: Caller-provided destructor function for destroying
+                an instance of `Self.T`. Not called when `self` is empty.
+
+        Examples:
+
+        ```mojo
+        @explicit_destroy
+        @fieldwise_init
+        struct ExplicitDestroy(Movable):
+            var data: Int
+
+            def destroy(deinit self):
+                pass
+
+        var opt = Optional(ExplicitDestroy(5))
+        opt^.destroy_with(ExplicitDestroy.destroy)
+        ```
+        """
+        if self:
+            # SAFETY: We just checked that the `Optional` holds a `T`, so
+            # it's safe to dispatch to `Variant.destroy_with[T]` (it would
+            # otherwise abort).
+            self._value^.destroy_with[Self.T](destroy_func)
+        else:
+            # Retire the empty `Optional` by destroying its `_NoneType`
+            # payload through `Variant.destroy_with`. `_NoneType` is
+            # trivially destructible, so `_NoneType.__del__` is a no-op.
+            self._value^.destroy_with[_NoneType](_NoneType.__del__)
+
     def or_else[
         _T: Movable & ImplicitlyDestructible, //
     ](deinit self: Optional[_T], var default: _T) -> _T:

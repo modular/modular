@@ -17,7 +17,7 @@ from std.sys import size_of
 
 from std.testing import *
 from std.testing import TestSuite
-from test_utils import MoveOnly, check_write_to
+from test_utils import ExplicitDelOnly, MoveOnly, check_write_to
 
 
 def test_basic() raises:
@@ -430,6 +430,41 @@ def test_and_then_with_none() raises:
     var opt = Optional[String](None)
     var result = opt^.and_then[To=Int](try_parse_int)
     assert_false(result)
+
+
+def test_optional_linear_type_destroy_with() raises:
+    # `Optional` holding a linear value is retired via `destroy_with`.
+    var v1 = Optional(ExplicitDelOnly(5))
+    v1^.destroy_with(ExplicitDelOnly.destroy)
+
+    # `Optional[T]` holding `None` is retired without invoking
+    # `destroy_func`.
+    var v2 = Optional[ExplicitDelOnly](None)
+    v2^.destroy_with(ExplicitDelOnly.destroy)
+
+
+def test_optional_destroy_with_runs_exactly_once() raises:
+    # Verify `destroy_func` runs exactly once on the contained value.
+    var counter = 0
+
+    def increment_counter(var _value: Int) {mut counter}:
+        counter += 1
+
+    var opt = Optional[Int](42)
+    opt^.destroy_with(increment_counter)
+    assert_equal(counter, 1)
+
+
+def test_optional_destroy_with_none_does_not_call_destroy() raises:
+    # Verify `destroy_func` is not called when the `Optional` is empty.
+    var counter = 0
+
+    def increment_counter(var _value: Int) {mut counter}:
+        counter += 1
+
+    var opt = Optional[Int](None)
+    opt^.destroy_with(increment_counter)
+    assert_equal(counter, 0)
 
 
 def main() raises:
