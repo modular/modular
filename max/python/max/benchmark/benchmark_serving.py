@@ -670,51 +670,6 @@ def _parse_metadata(metadata: list[str] | None) -> dict[str, str]:
     return result
 
 
-def _serialize_parsed_metrics(pm: ParsedMetrics) -> dict[str, object]:
-    """Serialize a ParsedMetrics into the JSON-ready dict format."""
-    return {
-        "counters": pm.counters,
-        "gauges": pm.gauges,
-        "histograms": {
-            name: {
-                "buckets": hist.buckets,
-                "sum": hist.sum,
-                "count": hist.count,
-                "mean": hist.mean,
-            }
-            for name, hist in pm.histograms.items()
-        },
-    }
-
-
-def _add_optional_result(
-    result: dict[str, Any],
-    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
-) -> None:
-    if not metrics.metrics_by_endpoint:
-        return
-
-    # Backwards compat: `server_metrics` mirrors the first endpoint so existing
-    # BigQuery/analysis consumers keep working. `server_metrics_by_endpoint`
-    # carries the full per-endpoint breakdown.
-    first_pm = next(iter(metrics.metrics_by_endpoint.values()))
-    result["server_metrics"] = _serialize_parsed_metrics(first_pm)
-    if isinstance(metrics, BenchmarkMetrics):
-        result["server_metrics"].update(
-            {
-                "prefill_batch_execution_time_ms": metrics.mean_prefill_batch_time_ms,
-                "prefill_batch_count": metrics.prefill_batch_count,
-                "decode_batch_execution_time_ms": metrics.mean_decode_batch_time_ms,
-                "decode_batch_count": metrics.decode_batch_count,
-            }
-        )
-
-    result["server_metrics_by_endpoint"] = {
-        label: _serialize_parsed_metrics(pm)
-        for label, pm in metrics.metrics_by_endpoint.items()
-    }
-
-
 def hash_string(s: str) -> str:
     """Hash a string using SHA-256. This is stable and deterministic across runs.
 
@@ -3053,8 +3008,6 @@ async def benchmark(
         spec_decode_stats=spec_decode_stats,
         lora_manager=lora_manager,
     )
-
-    _add_optional_result(result=result_dict, metrics=result.metrics)
 
     return result_dict, result
 

@@ -407,6 +407,16 @@ class BaseBenchmarkMetrics(Metrics):
                 d.update(val.confidence_to_flat_dict(f.name))
             elif isinstance(val, ChunkTimingMetrics):
                 d.update(val.to_flat_dict(f.name))
+        if self.metrics_by_endpoint:
+            # Backwards compat: `server_metrics` mirrors the first endpoint so
+            # existing BigQuery/analysis consumers keep working.
+            # `server_metrics_by_endpoint` carries the full per-endpoint breakdown.
+            first_pm = next(iter(self.metrics_by_endpoint.values()))
+            d["server_metrics"] = first_pm.to_dict()
+            d["server_metrics_by_endpoint"] = {
+                label: pm.to_dict()
+                for label, pm in self.metrics_by_endpoint.items()
+            }
         return d
 
     def validate(self) -> tuple[bool, list[str]]:
@@ -548,6 +558,16 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         d["request_complete_times"] = self.request_complete_times
         d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
         d["global_cached_token_rate"] = self.global_cached_token_rate
+        if "server_metrics" in d:
+            assert isinstance(d["server_metrics"], dict)
+            d["server_metrics"].update(
+                {
+                    "prefill_batch_execution_time_ms": self.mean_prefill_batch_time_ms,
+                    "prefill_batch_count": self.prefill_batch_count,
+                    "decode_batch_execution_time_ms": self.mean_decode_batch_time_ms,
+                    "decode_batch_count": self.decode_batch_count,
+                }
+            )
         return d
 
     def confidence_warnings(self) -> list[str]:

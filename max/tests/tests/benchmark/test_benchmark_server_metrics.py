@@ -14,7 +14,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -545,7 +545,7 @@ def test_batch_histograms_found_on_non_first_endpoint() -> None:
 
 
 class TestMetricsResultOutput:
-    """E2E: Prometheus response -> collect_benchmark_metrics -> _add_optional_result JSON."""
+    """E2E: Prometheus response -> collect_benchmark_metrics -> to_result_dict JSON."""
 
     @patch("max.benchmark.benchmark_shared.server_metrics.fetch_metrics")
     def test_single_endpoint_emits_both_keys_with_matching_content(
@@ -554,19 +554,19 @@ class TestMetricsResultOutput:
         """Auto-derive (urls={}) produces one endpoint labeled `server`.
         Both `server_metrics` and `server_metrics_by_endpoint.server` appear
         in the output JSON and carry the same counter/gauge/histogram data."""
-        from max.benchmark.benchmark_serving import _add_optional_result
-
         mock_fetch.return_value = sample_metrics
         final = collect_benchmark_metrics(
             urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
         )
-        result: dict[str, Any] = {}
-        _add_optional_result(result, _make_metrics(final))
+        result = _make_metrics(final).to_result_dict()
 
         sm = result["server_metrics"]
         by_ep = result["server_metrics_by_endpoint"]
+        assert isinstance(sm, dict)
+        assert isinstance(by_ep, dict)
         assert set(by_ep.keys()) == {"server"}
 
+        assert isinstance(by_ep["server"], dict)
         assert sm["counters"] == by_ep["server"]["counters"]
         assert sm["histograms"] == by_ep["server"]["histograms"]
         assert set(sm.keys()) >= {
@@ -581,8 +581,6 @@ class TestMetricsResultOutput:
         """Orchestrator and engine expose different metric families.
         Output must attribute each to its label, and `server_metrics` must
         mirror the FIRST endpoint (orchestrator), not the engine."""
-        from max.benchmark.benchmark_serving import _add_optional_result
-
         orch_prom = (
             "# TYPE orchestrator_requests counter\norchestrator_requests 42.0\n"
         )
@@ -604,11 +602,13 @@ class TestMetricsResultOutput:
             backend="vllm",
             base_url="http://10.0.0.1:8000",
         )
-        result: dict[str, Any] = {}
-        _add_optional_result(result, _make_metrics(final))
+        result = _make_metrics(final).to_result_dict()
 
         by_ep = result["server_metrics_by_endpoint"]
+        assert isinstance(by_ep, dict)
         assert set(by_ep.keys()) == {"orch", "engine-0"}
+        assert isinstance(by_ep["orch"], dict)
+        assert isinstance(by_ep["engine-0"], dict)
         assert by_ep["orch"]["counters"] == {"orchestrator_requests": 42.0}
         assert by_ep["engine-0"]["counters"] == {
             "engine_generation_tokens": 1000.0
@@ -617,5 +617,6 @@ class TestMetricsResultOutput:
         # server_metrics mirrors the FIRST inserted endpoint (orch), which is
         # how existing BigQuery/analysis consumers keep working.
         sm = result["server_metrics"]
+        assert isinstance(sm, dict)
         assert sm["counters"] == by_ep["orch"]["counters"]
         assert sm["counters"] != by_ep["engine-0"]["counters"]

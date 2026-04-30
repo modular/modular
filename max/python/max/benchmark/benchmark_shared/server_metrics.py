@@ -132,6 +132,22 @@ class ParsedMetrics:
         key = _format_metric_key(metric_name, labels or {})
         return self.histograms.get(key)
 
+    def to_dict(self) -> dict[str, object]:
+        """Serialize to a JSON-ready dict."""
+        return {
+            "counters": self.counters,
+            "gauges": self.gauges,
+            "histograms": {
+                name: {
+                    "buckets": hist.buckets,
+                    "sum": hist.sum,
+                    "count": hist.count,
+                    "mean": hist.mean,
+                }
+                for name, hist in self.histograms.items()
+            },
+        }
+
 
 def get_metrics_url(backend: Backend, base_url: str) -> str:
     """Get the metrics URL for a backend.
