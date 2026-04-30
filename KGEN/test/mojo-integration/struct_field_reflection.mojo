@@ -7,7 +7,6 @@
 
 
 from std.builtin.rebind import downcast
-from std.reflection import reflect
 
 
 trait CanDoSomething:
