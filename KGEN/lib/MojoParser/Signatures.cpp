@@ -73,20 +73,33 @@ TypedAttr IREmitter::extractOriginOf(const ExprNode *expr, CValue value) {
   return {};
 }
 
+static TypedAttr addImplicitAddressSpaceParam(StringRef valueName,
+                                              TypeCheckedParamList &paramList,
+                                              SMLoc loc) {
+  auto type = IndexType::get(paramList.shared.getContext());
+  auto paramDecl = ParamDeclAttr::get(
+      paramList.declScope.mangleParamName(Twine(valueName) + ".address_space"),
+      type);
+  paramList.names.push_back(paramDecl.getName());
+  paramList.passingKinds.push_back(PassingKind::Implicit);
+  paramList.paramDeclAttrs.push_back(paramDecl);
+  paramList.locations.push_back(loc);
+  paramList.variadicKinds.push_back(VariadicKind::None);
+  paramList.defaults.push_back(TypedAttr());
+  paramList.allParamConstraints.emplace_back();
+  return ParamDeclRefAttr::get(paramDecl);
+}
+
 /// Walk the bracketed expression list of a `ref [...]` or `out [...]`
 /// specifier, classifying each element as either an origin or an address
-/// space.  When `acceptOrigins` is false (e.g. for `out`, which does not yet
-/// support origin specifiers) any non-address-space expression is rejected
-/// with a diagnostic mentioning `diagSpecifierName`.
-///
-/// Discard literals (`_`) are always silently skipped, so callers don't need
-/// to special-case them; this also keeps the parser ready for future generic
-/// address-space support on `out`.
+/// space. When `acceptOrigins` is false any non-address-space expression is
+/// rejected with a diagnostic mentioning `diagSpecifierName`.
 ///
 /// On success, `origin` and `addrSpace` are set to the parsed values (each
-/// may remain null if not present).  Returns failure on a parse/type error.
+/// may remain null if not present). Returns failure on a parse/type error.
 static ParseResult parseRefSpecifierExprs(const ExprNode *expr,
                                           StringRef diagSpecifierName,
+                                          StringRef valueName,
                                           TypeCheckedParamList &paramList,
                                           bool acceptOrigins, TypedAttr &origin,
                                           TypedAttr &addrSpace) {
@@ -94,14 +107,9 @@ static ParseResult parseRefSpecifierExprs(const ExprNode *expr,
   IREmitter emitter(paramList.declScope, EC_Origin);
 
   // Dig the underlying index value out of an address-space-shaped value.
-  // Only the raw index form is recognized when origins aren't accepted yet
-  // (i.e. for `out`); the AddressSpace struct unwrap is gated on the same
-  // flag until generic support arrives.
   auto digOutAddressSpace = [&](TypedAttr value, SMLoc loc) -> TypedAttr {
     if (value.getType().isIndex())
       return value;
-    if (!acceptOrigins)
-      return {};
     auto extractInt = ASTType::extractStructField(value, "_value", loc, shared);
     if (!extractInt)
       return {};
@@ -122,14 +130,24 @@ static ParseResult parseRefSpecifierExprs(const ExprNode *expr,
     elts = expr;
 
   for (const ExprNode *elt : elts) {
-    if (elt->kind == ExprNode::kDiscardLiteral)
+    if (elt->kind == ExprNode::kDiscardLiteral) {
+      if (!acceptOrigins) {
+        if (addrSpace) {
+          emitter.emitError(elt->getLoc())
+              << "multiple specification of address space isn't valid"
+              << elt->getRange();
+          return failure();
+        }
+        addrSpace =
+            addImplicitAddressSpaceParam(valueName, paramList, elt->getLoc());
+      }
       continue;
+    }
 
     // The element may be any of:
     //   1) an MValue, which we take the origin from.
     //   2) a value of !lit.origin or Origin[Mut] type.
-    //   3) an address space value (raw index, or AddressSpace struct in ref
-    //      mode).
+    //   3) an address space value (raw index, or AddressSpace struct).
     // In all cases we want to evaluate the expression without evaluating it,
     // because it may involve complex nested expressions and we may be in a
     // PValue expression.
@@ -153,7 +171,8 @@ static ParseResult parseRefSpecifierExprs(const ExprNode *expr,
           if (!acceptOrigins) {
             emitter.emitError(elt->getLoc())
                 << "'" << diagSpecifierName
-                << "' address space specifier must be an index value"
+                << "' address space specifier must be an AddressSpace or "
+                   "index value"
                 << elt->getRange();
             isError = true;
             return;
@@ -199,7 +218,7 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 
   TypedAttr origin;
   TypedAttr addrSpace;
-  if (parseRefSpecifierExprs(origExpr, "ref", paramList,
+  if (parseRefSpecifierExprs(origExpr, "ref", valueName, paramList,
                              /*acceptOrigins=*/true, origin, addrSpace))
     return hadError();
 
@@ -251,11 +270,12 @@ static RefType processRefOriginSpecifier(const ExprNode *origExpr, ASTType type,
 /// Origins aren't yet supported on `out`, so this is a thin wrapper around
 /// `parseRefSpecifierExprs` that masks origin handling off.
 static TypedAttr
-processOutAddressSpaceSpecifier(const ExprNode *addrSpaceExpr,
+processOutAddressSpaceSpecifier(StringRef valueName,
+                                const ExprNode *addrSpaceExpr,
                                 TypeCheckedParamList &paramList) {
   assert(addrSpaceExpr && "expected an address space expression");
   TypedAttr origin, addrSpace;
-  if (parseRefSpecifierExprs(addrSpaceExpr, "out", paramList,
+  if (parseRefSpecifierExprs(addrSpaceExpr, "out", valueName, paramList,
                              /*acceptOrigins=*/false, origin, addrSpace))
     return {};
   assert(!origin && "out specifier should not produce an origin");
@@ -2262,7 +2282,8 @@ static void typeCheckResult(ParsedArgument resultArg, ASTDecl *fnDecl,
     TypedAttr addressSpace;
     if (resultArg.outAddressSpaceExpr)
       addressSpace = processOutAddressSpaceSpecifier(
-          resultArg.outAddressSpaceExpr, tcSignature.paramList);
+          resultArg.name.strref(), resultArg.outAddressSpaceExpr,
+          tcSignature.paramList);
     RefType refType =
         makeImplicitRefTypeForArg(resultArg, 0, resultType, /*isMutable*/ true,
                                   tcSignature, addressSpace);
