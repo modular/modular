@@ -71,6 +71,12 @@ class UnifiedEagleLlama3Inputs(ModelInputs):
     sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
     ``[batch_size]`` tensors on the primary device."""
 
+    in_thinking_phase: Buffer | None = None
+    """Per-batch ``bool`` flag set by the pipeline for relaxed acceptance
+    during thinking. Not consumed by the unified_eagle_llama3 graph today,
+    but the field is required to satisfy the ``_UnifiedEagleInputs`` protocol
+    used by ``OverlapTextGenerationPipeline``."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         buffers = (
