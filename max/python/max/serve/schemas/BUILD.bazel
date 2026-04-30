@@ -16,6 +16,6 @@ pkg_files(
     srcs = [
         "openai-docs.yaml",
     ],
-    prefix = "max/api",
+    prefix = "static",
     strip_prefix = strip_prefix.from_pkg(""),
 )

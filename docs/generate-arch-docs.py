@@ -18,7 +18,7 @@ arch.py, and generates:
   - One RST page per registered architecture
   - The architectures index RST (pipelines.architectures.rst)
   - Toctree entries in index.rst
-  - Sidebar items in sidebars.js
+  - Sidebar items under max.pipelines.architectures in sidebars.json
 
 Usage:
     ./bazelw run //oss/modular/docs:generate-arch-docs          # regenerate
@@ -27,6 +27,7 @@ Usage:
 
 import argparse
 import ast
+import json
 import os
 import sys
 from pathlib import Path
@@ -38,7 +39,7 @@ REPO_ROOT = Path(
 ARCH_BASE = REPO_ROOT / "max" / "python" / "max" / "pipelines" / "architectures"
 DOCS_DIR = REPO_ROOT / "max" / "python" / "docs"
 INDEX_RST = DOCS_DIR / "index.rst"
-SIDEBARS_JS = REPO_ROOT / "oss" / "modular" / "docs" / "sidebars.js"
+SIDEBARS_JSON = REPO_ROOT / "oss" / "modular" / "docs" / "sidebars.json"
 
 # Maps PipelineTask enum values to human-readable category headings.
 # Ordered by display priority on the index page.
@@ -230,33 +231,87 @@ def sync_index_rst(dir_names: list[str], check: bool, stale: list[str]) -> None:
         print("  updated index.rst")
 
 
-def sync_sidebars_js(
+def sync_sidebars_json(
     dir_names: list[str], check: bool, stale: list[str]
 ) -> None:
-    """Keep architecture items in sidebars.js in sync."""
-    items = "".join(
-        f'            "max/api/python/pipelines.architectures.{d}",\n'
-        for d in sorted(dir_names)
-    )
-    text = SIDEBARS_JS.read_text()
-    label_idx = text.find('"max.pipelines.architectures"')
-    if label_idx == -1:
+    """Keep architecture doc IDs in sidebars.json (Python reference sidebar).
+
+    Expects a category object with label \"max.pipelines.architectures\" under
+    the \"Python\" category in maxReferenceSidebar. Inserts that category
+    before \"max.profiler\" if it is missing.
+    """
+    path = SIDEBARS_JSON
+    original_text = path.read_text(encoding="utf-8")
+    data: object = json.loads(original_text)
+    if not isinstance(data, dict):
+        raise RuntimeError("sidebars.json: root value must be a JSON object")
+
+    max_ref = data.get("maxReferenceSidebar")
+    if not isinstance(max_ref, list):
         raise RuntimeError(
-            '"max.pipelines.architectures" not found in sidebars.js'
+            "sidebars.json: maxReferenceSidebar missing or not a list"
         )
-    begin = text.find("          items: [\n", label_idx)
-    end = text.find("          ],\n", begin + 1)
-    if begin == -1 or end == -1:
-        raise RuntimeError("Could not locate items block in sidebars.js")
-    content_start = begin + len("          items: [\n")
-    expected = text[:content_start] + items + text[end:]
-    if text == expected:
+
+    python_cat: dict[str, object] | None = None
+    for entry in max_ref:
+        if (
+            isinstance(entry, dict)
+            and entry.get("label") == "Python"
+            and entry.get("type") == "category"
+        ):
+            python_cat = entry
+            break
+    if python_cat is None:
+        raise RuntimeError(
+            'sidebars.json: category with label "Python" not found'
+        )
+
+    py_items = python_cat.get("items")
+    if not isinstance(py_items, list):
+        raise RuntimeError('sidebars.json: Python category "items" not a list')
+
+    new_doc_ids = [
+        f"max/api/python/pipelines.architectures.{d}" for d in sorted(dir_names)
+    ]
+
+    arch_cat: dict[str, object] | None = None
+    for entry in py_items:
+        if (
+            isinstance(entry, dict)
+            and entry.get("label") == "max.pipelines.architectures"
+        ):
+            arch_cat = entry
+            break
+
+    if arch_cat is None:
+        insert_at = len(py_items)
+        for i, entry in enumerate(py_items):
+            if isinstance(entry, dict) and entry.get("label") == "max.profiler":
+                insert_at = i
+                break
+        arch_cat = {
+            "type": "category",
+            "label": "max.pipelines.architectures",
+            "link": {
+                "type": "doc",
+                "id": "max/api/python/pipelines.architectures",
+            },
+            "items": new_doc_ids,
+        }
+        py_items.insert(insert_at, arch_cat)
+    elif arch_cat.get("items") == new_doc_ids:
+        return
+    else:
+        arch_cat["items"] = new_doc_ids
+
+    new_text = json.dumps(data, indent=2) + "\n"
+    if new_text == original_text:
         return
     if check:
-        stale.append("sidebars.js")
+        stale.append("sidebars.json")
     else:
-        SIDEBARS_JS.write_text(expected)
-        print("  updated sidebars.js")
+        path.write_text(new_text, encoding="utf-8")
+        print("  updated sidebars.json")
 
 
 # ---------------------------------------------------------------------------
@@ -280,7 +335,7 @@ def main() -> None:
         rst_path = DOCS_DIR / f"pipelines.architectures.{d}.rst"
         sync_file(rst_path, generate_rst(d), args.check, stale)
 
-    # Index RST, index.rst toctree, sidebars.js
+    # Index RST, index.rst toctree, sidebars.json
     sync_file(
         DOCS_DIR / "pipelines.architectures.rst",
         generate_index_rst(dir_names, categories),
@@ -288,7 +343,7 @@ def main() -> None:
         stale,
     )
     sync_index_rst(dir_names, args.check, stale)
-    sync_sidebars_js(dir_names, args.check, stale)
+    sync_sidebars_json(dir_names, args.check, stale)
 
     if args.check:
         if stale:

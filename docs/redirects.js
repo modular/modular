@@ -1,5 +1,3 @@
-const { mojoRedirects } = require('./mojo/redirects');
-
 const redirects = [
   {
     from: '/max',
@@ -40,10 +38,6 @@ const redirects = [
   {
     from: '/max/issues',
     to: 'https://github.com/modular/modular/issues',
-  },
-  {
-    from: '/max/api/mojo-decorators/compiler-register',
-    to: '/mojo/manual/decorators/compiler-register',
   },
   {
     from: '/max/engine',
@@ -165,7 +159,10 @@ const redirects = [
     from: '/glossary/ai/self-attention',
     to: '/glossary/ai/attention',
   },
-  ...mojoRedirects,
+  {
+    from: '/max/api/',
+    to: '/max/api/python/',
+  },
 ];
 
 module.exports = {
