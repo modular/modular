@@ -21,6 +21,7 @@ from std.gpu.host import DeviceContext
 from std.gpu.host.info import is_cpu, is_gpu
 from std.math import ceildiv
 from std.python import Python, PythonObject
+from std.reflection import reflect
 from std.runtime.asyncrt import DeviceContextPtr
 from std.sys import has_accelerator, simd_width_of
 
@@ -130,47 +131,39 @@ def run_python_interop_example() raises:
 # Metaprogramming example
 
 
-# This is basically copy-pasted from the max custom ops example,
-# and inserted here to make sure the edited code still compiles.
-# The @compiler.register decorator needs to be commented out as it only
-# works in a custom ops context.
-# @compiler.register("vector_addition")
-struct VectorAddition:
-    @staticmethod
-    def execute[
-        target: StaticString,
-    ](
-        output: OutputTensor[rank=1, ...],
-        lhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        rhs: InputTensor[dtype=output.dtype, rank=output.rank, ...],
-        ctx: DeviceContextPtr,
-    ) raises:
-        comptime if is_cpu(target):
-            vector_addition_cpu(output, lhs, rhs, ctx)
-        elif is_gpu(target):
-            vector_addition_gpu(output, lhs, rhs, ctx)
-        else:
-            raise Error("No known target:", target)
+trait FauxEquatable(ImplicitlyDestructible):
+    # Generic implementation using reflection: compare all fields
+    @always_inline
+    def __eq__(self, other: Self) -> Bool:
+        comptime r = reflect[Self]()
+        comptime names = r.field_names()
+        comptime types = r.field_types()
+
+        comptime for i in range(names.size):
+            comptime T = types[i]
+            comptime assert conforms_to(T, Equatable)
+            if trait_downcast[Equatable](
+                r.field_ref[i](self)
+            ) != trait_downcast[Equatable](r.field_ref[i](other)):
+                return False
+        return True
 
 
-def vector_addition_gpu(
-    result: OutputTensor[...],
-    lhs: InputTensor[...],
-    rhs: InputTensor[...],
-    ctx: DeviceContextPtr,
-):
-    pass
+@fieldwise_init
+struct EqTest(Copyable, FauxEquatable):
+    var i: Int
+    var s: String
 
 
-def vector_addition_cpu(
-    result: OutputTensor[...],
-    lhs: InputTensor[...],
-    rhs: InputTensor[...],
-    ctx: DeviceContextPtr,
-):
-    pass
+def run_metaprogramming_example():
+    v1 = EqTest(1, "Lucy")
+    v2 = EqTest(1, "Lucy")
+    v3 = EqTest(2, "Linus")
+    print(v1 == v2)
+    print(v1 == v3)
 
 
 def main() raises:
     run_gpu_programming_example()
     run_python_interop_example()
+    run_metaprogramming_example()
