@@ -1007,12 +1007,36 @@ def calculate_metrics(
     for _, output_len in successful:
         actual_output_lens.append(output_len)
 
-    end = (
-        total_successful - skip_last_n_requests
-        if skip_last_n_requests > 0
-        else total_successful
-    )
-    measured = successful[skip_first_n_requests:end]
+    # Pick head / tail to drop using request timing rather than dispatch
+    # order. For multi-turn the flat list arrives in
+    # ``[session0_turns, session1_turns, ...]`` block order, so a
+    # dispatch-order slice would silently target the wrong requests.
+    # Sorting by submit time for the head and complete time for the tail
+    # gives "first N sent, last N completed" uniformly across single-turn
+    # and multi-turn flows.
+    head_drop_ids: set[int] = set()
+    tail_drop_ids: set[int] = set()
+    if skip_first_n_requests > 0:
+        by_submit = sorted(
+            successful,
+            key=lambda pair: pair[0].request_submit_time or 0.0,
+        )
+        head_drop_ids = {
+            id(pair[0]) for pair in by_submit[:skip_first_n_requests]
+        }
+    if skip_last_n_requests > 0:
+        by_complete = sorted(
+            successful,
+            key=lambda pair: pair[0].request_complete_time or 0.0,
+        )
+        tail_drop_ids = {
+            id(pair[0]) for pair in by_complete[-skip_last_n_requests:]
+        }
+    measured = [
+        pair
+        for pair in successful
+        if id(pair[0]) not in head_drop_ids and id(pair[0]) not in tail_drop_ids
+    ]
 
     # Aggregate token/chunk stats over the measured slice only. Skipped
     # warmup/tail requests contribute neither their tokens nor their wall
@@ -1087,18 +1111,18 @@ def calculate_metrics(
         warnings.warn(
             (
                 f"All {total_successful} successful requests were excluded"
-                f" by skip_first_n_requests={skip_first_n_requests} and"
-                f" skip_last_n_requests={skip_last_n_requests}."
-                " Consider running a longer benchmark."
+                f" by skip_first_n_requests={skip_first_n_requests} (first"
+                f" submitted) and skip_last_n_requests={skip_last_n_requests}"
+                " (last completed). Consider running a longer benchmark."
             ),
             stacklevel=2,
         )
     elif 0 < measured_count < 10:
         warnings.warn(
             (
-                f"Only {measured_count} requests remain after skipping"
-                f" first {skip_first_n_requests} and last"
-                f" {skip_last_n_requests} requests."
+                f"Only {measured_count} requests remain after skipping the"
+                f" first {skip_first_n_requests} submitted and last"
+                f" {skip_last_n_requests} completed."
                 " Results may not be reliable."
                 " Consider running a longer benchmark."
             ),
@@ -1274,7 +1298,6 @@ async def chat_session_driver(
     temperature: float | None,
     top_p: float | None,
     top_k: int | None,
-    skip_session_count: int | None = None,
     ignore_first_turn_stats: bool = False,
     benchmark_should_end_time: int | None = None,
     randomize_session_start: bool = False,
@@ -1390,11 +1413,7 @@ async def chat_session_driver(
                 )
             response = raw_response
 
-        if (
-            skip_session_count is None
-            or chat_session.id is None
-            or chat_session.id >= skip_session_count
-        ) and not (ignore_first_turn_stats and content_idx == prefix_end_idx):
+        if not (ignore_first_turn_stats and content_idx == prefix_end_idx):
             session_outputs.append(response)
 
         if not response.success:
@@ -1871,7 +1890,6 @@ async def run_multiturn_benchmark(
     model_id: str,
     api_url: str,
     tokenizer: PreTrainedTokenizerBase,
-    skip_first_n_requests: int,
     ignore_first_turn_stats: bool,
     lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
@@ -1918,7 +1936,6 @@ async def run_multiturn_benchmark(
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
-                skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
@@ -1937,7 +1954,6 @@ async def run_multiturn_benchmark(
                     temperature=temperature,
                     top_p=top_p,
                     top_k=top_k,
-                    skip_session_count=skip_first_n_requests,
                     ignore_first_turn_stats=ignore_first_turn_stats,
                     benchmark_should_end_time=benchmark_should_end_time,
                     randomize_session_start=randomize_session_start,
@@ -2037,7 +2053,6 @@ async def run_kv_cache_stress_benchmark(
     model_id: str,
     api_url: str,
     tokenizer: PreTrainedTokenizerBase,
-    skip_first_n_requests: int,
     ignore_first_turn_stats: bool,
     lora_manager: LoRABenchmarkManager | None,
     warmup_delay_ms: float,
@@ -2132,7 +2147,6 @@ async def run_kv_cache_stress_benchmark(
                 temperature=temperature,
                 top_p=top_p,
                 top_k=top_k,
-                skip_session_count=skip_first_n_requests,
                 ignore_first_turn_stats=ignore_first_turn_stats,
                 benchmark_should_end_time=benchmark_should_end_time,
                 randomize_session_start=randomize_session_start,
@@ -2577,11 +2591,24 @@ async def benchmark(
     dict[str, object],
     TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult,
 ]:
-    if ignore_first_turn_stats and skip_first_n_requests:
+    if (
+        ignore_first_turn_stats
+        and skip_first_n_requests
+        and not warmup_to_steady_state
+    ):
+        # Without --warmup-to-steady-state, sessions all start at turn 0,
+        # so --ignore-first-turn-stats already drops the same head requests
+        # that --skip-first-n-requests would target. Combining them just
+        # trims deeper into the run than the user asked for.
+        # With --warmup-to-steady-state, sessions begin at randomized turn
+        # offsets, so the two features filter different requests and we
+        # want them to compose.
         logger.warning(
-            "--ignore-first-turn-stats and --skip-first-n-requests both set."
-            " Ignoring --skip-first-n-requests due to first turn in each chat"
-            " already being ignored."
+            "--ignore-first-turn-stats and --skip-first-n-requests both set"
+            " without --warmup-to-steady-state. --ignore-first-turn-stats"
+            " already drops every session's first turn, so"
+            " --skip-first-n-requests would trim deeper than expected."
+            " Ignoring --skip-first-n-requests."
         )
         skip_first_n_requests = 0
 
@@ -2830,7 +2857,6 @@ async def benchmark(
                     model_id=model_id,
                     api_url=api_url,
                     tokenizer=tokenizer,
-                    skip_first_n_requests=skip_first_n_requests,
                     ignore_first_turn_stats=ignore_first_turn_stats,
                     lora_manager=lora_manager,
                     warmup_delay_ms=warmup_delay_ms,
@@ -2859,7 +2885,6 @@ async def benchmark(
                     model_id=model_id,
                     api_url=api_url,
                     tokenizer=tokenizer,
-                    skip_first_n_requests=skip_first_n_requests,
                     ignore_first_turn_stats=ignore_first_turn_stats,
                     lora_manager=lora_manager,
                     warmup_delay_ms=warmup_delay_ms,
@@ -3174,8 +3199,8 @@ class BenchmarkSession:
     samples: Samples
     lora_manager: LoRABenchmarkManager | None
     trace_path: str | None
-    skip_first: int
-    skip_last: int
+    orig_skip_first: int | None
+    orig_skip_last: int | None
 
 
 def _execute_benchmark(
@@ -3187,10 +3212,42 @@ def _execute_benchmark(
     dict[str, Any],
     TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult,
 ]:
-    """Run a single benchmark invocation and return *(result_dict, metrics)*."""
+    """Run a single benchmark invocation and return *(result_dict, metrics)*.
+
+    ``session.orig_skip_first`` / ``session.orig_skip_last`` are the
+    user-supplied values (``None`` = auto-derive from *max_concurrency*).
+    """
     backend: Backend = args.backend
-    skip_first = session.skip_first
-    skip_last = session.skip_last
+
+    skip_first = session.orig_skip_first
+    skip_last = session.orig_skip_last
+    if request_rate != float("inf"):
+        # Finite rate → steady drip with no ramp-up / ramp-down artifacts,
+        # so skip nothing (PERF-878).
+        if skip_first is None:
+            skip_first = 0
+        if skip_last is None:
+            skip_last = 0
+    elif max_concurrency is not None and max_concurrency > 1:
+        if skip_first is None:
+            skip_first = max_concurrency
+            logger.info(
+                f"Auto-setting skip_first_n_requests={skip_first}"
+                f" (max_concurrency={max_concurrency})"
+            )
+        if skip_last is None:
+            skip_last = max_concurrency
+            logger.info(
+                f"Auto-setting skip_last_n_requests={skip_last}"
+                f" (max_concurrency={max_concurrency})"
+            )
+    # max_concurrency=1 → sequential requests, no ramp-up to trim.
+    # max_concurrency=None → no cap; default to 0.
+    # Both leave auto values unset → fall through to 0 below.
+    if skip_first is None:
+        skip_first = 0
+    if skip_last is None:
+        skip_last = 0
 
     if args.warm_shared_prefix:
         if args.dataset_name not in ("random", "synthetic"):
@@ -3940,8 +3997,8 @@ def main_with_parsed_args(
         samples=samples,
         lora_manager=lora_manager,
         trace_path=trace_path,
-        skip_first=args.skip_first_n_requests,
-        skip_last=args.skip_last_n_requests,
+        orig_skip_first=args.skip_first_n_requests,
+        orig_skip_last=args.skip_last_n_requests,
     )
 
     # ---- Sweep loop ----

@@ -489,15 +489,15 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         },
     )
 
-    skip_first_n_requests: int = Field(
-        default=0,
-        description="Skip first N requests for measurements (Generally not needed due to steady-state window detection).",
+    skip_first_n_requests: int | None = Field(
+        default=None,
+        description="Skip first N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
         json_schema_extra={"group": "Traffic Control"},
     )
 
-    skip_last_n_requests: int = Field(
-        default=0,
-        description="Skip last N requests for measurements (Generally not needed due to steady-state window detection).",
+    skip_last_n_requests: int | None = Field(
+        default=None,
+        description="Skip last N requests for measurements. Omit to auto-set to max_concurrency; pass 0 to disable.",
         json_schema_extra={"group": "Traffic Control"},
     )
 

@@ -737,3 +737,237 @@ def test_request_complete_time_property() -> None:
     submit_times = [o.request_submit_time for o in outputs]
     complete_times = [o.request_complete_time for o in outputs]
     assert len(submit_times) == len(complete_times)
+
+
+def test_skip_uses_submit_time_for_head_complete_time_for_tail() -> None:
+    """skip_first targets earliest submits, skip_last targets latest completes.
+
+    Mirrors a multi-turn flat list, where outputs arrive in
+    ``[session0_turns, session1_turns, ...]`` block order rather than
+    chronological order. The dispatch-order slice would silently target the
+    wrong requests; the timing-based selection picks the right ones.
+    """
+    # Three "sessions" of two turns each, flattened in block order. Submit/
+    # complete times are intentionally non-monotonic vs. iteration order.
+    outputs = [
+        # session 0: starts first, finishes early
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="s0t0",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=0.0,  # earliest submit overall
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="s0t1",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=2.0,
+        ),
+        # session 1: middle
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="s1t0",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=0.5,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="s1t1",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=3.0,
+        ),
+        # session 2: starts last, last turn finishes last (latest complete)
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="s2t0",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=1.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=5.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="s2t1",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=4.0,  # complete = 9.0, latest overall
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer(
+        {"s0t0": 2, "s0t1": 2, "s1t0": 2, "s1t1": 2, "s2t0": 2, "s2t1": 2}
+    )
+
+    metrics = calculate_metrics(
+        outputs=outputs,
+        dur_s=10.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # Head trim drops s0t0 (submit=0.0, the earliest).
+    # Tail trim drops s2t1 (complete=9.0, the latest).
+    # Dispatch-order slicing would have dropped s0t0 and s2t1 here too —
+    # but only because outputs[0] happens to be the earliest submit and
+    # outputs[-1] happens to be the latest complete. Use the asymmetric
+    # case below to distinguish.
+    assert metrics.completed == 4
+
+
+def test_skip_distinguishes_dispatch_order_from_timing() -> None:
+    """Head/tail trim uses timing, not iteration order.
+
+    Construct a list where the latest-completing request is *not* at the end
+    of the list and the earliest-submitting request is *not* at the front,
+    so a dispatch-order slice would target the wrong requests.
+    """
+    outputs = [
+        # outputs[0]: NOT earliest submit; latest complete (slow request).
+        RequestFuncOutput(
+            success=True,
+            latency=10.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="block_late_complete",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=2.0,  # complete = 12.0, latest
+        ),
+        # outputs[1]: earliest submit, completes mid-pack.
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="block_early_submit",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=0.0,  # earliest
+        ),
+        # outputs[2]: middle on both axes.
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="middle",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=1.0,
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer(
+        {"block_late_complete": 2, "block_early_submit": 2, "middle": 2}
+    )
+
+    metrics = calculate_metrics(
+        outputs=outputs,
+        dur_s=15.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # Head trim drops outputs[1] (block_early_submit, submit=0.0).
+    # Tail trim drops outputs[0] (block_late_complete, complete=12.0).
+    # Both removed → only outputs[2] (middle) is measured.
+    assert metrics.completed == 1
+    # If the old dispatch-order slice were still in effect it would have
+    # kept outputs[1] (the index-1 middle slot) and dropped outputs[0] and
+    # outputs[2]. The "middle" generated_text being the sole measured
+    # output proves the timing-based selection is what's running.
+    # tail_drop on a request with latency=10.0 that we kept would have
+    # inflated total_input. Verify only middle's prompt_len (10) is counted.
+    assert metrics.total_input == 10
+
+
+def test_skip_first_overlaps_with_skip_last_drops_both() -> None:
+    """When the same output is both an earliest submit and a latest complete
+    (slow request submitted first that finishes last), it ends up in both
+    drop sets. The set-based filter handles this naturally — it gets dropped
+    once."""
+    outputs = [
+        # The "warmup" request: submitted first AND completes last.
+        RequestFuncOutput(
+            success=True,
+            latency=20.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="slow_warmup",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=0.0,  # complete = 20.0
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="a",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=1.0,
+        ),
+        RequestFuncOutput(
+            success=True,
+            latency=1.0,
+            ttft=0.1,
+            prompt_len=10,
+            generated_text="b",
+            itl=[0.1],
+            tpot=[0.1],
+            request_submit_time=2.0,
+        ),
+    ]
+
+    tokenizer = _make_mock_tokenizer({"slow_warmup": 2, "a": 2, "b": 2})
+
+    metrics = calculate_metrics(
+        outputs=outputs,
+        dur_s=21.0,
+        tokenizer=tokenizer,
+        gpu_metrics=None,
+        cpu_metrics=_EMPTY_CPU_METRICS,
+        skip_first_n_requests=1,
+        skip_last_n_requests=1,
+        max_concurrency=None,
+        max_concurrent_conversations=None,
+        collect_gpu_stats=False,
+    )
+
+    # slow_warmup is in both head_drop_ids and tail_drop_ids — set union
+    # handles dedupe. The remaining "a" and "b" are both measured.
+    assert metrics.completed == 2
