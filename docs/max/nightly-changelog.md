@@ -6,6 +6,22 @@ This version is still a work in progress.
 
 ## Documentation {#26-3-docs}
 
+- Added new MAX Graph developer guides covering broadcasting, indexing,
+  dtypes, basic math operations, and the model bring-up workflow.
+- Added a graph overview, restructured the graph programming docs, and
+  replaced the MLP block tutorial with a new Module guide.
+- Added model debugging scenario guides for accuracy, errors, GPU, and
+  tracing.
+- Rewrote the speculative decoding serving guide and the custom model
+  architectures guide.
+- Restructured the `max-llm-book` tutorial around `max serve`.
+- Added per-architecture API reference pages for all pipeline architectures,
+  plus new entries for `RotaryEmbedding`, `LayerNorm`, `RMSNorm`,
+  `QuantFormat`, tool-parsing, reasoning, `VideoContentPart`,
+  `diagnostics.cpu`, `experimental.sharding`, `StackedLinear`, and
+  `DevicePlacementPolicy`.
+- Refreshed `max` CLI command reference pages with clearer prose.
+
 ## MAX models {#26-3-models}
 
 - The `residual_threshold` parameter for FLUX first-block cache (FBCache) is
