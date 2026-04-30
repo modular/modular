@@ -2793,6 +2793,7 @@ class DeferredOp(max._core.Operation):
         operands: Sequence[max._core.Value[max._core.Type]],
         op_name: max._core.dialects.builtin.StringAttr,
         op_attrs: max._core.dialects.builtin.DictionaryAttr,
+        op_properties: max._core.Attribute,
     ) -> None: ...
     @property
     def operands(self) -> Sequence[max._core.Value[max._core.Type]]: ...
@@ -2808,6 +2809,10 @@ class DeferredOp(max._core.Operation):
     def op_attrs(
         self, arg: max._core.dialects.builtin.DictionaryAttr, /
     ) -> None: ...
+    @property
+    def op_properties(self) -> max._core.Attribute | None: ...
+    @op_properties.setter
+    def op_properties(self, arg: max._core.Attribute, /) -> None: ...
 
 class ExternGeneratorOp(max._core.Operation):
     """
