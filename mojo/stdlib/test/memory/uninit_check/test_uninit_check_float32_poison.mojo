@@ -10,13 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Tests that loading a Float16 filled with 0xFF (host poison) triggers abort.
+# Tests that loading a Float32 with the debug allocator poison pattern
+# (largest finite value, FLT_MAX = 0x7F7FFFFF) triggers abort.
 
 from std.memory import UnsafePointer
 
 
 # CHECK: use of uninitialized memory
 def main():
-    var value = UInt16(0xFFFF)
-    var ptr = UnsafePointer(to=value).bitcast[Float16]()
+    var value = UInt32(0x7F7FFFFF)
+    var ptr = UnsafePointer(to=value).bitcast[Float32]()
     _ = ptr.load()

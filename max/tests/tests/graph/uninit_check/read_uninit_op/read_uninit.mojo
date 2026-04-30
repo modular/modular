@@ -28,8 +28,8 @@ struct ReadUninitOutput:
 
     The execute method runs on CPU.  When the op is assigned to GPU, the
     output tensor is allocated in device memory, which the debug
-    allocator fills with canonical qNaN.  Reading via unsafe_ptr().load()
-    triggers _check_not_poison on the CPU side.
+    allocator fills with the largest-finite poison pattern.  Reading via
+    unsafe_ptr().load() triggers _check_not_poison on the CPU side.
     """
 
     @staticmethod
@@ -41,7 +41,8 @@ struct ReadUninitOutput:
         ctx: DeviceContextPtr,
     ) raises:
         # Read from the output BEFORE writing — this is uninitialized.
-        # On GPU, the debug allocator has poisoned this with qNaN.
+        # On GPU, the debug allocator has poisoned this with the
+        # largest-finite bit pattern.
         var uninit = output.unsafe_ptr().load()
 
         # Write to prevent dead-code elimination.

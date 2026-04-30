@@ -10,15 +10,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-# Tests that loading a Float32 with canonical qNaN (device poison) triggers
-# abort.
+# Tests that loading a Float16 with the debug allocator poison pattern
+# (largest finite value, 65504 = 0x7BFF) triggers abort.
 
 from std.memory import UnsafePointer
 
 
 # CHECK: use of uninitialized memory
 def main():
-    # Canonical qNaN (0x7FC00000) — device poison pattern for Float32.
-    var value = UInt32(0x7FC00000)
-    var ptr = UnsafePointer(to=value).bitcast[Float32]()
+    var value = UInt16(0x7BFF)
+    var ptr = UnsafePointer(to=value).bitcast[Float16]()
     _ = ptr.load()
