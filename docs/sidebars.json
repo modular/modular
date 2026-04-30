@@ -191,6 +191,17 @@
         "max/api/python/index",
         {
           "type": "category",
+          "label": "max.diagnostics.cpu",
+          "link": {
+            "type": "doc",
+            "id": "max/api/python/diagnostics.cpu"
+          },
+          "items": [
+            "__AUTOGEN:max.diagnostics.cpu__"
+          ]
+        },
+        {
+          "type": "category",
           "label": "max.diagnostics.gpu",
           "link": {
             "type": "doc",
@@ -296,6 +307,17 @@
               },
               "items": [
                 "__AUTOGEN:max.experimental.random__"
+              ]
+            },
+            {
+              "type": "category",
+              "label": "sharding",
+              "link": {
+                "type": "doc",
+                "id": "max/api/python/experimental.sharding"
+              },
+              "items": [
+                "__AUTOGEN:max.experimental.sharding__"
               ]
             },
             {

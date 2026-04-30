@@ -41,6 +41,7 @@ Linear layers
    Linear
    LinearLoRA
    MLP
+   StackedLinear
    VocabParallelEmbedding
 
 Normalization

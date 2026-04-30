@@ -28,6 +28,7 @@ Modules
 .. toctree::
    :maxdepth: 1
 
+   diagnostics.cpu
    diagnostics.gpu
    driver
    dtype
@@ -113,4 +114,5 @@ Modules
    experimental.tensor
    experimental.random
    experimental.functional
+   experimental.sharding
    experimental.torch
