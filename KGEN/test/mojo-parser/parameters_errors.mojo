@@ -678,3 +678,14 @@ comptime bad = TakeAutoParamVA[23456]
 # TODO: we could potentially support this.
 # expected-error @+1 {{'NestedDeps' failed to infer parameter 'b', specify the parameter or use '_' or '...' to unbind the parameter explicitly}}
 comptime something = NestedDeps[_]
+
+# MOCO-3867: struct field with unbound parameter should emit error, not crash.
+struct UnboundFieldContainer[T: AnyType, size: Int]:
+    def __init__(out self): pass
+
+struct UnboundFieldHolder:
+    # expected-error @below {{'UnboundFieldContainer[Int, ?]' is not concrete, use '[]' to bind missing parameters}}
+    var data: UnboundFieldContainer[Int, _]
+
+def use_unbound_field_holder():
+    var x: UnboundFieldHolder
