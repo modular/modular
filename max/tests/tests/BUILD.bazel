@@ -23,14 +23,6 @@ modular_py_test(
             "test_mojo_runtime_foreign_thread.py",
         ],
     ),
-    args = [
-        "-n",
-        "auto",
-    ],
-    ignore_extra_deps = [
-        # Used for parallelizing tests
-        requirement("pytest-xdist"),
-    ],
     target_compatible_with = select({
         "@platforms//os:macos": ["@platforms//:incompatible"],
         "//conditions:default": [],
@@ -46,7 +38,6 @@ modular_py_test(
         "//max/python/max/graph",
         "//max/python/max/interfaces",
         "//max/python/max/mlir",
-        requirement("pytest-xdist"),
         requirement("numpy"),
     ],
 )
