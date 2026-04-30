@@ -449,6 +449,11 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     max_output: int
     max_total: int
 
+    # Global: SUM(cached_tokens) / SUM(prompt_tokens).
+    global_cached_token_rate: float
+    # Per-turn cached_tokens / prompt_tokens; None when usage data is unavailable.
+    per_turn_cached_token_rate: StandardPercentileMetrics | None
+
     # Per-request raw data, preserved for archival and post-processing.
     # N.B.: skip_first_n_requests and skip_last_n_requests are inputs and
     # shouldn't be part of the output metrics, but are included for
@@ -468,6 +473,8 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     errors: list[str] = field(default_factory=list)
     request_submit_times: list[float | None] = field(default_factory=list)
     request_complete_times: list[float | None] = field(default_factory=list)
+    # Empty when the server did not report per-request cached_tokens.
+    per_turn_cached_token_rates: list[float] = field(default_factory=list)
 
     def _find_batch_histogram(self, batch_type: str) -> HistogramData | None:
         """First endpoint that exposes the MAX-serve batch-time histogram."""
@@ -529,6 +536,8 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         d["errors"] = self.errors
         d["request_submit_times"] = self.request_submit_times
         d["request_complete_times"] = self.request_complete_times
+        d["per_turn_cached_token_rates"] = self.per_turn_cached_token_rates
+        d["global_cached_token_rate"] = self.global_cached_token_rate
         return d
 
     def confidence_warnings(self) -> list[str]:
@@ -599,6 +608,8 @@ class TextGenerationBenchmarkResult:
     metrics: BenchmarkMetrics
     steady_state_result: SteadyStateResult | None = None
     spec_decode_stats: SpecDecodeStats | None = None
+    session_server_stats: dict[str, list[dict[str, Any]]] | None = None
+    aggregate_server_stats: list[dict[str, Any]] | None = None
 
     def to_result_dict(self) -> dict[str, object]:
         d = self.metrics.to_result_dict()
@@ -606,6 +617,10 @@ class TextGenerationBenchmarkResult:
             d.update(self.steady_state_result.to_result_dict())
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
+        if self.session_server_stats is not None:
+            d["session_server_stats"] = self.session_server_stats
+        if self.aggregate_server_stats is not None:
+            d["aggregate_server_stats"] = self.aggregate_server_stats
         return d
 
     def validate(self) -> tuple[bool, list[str]]:

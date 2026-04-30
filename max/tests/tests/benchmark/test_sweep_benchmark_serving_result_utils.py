@@ -123,6 +123,7 @@ def _make_llm_metrics() -> BenchmarkMetrics:
     ttfts = [0.048, 0.050, 0.060, 0.080]
     itls = [0.0095, 0.010, 0.012, 0.018]
     latencies = [0.390, 0.400, 0.450, 0.550]
+    per_turn_cache_rates = [0.30, 0.35, 0.40, 0.45]
     return BenchmarkMetrics(
         duration=12.0,
         completed=100,
@@ -147,6 +148,10 @@ def _make_llm_metrics() -> BenchmarkMetrics:
         max_input=100,
         max_output=200,
         max_total=300,
+        global_cached_token_rate=0.35,
+        per_turn_cached_token_rate=StandardPercentileMetrics(
+            per_turn_cache_rates, scale_factor=100.0, unit="%"
+        ),
         peak_gpu_memory_mib=[8000.0],
         available_gpu_memory_mib=[2000.0],
         gpu_utilization=[0.9],

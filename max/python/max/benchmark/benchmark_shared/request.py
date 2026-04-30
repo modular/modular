@@ -190,6 +190,16 @@ def measured_window_duration(
     return max(last_complete - first_submit, 1e-9)
 
 
+@dataclass
+class ServerTokenStats:
+    """Server-reported token counts from the stream_options usage chunk."""
+
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+    cached_tokens: int = 0
+
+
 # TODO: We shouldn't have to maintain two separate RequestFuncOutput classes for
 # text generation and TTS benchmarks respectively.
 @dataclass
@@ -203,6 +213,9 @@ class RequestFuncOutput(BaseRequestFuncOutput):
     generated_text: str = ""
     ttft: float = 0.0  # Time to first token
     prompt_len: int = 0
+    server_token_stats: ServerTokenStats = field(
+        default_factory=ServerTokenStats
+    )
 
 
 @dataclass
@@ -572,7 +585,24 @@ async def _run_openai_stream_request(
 
                         data = json.loads(chunk)
 
-                        # Skip metadata chunks with no choices (e.g. usage-only chunks)
+                        # Parse usage from any chunk that reports it.
+                        usage = data.get("usage")
+                        if usage:
+                            details = usage.get("prompt_tokens_details")
+                            output.server_token_stats = ServerTokenStats(
+                                prompt_tokens=usage.get("prompt_tokens"),
+                                completion_tokens=usage.get(
+                                    "completion_tokens"
+                                ),
+                                total_tokens=usage.get("total_tokens"),
+                                cached_tokens=(
+                                    details.get("cached_tokens", 0)
+                                    if details
+                                    else 0
+                                ),
+                            )
+
+                        # Skip content processing for chunks with no choices.
                         if not data.get("choices"):
                             continue
 
@@ -699,6 +729,7 @@ class OpenAIChatCompletionsRequestDriver(RequestDriver):
             "model": request_func_input.model,
             "messages": messages_data,
             "stream": True,
+            "stream_options": {"include_usage": True},
             "ignore_eos": request_func_input.ignore_eos,
         }
 

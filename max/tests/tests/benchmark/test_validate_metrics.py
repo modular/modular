@@ -177,6 +177,10 @@ def _make_metrics(
         max_input=100,
         max_output=50,
         max_total=150,
+        global_cached_token_rate=0.35,
+        per_turn_cached_token_rate=StandardPercentileMetrics(
+            [0.35], scale_factor=100.0, unit="%"
+        ),
         peak_gpu_memory_mib=[],
         available_gpu_memory_mib=[],
         gpu_utilization=[],

@@ -152,6 +152,12 @@ BENCHMARK_SERVING_ARGPARSER_DESCRIPTION = (
 
 logger = logging.getLogger(__name__)
 
+# Server and client token counts can legitimately differ slightly because the
+# server applies the chat template and may count special tokens differently.
+# 5% tolerates small systematic gaps while still surfacing real mismatches
+# (e.g. wrong tokenizer, prompt truncation, or model-side reprocessing).
+_INPUT_TOKEN_DISCREPANCY_THRESHOLD = 0.05
+
 
 def compute_output_len(
     tokenizer: PreTrainedTokenizerBase,
@@ -525,12 +531,26 @@ def print_benchmark_summary(
                 prefix="output token throughput", unit="tok/s"
             )
         )
+        print(
+            "{:<40} {:<10.2f}".format(
+                "Global Cached Token Rate:",
+                metrics.global_cached_token_rate * 100,
+            )
+            + "%"
+        )
         print_section(title="Time to First Token")
         print(metrics.ttft_ms.format_with_prefix(prefix="TTFT", unit="ms"))
         print_section(title="Time per Output Token (excl. 1st token)")
         print(metrics.tpot_ms.format_with_prefix(prefix="TPOT", unit="ms"))
         print_section(title="Inter-token Latency")
         print(metrics.itl_ms.format_with_prefix(prefix="ITL", unit="ms"))
+        if metrics.per_turn_cached_token_rate is not None:
+            print_section(title="Per-Turn Cached Token Rate")
+            print(
+                metrics.per_turn_cached_token_rate.format_with_prefix(
+                    prefix="Per-Turn Cached Token Rate", unit="%"
+                )
+            )
 
     print_section(title="Per-Request E2E Latency")
     print(
@@ -976,6 +996,9 @@ def calculate_metrics(
     latencies: list[float] = []
     input_throughputs: list[float] = []
     output_throughputs: list[float] = []
+    per_turn_cached_token_rates: list[float] = []
+    total_server_cached_tokens: int = 0
+    total_server_prompt_tokens: int = 0
 
     successful: list[tuple[RequestFuncOutput, int]] = []
     for o in outputs:
@@ -1004,14 +1027,14 @@ def calculate_metrics(
     # warmup/tail requests contribute neither their tokens nor their wall
     # time to throughput metrics, so TPM-style numbers reflect the
     # intended steady-state portion of the run.
-    total_input = 0
+    total_input_client_calculated = 0
     total_output = 0
     nonempty_response_chunks = 0
     max_input = 0
     max_output = 0
     max_total = 0
     for o, output_len in measured:
-        total_input += o.prompt_len
+        total_input_client_calculated += o.prompt_len
         total_output += output_len
         nonempty_response_chunks += 1 if o.ttft != 0 else 0
         nonempty_response_chunks += len(o.itl)
@@ -1027,6 +1050,39 @@ def calculate_metrics(
         if (o.latency - o.ttft) > 0:
             output_throughputs.append((output_len - 1) / (o.latency - o.ttft))
         latencies.append(o.latency)
+        if o.server_token_stats.prompt_tokens:
+            per_turn_cached_token_rates.append(
+                o.server_token_stats.cached_tokens
+                / o.server_token_stats.prompt_tokens
+            )
+            total_server_cached_tokens += o.server_token_stats.cached_tokens
+            total_server_prompt_tokens += o.server_token_stats.prompt_tokens
+
+    if not measured:
+        total_input = 0
+    elif total_server_prompt_tokens == 0:
+        warnings.warn(
+            "Server did not report prompt_tokens; using client-calculated token"
+            " counts. Input token count and cache rate metrics may not be accurate.",
+            stacklevel=2,
+        )
+        total_input = total_input_client_calculated
+    else:
+        discrepancy = (
+            abs(total_server_prompt_tokens - total_input_client_calculated)
+            / total_input_client_calculated
+        )
+        if discrepancy > _INPUT_TOKEN_DISCREPANCY_THRESHOLD:
+            warnings.warn(
+                f"Server-reported total input tokens ({total_server_prompt_tokens})"
+                f" differs from client-calculated count ({total_input_client_calculated})"
+                f" by {discrepancy:.1%}. Using server-reported value.",
+                stacklevel=2,
+            )
+        total_input = total_server_prompt_tokens
+        logger.info(
+            "Using server-reported prompt_tokens for total input token count."
+        )
 
     _warn_on_request_failures(
         outputs=outputs,
@@ -1074,6 +1130,17 @@ def calculate_metrics(
         gpu_metrics=gpu_metrics,
     )
 
+    global_cached_token_rate: float = (
+        total_server_cached_tokens / total_input if total_input > 0 else 0.0
+    )
+    per_turn_cached_token_rate: StandardPercentileMetrics | None = (
+        StandardPercentileMetrics(
+            per_turn_cached_token_rates, scale_factor=100.0, unit="%"
+        )
+        if len(per_turn_cached_token_rates) > 0
+        else None
+    )
+
     metrics = BenchmarkMetrics(
         duration=measured_duration,
         completed=measured_count,
@@ -1106,6 +1173,8 @@ def calculate_metrics(
         max_input=max_input,
         max_output=max_output,
         max_total=max_total,
+        global_cached_token_rate=global_cached_token_rate,
+        per_turn_cached_token_rate=per_turn_cached_token_rate,
         peak_gpu_memory_mib=peak_gpu_memory_mib,
         available_gpu_memory_mib=available_gpu_memory_mib,
         gpu_utilization=gpu_utilization,
@@ -1121,6 +1190,7 @@ def calculate_metrics(
         errors=[o.error for o in outputs],
         request_submit_times=[o.request_submit_time for o in outputs],
         request_complete_times=[o.request_complete_time for o in outputs],
+        per_turn_cached_token_rates=per_turn_cached_token_rates,
     )
 
     # Override TPOT mean with weighted average: sum(ITL) / decode_tokens.
@@ -1825,7 +1895,7 @@ async def run_multiturn_benchmark(
     seed: int | None = None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
-) -> list[RequestFuncOutput]:
+) -> dict[str, list[RequestFuncOutput]]:
     """Run multi-turn chat benchmark scenario."""
 
     # Track total sent requests among chat sessions
@@ -1840,14 +1910,14 @@ async def run_multiturn_benchmark(
     async def limited_chat_session_driver(
         chat_session: ChatSession,
         session_idx: int,
-    ) -> list[RequestFuncOutput]:
+    ) -> tuple[str, list[RequestFuncOutput]]:
         # Determine which LoRA to use for this chat session
         lora_id = None
         if lora_manager:
             lora_id = lora_manager.get_lora_for_request(session_idx)
 
         if semaphore is None:
-            return await chat_session_driver(
+            outputs = await chat_session_driver(
                 model_id=model_id if lora_id is None else lora_id,
                 api_url=api_url,
                 request_driver=request_driver,
@@ -1864,24 +1934,31 @@ async def run_multiturn_benchmark(
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
             )
-        async with semaphore:
-            return await chat_session_driver(
-                model_id=model_id if lora_id is None else lora_id,
-                api_url=api_url,
-                request_driver=request_driver,
-                request_counter=request_counter,
-                chat_session=chat_session,
-                max_chat_len=tokenizer.model_max_length,
-                temperature=temperature,
-                top_p=top_p,
-                top_k=top_k,
-                skip_session_count=skip_first_n_requests,
-                ignore_first_turn_stats=ignore_first_turn_stats,
-                benchmark_should_end_time=benchmark_should_end_time,
-                randomize_session_start=randomize_session_start,
-                run_prefix=run_prefix,
-                run_prefix_len=run_prefix_len,
-            )
+        else:
+            async with semaphore:
+                outputs = await chat_session_driver(
+                    model_id=model_id if lora_id is None else lora_id,
+                    api_url=api_url,
+                    request_driver=request_driver,
+                    request_counter=request_counter,
+                    chat_session=chat_session,
+                    max_chat_len=tokenizer.model_max_length,
+                    temperature=temperature,
+                    top_p=top_p,
+                    top_k=top_k,
+                    skip_session_count=skip_first_n_requests,
+                    ignore_first_turn_stats=ignore_first_turn_stats,
+                    benchmark_should_end_time=benchmark_should_end_time,
+                    randomize_session_start=randomize_session_start,
+                    run_prefix=run_prefix,
+                    run_prefix_len=run_prefix_len,
+                )
+        session_id = (
+            str(chat_session.id)
+            if chat_session.id is not None
+            else f"anonymous-{session_idx}"
+        )
+        return session_id, outputs
 
     sessions = list(chat_sessions)
     if warmup_to_steady_state:
@@ -1897,7 +1974,7 @@ async def run_multiturn_benchmark(
         if report is not None:
             _log_warmup_sampling_report(report)
 
-    tasks: list[asyncio.Task[list[RequestFuncOutput]]] = []
+    tasks: list[asyncio.Task[tuple[str, list[RequestFuncOutput]]]] = []
     for idx, chat_session in enumerate(sessions):
         if warmup_delay_ms > 0 and max_concurrency and idx < max_concurrency:
             await asyncio.sleep(warmup_delay_ms / 1000)
@@ -1905,8 +1982,8 @@ async def run_multiturn_benchmark(
             asyncio.create_task(limited_chat_session_driver(chat_session, idx))
         )
 
-    session_outputs: list[list[RequestFuncOutput]] = await asyncio.gather(
-        *tasks
+    outputs_by_session: dict[str, list[RequestFuncOutput]] = dict(
+        await asyncio.gather(*tasks)
     )
 
     if (
@@ -1918,7 +1995,7 @@ async def run_multiturn_benchmark(
             "Consider increasing --num-chat-sessions for more stable load."
         )
 
-    return [output for sublist in session_outputs for output in sublist]
+    return outputs_by_session
 
 
 class _ConcurrentTurnsRequestDriver(RequestDriver):
@@ -1983,7 +2060,7 @@ async def run_kv_cache_stress_benchmark(
     seed: int | None = None,
     run_prefix: str | None = None,
     run_prefix_len: int = 0,
-) -> list[RequestFuncOutput]:
+) -> dict[str, list[RequestFuncOutput]]:
     """Run a KV-cache stress benchmark with independent conversation and turn concurrency.
 
     Two independent concurrency controls:
@@ -2035,8 +2112,8 @@ async def run_kv_cache_stress_benchmark(
         await session_queue.put((idx, session))
 
     num_workers = min(max_concurrent_conversations, len(sessions))
-    worker_outputs: list[list[RequestFuncOutput]] = [
-        [] for _ in range(num_workers)
+    worker_outputs: list[dict[str, list[RequestFuncOutput]]] = [
+        {} for _ in range(num_workers)
     ]
 
     async def _conversation_worker(worker_idx: int) -> None:
@@ -2044,6 +2121,7 @@ async def run_kv_cache_stress_benchmark(
         if warmup_delay_ms > 0:
             await asyncio.sleep(worker_idx * warmup_delay_ms / 1000)
 
+        local_count = 0
         while True:
             try:
                 idx, chat_session = session_queue.get_nowait()
@@ -2053,7 +2131,7 @@ async def run_kv_cache_stress_benchmark(
             lora_id = (
                 lora_manager.get_lora_for_request(idx) if lora_manager else None
             )
-            session_outputs = await chat_session_driver(
+            outputs = await chat_session_driver(
                 model_id=model_id if lora_id is None else lora_id,
                 api_url=api_url,
                 request_driver=inflight_limited_driver,
@@ -2070,14 +2148,25 @@ async def run_kv_cache_stress_benchmark(
                 run_prefix=run_prefix,
                 run_prefix_len=run_prefix_len,
             )
-
-            worker_outputs[worker_idx].extend(session_outputs)
+            session_id = (
+                str(chat_session.id)
+                if chat_session.id is not None
+                else f"anonymous-w{worker_idx}-{local_count}"
+            )
+            local_count += 1
+            worker_outputs[worker_idx].setdefault(session_id, []).extend(
+                outputs
+            )
 
     async with TaskGroup() as tg:
         for i in range(num_workers):
             tg.create_task(_conversation_worker(i))
 
-    return [output for worker in worker_outputs for output in worker]
+    outputs_by_session: dict[str, list[RequestFuncOutput]] = {}
+    for worker_dict in worker_outputs:
+        for sid, outs in worker_dict.items():
+            outputs_by_session.setdefault(sid, []).extend(outs)
+    return outputs_by_session
 
 
 def create_benchmark_pbar(disable_tqdm: bool, samples: Samples) -> tqdm | None:
@@ -2694,7 +2783,8 @@ async def benchmark(
             )
 
         try:
-            outputs: Sequence[BaseRequestFuncOutput]
+            all_outputs: Sequence[BaseRequestFuncOutput]
+            outputs_by_session: dict[str, list[RequestFuncOutput]] | None = None
             if isinstance(samples, RequestSamples):
                 if max_concurrent_conversations is not None:
                     raise ValueError(
@@ -2703,7 +2793,7 @@ async def benchmark(
                         "enable multi-turn mode."
                     )
                 # single-turn chat scenario
-                outputs = await run_single_turn_benchmark(
+                all_outputs = await run_single_turn_benchmark(
                     input_requests=samples.requests,
                     benchmark_task=benchmark_task,
                     request_rate=request_rate,
@@ -2739,7 +2829,7 @@ async def benchmark(
                     )
                 assert tokenizer is not None
                 assert isinstance(max_concurrent_conversations, int)
-                outputs = await run_kv_cache_stress_benchmark(
+                outputs_by_session = await run_kv_cache_stress_benchmark(
                     chat_sessions=samples.chat_sessions,
                     max_requests=max_requests,
                     max_concurrent_conversations=max_concurrent_conversations,
@@ -2764,9 +2854,12 @@ async def benchmark(
                     run_prefix=run_prefix,
                     run_prefix_len=run_prefix_len,
                 )
+                all_outputs = [
+                    out for outs in outputs_by_session.values() for out in outs
+                ]
             else:
                 # multi-turn chat scenario
-                outputs = await run_multiturn_benchmark(
+                outputs_by_session = await run_multiturn_benchmark(
                     chat_sessions=samples.chat_sessions,
                     max_requests=max_requests,
                     semaphore=semaphore,
@@ -2791,6 +2884,9 @@ async def benchmark(
                     run_prefix=run_prefix,
                     run_prefix_len=run_prefix_len,
                 )
+                all_outputs = [
+                    out for outs in outputs_by_session.values() for out in outs
+                ]
 
             # Close pbar if it was created
             if pbar is not None:
@@ -2820,7 +2916,7 @@ async def benchmark(
         if benchmark_task == "text-generation":
             assert tokenizer is not None
             print("Generated output text:")
-            for req_id, output in enumerate(outputs):
+            for req_id, output in enumerate(all_outputs):
                 assert isinstance(output, RequestFuncOutput)
                 output_len = compute_output_len(tokenizer, output)
                 print(
@@ -2832,7 +2928,7 @@ async def benchmark(
                 )
         elif benchmark_task in PIXEL_GENERATION_TASKS:
             print("Generated pixel generation outputs:")
-            for req_id, output in enumerate(outputs):
+            for req_id, output in enumerate(all_outputs):
                 assert isinstance(output, PixelGenerationRequestFuncOutput)
                 print(
                     {
@@ -2881,7 +2977,7 @@ async def benchmark(
     result: PixelGenerationBenchmarkResult | TextGenerationBenchmarkResult
     if benchmark_task in PIXEL_GENERATION_TASKS:
         result = _build_pixel_generation_result(
-            outputs=outputs,
+            outputs=all_outputs,
             benchmark_duration=benchmark_duration,
             gpu_metrics=gpu_metrics,
             cpu_metrics=cpu_metrics_result,
@@ -2890,8 +2986,8 @@ async def benchmark(
             metrics_by_endpoint=endpoint_metrics,
         )
     else:
-        result = _build_text_generation_result(
-            outputs=outputs,
+        text_result = _build_text_generation_result(
+            outputs=all_outputs,
             benchmark_duration=benchmark_duration,
             tokenizer=tokenizer,
             gpu_metrics=gpu_metrics,
@@ -2904,6 +3000,29 @@ async def benchmark(
             metrics_by_endpoint=endpoint_metrics,
             spec_decode_stats=spec_decode_stats,
         )
+        if outputs_by_session is not None:
+            result = dataclasses.replace(
+                text_result,
+                session_server_stats={
+                    sid: [
+                        dataclasses.asdict(out.server_token_stats)
+                        for out in outs
+                    ]
+                    for sid, outs in sorted(
+                        outputs_by_session.items(),
+                        key=lambda kv: _session_sort_key(kv[0]),
+                    )
+                },
+            )
+        else:
+            result = dataclasses.replace(
+                text_result,
+                aggregate_server_stats=[
+                    dataclasses.asdict(out.server_token_stats)
+                    for out in all_outputs
+                    if isinstance(out, RequestFuncOutput)
+                ],
+            )
     result_dict = result.to_result_dict()
 
     print_benchmark_summary(
@@ -3153,6 +3272,14 @@ def _execute_benchmark(
     return benchmark_result_dict, benchmark_result
 
 
+def _session_sort_key(sid: str) -> tuple[int, int, str]:
+    """Sort numeric session ids first by integer value, then anonymous ids."""
+    try:
+        return (0, int(sid), "")
+    except ValueError:
+        return (1, 0, sid)
+
+
 def save_result_json(
     result_filename: str | None,
     args: ServingBenchmarkConfig,
@@ -3170,6 +3297,7 @@ def save_result_json(
     backend: Backend = args.backend
     client_args = args.model_dump()
     client_args["request_rate"] = str(client_args["request_rate"])
+
     result_json: dict[str, Any] = {
         "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
         "backend": backend,
