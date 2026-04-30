@@ -21,7 +21,7 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from functools import wraps
 from inspect import signature
 from itertools import islice
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 import numpy as np
 from max.driver import Buffer, DLPackArray
@@ -44,6 +44,7 @@ from typing_extensions import Self
 from .._identity import IdentitySet
 
 
+@runtime_checkable
 class Shardable(Protocol):
     """Protocol for objects that support sharding across multiple devices.
 

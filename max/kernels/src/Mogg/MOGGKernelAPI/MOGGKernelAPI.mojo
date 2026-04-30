@@ -8247,6 +8247,112 @@ struct Struct_mla_decode_graph_paged_fp8:
             )
 
 
+@compiler.register("mo.mla.graph.decode.paged.fp8.sparse")
+struct Struct_mla_decode_graph_paged_fp8_sparse:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        fp8_dtype: DType,
+        fp8_scale_dtype: DType,
+        cache_dtype: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        mask_str: StaticString,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[
+            target
+        ](), "mo.mla.graph.decode.paged.fp8.sparse is only supported on GPU"
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var d_indices_ptr = UnsafePointer[Int32, MutAnyOrigin](
+            sparse_indices.to_layout_tensor().ptr
+        )
+        var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
+            topk_lengths.to_layout_tensor().ptr
+        )
+        var attn_sink_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ](attn_sink.to_layout_tensor().ptr)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.decode.paged.fp8.sparse",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_decode_branch_fp8[
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+                sparse_mla=True,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+                d_indices_ptr,
+                indices_stride,
+                topk_lengths_ptr,
+                attn_sink_ptr,
+            )
+
+
 @compiler.register("mo.mla.graph.prefill.paged")
 struct Struct_mla_prefill_graph_bf16_paged:
     @always_inline
@@ -8490,6 +8596,124 @@ struct Struct_mla_prefill_graph_decode_paged_fp8:
                 w_uv_scale.to_tile_tensor[DType.int64](),
                 scalar_args.to_tile_tensor[DType.int64](),
                 context.get_device_context(),
+            )
+
+
+@compiler.register("mo.mla.graph.prefill.decode.paged.fp8.sparse")
+struct Struct_mla_prefill_graph_decode_paged_fp8_sparse:
+    @always_inline
+    @staticmethod
+    @parameter
+    def execute[
+        dtype: DType,
+        freq_dtype: DType,
+        gamma_dtype: DType,
+        fp8_dtype: DType,
+        fp8_scale_dtype: DType,
+        cache_dtype: DType,
+        //,
+        m_scale_granularity: Int,
+        n_scale_granularity: Int,
+        k_scale_granularity: Int,
+        mask_str: StaticString,
+        target: StaticString,
+        indices_stride: Int,
+    ](
+        output: OutputTensor[dtype=dtype, rank=3, ...],
+        q: InputTensor[dtype=dtype, rank=3, ...],
+        kv: FusedInputTensor[dtype=DType.bfloat16, rank=2, ...],
+        input_row_offsets: InputTensor[dtype=DType.uint32, rank=1, ...],
+        freqs_cis: InputTensor[dtype=freq_dtype, rank=2, ...],
+        kv_norm_gamma: InputTensor[dtype=gamma_dtype, rank=1, ...],
+        buffer_row_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        cache_offsets_1d: InputTensor[dtype=DType.uint32, rank=1, ...],
+        buffer_length: Int32,
+        w_k: InputTensor[dtype=fp8_dtype, rank=2, ...],
+        w_uk: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        w_uv: InputTensor[dtype=fp8_dtype, rank=3, ...],
+        kv_blocks: MutableInputTensor[dtype=cache_dtype, rank=6, ...],
+        cache_lengths: InputTensor[dtype=DType.uint32, rank=1, ...],
+        kv_lookup_table: InputTensor[dtype=DType.uint32, rank=2, ...],
+        max_lengths: InputTensor[dtype=DType.uint32, rank=2, ...],
+        layer_idx: UInt32,
+        scale: Float32,
+        epsilon: Float32,
+        w_k_scale: InputTensor[dtype=fp8_scale_dtype, rank=2, ...],
+        w_uk_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        w_uv_scale: InputTensor[dtype=fp8_scale_dtype, rank=3, ...],
+        scalar_args: InputTensor[dtype=DType.int64, rank=1, ...],
+        sparse_indices: InputTensor[dtype=DType.int32, rank=2, ...],
+        topk_lengths: InputTensor[dtype=DType.int32, rank=1, ...],
+        attn_sink: InputTensor[dtype=DType.float32, rank=1, ...],
+        context: DeviceContextPtr,
+    ) raises:
+        var kv_collection = generic_get_paged_cache(
+            kv_blocks,
+            cache_lengths,
+            kv_lookup_table,
+            max_lengths,
+        )
+
+        comptime assert is_gpu[target](), (
+            "mo.mla.graph.prefill.decode.paged.fp8.sparse is only supported"
+            " on GPU"
+        )
+
+        @parameter
+        @always_inline
+        def kv_input_fn[
+            width: Int
+        ](coords: IndexList[2]) -> SIMD[DType.bfloat16, width]:
+            return kv._lambda_load[width=width, element_alignment=width](coords)
+
+        var d_indices_ptr = UnsafePointer[Int32, MutAnyOrigin](
+            sparse_indices.to_layout_tensor().ptr
+        )
+        var topk_lengths_ptr = UnsafePointer[Int32, MutAnyOrigin](
+            topk_lengths.to_layout_tensor().ptr
+        )
+        var attn_sink_ptr = UnsafePointer[
+            Scalar[DType.float32], origin=MutAnyOrigin
+        ](attn_sink.to_layout_tensor().ptr)
+
+        with Trace[TraceLevel.OP, target=target](
+            "mo.mla.graph.prefill.decode.paged.fp8.sparse",
+            task_id=get_safe_task_id(context),
+        ):
+            mla_prefill_decode_graph_fp8[
+                m_scale_granularity=m_scale_granularity,
+                n_scale_granularity=n_scale_granularity,
+                k_scale_granularity=k_scale_granularity,
+                mask_str=mask_str,
+                kv_input_fn=kv_input_fn,
+                target=target,
+                sparse_mla=True,
+            ](
+                output.to_tile_tensor[DType.int64](),
+                q.to_tile_tensor[DType.int64](),
+                input_row_offsets.to_tile_tensor[DType.int64](),
+                freqs_cis.to_tile_tensor[DType.int64](),
+                kv_norm_gamma.to_tile_tensor[DType.int64](),
+                kv_collection,
+                layer_idx,
+                scale,
+                epsilon,
+                buffer_row_offsets_1d.to_tile_tensor[DType.int64](),
+                cache_offsets_1d.to_tile_tensor[DType.int64](),
+                Int(buffer_length),
+                Int(kv_collection.max_seq_length),
+                w_k.to_tile_tensor[DType.int64](),
+                w_k_scale.to_tile_tensor[DType.int64](),
+                w_uk.to_tile_tensor[DType.int64](),
+                w_uk_scale.to_tile_tensor[DType.int64](),
+                w_uv.to_tile_tensor[DType.int64](),
+                w_uv_scale.to_tile_tensor[DType.int64](),
+                scalar_args.to_tile_tensor[DType.int64](),
+                context.get_device_context(),
+                d_indices_ptr,
+                indices_stride,
+                topk_lengths_ptr,
+                attn_sink_ptr,
             )
 
 

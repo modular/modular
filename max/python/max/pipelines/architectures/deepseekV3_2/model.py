@@ -242,7 +242,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 # Unmarshal the KV cache arguments.
                 assert isinstance(self.kv_params, MultiKVCacheParams)
                 len_of_mla_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs().inputs[0].flatten()
+                    self.kv_params.params[0].get_symbolic_inputs().flatten()
                 )
                 mla_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [
@@ -253,7 +253,7 @@ class DeepseekV3_2Model(DeepseekV3Model):
                 )
 
                 len_of_indexer_kv_inputs = len(
-                    self.kv_params.get_symbolic_inputs().inputs[-1].flatten()
+                    self.kv_params.params[1].get_symbolic_inputs().flatten()
                 )
                 indexer_kv_caches_per_dev = self._unflatten_kv_inputs(
                     [

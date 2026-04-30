@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 
+from std.collections import OptionalReg
 from std.math import align_up, ceildiv
 
 from std.sys import simd_width_of, size_of
@@ -40,6 +41,7 @@ from layout import (
     TileTensor,
     row_major,
 )
+from layout.layout import *
 from layout.tile_layout import Layout as TileLayout
 from linalg.bmm import _batched_matmul_gpu, batched_matmul_dynamic_scaled_fp8
 from linalg.matmul import matmul
@@ -1020,6 +1022,7 @@ def mla_decode_branch_fp8[
         DType.bfloat16, width
     ],
     target: StaticString = "cpu",
+    sparse_mla: Bool = False,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1046,6 +1049,19 @@ def mla_decode_branch_fp8[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    extra_k: OptionalReg[collection_t.CacheType] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1075,6 +1091,7 @@ def mla_decode_branch_fp8[
             [tot_seq_len, cache_head_dim]. Where cache_head_dim = kv_lora_rank
             + qk_rope_head_dim.
         target: Target device.
+        sparse_mla: Whether to use sparse MLA.
 
     Args:
         output: Output tensor of shape [tot_seq_len, num_heads, v_head_dim].
@@ -1100,6 +1117,15 @@ def mla_decode_branch_fp8[
             depending on the float8_config.
         scalar_args_buf: Packed MLA dispatch metadata buffer.
         ctx: Device context.
+        d_indices: Sparse decode packed indices (null when dense).
+        indices_stride: Row stride in ``d_indices``.
+        topk_lengths: Per-batch valid top-k counts.
+        attn_sink_ptr: Optional per-batch attention sink weights.
+        extra_k: Optional second key cache operand (see ``flare_mla_decoding``).
+        extra_d_indices: Extra-stream sparse indices.
+        extra_indices_stride: Stride for ``extra_d_indices``.
+        extra_topk_lengths: Extra-stream per-batch lengths.
+        extra_scales_ptr: Extra-stream scales.
     """
 
     comptime kv_params = collection_t.kv_params
@@ -1228,6 +1254,7 @@ def mla_decode_branch_fp8[
     generic_flare_mla_decode_kv_cache_ragged[
         target=target,
         mask_str=mask_str,
+        sparse_mla=sparse_mla,
     ](
         mla_decode_input,
         input_row_offsets,
@@ -1237,6 +1264,15 @@ def mla_decode_branch_fp8[
         raw_output,
         scalar_args_buf,
         ctx,
+        d_indices=d_indices,
+        indices_stride=indices_stride,
+        topk_lengths=topk_lengths,
+        attn_sink_ptr=attn_sink_ptr,
+        extra_k=extra_k,
+        extra_d_indices=extra_d_indices,
+        extra_indices_stride=extra_indices_stride,
+        extra_topk_lengths=extra_topk_lengths,
+        extra_scales_ptr=extra_scales_ptr,
     )
 
     # Create a view of the output tensor with logical shape
@@ -1283,6 +1319,7 @@ def mla_prefill_decode_graph_fp8[
         DType.bfloat16, width
     ],
     target: StaticString = "cpu",
+    sparse_mla: Bool = False,
 ](
     output: TileTensor[
         mut=True, dtype, address_space=AddressSpace.GENERIC, ...
@@ -1321,6 +1358,19 @@ def mla_prefill_decode_graph_fp8[
         DType.int64, address_space=AddressSpace.GENERIC, ...
     ],
     ctx: DeviceContext,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    extra_k: OptionalReg[collection_t.CacheType] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     """
     This is a manually fused kernel that performs the following operations:
@@ -1332,11 +1382,6 @@ def mla_prefill_decode_graph_fp8[
     if seq_len == 0:
         return
 
-    # TODO: Remove this once prefill and decode branches support FP8 KV cache KERN-2394.
-    comptime assert (
-        collection_t.dtype == dtype
-    ), "This KVCache DType is not supported."
-
     # When running verification with MTP we want to use the decode branch.
     if max_seq_len <= MLA_DECODE_MAX_SEQ_LEN:
         mla_decode_branch_fp8[
@@ -1346,6 +1391,7 @@ def mla_prefill_decode_graph_fp8[
             mask_str=mask_str,
             kv_input_fn=kv_input_fn,
             target=target,
+            sparse_mla=sparse_mla,
         ](
             output,
             q,
@@ -1362,6 +1408,15 @@ def mla_prefill_decode_graph_fp8[
             w_uv_scale,
             scalar_args_buf,
             ctx,
+            d_indices,
+            indices_stride,
+            topk_lengths,
+            attn_sink_ptr,
+            extra_k,
+            extra_d_indices,
+            extra_indices_stride,
+            extra_topk_lengths,
+            extra_scales_ptr,
         )
 
     else:

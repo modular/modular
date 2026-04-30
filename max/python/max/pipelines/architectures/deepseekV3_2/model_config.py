@@ -59,9 +59,11 @@ class DeepseekV3_2Config(DeepseekV3Config):
 
         # Always store the indexer's K cache in float8_e4m3fn.
         indexer_cache_dtype = DType.float8_e4m3fn
-        # TODO: Set valid scale_dtype when kv_scales are needed (SERVOPT-1094: [EPIC] SnapMLA Implementation).
+        # Per-token FP8 KV scales use float32 storage; required for
+        # ``KVCacheParams.quantized_kv_cache``, runtime ``kv_scales`` buffers,
+        # and ``store_k_scale_cache`` in the indexer path.
         indexer_kvcache_quant_config = KVCacheQuantizationConfig(
-            scale_dtype=DType.int8, quantization_granularity=32
+            scale_dtype=DType.float32, quantization_granularity=32
         )
         assert isinstance(mla_kv_params, KVCacheParams)
         indexer_kv_params = kv_cache_config.to_params(

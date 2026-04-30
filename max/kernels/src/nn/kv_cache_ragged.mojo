@@ -2916,6 +2916,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
+    sparse_mla: Bool = False,
 ](
     q: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -2930,6 +2931,19 @@ def generic_flare_mla_decode_kv_cache_ragged[
     ],
     context: DeviceContextPtr,
     q_scale_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    extra_k: OptionalReg[collection_t.CacheType] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
 ) raises:
@@ -2968,6 +2982,7 @@ def generic_flare_mla_decode_kv_cache_ragged[
             mask_str=mask_str,
             local_window_size=local_window_size,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
+            sparse_mla=sparse_mla,
         ](
             q,
             input_row_offsets,
@@ -2978,6 +2993,15 @@ def generic_flare_mla_decode_kv_cache_ragged[
             scalar_args_buf,
             context,
             q_scale_ptr,
+            d_indices,
+            indices_stride,
+            topk_lengths,
+            attn_sink_ptr,
+            extra_k,
+            extra_d_indices,
+            extra_indices_stride,
+            extra_topk_lengths,
+            extra_scales_ptr,
         )
 
 
@@ -2990,6 +3014,7 @@ def _flare_mla_decode_kv_cache_ragged[
     target: StaticString,
     local_window_size: Int = -1,
     per_token_scale_rope_aware: Bool = False,
+    sparse_mla: Bool = False,
 ](
     q: TileTensor[q_dtype, address_space=AddressSpace.GENERIC, ...],
     input_row_offsets: TileTensor[
@@ -3007,6 +3032,19 @@ def _flare_mla_decode_kv_cache_ragged[
     q_scale_ptr: OptionalReg[
         UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
     ] = None,
+    d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    indices_stride: Int = 0,
+    topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    attn_sink_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
+    extra_k: OptionalReg[collection_t.CacheType] = None,
+    extra_d_indices: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_indices_stride: Int = 0,
+    extra_topk_lengths: OptionalReg[UnsafePointer[Int32, MutAnyOrigin]] = None,
+    extra_scales_ptr: OptionalReg[
+        UnsafePointer[Scalar[DType.float32], MutAnyOrigin]
+    ] = None,
 ) raises:
     """Performs flash attention using k and v caches from KVCacheT custom dtypes.
 
@@ -3022,6 +3060,16 @@ def _flare_mla_decode_kv_cache_ragged[
         context: Pointer containing the runtime context for the target device.
         q_scale_ptr: Per-token Q scale pointer (float32 array, one per Q token).
             Default is null (sigma_Q = 1.0).
+        d_indices: Optional device pointer to packed int32 physical KV row indices
+            for sparse decode (see ``flare_mla_decoding``).
+        indices_stride: Stride between batch rows in ``d_indices`` (e.g. max top-k).
+        topk_lengths: Optional per-batch valid top-k counts.
+        attn_sink_ptr: Optional per-batch attention sink weights.
+        extra_k: Optional second KV cache operand (see ``flare_mla_decoding``).
+        extra_d_indices: Optional extra KV stream sparse indices.
+        extra_indices_stride: Stride for ``extra_d_indices``.
+        extra_topk_lengths: Optional per-batch lengths for extra stream.
+        extra_scales_ptr: Optional extra stream scales.
     """
     comptime assert is_gpu[target](), "MLA is only supported on GPU"
 
@@ -3037,13 +3085,25 @@ def _flare_mla_decode_kv_cache_ragged[
 
     @parameter
     @always_inline
-    @__copy_capture(k, scalar_args_buf_tt, q_scale_ptr)
+    @__copy_capture(
+        k,
+        scalar_args_buf_tt,
+        q_scale_ptr,
+        d_indices,
+        topk_lengths,
+        attn_sink_ptr,
+        extra_k,
+        extra_d_indices,
+        extra_topk_lengths,
+        extra_scales_ptr,
+    )
     def _dispatch_mla[mask_t: MHAMask](mask: mask_t) raises:
         flare_mla_decoding[
             rank=q.rank,
             config=MHAConfig[q_dtype](_q_num_heads, _q_head_dim),
             ragged=True,
             per_token_scale_rope_aware=per_token_scale_rope_aware,
+            sparse=sparse_mla,
         ](
             output,
             q,
@@ -3054,6 +3114,15 @@ def _flare_mla_decode_kv_cache_ragged[
             context.get_device_context(),
             scalar_args_buf=scalar_args_buf_tt,
             q_scale_ptr=q_scale_ptr,
+            d_indices=d_indices,
+            indices_stride=indices_stride,
+            topk_lengths=topk_lengths,
+            attn_sink_ptr=attn_sink_ptr,
+            extra_k=extra_k,
+            extra_d_indices=extra_d_indices,
+            extra_indices_stride=extra_indices_stride,
+            extra_topk_lengths=extra_topk_lengths,
+            extra_scales_ptr=extra_scales_ptr,
         )
 
     dispatch_mask[

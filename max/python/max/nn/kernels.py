@@ -3036,6 +3036,10 @@ def mla_decode_graph(
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    sparse_indices: TensorValue | None = None,
+    sparse_topk_lengths: TensorValue | None = None,
+    sparse_attn_sink: TensorValue | None = None,
+    sparse_indices_stride: int | None = None,
 ) -> TensorValue:
     """This is a manually fused kernel that performs the following operations:
 
@@ -3076,6 +3080,12 @@ def mla_decode_graph(
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
+        sparse_indices: Optional ``int32`` tensor of shape ``[total_seq_len, max_topk]``
+            with physical KV row indices for sparse decode (FP8 path only).
+        sparse_topk_lengths: Per-batch valid top-k counts, ``int32`` rank-1.
+        sparse_attn_sink: Per-batch attention sink weights, ``float32`` rank-1.
+        sparse_indices_stride: Row stride in ``sparse_indices`` (max top-k across
+            the batch). Required when ``sparse_indices`` is set.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -3122,6 +3132,40 @@ def mla_decode_graph(
 
     input_values.append(scalar_args)
 
+    if sparse_indices is not None:
+        if quant_config is None:
+            raise ValueError(
+                "mla_decode_graph sparse path requires FP8 (quant_config and scales)."
+            )
+        if (
+            sparse_topk_lengths is None
+            or sparse_attn_sink is None
+            or sparse_indices_stride is None
+        ):
+            raise ValueError(
+                "sparse_indices requires sparse_topk_lengths, sparse_attn_sink, "
+                "and sparse_indices_stride."
+            )
+        if sparse_indices.dtype != DType.int32:
+            raise ValueError(
+                f"sparse_indices must be int32, got {sparse_indices.dtype}"
+            )
+        if sparse_topk_lengths.dtype != DType.int32:
+            raise ValueError(
+                f"sparse_topk_lengths must be int32, got {sparse_topk_lengths.dtype}"
+            )
+        if sparse_attn_sink.dtype != DType.float32:
+            raise ValueError(
+                f"sparse_attn_sink must be float32, got {sparse_attn_sink.dtype}"
+            )
+        parameters["indices_stride"] = sparse_indices_stride
+        op_name += ".sparse"
+        input_values += [
+            sparse_indices,
+            sparse_topk_lengths,
+            sparse_attn_sink,
+        ]
+
     return ops.inplace_custom(
         op_name,
         device=q.device,
@@ -3156,6 +3200,10 @@ def mla_prefill_decode_graph(
     w_uk_scale: TensorValue | None = None,
     w_uv_scale: TensorValue | None = None,
     quant_config: QuantConfig | None = None,
+    sparse_indices: TensorValue | None = None,
+    sparse_topk_lengths: TensorValue | None = None,
+    sparse_attn_sink: TensorValue | None = None,
+    sparse_indices_stride: int | None = None,
 ) -> TensorValue:
     """Fused MLA prefill/decode kernel for FP8.
 
@@ -3187,6 +3235,12 @@ def mla_prefill_decode_graph(
         w_uk_scale: Optional FP8 scale tensor for `w_uk`.
         w_uv_scale: Optional FP8 scale tensor for `w_uv`.
         quant_config: Optional quantization config. When set, scales are required.
+        sparse_indices: Optional ``int32`` tensor for sparse decode (same semantics
+            as :func:`mla_decode_graph`). Used only when the decode branch runs.
+        sparse_topk_lengths: Per-batch valid top-k counts for sparse decode.
+        sparse_attn_sink: Per-batch attention sink weights for sparse decode.
+        sparse_indices_stride: Row stride in ``sparse_indices``. Required when
+            ``sparse_indices`` is set.
 
     Returns:
         Tensor of shape [total_seq_len, num_heads, v_head_dim].
@@ -3240,6 +3294,40 @@ def mla_prefill_decode_graph(
         input_values += [w_k_scale, w_uk_scale, w_uv_scale]
 
     input_values.append(scalar_args)
+
+    if sparse_indices is not None:
+        if quant_config is None:
+            raise ValueError(
+                "mla_prefill_decode_graph sparse path requires FP8 (quant_config)."
+            )
+        if (
+            sparse_topk_lengths is None
+            or sparse_attn_sink is None
+            or sparse_indices_stride is None
+        ):
+            raise ValueError(
+                "sparse_indices requires sparse_topk_lengths, sparse_attn_sink, "
+                "and sparse_indices_stride."
+            )
+        if sparse_indices.dtype != DType.int32:
+            raise ValueError(
+                f"sparse_indices must be int32, got {sparse_indices.dtype}"
+            )
+        if sparse_topk_lengths.dtype != DType.int32:
+            raise ValueError(
+                f"sparse_topk_lengths must be int32, got {sparse_topk_lengths.dtype}"
+            )
+        if sparse_attn_sink.dtype != DType.float32:
+            raise ValueError(
+                f"sparse_attn_sink must be float32, got {sparse_attn_sink.dtype}"
+            )
+        parameters["indices_stride"] = sparse_indices_stride
+        op_name += ".sparse"
+        input_values += [
+            sparse_indices,
+            sparse_topk_lengths,
+            sparse_attn_sink,
+        ]
 
     return ops.inplace_custom(
         op_name,

@@ -249,22 +249,24 @@ def _execute_ragged_increment_cache_lengths_graph(
         Updated cache input tuples with incremented lengths.
     """
     devices = params.devices
+    n_devices = len(devices)
+    all_inputs = kv_cache_inputs.inputs
+    if len(all_inputs) % n_devices != 0:
+        raise ValueError(
+            "kv_cache_inputs length must be a multiple of the device count: "
+            f"got {len(all_inputs)} inputs for {n_devices} devices"
+        )
+    num_caches = len(all_inputs) // n_devices
     device0 = devices[0].to_device()
-    kv_blocks = [
-        kv_cache_inputs.inputs[i].kv_blocks for i in range(len(devices))
-    ]
-    cache_lengths = [
-        kv_cache_inputs.inputs[i].cache_lengths for i in range(len(devices))
-    ]
-    lookup_table = [
-        kv_cache_inputs.inputs[i].lookup_table for i in range(len(devices))
-    ]
-    kv_scales = [
-        kv_cache_inputs.inputs[i].kv_scales for i in range(len(devices))
-    ]
+    blocks = [all_inputs[i].kv_blocks for i in range(len(all_inputs))]
+    # Graph reads cache_lengths from the first physical cache (same sequence
+    # lengths for every cache for a request).
+    cache_lengths = [all_inputs[i].cache_lengths for i in range(n_devices)]
+    lookup_table = [all_inputs[i].lookup_table for i in range(len(all_inputs))]
+    kv_scales = [all_inputs[i].kv_scales for i in range(len(all_inputs))]
     attention_dispatch_metadata = [
-        kv_cache_inputs.inputs[i].attention_dispatch_metadata
-        for i in range(len(devices))
+        all_inputs[i].attention_dispatch_metadata
+        for i in range(len(all_inputs))
     ]
     devices_per_replica = split_into_groups(
         devices, params.data_parallel_degree
@@ -307,42 +309,58 @@ def _execute_ragged_increment_cache_lengths_graph(
     inputs = list(kv_cache_inputs.inputs)
     kv_cache_inputs.inputs = inputs
 
-    start_idx = 0
+    # `inputs` layout from runtime_inputs: for each replica, for each
+    # physical cache, for each tensor-parallel shard (see cache_manager).
+    # `updated_cache_lengths` is one per device, ordered like `devices`.
+    input_replica_start = 0
+    ucl_replica_start = 0
     for replica_devices in devices_per_replica:
+        n_shards = len(replica_devices)
+        if input_replica_start + n_shards * num_caches > len(inputs):
+            raise ValueError("KV cache inputs and replica group size mismatch")
         # max_lengths is host allocated and the same across each replica.
-        max_lengths = inputs[start_idx].max_lengths
+        max_lengths = inputs[input_replica_start].max_lengths
 
         # Advance to the next step of the max_lengths tensor.
         updated_max_lengths = max_lengths[1:, :]
 
-        metadata = attention_dispatch_metadata[start_idx]
-        if metadata is None:
-            raise ValueError(
-                "attention_dispatch_metadata must be present in KV cache inputs"
-            )
+        for cache_idx in range(num_caches):
+            for i in range(n_shards):
+                gidx = input_replica_start + cache_idx * n_shards + i
+                updated_cache_length = updated_cache_lengths[
+                    ucl_replica_start + i
+                ]
+                assert isinstance(updated_cache_length, Buffer)
 
-        updated_metadata = metadata
-        if not params.is_mla and updated_max_lengths.shape[0] > 0:
-            metadata_np = metadata.to_numpy().copy()
-            metadata_np[3] = np.int64(updated_max_lengths.to_numpy()[0, 1])
-            updated_metadata = Buffer.from_numpy(metadata_np)
+                metadata = attention_dispatch_metadata[gidx]
+                if metadata is None:
+                    raise ValueError(
+                        "attention_dispatch_metadata must be present in KV cache inputs"
+                    )
 
-        for i in range(len(replica_devices)):
-            updated_cache_length = updated_cache_lengths[start_idx + i]
-            assert isinstance(updated_cache_length, Buffer)
-            inputs[start_idx + i] = KVCacheInputsPerDevice(
-                kv_blocks=kv_blocks[start_idx + i],
-                cache_lengths=updated_cache_length,
-                lookup_table=lookup_table[start_idx + i],
-                max_lengths=updated_max_lengths,
-                kv_scales=kv_scales[start_idx + i],
-                attention_dispatch_metadata=(
-                    attention_dispatch_metadata[start_idx + i]
-                    if params.is_mla
-                    else updated_metadata
-                ),
-            )
-        start_idx += len(replica_devices)
+                updated_metadata = metadata
+                if not params.is_mla and updated_max_lengths.shape[0] > 0:
+                    metadata_np = metadata.to_numpy().copy()
+                    metadata_np[3] = np.int64(
+                        updated_max_lengths.to_numpy()[0, 1]
+                    )
+                    updated_metadata = Buffer.from_numpy(metadata_np)
+
+                inputs[gidx] = KVCacheInputsPerDevice(
+                    kv_blocks=blocks[gidx],
+                    cache_lengths=updated_cache_length,
+                    lookup_table=lookup_table[gidx],
+                    max_lengths=updated_max_lengths,
+                    kv_scales=kv_scales[gidx],
+                    attention_dispatch_metadata=(
+                        attention_dispatch_metadata[gidx]
+                        if params.is_mla
+                        else updated_metadata
+                    ),
+                )
+
+        input_replica_start += n_shards * num_caches
+        ucl_replica_start += n_shards
     return kv_cache_inputs
 
 

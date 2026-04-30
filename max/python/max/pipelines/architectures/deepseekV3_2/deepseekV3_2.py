@@ -31,9 +31,6 @@ from max.graph import (
     ops,
 )
 from max.nn.attention.multi_latent_attention import MLAPrefillMetadata
-from max.nn.attention.multi_latent_attention_fp8 import (
-    DataParallelLatentAttentionWithRopeFp8,
-)
 from max.nn.comm import Signals
 from max.nn.comm.ep import EPBatchManager
 from max.nn.data_parallelism import split_batch_replicated
@@ -58,6 +55,9 @@ from max.nn.transformer.distributed_transformer import (
 )
 
 from .layers import DeepseekV3_2MLP, DeepseekV3_2MoE, DeepseekV3_2TopKRouter
+from .layers.sparse_mla import (
+    DataParallelSparseLatentAttentionWithRopeFp8,
+)
 from .model_config import DeepseekV3_2Config
 
 
@@ -159,8 +159,7 @@ class DeepseekV3_2DecoderLayer(Module):
             )
         assert isinstance(config.kv_params, MultiKVCacheParams)
         mla_kv_params, _indexer_kv_params = config.kv_params.params
-        # TODO(MODELS-968): Create new MLA layer with sparse attention support
-        self.self_attn = DataParallelLatentAttentionWithRopeFp8(
+        self.self_attn = DataParallelSparseLatentAttentionWithRopeFp8(
             rope=rope,
             num_attention_heads=config.num_attention_heads,
             num_key_value_heads=config.num_key_value_heads,
@@ -176,6 +175,9 @@ class DeepseekV3_2DecoderLayer(Module):
             buffer_size=config.max_batch_context_length,
             norm_dtype=DType.float32,
             quant_config=config.quant_config,
+            index_n_heads=config.index_n_heads,
+            index_head_dim=config.index_head_dim,
+            index_topk=config.index_topk,
         )
 
         # Create MLP or MoE layer
@@ -332,7 +334,6 @@ class DeepseekV3_2DecoderLayer(Module):
             )
             for i in range(len(indexer_kv_blocks))
         ]
-        del indexer_kv_collections  # Unused.
 
         # Re-pack flat MLA inputs into MLAPrefillMetadata dataclasses
         num_devices = len(mla_kv_blocks)
@@ -354,6 +355,7 @@ class DeepseekV3_2DecoderLayer(Module):
             norm_xs,
             signal_buffers,
             mla_kv_collections,
+            indexer_kv_collections,
             freqs_cis=freqs_cis,
             input_row_offsets=input_row_offsets,
             mla_prefill_metadata=mla_prefill_metadata,

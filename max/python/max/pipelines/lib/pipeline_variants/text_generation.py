@@ -224,6 +224,7 @@ class TextGenerationPipeline(
         # Use the model's kv_params (not the manager's) because in
         # compile-only mode the manager is a Mock.
         if isinstance(kv_params, MultiKVCacheParams):
+            # In case of multiple KV caches, multiple KV cache inputs are passed to `IncrementCacheLengthsProcessor.execute`, params only used for metadata.
             primary_params = kv_params.params[0]
         else:
             assert isinstance(kv_params, KVCacheParams)
