@@ -5,9 +5,9 @@ codeTitle: true
 
 ---
 
-The `@compiler.register` decorator registers a custom operation for use with the
-Graph API. For more information on custom operations, see
-[Intro to custom ops](/max/develop/custom-ops/).
+The `@compiler.register` decorator registers a custom operation for MAX graphs.
+For more information, see the
+[MAX documentation about custom ops](https://docs.modular.com/max/develop/custom-ops/).
 
 To define a custom operation:
 
@@ -62,11 +62,11 @@ following parameter:
 
 Graph output and input tensors are passed to the `execute()` function as
 instances of
-[`OutputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#comptime-values)
+[`OutputTensor`](https://docs.modular.com/max/api/kernels/extensibility/tensor/managed_tensor_slice/#outputtensor)
 and
-[`InputTensor`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/#comptime-values),
+[`InputTensor`](https://docs.modular.com/max/api/kernels/extensibility/tensor/managed_tensor_slice/#inputtensor),
 respectively. These are both type aliases for specific configurations of
-[`ManagedTensorSlice`](/mojo/kernels/extensibility/tensor/managed_tensor_slice/ManagedTensorSlice),
+[`ManagedTensorSlice`](https://docs.modular.com/max/api/kernels/extensibility/tensor/managed_tensor_slice/ManagedTensorSlice),
 so they both have the same API.
 
 In addition to input and output tensors, the function can take the following
