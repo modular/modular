@@ -2583,6 +2583,13 @@ static AnyValue emitMLIROperatorCall(const CallNode &call,
                        unboundOp.getName());
     state.addAttribute(DeferredOp::getOpAttrsAttrName(deferredName),
                        attrs.getDictionary(context));
+    // `kgen.deferred` has no property storage; stash `_properties` on it so
+    // the elaborator can re-apply it to the reconstructed op.
+    if (propsAttr) {
+      state.addAttribute(DeferredOp::getOpPropertiesAttrName(deferredName),
+                         *propsAttr);
+      propsAttr.reset();
+    }
   }
 
   // Finally, if we don't already have a type, figure out the return types
