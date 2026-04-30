@@ -56,10 +56,15 @@ def build_run_dist_cmd(
     """Build the ``run_dist`` command that boots the DI workers + proxy.
 
     The returned cmd shells out to ``./bazelw``, so callers must spawn it
-    with ``cwd`` set to the workspace root.
+    with ``cwd`` set to the workspace root. ``--output_base`` is set to a
+    PID-scoped tmp dir so this nested ``bazel run`` doesn't contend with
+    the outer ``bazel run //...:di_smoke_test`` for the workspace's
+    default output base lock (CI uses ``--noblock_for_lock``, which
+    otherwise causes immediate FATAL exits).
     """
     return [
         "./bazelw",
+        f"--output_base=/tmp/di_smoke_run_dist_{os.getpid()}",
         "run",
         "//max/examples/internal/di:run_dist",
         "--",
@@ -218,6 +223,14 @@ def di_smoke_test(
     cmd = build_run_dist_cmd(config_yaml, proxy_host, proxy_port)
 
     timeout = sys.maxsize if disable_timeouts else DI_SERVER_TIMEOUT_SECONDS
+
+    # Unset GITHUB_WORKSPACE before spawning the nested bazelw run for
+    # run_dist. The bazelw wrapper, when GITHUB_WORKSPACE is set, runs
+    # `bazelw --noblock_for_lock version` against the default output base
+    # to detect stale servers. That probe ignores our --output_base
+    # override and, on lock contention with the outer di_smoke_test
+    # bazel run, kill -9's every bazel process system-wide.
+    os.environ.pop("GITHUB_WORKSPACE", None)
 
     logger.info(f"Starting DI deployment with command:\n {' '.join(cmd)}")
     with start_server(
