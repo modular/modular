@@ -1997,15 +1997,36 @@ SharedState::resolveDeclFromBytecode(ASTDecl &decl,
 }
 
 LogicalResult SharedState::finalizeImportedBytecodeModules() {
+  // Collect all bytecode readers so we can identify which ops are still lazy
+  // stubs (isMaterializable == true).
+  SmallVector<mlir::BytecodeReader *> readers;
+  for (ModuleState *module : llvm::make_second_range(impl->moduleStates)) {
+    if (module->bytecodeReader)
+      readers.push_back(&*module->bytecodeReader);
+  }
+
+  // Collect unparsed bytecode decls whose ops are fully materialized (not lazy
+  // stubs). These were placed in the IR as a side effect of container
+  // body-resolution but were never themselves resolved. Their attributes may
+  // reference structs that finalize() will delete as stubs, causing
+  // verifySymbolUses to fail. We must erase them after finalize() runs.
+  SmallVector<Operation *> materializedUnparsedOps;
   for (ASTDecl *decl : declResolver->parsedDeclList) {
     if (!decl->loadedFromBytecode ||
         decl->resolvedness != DeclResolvedness::unparsed)
       continue;
-
-    // Clear out decls that weren't materialized to avoid dangling references
-    // after they get deleted.
+    if (Operation *op = decl->getIfOperation()) {
+      bool isLazy = llvm::any_of(readers, [op](mlir::BytecodeReader *r) {
+        return r->isMaterializable(op);
+      });
+      if (!isLazy)
+        materializedUnparsedOps.push_back(op);
+    }
+    // Clear the ASTDecl pointer to avoid a dangling reference after the op
+    // is erased below or deleted as a stub by finalize().
     decl->setIRValue(PValue(BoolAttr::get(getContext(), false)));
   }
+
   for (auto &module : llvm::make_second_range(impl->moduleStates)) {
     if (!module->bytecodeReader)
       continue;
@@ -2017,6 +2038,10 @@ LogicalResult SharedState::finalizeImportedBytecodeModules() {
     // Erase the temporary ModuleOp that was used to read bytecode.
     module->tmpModule.erase();
   }
+
+  for (Operation *op : materializedUnparsedOps)
+    op->erase();
+
   return success();
 }
 
