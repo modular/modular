@@ -735,15 +735,11 @@ examples in this section all use `Error` intentionally.
 
 :::
 
-By default, Mojo generates a stack trace when your program hits a segmentation
-fault. You can disable this by adding `stack-trace-on-crash = false` under the
-`[max-debug]` section of your `modular.cfg`.
-
-However, Mojo *doesn't* generate a stack trace when your program raises an
-error—this avoids the additional runtime overhead. To enable stack traces for
-raised errors, set the `MODULAR_DEBUG` environment variable to
-`stack-trace-on-error`, or configure the `max-debug.stack-trace-on-error`
-Config key directly.
+Mojo generates a stack trace when your program hits a segmentation fault.
+However, by default Mojo *doesn't* generate a stack trace when your program
+raises an error—this avoids the additional runtime overhead. To enable stack
+traces for raised errors, set the `MODULAR_DEBUG` environment variable to
+`stack-trace-on-error`, as shown in the examples below.
 
 Keep in mind that when you compile your program with
 [`mojo build`](/docs/cli/build/), the compiler optimizes and strips symbols by
