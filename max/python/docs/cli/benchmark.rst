@@ -63,10 +63,9 @@
 
     - Backend configuration:
 
-      - `--backend`: Backend to benchmark. Choices include `modular` (MAX
-        `/v1/completions` endpoint), `modular-chat` (MAX `/v1/chat/completions`
-        endpoint), `vllm`, `vllm-chat`, `sglang`, `sglang-chat`, `trtllm`, and
-        `trtllm-chat`. Default: `modular`.
+      - `--backend`: Server type to benchmark. Choices: `modular`,
+        `modular-chat`, `vllm`, `vllm-chat`, `sglang`, `sglang-chat`,
+        `trtllm`, `trtllm-chat`. Default: `modular`.
 
       - `--model`: Hugging Face model ID or local path.
 
@@ -104,10 +103,7 @@
         below.
 
       - `--dataset-path`: Path to a local dataset file that overrides the
-        default source for the chosen `--dataset-name`. The file format must
-        match the expected format for that dataset (such as JSON for
-        `axolotl`, JSONL for `obfuscated-conversations`, plain text for
-        `sonnet`).
+        default source for the chosen `--dataset-name`.
 
     - Output control:
 
@@ -166,53 +162,97 @@
 
     ### Datasets
 
-    The `--dataset-name` option supports the following datasets:
+    The `--dataset-name` option supports the following datasets. For any
+    dataset that has configurable flags, those flags are listed inline.
 
-    - `arxiv-summarization`: Research paper summarization dataset containing
-      academic papers with abstracts, from Hugging Face Datasets.
+    You can override the default data source for most datasets using
+    `--dataset-path`. You must always set `--dataset-name` so the tool knows
+    how to process the file.
 
-    - `axolotl`: Local dataset in Axolotl format with conversation segments
-      labeled as human/assistant text.
+    #### Text
 
-    - `agentic-code`: Multiturn agentic coding workload with tool-call turns.
+    - `sharegpt` (default): Conversational dataset with human-AI exchanges,
+      from Hugging Face Datasets.
 
-    - `batch-job`: Batch image workload. Set `--batch-job-image-dir` to point
-      the server at a directory of images, or omit it to embed images as
-      base64.
+    - `axolotl`: Local dataset in Axolotl format with human/assistant
+      conversation segments. Pair with `--dataset-path`.
 
-    - `code_debug`: Long-context code debugging dataset with multiple-choice
-      questions for testing long-context understanding, from Hugging Face
-      Datasets.
+    - `obfuscated-conversations`: Local obfuscated conversation dataset. Pair
+      with `--dataset-path` to point at a local JSONL file.
+
+      - `--obfuscated-conversations-average-output-len`: Average output length
+        when per-request output lengths are not provided. Default: `175`.
+      - `--obfuscated-conversations-coefficient-of-variation`: Coefficient of
+        variation for output length. Default: `0.1`.
+      - `--obfuscated-conversations-shuffle` /
+        `--no-obfuscated-conversations-shuffle`: Shuffle the dataset.
+        Disabled by default.
+
+    - `arxiv-summarization`: Research paper summarization dataset, from Hugging
+      Face Datasets.
+
+      - `--arxiv-summarization-input-len`: Input tokens per request.
+        Default: `15000`.
+
+    - `sonnet`: Poetry dataset using local text files of poem lines.
+
+      - `--sonnet-input-len`: Input tokens per request. Default: `550`.
+      - `--sonnet-prefix-len`: Shared prefix tokens per request. Default: `200`.
+
+    - `random`: Synthetically generated dataset with configurable token
+      distributions.
+
+      - `--random-input-len`: Input tokens per request. Accepts a constant or a
+        distribution string: `N(mean,std)`, `U(lower,upper)`, `DU(lower,upper)`,
+        `NB(n,p)`, `G(shape,scale)`, or `LN(mean,std)`. Use `;` to set
+        separate distributions for the first and subsequent turns (for example,
+        `N(2048,200);N(512,50)`). Default: `1024`.
+      - `--random-output-len`: Output tokens per request. Same format as
+        `--random-input-len`. Default: `128`.
+      - `--random-num-turns`: Turns per session. Same format as
+        `--random-input-len`. Default: `1`.
+      - `--random-sys-prompt-ratio`: Fraction of the input length to use as a
+        system prompt. Range: `0.0`–`1.0`. Default: `0.0`.
+      - `--random-max-num-unique-sys-prompt`: Maximum number of distinct system
+        prompts to generate. Default: `1`.
+      - `--warm-shared-prefix` / `--no-warm-shared-prefix`: Send each unique
+        shared prefix as a single-token request before the run to prime
+        prefix-cache KV entries. Requires `--random-sys-prompt-ratio > 0`.
+        Disabled by default.
+      - `--random-image-count`: Images to attach per request (enables vision
+        mode on this dataset). Default: `0`.
+      - `--random-image-size`: Pixel dimensions of generated images (for
+        example, `512x512`). Used with `--random-image-count`.
+
+    - `synthetic`: Synthetic text generation workload with multiturn support.
+      Also supports `--warm-shared-prefix` (see `random` above).
+
+    #### Code
 
     - `instruct-coder`: Instruction-following coding dataset with multiturn
       support.
 
+    - `agentic-code`: Multiturn agentic coding workload with tool-call turns.
+
+    - `code_debug`: Long-context code debugging dataset with multiple-choice
+      questions, from Hugging Face Datasets.
+
+    #### Vision
+
+    - `batch-job`: Batch image workload.
+
+      - `--batch-job-image-dir`: Directory where the server can access images
+        (file reference mode). When unset, images are embedded as base64.
+
     - `local-image`: Local images for vision benchmarks. Pair with
       `--dataset-path`.
-
-    - `obfuscated-conversations`: Local dataset with obfuscated conversation
-      data. Pair with `--dataset-path` to point at a local JSONL file.
-
-    - `random`: Synthetically generated random dataset with configurable
-      input/output lengths and distributions (see the `--random-*` options).
-
-    - `sharegpt`: Conversational dataset with human-AI conversations for chat
-      model evaluation, from Hugging Face Datasets.
-
-    - `sonnet`: Poetry dataset using local text files containing poem lines.
-
-    - `synthetic`: Synthetic text generation workload with multiturn support.
-
-    - `synthetic-pixel`: Synthetic pixel-generation workload for image-output
-      backends.
 
     - `vision-arena`: Vision-language benchmark dataset with images and
       associated questions for multimodal model evaluation, from Hugging Face
       Datasets.
 
-    You can override the default source for any dataset (except generated ones
-    like `random`) using `--dataset-path`. You must always specify a
-    `--dataset-name` so the tool knows how to process the file.
+    - `synthetic-pixel`: Synthetic pixel-generation workload for image-output
+      backends.
 
     ### Configuration file {#benchmark-configuration-file}
 
