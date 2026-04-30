@@ -25,11 +25,13 @@ without the `struct_` prefix used by the legacy free-function API:
 - `field_offset[name=...]()` / `field_offset[index=...]()` - byte offset.
 - `field_ref[idx](s)` - reference to field at index `idx` in value `s`.
 
+`reflect` is auto-imported via the prelude, so it is available without
+an explicit import. `Reflected[T]` must be imported from `std.reflection`
+when named in signatures.
+
 Example:
 
 ```mojo
-from std.reflection import reflect
-
 struct Point:
     var x: Int
     var y: Float64
@@ -103,8 +105,6 @@ def reflect[T: AnyType]() -> Reflected[T]:
 
     Example:
         ```mojo
-        from std.reflection import reflect
-
         struct Point:
             var x: Int
             var y: Float64
@@ -133,8 +133,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
     Example:
         ```mojo
-        from std.reflection import reflect
-
         struct Point:
             var x: Int
             var y: Float64
@@ -168,8 +166,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect
-
             def process_type[T: AnyType]():
                 comptime r = reflect[T]()
                 comptime if r.is_struct():
@@ -193,8 +189,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect
-
             struct Point:
                 var x: Int
                 var y: Float64
@@ -229,7 +223,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
         Example:
             ```mojo
             from std.collections import List, Dict
-            from std.reflection import reflect
 
             def main():
                 print(reflect[List[Int]]().base_name())          # "List"
@@ -271,8 +264,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect
-
             struct Point:
                 var x: Int
                 var y: Float64
@@ -362,8 +353,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect
-
             struct Point:
                 var x: Int
                 var y: Float64
@@ -403,8 +392,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect
-
             @fieldwise_init
             struct Container:
                 var id: Int
@@ -454,8 +441,6 @@ struct Reflected[T: AnyType](TrivialRegisterPassable):
 
         Example:
             ```mojo
-            from std.reflection import reflect
-
             struct Point:
                 var x: Int      # offset 0
                 var y: Float64  # offset 8

@@ -35,7 +35,6 @@ from ._nicheable import (
     UnsafeCustomNicheStorage,
 )
 from std.os import abort
-from std.reflection import reflect
 from std.sys import align_of, size_of
 from std.sys.intrinsics import _type_is_eq
 from std.utils.type_functions import ConditionalType

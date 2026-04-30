@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import reflect
-
 
 def show_type[T: AnyType]():
     """Displays a compile-time representation of a struct's fields and types.

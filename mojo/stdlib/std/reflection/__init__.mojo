@@ -21,10 +21,11 @@ This module provides compile-time reflection capabilities including:
 - Deprecated free functions: `get_type_name` (use `reflect[T]().name()`) and
   `get_base_type_name` (use `reflect[T]().base_name()`)
 
+`reflect` is auto-imported via the prelude. The other names listed above
+must be imported explicitly from `std.reflection`.
+
 Example:
 ```mojo
-from std.reflection import reflect
-
 struct Point:
     var x: Int
     var y: Float64

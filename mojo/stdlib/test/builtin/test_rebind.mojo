@@ -12,7 +12,6 @@
 # ===----------------------------------------------------------------------=== #
 
 from std.builtin.rebind import downcast
-from std.reflection import reflect
 from std.testing import TestSuite, assert_equal
 from test_utils import MoveCopyCounter, DelCounter
 

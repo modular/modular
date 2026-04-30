@@ -30,7 +30,7 @@
 
 from std.memory import UnsafeMaybeUninit
 from std.os import abort
-from std.reflection import call_location, reflect
+from std.reflection import call_location
 from std.utils._nicheable import UnsafeNicheable, NicheIndex
 
 # ===----------------------------------------------------------------------=== #

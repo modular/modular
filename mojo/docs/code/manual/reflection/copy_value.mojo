@@ -11,8 +11,6 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-from std.reflection import reflect
-
 
 trait MakeCopyable:
     def copy_to(self, mut other: Self):

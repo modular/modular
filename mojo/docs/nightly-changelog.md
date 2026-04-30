@@ -189,14 +189,13 @@ This version is still a work in progress.
   - `stdlib/std/memory/`: `arc_pointer.mojo`, `owned_pointer.mojo`, `span.mojo`
 
 - Consolidated the reflection APIs in `std.reflection` behind a unified entry
-  point `reflect[T]()` returning a `Reflected[T]` handle. Methods on the
-  handle replace the family of `struct_field_*` free functions (dropping the
-  `struct_` prefix — only structs have fields) and the `get_type_name` /
-  `get_base_type_name` free functions:
+  point `reflect[T]()` returning a `Reflected[T]` handle. `reflect` is
+  auto-imported via the prelude, so it is available without an explicit
+  import. Methods on the handle replace the family of `struct_field_*` free
+  functions (dropping the `struct_` prefix — only structs have fields) and
+  the `get_type_name` / `get_base_type_name` free functions:
 
   ```mojo
-  from std.reflection import reflect
-
   struct Point:
       var x: Int
       var y: Float64

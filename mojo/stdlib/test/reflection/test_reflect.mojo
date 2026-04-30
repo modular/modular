@@ -12,7 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 """Tests for the unified `reflect[T]` / `Reflected[T]` reflection API."""
 
-from std.reflection import Reflected, reflect
+from std.reflection import Reflected
 from std.sys.info import size_of
 from std.testing import TestSuite, assert_equal, assert_false, assert_true
 

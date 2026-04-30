@@ -80,8 +80,6 @@ The reflection calls used in the following example include:
   `field_names()`, and `field_types()`.
 
 ```mojo
-from std.reflection import reflect
-
 def show_type[T: AnyType]():
     comptime r = reflect[T]()
     comptime type_name = r.name()         # name of the type
@@ -194,8 +192,6 @@ limits copying to fields whose types conform to `Copyable`. It requires an
 already initialized target, avoiding matching values to `__init__` arguments.
 
 ```mojo
-from std.reflection import reflect
-
 trait MakeCopyable:
     def copy_to(self, mut other: Self):
         comptime r = reflect[Self]()
@@ -279,8 +275,6 @@ retrieves field value references from the `lhs` and `rhs` arguments. It uses
 early return for the first inequality (`False`), otherwise returning `True`:
 
 ```mojo
-from std.reflection import reflect
-
 def test_equality[T: AnyType](lhs: T, rhs: T) -> Bool:
     comptime r = reflect[T]()
     comptime field_count = r.field_count()
