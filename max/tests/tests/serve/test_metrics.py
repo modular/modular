@@ -108,3 +108,23 @@ def test_tokens_per_request_histograms() -> None:
     # Test recording output tokens per request
     m_output = metrics.MaxMeasurement("maxserve.output_tokens_per_request", 128)
     m_output.commit()  # Should not raise
+
+
+def test_batch_metrics_with_batch_type_attribute() -> None:
+    """Pins down the ``batch_type`` label on the new graduated batch histograms.
+    ``maxserve.batch_prompt_throughput`` is representative of the batch-level
+    instruments declared in this PR; the per-instrument plumbing is identical
+    so a single test guards the whole class.
+    """
+    common.configure_metrics(Settings())
+    assert "maxserve.batch_prompt_throughput" in metrics.SERVE_METRICS
+    metrics.MaxMeasurement(
+        "maxserve.batch_prompt_throughput",
+        9100.0,
+        attributes={"batch_type": "CE"},
+    ).commit()
+    metrics.MaxMeasurement(
+        "maxserve.batch_prompt_throughput",
+        4.9,
+        attributes={"batch_type": "TG"},
+    ).commit()

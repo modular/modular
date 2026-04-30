@@ -214,6 +214,76 @@ SERVE_METRICS: dict[str, SupportedInstruments] = {
         unit="percent",
         description="Draft token acceptance rate per position (0-100%)",
     ),  # type: ignore
+    "maxserve.batch_input_tokens": _meter.create_histogram(
+        "maxserve.batch_input_tokens",
+        unit="tokens",
+        description="Distribution of input tokens per scheduler batch (CE prefill or TG decode).",
+    ),  # type: ignore
+    "maxserve.batch_context_tokens": _meter.create_histogram(
+        "maxserve.batch_context_tokens",
+        unit="tokens",
+        description="Distribution of accumulated context tokens per scheduler batch.",
+    ),  # type: ignore
+    "maxserve.batch_creation_time": _meter.create_histogram(
+        "maxserve.batch_creation_time",
+        unit="ms",
+        description="Distribution of scheduler batch creation time.",
+    ),  # type: ignore
+    "maxserve.batch_prompt_throughput": _meter.create_histogram(
+        "maxserve.batch_prompt_throughput",
+        unit="tokens/s",
+        description="Per-batch prompt-side throughput in tokens/second.",
+    ),  # type: ignore
+    "maxserve.batch_generation_throughput": _meter.create_histogram(
+        "maxserve.batch_generation_throughput",
+        unit="tokens/s",
+        description="Per-batch generation-side throughput in tokens/second.",
+    ),  # type: ignore
+    "maxserve.batch_terminated_reqs": _meter.create_histogram(
+        "maxserve.batch_terminated_reqs",
+        unit="reqs",
+        description="Distribution of requests terminated per scheduler batch.",
+    ),  # type: ignore
+    "maxserve.batch_pending_reqs": _meter.create_histogram(
+        "maxserve.batch_pending_reqs",
+        unit="reqs",
+        description="Distribution of requests pending in the queue, sampled once per scheduler batch.",
+    ),  # type: ignore
+    "maxserve.cache.used_kv_pct": _meter.create_histogram(
+        "maxserve.cache.used_kv_pct",
+        unit="percent",
+        description="Percentage of device KV cache blocks in use (0-100%), sampled once per scheduler batch.",
+    ),  # type: ignore
+    "maxserve.cache.used_host_kv_pct": _meter.create_histogram(
+        "maxserve.cache.used_host_kv_pct",
+        unit="percent",
+        description="Percentage of host KV cache blocks in use (0-100%), sampled once per scheduler batch when host paging is enabled.",
+    ),  # type: ignore
+    "maxserve.cache.h2d_blocks_copied": _meter.create_counter(
+        "maxserve.cache.h2d_blocks_copied",
+        unit="blocks",
+        description="Cumulative host->device KV block copies.",
+    ),  # type: ignore
+    "maxserve.cache.d2h_blocks_copied": _meter.create_counter(
+        "maxserve.cache.d2h_blocks_copied",
+        unit="blocks",
+        description="Cumulative device->host KV block copies.",
+    ),  # type: ignore
+    "maxserve.spec_decode.avg_acceptance_length": _meter.create_histogram(
+        "maxserve.spec_decode.avg_acceptance_length",
+        unit="tokens",
+        description="Mean draft-token acceptance length per spec-decode batch.",
+    ),  # type: ignore
+    "maxserve.dkv.nixl_read_gib_per_s": _meter.create_histogram(
+        "maxserve.dkv.nixl_read_gib_per_s",
+        unit="GiB/s",
+        description="NIXL READ throughput.",
+    ),  # type: ignore
+    "maxserve.dkv.nixl_write_gib_per_s": _meter.create_histogram(
+        "maxserve.dkv.nixl_write_gib_per_s",
+        unit="GiB/s",
+        description="NIXL WRITE throughput.",
+    ),  # type: ignore
 }
 
 
@@ -614,6 +684,144 @@ class _AsyncMetrics:
                 "maxserve.spec_decode.acceptance_rate_per_position",
                 acceptance_rate,
                 {**self.extra_attributes, "position": str(position)},
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def batch_input_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_input_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def batch_context_tokens(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_context_tokens",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def batch_creation_time(self, ms: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_creation_time",
+                ms,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def batch_prompt_throughput(self, tps: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_prompt_throughput",
+                tps,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def batch_generation_throughput(self, tps: float, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_generation_throughput",
+                tps,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def batch_terminated_reqs(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_terminated_reqs",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def batch_pending_reqs(self, value: int, batch_type: str) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.batch_pending_reqs",
+                value,
+                {**self.extra_attributes, "batch_type": batch_type},
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_used_kv_pct(self, ratio: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.used_kv_pct", ratio, self.extra_attributes
+            ),
+            MetricLevel.BASIC,
+        )
+
+    def cache_used_host_kv_pct(self, ratio: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.used_host_kv_pct",
+                ratio,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_h2d_blocks_copied(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.h2d_blocks_copied",
+                count,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def cache_d2h_blocks_copied(self, count: int) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.cache.d2h_blocks_copied",
+                count,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def spec_decode_avg_acceptance_length(self, length: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.spec_decode.avg_acceptance_length",
+                length,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def dkv_nixl_read_gib_per_s(self, gib_per_s: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.nixl_read_gib_per_s",
+                gib_per_s,
+                self.extra_attributes,
+            ),
+            MetricLevel.DETAILED,
+        )
+
+    def dkv_nixl_write_gib_per_s(self, gib_per_s: float) -> None:
+        self.client.send_measurement(
+            MaxMeasurement(
+                "maxserve.dkv.nixl_write_gib_per_s",
+                gib_per_s,
+                self.extra_attributes,
             ),
             MetricLevel.DETAILED,
         )
