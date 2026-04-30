@@ -38,6 +38,27 @@ kgen.generator @test_elaborate_deferred_op(%arg0: index, %arg1: index, %arg2: !k
   kgen.return %0 : i1
 }
 
+// CHECK-LABEL: @test_elaborate_deferred_op_props_only
+kgen.generator @test_elaborate_deferred_op_props_only(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1> byref_result) throws -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  // CHECK: %[[CMP_RESULT:.*]] = index.cmp eq(%arg0, %arg1)
+  %1 = kgen.deferred "index.cmp"(%arg0, %arg1 : index, index) {} : i1 properties {pred = #index<cmp_predicate eq>}
+  // CHECK-NEXT: pop.store %[[CMP_RESULT]], %arg2 : !kgen.pointer<i1>
+  pop.store %1, %arg2 : !kgen.pointer<i1>
+  kgen.return %0 : i1
+}
+
+// CHECK-LABEL: @test_elaborate_deferred_op_props_deferred
+kgen.generator @test_elaborate_deferred_op_props_deferred(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1> byref_result) throws -> i1 {
+  %0 = kgen.param.constant: i1 = <0>
+  // CHECK: %[[CMP_RESULT:.*]] = index.cmp ne(%arg0, %arg1)
+  %1 = kgen.deferred "index.cmp"(%arg0, %arg1 : index, index) {} : i1
+       properties {pred = #kgen<deferred #index<cmp_predicate ne>> : !kgen.deferred}
+  // CHECK-NEXT: pop.store %[[CMP_RESULT]], %arg2 : !kgen.pointer<i1>
+  pop.store %1, %arg2 : !kgen.pointer<i1>
+  kgen.return %0 : i1
+}
+
 kgen.generator @select_pred_concat<*"pred`2x": struct<(pointer<none>, index)>>() -> !kgen.deferred {
   %0 = kgen.param.constant: !kgen.deferred = <#kgen<attr_ctor_deferred("#index<cmp_predicate ", #kgen<to_string_deferred(#kgen.param.expr<data_to_str, #kgen.param.decl.ref<"pred`2x"> : !kgen.struct<(pointer<none>, index)>, #kgen.param_list<> : !kgen.param_list<struct<(pointer<none>, index)>>> : !kgen.string) elide_type unit>, ">")>>
   kgen.return %0 : !kgen.deferred
@@ -66,6 +87,8 @@ kgen.generator export @test(%arg0: index, %arg1: index, %arg2: !kgen.pointer<i1>
   %0 = kgen.call @test_select_pred<:i1 1>(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
   %1 = kgen.call @test_select_pred<:i1 0>(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
   %2 = kgen.call @test_elaborate_deferred_op(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
+  %20 = kgen.call @test_elaborate_deferred_op_props_only(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
+  %21 = kgen.call @test_elaborate_deferred_op_props_deferred(%arg0, %arg1, %arg2) : (index, index, !kgen.pointer<i1> byref_result) throws -> i1
 
   kgen.param.apply *"(lifted)apply_2" = [(!kgen.struct<()>) -> !kgen.struct<(pointer<none>, index)>: @to_str<:i1 0, :string "ne">]({  })
   %3 = kgen.call @test_elaborate_deferred_op_concat<:struct<(pointer<none>, index)> *"(lifted)apply_2">(%arg0, %arg1) : (index, index) -> i1

@@ -2005,6 +2005,10 @@ ElaborationState ParametricElaborator::processDeferredOp(PImplNode *inode,
   Attribute dict;
   HANDLE_EVALUATOR_CONC(dict, inode, loc, op.getOpAttrs());
   assert(isa<DictionaryAttr>(dict) && "expected dictionary attribute");
+  Attribute propsDict;
+  if (auto props = op.getOpPropertiesAttr())
+    HANDLE_EVALUATOR_CONC(propsDict, inode, loc, props);
+
   // At this point remove all deferred attributes by replacing them with their
   // content. It's essential to do this before operation is constructed,
   // otherwise attribute may not be set if it's not concretized.
@@ -2014,6 +2018,8 @@ ElaborationState ParametricElaborator::processDeferredOp(PImplNode *inode,
         return {attr.getAttr(), WalkResult::advance()};
       });
   dict = replacer.replace(dict);
+  if (propsDict)
+    propsDict = replacer.replace(propsDict);
 
   // Do have to call to attr replacer again as AttrTypeReplacer does not visit
   // just replaced attribute and goes directly to its sub attributes. That
@@ -2055,6 +2061,8 @@ ElaborationState ParametricElaborator::processDeferredOp(PImplNode *inode,
 
   DiagnosticHandler handler(op.getContext());
   dict = concretizeAttrs.replace(dict);
+  if (propsDict)
+    propsDict = concretizeAttrs.replace(propsDict);
 
   if (handler.hasDiagnostics()) {
     // FIXME: Should report all errors encountered during construction of
@@ -2073,6 +2081,15 @@ ElaborationState ParametricElaborator::processDeferredOp(PImplNode *inode,
 
   OpBuilder b(op);
   Operation *resultOp = b.create(state);
+
+  if (propsDict) {
+    if (failed(resultOp->setPropertiesFromAttribute(
+            propsDict, [&]() { return resultOp->emitError(); }))) {
+      inode->setToError(ErrorTree(loc, "failed to set properties on '" +
+                                           op.getOpName() + "'"));
+      return failure();
+    }
+  }
 
   // It's essential to elaborate result types are they're not going to be
   // elaborated later.
