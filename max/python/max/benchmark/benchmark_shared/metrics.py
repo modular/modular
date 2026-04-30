@@ -719,78 +719,34 @@ class TTSBenchmarkMetrics(BaseBenchmarkMetrics):
 
 @dataclass
 class SpecDecodeMetrics:
-    """Speculative decoding counters scraped from a Prometheus endpoint.
+    """Speculative decoding metrics scraped from a Prometheus endpoint.
 
-    These correspond to the ``vllm:spec_decode_*`` counter family exposed by
-    vLLM when speculative decoding is enabled.
+    Two backend shapes are supported:
+
+    - vLLM-style counters (``vllm:spec_decode_*``): ``num_drafts``,
+      ``num_draft_tokens``, ``num_accepted_tokens``, ``accepted_per_pos``.
+    - MAX-style histogram (``maxserve_spec_decode_acceptance_rate_per_position``):
+      ``per_pos_rate_sum`` / ``per_pos_rate_count`` give running sums and counts
+      of observed acceptance-rate samples per position. Window averages are
+      computed via deltas.
+
+    A backend may populate either group; missing values default to 0/empty.
     """
 
-    num_drafts: int
-    num_draft_tokens: int
-    num_accepted_tokens: int
-    accepted_per_pos: dict[int, int]
-
-
-def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
-    """Parse vLLM speculative decoding counters from Prometheus text output.
-
-    Args:
-        raw_text: Raw Prometheus text-format payload.
-
-    Returns:
-        Parsed counters, or ``None`` when no ``vllm:spec_decode`` metrics are
-        present.
-    """
-    num_drafts = 0
-    num_draft_tokens = 0
-    num_accepted_tokens = 0
-    accepted_per_pos: dict[int, int] = {}
-    found_spec_decode = False
-
-    for line in raw_text.split("\n"):
-        line = line.strip()
-        if not line or line.startswith("#"):
-            continue
-
-        if line.startswith("vllm:spec_decode"):
-            found_spec_decode = True
-            parts = line.split()
-            if not parts:
-                continue
-            try:
-                value = int(float(parts[-1]))
-            except ValueError:
-                continue
-
-            if "num_drafts" in line:
-                num_drafts += value
-            elif "num_draft_tokens" in line:
-                num_draft_tokens += value
-            elif "num_accepted_tokens_per_pos" in line:
-                pos_label = 'position="'
-                if pos_label not in line:
-                    continue
-                start = line.index(pos_label) + len(pos_label)
-                end = line.index('"', start)
-                pos = int(line[start:end])
-                accepted_per_pos[pos] = accepted_per_pos.get(pos, 0) + value
-            elif "num_accepted_tokens" in line:
-                num_accepted_tokens += value
-
-    if not found_spec_decode:
-        return None
-
-    return SpecDecodeMetrics(
-        num_drafts=num_drafts,
-        num_draft_tokens=num_draft_tokens,
-        num_accepted_tokens=num_accepted_tokens,
-        accepted_per_pos=accepted_per_pos,
-    )
+    num_drafts: int = 0
+    num_draft_tokens: int = 0
+    num_accepted_tokens: int = 0
+    accepted_per_pos: dict[int, int] = field(default_factory=dict)
+    per_pos_rate_sum: dict[int, float] = field(default_factory=dict)
+    per_pos_rate_count: dict[int, int] = field(default_factory=dict)
 
 
 @dataclass
 class SpecDecodeStats:
     """Speculative decoding statistics for a benchmark window.
+
+    Fields are ``None`` when the underlying metric was not exposed by the
+    backend in the scraped Prometheus output.
 
     Attributes:
         num_drafts: Number of draft sequences generated.
@@ -799,26 +755,40 @@ class SpecDecodeStats:
         acceptance_rate: Percentage of draft tokens accepted.
         acceptance_length: Average number of tokens accepted per draft
             (including the verified token).
-        per_position_acceptance_rates: Acceptance rate at each draft position.
+        per_position_acceptance_rates: Acceptance rate at each draft position
+            as a fraction (0-1). Empty when no per-position data was exposed.
     """
 
-    num_drafts: int
-    draft_tokens: int
-    accepted_tokens: int
-    acceptance_rate: float
-    acceptance_length: float
-    per_position_acceptance_rates: list[float]
+    num_drafts: int | None = None
+    draft_tokens: int | None = None
+    accepted_tokens: int | None = None
+    acceptance_rate: float | None = None
+    acceptance_length: float | None = None
+    per_position_acceptance_rates: list[float] = field(default_factory=list)
 
     def to_result_dict(self) -> dict[str, object]:
-        """Return a flat dict of spec-decode keys for the benchmark result."""
-        return {
-            "spec_decode_acceptance_rate": self.acceptance_rate,
-            "spec_decode_acceptance_length": self.acceptance_length,
-            "spec_decode_num_drafts": int(self.num_drafts),
-            "spec_decode_draft_tokens": int(self.draft_tokens),
-            "spec_decode_accepted_tokens": int(self.accepted_tokens),
-            "spec_decode_per_position_acceptance_rates": self.per_position_acceptance_rates,
-        }
+        """Return a flat dict of spec-decode keys for the benchmark result.
+
+        Only fields the backend actually exposed are emitted; missing
+        aggregates (e.g. when only a per-position histogram is available, as
+        with MAX Serve) are omitted rather than written as ``None``.
+        """
+        result: dict[str, object] = {}
+        if self.acceptance_rate is not None:
+            result["spec_decode_acceptance_rate"] = self.acceptance_rate
+        if self.acceptance_length is not None:
+            result["spec_decode_acceptance_length"] = self.acceptance_length
+        if self.num_drafts is not None:
+            result["spec_decode_num_drafts"] = int(self.num_drafts)
+        if self.draft_tokens is not None:
+            result["spec_decode_draft_tokens"] = int(self.draft_tokens)
+        if self.accepted_tokens is not None:
+            result["spec_decode_accepted_tokens"] = int(self.accepted_tokens)
+        if self.per_position_acceptance_rates:
+            result["spec_decode_per_position_acceptance_rates"] = (
+                self.per_position_acceptance_rates
+            )
+        return result
 
 
 def calculate_spec_decode_stats(
@@ -827,13 +797,21 @@ def calculate_spec_decode_stats(
 ) -> SpecDecodeStats | None:
     """Compute benchmark-window speculative decoding stats from metric deltas.
 
+    Aggregate counters (``num_drafts``, ``num_draft_tokens``,
+    ``num_accepted_tokens``) are computed when the backend exposed them
+    (vLLM-style). Per-position acceptance rates are computed from either the
+    vLLM ``num_accepted_tokens_per_pos`` counter or the MAX-style
+    ``maxserve_spec_decode_acceptance_rate_per_position`` histogram, whichever
+    is available.
+
     Args:
         metrics_before: Snapshot taken before the benchmark window.
         metrics_after: Snapshot taken after the benchmark window.
 
     Returns:
-        A ``SpecDecodeStats`` object with computed stats, or ``None`` when
-        there were no draft tokens in the window.
+        A ``SpecDecodeStats`` with whatever fields are derivable, or ``None``
+        when neither aggregate counters nor per-position data moved during
+        the window.
     """
     delta_drafts = metrics_after.num_drafts - metrics_before.num_drafts
     delta_draft_tokens = (
@@ -842,8 +820,11 @@ def calculate_spec_decode_stats(
     delta_accepted = (
         metrics_after.num_accepted_tokens - metrics_before.num_accepted_tokens
     )
+
     per_pos_rates: list[float] = []
-    if delta_drafts > 0:
+    if delta_drafts > 0 and (
+        metrics_before.accepted_per_pos or metrics_after.accepted_per_pos
+    ):
         positions = sorted(
             set(metrics_before.accepted_per_pos.keys())
             | set(metrics_after.accepted_per_pos.keys())
@@ -851,21 +832,41 @@ def calculate_spec_decode_stats(
         for pos in positions:
             before_val = metrics_before.accepted_per_pos.get(pos, 0)
             after_val = metrics_after.accepted_per_pos.get(pos, before_val)
-            delta_pos = after_val - before_val
-            per_pos_rates.append(delta_pos / delta_drafts)
+            per_pos_rates.append((after_val - before_val) / delta_drafts)
+    elif metrics_before.per_pos_rate_count or metrics_after.per_pos_rate_count:
+        positions = sorted(
+            set(metrics_before.per_pos_rate_sum.keys())
+            | set(metrics_after.per_pos_rate_sum.keys())
+        )
+        for pos in positions:
+            sum_delta = metrics_after.per_pos_rate_sum.get(
+                pos, 0.0
+            ) - metrics_before.per_pos_rate_sum.get(pos, 0.0)
+            count_delta = metrics_after.per_pos_rate_count.get(
+                pos, 0
+            ) - metrics_before.per_pos_rate_count.get(pos, 0)
+            if count_delta > 0:
+                # Histogram observations are recorded as percentages (0-100);
+                # normalize to a 0-1 fraction for parity with the vLLM path.
+                per_pos_rates.append((sum_delta / count_delta) / 100.0)
 
-    if delta_draft_tokens <= 0:
+    has_aggregates = delta_draft_tokens > 0
+    if not has_aggregates and not per_pos_rates:
         return None
 
-    acceptance_rate = (delta_accepted / delta_draft_tokens) * 100
-    acceptance_length = (
-        1 + delta_accepted / delta_drafts if delta_drafts > 0 else 0.0
-    )
+    if has_aggregates:
+        acceptance_rate = (delta_accepted / delta_draft_tokens) * 100
+        acceptance_length = (
+            1 + delta_accepted / delta_drafts if delta_drafts > 0 else None
+        )
+        return SpecDecodeStats(
+            num_drafts=delta_drafts,
+            draft_tokens=delta_draft_tokens,
+            accepted_tokens=delta_accepted,
+            acceptance_rate=acceptance_rate,
+            acceptance_length=acceptance_length,
+            per_position_acceptance_rates=per_pos_rates,
+        )
     return SpecDecodeStats(
-        num_drafts=delta_drafts,
-        draft_tokens=delta_draft_tokens,
-        accepted_tokens=delta_accepted,
-        acceptance_rate=acceptance_rate,
-        acceptance_length=acceptance_length,
         per_position_acceptance_rates=per_pos_rates,
     )

@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from collections import defaultdict
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -27,7 +28,7 @@ import requests
 from prometheus_client.parser import text_string_to_metric_families
 
 from .config import Backend
-from .metrics import SpecDecodeMetrics, parse_spec_decode_metrics
+from .metrics import SpecDecodeMetrics
 
 if TYPE_CHECKING:
     from prometheus_client.metrics_core import Metric
@@ -440,6 +441,89 @@ def collect_benchmark_metrics(
                 "Failed to collect metrics from %s (%s): %s", label, url, exc
             )
     return results
+
+
+_POSITION_LABEL_RE = re.compile(r'position="([^"]*)"')
+
+
+def _extract_position(metric_key: str) -> int | None:
+    """Extract the ``position`` label value from a formatted metric key."""
+    match = _POSITION_LABEL_RE.search(metric_key)
+    if match is None:
+        return None
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return None
+
+
+def parse_spec_decode_metrics(raw_text: str) -> SpecDecodeMetrics | None:
+    """Parse speculative decoding metrics from Prometheus text output.
+
+    Recognizes two backend shapes:
+
+    - vLLM-style counters under ``vllm:spec_decode_*``.
+    - MAX-style histogram ``maxserve_spec_decode_acceptance_rate_per_position``
+      (per-position acceptance-rate observations).
+
+    Args:
+        raw_text: Raw Prometheus text-format payload.
+
+    Returns:
+        Parsed metrics, or ``None`` when neither family is present.
+    """
+    parsed = parse_metrics(raw_text)
+
+    num_drafts = 0
+    num_draft_tokens = 0
+    num_accepted_tokens = 0
+    accepted_per_pos: dict[int, int] = {}
+    per_pos_rate_sum: dict[int, float] = {}
+    per_pos_rate_count: dict[int, int] = {}
+    found = False
+
+    for key, value in parsed.counters.items():
+        if not key.startswith("vllm:spec_decode"):
+            continue
+        found = True
+        if "num_accepted_tokens_per_pos" in key:
+            pos = _extract_position(key)
+            if pos is not None:
+                accepted_per_pos[pos] = accepted_per_pos.get(pos, 0) + int(
+                    value
+                )
+        elif "num_drafts" in key:
+            num_drafts += int(value)
+        elif "num_draft_tokens" in key:
+            num_draft_tokens += int(value)
+        elif "num_accepted_tokens" in key:
+            num_accepted_tokens += int(value)
+
+    for key, hist in parsed.histograms.items():
+        if not key.startswith(
+            "maxserve_spec_decode_acceptance_rate_per_position"
+        ):
+            continue
+        pos = _extract_position(key)
+        if pos is None:
+            continue
+        found = True
+        per_pos_rate_sum[pos] = per_pos_rate_sum.get(pos, 0.0) + hist.sum
+        per_pos_rate_count[pos] = per_pos_rate_count.get(pos, 0) + int(
+            hist.count
+        )
+
+    if not found:
+        return None
+
+    return SpecDecodeMetrics(
+        num_drafts=num_drafts,
+        num_draft_tokens=num_draft_tokens,
+        num_accepted_tokens=num_accepted_tokens,
+        accepted_per_pos=accepted_per_pos,
+        per_pos_rate_sum=per_pos_rate_sum,
+        per_pos_rate_count=per_pos_rate_count,
+    )
 
 
 def fetch_spec_decode_metrics(

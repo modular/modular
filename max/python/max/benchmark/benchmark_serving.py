@@ -412,10 +412,6 @@ def build_single_turn_request_input(
     raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
 
-def _is_vllm_backend(backend: Backend) -> bool:
-    return backend in ("vllm", "vllm-chat")
-
-
 def print_lora_benchmark_results(
     lora_manager: LoRABenchmarkManager,
 ) -> None:
@@ -601,6 +597,46 @@ def print_benchmark_summary(
         print("{:<40} {:<10}".format("Max output tokens:", metrics.max_output))
         print("{:<40} {:<10}".format("Max total tokens:", metrics.max_total))
 
+    if spec_decode_stats is not None:
+        print_section(title="Speculative Decoding")
+        if spec_decode_stats.acceptance_rate is not None:
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Acceptance rate (%):", spec_decode_stats.acceptance_rate
+                )
+            )
+        if spec_decode_stats.acceptance_length is not None:
+            print(
+                "{:<40} {:<10.2f}".format(
+                    "Acceptance length:", spec_decode_stats.acceptance_length
+                )
+            )
+        if spec_decode_stats.num_drafts is not None:
+            print(
+                "{:<40} {:<10}".format(
+                    "Drafts:", int(spec_decode_stats.num_drafts)
+                )
+            )
+        if spec_decode_stats.draft_tokens is not None:
+            print(
+                "{:<40} {:<10}".format(
+                    "Draft tokens:", int(spec_decode_stats.draft_tokens)
+                )
+            )
+        if spec_decode_stats.accepted_tokens is not None:
+            print(
+                "{:<40} {:<10}".format(
+                    "Accepted tokens:", int(spec_decode_stats.accepted_tokens)
+                )
+            )
+        per_pos_rates = spec_decode_stats.per_position_acceptance_rates
+        if per_pos_rates:
+            print("Per-position acceptance (%):")
+            for pos, rate in enumerate(per_pos_rates):
+                print(
+                    "{:<40} {:<10.2f}".format(f"  Position {pos}:", rate * 100)
+                )
+
     # Print GPU and CPU statistics
     if collect_gpu_stats and metrics.peak_gpu_memory_mib:
         print_section(title="GPU Statistics")
@@ -638,38 +674,6 @@ def print_benchmark_summary(
                 cpu.system_percent if cpu else 0.0,
             )
         )
-    if spec_decode_stats is not None:
-        print_section(title="Speculative Decoding")
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Acceptance rate (%):", spec_decode_stats.acceptance_rate
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Acceptance length:", spec_decode_stats.acceptance_length
-            )
-        )
-        print(
-            "{:<40} {:<10}".format("Drafts:", int(spec_decode_stats.num_drafts))
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Draft tokens:", int(spec_decode_stats.draft_tokens)
-            )
-        )
-        print(
-            "{:<40} {:<10}".format(
-                "Accepted tokens:", int(spec_decode_stats.accepted_tokens)
-            )
-        )
-        per_pos_rates = spec_decode_stats.per_position_acceptance_rates
-        if per_pos_rates:
-            print("Per-position acceptance (%):")
-            for pos, rate in enumerate(per_pos_rates):
-                print(
-                    "{:<40} {:<10.2f}".format(f"  Position {pos}:", rate * 100)
-                )
     print("=" * 50)
     if lora_manager:
         print_lora_benchmark_results(lora_manager)
@@ -2722,7 +2726,7 @@ async def benchmark(
                     f"Failed to capture baseline server metrics: {e}"
                 )
 
-        if benchmark_task == "text-generation" and _is_vllm_backend(backend):
+        if benchmark_task == "text-generation":
             spec_decode_metrics_before = fetch_spec_decode_metrics(
                 backend, base_url
             )
@@ -2854,7 +2858,7 @@ async def benchmark(
             if trace_path:
                 stop_trace(trace_session)
 
-    if benchmark_task == "text-generation" and _is_vllm_backend(backend):
+    if benchmark_task == "text-generation":
         spec_decode_metrics_after = fetch_spec_decode_metrics(backend, base_url)
     spec_decode_stats = None
     if (
