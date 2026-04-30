@@ -98,10 +98,12 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
     PixelGenerationBenchmarkMetrics,
+    PixelGenerationBenchmarkResult,
     SpecDecodeMetrics,
     SpecDecodeStats,
     StandardPercentileMetrics,
     SteadyStateResult,
+    TextGenerationBenchmarkResult,
     ThroughputMetrics,
     calculate_spec_decode_stats,
 )
@@ -2241,7 +2243,7 @@ def _build_pixel_generation_result(
     max_concurrency: int | None,
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
-) -> tuple[dict[str, object], PixelGenerationBenchmarkMetrics]:
+) -> PixelGenerationBenchmarkResult:
     """Compute metrics and build the result dict for pixel-generation tasks."""
     if not _is_pixel_generation_outputs(outputs):
         raise TypeError(
@@ -2257,8 +2259,7 @@ def _build_pixel_generation_result(
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
     )
-    result = metrics.to_result_dict()
-    return result, metrics
+    return PixelGenerationBenchmarkResult(metrics=metrics)
 
 
 def _build_text_generation_result(
@@ -2275,7 +2276,7 @@ def _build_text_generation_result(
     collect_gpu_stats: bool,
     metrics_by_endpoint: Mapping[str, ParsedMetrics] | None = None,
     spec_decode_stats: SpecDecodeStats | None = None,
-) -> tuple[dict[str, object], BenchmarkMetrics]:
+) -> TextGenerationBenchmarkResult:
     """Compute metrics and build the result dict for text-generation tasks."""
     if not _is_text_generation_outputs(outputs):
         raise TypeError(
@@ -2296,11 +2297,6 @@ def _build_text_generation_result(
         metrics_by_endpoint=metrics_by_endpoint,
     )
 
-    result = text_metrics.to_result_dict()
-
-    if spec_decode_stats is not None:
-        result.update(spec_decode_stats.to_result_dict())
-
     for warn in text_metrics.confidence_warnings():
         logger.warning(f"Confidence: {warn}")
 
@@ -2314,9 +2310,12 @@ def _build_text_generation_result(
         collect_gpu_stats=collect_gpu_stats,
         metrics_by_endpoint=metrics_by_endpoint,
     )
-    result.update(steady_state_result.to_result_dict())
 
-    return result, text_metrics
+    return TextGenerationBenchmarkResult(
+        metrics=text_metrics,
+        steady_state_result=steady_state_result,
+        spec_decode_stats=spec_decode_stats,
+    )
 
 
 def _compute_steady_state_result(
@@ -2549,7 +2548,8 @@ async def benchmark(
     trace_session: str | None = None,
     force_unique_runs: bool = False,
 ) -> tuple[
-    dict[str, object], BenchmarkMetrics | PixelGenerationBenchmarkMetrics
+    dict[str, object],
+    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult,
 ]:
     if ignore_first_turn_stats and skip_first_n_requests:
         logger.warning(
@@ -2932,10 +2932,9 @@ async def benchmark(
             round(1.0 / mean_interval, 3) if mean_interval > 0 else 0.0
         )
 
-    result: dict[str, object]
-    metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics
+    result: PixelGenerationBenchmarkResult | TextGenerationBenchmarkResult
     if benchmark_task in PIXEL_GENERATION_TASKS:
-        result, metrics = _build_pixel_generation_result(
+        result = _build_pixel_generation_result(
             outputs=outputs,
             benchmark_duration=benchmark_duration,
             gpu_metrics=gpu_metrics,
@@ -2945,7 +2944,7 @@ async def benchmark(
             metrics_by_endpoint=endpoint_metrics,
         )
     else:
-        result, metrics = _build_text_generation_result(
+        result = _build_text_generation_result(
             outputs=outputs,
             benchmark_duration=benchmark_duration,
             tokenizer=tokenizer,
@@ -2959,9 +2958,10 @@ async def benchmark(
             metrics_by_endpoint=endpoint_metrics,
             spec_decode_stats=spec_decode_stats,
         )
+    result_dict = result.to_result_dict()
 
     print_benchmark_summary(
-        metrics=metrics,
+        metrics=result.metrics,
         request_rate=request_rate,
         max_concurrency=max_concurrency,
         achieved_request_rate=achieved_request_rate,
@@ -2972,12 +2972,12 @@ async def benchmark(
     )
 
     _add_optional_result(
-        result=result,
-        metrics=metrics,
+        result=result_dict,
+        metrics=result.metrics,
         lora_manager=lora_manager,
     )
 
-    return result, metrics
+    return result_dict, result
 
 
 def validate_task_and_endpoint(
@@ -3129,7 +3129,10 @@ def _execute_benchmark(
     session: BenchmarkSession,
     max_concurrency: int | None,
     request_rate: float,
-) -> tuple[dict[str, Any], BenchmarkMetrics | PixelGenerationBenchmarkMetrics]:
+) -> tuple[
+    dict[str, Any],
+    TextGenerationBenchmarkResult | PixelGenerationBenchmarkResult,
+]:
     """Run a single benchmark invocation and return *(result_dict, metrics)*."""
     backend: Backend = args.backend
     skip_first = session.skip_first
@@ -3149,7 +3152,7 @@ def _execute_benchmark(
 
     logger.info("Starting benchmark run")
     assert args.num_prompts is not None
-    benchmark_result, benchmark_metrics = asyncio.run(
+    benchmark_result_dict, benchmark_result = asyncio.run(
         benchmark(
             backend=backend,
             benchmark_task=session.benchmark_task,
@@ -3193,7 +3196,7 @@ def _execute_benchmark(
         )
     )
 
-    ok, validation_errors = benchmark_metrics.validate()
+    ok, validation_errors = benchmark_result.validate()
     if not ok:
         for err in validation_errors:
             logger.error(f"Benchmark result validation failed: {err}")
@@ -3201,7 +3204,7 @@ def _execute_benchmark(
         sys.exit(1)
 
     logger.info("finished benchmark run: Success.")
-    return benchmark_result, benchmark_metrics
+    return benchmark_result_dict, benchmark_result
 
 
 def save_result_json(
@@ -3899,7 +3902,8 @@ def main_with_parsed_args(
             iteration_results: list[
                 tuple[
                     dict[str, Any],
-                    BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
+                    TextGenerationBenchmarkResult
+                    | PixelGenerationBenchmarkResult,
                 ]
             ] = []
             for _iteration in range(args.num_iters):
@@ -3910,25 +3914,27 @@ def main_with_parsed_args(
 
                 args.seed = int(np.random.randint(0, 10000))
 
-                result_dict, metrics = _execute_benchmark(args, session, mc, rr)
-                iteration_results.append((result_dict, metrics))
+                result_dict, result_obj = _execute_benchmark(
+                    args, session, mc, rr
+                )
+                iteration_results.append((result_dict, result_obj))
 
             # Median selection when running multiple iterations.
             if len(iteration_results) > 1:
                 throughputs = np.asarray(
-                    [m.request_throughput for _, m in iteration_results]
+                    [r.metrics.request_throughput for _, r in iteration_results]
                 )
                 idx = argmedian(throughputs)
             else:
                 idx = 0
-            best_result, best_metrics = iteration_results[idx]
+            best_result_dict, best_result_obj = iteration_results[idx]
 
             # JSON result file (for the median iteration).
             save_result_json(
                 args.result_filename,
                 args,
-                best_result,
-                best_metrics,
+                best_result_dict,
+                best_result_obj.metrics,
                 benchmark_task=session.benchmark_task,
                 model_id=session.model_id,
                 tokenizer_id=session.tokenizer_id,
@@ -3936,14 +3942,17 @@ def main_with_parsed_args(
             )
 
             # Output lengths recording (for the median iteration).
-            _save_output_lengths(args, best_result, session.benchmark_task)
+            _save_output_lengths(args, best_result_dict, session.benchmark_task)
 
+            # TODO: In the future, probably BenchmarkRunResult should hold the
+            # TextGenerationBenchmarkResult or PixelGenerationBenchmarkResult
+            # object directly, rather than just the metrics object.
             yield BenchmarkRunResult(
                 mc,
                 rr,
                 args.num_prompts or 0,
-                best_metrics,
-                best_result,
+                metrics=best_result_obj.metrics,
+                result_dict=best_result_dict,
             )
 
 

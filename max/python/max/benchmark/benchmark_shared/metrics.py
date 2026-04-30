@@ -593,6 +593,29 @@ class SteadyStateResult:
 
 
 @dataclass(kw_only=True)
+class TextGenerationBenchmarkResult:
+    """Result from a text-generation benchmark iteration."""
+
+    metrics: BenchmarkMetrics
+    steady_state_result: SteadyStateResult | None = None
+    spec_decode_stats: SpecDecodeStats | None = None
+
+    def to_result_dict(self) -> dict[str, object]:
+        d = self.metrics.to_result_dict()
+        if self.steady_state_result is not None:
+            d.update(self.steady_state_result.to_result_dict())
+        if self.spec_decode_stats is not None:
+            d.update(self.spec_decode_stats.to_result_dict())
+        return d
+
+    def validate(self) -> tuple[bool, list[str]]:
+        # TODO: Mirroring previous behavior, we only validate the normal
+        # metrics.  Perhaps we should validate the steady-state metrics too,
+        # but that would be a change in behavior.
+        return self.metrics.validate()
+
+
+@dataclass(kw_only=True)
 class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for pixel generation serving benchmark metrics."""
 
@@ -616,6 +639,19 @@ class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
         d["request_submit_times"] = self.request_submit_times
         d["request_complete_times"] = self.request_complete_times
         return d
+
+
+@dataclass(kw_only=True)
+class PixelGenerationBenchmarkResult:
+    """Result from a pixel generation benchmark iteration."""
+
+    metrics: PixelGenerationBenchmarkMetrics
+
+    def to_result_dict(self) -> dict[str, object]:
+        return self.metrics.to_result_dict()
+
+    def validate(self) -> tuple[bool, list[str]]:
+        return self.metrics.validate()
 
 
 @dataclass
