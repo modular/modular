@@ -100,10 +100,33 @@ class BundleType(max._core.Type):
     value.  All elements must be `!mo.tensor` types.  Elements may have
     different devices, shapes, or dtypes.
 
-    Example:
+    The type has two interchangeable surface syntaxes. The verbose form lists
+    each element tensor explicitly and is used when the elements are not
+    uniform:
+
     ```mlir
-    !mo.bundle<[!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[3], f32, gpu:1>]>
+    !mo.bundle<[!mo.tensor<[3], f32, gpu:0>, !mo.tensor<[4], f32, gpu:1>]>
     ```
+
+    The compact form is used when every element shares the same shape, dtype,
+    device label, and metadata, and the device IDs are strictly ordered and
+    contiguous (`ids[i] == ids[0] + i`). It names the shared attributes once
+    and the device range as `label:firstId-lastId`:
+
+    ```mlir
+    !mo.bundle<[3], f32, gpu:0-1>
+    ```
+
+    A single-element compact bundle omits the range suffix. A single-element
+    bundle on the default host device also omits the device section entirely:
+
+    ```mlir
+    !mo.bundle<[3], f32, gpu:0>   // single element, explicit device
+    !mo.bundle<[3], f32>          // single element, default host device
+    ```
+
+    The compact form is purely syntactic sugar; the stored `elementTypes` are
+    identical regardless of which form is parsed.
     """
 
     def __init__(self, element_types: Sequence[max._core.Type]) -> None: ...
