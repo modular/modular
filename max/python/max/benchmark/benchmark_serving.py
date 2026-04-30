@@ -97,6 +97,7 @@ from max.benchmark.benchmark_shared.lora_benchmark_manager import (
 )
 from max.benchmark.benchmark_shared.metrics import (
     BenchmarkMetrics,
+    LoRAMetrics,
     PixelGenerationBenchmarkMetrics,
     PixelGenerationBenchmarkResult,
     SpecDecodeMetrics,
@@ -414,88 +415,33 @@ def build_single_turn_request_input(
     raise ValueError(f"Unsupported benchmark task: {benchmark_task}")
 
 
-def print_lora_benchmark_results(
-    lora_manager: LoRABenchmarkManager,
-) -> None:
+def print_lora_benchmark_results(metrics: LoRAMetrics) -> None:
     """Print LoRA benchmark statistics if available."""
 
     print_section(title=" LoRA Adapter Benchmark Results ", char="=")
-    print(
-        "{:<40} {:<10}".format(
-            "Total LoRA loads:", lora_manager.metrics.total_loads
-        )
-    )
-    print(
-        "{:<40} {:<10}".format(
-            "Total LoRA unloads:", lora_manager.metrics.total_unloads
-        )
-    )
+    print("{:<40} {:<10}".format("Total LoRA loads:", metrics.total_loads))
+    print("{:<40} {:<10}".format("Total LoRA unloads:", metrics.total_unloads))
 
-    if lora_manager.metrics.load_times_ms:
-        print_section(title="LoRA Load Times")
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Mean load time:",
-                statistics.mean(lora_manager.metrics.load_times_ms),
-            )
+    def print_float_metric(metric: str, value: float) -> None:
+        print(f"{metric:<40} {value:<10.2f}")
+
+    def print_action_section(action: str, times_ms: list[float]) -> None:
+        if not times_ms:
+            return
+        print_section(title=f"LoRA {action.title()} Times")
+        print_float_metric(f"Mean {action} time:", statistics.mean(times_ms))
+        print_float_metric(
+            f"Median {action} time:", statistics.median(times_ms)
         )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Median load time:",
-                statistics.median(lora_manager.metrics.load_times_ms),
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Min load time:", min(lora_manager.metrics.load_times_ms)
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Max load time:", max(lora_manager.metrics.load_times_ms)
-            )
-        )
-        if len(lora_manager.metrics.load_times_ms) > 1:
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Std dev load time:",
-                    statistics.stdev(lora_manager.metrics.load_times_ms),
-                )
+        print_float_metric(f"Min {action} time:", min(times_ms))
+        print_float_metric(f"Max {action} time:", max(times_ms))
+        if len(times_ms) > 1:
+            print_float_metric(
+                f"Std dev {action} time:", statistics.stdev(times_ms)
             )
 
-    if lora_manager.metrics.unload_times_ms:
-        print_section(title="LoRA Unload Times")
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Mean unload time:",
-                statistics.mean(lora_manager.metrics.unload_times_ms),
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Median unload time:",
-                statistics.median(lora_manager.metrics.unload_times_ms),
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Min unload time:",
-                min(lora_manager.metrics.unload_times_ms),
-            )
-        )
-        print(
-            "{:<40} {:<10.2f}".format(
-                "Max unload time:",
-                max(lora_manager.metrics.unload_times_ms),
-            )
-        )
-        if len(lora_manager.metrics.unload_times_ms) > 1:
-            print(
-                "{:<40} {:<10.2f}".format(
-                    "Std dev unload time:",
-                    statistics.stdev(lora_manager.metrics.unload_times_ms),
-                )
-            )
+    print_action_section("load", metrics.load_times_ms)
+    print_action_section("unload", metrics.unload_times_ms)
 
 
 def print_benchmark_summary(
@@ -678,7 +624,7 @@ def print_benchmark_summary(
         )
     print("=" * 50)
     if lora_manager:
-        print_lora_benchmark_results(lora_manager)
+        print_lora_benchmark_results(lora_manager.metrics)
     for label, pm in metrics.metrics_by_endpoint.items():
         if len(metrics.metrics_by_endpoint) > 1:
             print(f"\n--- Metrics: {label} ---")
