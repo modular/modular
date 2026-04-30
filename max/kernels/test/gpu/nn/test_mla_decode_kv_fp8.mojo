@@ -142,18 +142,23 @@ def test[
     var o_size = q_size
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[q_type]](q_size)
-    var k_ptr = alloc[Scalar[kv_type]](k_size)  # fp8 host
-    var k_bf16_ptr = alloc[Scalar[q_type]](k_size)
-    var output_ptr = alloc[Scalar[q_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[q_type]](o_size)
+    var q_ptr = List(length=q_size, fill=Scalar[q_type](0))
+    var k_ptr = List(length=k_size, fill=Scalar[kv_type](0))  # fp8 host
+    var k_bf16_ptr = List(length=k_size, fill=Scalar[q_type](0))
+    var output_ptr = List(length=o_size, fill=Scalar[q_type](0))
+    var flash_output_ptr = List(length=o_size, fill=Scalar[q_type](0))
 
     # Q, K, V are randomly initialized.
-    randn[q_type](q_ptr, q_size)
-    randn[kv_type](k_ptr, k_size)
+    randn(q_ptr)
+    randn(k_ptr)
 
     host_cast_k_fp8_to_bf16[kv_fp8_t=kv_type, k_bf16_t=q_type](
-        k_ptr, k_bf16_ptr, depth, num_keys, kv_num_heads, batch_size
+        k_ptr.unsafe_ptr(),
+        k_bf16_ptr.unsafe_ptr(),
+        depth,
+        num_keys,
+        kv_num_heads,
+        batch_size,
     )
 
     # Device pointers
@@ -339,16 +344,16 @@ def test[
         for s in range(seq_len):
             for h in range(num_heads):
                 for d in range(depth - 64):
-                    var expect = output_ptr.load(
+                    var expect = output_ptr[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ).cast[DType.float64]()
-                    var actual = flash_output_ptr.load(
+                    ].cast[DType.float64]()
+                    var actual = flash_output_ptr[
                         d
                         + (depth - 64) * (h + s * num_heads)
                         + b * (depth - 64) * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ].cast[DType.float64]()
                     # if not isclose(actual, expect, atol=1e-3, rtol=rtol):
                     #     var rerr = abs((actual - expect) / expect)
                     #     print(h, s, d, actual, expect, rerr)
@@ -360,11 +365,10 @@ def test[
     _ = q_device_ptr
     _ = k_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
+    _ = flash_output_ptr^
+    _ = output_ptr^
+    _ = k_ptr^
+    _ = q_ptr^
 
 
 def test_decoding[

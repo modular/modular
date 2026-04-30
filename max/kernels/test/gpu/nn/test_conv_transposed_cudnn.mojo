@@ -83,15 +83,13 @@ def test_conv_transposed_cudnn[
     ]()
 
     # Allocate host memory for NHWC tensors
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var output_host_ptr = alloc[Scalar[dtype]](output_size)
-    var output_ref_host_ptr = alloc[Scalar[dtype]](output_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_ref_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
     # Create host TileTensors for NHWC
     var input_host = TileTensor(input_host_ptr, input_layout)
     var filter_host = TileTensor(filter_host_ptr, filter_layout)
-    var _output_host = TileTensor(output_host_ptr, output_layout)
     var output_ref_host = TileTensor(output_ref_host_ptr, output_layout)
 
     random(input_host)
@@ -132,9 +130,15 @@ def test_conv_transposed_cudnn[
     # -------------------------------------------------------------
 
     # Allocate host memory for NCHW tensors (for cuDNN)
-    var input_nchw_host_ptr = alloc[Scalar[dtype]](input_nchw_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_nchw_size)
-    var output_nchw_host_ptr = alloc[Scalar[dtype]](output_nchw_size)
+    var input_nchw_host_ptr = List(
+        length=input_nchw_size, fill=Scalar[dtype](0)
+    )
+    var filter_nchw_host_ptr = List(
+        length=filter_nchw_size, fill=Scalar[dtype](0)
+    )
+    var output_nchw_host_ptr = List(
+        length=output_nchw_size, fill=Scalar[dtype](0)
+    )
 
     # Create host TileTensors for NCHW
     var input_nchw_host = TileTensor(input_nchw_host_ptr, input_nchw_layout)
@@ -205,19 +209,16 @@ def test_conv_transposed_cudnn[
             )
     print("Succeed")
 
-    # Cleanup host memory
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    output_host_ptr.free()
-    output_ref_host_ptr.free()
-    input_nchw_host_ptr.free()
-    filter_nchw_host_ptr.free()
-    output_nchw_host_ptr.free()
-
     # Cleanup device buffers
     _ = d_input^
     _ = d_filter^
     _ = d_output^
+    _ = output_nchw_host_ptr^
+    _ = filter_nchw_host_ptr^
+    _ = input_nchw_host_ptr^
+    _ = output_ref_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

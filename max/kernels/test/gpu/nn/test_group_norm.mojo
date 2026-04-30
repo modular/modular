@@ -62,10 +62,10 @@ def run_group_norm_gpu[
     var rows = N * num_groups
     var cols = group_size
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](C)
-    var beta_h = alloc[Scalar[dtype]](C)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var res = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=C, fill=Scalar[dtype](0))
+    var beta_h = List(length=C, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](i % 256)  # bounded range to avoid overflow
@@ -120,7 +120,7 @@ def run_group_norm_gpu[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
+            data_h.unsafe_ptr() + r * cols,
             row_major(Idx(cols)),
         )
         var stats = compute_group_stats(vec, cols, epsilon)
@@ -145,10 +145,10 @@ def run_group_norm_gpu[
     _ = data_d^
     _ = gamma_d^
     _ = beta_d^
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
+    _ = beta_h^
+    _ = gamma_h^
+    _ = res^
+    _ = data_h^
 
 
 def main() raises:

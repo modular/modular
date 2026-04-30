@@ -52,7 +52,7 @@ def compute_rms_norm_rope_ref[
         var inv_rms = Scalar[accum_type](1) / rms
 
         # Apply norm with gamma (multiply_before_cast=True: all ops in accum_type).
-        var normed = alloc[Scalar[dtype]](cols)
+        var normed = List(length=cols, fill=Scalar[dtype](0))
         for c in range(cols):
             var v = input_h[r * cols + c].cast[accum_type]()
             var g = (
@@ -71,8 +71,7 @@ def compute_rms_norm_rope_ref[
             output_ref[r * cols + c] = (
                 normed_val * cos_val + rotated * sin_val
             ).cast[dtype]()
-
-        normed.free()
+        _ = normed^
 
 
 def run_rms_norm_rope_gpu[
@@ -83,12 +82,12 @@ def run_rms_norm_rope_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var cos_h = alloc[Scalar[cos_sin_dtype]](rows * cols)
-    var sin_h = alloc[Scalar[cos_sin_dtype]](rows * cols)
-    var result_gpu = alloc[Scalar[dtype]](rows * cols)
-    var result_ref = alloc[Scalar[dtype]](rows * cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var cos_h = List(length=rows * cols, fill=Scalar[cos_sin_dtype](0))
+    var sin_h = List(length=rows * cols, fill=Scalar[cos_sin_dtype](0))
+    var result_gpu = List(length=rows * cols, fill=Scalar[dtype](0))
+    var result_ref = List(length=rows * cols, fill=Scalar[dtype](0))
 
     # Initialize with diverse deterministic values.
     for i in range(rows * cols):
@@ -104,11 +103,11 @@ def run_rms_norm_rope_gpu[
 
     # Compute CPU reference.
     compute_rms_norm_rope_ref[dtype, cos_sin_dtype](
-        data_h,
-        gamma_h,
-        cos_h,
-        sin_h,
-        result_ref,
+        data_h.unsafe_ptr(),
+        gamma_h.unsafe_ptr(),
+        cos_h.unsafe_ptr(),
+        sin_h.unsafe_ptr(),
+        result_ref.unsafe_ptr(),
         rows,
         cols,
         epsilon,
@@ -185,13 +184,12 @@ def run_rms_norm_rope_gpu[
     _ = cos_d
     _ = sin_d
     _ = output_d
-
-    data_h.free()
-    gamma_h.free()
-    cos_h.free()
-    sin_h.free()
-    result_gpu.free()
-    result_ref.free()
+    _ = result_ref^
+    _ = result_gpu^
+    _ = sin_h^
+    _ = cos_h^
+    _ = gamma_h^
+    _ = data_h^
 
 
 def main() raises:

@@ -77,7 +77,7 @@ def compute_reference_dynamic_scaling[
     var fp8_min = Float32(min_finite[out_dtype]())
 
     # Allocate temporary storage for normalized values
-    var temp_storage = alloc[Scalar[DType.float32]](cols)
+    var temp_storage = List(length=cols, fill=Scalar[DType.float32](0))
 
     for row in range(rows):
         # Step 1: Compute mean square for RMSNorm
@@ -124,8 +124,7 @@ def compute_reference_dynamic_scaling[
             var quantized = scaled_val * scale_factor_recip
             quantized = max(fp8_min, min(fp8_max, quantized))
             output_data[row * cols + col] = quantized.cast[out_dtype]()
-
-    temp_storage.free()
+    _ = temp_storage^
 
 
 def test_dynamic[
@@ -145,15 +144,15 @@ def test_dynamic[
     var rows = input_size // cols
 
     # Allocate and initialize host memory
-    var in_host = alloc[Scalar[in_dtype]](input_size)
-    var out_host = alloc[Scalar[out_dtype]](input_size)
-    var gamma_host = alloc[Scalar[in_dtype]](cols)
-    var scales_host = alloc[Scalar[scales_dtype]](rows)
-    var expected_host = alloc[Scalar[out_dtype]](input_size)
-    var expected_scales_host = alloc[Scalar[scales_dtype]](rows)
+    var in_host = List(length=input_size, fill=Scalar[in_dtype](0))
+    var out_host = List(length=input_size, fill=Scalar[out_dtype](0))
+    var gamma_host = List(length=cols, fill=Scalar[in_dtype](0))
+    var scales_host = List(length=rows, fill=Scalar[scales_dtype](0))
+    var expected_host = List(length=input_size, fill=Scalar[out_dtype](0))
+    var expected_scales_host = List(length=rows, fill=Scalar[scales_dtype](0))
 
     # Initialize with diverse values to avoid FP8 saturation
-    initialize_test_data(in_host, input_size)
+    initialize_test_data(in_host.unsafe_ptr(), input_size)
     for i in range(cols):
         # Gamma values between 0.5 and 1.5 to create variety after normalization
         gamma_host[i] = Scalar[in_dtype](0.5 + Float64((i % 11)) * 0.1)
@@ -167,10 +166,10 @@ def test_dynamic[
 
     # Compute reference
     compute_reference_dynamic_scaling[in_dtype, out_dtype](
-        in_host,
-        gamma_host,
-        expected_host,
-        expected_scales_host,
+        in_host.unsafe_ptr(),
+        gamma_host.unsafe_ptr(),
+        expected_host.unsafe_ptr(),
+        expected_scales_host.unsafe_ptr(),
         rows,
         cols,
         epsilon_f32,
@@ -254,14 +253,12 @@ def test_dynamic[
         ") ",
         shape,
     )
-
-    # Cleanup
-    in_host.free()
-    out_host.free()
-    gamma_host.free()
-    scales_host.free()
-    expected_host.free()
-    expected_scales_host.free()
+    _ = expected_scales_host^
+    _ = expected_host^
+    _ = scales_host^
+    _ = gamma_host^
+    _ = out_host^
+    _ = in_host^
 
 
 def main() raises:

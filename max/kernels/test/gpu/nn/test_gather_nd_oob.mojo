@@ -107,7 +107,7 @@ def test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime data_type = DType.int32
     var data_shape = IndexList[data_rank](2, 2)
     var data_size = 4
-    var data_host_ptr = alloc[Scalar[data_type]](data_size)
+    var data_host_ptr = List(length=data_size, fill=Scalar[data_type](0))
     var data_tensor = TileTensor(data_host_ptr, row_major(Coord(data_shape)))
 
     data_tensor[0, 0] = 0
@@ -118,7 +118,9 @@ def test_gather_nd_oob(ctx: DeviceContext) raises:
     comptime indices_rank = 2
     var indices_shape = IndexList[indices_rank](2, 2)
     var indices_size = 4
-    var indices_host_ptr = alloc[Scalar[DType.int64]](indices_size)
+    var indices_host_ptr = List(
+        length=indices_size, fill=Scalar[DType.int64](0)
+    )
     var indices_tensor = TileTensor(
         indices_host_ptr, row_major(Coord(indices_shape))
     )
@@ -130,12 +132,16 @@ def test_gather_nd_oob(ctx: DeviceContext) raises:
 
     execute_gather_nd_test[
         data_type, DType.int64, data_rank, indices_rank, batch_dims
-    ](data_host_ptr, data_shape, indices_host_ptr, indices_shape, ctx)
+    ](
+        data_host_ptr.unsafe_ptr(),
+        data_shape,
+        indices_host_ptr.unsafe_ptr(),
+        indices_shape,
+        ctx,
+    )
     ctx.synchronize()
-
-    # Cleanup host memory
-    data_host_ptr.free()
-    indices_host_ptr.free()
+    _ = indices_host_ptr^
+    _ = data_host_ptr^
 
 
 def main() raises:

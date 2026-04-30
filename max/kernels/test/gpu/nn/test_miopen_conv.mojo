@@ -141,10 +141,18 @@ def test_conv_miopen[
     comptime output_dim_flattened = Nout * Hout * Wout * Cout
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[input_type]](input_dim_flattened)
-    var filter_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
-    var output_ref_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
-    var output_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
+    var input_host_ptr = List(
+        length=input_dim_flattened, fill=Scalar[input_type](0)
+    )
+    var filter_host_ptr = List(
+        length=filter_dim_flattened, fill=Scalar[filter_type](0)
+    )
+    var output_ref_host_ptr = List(
+        length=output_dim_flattened, fill=Scalar[output_type](0)
+    )
+    var output_host_ptr = List(
+        length=output_dim_flattened, fill=Scalar[output_type](0)
+    )
 
     # Create host TileTensors
     comptime input_tt_layout = row_major(
@@ -170,9 +178,9 @@ def test_conv_miopen[
     # CPU reference
     var sym_pad = IndexList[2](pad_dim[0], pad_dim[2])
     conv_ref_cpu[input_type, filter_type, output_type](
-        input_host_ptr,
-        filter_host_ptr,
-        output_ref_host_ptr,
+        input_host_ptr.unsafe_ptr(),
+        filter_host_ptr.unsafe_ptr(),
+        output_ref_host_ptr.unsafe_ptr(),
         N,
         H,
         W,
@@ -243,16 +251,14 @@ def test_conv_miopen[
             raise Error("MIOpen output does not match CPU reference")
     print("  PASS: max_diff=", max_diff)
 
-    # Cleanup host memory
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    output_ref_host_ptr.free()
-    output_host_ptr.free()
-
     # Cleanup device buffers
     _ = input_dev^
     _ = filter_dev^
     _ = output_dev^
+    _ = output_host_ptr^
+    _ = output_ref_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

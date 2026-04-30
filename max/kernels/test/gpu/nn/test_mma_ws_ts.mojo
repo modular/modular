@@ -833,7 +833,7 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
         block_dim=(NAIVE_BLOCK_DIM, NAIVE_BLOCK_DIM, 1),
     )
 
-    var p_ref_host = alloc[Float32](P_REF_ROWS * P_REF_COLS)
+    var p_ref_host = List(length=P_REF_ROWS * P_REF_COLS, fill=Float32(0))
     ctx.enqueue_copy(p_ref_host, p_ref_device)
     ctx.synchronize()
 
@@ -871,11 +871,11 @@ def test_dense_mma_ws_ts(ctx: DeviceContext) raises:
     print("  P max relative error: " + String(max_err))
     print("  P PASSED")
 
-    p_ref_host.free()
     _ = p_ref_device
     _ = q_inp^
     _ = k_inp^
     _ = p_out_buf^
+    _ = p_ref_host^
 
 
 # ---------------------------------------------------------------------------
@@ -953,7 +953,7 @@ def test_sparse_mma_ws_ts[
     randn[op_type](k_full_host.ptr, total_tokens * cols)
 
     # ---- Build non-contiguous indices into the full K buffer ----
-    var h_indices = alloc[Int32](rows)
+    var h_indices = List(length=rows, fill=Int32(0))
     for i in range(rows):
         h_indices[i] = Int32((i * 37 + 13) % total_tokens)
 
@@ -961,7 +961,7 @@ def test_sparse_mma_ws_ts[
     ctx.enqueue_copy(d_indices, h_indices)
 
     # ---- Build reference K [rows, cols] from selected rows ----
-    var k_ref_host = alloc[Scalar[op_type]](rows * cols)
+    var k_ref_host = List(length=rows * cols, fill=Scalar[op_type](0))
     for i in range(rows):
         var src_row = Int(h_indices[i])
         for c in range(cols):
@@ -1079,7 +1079,7 @@ def test_sparse_mma_ws_ts[
         block_dim=(naive_block_dim, naive_block_dim, 1),
     )
 
-    var p_ref_host = alloc[Float32](p_ref_rows * p_ref_cols)
+    var p_ref_host = List(length=p_ref_rows * p_ref_cols, fill=Float32(0))
     ctx.enqueue_copy(p_ref_host, p_ref_device)
     ctx.synchronize()
 
@@ -1116,15 +1116,15 @@ def test_sparse_mma_ws_ts[
     print("  P max relative error: " + String(max_err))
     print("  P sparse PASSED")
 
-    p_ref_host.free()
-    h_indices.free()
-    k_ref_host.free()
     _ = p_ref_device
     _ = k_ref_device
     _ = d_indices
     _ = q_inp^
     _ = k_full^
     _ = p_out_buf^
+    _ = k_ref_host^
+    _ = h_indices^
+    _ = p_ref_host^
 
 
 # ---------------------------------------------------------------------------
@@ -1272,7 +1272,7 @@ def test_sparse_paged_mma_ws_ts[
     randn[op_type](q_inp_host.ptr, rows * cols)
 
     # ---- Build gather indices from the paged cache ----
-    var h_indices = alloc[Int32](topk)
+    var h_indices = List(length=topk, fill=Int32(0))
     for i in range(topk):
         var tok_idx = (i * 37 + 13) % total_tokens
         var page_within_seq = tok_idx // page_size
@@ -1285,7 +1285,7 @@ def test_sparse_paged_mma_ws_ts[
     ctx.enqueue_copy(d_indices, h_indices)
 
     # ---- Build reference K_gathered on host ----
-    var k_ref_host = alloc[Scalar[op_type]](topk * row_width)
+    var k_ref_host = List(length=topk * row_width, fill=Scalar[op_type](0))
     for i in range(topk):
         var src_row = Int(h_indices[i])
         for c in range(row_width):
@@ -1404,7 +1404,7 @@ def test_sparse_paged_mma_ws_ts[
         block_dim=(naive_block_dim, naive_block_dim, 1),
     )
 
-    var p_ref_host = alloc[Float32](p_ref_rows * p_ref_cols)
+    var p_ref_host = List(length=p_ref_rows * p_ref_cols, fill=Float32(0))
     ctx.enqueue_copy(p_ref_host, p_ref_device)
     ctx.synchronize()
 
@@ -1440,10 +1440,6 @@ def test_sparse_paged_mma_ws_ts[
 
     print("  P max relative error: " + String(max_err))
     print("  P sparse paged PASSED")
-
-    p_ref_host.free()
-    h_indices.free()
-    k_ref_host.free()
     _ = p_ref_device
     _ = k_ref_device
     _ = d_indices
@@ -1452,6 +1448,9 @@ def test_sparse_paged_mma_ws_ts[
     _ = cache_lengths_managed^
     _ = lut_managed^
     _ = p_out_buf^
+    _ = k_ref_host^
+    _ = h_indices^
+    _ = p_ref_host^
 
 
 # ---------------------------------------------------------------------------

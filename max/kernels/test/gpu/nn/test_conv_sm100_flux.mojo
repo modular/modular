@@ -84,14 +84,14 @@ def test_flux_conv_layer[
     )
 
     # Host memory
-    var input_host_ptr = alloc[Scalar[dtype]](in_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var out_sm100_host_ptr = alloc[Scalar[dtype]](out_size)
-    var out_cudnn_host_ptr = alloc[Scalar[dtype]](out_size)
+    var input_host_ptr = List(length=in_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var out_sm100_host_ptr = List(length=out_size, fill=Scalar[dtype](0))
+    var out_cudnn_host_ptr = List(length=out_size, fill=Scalar[dtype](0))
 
-    rand(input_host_ptr, in_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Transpose filter RSCF -> FCRS for cuDNN reference
     for r in range(R):
@@ -192,16 +192,16 @@ def test_flux_conv_layer[
     assert_false(errors > 0, "SM100 conv2d output mismatch vs cuDNN")
 
     # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-    out_sm100_host_ptr.free()
-    out_cudnn_host_ptr.free()
     _ = input_dev^
     _ = filter_rscf_dev^
     _ = filter_fcrs_dev^
     _ = out_sm100_dev^
     _ = out_cudnn_dev^
+    _ = out_cudnn_host_ptr^
+    _ = out_sm100_host_ptr^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

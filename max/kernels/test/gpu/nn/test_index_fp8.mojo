@@ -41,14 +41,14 @@ def test_index_fp8[
     var ks_size = batch_size * num_keys
     var o_size = batch_size * seq_len * num_keys
 
-    var q_ptr = alloc[Scalar[DType.float8_e4m3fn]](q_size)
-    var qs_ptr = alloc[Scalar[DType.float32]](qs_size)
-    var k_ptr = alloc[Scalar[DType.float8_e4m3fn]](k_size)
-    var ks_ptr = alloc[Scalar[DType.float32]](ks_size)
-    var o_ptr = alloc[Scalar[DType.float32]](o_size)
-    var o_ref_ptr = alloc[Scalar[DType.float32]](o_size)
-    var input_row_offsets = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets = alloc[UInt32](batch_size + 1)
+    var q_ptr = List(length=q_size, fill=Scalar[DType.float8_e4m3fn](0))
+    var qs_ptr = List(length=qs_size, fill=Scalar[DType.float32](0))
+    var k_ptr = List(length=k_size, fill=Scalar[DType.float8_e4m3fn](0))
+    var ks_ptr = List(length=ks_size, fill=Scalar[DType.float32](0))
+    var o_ptr = List(length=o_size, fill=Scalar[DType.float32](0))
+    var o_ref_ptr = List(length=o_size, fill=Scalar[DType.float32](0))
+    var input_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
+    var cache_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
 
     var q_device_ptr = ctx.enqueue_create_buffer[DType.float8_e4m3fn](q_size)
     var qs_device_ptr = ctx.enqueue_create_buffer[DType.float32](qs_size)
@@ -63,10 +63,10 @@ def test_index_fp8[
     var o_device_ptr = ctx.enqueue_create_buffer[DType.float32](o_size)
     var o_device_ref_ptr = ctx.enqueue_create_buffer[DType.float32](o_size)
 
-    rand(q_ptr, q_size)
-    rand(qs_ptr, qs_size)
-    rand(k_ptr, k_size)
-    rand(ks_ptr, ks_size)
+    rand(q_ptr)
+    rand(qs_ptr)
+    rand(k_ptr)
+    rand(ks_ptr)
 
     # input row offsets and cache row offsets
     for i in range(batch_size):
@@ -175,14 +175,13 @@ def test_index_fp8[
     _ = cache_row_offsets_device_ptr
     _ = o_device_ptr
     _ = o_device_ref_ptr
-
-    q_ptr.free()
-    qs_ptr.free()
-    k_ptr.free()
-    ks_ptr.free()
-    input_row_offsets.free()
-    cache_row_offsets.free()
-    o_ptr.free()
+    _ = o_ptr^
+    _ = cache_row_offsets^
+    _ = input_row_offsets^
+    _ = ks_ptr^
+    _ = k_ptr^
+    _ = qs_ptr^
+    _ = q_ptr^
 
 
 def main() raises:

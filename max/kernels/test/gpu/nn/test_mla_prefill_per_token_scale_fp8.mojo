@@ -72,25 +72,25 @@ def test_prefill[
     var o_size = batch_size * seq_len * num_heads * kv_depth
     var cache_size = batch_size * num_keys * cache_num_heads * cache_depth
 
-    var q_scale_ptr = alloc[Scalar[scale_type]](q_scale_size)
-    var q_nope_ptr = alloc[Scalar[qkv_type]](q_nope_size)
-    var q_rope_ptr = alloc[Scalar[rope_type]](q_rope_size)
+    var q_scale_ptr = List(length=q_scale_size, fill=Scalar[scale_type](0))
+    var q_nope_ptr = List(length=q_nope_size, fill=Scalar[qkv_type](0))
+    var q_rope_ptr = List(length=q_rope_size, fill=Scalar[rope_type](0))
 
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var k_scale_ptr = alloc[Scalar[scale_type]](k_scale_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var cache_ptr = alloc[Scalar[rope_type]](cache_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
+    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
+    var k_scale_ptr = List(length=k_scale_size, fill=Scalar[scale_type](0))
+    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
+    var cache_ptr = List(length=cache_size, fill=Scalar[rope_type](0))
+    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
 
-    var q_bf16_ptr = alloc[BFloat16](q_size)
-    var k_bf16_ptr = alloc[BFloat16](k_size)
-    var v_bf16_ptr = alloc[BFloat16](v_size)
-    var cache_bf16_ptr = alloc[BFloat16](cache_size)
+    var q_bf16_ptr = List(length=q_size, fill=BFloat16(0))
+    var k_bf16_ptr = List(length=k_size, fill=BFloat16(0))
+    var v_bf16_ptr = List(length=v_size, fill=BFloat16(0))
+    var cache_bf16_ptr = List(length=cache_size, fill=BFloat16(0))
 
-    randn[DType.bfloat16](q_bf16_ptr, q_size)
-    randn[DType.bfloat16](k_bf16_ptr, k_size)
-    randn[DType.bfloat16](v_bf16_ptr, v_size)
-    randn[DType.bfloat16](cache_bf16_ptr, cache_size)
+    randn(q_bf16_ptr)
+    randn(k_bf16_ptr)
+    randn(v_bf16_ptr)
+    randn(cache_bf16_ptr)
 
     # scale down the value to make it easier to verify
     var scale_factor = BFloat16(0.125)
@@ -105,8 +105,8 @@ def test_prefill[
         cache_bf16_ptr[i] *= scale_factor
 
     # input row offsets and cache row offsets
-    var input_row_offsets = alloc[UInt32](batch_size + 1)
-    var cache_row_offsets = alloc[UInt32](batch_size + 1)
+    var input_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
+    var cache_row_offsets = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size):
         input_row_offsets[i] = UInt32(i * seq_len)
         cache_row_offsets[i] = UInt32(i * num_keys)
@@ -119,19 +119,19 @@ def test_prefill[
     # Q_scale is per token scaled, meaning we shared same scale per [128, 128] block
     # Q_scale has shape [batch_size * seq_len, 1]
     var q_bf16 = TileTensor(
-        q_bf16_ptr,
+        q_bf16_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * seq_len), Idx[num_heads](), Idx[depth]())
         ),
     )
     var q_nope = TileTensor(
-        q_nope_ptr,
+        q_nope_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var q_rope = TileTensor(
-        q_rope_ptr,
+        q_rope_ptr.unsafe_ptr(),
         row_major(
             Coord(
                 Idx(batch_size * seq_len),
@@ -141,7 +141,7 @@ def test_prefill[
         ),
     )
     var q_scale = TileTensor(
-        q_scale_ptr,
+        q_scale_ptr.unsafe_ptr(),
         row_major(Coord(Idx(batch_size * seq_len), Idx[1]())),
     )
 
@@ -151,19 +151,19 @@ def test_prefill[
     # K_scale is per token scaled, meaning we shared same scale per [128, 128] block
     # K_scale has shape [batch_size * num_keys, 1]
     var k_bf16 = TileTensor(
-        k_bf16_ptr,
+        k_bf16_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var k = TileTensor(
-        k_ptr,
+        k_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var k_scale = TileTensor(
-        k_scale_ptr,
+        k_scale_ptr.unsafe_ptr(),
         row_major(Coord(Idx(batch_size * num_keys), Idx[1]())),
     )
 
@@ -173,13 +173,13 @@ def test_prefill[
     # V_scale is per head scaled
     # V_scale has shape [num_heads, batch_size * num_keys, 1]
     var v_bf16 = TileTensor(
-        v_bf16_ptr,
+        v_bf16_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
     )
     var v = TileTensor(
-        v_ptr,
+        v_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * num_keys), Idx[num_heads](), Idx[kv_depth]())
         ),
@@ -191,7 +191,7 @@ def test_prefill[
     # Cache_scale is per token scaled, meaning we shared same scale per [128, 128] block
     # Cache does not have a scale tensor, it will be scaled by k_nope scale.
     var cache_bf16 = TileTensor(
-        cache_bf16_ptr,
+        cache_bf16_ptr.unsafe_ptr(),
         row_major(
             Coord(
                 Idx(batch_size),
@@ -202,7 +202,7 @@ def test_prefill[
         ),
     )
     var cache = TileTensor(
-        cache_ptr,
+        cache_ptr.unsafe_ptr(),
         row_major(
             Coord(
                 Idx(batch_size),
@@ -214,7 +214,7 @@ def test_prefill[
     )
 
     var output = TileTensor(
-        output_ptr,
+        output_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size * seq_len), Idx[num_heads](), Idx[kv_depth]())
         ),
@@ -426,18 +426,21 @@ def test_prefill[
         row_major(Coord(Idx(0))),
     )
 
-    var k_ref_host_ptr = alloc[BFloat16](
-        batch_size * num_keys * num_heads * depth
+    var k_ref_host_ptr = List(
+        length=batch_size * num_keys * num_heads * depth,
+        fill=BFloat16(0),
     )
-    var v_ref_host_ptr = alloc[BFloat16](
-        batch_size * num_keys * num_heads * depth
+    var v_ref_host_ptr = List(
+        length=batch_size * num_keys * num_heads * depth,
+        fill=BFloat16(0),
     )
-    var output_ref_host_ptr = alloc[Scalar[output_type]](
-        batch_size * seq_len * num_heads * depth
+    var output_ref_host_ptr = List(
+        length=batch_size * seq_len * num_heads * depth,
+        fill=Scalar[output_type](0),
     )
 
     var k_ref_host = TileTensor(
-        k_ref_host_ptr,
+        k_ref_host_ptr.unsafe_ptr(),
         row_major(
             Coord(
                 Idx(batch_size),
@@ -448,7 +451,7 @@ def test_prefill[
         ),
     )
     var v_ref_host = TileTensor(
-        v_ref_host_ptr,
+        v_ref_host_ptr.unsafe_ptr(),
         row_major(
             Coord(
                 Idx(batch_size),
@@ -462,11 +465,12 @@ def test_prefill[
     # Build a faithful reference using the SAME quantized data the kernel
     # receives, dequantized back to BF16. This tests the kernel's per-token
     # scaling logic rather than FP8 approximation quality.
-    var q_ref_host_ptr = alloc[BFloat16](
-        batch_size * seq_len * num_heads * depth
+    var q_ref_host_ptr = List(
+        length=batch_size * seq_len * num_heads * depth,
+        fill=BFloat16(0),
     )
     var q_ref_host = TileTensor(
-        q_ref_host_ptr,
+        q_ref_host_ptr.unsafe_ptr(),
         row_major(
             Coord(
                 Idx(batch_size),
@@ -595,7 +599,7 @@ def test_prefill[
     )
 
     var output_ref_host = TileTensor(
-        output_ref_host_ptr,
+        output_ref_host_ptr.unsafe_ptr(),
         row_major(
             Coord(Idx(batch_size), Idx(seq_len), Idx[num_heads](), Idx[depth]())
         ),
@@ -668,25 +672,24 @@ def test_prefill[
     _ = output_ref_device_ptr
     _ = input_row_offsets_device_ptr
     _ = cache_row_offsets_device_ptr
-
-    q_nope_ptr.free()
-    q_rope_ptr.free()
-    q_scale_ptr.free()
-    q_bf16_ptr.free()
-    k_ptr.free()
-    k_scale_ptr.free()
-    k_bf16_ptr.free()
-    v_ptr.free()
-    v_bf16_ptr.free()
-    cache_ptr.free()
-    cache_bf16_ptr.free()
-    output_ptr.free()
-    output_ref_host_ptr.free()
-    q_ref_host_ptr.free()
-    k_ref_host_ptr.free()
-    v_ref_host_ptr.free()
-    input_row_offsets.free()
-    cache_row_offsets.free()
+    _ = cache_row_offsets^
+    _ = input_row_offsets^
+    _ = v_ref_host_ptr^
+    _ = k_ref_host_ptr^
+    _ = q_ref_host_ptr^
+    _ = output_ref_host_ptr^
+    _ = output_ptr^
+    _ = cache_bf16_ptr^
+    _ = cache_ptr^
+    _ = v_bf16_ptr^
+    _ = v_ptr^
+    _ = k_bf16_ptr^
+    _ = k_scale_ptr^
+    _ = k_ptr^
+    _ = q_bf16_ptr^
+    _ = q_scale_ptr^
+    _ = q_rope_ptr^
+    _ = q_nope_ptr^
 
 
 def test_mla_prefill_qkv_fp8[

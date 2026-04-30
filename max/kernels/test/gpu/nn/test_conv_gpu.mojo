@@ -83,25 +83,27 @@ def test_conv3d_gpu[
     var output_size = comptime (output_layout.size())
 
     # allocate host memory and initialize with random data
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var output_gpu_host = alloc[Scalar[dtype]](output_size)
-    var output_ref_host = alloc[Scalar[dtype]](output_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
 
     # initialize with random data
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_host, filter_size)
+    rand(input_host)
+    rand(filter_host)
 
     # Run the CPU reference at the same precision the GPU kernel uses for
     # its accumulator (fp32 for bf16 inputs), then narrow back to `dtype`.
     # Without this, a bf16 reference reduction drifts far outside any
     # reasonable tolerance for non-trivial channel counts.
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    var output_ref_accum_host = List(
+        length=output_size, fill=Scalar[accum_dtype](0)
+    )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
-        output_ref_accum_host,
-        input_host,
-        filter_host,
+        output_ref_accum_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, D_out, H_out, W_out, F),  # output shape
         Index(N, D, H, W, C),  # input shape
         Index(Q, R, S, C, F),  # filter shape
@@ -114,7 +116,6 @@ def test_conv3d_gpu[
     )
     for i in range(output_size):
         output_ref_host[i] = output_ref_accum_host[i].cast[dtype]()
-    output_ref_accum_host.free()
     # allocate device memory
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -175,10 +176,12 @@ def test_conv3d_gpu[
     except:
         print("RESULT: FAIL - Elements do not match")
     finally:
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
+        pass
+    _ = output_ref_host^
+    _ = output_gpu_host^
+    _ = filter_host^
+    _ = input_host^
+    _ = output_ref_accum_host^
 
 
 def test_conv3d_gpu_dispatch[
@@ -229,21 +232,23 @@ def test_conv3d_gpu_dispatch[
     var filter_size = comptime (filter_layout.size())
     var output_size = comptime (output_layout.size())
 
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var output_gpu_host = alloc[Scalar[dtype]](output_size)
-    var output_ref_host = alloc[Scalar[dtype]](output_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
 
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_host, filter_size)
+    rand(input_host)
+    rand(filter_host)
 
     # CPU reference at fp32 accumulator then narrow back (matches GPU).
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    var output_ref_accum_host = List(
+        length=output_size, fill=Scalar[accum_dtype](0)
+    )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
-        output_ref_accum_host,
-        input_host,
-        filter_host,
+        output_ref_accum_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, D_out, H_out, W_out, F),
         Index(N, D, H, W, C),
         Index(Q, R, S, C, F),
@@ -259,7 +264,6 @@ def test_conv3d_gpu_dispatch[
         output_ref_host[i] = (
             output_ref_accum_host[i] * Scalar[accum_dtype](2.0)
         ).cast[dtype]()
-    output_ref_accum_host.free()
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -318,13 +322,14 @@ def test_conv3d_gpu_dispatch[
         print("RESULT: FAIL - ", String(e))
         raise e^
     finally:
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
+    _ = output_ref_host^
+    _ = output_gpu_host^
+    _ = filter_host^
+    _ = input_host^
+    _ = output_ref_accum_host^
 
 
 def test_conv3d_im2col_multi_tile[
@@ -382,20 +387,22 @@ def test_conv3d_im2col_multi_tile[
         Layout.row_major(N, D_out, H_out, W_out, F).size()
     )
 
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var output_gpu_host = alloc[Scalar[dtype]](output_size)
-    var output_ref_host = alloc[Scalar[dtype]](output_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
 
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_host, filter_size)
+    rand(input_host)
+    rand(filter_host)
 
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    var output_ref_accum_host = List(
+        length=output_size, fill=Scalar[accum_dtype](0)
+    )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
-        output_ref_accum_host,
-        input_host,
-        filter_host,
+        output_ref_accum_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, D_out, H_out, W_out, F),
         Index(N, D, H, W, C),
         Index(Q, R, S, C, F),
@@ -411,7 +418,6 @@ def test_conv3d_im2col_multi_tile[
     ](1.0)
     for i in range(output_size):
         output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
-    output_ref_accum_host.free()
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -463,10 +469,6 @@ def test_conv3d_im2col_multi_tile[
         )
         if not handled:
             print("SKIP: dispatcher declined this shape (likely 1x1x1 or K<16)")
-            input_host.free()
-            filter_host.free()
-            output_gpu_host.free()
-            output_ref_host.free()
             _ = input_dev^
             _ = filter_dev^
             _ = output_dev^
@@ -490,10 +492,6 @@ def test_conv3d_im2col_multi_tile[
         )
         if not handled:
             print("SKIP: dispatcher declined this shape (likely 1x1x1 or K<16)")
-            input_host.free()
-            filter_host.free()
-            output_gpu_host.free()
-            output_ref_host.free()
             _ = input_dev^
             _ = filter_dev^
             _ = output_dev^
@@ -513,13 +511,14 @@ def test_conv3d_im2col_multi_tile[
         print("RESULT: FAIL - ", String(e))
         raise e^
     finally:
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
+    _ = output_ref_host^
+    _ = output_gpu_host^
+    _ = filter_host^
+    _ = input_host^
+    _ = output_ref_accum_host^
 
 
 def test_conv2d_im2col_multi_tile[
@@ -570,21 +569,23 @@ def test_conv2d_im2col_multi_tile[
     var filter_size = comptime (filter_layout.size())
     var output_size = comptime (Layout.row_major(N, H_out, W_out, F).size())
 
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var output_gpu_host = alloc[Scalar[dtype]](output_size)
-    var output_ref_host = alloc[Scalar[dtype]](output_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
 
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_host, filter_size)
+    rand(input_host)
+    rand(filter_host)
 
     # Naive2dConvolution internally uses 5-D NDHWC shapes with D=Q=1 for 2-D.
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    var output_ref_accum_host = List(
+        length=output_size, fill=Scalar[accum_dtype](0)
+    )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
-        output_ref_accum_host,
-        input_host,
-        filter_host,
+        output_ref_accum_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, 1, H_out, W_out, F),
         Index(N, 1, H, W, C),
         Index(1, R, S, C, F),
@@ -600,7 +601,6 @@ def test_conv2d_im2col_multi_tile[
     ](1.0)
     for i in range(output_size):
         output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
-    output_ref_accum_host.free()
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -671,10 +671,6 @@ def test_conv2d_im2col_multi_tile[
 
     if not handled:
         print("SKIP: dispatcher declined this shape (likely 1x1 or K<16)")
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
@@ -694,13 +690,14 @@ def test_conv2d_im2col_multi_tile[
         print("RESULT: FAIL - ", String(e))
         raise e^
     finally:
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
+    _ = output_ref_accum_host^
+    _ = output_ref_host^
+    _ = output_gpu_host^
+    _ = filter_host^
+    _ = input_host^
 
 
 def test_conv3d_1x1x1_matmul_direct[
@@ -741,20 +738,22 @@ def test_conv3d_1x1x1_matmul_direct[
     comptime output_layout_ = Layout.row_major(N, D, H, W, F)
     comptime output_size = output_layout_.size()
 
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_host = alloc[Scalar[dtype]](filter_size)
-    var output_gpu_host = alloc[Scalar[dtype]](output_size)
-    var output_ref_host = alloc[Scalar[dtype]](output_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_gpu_host = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
 
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_host, filter_size)
+    rand(input_host)
+    rand(filter_host)
 
     comptime accum_dtype = DType.float32 if dtype == DType.bfloat16 else dtype
-    var output_ref_accum_host = alloc[Scalar[accum_dtype]](output_size)
+    var output_ref_accum_host = List(
+        length=output_size, fill=Scalar[accum_dtype](0)
+    )
     Naive2dConvolution[accum_dtype, dtype, dtype].run(
-        output_ref_accum_host,
-        input_host,
-        filter_host,
+        output_ref_accum_host.unsafe_ptr(),
+        input_host.unsafe_ptr(),
+        filter_host.unsafe_ptr(),
         Index(N, D, H, W, F),
         Index(N, D, H, W, C),
         Index(Q, R, S, C, F),
@@ -770,7 +769,6 @@ def test_conv3d_1x1x1_matmul_direct[
     ](1.0)
     for i in range(output_size):
         output_ref_host[i] = (output_ref_accum_host[i] * scale).cast[dtype]()
-    output_ref_accum_host.free()
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -820,10 +818,6 @@ def test_conv3d_1x1x1_matmul_direct[
         )
         if not handled:
             print("SKIP: 1x1x1 dispatcher declined this shape")
-            input_host.free()
-            filter_host.free()
-            output_gpu_host.free()
-            output_ref_host.free()
             _ = input_dev^
             _ = filter_dev^
             _ = output_dev^
@@ -846,10 +840,6 @@ def test_conv3d_1x1x1_matmul_direct[
         )
         if not handled:
             print("SKIP: 1x1x1 dispatcher declined this shape")
-            input_host.free()
-            filter_host.free()
-            output_gpu_host.free()
-            output_ref_host.free()
             _ = input_dev^
             _ = filter_dev^
             _ = output_dev^
@@ -869,13 +859,14 @@ def test_conv3d_1x1x1_matmul_direct[
         print("RESULT: FAIL - ", String(e))
         raise e^
     finally:
-        input_host.free()
-        filter_host.free()
-        output_gpu_host.free()
-        output_ref_host.free()
         _ = input_dev^
         _ = filter_dev^
         _ = output_dev^
+    _ = output_ref_accum_host^
+    _ = output_ref_host^
+    _ = output_gpu_host^
+    _ = filter_host^
+    _ = input_host^
 
 
 def main() raises:

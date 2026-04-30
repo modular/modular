@@ -93,17 +93,17 @@ def test_gemv_partial_norm[
     var unnormed_shape = row_major(Coord(Idx(1), Idx(N_UNNORMED)))
     comptime gamma_shape = row_major(Idx[NNormedType.static_value]())
 
-    var a_host_ptr = alloc[Scalar[a_type]](M * K)
-    var b_host_ptr = alloc[Scalar[a_type]](N * K)
-    var gamma_host_ptr = alloc[Scalar[a_type]](N_NORMED)
-    var y_ref_host_ptr = alloc[Scalar[c_type]](M * N)
-    var normed_ref_ptr = alloc[Scalar[c_type]](M * N_NORMED)
-    var unnormed_ref_ptr = alloc[Scalar[c_type]](M * N_UNNORMED)
-    var normed_ours_ptr = alloc[Scalar[c_type]](M * N_NORMED)
-    var unnormed_ours_ptr = alloc[Scalar[c_type]](M * N_UNNORMED)
+    var a_host_ptr = List(length=M * K, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=N * K, fill=Scalar[a_type](0))
+    var gamma_host_ptr = List(length=N_NORMED, fill=Scalar[a_type](0))
+    var y_ref_host_ptr = List(length=M * N, fill=Scalar[c_type](0))
+    var normed_ref_ptr = List(length=M * N_NORMED, fill=Scalar[c_type](0))
+    var unnormed_ref_ptr = List(length=M * N_UNNORMED, fill=Scalar[c_type](0))
+    var normed_ours_ptr = List(length=M * N_NORMED, fill=Scalar[c_type](0))
+    var unnormed_ours_ptr = List(length=M * N_UNNORMED, fill=Scalar[c_type](0))
 
-    rand(a_host_ptr, M * K)
-    rand(b_host_ptr, N * K)
+    rand(a_host_ptr)
+    rand(b_host_ptr)
     for i in range(N_NORMED):
         gamma_host_ptr[i] = (
             Float64(0.75) + Float64(i) / Float64(N_NORMED) * Float64(0.5)
@@ -158,45 +158,49 @@ def test_gemv_partial_norm[
     ctx.synchronize()
 
     _host_reference[c_type, a_type](
-        y_ref_host_ptr,
-        gamma_host_ptr,
-        normed_ref_ptr,
-        unnormed_ref_ptr,
+        y_ref_host_ptr.unsafe_ptr(),
+        gamma_host_ptr.unsafe_ptr(),
+        normed_ref_ptr.unsafe_ptr(),
+        unnormed_ref_ptr.unsafe_ptr(),
         N,
         N_NORMED,
         eps,
     )
 
     assert_almost_equal(
-        normed_ours_ptr, normed_ref_ptr, M * N_NORMED, atol=5e-2, rtol=5e-2
+        normed_ours_ptr.unsafe_ptr(),
+        normed_ref_ptr.unsafe_ptr(),
+        M * N_NORMED,
+        atol=5e-2,
+        rtol=5e-2,
     )
     # The unfused path does not populate `unnormed_output`: the
     # unnormed tail is a view into the matmul scratch. Only check
     # this output for the fused path.
     comptime if fused:
         assert_almost_equal(
-            unnormed_ours_ptr,
-            unnormed_ref_ptr,
+            unnormed_ours_ptr.unsafe_ptr(),
+            unnormed_ref_ptr.unsafe_ptr(),
             M * N_UNNORMED,
             atol=1e-2,
             rtol=1e-2,
         )
     print("\n=== TEST PASSED ===\n")
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    gamma_host_ptr.free()
-    y_ref_host_ptr.free()
-    normed_ref_ptr.free()
-    unnormed_ref_ptr.free()
-    normed_ours_ptr.free()
-    unnormed_ours_ptr.free()
     _ = a_dev^
     _ = b_dev^
     _ = gamma_dev^
     _ = y_ref_dev^
     _ = normed_dev^
     _ = unnormed_dev^
+    _ = unnormed_ours_ptr^
+    _ = normed_ours_ptr^
+    _ = unnormed_ref_ptr^
+    _ = normed_ref_ptr^
+    _ = y_ref_host_ptr^
+    _ = gamma_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

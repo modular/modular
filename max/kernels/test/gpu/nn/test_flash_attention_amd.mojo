@@ -102,12 +102,12 @@ def test[
     )
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](o_size)
+    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
+    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
+    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
+    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
+    var output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
+    var flash_output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
 
     # Q, K, V are randomly initialized.
     if use_adversarial_softmax_input:
@@ -154,11 +154,11 @@ def test[
                     ](i * depth + j)
 
     else:
-        rand[qkv_type](q_ptr, q_size)
-        rand[qkv_type](k_ptr, k_size)
-        rand[qkv_type](v_ptr, v_size)
+        rand(q_ptr)
+        rand(k_ptr)
+        rand(v_ptr)
 
-    memset_zero(mask_ptr, mask_size)
+    # mask_ptr is already zero-initialized by List constructor.
     # Construct buffers.
     comptime layout_4d = Layout.row_major[4]()
     var q = LayoutTensor[qkv_type, layout_4d](
@@ -378,13 +378,12 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
+    _ = flash_output_ptr^
+    _ = output_ptr^
+    _ = mask_ptr^
+    _ = v_ptr^
+    _ = k_ptr^
+    _ = q_ptr^
 
 
 def test_context_encoding[

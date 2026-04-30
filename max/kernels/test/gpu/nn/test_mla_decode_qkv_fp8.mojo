@@ -162,27 +162,27 @@ def test[
     var o_size = batch_size * num_heads * seq_len * v_depth
 
     # Allocate memory: BF16 reference Q and K, then quantize to FP8.
-    var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
-    var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
-    var q_bf16_dequant_ptr = alloc[Scalar[output_type]](q_size)
-    var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
-    var k_bf16_ptr = alloc[Scalar[output_type]](k_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_bf16_ptr = List(length=q_size, fill=Scalar[output_type](0))
+    var q_fp8_ptr = List(length=q_size, fill=Scalar[q_type](0))
+    var q_bf16_dequant_ptr = List(length=q_size, fill=Scalar[output_type](0))
+    var k_fp8_ptr = List(length=k_size, fill=Scalar[kv_type](0))
+    var k_bf16_ptr = List(length=k_size, fill=Scalar[output_type](0))
+    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var flash_output_ptr = List(length=o_size, fill=Scalar[output_type](0))
 
     # Q: create as BF16, quantize to FP8, dequant back for reference
-    randn[output_type](q_bf16_ptr, q_size)
+    randn(q_bf16_ptr)
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
-        q_bf16_ptr, q_fp8_ptr, q_size
+        q_bf16_ptr.unsafe_ptr(), q_fp8_ptr.unsafe_ptr(), q_size
     )
     host_cast_fp8_to_bf16[fp8_t=q_type, bf16_t=output_type](
-        q_fp8_ptr, q_bf16_dequant_ptr, q_size
+        q_fp8_ptr.unsafe_ptr(), q_bf16_dequant_ptr.unsafe_ptr(), q_size
     )
 
     # K: create as FP8, dequant to BF16 for reference
-    randn[kv_type](k_fp8_ptr, k_size)
+    randn(k_fp8_ptr)
     host_cast_fp8_to_bf16[fp8_t=kv_type, bf16_t=output_type](
-        k_fp8_ptr, k_bf16_ptr, k_size
+        k_fp8_ptr.unsafe_ptr(), k_bf16_ptr.unsafe_ptr(), k_size
     )
 
     # ---- Device buffers ----
@@ -402,7 +402,9 @@ def test[
     print("  Reference completed.")
 
     # Copy reference output to host
-    var ref_full_output_ptr = alloc[Scalar[output_type]](ref_full_o_size)
+    var ref_full_output_ptr = List(
+        length=ref_full_o_size, fill=Scalar[output_type](0)
+    )
     ctx.enqueue_copy(ref_full_output_ptr, output_ref_full_device_ptr)
     ctx.synchronize()
 
@@ -423,17 +425,17 @@ def test[
             for h in range(num_heads):
                 for d in range(v_depth):
                     # Reference: [b, s, h, d] with stride depth
-                    var expect = ref_full_output_ptr.load(
+                    var expect = ref_full_output_ptr[
                         d
                         + depth * (h + s * num_heads)
                         + b * depth * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ].cast[DType.float64]()
                     # Kernel output: [b, s, h, d] with stride v_depth
-                    var actual = flash_output_ptr.load(
+                    var actual = flash_output_ptr[
                         d
                         + v_depth * (h + s * num_heads)
                         + b * v_depth * num_heads * seq_len
-                    ).cast[DType.float64]()
+                    ].cast[DType.float64]()
                     if abs((actual - expect)) > 1e-1:
                         if num_mismatches < 10:
                             print(b, h, s, d, actual, expect)
@@ -455,15 +457,14 @@ def test[
     _ = output_device_ptr
     _ = output_ref_device_ptr
     _ = output_ref_full_device_ptr
-
-    q_bf16_ptr.free()
-    q_fp8_ptr.free()
-    q_bf16_dequant_ptr.free()
-    k_fp8_ptr.free()
-    k_bf16_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-    ref_full_output_ptr.free()
+    _ = ref_full_output_ptr^
+    _ = flash_output_ptr^
+    _ = output_ptr^
+    _ = k_bf16_ptr^
+    _ = k_fp8_ptr^
+    _ = q_bf16_dequant_ptr^
+    _ = q_fp8_ptr^
+    _ = q_bf16_ptr^
 
 
 def bench[
@@ -486,15 +487,15 @@ def bench[
     var o_size = batch_size * num_heads * seq_len * v_depth
 
     # Allocate and fill FP8 Q and K
-    var q_bf16_ptr = alloc[Scalar[output_type]](q_size)
-    var q_fp8_ptr = alloc[Scalar[q_type]](q_size)
-    var k_fp8_ptr = alloc[Scalar[kv_type]](k_size)
+    var q_bf16_ptr = List(length=q_size, fill=Scalar[output_type](0))
+    var q_fp8_ptr = List(length=q_size, fill=Scalar[q_type](0))
+    var k_fp8_ptr = List(length=k_size, fill=Scalar[kv_type](0))
 
-    randn[output_type](q_bf16_ptr, q_size)
+    randn(q_bf16_ptr)
     host_quantize_bf16_to_fp8[bf16_t=output_type, fp8_t=q_type](
-        q_bf16_ptr, q_fp8_ptr, q_size
+        q_bf16_ptr.unsafe_ptr(), q_fp8_ptr.unsafe_ptr(), q_size
     )
-    randn[kv_type](k_fp8_ptr, k_size)
+    randn(k_fp8_ptr)
 
     # Device buffers
     var q_fp8_device_ptr = ctx.enqueue_create_buffer[q_type](q_size)
@@ -589,14 +590,12 @@ def bench[
         "us",
     )
 
-    # Cleanup
-    q_bf16_ptr.free()
-    q_fp8_ptr.free()
-    k_fp8_ptr.free()
-
     _ = q_fp8_device_ptr
     _ = k_fp8_device_ptr
     _ = output_device_ptr
+    _ = k_fp8_ptr^
+    _ = q_fp8_ptr^
+    _ = q_bf16_ptr^
 
 
 def test_decoding[

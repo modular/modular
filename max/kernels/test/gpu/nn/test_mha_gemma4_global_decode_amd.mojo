@@ -57,12 +57,12 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     var output_size = q_size
     var mask_size = batch_size * num_heads * seq_len * num_keys
 
-    var q_ptr = alloc[Scalar[dtype]](q_size)
-    var k_ptr = alloc[Scalar[dtype]](kv_size)
-    var v_ptr = alloc[Scalar[dtype]](kv_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var actual_ptr = alloc[Scalar[dtype]](output_size)
-    var expect_ptr = alloc[Scalar[dtype]](output_size)
+    var q_ptr = List(length=q_size, fill=Scalar[dtype](0))
+    var k_ptr = List(length=kv_size, fill=Scalar[dtype](0))
+    var v_ptr = List(length=kv_size, fill=Scalar[dtype](0))
+    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
+    var actual_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var expect_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
     for i in range(seq_len):
         for h in range(num_heads):
@@ -175,8 +175,8 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     for h in range(num_heads):
         for d in range(depth):
             var idx = d + depth * h
-            var actual = actual_ptr.load(idx).cast[DType.float64]()
-            var expect = expect_ptr.load(idx).cast[DType.float64]()
+            var actual = actual_ptr[idx].cast[DType.float64]()
+            var expect = expect_ptr[idx].cast[DType.float64]()
             if not isclose(actual, expect, atol=1e-5, rtol=3e-2):
                 print("MISMATCH:", h, d, actual, expect)
             assert_almost_equal(actual, expect, atol=1e-5, rtol=3e-2)
@@ -187,13 +187,12 @@ def test_gemma4_global_decode(ctx: DeviceContext) raises:
     _ = mask_device_ptr
     _ = actual_device_ptr
     _ = expect_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    actual_ptr.free()
-    expect_ptr.free()
+    _ = expect_ptr^
+    _ = actual_ptr^
+    _ = mask_ptr^
+    _ = v_ptr^
+    _ = k_ptr^
+    _ = q_ptr^
 
 
 def main() raises:

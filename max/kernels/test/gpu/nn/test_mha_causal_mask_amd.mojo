@@ -82,12 +82,12 @@ def test[
     var mask_size = num_heads * seq_len * num_keys
 
     # Allocate memory for all variables.
-    var q_ptr = alloc[Scalar[qkv_type]](q_size)
-    var k_ptr = alloc[Scalar[qkv_type]](k_size)
-    var v_ptr = alloc[Scalar[qkv_type]](v_size)
-    var mask_ptr = alloc[Scalar[mask_type]](mask_size)
-    var output_ptr = alloc[Scalar[output_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[output_type]](o_size)
+    var q_ptr = List(length=q_size, fill=Scalar[qkv_type](0))
+    var k_ptr = List(length=k_size, fill=Scalar[qkv_type](0))
+    var v_ptr = List(length=v_size, fill=Scalar[qkv_type](0))
+    var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
+    var output_ptr = List(length=o_size, fill=Scalar[output_type](0))
+    var flash_output_ptr = List(length=o_size, fill=Scalar[output_type](0))
 
     # Construct mask buffer for causal mask initialization.
     comptime layout_4d = Layout.row_major[4]()
@@ -100,12 +100,12 @@ def test[
 
     # Initialize Q, K, V in bf16, then roundtrip through qkv_type so the
     # naive bf16 reference sees identical values (matters for fp8).
-    var q_bf16_ptr = alloc[BFloat16](q_size)
-    var k_bf16_ptr = alloc[BFloat16](k_size)
-    var v_bf16_ptr = alloc[BFloat16](v_size)
-    rand[DType.bfloat16](q_bf16_ptr, q_size)
-    rand[DType.bfloat16](k_bf16_ptr, k_size)
-    rand[DType.bfloat16](v_bf16_ptr, v_size)
+    var q_bf16_ptr = List(length=q_size, fill=BFloat16(0))
+    var k_bf16_ptr = List(length=k_size, fill=BFloat16(0))
+    var v_bf16_ptr = List(length=v_size, fill=BFloat16(0))
+    rand(q_bf16_ptr)
+    rand(k_bf16_ptr)
+    rand(v_bf16_ptr)
     for i in range(q_size):
         var val = q_bf16_ptr[i].cast[qkv_type]()
         q_ptr[i] = val
@@ -272,12 +272,12 @@ def test[
     for h in range(num_heads):
         for s in range(seq_len):
             for d in range(depth):
-                var expect = output_ptr.load(
+                var expect = output_ptr[d + depth * (h + s * num_heads)].cast[
+                    DType.float64
+                ]()
+                var actual = flash_output_ptr[
                     d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
-                var actual = flash_output_ptr.load(
-                    d + depth * (h + s * num_heads)
-                ).cast[DType.float64]()
+                ].cast[DType.float64]()
                 if not isclose(actual, expect, atol=atol, rtol=rtol):
                     var rerr = abs((actual - expect) / expect)
                     print(h, s, d, actual, expect, rerr)
@@ -288,16 +288,15 @@ def test[
     _ = v_device_ptr
     _ = mask_device_ptr
     _ = output_device_ptr
-
-    q_ptr.free()
-    k_ptr.free()
-    v_ptr.free()
-    mask_ptr.free()
-    output_ptr.free()
-    flash_output_ptr.free()
-    q_bf16_ptr.free()
-    k_bf16_ptr.free()
-    v_bf16_ptr.free()
+    _ = v_bf16_ptr^
+    _ = k_bf16_ptr^
+    _ = q_bf16_ptr^
+    _ = flash_output_ptr^
+    _ = output_ptr^
+    _ = mask_ptr^
+    _ = v_ptr^
+    _ = k_ptr^
+    _ = q_ptr^
 
 
 comptime USE_FP8 = get_defined_bool["USE_FP8", False]()

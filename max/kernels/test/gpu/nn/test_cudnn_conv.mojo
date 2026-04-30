@@ -82,31 +82,43 @@ def test_conv_cudnn[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[input_type]](input_dim_flattened)
-    var filter_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
-    var filter_nchw_host_ptr = alloc[Scalar[filter_type]](filter_dim_flattened)
-    var output_ref_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
-    var output_host_ptr = alloc[Scalar[output_type]](output_dim_flattened)
+    var input_host_ptr = List(
+        length=input_dim_flattened, fill=Scalar[input_type](0)
+    )
+    var filter_host_ptr = List(
+        length=filter_dim_flattened, fill=Scalar[filter_type](0)
+    )
+    var filter_nchw_host_ptr = List(
+        length=filter_dim_flattened, fill=Scalar[filter_type](0)
+    )
+    var output_ref_host_ptr = List(
+        length=output_dim_flattened, fill=Scalar[output_type](0)
+    )
+    var output_host_ptr = List(
+        length=output_dim_flattened, fill=Scalar[output_type](0)
+    )
 
     # Create host TileTensors
     var input_host = TileTensor(
-        Span(ptr=input_host_ptr, length=input_dim_flattened),
+        Span(ptr=input_host_ptr.unsafe_ptr(), length=input_dim_flattened),
         input_tt_layout,
     )
     var filter_host = TileTensor(
-        Span(ptr=filter_host_ptr, length=filter_dim_flattened),
+        Span(ptr=filter_host_ptr.unsafe_ptr(), length=filter_dim_flattened),
         filter_tt_layout,
     )
     var filter_nchw_host = TileTensor(
-        Span(ptr=filter_nchw_host_ptr, length=filter_dim_flattened),
+        Span(
+            ptr=filter_nchw_host_ptr.unsafe_ptr(), length=filter_dim_flattened
+        ),
         filter_nchw_tt_layout,
     )
     var output_ref_host = TileTensor(
-        Span(ptr=output_ref_host_ptr, length=output_dim_flattened),
+        Span(ptr=output_ref_host_ptr.unsafe_ptr(), length=output_dim_flattened),
         output_tt_layout,
     )
     var output_host = TileTensor(
-        Span(ptr=output_host_ptr, length=output_dim_flattened),
+        Span(ptr=output_host_ptr.unsafe_ptr(), length=output_dim_flattened),
         output_tt_layout,
     )
 
@@ -198,19 +210,17 @@ def test_conv_cudnn[
                     )
     print("Succeed")
 
-    # Cleanup host memory
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-    output_ref_host_ptr.free()
-    output_host_ptr.free()
-
     # Cleanup device buffers
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_dev^
     _ = output_ref_dev^
+    _ = output_host_ptr^
+    _ = output_ref_host_ptr^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

@@ -45,7 +45,9 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     comptime type = DType.float32
     comptime rank = 3
     var shape = IndexList[rank](3, 5, 515)
-    var in_host_ptr = alloc[Scalar[type]](shape.flattened_length())
+    var in_host_ptr = List(
+        length=shape.flattened_length(), fill=Scalar[type](0)
+    )
     var in_device_ptr = ctx.enqueue_create_buffer[type](
         shape.flattened_length()
     )
@@ -56,8 +58,12 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     var in_device = LayoutTensor[type, layout_dyn](
         in_device_ptr.unsafe_ptr(), RuntimeLayout[layout_dyn].row_major(shape)
     )
-    var out_host_ptr = alloc[Scalar[type]](shape.flattened_length())
-    var out_ref_ptr = alloc[Scalar[type]](shape.flattened_length())
+    var out_host_ptr = List(
+        length=shape.flattened_length(), fill=Scalar[type](0)
+    )
+    var out_ref_ptr = List(
+        length=shape.flattened_length(), fill=Scalar[type](0)
+    )
     var out_device_ptr = ctx.enqueue_create_buffer[type](
         shape.flattened_length()
     )
@@ -67,7 +73,7 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
     var out_ref = LayoutTensor[type, layout_dyn](
         out_ref_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
-    rand[type](in_host_ptr, shape.flattened_length())
+    rand[type](in_host_ptr)
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
     @parameter
@@ -122,14 +128,13 @@ def test_gpu_softmax(ctx: DeviceContext) raises:
             print("ERROR. Mismatch at flattened idx:", i)
             assert_true(False)
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    out_ref_ptr.free()
-
     _ = in_device
     _ = in_host
     _ = in_device_ptr
     _ = out_device_ptr
+    _ = out_ref_ptr^
+    _ = out_host_ptr^
+    _ = in_host_ptr^
 
 
 def test_gpu_softmax_half[test_type: DType](ctx: DeviceContext) raises:
@@ -315,9 +320,15 @@ def test_gpu_online_softmax[
     comptime num_warps = seqlen // (2 * WN)
     comptime num_threads = num_warps * WARP_SIZE
 
-    var in_host_ptr = alloc[Scalar[type]](shape.flattened_length())
-    var out_host_ptr = alloc[Scalar[type]](shape.flattened_length())
-    var out_ref_ptr = alloc[Scalar[type]](shape.flattened_length())
+    var in_host_ptr = List(
+        length=shape.flattened_length(), fill=Scalar[type](0)
+    )
+    var out_host_ptr = List(
+        length=shape.flattened_length(), fill=Scalar[type](0)
+    )
+    var out_ref_ptr = List(
+        length=shape.flattened_length(), fill=Scalar[type](0)
+    )
 
     comptime layout_dyn = Layout.row_major[rank]()
     var in_host = LayoutTensor[type, layout_dyn](
@@ -341,7 +352,7 @@ def test_gpu_online_softmax[
         out_device_ptr
     )
 
-    rand[type](in_host_ptr, shape.flattened_length())
+    rand[type](in_host_ptr)
 
     ctx.enqueue_copy(in_device_ptr, in_host_ptr)
     comptime kernel = _online_softmax_kernel[
@@ -380,12 +391,11 @@ def test_gpu_online_softmax[
             out_host_ptr[i], out_ref_ptr[i], atol=1e-4, rtol=1e-5
         )
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    out_ref_ptr.free()
-
     _ = in_device_ptr
     _ = out_device_ptr
+    _ = out_ref_ptr^
+    _ = out_host_ptr^
+    _ = in_host_ptr^
 
 
 def test_gpu_logsoftmax(ctx: DeviceContext) raises:
@@ -396,7 +406,9 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
 
     @parameter
     def _test_shape(shape: IndexList[rank]) raises:
-        var in_host_ptr = alloc[Scalar[type]](shape.flattened_length())
+        var in_host_ptr = List(
+            length=shape.flattened_length(), fill=Scalar[type](0)
+        )
         var in_device_ptr = ctx.enqueue_create_buffer[type](
             shape.flattened_length()
         )
@@ -408,15 +420,19 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
             in_device_ptr.unsafe_ptr(),
             RuntimeLayout[layout_dyn].row_major(shape),
         )
-        var out_host_ptr = alloc[Scalar[type]](shape.flattened_length())
-        var out_ref_ptr = alloc[Scalar[type]](shape.flattened_length())
+        var out_host_ptr = List(
+            length=shape.flattened_length(), fill=Scalar[type](0)
+        )
+        var out_ref_ptr = List(
+            length=shape.flattened_length(), fill=Scalar[type](0)
+        )
         var out_device_ptr = ctx.enqueue_create_buffer[type](
             shape.flattened_length()
         )
         var out_ref = LayoutTensor[type, layout_dyn](
             out_ref_ptr, RuntimeLayout[layout_dyn].row_major(shape)
         )
-        rand[type](in_host_ptr, shape.flattened_length())
+        rand[type](in_host_ptr)
         ctx.enqueue_copy(in_device_ptr, in_host_ptr)
 
         @parameter
@@ -474,14 +490,13 @@ def test_gpu_logsoftmax(ctx: DeviceContext) raises:
                 )
                 assert_true(False)
 
-        in_host_ptr.free()
-        out_host_ptr.free()
-        out_ref_ptr.free()
-
         _ = in_device
         _ = in_host
         _ = in_device_ptr
         _ = out_device_ptr
+        _ = out_ref_ptr^
+        _ = out_host_ptr^
+        _ = in_host_ptr^
 
     # Test multi-thread row processing (row_size=515 > BLOCK_SIZE=128)
     _test_shape(IndexList[rank](3, 5, 515))
@@ -509,9 +524,9 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     var length = shape.flattened_length()
 
     # Input logits.
-    var in_host_ptr = alloc[Scalar[type]](length)
+    var in_host_ptr = List(length=length, fill=Scalar[type](0))
     var in_device = ctx.enqueue_create_buffer[type](length)
-    rand[type](in_host_ptr, length)
+    rand[type](in_host_ptr)
     for i in range(length):
         in_host_ptr[i] *= 10.0
     ctx.enqueue_copy(in_device, in_host_ptr)
@@ -524,11 +539,11 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     var out_tt = TileTensor(out_device, rt_layout)
 
     # Temperature: scalar or per-row array.
-    var temp_host_ptr = alloc[Scalar[type]](batch_size)
+    var temp_host_ptr = List(length=batch_size, fill=Scalar[type](0))
     var temp_device = ctx.enqueue_create_buffer[type](batch_size)
 
     comptime if per_row:
-        rand[type](temp_host_ptr, batch_size)
+        rand[type](temp_host_ptr)
         for i in range(batch_size):
             temp_host_ptr[i] = temp_host_ptr[i] * 1.5 + 0.5
         ctx.enqueue_copy(temp_device, temp_host_ptr)
@@ -548,7 +563,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
 
     # CPU reference: standard softmax on logits / T per row.
     comptime layout_dyn = Layout.row_major[rank]()
-    var scaled_host_ptr = alloc[Scalar[type]](length)
+    var scaled_host_ptr = List(length=length, fill=Scalar[type](0))
     var scaled_host = LayoutTensor[type, layout_dyn](
         scaled_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
@@ -558,7 +573,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     for row in range(batch_size):
         for col in range(vocab_size):
             scaled_host[row, col] = in_host[row, col] / temp_host_ptr[row]
-    var ref_host_ptr = alloc[Scalar[type]](length)
+    var ref_host_ptr = List(length=length, fill=Scalar[type](0))
     var out_ref = LayoutTensor[type, layout_dyn](
         ref_host_ptr, RuntimeLayout[layout_dyn].row_major(shape)
     )
@@ -579,7 +594,7 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
     )
 
     ctx.synchronize()
-    var out_host_ptr = alloc[Scalar[type]](length)
+    var out_host_ptr = List(length=length, fill=Scalar[type](0))
     ctx.enqueue_copy(out_host_ptr, out_device)
 
     for i in range(length):
@@ -594,15 +609,15 @@ def test_gpu_softmax_temperature[per_row: Bool](ctx: DeviceContext) raises:
             )
             assert_true(False)
 
-    in_host_ptr.free()
-    out_host_ptr.free()
-    ref_host_ptr.free()
-    scaled_host_ptr.free()
-    temp_host_ptr.free()
     _ = in_device
     _ = out_device
     _ = temp_device
     _ = scaled_host
+    _ = temp_host_ptr^
+    _ = scaled_host_ptr^
+    _ = ref_host_ptr^
+    _ = out_host_ptr^
+    _ = in_host_ptr^
 
 
 def main() raises:

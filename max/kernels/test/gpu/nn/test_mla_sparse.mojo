@@ -187,7 +187,7 @@ def host_reference[
 
                 # Compute S = Q * K^T * scale
                 var max_s = Float64(min_or_neg_inf[DType.float32]())
-                var s_buf = alloc[Float64](num_keys)
+                var s_buf = List(length=num_keys, fill=Float64(0))
                 for k in range(num_keys):
                     var k_base = b * num_keys * depth + k * depth
                     var dot = Float64(0)
@@ -223,8 +223,7 @@ def host_reference[
                             * k_bf16_ptr[k_base + d].cast[DType.float64]()
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
-
-                s_buf.free()
+                _ = s_buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -296,16 +295,17 @@ def run_test_sparse[
     )
 
     # Allocate KV cache on host.
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
     # Zero-initialize the entire cache.
-    for i in range(block_elems):
-        blocks_host[i] = Scalar[kv_type](0)
-
     # Generate random BF16 data for nope (512 dims) and rope (64 dims).
     # We store the combined BF16 view for reference computation.
     var k_bf16_total = batch_size * num_keys * Q_DEPTH
-    var k_bf16_host = alloc[Scalar[q_type]](k_bf16_total)
-    randn[q_type](k_bf16_host, k_bf16_total, mean=0.0, standard_deviation=0.5)
+    var k_bf16_host = List(length=k_bf16_total, fill=Scalar[q_type](0))
+    randn(
+        k_bf16_host,
+        mean=0.0,
+        standard_deviation=0.5,
+    )
 
     # Fill the KV cache blocks with the sparse layout:
     #   [nope: 512 FP8 bytes] [rope: 64 BF16 = 128 bytes]
@@ -318,9 +318,7 @@ def run_test_sparse[
     # This ensures gather4 TMA loads from non-contiguous physical rows,
     # actually exercising the scatter access pattern.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_keys, PAGE_SIZE)
@@ -349,9 +347,7 @@ def run_test_sparse[
             print()
 
     # Cache lengths (each batch has cache_len tokens cached).
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    for i in range(batch_size):
-        cache_lengths_host[i] = UInt32(cache_len)
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(cache_len))
 
     # Fill KV cache with sparse layout data.
     # For each batch b, token t: write FP8 nope then BF16 rope.
@@ -381,15 +377,15 @@ def run_test_sparse[
             # Write rope (last 64 dims): BF16, stored as raw bytes.
             # Offset in FP8 slots: V_DEPTH (512). Each BF16 = 2 FP8 slots.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
 
     # Also create a BF16 version of K for reference (cast nope FP8 back).
     # The reference needs the exact FP8-rounded values for nope.
-    var k_ref_host = alloc[Scalar[q_type]](k_bf16_total)
+    var k_ref_host = List(length=k_bf16_total, fill=Scalar[q_type](0))
     for bi in range(batch_size):
         for t in range(num_keys):
             var page_idx = t // PAGE_SIZE
@@ -405,9 +401,9 @@ def run_test_sparse[
                 k_ref_host[k_base + d] = blocks_host[base + d].cast[q_type]()
 
             # Read back rope as BF16 (exact, no conversion loss).
-            var rope_ptr_bf16 = (blocks_host + base + V_DEPTH).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + base + V_DEPTH
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 k_ref_host[k_base + V_DEPTH + d] = rope_ptr_bf16[d]
 
@@ -415,15 +411,15 @@ def run_test_sparse[
     # Q tensor: [batch_size * q_max_seq_len, num_heads, Q_DEPTH] (ragged)
     # -----------------------------------------------------------------------
     var q_size = batch_size * q_max_seq_len * num_heads * Q_DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Select topk tokens per batch (sparse subset of all num_keys tokens).
     # Use a deterministic permutation seeded by batch index to pick which
     # tokens are included.  selected_tokens[bi][i] = logical token index.
     # -----------------------------------------------------------------------
-    var selected_tokens = alloc[Int](batch_size * topk)
+    var selected_tokens = List(length=batch_size * topk, fill=Int(0))
     for bi in range(batch_size):
         # Build a permuted list of all token indices and take first topk.
         # Permutation: (t * mult + 1) % num_keys  (bijection when coprime).
@@ -437,7 +433,7 @@ def run_test_sparse[
     # Contains the FP8-rounded K values for only the selected tokens.
     # -----------------------------------------------------------------------
     var k_sparse_ref_size = batch_size * topk * Q_DEPTH
-    var k_sparse_ref = alloc[Scalar[q_type]](k_sparse_ref_size)
+    var k_sparse_ref = List(length=k_sparse_ref_size, fill=Scalar[q_type](0))
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens[bi * topk + i]
@@ -450,11 +446,11 @@ def run_test_sparse[
     # Reference output on host (using only the selected topk tokens)
     # -----------------------------------------------------------------------
     var out_size = batch_size * q_max_seq_len * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_size)
+    var ref_host = List(length=out_size, fill=Scalar[q_type](0))
     host_reference[q_type](
-        q_host,
-        k_sparse_ref,
-        ref_host,
+        q_host.unsafe_ptr(),
+        k_sparse_ref.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
         batch_size,
         num_heads,
         topk,
@@ -543,7 +539,7 @@ def run_test_sparse[
     # the TMA row as block * kv_stride + offset.
     # -----------------------------------------------------------------------
     var total_indices = batch_size * topk
-    var h_indices = alloc[Int32](total_indices)
+    var h_indices = List(length=total_indices, fill=Int32(0))
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens[bi * topk + i]
@@ -579,7 +575,7 @@ def run_test_sparse[
 
     # Row offsets for ragged: [0, seq_len, 2*seq_len, ..., batch_size*seq_len]
     # Each batch has q_max_seq_len query tokens.
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i * q_max_seq_len)
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -651,7 +647,7 @@ def run_test_sparse[
     # -----------------------------------------------------------------------
     # Verify output
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -702,19 +698,18 @@ def run_test_sparse[
     _ = out_device
     _ = d_indices_device
     _ = row_offsets_device
-
-    blocks_host.free()
-    k_bf16_host.free()
-    k_ref_host.free()
-    k_sparse_ref.free()
-    selected_tokens.free()
-    q_host.free()
-    ref_host.free()
-    out_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    h_indices.free()
-    row_offsets_host.free()
+    _ = row_offsets_host^
+    _ = h_indices^
+    _ = cache_lengths_host^
+    _ = lookup_table_host^
+    _ = out_host^
+    _ = ref_host^
+    _ = q_host^
+    _ = selected_tokens^
+    _ = k_sparse_ref^
+    _ = k_ref_host^
+    _ = k_bf16_host^
+    _ = blocks_host^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -751,7 +746,7 @@ def host_reference_blockscale[
       O[d] = sum_k P[k] * V[b,k,d]
     """
     # Compute the offset into the K buffer for each batch entry.
-    var k_offsets = alloc[Int](batch_size)
+    var k_offsets = List(length=batch_size, fill=Int(0))
     var running = 0
     for b in range(batch_size):
         k_offsets[b] = running
@@ -770,7 +765,7 @@ def host_reference_blockscale[
 
                 # Compute S = Q * K^T * scale
                 var max_s = Float64(min_or_neg_inf[DType.float32]())
-                var s_buf = alloc[Float64](num_keys)
+                var s_buf = List(length=num_keys, fill=Float64(0))
                 for k in range(num_keys):
                     var k_base = k_base_offset + k * depth
                     var dot = Float64(0)
@@ -806,10 +801,8 @@ def host_reference_blockscale[
                             * k_bf16_ptr[k_base + d].cast[DType.float64]()
                         )
                     output_ptr[o_base + d] = acc.cast[q_type]()
-
-                s_buf.free()
-
-    k_offsets.free()
+                _ = s_buf^
+    _ = k_offsets^
 
 
 def _palette_scale(index: Int) -> Float32:
@@ -916,19 +909,14 @@ def run_test_sparse_blockscale[
     # -----------------------------------------------------------------------
     # Allocate KV cache blocks and zero-initialize
     # -----------------------------------------------------------------------
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
-    for i in range(block_elems):
-        blocks_host[i] = Scalar[kv_type](0)
-
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
     # -----------------------------------------------------------------------
     # Build lookup table with SHUFFLED page mapping.
     # Deterministic permutation: physical = (logical * 3 + 1) % num_pages.
     # This ensures gather4 TMA loads from non-contiguous physical rows.
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for bi in range(batch_size):
@@ -957,7 +945,7 @@ def run_test_sparse_blockscale[
             print()
 
     # Cache lengths
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -976,10 +964,8 @@ def run_test_sparse_blockscale[
         * kv_params.num_heads
         * scales_per_token
     )
-    var scales_host = alloc[Scalar[DType.float32]](scales_elems)
     # Initialize all scales to 1.0 (neutral)
-    for i in range(scales_elems):
-        scales_host[i] = Scalar[DType.float32](1.0)
+    var scales_host = List(length=scales_elems, fill=Scalar[DType.float32](1.0))
 
     # Page stride for scales: kv_dim2 * NUM_LAYERS * PAGE_SIZE * KV_NUM_HEADS * scales_per_token
     var scale_page_stride = (
@@ -1009,12 +995,16 @@ def run_test_sparse_blockscale[
     for bi in range(batch_size):
         total_k_elems += num_keys_list[bi] * Q_DEPTH
 
-    var k_bf16_host = alloc[Scalar[q_type]](total_k_elems)
-    randn[q_type](k_bf16_host, total_k_elems, mean=0.0, standard_deviation=0.5)
+    var k_bf16_host = List(length=total_k_elems, fill=Scalar[q_type](0))
+    randn(
+        k_bf16_host,
+        mean=0.0,
+        standard_deviation=0.5,
+    )
 
     # Fill KV cache blocks and scales with non-uniform values.
     # Also build the reference K buffer with block-scale-corrected values.
-    var k_ref_host = alloc[Scalar[q_type]](total_k_elems)
+    var k_ref_host = List(length=total_k_elems, fill=Scalar[q_type](0))
 
     var k_offset = 0
     for bi in range(batch_size):
@@ -1054,9 +1044,9 @@ def run_test_sparse_blockscale[
 
             # Write rope (last 64 dims): BF16, stored as raw bytes.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 # Rope is BF16, no scaling needed for reference.
@@ -1089,13 +1079,13 @@ def run_test_sparse_blockscale[
     # Q tensor: [batch_size, num_heads, Q_DEPTH]
     # -----------------------------------------------------------------------
     var q_size = batch_size * num_heads * Q_DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Select topk tokens per batch and build sparse reference K buffer.
     # -----------------------------------------------------------------------
-    var selected_tokens_bs = alloc[Int](batch_size * topk)
+    var selected_tokens_bs = List(length=batch_size * topk, fill=Int(0))
     for bi in range(batch_size):
         var nk = num_keys_list[bi]
         var mult = _coprime_multiplier(nk)
@@ -1104,7 +1094,7 @@ def run_test_sparse_blockscale[
 
     # Build sparse reference K: [batch_size * topk * Q_DEPTH] (flat per-batch).
     var k_sparse_ref_size = batch_size * topk * Q_DEPTH
-    var k_sparse_ref = alloc[Scalar[q_type]](k_sparse_ref_size)
+    var k_sparse_ref = List(length=k_sparse_ref_size, fill=Scalar[q_type](0))
     var k_offset_src = 0
     for bi in range(batch_size):
         var nk = num_keys_list[bi]
@@ -1125,11 +1115,11 @@ def run_test_sparse_blockscale[
     # Reference output on host (using only the selected topk tokens)
     # -----------------------------------------------------------------------
     var out_size = batch_size * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_size)
+    var ref_host = List(length=out_size, fill=Scalar[q_type](0))
     host_reference_blockscale[q_type](
-        q_host,
-        k_sparse_ref,
-        ref_host,
+        q_host.unsafe_ptr(),
+        k_sparse_ref.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
         batch_size,
         num_heads,
         sparse_num_keys_list,
@@ -1246,7 +1236,7 @@ def run_test_sparse_blockscale[
     # the TMA row as block * kv_stride + offset.
     # -----------------------------------------------------------------------
     var total_indices = batch_size * topk
-    var h_indices_bs = alloc[Int32](total_indices)
+    var h_indices_bs = List(length=total_indices, fill=Int32(0))
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens_bs[bi * topk + i]
@@ -1280,7 +1270,7 @@ def run_test_sparse_blockscale[
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -1352,7 +1342,7 @@ def run_test_sparse_blockscale[
     # -----------------------------------------------------------------------
     # Verify output
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -1398,20 +1388,19 @@ def run_test_sparse_blockscale[
     _ = out_device
     _ = d_indices_device
     _ = row_offsets_device
-
-    blocks_host.free()
-    k_bf16_host.free()
-    k_ref_host.free()
-    k_sparse_ref.free()
-    selected_tokens_bs.free()
-    q_host.free()
-    ref_host.free()
-    out_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    row_offsets_host.free()
-    scales_host.free()
-    h_indices_bs.free()
+    _ = h_indices_bs^
+    _ = scales_host^
+    _ = row_offsets_host^
+    _ = cache_lengths_host^
+    _ = lookup_table_host^
+    _ = out_host^
+    _ = ref_host^
+    _ = q_host^
+    _ = selected_tokens_bs^
+    _ = k_sparse_ref^
+    _ = k_ref_host^
+    _ = k_bf16_host^
+    _ = blocks_host^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1507,17 +1496,12 @@ def run_test_sparse_variable_topk[
     # -----------------------------------------------------------------------
     # Allocate KV cache blocks and zero-initialize
     # -----------------------------------------------------------------------
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
-    for i in range(block_elems):
-        blocks_host[i] = Scalar[kv_type](0)
-
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
     # -----------------------------------------------------------------------
     # Build lookup table with SHUFFLED page mapping.
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for bi in range(batch_size):
@@ -1544,7 +1528,7 @@ def run_test_sparse_variable_topk[
             print()
 
     # Cache lengths
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -1564,11 +1548,15 @@ def run_test_sparse_variable_topk[
     for bi in range(batch_size):
         total_k_elems += num_keys_list[bi] * Q_DEPTH
 
-    var k_bf16_host = alloc[Scalar[q_type]](total_k_elems)
-    randn[q_type](k_bf16_host, total_k_elems, mean=0.0, standard_deviation=0.5)
+    var k_bf16_host = List(length=total_k_elems, fill=Scalar[q_type](0))
+    randn(
+        k_bf16_host,
+        mean=0.0,
+        standard_deviation=0.5,
+    )
 
     # Build reference K with FP8-rounded nope values.
-    var k_ref_host = alloc[Scalar[q_type]](total_k_elems)
+    var k_ref_host = List(length=total_k_elems, fill=Scalar[q_type](0))
 
     var k_offset = 0
     for bi in range(batch_size):
@@ -1592,9 +1580,9 @@ def run_test_sparse_variable_topk[
 
             # Write rope (last 64 dims): BF16.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 k_ref_host[k_base + V_DEPTH + d] = k_bf16_host[
@@ -1607,8 +1595,8 @@ def run_test_sparse_variable_topk[
     # Q tensor: [batch_size, num_heads, Q_DEPTH]
     # -----------------------------------------------------------------------
     var q_size = batch_size * num_heads * Q_DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Select variable topk tokens per batch and build sparse reference.
@@ -1616,18 +1604,17 @@ def run_test_sparse_variable_topk[
     # each batch's actual topk.
     # -----------------------------------------------------------------------
     var total_indices = batch_size * max_topk
-    var h_indices = alloc[Int32](total_indices)
+    var h_indices = List(length=total_indices, fill=Int32(0))
     # Zero-initialize (padding).
-    for i in range(total_indices):
-        h_indices[i] = Int32(0)
-
     # Per-batch selected tokens (variable count).
     # We also need sparse reference K for the reference computation.
     # Total sparse ref elements: sum of topk_per_batch[bi] * Q_DEPTH.
     var total_sparse_ref_elems = 0
     for bi in range(batch_size):
         total_sparse_ref_elems += topk_per_batch[bi] * Q_DEPTH
-    var k_sparse_ref = alloc[Scalar[q_type]](total_sparse_ref_elems)
+    var k_sparse_ref = List(
+        length=total_sparse_ref_elems, fill=Scalar[q_type](0)
+    )
 
     var sparse_ref_offset = 0
     var k_offset_src = 0
@@ -1662,11 +1649,11 @@ def run_test_sparse_variable_topk[
         sparse_num_keys_list.append(topk_per_batch[bi])
 
     var out_size = batch_size * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_size)
+    var ref_host = List(length=out_size, fill=Scalar[q_type](0))
     host_reference_blockscale[q_type](
-        q_host,
-        k_sparse_ref,
-        ref_host,
+        q_host.unsafe_ptr(),
+        k_sparse_ref.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
         batch_size,
         num_heads,
         sparse_num_keys_list,
@@ -1698,7 +1685,7 @@ def run_test_sparse_variable_topk[
     ctx.enqueue_copy(d_indices_device, h_indices)
 
     # Build topk_lengths on host and copy to device.
-    var topk_lengths_host = alloc[Int32](batch_size)
+    var topk_lengths_host = List(length=batch_size, fill=Int32(0))
     for bi in range(batch_size):
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
@@ -1771,7 +1758,7 @@ def run_test_sparse_variable_topk[
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -1843,7 +1830,7 @@ def run_test_sparse_variable_topk[
     # -----------------------------------------------------------------------
     # Verify output
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -1889,19 +1876,18 @@ def run_test_sparse_variable_topk[
     _ = d_indices_device
     _ = topk_lengths_device
     _ = row_offsets_device
-
-    blocks_host.free()
-    k_bf16_host.free()
-    k_ref_host.free()
-    k_sparse_ref.free()
-    q_host.free()
-    ref_host.free()
-    out_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    row_offsets_host.free()
-    h_indices.free()
-    topk_lengths_host.free()
+    _ = topk_lengths_host^
+    _ = h_indices^
+    _ = row_offsets_host^
+    _ = cache_lengths_host^
+    _ = lookup_table_host^
+    _ = out_host^
+    _ = ref_host^
+    _ = q_host^
+    _ = k_sparse_ref^
+    _ = k_ref_host^
+    _ = k_bf16_host^
+    _ = blocks_host^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -1936,7 +1922,7 @@ def host_reference_with_attn_sink[
 
             # Compute S = Q * K^T * scale
             var max_s = Float64(min_or_neg_inf[DType.float32]())
-            var s_buf = alloc[Float64](num_keys)
+            var s_buf = List(length=num_keys, fill=Float64(0))
             for k in range(num_keys):
                 var k_base = b * num_keys * depth + k * depth
                 var dot = Float64(0)
@@ -1975,8 +1961,7 @@ def host_reference_with_attn_sink[
                         s_buf[k] * k_bf16_ptr[k_base + d].cast[DType.float64]()
                     )
                 output_ptr[o_base + d] = acc.cast[q_type]()
-
-            s_buf.free()
+            _ = s_buf^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2044,21 +2029,20 @@ def run_test_sparse_attn_sink[
         * kv_params.head_size
     )
 
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
-    for i in range(block_elems):
-        blocks_host[i] = Scalar[kv_type](0)
-
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
     var k_bf16_total = batch_size * num_keys * Q_DEPTH
-    var k_bf16_host = alloc[Scalar[q_type]](k_bf16_total)
-    randn[q_type](k_bf16_host, k_bf16_total, mean=0.0, standard_deviation=0.5)
+    var k_bf16_host = List(length=k_bf16_total, fill=Scalar[q_type](0))
+    randn(
+        k_bf16_host,
+        mean=0.0,
+        standard_deviation=0.5,
+    )
 
     var tok_stride = kv_params.head_size
 
     # Build shuffled page mapping.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
     var page_offset = 0
     for bi in range(batch_size):
         var np = ceildiv(num_keys, PAGE_SIZE)
@@ -2094,14 +2078,14 @@ def run_test_sparse_attn_sink[
 
             # Write rope (last 64 dims): BF16, stored as raw bytes.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
 
     # Re-read k_bf16 from the blocks to match FP8 quantization.
-    var k_ref_host = alloc[Scalar[q_type]](k_bf16_total)
+    var k_ref_host = List(length=k_bf16_total, fill=Scalar[q_type](0))
     for bi in range(batch_size):
         for t in range(num_keys):
             var page_idx = t // PAGE_SIZE
@@ -2117,17 +2101,17 @@ def run_test_sparse_attn_sink[
                 k_ref_host[k_base + d] = blocks_host[base + d].cast[q_type]()
 
             # Read back rope as BF16 (exact, no conversion loss).
-            var rope_ptr_bf16 = (blocks_host + base + V_DEPTH).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + base + V_DEPTH
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 k_ref_host[k_base + V_DEPTH + d] = rope_ptr_bf16[d]
 
     # Select topk tokens.
-    var selected_tokens = alloc[Int](batch_size * topk)
+    var selected_tokens = List(length=batch_size * topk, fill=Int(0))
     seed(42)
     for bi in range(batch_size):
-        var all_tokens = alloc[Int](num_keys)
+        var all_tokens = List(length=num_keys, fill=Int(0))
         for t in range(num_keys):
             all_tokens[t] = t
         # Simple Fisher-Yates partial shuffle.
@@ -2138,11 +2122,11 @@ def run_test_sparse_attn_sink[
             all_tokens[i] = all_tokens[j]
             all_tokens[j] = tmp
             selected_tokens[bi * topk + i] = all_tokens[i]
-        all_tokens.free()
+        _ = all_tokens^
 
     # Build sparse reference K from selected tokens only.
     var k_sparse_total = batch_size * topk * Q_DEPTH
-    var k_sparse_ref = alloc[Scalar[q_type]](k_sparse_total)
+    var k_sparse_ref = List(length=k_sparse_total, fill=Scalar[q_type](0))
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens[bi * topk + i]
@@ -2153,7 +2137,7 @@ def run_test_sparse_attn_sink[
 
     # Create per-head attn_sink values (natural log domain).
     # Use moderate values that will noticeably affect the softmax.
-    var attn_sink_host = alloc[Float32](num_heads)
+    var attn_sink_host = List(length=num_heads, fill=Float32(0))
     for h in range(num_heads):
         # Use values between -2.0 and +2.0, varying by head.
         attn_sink_host[h] = Float32(
@@ -2162,17 +2146,17 @@ def run_test_sparse_attn_sink[
 
     # Q
     var q_size = batch_size * num_heads * Q_DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.3)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.3)
 
     # Reference output with attn_sink correction.
     var out_size = batch_size * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_size)
+    var ref_host = List(length=out_size, fill=Scalar[q_type](0))
     host_reference_with_attn_sink[q_type](
-        q_host,
-        k_sparse_ref,
-        ref_host,
-        attn_sink_host,
+        q_host.unsafe_ptr(),
+        k_sparse_ref.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
+        attn_sink_host.unsafe_ptr(),
         batch_size,
         num_heads,
         topk,
@@ -2185,9 +2169,7 @@ def run_test_sparse_attn_sink[
     var blocks_device = ctx.enqueue_create_buffer[kv_type](block_elems)
     ctx.enqueue_copy(blocks_device, blocks_host)
 
-    var cache_lengths_host = alloc[UInt32](batch_size)
-    for i in range(batch_size):
-        cache_lengths_host[i] = UInt32(cache_len)
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(cache_len))
     var cache_lengths_device = ctx.enqueue_create_buffer[DType.uint32](
         batch_size
     )
@@ -2257,7 +2239,7 @@ def run_test_sparse_attn_sink[
 
     # Build gather4 indices.
     var total_indices = batch_size * topk
-    var h_indices = alloc[Int32](total_indices)
+    var h_indices = List(length=total_indices, fill=Int32(0))
     for bi in range(batch_size):
         for i in range(topk):
             var t = selected_tokens[bi * topk + i]
@@ -2283,7 +2265,7 @@ def run_test_sparse_attn_sink[
         row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -2351,7 +2333,7 @@ def run_test_sparse_attn_sink[
     ctx.synchronize()
 
     # Verify output.
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -2392,20 +2374,19 @@ def run_test_sparse_attn_sink[
     _ = d_indices_device
     _ = row_offsets_device
     _ = attn_sink_device
-
-    blocks_host.free()
-    k_bf16_host.free()
-    k_ref_host.free()
-    k_sparse_ref.free()
-    selected_tokens.free()
-    q_host.free()
-    ref_host.free()
-    out_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    h_indices.free()
-    row_offsets_host.free()
-    attn_sink_host.free()
+    _ = attn_sink_host^
+    _ = row_offsets_host^
+    _ = h_indices^
+    _ = cache_lengths_host^
+    _ = lookup_table_host^
+    _ = out_host^
+    _ = ref_host^
+    _ = q_host^
+    _ = selected_tokens^
+    _ = k_sparse_ref^
+    _ = k_ref_host^
+    _ = k_bf16_host^
+    _ = blocks_host^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -2521,15 +2502,10 @@ def run_test_sparse_extra_kv[
         * kv_params.head_size
     )
 
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
-    for i in range(block_elems):
-        blocks_host[i] = Scalar[kv_type](0)
-
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
     # Build shuffled page mapping for original cache.
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
     var page_offset = 0
     for bi in range(batch_size):
         var np_bi = ceildiv(num_keys_list[bi], PAGE_SIZE)
@@ -2542,7 +2518,7 @@ def run_test_sparse_extra_kv[
         page_offset += np_bi
 
     # Cache lengths.
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -2550,11 +2526,15 @@ def run_test_sparse_extra_kv[
     var total_k_elems = 0
     for bi in range(batch_size):
         total_k_elems += num_keys_list[bi] * Q_DEPTH
-    var k_bf16_host = alloc[Scalar[q_type]](total_k_elems)
-    randn[q_type](k_bf16_host, total_k_elems, mean=0.0, standard_deviation=0.5)
+    var k_bf16_host = List(length=total_k_elems, fill=Scalar[q_type](0))
+    randn(
+        k_bf16_host,
+        mean=0.0,
+        standard_deviation=0.5,
+    )
 
     # Build reference K with FP8-rounded nope values.
-    var k_ref_host = alloc[Scalar[q_type]](total_k_elems)
+    var k_ref_host = List(length=total_k_elems, fill=Scalar[q_type](0))
 
     var k_offset = 0
     for bi in range(batch_size):
@@ -2578,9 +2558,9 @@ def run_test_sparse_extra_kv[
 
             # Write rope (last 64 dims): BF16.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 k_ref_host[k_base + V_DEPTH + d] = k_bf16_host[
@@ -2621,15 +2601,15 @@ def run_test_sparse_extra_kv[
         * kv_params.head_size
     )
 
-    var extra_blocks_host = alloc[Scalar[kv_type]](extra_block_elems)
+    var extra_blocks_host = List(
+        length=extra_block_elems, fill=Scalar[kv_type](0)
+    )
     for i in range(extra_block_elems):
         extra_blocks_host[i] = Scalar[kv_type](0)
 
     # Build shuffled page mapping for extra cache.
     var extra_lut_size = batch_size * max_extra_pages_per_batch
-    var extra_lookup_table_host = alloc[UInt32](extra_lut_size)
-    for i in range(extra_lut_size):
-        extra_lookup_table_host[i] = UInt32(0)
+    var extra_lookup_table_host = List(length=extra_lut_size, fill=UInt32(0))
     var extra_page_offset = 0
     for bi in range(batch_size):
         var np_bi = ceildiv(extra_num_keys_list[bi], PAGE_SIZE)
@@ -2642,7 +2622,7 @@ def run_test_sparse_extra_kv[
         extra_page_offset += np_bi
 
     # Extra cache lengths.
-    var extra_cache_lengths_host = alloc[UInt32](batch_size)
+    var extra_cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         extra_cache_lengths_host[i] = UInt32(extra_cache_lengths[i])
 
@@ -2650,15 +2630,18 @@ def run_test_sparse_extra_kv[
     var extra_total_k_elems = 0
     for bi in range(batch_size):
         extra_total_k_elems += extra_num_keys_list[bi] * Q_DEPTH
-    var extra_k_bf16_host = alloc[Scalar[q_type]](extra_total_k_elems)
-    randn[q_type](
+    var extra_k_bf16_host = List(
+        length=extra_total_k_elems, fill=Scalar[q_type](0)
+    )
+    randn(
         extra_k_bf16_host,
-        extra_total_k_elems,
         mean=0.0,
         standard_deviation=0.5,
     )
 
-    var extra_k_ref_host = alloc[Scalar[q_type]](extra_total_k_elems)
+    var extra_k_ref_host = List(
+        length=extra_total_k_elems, fill=Scalar[q_type](0)
+    )
 
     var ek_offset = 0
     for bi in range(batch_size):
@@ -2682,9 +2665,9 @@ def run_test_sparse_extra_kv[
                 extra_k_ref_host[k_base + d] = fp8_val.cast[q_type]()
 
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (extra_blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                extra_blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = extra_k_bf16_host[k_base + V_DEPTH + d]
                 extra_k_ref_host[k_base + V_DEPTH + d] = extra_k_bf16_host[
@@ -2696,8 +2679,8 @@ def run_test_sparse_extra_kv[
     # Q tensor: [batch_size, num_heads, Q_DEPTH]
     # -----------------------------------------------------------------------
     var q_size = batch_size * num_heads * Q_DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Select tokens and build sparse indices for both caches.
@@ -2705,22 +2688,18 @@ def run_test_sparse_extra_kv[
     # extra_d_indices layout: [batch_size * max_extra_topk], padded with zeros.
     # -----------------------------------------------------------------------
     var total_indices = batch_size * max_topk
-    var h_indices = alloc[Int32](total_indices)
-    for i in range(total_indices):
-        h_indices[i] = Int32(0)
-
+    var h_indices = List(length=total_indices, fill=Int32(0))
     var extra_total_indices = batch_size * max_extra_topk
-    var extra_h_indices = alloc[Int32](extra_total_indices)
-    for i in range(extra_total_indices):
-        extra_h_indices[i] = Int32(0)
-
+    var extra_h_indices = List(length=extra_total_indices, fill=Int32(0))
     # Build combined reference K: [batch, topk+extra_topk, Q_DEPTH].
     var total_combined_ref_elems = 0
     for bi in range(batch_size):
         total_combined_ref_elems += (
             topk_per_batch[bi] + extra_topk_per_batch[bi]
         ) * Q_DEPTH
-    var k_combined_ref = alloc[Scalar[q_type]](total_combined_ref_elems)
+    var k_combined_ref = List(
+        length=total_combined_ref_elems, fill=Scalar[q_type](0)
+    )
 
     var combined_ref_offset = 0
     var k_offset_src = 0
@@ -2785,11 +2764,11 @@ def run_test_sparse_extra_kv[
         )
 
     var out_size = batch_size * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_size)
+    var ref_host = List(length=out_size, fill=Scalar[q_type](0))
     host_reference_blockscale[q_type](
-        q_host,
-        k_combined_ref,
-        ref_host,
+        q_host.unsafe_ptr(),
+        k_combined_ref.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
         batch_size,
         num_heads,
         combined_num_keys_list,
@@ -2845,13 +2824,13 @@ def run_test_sparse_extra_kv[
     ctx.enqueue_copy(extra_d_indices_device, extra_h_indices)
 
     # topk_lengths and extra_topk_lengths.
-    var topk_lengths_host = alloc[Int32](batch_size)
+    var topk_lengths_host = List(length=batch_size, fill=Int32(0))
     for bi in range(batch_size):
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
     ctx.enqueue_copy(topk_lengths_device, topk_lengths_host)
 
-    var extra_topk_lengths_host = alloc[Int32](batch_size)
+    var extra_topk_lengths_host = List(length=batch_size, fill=Int32(0))
     for bi in range(batch_size):
         extra_topk_lengths_host[bi] = Int32(extra_topk_per_batch[bi])
     var extra_topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](
@@ -2972,7 +2951,7 @@ def run_test_sparse_extra_kv[
         row_major((Idx(batch_size), Idx[num_heads](), Idx[V_DEPTH]())),
     )
 
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -3050,7 +3029,7 @@ def run_test_sparse_extra_kv[
     # -----------------------------------------------------------------------
     # Verify output
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -3100,26 +3079,25 @@ def run_test_sparse_extra_kv[
     _ = topk_lengths_device
     _ = extra_topk_lengths_device
     _ = row_offsets_device
-
-    blocks_host.free()
-    k_bf16_host.free()
-    k_ref_host.free()
-    extra_blocks_host.free()
-    extra_k_bf16_host.free()
-    extra_k_ref_host.free()
-    k_combined_ref.free()
-    q_host.free()
-    ref_host.free()
-    out_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    extra_lookup_table_host.free()
-    extra_cache_lengths_host.free()
-    h_indices.free()
-    extra_h_indices.free()
-    topk_lengths_host.free()
-    extra_topk_lengths_host.free()
-    row_offsets_host.free()
+    _ = row_offsets_host^
+    _ = extra_topk_lengths_host^
+    _ = topk_lengths_host^
+    _ = extra_h_indices^
+    _ = h_indices^
+    _ = extra_cache_lengths_host^
+    _ = extra_lookup_table_host^
+    _ = cache_lengths_host^
+    _ = lookup_table_host^
+    _ = out_host^
+    _ = ref_host^
+    _ = q_host^
+    _ = k_combined_ref^
+    _ = extra_k_ref_host^
+    _ = extra_k_bf16_host^
+    _ = extra_blocks_host^
+    _ = k_ref_host^
+    _ = k_bf16_host^
+    _ = blocks_host^
 
 
 # ===-----------------------------------------------------------------------===#
@@ -3236,17 +3214,12 @@ def run_test_sparse_topk_clamping[
     # -----------------------------------------------------------------------
     # Allocate KV cache blocks and zero-initialize
     # -----------------------------------------------------------------------
-    var blocks_host = alloc[Scalar[kv_type]](block_elems)
-    for i in range(block_elems):
-        blocks_host[i] = Scalar[kv_type](0)
-
+    var blocks_host = List(length=block_elems, fill=Scalar[kv_type](0))
     # -----------------------------------------------------------------------
     # Build lookup table with SHUFFLED page mapping.
     # -----------------------------------------------------------------------
     var lut_size = batch_size * max_pages_per_batch
-    var lookup_table_host = alloc[UInt32](lut_size)
-    for i in range(lut_size):
-        lookup_table_host[i] = UInt32(0)
+    var lookup_table_host = List(length=lut_size, fill=UInt32(0))
 
     var page_offset = 0
     for bi in range(batch_size):
@@ -3273,7 +3246,7 @@ def run_test_sparse_topk_clamping[
             print()
 
     # Cache lengths
-    var cache_lengths_host = alloc[UInt32](batch_size)
+    var cache_lengths_host = List(length=batch_size, fill=UInt32(0))
     for i in range(batch_size):
         cache_lengths_host[i] = UInt32(cache_lengths[i])
 
@@ -3293,11 +3266,15 @@ def run_test_sparse_topk_clamping[
     for bi in range(batch_size):
         total_k_elems += num_keys_list[bi] * Q_DEPTH
 
-    var k_bf16_host = alloc[Scalar[q_type]](total_k_elems)
-    randn[q_type](k_bf16_host, total_k_elems, mean=0.0, standard_deviation=0.5)
+    var k_bf16_host = List(length=total_k_elems, fill=Scalar[q_type](0))
+    randn(
+        k_bf16_host,
+        mean=0.0,
+        standard_deviation=0.5,
+    )
 
     # Build reference K with FP8-rounded nope values.
-    var k_ref_host = alloc[Scalar[q_type]](total_k_elems)
+    var k_ref_host = List(length=total_k_elems, fill=Scalar[q_type](0))
 
     var k_offset = 0
     for bi in range(batch_size):
@@ -3321,9 +3298,9 @@ def run_test_sparse_topk_clamping[
 
             # Write rope (last 64 dims): BF16.
             var rope_base_fp8 = base + V_DEPTH
-            var rope_ptr_bf16 = (blocks_host + rope_base_fp8).bitcast[
-                Scalar[q_type]
-            ]()
+            var rope_ptr_bf16 = (
+                blocks_host.unsafe_ptr() + rope_base_fp8
+            ).bitcast[Scalar[q_type]]()
             for d in range(ROPE_DEPTH):
                 rope_ptr_bf16[d] = k_bf16_host[k_base + V_DEPTH + d]
                 k_ref_host[k_base + V_DEPTH + d] = k_bf16_host[
@@ -3336,8 +3313,8 @@ def run_test_sparse_topk_clamping[
     # Q tensor: [batch_size, num_heads, Q_DEPTH]
     # -----------------------------------------------------------------------
     var q_size = batch_size * num_heads * Q_DEPTH
-    var q_host = alloc[Scalar[q_type]](q_size)
-    randn[q_type](q_host, q_size, mean=0.0, standard_deviation=0.5)
+    var q_host = List(length=q_size, fill=Scalar[q_type](0))
+    randn(q_host, mean=0.0, standard_deviation=0.5)
 
     # -----------------------------------------------------------------------
     # Select tokens per batch for d_indices.
@@ -3345,17 +3322,17 @@ def run_test_sparse_topk_clamping[
     # (garbage) to verify the kernel never reads beyond the clamped topk.
     # -----------------------------------------------------------------------
     var total_indices = batch_size * max_topk
-    var h_indices = alloc[Int32](total_indices)
     # Fill with -1 (invalid sentinel) to ensure kernel does NOT read past
     # the clamped topk. If it does, the gather will hit an invalid row.
-    for i in range(total_indices):
-        h_indices[i] = Int32(-1)
+    var h_indices = List(length=total_indices, fill=Int32(-1))
 
     # Build sparse reference K for the EFFECTIVE (clamped) topk.
     var total_sparse_ref_elems = 0
     for bi in range(batch_size):
         total_sparse_ref_elems += effective_topk_list[bi] * Q_DEPTH
-    var k_sparse_ref = alloc[Scalar[q_type]](total_sparse_ref_elems)
+    var k_sparse_ref = List(
+        length=total_sparse_ref_elems, fill=Scalar[q_type](0)
+    )
 
     var sparse_ref_offset = 0
     var k_offset_src = 0
@@ -3394,11 +3371,11 @@ def run_test_sparse_topk_clamping[
         sparse_num_keys_list.append(effective_topk_list[bi])
 
     var out_size = batch_size * num_heads * V_DEPTH
-    var ref_host = alloc[Scalar[q_type]](out_size)
+    var ref_host = List(length=out_size, fill=Scalar[q_type](0))
     host_reference_blockscale[q_type](
-        q_host,
-        k_sparse_ref,
-        ref_host,
+        q_host.unsafe_ptr(),
+        k_sparse_ref.unsafe_ptr(),
+        ref_host.unsafe_ptr(),
         batch_size,
         num_heads,
         sparse_num_keys_list,
@@ -3431,7 +3408,7 @@ def run_test_sparse_topk_clamping[
 
     # Build topk_lengths on host and copy to device.
     # These are the UNCLAMPED topk values. The kernel must clamp them.
-    var topk_lengths_host = alloc[Int32](batch_size)
+    var topk_lengths_host = List(length=batch_size, fill=Int32(0))
     for bi in range(batch_size):
         topk_lengths_host[bi] = Int32(topk_per_batch[bi])
     var topk_lengths_device = ctx.enqueue_create_buffer[DType.int32](batch_size)
@@ -3504,7 +3481,7 @@ def run_test_sparse_topk_clamping[
     )
 
     # Row offsets for ragged: [0, 1, 2, ..., batch_size]
-    var row_offsets_host = alloc[UInt32](batch_size + 1)
+    var row_offsets_host = List(length=batch_size + 1, fill=UInt32(0))
     for i in range(batch_size + 1):
         row_offsets_host[i] = UInt32(i)
     var row_offsets_device = ctx.enqueue_create_buffer[DType.uint32](
@@ -3576,7 +3553,7 @@ def run_test_sparse_topk_clamping[
     # -----------------------------------------------------------------------
     # Verify output
     # -----------------------------------------------------------------------
-    var out_host = alloc[Scalar[q_type]](out_size)
+    var out_host = List(length=out_size, fill=Scalar[q_type](0))
     ctx.enqueue_copy(out_host, out_device)
     ctx.synchronize()
 
@@ -3622,19 +3599,18 @@ def run_test_sparse_topk_clamping[
     _ = d_indices_device
     _ = topk_lengths_device
     _ = row_offsets_device
-
-    blocks_host.free()
-    k_bf16_host.free()
-    k_ref_host.free()
-    k_sparse_ref.free()
-    q_host.free()
-    ref_host.free()
-    out_host.free()
-    lookup_table_host.free()
-    cache_lengths_host.free()
-    row_offsets_host.free()
-    h_indices.free()
-    topk_lengths_host.free()
+    _ = topk_lengths_host^
+    _ = h_indices^
+    _ = row_offsets_host^
+    _ = cache_lengths_host^
+    _ = lookup_table_host^
+    _ = out_host^
+    _ = ref_host^
+    _ = q_host^
+    _ = k_sparse_ref^
+    _ = k_ref_host^
+    _ = k_bf16_host^
+    _ = blocks_host^
 
 
 def main() raises:

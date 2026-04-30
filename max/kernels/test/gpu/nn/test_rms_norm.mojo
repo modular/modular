@@ -48,11 +48,11 @@ def run_rms_norm_gpu[
     var cols = shape[rank - 1]
     var rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var res = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
 
-    rand[dtype](data_h, rows * cols)
+    rand[dtype](data_h)
 
     for i in range(cols):
         gamma_h[i] = (Float64(i + cols) / Float64(cols)).cast[dtype]()
@@ -96,7 +96,7 @@ def run_rms_norm_gpu[
 
     for r in range(rows):
         var vec = TileTensor(
-            data_h + r * cols,
+            data_h.unsafe_ptr() + r * cols,
             row_major(Idx(cols)),
         )
         var rms_ref = compute_rms(vec, cols, epsilon)
@@ -107,10 +107,9 @@ def run_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
+    _ = gamma_h^
+    _ = res^
+    _ = data_h^
 
 
 def main() raises:
