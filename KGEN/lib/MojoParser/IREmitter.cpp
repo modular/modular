@@ -1797,6 +1797,7 @@ ASTType IREmitter::emitType(ASTExprAnd<PValue> value, bool allowUnbound) {
                    [](TypedAttr attr) { return isa<UnboundAttr>(attr); })) {
     emitError(value.expr->getLoc())
         << type << " is not concrete, use '[]' to bind missing parameters";
+    return {};
   }
 
   // Reject generator types (e.g. comptime aliases with unbound parameters)
