@@ -197,13 +197,18 @@ def bench_grouped_matmul[
     var b_size = num_experts * N * packed_K
 
     # Host allocations
-    var a_offsets_host_ptr = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var a_scale_offsets_ptr = alloc[Scalar[DType.uint32]](num_active_experts)
-    var expert_ids_host_ptr = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host_ptr = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var a_scale_offsets_ptr = List(
+        length=num_active_experts, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host_ptr = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
 
     # Setup offsets and expert ids
     a_scale_dim0 = 0
-    a_offsets_host_ptr[0] = 0
     for i in range(num_active_experts):
         var num_tokens = num_tokens_by_expert[i]
         a_scale_offsets_ptr[i] = UInt32(
@@ -367,7 +372,9 @@ def bench_grouped_matmul[
         var expert_scales_dev_buffer = ctx.enqueue_create_buffer[DType.float32](
             num_experts
         )
-        var expert_scales_host_ptr = alloc[Scalar[DType.float32]](num_experts)
+        var expert_scales_host_ptr = List(
+            length=num_experts, fill=Scalar[DType.float32](0)
+        )
         for i in range(num_experts):
             expert_scales_host_ptr[i] = 1.0 + Float32(i + 1) / Float32(
                 num_experts
@@ -457,7 +464,7 @@ def bench_grouped_matmul[
         _ = b_scales_dev_buffer^
         _ = a_scale_offsets_dev_buffer^
         _ = expert_scales_dev_buffer^
-        expert_scales_host_ptr.free()
+        _ = expert_scales_host_ptr^
 
     elif in_type == DType.float8_e4m3fn:
         comptime assert (
@@ -641,17 +648,15 @@ def bench_grouped_matmul[
             ],
         )
 
-    # Cleanup host pointers
-    a_offsets_host_ptr.free()
-    a_scale_offsets_ptr.free()
-    expert_ids_host_ptr.free()
-
     # Consume device buffers
     _ = a_dev_buffer^
     _ = b_dev_buffer^
     _ = c_dev_buffer^
     _ = a_offsets_dev_buffer^
     _ = expert_ids_dev_buffer^
+    _ = expert_ids_host_ptr^
+    _ = a_scale_offsets_ptr^
+    _ = a_offsets_host_ptr^
 
 
 def create_grouped_matmul_bench[

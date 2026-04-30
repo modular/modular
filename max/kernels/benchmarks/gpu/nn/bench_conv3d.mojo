@@ -176,11 +176,11 @@ def bench_conv3d[
     )
 
     # Host buffers.
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_qrscf_host = alloc[Scalar[dtype]](filter_size)
-    var filter_fcqrs_host = alloc[Scalar[dtype]](filter_size)
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_qrscf_host, filter_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_qrscf_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_fcqrs_host = List(length=filter_size, fill=Scalar[dtype](0))
+    rand[dtype](input_host)
+    rand[dtype](filter_qrscf_host)
 
     # QRSCF [Q,R,S,C,F] -> FCQRS [F,C,Q,R,S] for cuDNN.
     for f in range(out_channels):
@@ -493,8 +493,8 @@ def bench_conv3d[
             ctx,
         )
         ctx.synchronize()
-        var output_host = alloc[Scalar[dtype]](output_size)
-        var output_ref_host = alloc[Scalar[dtype]](output_size)
+        var output_host = List(length=output_size, fill=Scalar[dtype](0))
+        var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
         ctx.enqueue_copy(output_host, output_dev)
         ctx.enqueue_copy(output_ref_host, output_ref_dev)
         ctx.synchronize()
@@ -506,17 +506,17 @@ def bench_conv3d[
             if d > max_diff:
                 max_diff = d
         print("verify max |", impl, " - cuDNN| = ", max_diff, sep="")
-        output_host.free()
-        output_ref_host.free()
+        _ = output_host^
+        _ = output_ref_host^
 
-    input_host.free()
-    filter_qrscf_host.free()
-    filter_fcqrs_host.free()
     _ = input_dev^
     _ = filter_qrscf_dev^
     _ = filter_fcqrs_dev^
     _ = output_dev^
     _ = output_ref_dev^
+    _ = filter_fcqrs_host^
+    _ = filter_qrscf_host^
+    _ = input_host^
 
 
 def main() raises:

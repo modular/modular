@@ -34,7 +34,7 @@ def bench_softmax_gpu[
     comptime cols = shape[rank - 1]
     comptime total = shape.flattened_length()
 
-    var data_h = alloc[Scalar[dtype]](total)
+    var data_h = List(length=total, fill=Scalar[dtype](0))
 
     for i in range(total):
         data_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -85,8 +85,7 @@ def bench_softmax_gpu[
 
     _ = data_d
     _ = out_d
-
-    data_h.free()
+    _ = data_h^
 
 
 def bench_softmax_with_temperature_gpu[
@@ -100,7 +99,7 @@ def bench_softmax_with_temperature_gpu[
     comptime total = shape.flattened_length()
     comptime rows = shape[0]
 
-    var data_h = alloc[Scalar[dtype]](total)
+    var data_h = List(length=total, fill=Scalar[dtype](0))
     for i in range(total):
         data_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
 
@@ -136,8 +135,7 @@ def bench_softmax_with_temperature_gpu[
 
     _ = data_d
     _ = out_d
-
-    data_h.free()
+    _ = data_h^
 
 
 def main() raises:

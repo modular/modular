@@ -170,7 +170,7 @@ def bench_broadcast[
             )
 
     # Create and initialize host buffer for root with position-based values
-    var host_buffer = alloc[Scalar[dtype]](cb_in.alloc_size())
+    var host_buffer = List(length=cb_in.alloc_size(), fill=Scalar[dtype](0))
     for i in range(cb_in.alloc_size() // cb_in.stride):
         for j in range(length):
             host_buffer[i * cb_in.stride + j] = _input_value[dtype](root, j)
@@ -324,9 +324,9 @@ def bench_broadcast[
                 raise Error("Verification failed")
 
     # Cleanup
-    host_buffer.free()
     _ = signal_buffers^
     _ = cb_in^
+    _ = host_buffer^
 
 
 def main() raises:

@@ -129,8 +129,12 @@ def execute_kv_cache_ragged_flash_attention[
     )
 
     # Host allocations for row offsets and cache lengths
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
-    var cache_lengths_host_ptr = alloc[Scalar[DType.uint32]](batch_size)
+    var input_row_offsets_host_ptr = List(
+        length=batch_size + 1, fill=Scalar[DType.uint32](0)
+    )
+    var cache_lengths_host_ptr = List(
+        length=batch_size, fill=Scalar[DType.uint32](0)
+    )
     var max_context_length = 0
     var max_seq_length: UInt32 = 0
     var total_seq_len: UInt32 = 0
@@ -179,7 +183,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Q tensor allocation
     var q_size = Int(total_seq_len) * num_q_heads * head_dim
-    var q_host_ptr = alloc[Scalar[dtype]](q_size)
+    var q_host_ptr = List(length=q_size, fill=Scalar[dtype](0))
     random(
         TileTensor(
             q_host_ptr,
@@ -197,7 +201,7 @@ def execute_kv_cache_ragged_flash_attention[
 
     # Output tensor allocation
     var output_size = Int(total_seq_len) * num_q_heads * head_dim
-    var output_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var output_dev_buffer = ctx.enqueue_create_buffer[dtype](output_size)
     var output_device_tensor = TileTensor(
         output_dev_buffer,
@@ -210,7 +214,9 @@ def execute_kv_cache_ragged_flash_attention[
     def _ri(v: Int) -> RuntimeInt[DType.int64]:
         return RuntimeInt[DType.int64](Int64(v))
 
-    var paged_lut_host_ptr = alloc[Scalar[DType.uint32]](paged_lut_size)
+    var paged_lut_host_ptr = List(
+        length=paged_lut_size, fill=Scalar[DType.uint32](0)
+    )
     var paged_lut_host = TileTensor(
         paged_lut_host_ptr,
         row_major(Coord(_ri(batch_size), _ri(paged_lut_cols))),
@@ -235,7 +241,9 @@ def execute_kv_cache_ragged_flash_attention[
     var kv_block_size = (
         num_pages * 2 * num_layers * page_size * num_kv_heads * head_dim
     )
-    var kv_block_paged_host_ptr = alloc[Scalar[dtype]](kv_block_size)
+    var kv_block_paged_host_ptr = List(
+        length=kv_block_size, fill=Scalar[dtype](0)
+    )
     random(
         LayoutTensor[dtype, Layout.row_major[6](), MutAnyOrigin](
             kv_block_paged_host_ptr,
@@ -367,14 +375,6 @@ def execute_kv_cache_ragged_flash_attention[
             ctx,
         )
 
-    # Cleanup host pointers
-    input_row_offsets_host_ptr.free()
-    cache_lengths_host_ptr.free()
-    q_host_ptr.free()
-    output_host_ptr.free()
-    paged_lut_host_ptr.free()
-    kv_block_paged_host_ptr.free()
-
     # Consume device buffers
     _ = input_row_offsets_dev_buffer^
     _ = cache_lengths_dev_buffer^
@@ -382,6 +382,12 @@ def execute_kv_cache_ragged_flash_attention[
     _ = output_dev_buffer^
     _ = paged_lut_dev_buffer^
     _ = kv_block_paged_dev_buffer^
+    _ = kv_block_paged_host_ptr^
+    _ = paged_lut_host_ptr^
+    _ = output_host_ptr^
+    _ = q_host_ptr^
+    _ = cache_lengths_host_ptr^
+    _ = input_row_offsets_host_ptr^
 
 
 def main() raises:

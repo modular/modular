@@ -151,11 +151,11 @@ def bench_conv2d[
         ")",
     )
 
-    var input_host = alloc[Scalar[dtype]](input_size)
-    var filter_rscf_host = alloc[Scalar[dtype]](filter_size)
-    var filter_fcrs_host = alloc[Scalar[dtype]](filter_size)
-    rand[dtype](input_host, input_size)
-    rand[dtype](filter_rscf_host, filter_size)
+    var input_host = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_rscf_host = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_fcrs_host = List(length=filter_size, fill=Scalar[dtype](0))
+    rand[dtype](input_host)
+    rand[dtype](filter_rscf_host)
 
     # RSCF [R,S,C,F] -> FCRS [F,C,R,S] for cuDNN.
     for f in range(out_channels):
@@ -361,8 +361,8 @@ def bench_conv2d[
             ctx,
         )
         ctx.synchronize()
-        var output_host = alloc[Scalar[dtype]](output_size)
-        var output_ref_host = alloc[Scalar[dtype]](output_size)
+        var output_host = List(length=output_size, fill=Scalar[dtype](0))
+        var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
         ctx.enqueue_copy(output_host, output_dev)
         ctx.enqueue_copy(output_ref_host, output_ref_dev)
         ctx.synchronize()
@@ -374,17 +374,17 @@ def bench_conv2d[
             if d > max_diff:
                 max_diff = d
         print("verify max |", impl, " - cuDNN| = ", max_diff, sep="")
-        output_host.free()
-        output_ref_host.free()
+        _ = output_host^
+        _ = output_ref_host^
 
-    input_host.free()
-    filter_rscf_host.free()
-    filter_fcrs_host.free()
     _ = input_dev^
     _ = filter_rscf_dev^
     _ = filter_fcrs_dev^
     _ = output_dev^
     _ = output_ref_dev^
+    _ = filter_fcrs_host^
+    _ = filter_rscf_host^
+    _ = input_host^
 
 
 def main() raises:

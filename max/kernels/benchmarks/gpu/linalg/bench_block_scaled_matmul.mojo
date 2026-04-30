@@ -271,7 +271,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -289,8 +289,6 @@ def verify_matmul[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    result_host.free()
 
     # Check zero/nonzero expectations
     var c_is_zeros = any_out_nz == 0
@@ -328,6 +326,7 @@ def verify_matmul[
         )
 
     print("\n=== TEST PASSED ===\n")
+    _ = result_host^
 
 
 def _get_run_name[
@@ -856,7 +855,9 @@ def bench_mxfp4_amd[
                 block_dim=BLOCK_SIZE,
             )
 
-            var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+            var result_host = List(
+                length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0)
+            )
             ctx.enqueue_copy(result_host, result_device)
             ctx.synchronize()
 
@@ -872,7 +873,6 @@ def bench_mxfp4_amd[
                 worst_violation = max(worst_violation, result_host[base + 2])
                 out_nz = max(out_nz, result_host[base + 3])
                 ref_nz = max(ref_nz, result_host[base + 4])
-            result_host.free()
 
             if init_type != InitializationType.zero:
                 if out_nz == 0:
@@ -899,6 +899,7 @@ def bench_mxfp4_amd[
                 )
 
             print("\n=== MXFP4 verify PASSED ===\n")
+            _ = result_host^
 
 
 def main() raises:

@@ -96,9 +96,7 @@ def bench_scatter[
     # Use a conservative alignment that works across all GPU architectures.
     comptime alignment = max(16, size_of[dtype]())
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=dp_size
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=dp_size)
 
     for dp_idx in range(dp_size):
         cb_inputs.append(
@@ -110,8 +108,9 @@ def bench_scatter[
             )
         )
 
-        var host_buffer = alloc[Scalar[dtype]](cb_inputs[0].alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_inputs[0].alloc_size()
+        )
 
         for i in range(cb_inputs[0].alloc_size() // cb_inputs[0].stride):
             for j in range(num_elems):
@@ -122,6 +121,8 @@ def bench_scatter[
         list_of_ctx[0].enqueue_copy(
             cb_inputs[dp_idx].device_buffer(), host_buffer
         )
+
+        host_buffers.append(host_buffer^)
 
     # Create output device buffers for each GPU.
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
@@ -220,7 +221,7 @@ def bench_scatter[
     )
 
     # Copy results back and verify the benchmarked outputs directly.
-    var verify_host = alloc[Scalar[dtype]](num_elems)
+    var verify_host = List(length=num_elems, fill=Scalar[dtype](0))
     for gpu_idx in range(ngpus):
         var dp_idx = gpu_idx // tp_size
         list_of_ctx[gpu_idx].enqueue_copy(verify_host, out_bufs_list[gpu_idx])
@@ -242,11 +243,10 @@ def bench_scatter[
                 raise Error("Verification failed")
 
     # Cleanup.
-    verify_host.free()
-    for i in range(dp_size):
-        host_buffers[i].free()
+    _ = host_buffers^
     _ = signal_buffers^
     _ = cb_inputs^
+    _ = verify_host^
 
 
 def main() raises:

@@ -29,10 +29,9 @@ def bench_layer_norm_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var beta_h = alloc[Scalar[dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var beta_h = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         var val = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -109,11 +108,9 @@ def bench_layer_norm_gpu[
     _ = data_d
     _ = gamma_d
     _ = beta_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
-    beta_h.free()
+    _ = data_h^
+    _ = gamma_h^
+    _ = beta_h^
 
 
 def bench_rms_norm_gpu[
@@ -122,9 +119,8 @@ def bench_rms_norm_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var res = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         var val = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -186,10 +182,8 @@ def bench_rms_norm_gpu[
 
     _ = data_d
     _ = gamma_d
-
-    data_h.free()
-    res.free()
-    gamma_h.free()
+    _ = data_h^
+    _ = gamma_h^
 
 
 def main() raises:

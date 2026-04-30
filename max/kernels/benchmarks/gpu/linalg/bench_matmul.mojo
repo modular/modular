@@ -137,34 +137,33 @@ def verify_matmul[
 
     # Initialize matmul operands
     comptime if not init_on_gpu:
-        var a_host_ptr = alloc[Scalar[a_type]](a_size)
-        var b_host_ptr = alloc[Scalar[a_type]](b_size)
-        var a_host = TileTensor(a_host_ptr, row_major(a_shape))
-        var b_host = TileTensor(b_host_ptr, row_major(b_shape))
+        var a_host = List[Scalar[a_type]](unsafe_uninit_length=a_size)
+        var b_host = List[Scalar[a_type]](unsafe_uninit_length=b_size)
 
         comptime if a_type.is_float8():
-            rand(a_host.ptr, a_host.num_elements())
-            rand(b_host.ptr, b_host.num_elements())
+            rand(a_host)
+            rand(b_host)
         else:
             if init_type == InitializationType.zero:
-                _ = a_host.fill(0)
-                _ = b_host.fill(0)
+                Span(a_host).fill(0)
+                Span(b_host).fill(0)
             elif init_type == InitializationType.one:
-                _ = a_host.fill(1)
-                _ = b_host.fill(1)
+                Span(a_host).fill(1)
+                Span(b_host).fill(1)
             elif init_type == InitializationType.uniform_distribution:
-                rand(a_host.ptr, a_host.num_elements())
-                rand(b_host.ptr, b_host.num_elements())
+                rand(a_host)
+                rand(b_host)
             elif init_type == InitializationType.arange:
-                for i in range(a_host.num_elements()):
-                    a_host.raw_store(i, Scalar[a_type](i))
-                for i in range(b_host.num_elements()):
-                    b_host.raw_store(i, Scalar[a_type](i))
+                for i in range(len(a_host)):
+                    a_host[i] = Scalar[a_type](i)
+                for i in range(len(b_host)):
+                    b_host[i] = Scalar[a_type](i)
         # Move operands to the Device
-        ctx.enqueue_copy(a_device, a_host_ptr)
-        ctx.enqueue_copy(b_device, b_host_ptr)
-        a_host_ptr.free()
-        b_host_ptr.free()
+        ctx.enqueue_copy(a_device, a_host)
+        ctx.enqueue_copy(b_device, b_host)
+        ctx.synchronize()
+        _ = a_host^
+        _ = b_host^
     else:
         init_vector_launch[a_type](a_device, a_size, init_type, ctx)
         init_vector_launch[a_type](b_device, b_size, init_type, ctx)
@@ -214,7 +213,7 @@ def verify_matmul[
     )
 
     # Copy back only NUM_BLOCKS * 5 Float32 values
-    var result_host = alloc[Scalar[DType.float32]](NUM_BLOCKS * 5)
+    var result_host = List(length=NUM_BLOCKS * 5, fill=Scalar[DType.float32](0))
     ctx.enqueue_copy(result_host, result_device)
     ctx.synchronize()
 
@@ -232,8 +231,6 @@ def verify_matmul[
         worst_violation = max(worst_violation, result_host[base + 2])
         any_out_nz = max(any_out_nz, result_host[base + 3])
         any_ref_nz = max(any_ref_nz, result_host[base + 4])
-
-    result_host.free()
 
     # Check zero/nonzero expectations
     var c_is_zeros = any_out_nz == 0
@@ -271,6 +268,7 @@ def verify_matmul[
         )
 
     print("\n=== TEST PASSED ===\n")
+    _ = result_host^
 
 
 def _get_run_name[
@@ -351,35 +349,37 @@ def bench_matmul[
     comptime init_on_gpu = True
 
     comptime if not init_on_gpu:
-        var a_host_ptr = alloc[Scalar[a_type]](cb_a.alloc_size())
-        var b_host_ptr = alloc[Scalar[a_type]](cb_b.alloc_size())
-        var a_host = TileTensor(a_host_ptr, row_major(Idx(cb_a.alloc_size())))
-        var b_host = TileTensor(b_host_ptr, row_major(Idx(cb_b.alloc_size())))
+        var a_host = List[Scalar[a_type]](
+            unsafe_uninit_length=cb_a.alloc_size()
+        )
+        var b_host = List[Scalar[a_type]](
+            unsafe_uninit_length=cb_b.alloc_size()
+        )
 
         comptime if a_type.is_float8():
-            rand(a_host.ptr, a_host.num_elements())
-            rand(b_host.ptr, b_host.num_elements())
+            rand(a_host)
+            rand(b_host)
         else:
             if init_type == InitializationType.zero:
-                _ = a_host.fill(0)
-                _ = b_host.fill(0)
+                Span(a_host).fill(0)
+                Span(b_host).fill(0)
             elif init_type == InitializationType.one:
-                _ = a_host.fill(1)
-                _ = b_host.fill(1)
+                Span(a_host).fill(1)
+                Span(b_host).fill(1)
             elif init_type == InitializationType.uniform_distribution:
-                rand(a_host.ptr, a_host.num_elements())
-                rand(b_host.ptr, b_host.num_elements())
+                rand(a_host)
+                rand(b_host)
             elif init_type == InitializationType.arange:
-                for i in range(a_host.num_elements()):
-                    a_host.raw_store(i, Scalar[a_type](i))
-                for i in range(b_host.num_elements()):
-                    b_host.raw_store(i, Scalar[a_type](i))
+                for i in range(len(a_host)):
+                    a_host[i] = Scalar[a_type](i)
+                for i in range(len(b_host)):
+                    b_host[i] = Scalar[a_type](i)
 
-        ctx.enqueue_copy(cb_a.device_buffer(), a_host_ptr)
-        ctx.enqueue_copy(cb_b.device_buffer(), b_host_ptr)
+        ctx.enqueue_copy(cb_a.device_buffer(), a_host)
+        ctx.enqueue_copy(cb_b.device_buffer(), b_host)
         ctx.synchronize()
-        a_host_ptr.free()
-        b_host_ptr.free()
+        _ = a_host^
+        _ = b_host^
     else:
         cb_a.init_on_device(init_type, ctx)
         cb_b.init_on_device(init_type, ctx)

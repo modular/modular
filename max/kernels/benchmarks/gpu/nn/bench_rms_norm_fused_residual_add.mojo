@@ -29,10 +29,10 @@ def bench_rms_norm_fused_residual_add_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var residual_h = alloc[Scalar[dtype]](rows * cols)
-    var gamma1_h = alloc[Scalar[dtype]](cols)
-    var gamma2_h = alloc[Scalar[dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma1_h = List(length=cols, fill=Scalar[dtype](0))
+    var gamma2_h = List(length=cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](random_float64(0, 100).cast[dtype]())
@@ -150,11 +150,10 @@ def bench_rms_norm_fused_residual_add_gpu[
     _ = residual_output_d
     _ = gamma1_d
     _ = gamma2_d
-
-    data_h.free()
-    residual_h.free()
-    gamma1_h.free()
-    gamma2_h.free()
+    _ = data_h^
+    _ = residual_h^
+    _ = gamma1_h^
+    _ = gamma2_h^
 
 
 def main() raises:

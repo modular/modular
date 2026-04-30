@@ -112,10 +112,12 @@ def bench_router_group_limited[
 ](ctx: DeviceContext, mut b: Bench) raises:
     comptime dtype = DType.float32
 
-    var scores_h = alloc[Scalar[dtype]](num_tokens * n_routed_experts)
-    var bias_h = alloc[Scalar[dtype]](n_routed_experts)
-    rand[dtype](scores_h, num_tokens * n_routed_experts)
-    rand[dtype](bias_h, n_routed_experts)
+    var scores_h = List(
+        length=num_tokens * n_routed_experts, fill=Scalar[dtype](0)
+    )
+    var bias_h = List(length=n_routed_experts, fill=Scalar[dtype](0))
+    rand[dtype](scores_h)
+    rand[dtype](bias_h)
 
     var scores_d = ctx.enqueue_create_buffer[dtype](
         num_tokens * n_routed_experts
@@ -202,9 +204,8 @@ def bench_router_group_limited[
     _ = bias_d
     _ = indices_d
     _ = weights_d
-
-    scores_h.free()
-    bias_h.free()
+    _ = bias_h^
+    _ = scores_h^
 
 
 def bench_single_group_router[
@@ -214,10 +215,12 @@ def bench_single_group_router[
 ](ctx: DeviceContext, mut b: Bench) raises:
     comptime dtype = DType.float32
 
-    var scores_h = alloc[Scalar[dtype]](num_tokens * n_routed_experts)
-    var bias_h = alloc[Scalar[dtype]](n_routed_experts)
-    rand[dtype](scores_h, num_tokens * n_routed_experts)
-    rand[dtype](bias_h, n_routed_experts)
+    var scores_h = List(
+        length=num_tokens * n_routed_experts, fill=Scalar[dtype](0)
+    )
+    var bias_h = List(length=n_routed_experts, fill=Scalar[dtype](0))
+    rand[dtype](scores_h)
+    rand[dtype](bias_h)
 
     var scores_d = ctx.enqueue_create_buffer[dtype](
         num_tokens * n_routed_experts
@@ -299,9 +302,8 @@ def bench_single_group_router[
     _ = bias_d
     _ = indices_d
     _ = weights_d
-
-    scores_h.free()
-    bias_h.free()
+    _ = bias_h^
+    _ = scores_h^
 
 
 def main() raises:

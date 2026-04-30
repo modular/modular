@@ -120,10 +120,10 @@ def copy2_n(
 @no_inline
 def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime dtype = DType.float32
-    var a_host = alloc[Scalar[dtype]](length)
-    var b_host = alloc[Scalar[dtype]](length)
-    var c_host = alloc[Scalar[dtype]](length)
-    var d_host = alloc[Scalar[dtype]](length)
+    var a_host = List(length=length, fill=Scalar[dtype](0))
+    var b_host = List(length=length, fill=Scalar[dtype](0))
+    var c_host = List(length=length, fill=Scalar[dtype](0))
+    var d_host = List(length=length, fill=Scalar[dtype](0))
 
     comptime grid_dim = 16
     comptime block_dim = 256
@@ -132,9 +132,6 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = Float32(i)
         d_host[i] = Float32(i)
-
-    for i in range(length):
-        c_host[i] = 0
 
     var a_device = context.enqueue_create_buffer[dtype](length)
     var b_device = context.enqueue_create_buffer[dtype](length)
@@ -185,20 +182,19 @@ def bench_pdl_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(c_host, c_device)
 
     __ownership_keepalive(a_device, b_device, c_device, d_device)
-
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    d_host.free()
+    _ = a_host^
+    _ = b_host^
+    _ = c_host^
+    _ = d_host^
 
 
 @no_inline
 def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     comptime dtype = DType.float32
-    var a_host = alloc[Scalar[dtype]](length)
-    var b_host = alloc[Scalar[dtype]](length)
-    var c_host = alloc[Scalar[dtype]](length)
-    var d_host = alloc[Scalar[dtype]](length)
+    var a_host = List(length=length, fill=Scalar[dtype](0))
+    var b_host = List(length=length, fill=Scalar[dtype](0))
+    var c_host = List(length=length, fill=Scalar[dtype](0))
+    var d_host = List(length=length, fill=Scalar[dtype](0))
 
     comptime grid_dim = 16
     comptime block_dim = 256
@@ -207,9 +203,6 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
         a_host[i] = Float32(i)
         b_host[i] = Float32(i)
         d_host[i] = Float32(i)
-
-    for i in range(length):
-        c_host[i] = 0
 
     var a_device = context.enqueue_create_buffer[dtype](length)
     var b_device = context.enqueue_create_buffer[dtype](length)
@@ -258,11 +251,10 @@ def bench_copy(mut b: Bench, *, length: Int, context: DeviceContext) raises:
     context.enqueue_copy(c_host, c_device)
 
     __ownership_keepalive(a_device, b_device, c_device, d_device)
-
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    d_host.free()
+    _ = a_host^
+    _ = b_host^
+    _ = c_host^
+    _ = d_host^
 
 
 def main() raises:

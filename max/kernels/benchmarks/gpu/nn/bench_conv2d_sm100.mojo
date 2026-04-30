@@ -147,13 +147,13 @@ def bench_conv2d[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
     # Initialize with random data
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -270,8 +270,8 @@ def bench_conv2d[
     var cudnn_tflops = Float64(flops) / (cudnn_time_ms / 1000) / 1e12
 
     # Verify outputs match
-    var output_sm100_host_ptr = alloc[Scalar[dtype]](output_size)
-    var output_cudnn_host_ptr = alloc[Scalar[dtype]](output_size)
+    var output_sm100_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_cudnn_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
     ctx.enqueue_copy(output_sm100_host_ptr, output_sm100_dev)
     ctx.enqueue_copy(output_cudnn_host_ptr, output_cudnn_dev)
     ctx.synchronize()
@@ -284,9 +284,6 @@ def bench_conv2d[
         )
         if diff > max_diff:
             max_diff = diff
-
-    output_sm100_host_ptr.free()
-    output_cudnn_host_ptr.free()
 
     # Report
     var ratio = cudnn_time_ms / sm100_time_ms
@@ -316,16 +313,16 @@ def bench_conv2d[
     print("  Correctness: max_diff=", max_diff, sep="")
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
-
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_sm100_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
+    _ = output_cudnn_host_ptr^
+    _ = output_sm100_host_ptr^
 
 
 def bench_all_configs[
@@ -389,12 +386,12 @@ def bench_all_configs[
     )
 
     # Allocate host memory
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var filter_nchw_host_ptr = alloc[Scalar[dtype]](filter_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var filter_nchw_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
 
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
 
     # Convert filter KRSC -> NCHW for cuDNN
     for k in range(out_channels):
@@ -569,16 +566,15 @@ def bench_all_configs[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    filter_nchw_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = filter_nchw_dev^
     _ = output_1sm_dev^
     _ = output_2sm_dev^
     _ = output_cudnn_dev^
+    _ = filter_nchw_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def bench_residual[
@@ -643,12 +639,12 @@ def bench_residual[
     )
 
     # Allocate
-    var input_host_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_host_ptr = alloc[Scalar[dtype]](filter_size)
-    var source_host_ptr = alloc[Scalar[dtype]](output_size)
-    rand(input_host_ptr, input_size)
-    rand(filter_host_ptr, filter_size)
-    rand(source_host_ptr, output_size)
+    var input_host_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_host_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var source_host_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    rand(input_host_ptr)
+    rand(filter_host_ptr)
+    rand(source_host_ptr)
 
     var input_dev = ctx.enqueue_create_buffer[dtype](input_size)
     var filter_dev = ctx.enqueue_create_buffer[dtype](filter_size)
@@ -765,15 +761,14 @@ def bench_residual[
     )
     print()
 
-    # Cleanup
-    input_host_ptr.free()
-    filter_host_ptr.free()
-    source_host_ptr.free()
     _ = input_dev^
     _ = filter_dev^
     _ = output_dev^
     _ = output_res_dev^
     _ = source_dev^
+    _ = source_host_ptr^
+    _ = filter_host_ptr^
+    _ = input_host_ptr^
 
 
 def main() raises:

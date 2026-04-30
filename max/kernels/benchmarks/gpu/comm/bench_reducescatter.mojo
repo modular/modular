@@ -130,9 +130,7 @@ def bench_reducescatter_2d[
     # Create cache busting input buffers for each GPU.
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -157,8 +155,9 @@ def bench_reducescatter_2d[
         )
 
         # Create and initialize host buffers.
-        var host_buffer = alloc[Scalar[dtype]](cb_inputs[0].alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_inputs[0].alloc_size()
+        )
 
         # Fill with repeated GPU-specific values for cache busting.
         for i in range(cb_inputs[0].alloc_size() // cb_inputs[0].stride):
@@ -171,6 +170,8 @@ def bench_reducescatter_2d[
         list_of_ctx[gpu_idx].enqueue_copy(
             cb_inputs[gpu_idx].device_buffer(), host_buffer
         )
+
+        host_buffers.append(host_buffer^)
 
         # Create and initialize signal buffers.
         signal_buffers.append(
@@ -324,8 +325,7 @@ def bench_reducescatter_2d[
                         raise e^
 
     # Clean up
-    for i in range(ngpus):
-        host_buffers[i].free()
+    _ = host_buffers^
 
 
 def bench_reducescatter[
@@ -368,9 +368,7 @@ def bench_reducescatter[
     # Create cache busting input buffers for each GPU
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create signal buffers for synchronization
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -396,8 +394,9 @@ def bench_reducescatter[
         )
 
         # Create and initialize host buffers
-        var host_buffer = alloc[Scalar[dtype]](cb_inputs[0].alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_inputs[0].alloc_size()
+        )
 
         # Fill with repeated GPU-specific values for cache busting
         for i in range(cb_inputs[0].alloc_size() // cb_inputs[0].stride):
@@ -410,6 +409,8 @@ def bench_reducescatter[
         list_of_ctx[gpu_idx].enqueue_copy(
             cb_inputs[gpu_idx].device_buffer(), host_buffer
         )
+
+        host_buffers.append(host_buffer^)
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -507,8 +508,7 @@ def bench_reducescatter[
                 raise e^
 
     # Clean up
-    for i in range(ngpus):
-        host_buffers[i].free()
+    _ = host_buffers^
 
 
 def main() raises:

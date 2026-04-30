@@ -64,11 +64,8 @@ def run_reduce[
     # Allocate & initialize host data
     var expected_vals = alloc[Scalar[dtype]](out_size, alignment=align)
 
-    var in_host = alloc[Scalar[dtype]](cb_in.alloc_size())
-    var res_host = alloc[Scalar[dtype]](out_size)
-
-    for i in range(cb_in.alloc_size()):
-        in_host[i] = 1
+    var in_host = List(length=cb_in.alloc_size(), fill=Scalar[dtype](1))
+    var res_host = List(length=out_size, fill=Scalar[dtype](0))
 
     # TODO: use reduce_fn to make this generic.
     for i in range(out_size):
@@ -160,9 +157,9 @@ def run_reduce[
     _ = cb_in
     _ = res_device
 
-    in_host.free()
-    res_host.free()
     expected_vals.free()
+    _ = in_host^
+    _ = res_host^
 
 
 @parameter

@@ -72,7 +72,7 @@ def bench_stencil_avg_pool[
     )
 
     # Create host buffers
-    var h_input_ptr = alloc[Scalar[dtype]](input_size)
+    var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
     var h_input = TileTensor(
         h_input_ptr,
         row_major(
@@ -84,7 +84,7 @@ def bench_stencil_avg_pool[
             )
         ),
     )
-    var h_output_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
@@ -96,7 +96,7 @@ def bench_stencil_avg_pool[
             )
         ),
     )
-    var h_output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output_ref = TileTensor(
         h_output_ref_ptr,
         row_major(
@@ -112,8 +112,6 @@ def bench_stencil_avg_pool[
     # Initialize input data
     for i in range(h_input.num_elements()):
         h_input.raw_store(i, Scalar[dtype](i + 1))
-    _ = h_output_ref.fill(Scalar[dtype](0))
-    _ = h_output.fill(Scalar[dtype](0))
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -334,9 +332,9 @@ def bench_stencil_avg_pool[
 
     _ = d_input_buf^
     _ = d_output_buf^
-    h_input_ptr.free()
-    h_output_ptr.free()
-    h_output_ref_ptr.free()
+    _ = h_output_ref_ptr^
+    _ = h_output_ptr^
+    _ = h_input_ptr^
 
 
 def bench_stencil_max_pool[
@@ -365,7 +363,7 @@ def bench_stencil_max_pool[
     )
 
     # Create host buffers
-    var h_input_ptr = alloc[Scalar[dtype]](input_size)
+    var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
     var h_input = TileTensor(
         h_input_ptr,
         row_major(
@@ -377,7 +375,7 @@ def bench_stencil_max_pool[
             )
         ),
     )
-    var h_output_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
@@ -389,7 +387,7 @@ def bench_stencil_max_pool[
             )
         ),
     )
-    var h_output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output_ref = TileTensor(
         h_output_ref_ptr,
         row_major(
@@ -405,8 +403,6 @@ def bench_stencil_max_pool[
     # Initialize input data
     for i in range(h_input.num_elements()):
         h_input.raw_store(i, Scalar[dtype](i + 1))
-    _ = h_output_ref.fill(Scalar[dtype](0))
-    _ = h_output.fill(Scalar[dtype](0))
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -622,9 +618,9 @@ def bench_stencil_max_pool[
 
     _ = d_input_buf^
     _ = d_output_buf^
-    h_input_ptr.free()
-    h_output_ptr.free()
-    h_output_ref_ptr.free()
+    _ = h_output_ref_ptr^
+    _ = h_output_ptr^
+    _ = h_input_ptr^
 
 
 def bench_stencil_avg_pool_padded[
@@ -652,14 +648,14 @@ def bench_stencil_avg_pool_padded[
     )
 
     # Create host buffers
-    var h_input_ptr = alloc[Scalar[dtype]](input_size)
+    var h_input_ptr = List(length=input_size, fill=Scalar[dtype](0))
     var h_input = TileTensor(
         h_input_ptr,
         row_major(
             Coord(Idx[1](), Idx[input_height](), Idx[input_width](), Idx[1]())
         ),
     )
-    var h_output_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output = TileTensor(
         h_output_ptr,
         row_major(
@@ -671,7 +667,7 @@ def bench_stencil_avg_pool_padded[
             )
         ),
     )
-    var h_output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var h_output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
     var h_output_ref = TileTensor(
         h_output_ref_ptr,
         row_major(
@@ -687,8 +683,6 @@ def bench_stencil_avg_pool_padded[
     # Initialize input data
     for i in range(h_input.num_elements()):
         h_input.raw_store(i, Scalar[dtype](i + 1))
-    _ = h_output_ref.fill(Scalar[dtype](0))
-    _ = h_output.fill(Scalar[dtype](0))
 
     # Create device buffers
     var d_input_buf = ctx.enqueue_create_buffer[dtype](input_size)
@@ -916,9 +910,9 @@ def bench_stencil_avg_pool_padded[
 
     _ = d_input_buf^
     _ = d_output_buf^
-    h_input_ptr.free()
-    h_output_ptr.free()
-    h_output_ref_ptr.free()
+    _ = h_output_ref_ptr^
+    _ = h_output_ptr^
+    _ = h_input_ptr^
 
 
 def main() raises:

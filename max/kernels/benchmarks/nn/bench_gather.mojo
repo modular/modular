@@ -39,14 +39,15 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec):
     var input_shape = Index(spec.m1, spec.m2)
     var indices_shape = Index(spec.n1, spec.n2)
 
-    var data_ptr = alloc[Float32](input_shape.flattened_length())
-    rand(data_ptr, input_shape.flattened_length())
+    var data_ptr = List(length=input_shape.flattened_length(), fill=Float32(0))
+    rand(data_ptr)
     var data_tensor = TileTensor(data_ptr, row_major(Coord(input_shape)))
 
-    var indices_ptr = alloc[Int32](indices_shape.flattened_length())
+    var indices_ptr = List(
+        length=indices_shape.flattened_length(), fill=Int32(0)
+    )
     randint(
         indices_ptr,
-        indices_shape.flattened_length(),
         index_rand_min,
         index_rand_max,
     )
@@ -54,7 +55,9 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec):
         indices_ptr, row_major(Coord(indices_shape))
     )
 
-    var output_ptr = alloc[Float32](indices_shape.flattened_length())
+    var output_ptr = List(
+        length=indices_shape.flattened_length(), fill=Float32(0)
+    )
     var output_tensor = TileTensor(output_ptr, row_major(Coord(indices_shape)))
 
     @always_inline
@@ -71,10 +74,6 @@ def bench_gather(mut bencher: Bencher, spec: GatherSpec):
             print("Err => ", e)
 
     bencher.iter[bench_fn]()
-
-    data_tensor.ptr.free()
-    indices_tensor.ptr.free()
-    output_tensor.ptr.free()
 
 
 @fieldwise_init

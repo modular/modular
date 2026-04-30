@@ -130,9 +130,7 @@ def bench_allgather[
 
     # Create cache-busting input buffers for each GPU.
     var cb_inputs = List[CacheBustingBuffer[dtype]]()
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     # Create output device buffers: ngpus outputs per GPU (one per source).
     var out_bufs_list = List[DeviceBuffer[dtype]](capacity=ngpus * ngpus)
@@ -165,8 +163,9 @@ def bench_allgather[
             )
 
         # Host buffer for verification.
-        var host_buffer = alloc[Scalar[dtype]](cb_inputs[gpu_idx].alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_inputs[gpu_idx].alloc_size()
+        )
 
         # Fill with GPU-specific values for cache busting.
         for i in range(
@@ -181,6 +180,8 @@ def bench_allgather[
         list_of_ctx[gpu_idx].enqueue_copy(
             cb_inputs[gpu_idx].device_buffer(), host_buffer
         )
+
+        host_buffers.append(host_buffer^)
 
         # Signal buffers.
         signal_buffers.append(
@@ -275,7 +276,7 @@ def bench_allgather[
     var max_length = 0
     for i in range(ngpus):
         max_length = max(max_length, lengths[i])
-    var verify_host = alloc[Scalar[dtype]](max_length)
+    var verify_host = List(length=max_length, fill=Scalar[dtype](0))
 
     for gpu_idx in range(ngpus):
         for src_idx in range(ngpus):
@@ -302,11 +303,10 @@ def bench_allgather[
                     raise Error("Verification failed")
 
     # Cleanup.
-    verify_host.free()
-    for i in range(ngpus):
-        host_buffers[i].free()
+    _ = host_buffers^
     _ = signal_buffers^
     _ = cb_inputs^
+    _ = verify_host^
 
 
 def main() raises:

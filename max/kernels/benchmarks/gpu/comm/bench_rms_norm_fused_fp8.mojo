@@ -53,8 +53,8 @@ def bench_rms_norm_fused_fp8[
     comptime rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var data_h = alloc[Scalar[in_dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[in_dtype]](cols)
+    var data_h = List(length=rows * cols, fill=Scalar[in_dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[in_dtype](0))
 
     # Initialize data
     for i in range(rows * cols):
@@ -431,8 +431,8 @@ def bench_rms_norm_fused_fp8[
     ctx.synchronize()
 
     # Copy results back to host for verification
-    var fp8_output_h = alloc[Scalar[out_dtype]](rows * cols)
-    var fused_output_h = alloc[Scalar[out_dtype]](rows * cols)
+    var fp8_output_h = List(length=rows * cols, fill=Scalar[out_dtype](0))
+    var fused_output_h = List(length=rows * cols, fill=Scalar[out_dtype](0))
 
     ctx.enqueue_copy(fp8_output_h, fp8_verify_d)
     ctx.enqueue_copy(fused_output_h, fused_verify_d)
@@ -528,10 +528,6 @@ def bench_rms_norm_fused_fp8[
             "\nVerification PASSED: All outputs within tolerance",
         )
 
-    # Cleanup
-    fp8_output_h.free()
-    fused_output_h.free()
-
     _ = cb_data
     _ = gamma_d
     _ = cb_rms_output
@@ -541,9 +537,10 @@ def bench_rms_norm_fused_fp8[
     _ = fp8_verify_d
     _ = fused_verify_d
     _ = rms_verify_d
-
-    data_h.free()
-    gamma_h.free()
+    _ = data_h^
+    _ = gamma_h^
+    _ = fp8_output_h^
+    _ = fused_output_h^
 
 
 def main() raises:

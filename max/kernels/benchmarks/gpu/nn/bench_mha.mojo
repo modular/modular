@@ -76,8 +76,10 @@ def run_mha[
     )
 
     # Allocate host memory for verification.
-    var output_ptr = alloc[Scalar[qkv_type]](o_size)
-    var flash_output_ptr = alloc[Scalar[qkv_type]](cb_o.alloc_size())
+    var output_ptr = List(length=o_size, fill=Scalar[qkv_type](0))
+    var flash_output_ptr = List(
+        length=cb_o.alloc_size(), fill=Scalar[qkv_type](0)
+    )
 
     # Initialize data on the device.
     comptime random_distribution = InitializationType.uniform_distribution
@@ -242,7 +244,7 @@ def run_mha[
         ctx.enqueue_copy(flash_output_ptr, cb_o.device_buffer())
         # Allocate and initialize mask for verification
         var mask_size = batch_size * num_heads * seq_len * num_keys
-        var mask_ptr = alloc[Scalar[mask_type]](mask_size)
+        var mask_ptr = List(length=mask_size, fill=Scalar[mask_type](0))
 
         var mask = TileTensor(
             mask_ptr,
@@ -312,30 +314,27 @@ def run_mha[
         ctx.enqueue_copy(output_ptr, output_ref_device_ptr)
         _ = output_ref_device_ptr
         _ = mask_device_ptr
-        mask_ptr.free()
 
         var rtol = 0.02
 
         for h in range(num_heads):
             for s in range(seq_len):
                 for d in range(depth):
-                    var expect = output_ptr.load(
+                    var expect = output_ptr[d + depth * (h + s * num_heads)]
+                    var actual = flash_output_ptr[
                         d + depth * (h + s * num_heads)
-                    )
-                    var actual = flash_output_ptr.load(
-                        d + depth * (h + s * num_heads)
-                    )
+                    ]
                     if not isclose(expect, actual, atol=1e-5, rtol=rtol):
                         print(h, s, d, actual, expect)
                     assert_almost_equal(expect, actual, atol=1e-5, rtol=rtol)
+        _ = mask_ptr^
 
     _ = cb_q
     _ = cb_k
     _ = cb_v
     _ = cb_o
-
-    output_ptr.free()
-    flash_output_ptr.free()
+    _ = flash_output_ptr^
+    _ = output_ptr^
 
 
 @fieldwise_init

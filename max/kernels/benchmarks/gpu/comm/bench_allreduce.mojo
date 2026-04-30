@@ -86,9 +86,7 @@ def bench_reduce[
     # Create cache busting template on GPU 0 for metadata (stride, alloc_size,
     # offset). In non-multimem path, also serves as GPU 0's input buffer.
     var out_dev = List[DeviceBuffer[dtype]](capacity=ngpus)
-    var host_buffers = List[UnsafePointer[Scalar[dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_buffers = List[List[Scalar[dtype]]](capacity=ngpus)
 
     comptime num_buffers = 1 if use_multimem else ngpus
 
@@ -118,8 +116,9 @@ def bench_reduce[
         )
 
         # Create and initialize host buffers
-        var host_buffer = alloc[Scalar[dtype]](cb_template.alloc_size())
-        host_buffers.append(host_buffer)
+        var host_buffer = List[Scalar[dtype]](
+            unsafe_uninit_length=cb_template.alloc_size()
+        )
 
         for i in range(cb_template.alloc_size() // cb_template.stride):
             for j in range(length):
@@ -140,6 +139,8 @@ def bench_reduce[
             list_of_ctx[gpu_idx].enqueue_copy(
                 cb_inputs[gpu_idx].device_buffer(), host_buffer
             )
+
+        host_buffers.append(host_buffer^)
 
         # Create and initialize signal buffers
         signal_buffers.append(
@@ -324,8 +325,7 @@ def bench_reduce[
                 raise e^
 
     # Cleanup
-    for i in range(ngpus):
-        host_buffers[i].free()
+    _ = host_buffers^
     _ = signal_buffers^
 
 

@@ -131,8 +131,12 @@ def bench_mxfp4_grouped_matmul[
     ctx.enqueue_copy(b_scales_device, bs_hbuf)
 
     # Setup offsets and expert ids on host, copy to device
-    var a_offsets_host = alloc[Scalar[DType.uint32]](num_active_experts + 1)
-    var expert_ids_host = alloc[Scalar[DType.int32]](num_active_experts)
+    var a_offsets_host = List(
+        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    )
+    var expert_ids_host = List(
+        length=num_active_experts, fill=Scalar[DType.int32](0)
+    )
     a_offsets_host[0] = UInt32(0)
     for i in range(num_active_experts):
         a_offsets_host[i + 1] = a_offsets_host[i] + UInt32(
@@ -330,14 +334,14 @@ def bench_mxfp4_grouped_matmul[
 
         _ = c_ref_device^
 
-    a_offsets_host.free()
-    expert_ids_host.free()
     _ = a_device^
     _ = b_packed_device^
     _ = b_scales_device^
     _ = a_offsets_device^
     _ = expert_ids_device^
     _ = c_device^
+    _ = expert_ids_host^
+    _ = a_offsets_host^
 
 
 def bench_dequant_all_experts[

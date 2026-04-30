@@ -204,8 +204,8 @@ def _verify_results[
     # can cause ±1 FP8 ULP differences at rounding boundaries, so we compare
     # the cast-to-float32 values with exact equality and allow a small
     # mismatch rate.
-    var fused_h = alloc[Scalar[out_dtype]](length)
-    var ff_h = alloc[Scalar[out_dtype]](length)
+    var fused_h = List(length=length, fill=Scalar[out_dtype](0))
+    var ff_h = List(length=length, fill=Scalar[out_dtype](0))
     ctx0.enqueue_copy(fused_h, v_fused_fp8_dev)
     ctx0.enqueue_copy(ff_h, v_ff_fp8_dev)
     ctx0.synchronize()
@@ -227,8 +227,6 @@ def _verify_results[
                 )
 
     var error_rate = Float32(num_errors) / Float32(length)
-    fused_h.free()
-    ff_h.free()
     if error_rate > 0.03:
         raise Error(
             String(
@@ -243,8 +241,8 @@ def _verify_results[
         )
 
     # Compare per-row scale factors (fused vs fully-fused).
-    var fused_scales_h = alloc[Scalar[DType.float32]](num_rows)
-    var ff_scales_h = alloc[Scalar[DType.float32]](num_rows)
+    var fused_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
+    var ff_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
     ctx0.enqueue_copy(fused_scales_h, v_fused_scales_dev)
     ctx0.enqueue_copy(ff_scales_h, v_ff_scales_dev)
     ctx0.synchronize()
@@ -269,8 +267,6 @@ def _verify_results[
                     rel_diff,
                 )
 
-    fused_scales_h.free()
-    ff_scales_h.free()
     if scale_errors > 0:
         raise Error(
             String(
@@ -287,6 +283,10 @@ def _verify_results[
     _ = v_ff_scales_dev^
 
     print("Verification PASSED")
+    _ = fused_h^
+    _ = ff_h^
+    _ = fused_scales_h^
+    _ = ff_scales_h^
 
 
 def _verify_add_results[
@@ -466,8 +466,8 @@ def _verify_add_results[
     ctx0.synchronize()
 
     # Compare epilogue path vs fully-fused kernel (FP8 values).
-    var ep_h = alloc[Scalar[out_dtype]](length)
-    var ff_h = alloc[Scalar[out_dtype]](length)
+    var ep_h = List(length=length, fill=Scalar[out_dtype](0))
+    var ff_h = List(length=length, fill=Scalar[out_dtype](0))
     ctx0.enqueue_copy(ep_h, v_ep_fp8_dev)
     ctx0.enqueue_copy(ff_h, v_ff_fp8_dev)
     ctx0.synchronize()
@@ -489,8 +489,6 @@ def _verify_add_results[
                 )
 
     var error_rate = Float32(num_errors) / Float32(length)
-    ep_h.free()
-    ff_h.free()
     if error_rate > 0.03:
         raise Error(
             String(
@@ -505,8 +503,8 @@ def _verify_add_results[
         )
 
     # Compare per-row scale factors.
-    var ep_scales_h = alloc[Scalar[DType.float32]](num_rows)
-    var ff_scales_h = alloc[Scalar[DType.float32]](num_rows)
+    var ep_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
+    var ff_scales_h = List(length=num_rows, fill=Scalar[DType.float32](0))
     ctx0.enqueue_copy(ep_scales_h, v_ep_scales_dev)
     ctx0.enqueue_copy(ff_scales_h, v_ff_scales_dev)
     ctx0.synchronize()
@@ -531,8 +529,6 @@ def _verify_add_results[
                     rel_diff,
                 )
 
-    ep_scales_h.free()
-    ff_scales_h.free()
     if scale_errors > 0:
         raise Error(
             String(
@@ -550,6 +546,10 @@ def _verify_add_results[
     _ = v_res_out_dev^
 
     print("Add-path verification PASSED")
+    _ = ff_h^
+    _ = ff_scales_h^
+    _ = ep_h^
+    _ = ep_scales_h^
 
 
 def bench_allreduce_rmsnorm_fp8[
@@ -567,9 +567,7 @@ def bench_allreduce_rmsnorm_fp8[
     # Per-GPU input CacheBustingBuffers (for allreduce).
     var cb_inputs = List[CacheBustingBuffer[in_dtype]]()
     var ar_out_dev = List[DeviceBuffer[in_dtype]](capacity=ngpus)
-    var host_bufs = List[UnsafePointer[Scalar[in_dtype], MutExternalOrigin]](
-        capacity=ngpus
-    )
+    var host_bufs = List[List[Scalar[in_dtype]]](capacity=ngpus)
 
     # Signal buffers.
     var signal_buffers = List[DeviceBuffer[DType.uint8]](capacity=ngpus)
@@ -588,12 +586,14 @@ def bench_allreduce_rmsnorm_fp8[
             list_of_ctx[i].enqueue_create_buffer[in_dtype](length)
         )
 
-        var h = alloc[Scalar[in_dtype]](cb_inputs[0].alloc_size())
-        host_bufs.append(h)
+        var h = List[Scalar[in_dtype]](
+            unsafe_uninit_length=cb_inputs[0].alloc_size()
+        )
         # Initialize all cache-busted positions.
         for j in range(cb_inputs[0].alloc_size()):
             h[j] = Scalar[in_dtype](i + 1) + Scalar[in_dtype](j % 251)
         list_of_ctx[i].enqueue_copy(cb_inputs[i].device_buffer(), h)
+        host_bufs.append(h^)
 
         signal_buffers.append(
             list_of_ctx[i].create_buffer_sync[DType.uint8](
@@ -669,14 +669,16 @@ def bench_allreduce_rmsnorm_fp8[
     )
 
     # Initialize residual buffer with deterministic values.
-    var residual_host = alloc[Scalar[in_dtype]](cb_residual.alloc_size())
+    var residual_host = List(
+        length=cb_residual.alloc_size(), fill=Scalar[in_dtype](0)
+    )
     for i in range(cb_residual.alloc_size()):
         residual_host[i] = Scalar[in_dtype](i % 127 + 1) / Scalar[in_dtype](127)
     list_of_ctx[0].enqueue_copy(cb_residual.device_buffer(), residual_host)
 
     # Gamma weights.
     var gamma_dev = list_of_ctx[0].enqueue_create_buffer[in_dtype](num_cols)
-    var gamma_host = alloc[Scalar[in_dtype]](num_cols)
+    var gamma_host = List(length=num_cols, fill=Scalar[in_dtype](0))
     for i in range(num_cols):
         gamma_host[i] = (Float64(i + num_cols) / Float64(num_cols)).cast[
             in_dtype
@@ -1076,10 +1078,7 @@ def bench_allreduce_rmsnorm_fp8[
         )
 
     # Cleanup.
-    residual_host.free()
-    gamma_host.free()
-    for i in range(ngpus):
-        host_bufs[i].free()
+    _ = host_bufs^
     _ = signal_buffers^
     _ = cb_inputs^
     _ = ar_out_dev^
@@ -1092,6 +1091,8 @@ def bench_allreduce_rmsnorm_fp8[
     _ = fused_add_scales_dev^
     _ = residual_out_dev^
     _ = gamma_dev^
+    _ = gamma_host^
+    _ = residual_host^
 
 
 def main() raises:

@@ -131,8 +131,9 @@ def main() raises:
         )
         ctx.synchronize()
 
-        var trace_host = alloc[Scalar[DType.uint64]](
-            num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK
+        var trace_host = List(
+            length=num_blocks * GEMV_TRACE_EVENTS_PER_BLOCK,
+            fill=Scalar[DType.uint64](0),
         )
         ctx.enqueue_copy(trace_host, trace_buf)
         ctx.synchronize()
@@ -158,5 +159,4 @@ def main() raises:
                 t"{Int(trace_host[base + 9])}"
             )
         print("TRACE_CSV_END")
-
-        trace_host.free()
+        _ = trace_host^

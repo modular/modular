@@ -44,13 +44,12 @@ def bench_vec_add(
     mut b: Bench, *, block_dim: Int, length: Int, context: DeviceContext
 ) raises:
     comptime dtype = DType.float32
-    var in0_host = alloc[Scalar[dtype]](length)
-    var in1_host = alloc[Scalar[dtype]](length)
-    var out_host = alloc[Scalar[dtype]](length)
+    var in0_host = List(length=length, fill=Scalar[dtype](0))
+    var in1_host = List(length=length, fill=Scalar[dtype](2))
+    var out_host = List(length=length, fill=Scalar[dtype](0))
 
     for i in range(length):
         in0_host[i] = Float32(i)
-        in1_host[i] = 2
 
     var in0_device = context.enqueue_create_buffer[dtype](length)
     var in1_device = context.enqueue_create_buffer[dtype](length)
@@ -92,10 +91,9 @@ def bench_vec_add(
         assert_equal(Scalar[dtype](i + 2), out_host[i])
 
     __ownership_keepalive(in0_device, in1_device, out_device)
-
-    in0_host.free()
-    in1_host.free()
-    out_host.free()
+    _ = in0_host^
+    _ = in1_host^
+    _ = out_host^
 
 
 def main() raises:

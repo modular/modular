@@ -29,10 +29,10 @@ def bench_rms_norm_rope_gpu[
     comptime cols = shape[rank - 1]
     comptime rows = shape.flattened_length() // cols
 
-    var data_h = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
-    var cos_h = alloc[Scalar[dtype]](rows * cols)
-    var sin_h = alloc[Scalar[dtype]](rows * cols)
+    var data_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
+    var cos_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var sin_h = List(length=rows * cols, fill=Scalar[dtype](0))
 
     for i in range(rows * cols):
         data_h[i] = Scalar[dtype](random_float64(-1, 1).cast[dtype]())
@@ -126,11 +126,10 @@ def bench_rms_norm_rope_gpu[
     _ = cos_d
     _ = sin_d
     _ = output_d
-
-    data_h.free()
-    gamma_h.free()
-    cos_h.free()
-    sin_h.free()
+    _ = data_h^
+    _ = gamma_h^
+    _ = cos_h^
+    _ = sin_h^
 
 
 def main() raises:
