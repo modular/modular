@@ -604,7 +604,9 @@ def install_flashinfer(python: Path, src: Path) -> None:
 def install_flashattn(python: Path, src: Path) -> None:
     cute_src = src / "flash_attn" / "cute"
     if not cute_src.exists():
-        print(f"[warn] flash-attention FA4 package not found at {cute_src}, skipping")
+        print(
+            f"[warn] flash-attention FA4 package not found at {cute_src}, skipping"
+        )
         return
 
     env = build_env(python)
