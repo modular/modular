@@ -690,16 +690,7 @@ def _serialize_parsed_metrics(pm: ParsedMetrics) -> dict[str, object]:
 def _add_optional_result(
     result: dict[str, Any],
     metrics: BenchmarkMetrics | PixelGenerationBenchmarkMetrics,
-    lora_manager: LoRABenchmarkManager | None,
 ) -> None:
-    if lora_manager is not None:
-        result["lora_metrics"] = {
-            "total_loads": lora_manager.metrics.total_loads,
-            "total_unloads": lora_manager.metrics.total_unloads,
-            "load_times_ms": lora_manager.metrics.load_times_ms,
-            "unload_times_ms": lora_manager.metrics.unload_times_ms,
-        }
-
     if not metrics.metrics_by_endpoint:
         return
 
@@ -3023,6 +3014,8 @@ async def benchmark(
                     if isinstance(out, RequestFuncOutput)
                 ],
             )
+    if lora_manager is not None:
+        result.lora_metrics = lora_manager.metrics
     result_dict = result.to_result_dict()
 
     print_benchmark_summary(
@@ -3036,11 +3029,7 @@ async def benchmark(
         lora_manager=lora_manager,
     )
 
-    _add_optional_result(
-        result=result_dict,
-        metrics=result.metrics,
-        lora_manager=lora_manager,
-    )
+    _add_optional_result(result=result_dict, metrics=result.metrics)
 
     return result_dict, result
 

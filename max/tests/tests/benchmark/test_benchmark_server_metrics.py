@@ -561,7 +561,7 @@ class TestMetricsResultOutput:
             urls={}, backend="vllm", base_url="http://10.0.0.1:8000"
         )
         result: dict[str, Any] = {}
-        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+        _add_optional_result(result, _make_metrics(final))
 
         sm = result["server_metrics"]
         by_ep = result["server_metrics_by_endpoint"]
@@ -605,7 +605,7 @@ class TestMetricsResultOutput:
             base_url="http://10.0.0.1:8000",
         )
         result: dict[str, Any] = {}
-        _add_optional_result(result, _make_metrics(final), lora_manager=None)
+        _add_optional_result(result, _make_metrics(final))
 
         by_ep = result["server_metrics_by_endpoint"]
         assert set(by_ep.keys()) == {"orch", "engine-0"}

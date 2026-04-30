@@ -345,6 +345,16 @@ class LoRAMetrics:
     total_unloads: int = 0
     total_swaps: int = 0
 
+    def to_result_dict(self) -> dict[str, object]:
+        # TODO: Not clear why only these metrics are exposed.
+        # It will probably be moot once to_result_dict is removed, though.
+        return {
+            "total_loads": self.total_loads,
+            "total_unloads": self.total_unloads,
+            "load_times_ms": self.load_times_ms,
+            "unload_times_ms": self.unload_times_ms,
+        }
+
 
 @dataclass(kw_only=True)
 class BaseBenchmarkMetrics(Metrics):
@@ -607,6 +617,7 @@ class TextGenerationBenchmarkResult:
 
     metrics: BenchmarkMetrics
     steady_state_result: SteadyStateResult | None = None
+    lora_metrics: LoRAMetrics | None = None
     spec_decode_stats: SpecDecodeStats | None = None
     session_server_stats: dict[str, list[dict[str, Any]]] | None = None
     aggregate_server_stats: list[dict[str, Any]] | None = None
@@ -617,6 +628,8 @@ class TextGenerationBenchmarkResult:
             d.update(self.steady_state_result.to_result_dict())
         if self.spec_decode_stats is not None:
             d.update(self.spec_decode_stats.to_result_dict())
+        if self.lora_metrics is not None:
+            d["lora_metrics"] = self.lora_metrics.to_result_dict()
         if self.session_server_stats is not None:
             d["session_server_stats"] = self.session_server_stats
         if self.aggregate_server_stats is not None:
@@ -661,9 +674,13 @@ class PixelGenerationBenchmarkResult:
     """Result from a pixel generation benchmark iteration."""
 
     metrics: PixelGenerationBenchmarkMetrics
+    lora_metrics: LoRAMetrics | None = None
 
     def to_result_dict(self) -> dict[str, object]:
-        return self.metrics.to_result_dict()
+        d = self.metrics.to_result_dict()
+        if self.lora_metrics is not None:
+            d["lora_metrics"] = self.lora_metrics.to_result_dict()
+        return d
 
     def validate(self) -> tuple[bool, list[str]]:
         return self.metrics.validate()
