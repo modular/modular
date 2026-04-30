@@ -43,10 +43,18 @@ def get_tokenizer(
         pretrained_model_name_or_path,
         **tokenizer_kwargs,
     )
-    config = AutoConfig.from_pretrained(
-        pretrained_model_name_or_path, trust_remote_code=trust_remote_code
-    )
-    architectures = getattr(config, "architectures", None) or []
+    try:
+        config = AutoConfig.from_pretrained(
+            pretrained_model_name_or_path, trust_remote_code=trust_remote_code
+        )
+        architectures = getattr(config, "architectures", None) or []
+    except (ValueError, OSError) as exc:
+        print(
+            f"Warning: AutoConfig.from_pretrained failed for "
+            f"{pretrained_model_name_or_path!r}: {exc}. "
+            "Skipping architecture-specific tokenizer overrides."
+        )
+        architectures = []
     if "KimiK25ForConditionalGeneration" in architectures:
         original_encode = tokenizer.encode
 

@@ -1253,14 +1253,6 @@ class PipelineConfig(ConfigFileModel):
                     "LoRA is currently not supported with the number of devices > 1."
                 )
 
-        # TODO(E2EOPT-28): remove this constraint.
-        # Gemma has a MHA head size of 256.
-        # This requires a kv cache page size of at least 256.
-        if "Gemma3" in arch.name or "Gemma4" in arch.name:
-            model_config.kv_cache.kv_cache_page_size = max(
-                model_config.kv_cache.kv_cache_page_size, 256
-            )
-
         model_config.validate_multi_gpu_supported(
             multi_gpu_supported=arch.multi_gpu_supported
         )
