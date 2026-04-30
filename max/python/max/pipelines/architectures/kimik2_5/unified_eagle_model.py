@@ -79,6 +79,14 @@ class Eagle3KimiK25Unified(Module):
             if speculative_config
             else 1
         )
+        relaxed_topk: int | None = None
+        relaxed_delta: float | None = None
+        if (
+            speculative_config is not None
+            and speculative_config.use_relaxed_acceptance_for_thinking
+        ):
+            relaxed_topk = speculative_config.relaxed_topk
+            relaxed_delta = speculative_config.relaxed_delta
         self.acceptance_sampler = AcceptanceSampler(
             synthetic_acceptance_rate=(
                 speculative_config.synthetic_acceptance_rate
@@ -87,6 +95,8 @@ class Eagle3KimiK25Unified(Module):
             ),
             num_draft_steps=self.num_draft_steps,
             use_stochastic=True,
+            relaxed_topk=relaxed_topk,
+            relaxed_delta=relaxed_delta,
         )
         self.target = DeepseekV3(config)
         self.merger = RaggedTokenMerger(config.devices[0])
@@ -112,6 +122,7 @@ class Eagle3KimiK25Unified(Module):
         max_k: TensorValue,
         top_p: TensorValue,
         min_top_p: TensorValue,
+        in_thinking_phase: TensorValue,
         ep_inputs: list[Value[Any]] | None = None,
         draft_kv_collections: list[PagedCacheValues] | None = None,
     ) -> tuple[TensorValue, ...]:
@@ -154,6 +165,7 @@ class Eagle3KimiK25Unified(Module):
             max_k=max_k,
             top_p=top_p,
             min_top_p=min_top_p,
+            in_thinking_phase=in_thinking_phase,
         )
 
         # Compute next_tokens: target argmax at the first rejected position.
@@ -388,7 +400,7 @@ class Eagle3KimiK25Unified(Module):
                data_parallel_splits, signal_buffers, target_kv_cache,
                batch_context_lengths, target_ep_inputs, draft_tokens,
                draft_kv_blocks_per_device, seed, temperature, top_k,
-               max_k, top_p, min_top_p.
+               max_k, top_p, min_top_p, in_thinking_phase.
         """
         devices = self.config.devices
         device_ref = devices[0]
@@ -464,6 +476,9 @@ class Eagle3KimiK25Unified(Module):
         min_top_p_type = TensorType(
             DType.float32, shape=[], device=DeviceRef.CPU()
         )
+        in_thinking_phase_type = TensorType(
+            DType.bool, shape=["batch_size"], device=device_ref
+        )
         all_input_types.extend(
             [
                 temperature_type,
@@ -471,6 +486,7 @@ class Eagle3KimiK25Unified(Module):
                 max_k_type,
                 top_p_type,
                 min_top_p_type,
+                in_thinking_phase_type,
             ]
         )
 

@@ -139,6 +139,56 @@ class SpeculativeConfig(ConfigFileModel):
             )
         return v
 
+    use_relaxed_acceptance_for_thinking: bool = Field(
+        default=False,
+        description=(
+            "Enables relaxed acceptance for speculative decoding "
+            "draft positions inside a ``<think>...</think>`` block. The "
+            "target's top-N candidates (filtered by a probability "
+            "threshold ``top1_prob - relaxed_delta``) are compared "
+            "against the draft token; matching any candidate accepts "
+            "the draft. Outside the thinking span, the existing strict "
+            "acceptance rule still applies."
+        ),
+    )
+
+    relaxed_topk: int = Field(
+        default=10,
+        description=(
+            "Top-N candidates from the target distribution to consider "
+            "when relaxed acceptance is active. Ignored when "
+            "``use_relaxed_acceptance_for_thinking`` is ``False``."
+        ),
+    )
+
+    relaxed_delta: float = Field(
+        default=0.6,
+        description=(
+            "Probability gap below the top-1 candidate inside which "
+            "candidates remain eligible for relaxed acceptance. A draft "
+            "token is accepted if it matches any top-N candidate whose "
+            "probability is at least ``top1_prob - relaxed_delta``. "
+            "Ignored when ``use_relaxed_acceptance_for_thinking`` is "
+            "``False``."
+        ),
+    )
+
+    @field_validator("relaxed_topk")
+    @classmethod
+    def _validate_relaxed_topk(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError(f"relaxed_topk must be >= 1, got {v}")
+        return v
+
+    @field_validator("relaxed_delta")
+    @classmethod
+    def _validate_relaxed_delta(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError(
+                f"relaxed_delta must be between 0.0 and 1.0, got {v}"
+            )
+        return v
+
     _config_file_section_name: str = "speculative_config"
 
     def is_eagle(self) -> bool:

@@ -72,6 +72,10 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
     sampler. ``max_k`` and ``min_top_p`` are 0-d CPU scalars; the rest are
     ``[batch_size]`` tensors on the primary device."""
 
+    in_thinking_phase: Buffer | None = None
+    """Per-batch ``bool`` flag marking rows currently inside a
+    ``<think>...</think>`` block; consumed by relaxed acceptance."""
+
     @property
     def buffers(self) -> tuple[Buffer, ...]:
         buffers = (
@@ -104,12 +108,14 @@ class Eagle3KimiK25Inputs(KimiK2_5ModelInputs):
             assert self.max_k is not None
             assert self.top_p is not None
             assert self.min_top_p is not None
+            assert self.in_thinking_phase is not None
             buffers += (
                 self.temperature,
                 self.top_k,
                 self.max_k,
                 self.top_p,
                 self.min_top_p,
+                self.in_thinking_phase,
             )
         return buffers
 
@@ -387,6 +393,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                 max_k = next(variadic_args_iter).tensor
                 top_p = next(variadic_args_iter).tensor
                 min_top_p = next(variadic_args_iter).tensor
+                in_thinking_phase = next(variadic_args_iter).tensor
 
                 outputs = nn_model(
                     tokens=tokens.tensor,
@@ -404,6 +411,7 @@ class Eagle3KimiK25Model(KimiK2_5Model):
                     max_k=max_k,
                     top_p=top_p,
                     min_top_p=min_top_p,
+                    in_thinking_phase=in_thinking_phase,
                     ep_inputs=target_ep_inputs,
                     draft_kv_collections=draft_kv_collections,
                 )

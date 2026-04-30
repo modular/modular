@@ -1564,6 +1564,24 @@ class PipelineConfig(ConfigFileModel):
             ("device_graph_capture", self.runtime.device_graph_capture)
         )
 
+        if self.speculative is not None:
+            config_entries.append(
+                ("speculative_method", self.speculative.speculative_method)
+            )
+            config_entries.append(
+                (
+                    "num_speculative_tokens",
+                    self.speculative.num_speculative_tokens,
+                )
+            )
+            if self.speculative.use_relaxed_acceptance_for_thinking:
+                config_entries.append(
+                    ("relaxed_topk", self.speculative.relaxed_topk)
+                )
+                config_entries.append(
+                    ("relaxed_delta", self.speculative.relaxed_delta)
+                )
+
         logger.info("")
         logger.info("=" * 60)
         logger.info(

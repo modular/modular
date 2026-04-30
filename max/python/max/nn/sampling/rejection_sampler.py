@@ -359,10 +359,14 @@ class AcceptanceSampler:
         synthetic_acceptance_rate: float | None = None,
         num_draft_steps: int = 1,
         use_stochastic: bool = False,
+        relaxed_topk: int | None = None,
+        relaxed_delta: float | None = None,
     ) -> None:
         self._num_draft_steps = num_draft_steps
         self._use_stochastic = use_stochastic
         self._base_rate: float | None = None
+        self._relaxed_topk = relaxed_topk
+        self._relaxed_delta = relaxed_delta
 
         if synthetic_acceptance_rate is not None and num_draft_steps > 0:
             self._base_rate = compute_synthetic_acceptance_base_rate(
@@ -381,6 +385,7 @@ class AcceptanceSampler:
         max_k: TensorValue | None = None,
         top_p: TensorValue | None = None,
         min_top_p: TensorValue | None = None,
+        in_thinking_phase: TensorValue | None = None,
     ) -> tuple[TensorValue, TensorValue, TensorValue]:
         """Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``.
 
@@ -393,6 +398,12 @@ class AcceptanceSampler:
                 sampling params. Required when the sampler was built
                 with ``use_stochastic=True`` and synthetic mode is off;
                 ignored otherwise.
+            in_thinking_phase: Optional ``[batch_size]`` bool tensor
+                marking rows currently inside a ``<think>...</think>``
+                span. Required when the sampler was built with
+                ``relaxed_topk`` / ``relaxed_delta``; rows where this is
+                True use the relaxed acceptance rule, others use the
+                strict stochastic rule.
         """
         if self._base_rate is not None:
             return synthetic_acceptance_sampler(
@@ -417,6 +428,9 @@ class AcceptanceSampler:
                 top_p=top_p,
                 min_top_p=min_top_p,
                 seed=seed,
+                in_thinking_phase=in_thinking_phase,
+                relaxed_topk=self._relaxed_topk,
+                relaxed_delta=self._relaxed_delta,
             )
         return greedy_acceptance_sampler(draft_tokens, target_logits)
 
@@ -430,6 +444,9 @@ def stochastic_acceptance_sampler(
     top_p: TensorValue,
     min_top_p: TensorValue,
     seed: int | TensorValue | None = 0,
+    in_thinking_phase: TensorValue | None = None,
+    relaxed_topk: int | None = None,
+    relaxed_delta: float | None = None,
 ) -> tuple[TensorValue, TensorValue, TensorValue]:
     """Target-only rejection sampler for speculative decoding.
 
@@ -438,6 +455,13 @@ def stochastic_acceptance_sampler(
     scaling and softmax.  Recovered tokens are sampled from the
     target distribution; the bonus token is sampled via
     ``topk_fused_sampling``.
+
+    When ``in_thinking_phase``, ``relaxed_topk``, and ``relaxed_delta``
+    are all provided, rows where ``in_thinking_phase[b]`` is True
+    the draft is accepted if it appears among the target's top-N candidates whose
+    probability is within ``relaxed_delta`` of the top-1 probability.
+    Recovered tokens for accepted-but-rejected positions in relaxed
+    mode fall back to the target's top-1 argmax.
 
     Returns ``(first_rejected_idx, recovered_tokens, bonus_tokens)``
     """
@@ -510,13 +534,97 @@ def stochastic_acceptance_sampler(
     p_target = ops.gather_nd(target_probs, gather_indices)
 
     coins = ops.random.uniform(p_target.type)
-    rejected = coins >= p_target
+    rejected_strict = coins >= p_target
+    recovered_strict = _multinomial(target_probs)
+
+    use_relaxed = (
+        in_thinking_phase is not None
+        and relaxed_topk is not None
+        and relaxed_delta is not None
+    )
+
+    if use_relaxed:
+        # Worked example for one (batch, step) slot with vocab=6, N=3,
+        # delta=0.6, draft_token=2. ``probs`` below is the untempered
+        # softmax of the target's raw logits — *not* the temperature-
+        # scaled ``target_probs`` used by the strict path.
+        #
+        #   probs[b, k] = [0.05, 0.10, 0.20, 0.50, 0.10, 0.05]
+        #
+        #   ops.top_k(probs, k=3) →
+        #     top_probs = [0.50, 0.20, 0.10]
+        #     top_idx   = [   3,    2,    1]   ← vocab ids of the top 3
+        #
+        #   top1_prob = 0.50
+        #   threshold = 0.50 - 0.6 = -0.10   (any candidate qualifies)
+        #   valid     = [T, T, T]
+        #
+        #   draft_token = 2; matches = (top_idx == 2) & valid
+        #                            = [F, T, F] & [T, T, T]
+        #                            = [F, T, F]
+        #   accepted_relaxed = sum(matches) > 0  →  True   (draft is in top-3)
+        #
+        # Strict stochastic with the same logits would have accepted
+        # draft=2 only with probability 0.20 (the rank-2 prob). Relaxed
+        # accepts deterministically because rank-2 is inside the top-N
+        # AND its prob 0.20 ≥ threshold -0.10.
+        #
+        # If draft_token=4 instead: top_idx = [3, 2, 1] does not contain
+        # 4, so matches = [F, F, F] → rejected. Vocab tokens outside the
+        # top-N are never relaxed-accepted regardless of delta.
+        assert in_thinking_phase is not None
+        assert relaxed_topk is not None
+        assert relaxed_delta is not None
+
+        target_probs_relaxed = ops.softmax(draft_verification_logits)
+        top_probs, top_idx = ops.top_k(
+            target_probs_relaxed, k=relaxed_topk, axis=-1
+        )
+
+        # Threshold = top1_prob - delta (broadcast over the N dim).
+        delta_const = ops.constant(
+            relaxed_delta,
+            dtype=target_probs.dtype,
+            device=target_probs.device,
+        )
+        top1_prob = top_probs[:, :, 0:1]  # [B, K, 1]
+        threshold = top1_prob - delta_const
+        valid = top_probs >= threshold  # [B, K, N] bool
+
+        # Compare each top-N index against the draft token at that slot.
+        draft_b = ops.unsqueeze(token_indices, axis=-1)  # [B, K, 1]
+        matches = (
+            top_idx.cast(DType.int64) == draft_b.cast(DType.int64)
+        ) & valid  # [B, K, N] bool
+
+        # No reduce-any in MAX graph ops; use sum>0 over the last axis.
+        accepted_relaxed = (
+            ops.squeeze(ops.sum(matches.cast(DType.int32), axis=-1), axis=-1)
+            > 0
+        )  # [B, K] bool
+        rejected_relaxed = ops.logical_not(accepted_relaxed)
+
+        # Recovered fallback when relaxed rejects: target's top-1 argmax.
+        recovered_relaxed = ops.squeeze(
+            top_idx[:, :, 0:1].cast(recovered_strict.dtype), axis=-1
+        )  # [B, K]
+
+        # Per-row select: rows in thinking use relaxed; others use strict.
+        in_thinking_bk = ops.broadcast_to(
+            ops.unsqueeze(in_thinking_phase, axis=-1),
+            shape=[Dim("batch_size"), Dim("num_steps")],
+        )
+        rejected = ops.where(in_thinking_bk, rejected_relaxed, rejected_strict)
+        recovered_token_ids = ops.where(
+            in_thinking_bk, recovered_relaxed, recovered_strict
+        )
+    else:
+        rejected = rejected_strict
+        recovered_token_ids = recovered_strict
 
     first_rejected_idx = ops.squeeze(
         _find_first_rejected(rejected, device), axis=-1
     )
-
-    recovered_token_ids = _multinomial(target_probs)
 
     bonus_token_ids = topk_fused_sampling(
         logits=bonus_logits,

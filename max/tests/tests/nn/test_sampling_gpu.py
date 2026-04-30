@@ -540,3 +540,138 @@ def test_stochastic_acceptance_sampler_mixed_per_row_params() -> None:
     np.testing.assert_array_equal(first_rejected_np, [num_steps, 0, num_steps])
     assert np.isfinite(cast(Buffer, recovered).to_numpy()).all()
     assert np.isfinite(cast(Buffer, bonus).to_numpy()).all()
+
+
+def _build_relaxed_acceptance_graph(
+    device_ref: DeviceRef,
+    *,
+    relaxed_topk: int,
+    relaxed_delta: float,
+) -> Graph:
+    """Inline graph that calls ``stochastic_acceptance_sampler`` with the
+    new optional kwargs wired in. ``relaxed_topk`` and ``relaxed_delta``
+    bake in at graph build time."""
+    input_types = [
+        TensorType(DType.int64, ["batch_size", "num_steps"], device=device_ref),
+        TensorType(
+            DType.float32,
+            ["total_output_len", "vocab_size"],
+            device=device_ref,
+        ),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, ["batch_size"], device=device_ref),
+        TensorType(DType.int64, [], device=DeviceRef.CPU()),
+        TensorType(DType.float32, ["batch_size"], device=device_ref),
+        TensorType(DType.float32, [], device=DeviceRef.CPU()),
+        TensorType(DType.bool, ["batch_size"], device=device_ref),
+    ]
+    with Graph("stochastic_relaxed", input_types=input_types) as graph:
+        (
+            draft_tokens,
+            target_logits,
+            temperature,
+            top_k,
+            max_k,
+            top_p,
+            min_top_p,
+            in_thinking_phase,
+        ) = graph.inputs
+        first_rejected_out, recovered_out, bonus_out = (
+            stochastic_acceptance_sampler(
+                draft_tokens=draft_tokens.tensor,
+                target_logits=target_logits.tensor,
+                temperature=temperature.tensor,
+                top_k=top_k.tensor,
+                max_k=max_k.tensor,
+                top_p=top_p.tensor,
+                min_top_p=min_top_p.tensor,
+                seed=0,
+                in_thinking_phase=in_thinking_phase.tensor,
+                relaxed_topk=relaxed_topk,
+                relaxed_delta=relaxed_delta,
+            )
+        )
+        graph.output(first_rejected_out, recovered_out, bonus_out)
+    return graph
+
+
+def _relaxed_inputs(
+    device: Device,
+    batch_size: int,
+    vocab_size: int,
+    draft_tokens_np: npt.NDArray[np.int64],
+    logits: npt.NDArray[np.float32],
+    in_thinking_np: npt.NDArray[np.bool_],
+) -> list[Buffer]:
+    return [
+        *_stochastic_sampler_inputs(
+            device,
+            batch_size,
+            vocab_size,
+            draft_tokens_np,
+            logits,
+            np.ones(batch_size, dtype=np.float32),
+        ),
+        Buffer.from_numpy(in_thinking_np).to(device),
+    ]
+
+
+def test_relaxed_acceptance_accepts_top_n_within_delta() -> None:
+    """When the draft token is within the target's top-N candidates and
+    its probability exceeds ``top1 - delta``, the relaxed branch must
+    accept all draft positions for thinking rows."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+
+    vocab_size = 5
+    num_steps = 2
+    batch_size = 1
+
+    logits = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
+    logits[:, 0] = 3.0
+    logits[:, 1] = 2.0
+
+    draft = np.full((batch_size, num_steps), 1, dtype=np.int64)
+    in_thinking = np.array([True], dtype=np.bool_)
+
+    graph = _build_relaxed_acceptance_graph(
+        device_ref, relaxed_topk=3, relaxed_delta=0.95
+    )
+    model = session.load(graph)
+    first_rejected, _, _ = model.execute(
+        *_relaxed_inputs(
+            device, batch_size, vocab_size, draft, logits, in_thinking
+        )
+    )
+    assert int(cast(Buffer, first_rejected).to_numpy()[0]) == num_steps
+
+
+def test_relaxed_acceptance_rejects_out_of_top_n() -> None:
+    """A draft token that is not among the target's top-N candidates
+    must be rejected at position 0 even with ``in_thinking_phase=True``."""
+    device = Accelerator()
+    session = InferenceSession(devices=[device])
+    device_ref = DeviceRef.from_device(device)
+
+    vocab_size = 5
+    num_steps = 2
+    batch_size = 1
+
+    logits = np.full((num_steps + 1, vocab_size), -100.0, dtype=np.float32)
+    logits[:, 0] = 5.0
+    logits[:, 1] = 4.0
+    # Token 4 has logit -100 → not in top-3 → relaxed rejects.
+    draft = np.full((batch_size, num_steps), 4, dtype=np.int64)
+    in_thinking = np.array([True], dtype=np.bool_)
+
+    graph = _build_relaxed_acceptance_graph(
+        device_ref, relaxed_topk=3, relaxed_delta=0.95
+    )
+    model = session.load(graph)
+    first_rejected, _, _ = model.execute(
+        *_relaxed_inputs(
+            device, batch_size, vocab_size, draft, logits, in_thinking
+        )
+    )
+    assert int(cast(Buffer, first_rejected).to_numpy()[0]) == 0

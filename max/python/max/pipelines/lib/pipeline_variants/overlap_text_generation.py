@@ -169,16 +169,18 @@ class _UnifiedEagleInputs(Protocol):
     max_k: Buffer | None
     top_p: Buffer | None
     min_top_p: Buffer | None
+    in_thinking_phase: Buffer | None
 
 
 @dataclass
 class _SpecDecodeSamplingBuffers:
     """Per-batch sampling parameter buffers for stochastic target acceptance.
 
-    Per-batch tensors (``temperature``, ``top_k``, ``top_p``) are prefix
-    views of persistent device buffers, providing stable base pointers
-    required by graph capture. The 0-d scalars (``max_k``, ``min_top_p``)
-    live on the host and are fresh each execute.
+    Per-batch tensors (``temperature``, ``top_k``, ``top_p``,
+    ``in_thinking_phase``) are prefix views of persistent device buffers,
+    providing stable base pointers required by graph capture. The 0-d
+    scalars (``max_k``, ``min_top_p``) live on the host and are fresh each
+    execute.
     """
 
     temperature: Buffer
@@ -186,6 +188,7 @@ class _SpecDecodeSamplingBuffers:
     max_k: Buffer
     top_p: Buffer
     min_top_p: Buffer
+    in_thinking_phase: Buffer
 
 
 def _get_draft_kv_blocks(
@@ -279,6 +282,9 @@ class SpecDecodeState:
     persistent_top_p: Buffer
     """Persistent per-batch top_p values."""
 
+    persistent_in_thinking_phase: Buffer
+    """Persistent per-batch boolean for in-thinking-phase state."""
+
     @classmethod
     def load(
         cls,
@@ -347,6 +353,11 @@ class SpecDecodeState:
             shape=(total_max_batch,),
             device=model.devices[0],
         )
+        persistent_in_thinking_phase = Buffer(
+            dtype=DType.bool,
+            shape=(total_max_batch,),
+            device=model.devices[0],
+        )
 
         return SpecDecodeState(
             num_speculative_tokens=num_speculative_tokens,
@@ -357,6 +368,7 @@ class SpecDecodeState:
             persistent_temperature=persistent_temperature,
             persistent_top_k=persistent_top_k,
             persistent_top_p=persistent_top_p,
+            persistent_in_thinking_phase=persistent_in_thinking_phase,
         )
 
 
@@ -1263,20 +1275,6 @@ class OverlapTextGenerationPipeline(
             self._think_start_token_id, self._think_end_token_id = (
                 _resolve_thinking_token_ids(tokenizer)
             )
-        if self._think_start_token_id >= 0 and self._think_end_token_id >= 0:
-            logger.info(
-                "[thinking-temp] enabled: <think>=%d </think>=%d",
-                self._think_start_token_id,
-                self._think_end_token_id,
-            )
-        else:
-            logger.info(
-                "[thinking-temp] disabled (reasoning_parser=%r, "
-                "think_start=%d, think_end=%d)",
-                pipeline_config.runtime.reasoning_parser,
-                self._think_start_token_id,
-                self._think_end_token_id,
-            )
 
         # Initialize structured output helper for constrained decoding.
         self._structured_output = StructuredOutputHelper.from_tokenizer(
@@ -1611,6 +1609,9 @@ class OverlapTextGenerationPipeline(
                 model_inputs.max_k = sampling_buffers.max_k
                 model_inputs.top_p = sampling_buffers.top_p
                 model_inputs.min_top_p = sampling_buffers.min_top_p
+                model_inputs.in_thinking_phase = (
+                    sampling_buffers.in_thinking_phase
+                )
 
             yield model_inputs
 
@@ -1712,6 +1713,12 @@ class OverlapTextGenerationPipeline(
             count=batch_size,
         )
 
+        in_thinking_phase_np = np.fromiter(
+            (ctx.in_reasoning_phase for ctx in context_batch),
+            dtype=np.bool_,
+            count=batch_size,
+        )
+
         temperature_pinned = DevicePinnedBuffer(
             shape=(batch_size,), dtype=DType.float32, device=device0
         )
@@ -1724,6 +1731,10 @@ class OverlapTextGenerationPipeline(
             shape=(batch_size,), dtype=DType.float32, device=device0
         )
         top_p_pinned.to_numpy()[:] = top_p_np
+        in_thinking_phase_pinned = DevicePinnedBuffer(
+            shape=(batch_size,), dtype=DType.bool, device=device0
+        )
+        in_thinking_phase_pinned.to_numpy()[:] = in_thinking_phase_np
 
         temperature_view = self._spec_decode_state.persistent_temperature[
             :batch_size
@@ -1736,6 +1747,11 @@ class OverlapTextGenerationPipeline(
         top_p_view = self._spec_decode_state.persistent_top_p[:batch_size]
         top_p_view.inplace_copy_from(top_p_pinned)
 
+        in_thinking_phase_view = (
+            self._spec_decode_state.persistent_in_thinking_phase[:batch_size]
+        )
+        in_thinking_phase_view.inplace_copy_from(in_thinking_phase_pinned)
+
         max_k = Buffer.from_numpy(np.array(int(top_k_np.max()), dtype=np.int64))
         min_top_p = Buffer.from_numpy(
             np.array(float(top_p_np.min()), dtype=np.float32)
@@ -1747,6 +1763,7 @@ class OverlapTextGenerationPipeline(
             max_k=max_k,
             top_p=top_p_view,
             min_top_p=min_top_p,
+            in_thinking_phase=in_thinking_phase_view,
         )
 
     def _run_forward(
@@ -1856,6 +1873,7 @@ class OverlapTextGenerationPipeline(
             model_inputs.max_k = sampling_buffers.max_k
             model_inputs.top_p = sampling_buffers.top_p
             model_inputs.min_top_p = sampling_buffers.min_top_p
+            model_inputs.in_thinking_phase = sampling_buffers.in_thinking_phase
 
         if (
             self._prev_batch is not None
