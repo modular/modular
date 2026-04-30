@@ -1432,6 +1432,17 @@ void ParametricElaborator::completeImplNodeProcessing(PImplNode *inode) {
       if (failed(concrete))
         break;
     }
+
+    // Check intra-SCC edges that were removed to break the cycle. Any callee
+    // that errored during the first pass needs to propagate its error here.
+    for (auto [loc, genNode] : inode->sccRemovedDeps) {
+      if (inode->error)
+        break;
+      if (failed(collectConcreteImplementations(loc, inode, genNode)))
+        break;
+    }
+    inode->sccRemovedDeps.clear();
+
     if (!inode->error)
       finalizeInstance(inode);
   }
@@ -2361,11 +2372,15 @@ bool ParametricElaborator::diagnoseAndBreakRecursion(
     for (PParamNode *node : sccNodes) {
       PImplNode *inode = &node->impl;
       std::vector<std::pair<Location, PParamNode *>> newDeps;
+      std::vector<std::pair<Location, PParamNode *>> sccDeps;
       for (auto [idx, dep] : llvm::enumerate(inode->dependencies)) {
         if (!inSCC.contains(GraphEdge{node, idx})) {
           newDeps.push_back(dep);
+        } else {
+          inode->sccRemovedDeps.push_back(dep);
         }
       }
+
       // Decrement the number of dependencies and set the new dependencies.
       inode->numDependencies -=
           (inode->dependencies.size() - newDeps.size() - 1);
@@ -2376,7 +2391,9 @@ bool ParametricElaborator::diagnoseAndBreakRecursion(
     }
 
     // When all of them are done as individual nodes, they will reset their
-    // dependency counter to 1 and wait for all chains to complete.
+    // dependency counter to 1 and wait for all chains to complete. Then
+    // sccRemovedDeps on each node is checked to propagate any errors from
+    // callees that errored during the first pass.
     MLRT::andThenAsyncMoving(sccChains, [this, nodes = sccNodes.takeVector()](
                                             MutableArrayRef<AnyAsyncValueRef>) {
       for (PParamNode *node : nodes)
