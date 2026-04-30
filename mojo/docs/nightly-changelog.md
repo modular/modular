@@ -29,6 +29,21 @@ This version is still a work in progress.
 - Adds docs for non-nullable pointers and provides sample code showing
   how to use `Optional` with `UnsafePointer`.
 
+- Separated the Mojo layout library docs from the MAX kernels library,
+  reflecting that the layout library ships with the `mojo` package while the
+  rest of the kernels library ships with the `max` package.
+
+- Added a new guide for building Mojo packages, currently covering the
+  `rattler-build` workflow.
+
+- Restructured the Mojo and MAX system requirements and GPU compatibility
+  docs. Replaced the three-tier GPU support model with a two-level
+  "Continuously tested" / "Known compatible" taxonomy, added a dedicated
+  Mojo GPU compatibility page with per-vendor hardware tables and driver
+  requirements, and simplified the main requirements pages.
+
+- Added a Mojo manual reference page for the `@doc_hidden` decorator.
+
 ## Language enhancements
 
 - Added type refinement based on compile time assumptions, enabling Mojo to
@@ -59,9 +74,6 @@ This version is still a work in progress.
 - Improved diagnostics for onboarding-priority parser errors in Mojo
   for clarity and UX.
 
-- Migrated monorepo from `fn` to using `def` for function declaration.
-  Warned on use of `fn` and will deprecate `fn` in the next release.
-
 - Updated signature error diagnostics and added related tests.
 
 - Mojo now uses `NoneType` instead of an empty tuple to mark constructor
@@ -75,19 +87,61 @@ This version is still a work in progress.
     comptime some_type: Movable = Int if cond else String
   ```
 
-- Unified closures now accept default capturing conventions when there are
-  explicit captures already.
+- **Unified closure improvements.** This release continues the closure
+  unification work begun in earlier releases: stateless closures auto-lift,
+  the `ref` capture convention is supported, default capture conventions can
+  be combined with explicit capture lists, and a new `thin` function effect
+  distinguishes function pointer types from closure traits.
 
   ```mojo
-  def captures_with_default_convention():
-    var a, b, c, d = ("a", "b", "c", "d")
-    def my_fn() unified {mut a, b, c^, read}:
-      # capture:
-      # `a` by mut reference
-      # `b` by immut reference
-      # `c` by moving
-      # `d` by immut reference (the default 'read' convention)
-      use(a, b, c, d)
+  def main() raises:
+      var a, b, c, d = 1, 2, 3, 4
+      var x = "hello"
+
+      # Legacy closure: no capture list. Cannot capture variables.
+      def hello():
+          print("hi")
+
+      # Unified closure with no captures (stateless). Stateless closures
+      # lift to top-level functions and can be passed as FFI callbacks.
+      def add_one(n: Int) {} -> Int:
+          return n + 1
+
+      # Unified closure with explicit captures and a default capturing
+      # convention:
+      def my_fn() {mut a, b, c^, read}:
+          # capture:
+          # `a` by mut reference
+          # `b` by immut reference
+          # `c` by moving
+          # `d` by immut reference (the default `read` convention)
+          use(a, b, c, d)
+
+      # Unified closure that captures `x` by ref (carries an
+      # origin-mutability parameter):
+      def show_x() {ref x}:
+          print(x)
+
+      # Function effects come before the capture list. The calling context
+      # must handle errors raised from a `raises` closure.
+      def fallible() raises {}:
+          raise Error("nope")
+
+      # Closures are invoked like ordinary functions:
+      hello()
+      print(add_one(41))
+      my_fn()
+      show_x()
+      try:
+          fallible()
+      except e:
+          print(e)
+
+      # The `thin` function effect declares a function pointer type
+      # (distinct from a closure trait). Stateless closures and top-level
+      # functions satisfy `thin`:
+      var fn_ptr: def(Int) thin -> Int = add_one
+      print(fn_ptr(99))
   ```
 
 - Added `abi("C")` as a function effect for declaring C calling convention on
@@ -142,6 +196,11 @@ This version is still a work in progress.
         comptime assert i > 5, t"expected i > 5, got {i}"
   ```
 
+- Added `__mlir_deferred_type[...]` for declaring parameter-dependent return
+  types and operation result types in inline MLIR. The parser combines the
+  bracketed pieces into a type string and the elaborator builds the concrete
+  MLIR type once parameters are substituted.
+
 ## Language changes
 
 - Variadic parameters lists are now passed instead of `ParameterList` and
@@ -171,8 +230,28 @@ This version is still a work in progress.
   def bar(): pass
   ```
 
-- Mojo now warns on uses of the legacy `fn` keyword. Please move to `def` as
-  this will upgrade to an error in the future.
+- The `fn` keyword for function declarations is deprecated. Mojo now emits a
+  compiler warning on uses of `fn`; this will become a compilation error in
+  the next release. Use `def` instead.
+
+- The `unified` keyword has been removed; specify unified-closure semantics
+  with an explicit capture list `{...}` after the function signature. An
+  empty capture list `{}` denotes unified with no captures. Closures without
+  any capture list are legacy. Mojo also now warns when a function pointer
+  type omits the `thin` effect; specify `thin` explicitly to silence the
+  warning.
+
+- Removed support for comparing tuples of differing lengths or types. Such
+  comparisons (for example `(1, 2) != (4, 5, 6)`) are now rejected statically
+  by the type system instead of silently returning not-equal.
+
+- `A if comptime(C) else B` now skips elaboration of the dead branch,
+  treating the ternary expression as a compile-time evaluation contract
+  analogous to `comptime if C: A else: B`.
+
+- `@explicit_destroy` is now rejected at parse time when paired with an
+  unconditional `ImplicitlyDestructible` conformance; it remains valid only
+  on conditional (where-clause-constrained) conformances.
 
 - Import statements of the form `from pkg import ...` no longer make `pkg`
   available to the module.
@@ -357,26 +436,49 @@ This version is still a work in progress.
 
 - Added uninitialized memory read detection for float loads. When compiled
   with `-D MOJO_STDLIB_SIMD_UNINIT_CHECK=true`, every float load is checked
-  against the debug allocator's poison patterns (0xFF host fill and canonical
-  qNaN device fill). A match triggers `abort()` with a descriptive message.
-  When disabled (the default), zero runtime overhead. For MAX pipelines, set
-  `MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true` (or the
-  `max-debug.uninitialized-read-check` config key, or
-  `InferenceSession.debug.uninitialized_read_check = True`) to enable both the
-  debug allocator and the load-time checks automatically.
+  against the debug allocator's poison pattern (the largest finite value of
+  the float type, e.g. `FLT_MAX` for `Float32`). A match triggers `abort()`
+  with a descriptive message. The non-NaN poison pattern lets `nan-check`
+  and `uninit-read-check` coexist (a NaN poison would be flagged by
+  `nan-check` as a legitimate NaN error in kernels that intentionally only
+  write active positions). When disabled (the default), zero runtime
+  overhead. For MAX pipelines, set
+  `MODULAR_MAX_DEBUG_UNINITIALIZED_READ_CHECK=true` to enable both the debug
+  allocator and the load-time checks automatically.
 
-- Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple M5
-  targets at compile time. `is_apple_silicon()` now includes M5 in its check.
+- **Expanded Apple Silicon GPU support.** Apple Metal GPU is now a more
+  capable Mojo target.
 
-- Added Apple M5 MMA intrinsics (`apple_mma_load`, `apple_mma_store`,
-  `_mma_apple`) in `std.gpu.compute.arch.mma_apple`, enabling hardware matrix
-  multiply-accumulate on Apple GPU.
+  - `print()` and `_printf()` now work on Apple Metal GPU. Output is chunked
+    through the Metal `os_log` path, with a Float32-only formatter that
+    matches Metal's hardware constraints. `_printf()` currently emits the
+    format string only (not interpolated arguments); `|x| < 1e-7` is
+    truncated to `0.0` and there is no scientific notation.
+  - `external_memory[]()` (dynamic threadgroup memory) is now supported on
+    Apple Silicon. The compiler and runtime bridge CUDA-style extern shared
+    symbols to Metal's `setThreadgroupMemoryLength:atIndex:` model, so
+    existing GPU kernels using `external_memory[]()` work unchanged.
+  - Apple M5 MMA intrinsics (`apple_mma_load`, `apple_mma_store`,
+    `_mma_apple`) in `std.gpu.compute.arch.mma_apple` enable hardware matrix
+    multiply-accumulate on Apple GPU.
+  - Added `CompilationTarget.is_apple_m5()` to `std.sys` for detecting Apple
+    M5 targets at compile time; `is_apple_silicon()` now includes M5 in its
+    check.
+  - Apple GPU targets now prefer `metal4` features by default when the
+    toolchain supports them, automatically appending `-metal4` to the arch
+    instead of requiring explicit `m5-metal4` selection.
+  - **Atomic ordering:** `release` ordering is not supported on Metal. Apple
+    GPU targets now use `monotonic` (relaxed) atomic ordering by default.
+  - **Floating-point widths:** the compiler now rejects floating-point types
+    wider than 32 bits (`Float64`/`Float80`/`Float128`) for Apple GPU
+    targets, since Metal supports only `Float16` and `Float32`.
 
 - Standard library types now use conditional conformances, replacing previous
   `_constrained_conforms_to` checks:
   - `Span`: `Writable`, `Hashable`
   - `Tuple`, `Optional`, `Variant`, and `UnsafeMaybeUninit`: `RegisterPassable`
   - `Variant`: `Copyable`, `ImplicitlyCopyable`
+  - `Optional`: `DevicePassable` (conditional on element type)
 
 - `Tuple` now conditionally conforms to `Defaultable`, so generic
   `T: Defaultable` code can default-construct tuples when all element types are
@@ -421,48 +523,45 @@ This version is still a work in progress.
   pointer. Note that `unsafe_dangling()` is not a null sentinel: types that
   lazily allocate must track initialization separately.
 
-- GPU primitive id accessors (e.g. `thread_idx`) have migrated from `UInt` to
+- GPU primitive id accessors (`thread_idx`, `block_idx`, `block_dim`,
+  `grid_dim`, `global_idx`, `lane_id`, `warp_id`, `cluster_dim`,
+  `cluster_idx`, and `block_id_in_cluster`) have migrated from `UInt` to
   `Int`.
 
-  This is part of a broader migration to standardize on the `Int` type for all
-  sizes and offsets in Mojo.
+  This is part of a broader migration to standardize on the `Int` type for
+  all sizes and offsets in Mojo. As a related step in the same migration,
+  `TensorCore.load_a()` and `TensorCore.load_b()` now also take `Int`
+  arguments instead of `UInt`.
 
-  To provide a gradual migration path, explicitly typed aliases are
-  available temporarily.
+  To provide a gradual migration path, explicitly typed `*_uint` aliases of
+  the seven non-cluster accessors are available temporarily:
 
-  | Base         | `UInt` Accessor   | `Int` Accessor    |
-  |--------------|-------------------|-------------------|
-  | `thread_idx` | `thread_idx_uint` | `thread_idx_int`  |
-  | `thread_dim` | `thread_dim_uint` | `thread_dim_int`  |
-  | `block_dim`  | `block_dim_uint`  | `block_dim_int`   |
-  | `grid_dim`   | `grid_dim_uint`   | `grid_dim_int`    |
-  | `global_idx` | `global_idx_uint` | `global_idx_int`  |
-  | `lane_id`    | `lane_id_uint`    | `lane_id_int`     |
-  | `warp_id`    | `warp_id_uint`    | `warp_id_int`     |
+  | Accessor       | Legacy `UInt` alias  |
+  |----------------|----------------------|
+  | `thread_idx`   | `thread_idx_uint`    |
+  | `block_idx`    | `block_idx_uint`     |
+  | `block_dim`    | `block_dim_uint`     |
+  | `grid_dim`     | `grid_dim_uint`      |
+  | `global_idx`   | `global_idx_uint`    |
+  | `lane_id`      | `lane_id_uint`       |
+  | `warp_id`      | `warp_id_uint`       |
 
-  Code can preserve its prior behavior by using a renaming import of the
-  `thread_idx_uint` alias:
+  The three cluster accessors (`cluster_dim`, `cluster_idx`,
+  `block_id_in_cluster`) migrated directly without `*_uint` aliases, since
+  their usage was limited.
+
+  Code can preserve its prior `UInt` behavior by using a renaming import of
+  the `*_uint` alias:
 
   ```diff
   - from std.gpu import thread_idx
   + from std.gpu import thread_idx_uint as thread_idx
   ```
 
-  Note that `thread_idx_uint` and the other `_*uint` aliases will eventually
-  be deprecated and removed as well.
-
-  After a temporary deprecation acting as a "speed bump" in the 2026-03-29
-  nightly release, `thread_idx` etc. have changed from `UInt` to `Int`.
-
-  Code built with a version where `thread_idx` is still `UInt`, can proactively
-  migrate to the eventual `Int` behavior using the `thread_idx_int` alias:
-
-  ```diff
-  - from std.gpu import thread_idx
-  + from std.gpu import thread_idx_int as thread_idx
-
-  # ... update file to reflect change from `UInt` to `Int` ...
-  ```
+  The temporary `*_int` accessors that briefly existed during the phased
+  migration as a forward-compatibility aid have been removed; use the
+  unprefixed accessors (which now return `Int` by default). The `*_uint`
+  aliases will eventually be deprecated and removed as well.
 
 - Added `IterableOwned` trait to the iteration module. Types conforming to
   `IterableOwned` implement `__iter__(var self)`, which consumes the collection
@@ -591,7 +690,7 @@ This version is still a work in progress.
   ```mojo
   var o = Optional[Int](42)
 
-  def closure(n: Int) unified {} -> String:
+  def closure(n: Int) {} -> String:
     return String(n + 1)
 
   var mapped: Optional[String] = o.map[To=String](closure)
@@ -602,13 +701,172 @@ This version is still a work in progress.
   requirement to run a destructor for a value. This function should be used
   rarely, when building low-level abstractions.
 
-- `parallelize`, `parallelize_over_rows` (in
-  `std.algorithm.backend.cpu.parallelize`) and the `elementwise` overloads in
-  `std.algorithm.functional` now accept an optional trailing
-  `ctx: Optional[DeviceContext] = None` parameter. When supplied, the provided
-  CPU `DeviceContext` is forwarded to `sync_parallelize` so that parallel work
-  runs on that context; when omitted, the previous behavior is preserved. This
-  is a step toward running CPU ops on specific NUMA nodes.
+- **CPU `DeviceContext` expansion.** `DeviceContext(api="cpu")` is now usable
+  as a stream-ordered execution context for CPU work, paving the way for
+  NUMA-aware CPU dispatch.
+
+  - Added `DeviceContext.enqueue_cpu_function()` and
+    `DeviceContext.enqueue_cpu_range()` for stream-ordered execution of host
+    functions on CPU `DeviceContext` instances. `enqueue_cpu_function`
+    enqueues a single host function; `enqueue_cpu_range` enqueues a parallel
+    range whose tasks run concurrently but are stream-ordered relative to
+    surrounding work. Argument passing is not yet supported.
+  - `parallelize`, `parallelize_over_rows` (in
+    `std.algorithm.backend.cpu.parallelize`), and the `elementwise`
+    overloads in `std.algorithm.functional` now accept an optional trailing
+    `ctx: Optional[DeviceContext] = None`. When supplied, the provided CPU
+    `DeviceContext` is forwarded to `sync_parallelize`; when omitted, the
+    previous behavior is preserved.
+  - Added a `parallelism_level()` overload that takes a CPU `DeviceContext`
+    and returns the thread-pool size for that specific context, enabling
+    NUMA-specific introspection.
+
+- **Readable GPU kernel names in profilers.** GPU kernels in the standard
+  library and across MAX kernels (elementwise, GEMV, multistage matmul,
+  attention, convolution, MoE, normalization, quantization, BMM, grouped
+  matmul, SM100 matmul, AMD matmul, communication, and sampling) now expose
+  human-readable names in profiler traces such as Nsight Systems, replacing
+  previously mangled KGEN symbols.
+
+- **`tile_io` module for `TileTensor` data movement.** Added a `tile_io`
+  module providing `TileTensor` copier traits and copy utilities for moving
+  data between memory hierarchies (DRAM/SRAM). The module includes:
+
+  - `GenericToSharedAsyncTileCopier`, which moves a `TileTensor` from
+    generic memory into shared memory via NVIDIA's `cp.async`. On AMD and
+    Apple GPUs the underlying `async_copy` falls back to synchronous
+    loads/stores.
+  - An optional `swizzle: Swizzle` parameter on
+    `GenericToSharedAsyncTileCopier`, mirroring the swizzled write path in
+    `LocalToSharedTileCopier`.
+  - A `masked: Bool = False` parameter on
+    `GenericToSharedAsyncTileCopier`. When enabled, out-of-bounds vectors
+    receive a zero-byte copy with zero-fill, matching
+    `LayoutTensor.copy_from_async[is_masked=True, fill=Fill.ZERO]`.
+  - An `AsyncTileCopier` trait abstracting copier conformance.
+
+- **TMA `gather4` for sparse 2D tensor loads.** Added a TMA `gather4`
+  operation on SM100 (Blackwell) for loading 4 non-contiguous rows from a 2D
+  tensor in a single TMA instruction, surfaced as the
+  `cp_async_bulk_tensor_2d_gather4` intrinsic in `std.gpu.memory` and
+  integrated with `TMATensorTile`. The API supports:
+
+  - Full 2D tile sparse loads with arbitrary `tile_height` (multiple of 4)
+    and `tile_width`, replacing the prior 4-row-per-call limit.
+  - Arbitrary `row_width` — previously restricted to the swizzle box width.
+    The API automatically computes the box width from the swizzle constraint
+    and supports non-divisible widths via TMA hardware zero-fill on the last
+    column group, so kernels no longer need to hand-code column-group loops.
+
+- **1D TMA instructions for SM90+ NVIDIA GPUs.** Added 1D TMA (Tensor Memory
+  Accelerator) instruction support in `std.gpu.memory`. 1D TMA copies do not
+  require a pre-allocated tensormap object on the host, providing greater
+  flexibility than the existing 2D–5D TMA path. New functions:
+  `cp_async_bulk_shared_cluster_global`, `cp_async_bulk_global_shared_cta`,
+  `cp_async_bulk_prefetch`, and `cp_async_bulk_reduce_global_shared_cta`
+  (the 1D counterpart to `cp_async_bulk_tensor_reduce_global_shared_cta`,
+  which reduces floating-point values from shared memory into global memory;
+  ADD only).
+
+- **`TileTensor` API extensions.**
+
+  - Added `TileTensor.bitcast[target_dtype]()`, which returns a new
+    `TileTensor` viewing the same storage and layout under a different
+    element dtype, replacing the
+    `TileTensor(x.ptr.bitcast[Scalar[T]](), x.layout)` idiom.
+  - Added `TileTensor.flat_load` and `TileTensor.flat_store` as raw-flat
+    accessors that read and write the underlying storage at a linear offset,
+    bypassing the tensor's layout.
+  - Added a `TileTensor.tile()` overload that takes the tile shape as a
+    runtime/parameter argument, complementing the existing tile APIs.
+  - GPU `TileTensor.load()` and `load_linear()` now default `invariant=True`
+    for immutable tensors, enabling the compiler to use `ldg` for read-only
+    memory accesses.
+  - Added compile-time bounds checks to `TileTensor`, `ManagedTensorSlice`,
+    and `crd2idx` to catch out-of-range coordinate accesses at compile time.
+
+- **Layout library extensions.**
+
+  - Added a compile-time `coalesce` function for `TensorLayout`, mirroring
+    the legacy `Layout.coalesce` algorithm (skip shape-1 dims and merge
+    contiguous dims).
+  - Added `write_repr_to` to `Layout` for writing a debug representation to
+    a `Writer`.
+  - `vectorize` and `distribute` now accept layouts with runtime dimensions.
+  - `row_major` now accepts coord-like arguments directly, no longer
+    requiring them to be wrapped in tuples.
+  - Introduced weakly compatible layouts, enabling structural compatibility
+    comparisons between layouts and coordinate indices (up to depth 4).
+    Structural equality is now checked via a `comptime assert` rather than a
+    `where` clause.
+  - Changed `CoordLike.value()` to return `Scalar[Self.DTYPE]` instead of
+    `Int`, providing a more expressive return type for layout coordinate
+    values.
+  - `Coord`, `RowMajorLayout`, and `ColMajorLayout` once again take their
+    parameters as variadic arguments, improving ergonomics when specifying
+    individual coords. Use `*splat` to pass an existing list.
+
+- Several standard library APIs that previously took legacy closures now
+  have unified-closure overloads: `parallelize` and `parallelize_over_rows`
+  (in `std.algorithm.backend.cpu.parallelize`), `bench.bencher`,
+  `DeviceContext.execution_time`, and `DeviceContext.enqueue_function` (the
+  GPU enqueue path, renamed from the previous `enqueue_closure`).
+
+- **GPU device APIs.**
+
+  - Added support for NVIDIA B300 (sm_103a) accelerators. New helpers in
+    `std.sys.info` and `std.gpu.host.info` recognize B300 targets so kernels
+    can dispatch correctly on the Blackwell B300 architecture.
+  - Added `DeviceStream.enqueue_host_func(func, user_data)` exposing the
+    `cuLaunchHostFunc` primitive for Mojo kernels and custom ops. Takes a
+    `thin def(OpaquePointer[MutAnyOrigin]) -> None` callback and an opaque
+    `user_data` pointer. CUDA-only today; non-CUDA backends raise.
+  - `DeviceContext` initialization now runs an automatic GPU health check
+    that detects hardware throttling, uncorrectable ECC errors, and zombie
+    VRAM, and fails device creation with an actionable error message on
+    unhealthy GPUs. Added `DeviceContext.run_healthcheck()` to re-invoke the
+    check explicitly. Set `MODULAR_DEVICE_CONTEXT_DISABLE_HEALTHCHECK=true`
+    to disable.
+  - Optimized GPU `elementwise` index computation and dispatch with a
+    `use_32bit` fast path, 4× unrolled grid-stride processing, warp-aligned
+    block sizes, and SM100+ single-tile routing.
+
+- **AMD GPU intrinsics.**
+
+  - Added the `ds_read_tr8_b64` AMD GPU intrinsic in `std.gpu.intrinsics`,
+    performing a 64-bit LDS transpose load of 8-bit elements via
+    `llvm.amdgcn.ds.read.tr8.b64`. Supported on AMD CDNA4+ GPUs.
+  - Added a `Scalar[dtype]` overload of `readfirstlane` so callers no longer
+    need bitcast workarounds to broadcast non-`Int32` scalar values across
+    an AMD GPU wavefront.
+  - `AMDBufferResource.load_to_lds` in `std.gpu.intrinsics` now lowers to
+    the `.ptr.` form of the AMDGPU buffer-load-to-LDS intrinsic, fixing a
+    strided-layout regression on MLA layouts where `cache_depth != depth`
+    and `head_dim_offset != 0`. A new `async_copies: Bool = False` parameter
+    opts in to attaching the `amdgpu.AsyncCopies` alias scope on the load,
+    enabling LLVM `vmcnt` relaxation.
+  - Added a `broadcast=True` parameter to GPU `warp_id()` (and related id
+    accessors) so callers can avoid manual `warp.broadcast(warp_id())`
+    patterns.
+
+- **Math, debug, and stdlib APIs.**
+
+  - `align_down` and `align_up` now accept generic `SIMD[dtype, width]`
+    integer values, replacing the previous `UInt`-only overloads.
+  - Extended `FastDiv` and `mulhi` to support 64-bit integer types, with
+    NVIDIA-specific `llvm.nvvm.mulhi.ull/ll` intrinsics and 128-bit
+    arithmetic on other targets.
+  - Added `check_bounds` for collections that asserts on out-of-range
+    indices and reports the user's call site instead of stdlib source.
+  - `debug_assert` now accepts a `call_location` parameter, allowing callers
+    to override the reported `SourceLocation` so assertion errors can point
+    to user code rather than stdlib internals.
+  - Swapped the ordering arguments of `Atomic.compare_exchange` so
+    `success_ordering` is listed before `failure_ordering`, matching the
+    convention used by C++, Rust, and other languages.
+  - `InlineArray`'s storage constructor now uses
+    `debug_assert[assert_mode="safe"]` for the element-count check, so size
+    mismatches are caught by default instead of only with `-D ASSERT=all`.
 
 ## Tooling changes
 
@@ -627,6 +885,80 @@ This version is still a work in progress.
   documentation, not including `VariadicList`/`VariadicPack` and including
   keyword argument labels when required.
 
+- **LSP and REPL responsiveness.**
+
+  - Code completion and signature help in REPL/notebook contexts are now
+    amortized O(1) per request by caching parsed prior cells across
+    requests, eliminating quadratic O(N²) slowdown in long sessions.
+  - LSP parse time for files with docstring code blocks (e.g. `dict.mojo`)
+    is roughly 2× faster, using signature-only resolution for transitive
+    dependencies inside docstring code blocks.
+  - LSP parse time is further reduced by deferring body resolution of
+    imported bytecode declarations and resolving named imports lazily,
+    avoiding eager pulls of large transitive dependencies.
+
+- **`mojo` CLI and toolchain.**
+
+  - `mojo --version` now prints a semantic Mojo version (for example,
+    `1.0.0...`) instead of an internal build identifier, and the same
+    version is used wherever the compiler performs version checks.
+  - `mojo build --print-supported-targets` now lists registered targets
+    sorted alphabetically, with a graceful empty-list message.
+  - The compiler now selects the target's baseline CPU when cross-compiling
+    with `--target-triple` without `--target-cpu` and the host and target
+    architectures differ.
+  - ASAN-instrumented Mojo binaries on macOS now use `llvm-symbolizer`
+    instead of `atos`, so stack traces report the full inlined call chain
+    through user functions.
+
+- **`mojo doc` and docstring validation.**
+
+  - `mojo doc` now preserves parameterized type names (for example
+    `List[K]`, `Optional[V]`, `UnsafePointer[Scalar[dtype]]`) in the API doc
+    JSON `"type"` fields, instead of emitting only the bare base name.
+  - `mojo doc` now emits a diagnostic when a public Mojo module has no
+    module-level docstring and `-mojo-diagnose-missing-doc-strings` is
+    active. Private modules and modules nested inside private packages are
+    exempt.
+  - Docstring validation no longer requires inferred parameters (those
+    before `//` in a parameter list) to be documented; documenting them
+    remains valid.
+  - Docstring validation now accepts `!` and `?` as valid sentence-ending
+    punctuation for summaries, section bodies, and argument descriptions.
+  - `def ... raises` functions now require a `Raises:` docstring section
+    like any other raising function, and the `isDef` field has been removed
+    from `mojo doc` JSON output.
+
+- **Debugger UX.**
+
+  - The Mojo debugger now displays `Optional[T]` variables as `None` or
+    `Some(value)` in LLDB instead of exposing raw `_DefaultVariantStorage`
+    internals.
+  - The Mojo debugger now correctly displays `UnsafePointer[T]` values in
+    LLDB for all pointed-to types, including signed integers (no longer
+    rendered as huge unsigned values), `Bool` (`True`/`False`), and floats.
+  - The Mojo debugger now displays `StringSlice`, `StaticString`, and their
+    underlying `Span[Byte]` values as quoted strings in LLDB.
+  - At `-O0`, trivially destructible types (`Int`, `Float`, `Bool`, `SIMD`,
+    etc.) now remain visible in the debugger through the end of their
+    lexical scope instead of disappearing at the ASAP destruction point.
+
+- `mojo format` (`mblack`) now correctly parses the new unified-closure
+  syntax including `raises {captures}` effect ordering, and no longer
+  inserts a spurious space between `^` and the operand in `var^` captures.
+
+- Mojo package files (`.mojopkg`) now use format version 2 with
+  zstd-compressed MLIR bytecode, significantly reducing package, wheel, and
+  Docker image sizes.
+
+- Added a `--mojo-version` flag to `mojo-lsp-server` for verifying the Mojo
+  version that the LSP is using.
+
+- Removed the legacy `MOJO_ENABLE_STACK_TRACE_ON_ERROR` and
+  `MOJO_ENABLE_STACK_TRACE_ON_CRASH` environment variables. Instead, set the
+  `MODULAR_DEBUG` environment variable to `stack_trace_on_error` to enable
+  generation of stack traces when a Mojo program raises an error.
+
 ## GPU programming
 
 - Added support for AMD MI250X accelerators.
@@ -634,7 +966,9 @@ This version is still a work in progress.
 ## ❌ Removed
 
 - The `escaping` function effect is no longer supported. Migrate
-  `def(...) escaping -> T` closures to `unified` closures.
+  `def(...) escaping -> T` closures to use an explicit capture list `{...}` (see
+  the
+  [closure refactor entry under Language enhancements](#language-enhancements)).
 
 - The deprecated `@doc_private` decorator has been removed. Use `@doc_hidden`
   instead.
@@ -656,6 +990,32 @@ This version is still a work in progress.
   Atomic[dtype, scope="device"].store[ordering=Ordering.RELEASE](ptr, value)
   var v = Atomic[dtype, scope="device"].load[ordering=Ordering.ACQUIRE](ptr)
   ```
+
+- Several constructs deprecated in 26.2 are no longer accepted:
+
+  - The `@register_passable` and `@register_passable("trivial")` decorators
+    are no longer supported. Conform to the `RegisterPassable` and
+    `TrivialRegisterPassable` traits instead. Use of either decorator now
+    produces a hard error pointing to the trait equivalent.
+  - The legacy `__moveinit__` and `__copyinit__` method names are no longer
+    auto-rewritten to the unified `__init__` form. Rename these methods to
+    `__init__` with keyword-only `take: Self` and `copy: Self` arguments,
+    respectively, as introduced by
+    [init unification](/mojo/changelog/v0.26.2#0-26-2-init-unification) in 26.2.
+    Existing legacy spellings now fail to compile with errors such as
+    `no matching function in initialization` rather than being silently
+    rewritten.
+
+- API removals beyond the deprecation removals already noted:
+
+  - Removed the `param_env.mojo` module. Use `defines.mojo` instead.
+  - Removed `LinkedList.__getitem__`. Indexing a `LinkedList` is O(n), and
+    exposing `__getitem__` encouraged accidentally quadratic code; iterate
+    the list instead.
+  - Removed the unused `UIntSized` trait and its prelude re-export.
+  - Removed the `pdl_level` parameter from `elementwise`, `reduction`, and
+    `reducescatter` kernel APIs. PDL usage is now an internal compile-time
+    default.
 
 ## 🛠️ Fixed
 
@@ -741,3 +1101,86 @@ This version is still a work in progress.
 
 - Fixed incorrect data layout for `MI250X` AMDGPU architectures.
   ([Issue #6451](https://github.com/modular/modular/issues/6451)
+
+- Fixed Apple Silicon target detection on macOS 26 producing unrecognized
+  arch strings like `metal:2-metal4` when the installed Xcode could not
+  compile Metal 4.0; the `-metal4` suffix is now applied only when the
+  toolchain supports it.
+
+- Fixed `UnsafePointer.gather`, `UnsafePointer.scatter`, and `strided_load`
+  silently reading zero on Apple GPU. The per-lane fallback reconstructed
+  pointers via `unsafe_from_address=Int(addr)`, yielding a generic-address-space
+  pointer the Apple AIR backend could not resolve. The fallback now uses typed
+  pointer arithmetic on Apple GPU; NVIDIA, AMD, and CPU paths are unchanged.
+
+- Fixed `rotate_left` and `rotate_right` intrinsics failing to lower on
+  Apple GPU. Both now lower correctly to the Apple AIR backend.
+
+- Fixed `TileTensor.write_to()` only handling 2D static-shape tensors; 1D,
+  3D+, nested-layout, and dynamic-shape tensors now print correctly via a
+  generic elementwise fallback, and all ranks use a bracket-delimited,
+  comma-separated format.
+
+- Fixed incorrect alignment in `TileTensor.__getitem__`.
+
+- Fixed `TileTensor` SIMD loads/stores on CPU to use `alignment=1`,
+  preventing segfaults when underlying data is not naturally aligned. GPU
+  still uses aligned access where the layout guarantees alignment.
+
+- Fixed `complement()` in `tile_layout` returning a static shape of `0`
+  when given `UNKNOWN_VALUE` as the size; it now propagates `UNKNOWN_VALUE`
+  so downstream layout algebra falls back to runtime dimensions, restoring
+  correct bounds checks for `LayoutTensor.flatten().vectorize[N]()`.
+
+- Fixed `idx2crd` returning incorrect coordinates for nested layouts.
+
+- Fixed `mojo --version` printing the MAX version instead of the Mojo
+  compiler version.
+
+- Fixed `comptime` `and`/`or` expressions to accept any `Boolable` operands,
+  matching runtime behavior. This also enables mixed-type expressions like
+  `comptime if some_Bool and some_Optional`.
+
+- Fixed several codegen correctness issues affecting valid Mojo programs:
+  an SRoA miscompile that incorrectly promoted arrays accessed via dynamic
+  offsets through a constant GEP; a use-after-free where destructors of
+  live owned values were inserted before, rather than after, a
+  `lit.ref.store` into a ref with `#lit.any.origin`; silent memory
+  corruption when calling `abi("C")` functions that returned structs via
+  `sret`; and bogus `existing function with conflicting attributes` errors
+  when calling the same external function more than once with an
+  `sret`/`byval` ABI.
+
+- Fixed several `mojo-lsp-server` crashes affecting REPL/notebook contexts,
+  parameter-pack-related diagnostics, files importing from `.mojopkg`, and
+  files using stateless closures. The LSP also no longer mistakes REPL
+  buffer identifiers (which contain a `.mojo` extension) for relative
+  module imports.
+
+- Fixed several debugger display issues: variables after their ASAP
+  destruction point at `-O0` now correctly show "not available" instead of
+  stale values; unsigned integers (`UInt`, `UInt8`, etc.) display with
+  correct unsigned semantics; `ref` loop variables show `index` instead of
+  `pointer<index>`; `String` fields typed as `Scalar[T]` and `Tuple` values
+  display correctly.
+
+- Fixed two `mojo format` (`mblack`) issues: it no longer loses the `t`
+  prefix when splitting long t-string literals across lines, and no longer
+  inserts a stray space between `*` and a complex operand in variadic pack
+  unpacking annotations.
+
+- Fixed `BitSet.set_all` and `BitSet.toggle_all` writing `~0` to every
+  underlying 64-bit word, including bits beyond the logical `size` when
+  `size` was not a multiple of 64. Those stray high bits were counted by
+  `__len__`, producing incorrect population counts; the methods now mask
+  off the unused high bits.
+
+- Fixed `syncwarp` on AMD GPUs, which was previously implemented as a
+  no-op. It now lowers to `llvm.amdgcn.wave.barrier`, providing the
+  control-flow synchronization required to correctly sequence shared-memory
+  writes followed by reads across lanes.
+
+- Fixed `isnan`, `isinf`, and `isfinite` failing during LLVM lowering for
+  `float8_e3m4` and `float4_e2m1fn`. `float4_e2m1fn` (no NaN/Inf encodings)
+  folds to constant branches; `float8_e3m4` casts through `bfloat16` to
+  reuse the existing `llvm.is.fpclass` path.
