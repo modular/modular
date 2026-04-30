@@ -322,7 +322,9 @@ async def _run_reasoning_pipeline(
     top_log_probs: AsyncMock | None = None,
 ) -> list[TokenGeneratorOutput]:
     """Build a mock TokenGeneratorPipeline with reasoning and collect all chunks."""
-    from max.pipelines.lib.reasoning import KimiK2_5ReasoningParser
+    from max.pipelines.architectures.kimik2_5.reasoning import (
+        KimiK2_5ReasoningParser,
+    )
     from max.serve.pipelines.llm import TokenGeneratorPipeline
 
     test_request_id = RequestID(value="test-request")

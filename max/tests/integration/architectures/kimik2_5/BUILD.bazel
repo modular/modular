@@ -1,4 +1,4 @@
-load("//bazel:api.bzl", "modular_py_test")
+load("//bazel:api.bzl", "modular_py_test", "requirement")
 
 package(default_visibility = [
     "//:__pkg__",
@@ -29,5 +29,15 @@ modular_py_test(
     deps = [
         "//max/python/max/interfaces",
         "//max/python/max/pipelines/architectures",
+    ],
+)
+
+modular_py_test(
+    name = "test_reasoning",
+    srcs = ["test_reasoning.py"],
+    deps = [
+        "//max/python/max/pipelines/architectures",
+        requirement("numpy"),
+        requirement("pytest-asyncio"),
     ],
 )

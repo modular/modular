@@ -14,10 +14,12 @@
 from .arch import minimax_m2_arch
 from .model import MiniMaxM2Inputs, MiniMaxM2Model
 from .model_config import MiniMaxM2Config
+from .reasoning import MiniMaxM2ReasoningParser
 
 __all__ = [
     "MiniMaxM2Config",
     "MiniMaxM2Inputs",
     "MiniMaxM2Model",
+    "MiniMaxM2ReasoningParser",
     "minimax_m2_arch",
 ]
