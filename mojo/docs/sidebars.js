@@ -146,7 +146,7 @@ const mojoSidebars = {
             'mojo/cli/demangle',
             'mojo/cli/doc',
             'mojo/cli/format',
-            'mojo/cli/package',
+            'mojo/cli/precompile',
             'mojo/cli/repl',
             'mojo/cli/run',
           ],

@@ -125,7 +125,7 @@ mojo_commands = [
     "Doc",
     "Format",
     "Index",
-    "Package",
+    "Precompile",
     "REPL",
     "Run",
 ]

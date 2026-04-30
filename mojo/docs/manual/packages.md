@@ -94,7 +94,7 @@ from a compiled `.mojopkg` file. It makes no real difference to Mojo
 which way you import a package. When importing from source files, the directory
 name works as the package name, whereas when importing from a compiled package,
 the filename is the package name (which you specify with the [`mojo
-package`](/mojo/cli/package) command—it can differ from the directory
+package`](/mojo/cli/precompile) command—it can differ from the directory
 name).
 
 For example, consider a project with these files:
