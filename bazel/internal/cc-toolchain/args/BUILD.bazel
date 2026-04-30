@@ -309,14 +309,15 @@ cc_args(
     actions = ["@rules_cc//cc/toolchains/actions:link_actions"],
     args = [
         "-fsanitize=undefined",
-        # Link the shared UBSan runtime (libclang_rt.ubsan_standalone.so)
-        # rather than statically linking it into each binary. The shared
-        # variant is required for UBSan-instrumented shared libraries that
-        # are loaded via dlopen by a non-instrumented executable (e.g.
-        # Python via ctypes); without it, the loaded .so has unresolved
-        # __ubsan_handle_*_abort references and fails to dlopen.
-        # Tracks MOTO-1576.
-        "-shared-libsan",
+        # Note: we intentionally don't add `-shared-libsan` here. Doing so
+        # makes every UBSan-instrumented binary (including build-time tools
+        # like kgen) depend on libclang_rt.ubsan_standalone.so at runtime,
+        # but build actions don't get the LD_PRELOAD wiring from
+        # runtime_sanitizer_env, so they would fail with "cannot open shared
+        # object file". For the dlopen-from-Python case (kbench), we instead
+        # rely on the loader explicitly preloading libubsan via
+        # ctypes.CDLL(..., mode=RTLD_GLOBAL) before opening the user .so.
+        # See kbench_model.py and MOTO-1576.
     ],
 )
 
