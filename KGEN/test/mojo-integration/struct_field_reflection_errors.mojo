@@ -14,8 +14,6 @@
 
 from std.sys import get_defined_bool
 
-from std.reflection import reflect
-
 
 struct TestStruct:
     var x: Int
