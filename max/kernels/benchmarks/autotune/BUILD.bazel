@@ -41,13 +41,14 @@ modular_py_binary(
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
     target_compatible_with = select({
-        # FIXME: MOTO-1576 — partially mitigated by adding `-shared-libsan`
-        # to ubsan_link_args (so the .so resolves UBSan handler symbols), but
-        # the inner Mojo benchmark binaries built via `mojo build --emit
-        # shared-lib` still hit additional runtime issues when loaded via
-        # ctypes (silent return-1 with no captured output, distinct from the
-        # original target-compat error in PAQ-2245).  Keep skipped on UBSan
-        # until MOTO-1576 lands a complete fix.
+        # FIXME: MOTO-1576 — partial fixes landed:
+        #   * `-shared-libsan` in ubsan_link_args (resolves "undefined symbol:
+        #     __ubsan_handle_*" at dlopen time).
+        #   * kbench falls back to subprocess mode when running under any
+        #     sanitizer (avoids the dlopen+ctypes path entirely).
+        # The remaining blocker is runtime discovery of
+        # libclang_rt.ubsan_standalone.so by Mojo-built binaries (rpath /
+        # LD_LIBRARY_PATH wiring). Re-enable once that lands.
         "//:ubsan": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
