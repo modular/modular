@@ -11,14 +11,14 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""Pure-metadata tests for matmul and layer_norm placement rules."""
+"""Pure-metadata tests for matmul placement rules."""
 
 from __future__ import annotations
 
 import pytest
 from max.dtype import DType
 from max.experimental.sharding import DeviceMapping, Partial
-from max.experimental.sharding.rules.matmul import layer_norm_rule, matmul_rule
+from max.experimental.sharding.rules.matmul import matmul_rule
 from max.experimental.sharding.types import TensorLayout
 
 from rules._fixtures import MESH_1D, MESH_2D, M, P, R, S
@@ -172,49 +172,3 @@ class TestMatmulRule:
         rhs = _layout(M(MESH_1D, S(1)), (8, 6))
         _, (out,) = matmul_rule(lhs, rhs)
         assert out.to_placements() == (S(1),)
-
-
-# ═════════════════════════════════════════════════════════════════════════
-#  Layer norm rule
-# ═════════════════════════════════════════════════════════════════════════
-
-
-class TestLayerNormRule:
-    def test_replicated(self) -> None:
-        x = _layout(M(MESH_1D, R), (4, 8))
-        gamma = _layout(M(MESH_1D, R), (8,))
-        beta = _layout(M(MESH_1D, R), (8,))
-        _, (out,) = layer_norm_rule(x, gamma, beta, 1e-5)
-        assert out.to_placements() == (R,)
-
-    def test_batch_sharded(self) -> None:
-        """S(0) on [B, H] with weight shape [H]: norm dims start at 1."""
-        x = _layout(M(MESH_1D, S(0)), (4, 8))
-        gamma = _layout(M(MESH_1D, R), (8,))
-        beta = _layout(M(MESH_1D, R), (8,))
-        _, (out,) = layer_norm_rule(x, gamma, beta, 1e-5)
-        assert out.to_placements() == (S(0),)
-
-    def test_norm_dim_sharded_raises(self) -> None:
-        """Sharding on the hidden dim (being normalized) must error."""
-        x = _layout(M(MESH_1D, S(1)), (4, 8))
-        gamma = _layout(M(MESH_1D, R), (8,))
-        beta = _layout(M(MESH_1D, R), (8,))
-        with pytest.raises(ValueError, match="cannot normalize"):
-            layer_norm_rule(x, gamma, beta, 1e-5)
-
-    def test_3d_input_2d_weight(self) -> None:
-        """[B, S, H] with weight [S, H]: norm dims start at 1."""
-        x = _layout(M(MESH_1D, S(0)), (2, 4, 8))
-        gamma = _layout(M(MESH_1D, R), (4, 8))
-        beta = _layout(M(MESH_1D, R), (4, 8))
-        _, (out,) = layer_norm_rule(x, gamma, beta, 1e-5)
-        assert out.to_placements() == (S(0),)
-
-    def test_3d_input_sharded_seq_raises(self) -> None:
-        """[B, S, H] with S(1) (seq dim) when weight is [S, H]."""
-        x = _layout(M(MESH_1D, S(1)), (2, 4, 8))
-        gamma = _layout(M(MESH_1D, R), (4, 8))
-        beta = _layout(M(MESH_1D, R), (4, 8))
-        with pytest.raises(ValueError, match="cannot normalize"):
-            layer_norm_rule(x, gamma, beta, 1e-5)

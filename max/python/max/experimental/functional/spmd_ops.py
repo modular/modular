@@ -38,6 +38,7 @@ from max.graph import TensorValue, TensorValueLike, Type, ops
 from max.graph.dim import StaticDim
 from max.graph.ops.slice_tensor import SliceIndices
 
+from ..sharding.rules._common import RuleSignature
 from ..sharding.rules.conv import (
     conv2d_rule,
     conv2d_transpose_rule,
@@ -50,7 +51,7 @@ from ..sharding.rules.elementwise import (
     ternary_rule,
     unary_rule,
 )
-from ..sharding.rules.matmul import layer_norm_rule, matmul_rule
+from ..sharding.rules.matmul import matmul_rule
 from ..sharding.rules.misc import (
     as_interleaved_complex_rule,
     band_part_rule,
@@ -63,6 +64,7 @@ from ..sharding.rules.misc import (
     resize_rule,
     while_loop_rule,
 )
+from ..sharding.rules.norm import normalization_rule
 from ..sharding.rules.pooling import linear_pool_rule, pool_rule
 from ..sharding.rules.reduction import linear_reduce_rule, reduce_rule
 from ..sharding.rules.shape import (
@@ -129,7 +131,10 @@ def spmd_dispatch(
         for i in builtins.range(n):
 
             def _get_shard(t: Tensor, _i: int = i) -> TensorValue:
-                return t.local_shards[_i].__tensorvalue__()
+                if t.is_distributed:
+                    return TensorValue(t.local_shards[_i])
+                else:
+                    return TensorValue(t)
 
             shard_args = map_tensors(_get_shard, args)
             per_shard.append(graph_op(*shard_args))
@@ -179,9 +184,8 @@ def _transfer_args(
 
 
 def functional(
-    graph_op: Callable[..., Any],
-    rule: Callable[..., tuple[tuple[Any, ...], tuple[DeviceMapping, ...]]]
-    | None = None,
+    graph_op: Callable[..., Any] | None = None,
+    rule: Callable[..., RuleSignature] | None = None,
 ) -> Callable[..., Any]:
     """Wrap a graph op to work with Tensor inputs and optional SPMD sharding.
 
@@ -197,6 +201,9 @@ def functional(
     Uses ``functools.wraps`` so the wrapped function inherits the graph
     op's name and docstring.
     """
+    if graph_op is None:
+        return functools.partial(functional, rule=rule)
+
     # Pre-compute signature for canonicalizing kwargs → positional.
     sig = inspect.signature(graph_op)
 
@@ -210,7 +217,9 @@ def functional(
 
     @functools.wraps(graph_op)
     def wrapped(*args: Any, **kwargs: Any) -> Any:
-        if rule is not None and any_distributed(args):
+        if rule is not None and (
+            any_distributed(args) or any_distributed(kwargs.values())
+        ):
             all_args = _canonicalize(args, kwargs)
             layout_args = map_tensors(tensor_to_layout, all_args)
             suggested, out_mappings = rule(*layout_args)
@@ -449,7 +458,7 @@ matmul = functional(ops.matmul, rule=matmul_rule)
 
 #: Applies layer normalization. Distributed via SPMD.
 #: See :func:`max.graph.ops.layer_norm` for details.
-layer_norm = functional(ops.layer_norm, rule=layer_norm_rule)
+layer_norm = functional(ops.layer_norm, rule=normalization_rule)
 #: Performs quantized matrix multiplication. Distributed via SPMD.
 #: See :func:`max.graph.ops.qmatmul` for details.
 qmatmul = functional(ops.qmatmul, rule=matmul_rule)
@@ -613,7 +622,7 @@ chunk = functional(ops.chunk, rule=chunk_rule)
 def _reduce_op(
     graph_op: Callable[..., object],
     *,
-    rule: Callable[..., tuple[tuple[object, ...], tuple[DeviceMapping, ...]]],
+    rule: Callable[..., RuleSignature],
 ) -> Callable[..., Tensor]:
     """Build a reduction wrapper matching the old ``functional`` semantics.
 
@@ -643,7 +652,7 @@ def _reduce_op(
 def _reduce_elementwise_op(
     graph_op: Callable[..., object],
     *,
-    rule: Callable[..., tuple[tuple[object, ...], tuple[DeviceMapping, ...]]],
+    rule: Callable[..., RuleSignature],
     elementwise_fn: Callable[[Tensor, Tensor], Tensor],
 ) -> Callable[..., Tensor]:
     """Build a function that acts as reduction (1 arg) or elementwise (2 args).

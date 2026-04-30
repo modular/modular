@@ -29,6 +29,7 @@ from collections.abc import Callable
 from typing import TypeGuard
 
 from max.experimental.sharding.mappings import DeviceMapping, PlacementMapping
+from max.experimental.sharding.mesh import DeviceMesh
 from max.experimental.sharding.placements import (
     Partial,
     Placement,
@@ -140,3 +141,22 @@ def resolve_partials_mapping(current: DeviceMapping) -> DeviceMapping:
     if new_p == placements:
         return current
     return PlacementMapping(current.mesh, new_p)
+
+
+def replicated_placements(
+    current: tuple[Placement, ...],
+) -> tuple[Placement, ...]:
+    """Replicate all placements."""
+    return tuple(Replicated() for _ in current)
+
+
+def replicated_mapping(
+    current: DeviceMapping,
+    mesh: DeviceMesh | None = None,
+) -> DeviceMapping:
+    """Create a new DeviceMapping with all placements replicated."""
+    placements = current.to_placements()
+    new_p = replicated_placements(placements)
+    if new_p == placements:
+        return current
+    return PlacementMapping(mesh or current.mesh, new_p)

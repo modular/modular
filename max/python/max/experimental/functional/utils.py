@@ -21,7 +21,7 @@ sibling modules (``collective_ops``, ``spmd_ops``, ``creation_ops``).
 from __future__ import annotations
 
 import contextlib
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterable
 
 from max.driver import Accelerator, Buffer
 from max.experimental import realization_context as rc
@@ -237,7 +237,7 @@ def map_tensors(
     return tuple(_walk(a) for a in args)
 
 
-def any_distributed(args: tuple[object, ...]) -> bool:
+def any_distributed(args: Iterable[object]) -> bool:
     """True if any :class:`Tensor` in *args* is distributed (multi-device).
 
     Checks top-level args and one level of list/tuple nesting.

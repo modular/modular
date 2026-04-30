@@ -19,6 +19,8 @@ from collections.abc import Sequence
 
 import numpy as np
 import numpy.typing as npt
+from max.experimental import functional as F
+from max.experimental.sharding.rules import ternary_rule
 from max.graph import TensorValue, ops
 from max.interfaces.pipeline_variants.text_generation import (
     VLMTextGenerationContext,
@@ -66,6 +68,13 @@ def merge_multimodal_embeddings(
         updates=multimodal_embeddings,
         indices=indices_2d,
     )
+
+
+# TODO(MXF-336): Use @F.functional decorator as the main entrypoint, instead of
+# creating a separate `F_` function, once all models are using ModuleV3.
+F_merge_multimodal_embeddings = F.functional(
+    merge_multimodal_embeddings, rule=ternary_rule
+)
 
 
 def compute_multimodal_merge_indices(

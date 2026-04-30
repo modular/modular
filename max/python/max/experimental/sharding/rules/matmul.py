@@ -11,7 +11,7 @@
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
 
-"""TensorLayout-based rules for matmul-family ops (matmul, qmatmul, layer_norm).
+"""TensorLayout-based rules for matmul-family ops (matmul, qmatmul).
 
 Per-mesh-axis placement rules for ``[..., M, K] @ [..., K, N]``::
 
@@ -215,36 +215,4 @@ def matmul_rule(lhs: TensorLayout, rhs: TensorLayout) -> RuleSignature:
             PlacementMapping(mesh, suggested_rhs_p),
         ),
         (PlacementMapping(mesh, out_p),),
-    )
-
-
-def layer_norm_rule(
-    input: TensorLayout,
-    gamma: TensorLayout,
-    beta: TensorLayout,
-    epsilon: float,
-) -> RuleSignature:
-    """Placement rule for layer_norm: rejects sharded norm dimensions."""
-    x_p = input.mapping.to_placements()
-    mesh = input.mapping.mesh
-    w_rank = gamma.rank
-    norm_start = input.rank - w_rank
-
-    suggested_x_p = tuple(
-        Replicated() if isinstance(p, Partial) else p for p in x_p
-    )
-
-    for p in suggested_x_p:
-        if isinstance(p, Sharded) and p.axis >= norm_start:
-            raise ValueError(
-                f"layer_norm: cannot normalize along sharded axis "
-                f"{p.axis}. Gather first or shard a different axis."
-            )
-
-    suggested_x_mapping = PlacementMapping(mesh, suggested_x_p)
-    out_mapping = PlacementMapping(mesh, suggested_x_p)
-
-    return (
-        (suggested_x_mapping, gamma.mapping, beta.mapping, epsilon),
-        (out_mapping,),
     )

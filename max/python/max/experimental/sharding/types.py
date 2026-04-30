@@ -38,7 +38,7 @@ from max.graph import (
 )
 from max.graph.shape import ShapeLike
 
-from .mappings import DeviceMapping
+from .mappings import DeviceMapping, NamedMapping
 from .mesh import DeviceMesh
 from .placements import Placement, Sharded
 
@@ -202,7 +202,7 @@ class DistributedBufferType(DistributedType[BufferType]):
 
 
 @dataclass(frozen=True)
-class TensorLayout:
+class TensorLayout(DeviceMapping):
     """Metadata snapshot of a distributed tensor for rule evaluation.
 
     Bundles the tensor's dtype, shape, and distribution mapping. The mapping
@@ -211,6 +211,9 @@ class TensorLayout:
 
     The shape is a :class:`~max.graph.Shape` (``list[Dim]``), supporting both
     static and symbolic dimensions for graph compilation compatibility.
+
+    This class implements DeviceMapping, so sharding rules can
+    return input TensorLayouts directly.
     """
 
     dtype: DType
@@ -238,6 +241,32 @@ class TensorLayout:
     def mesh(self) -> DeviceMesh:
         """The device mesh derived from the mapping."""
         return self.mapping.mesh
+
+    @property
+    def is_fully_resolved(self) -> bool:
+        """Whether this spec can be used in eager dispatch.
+
+        Returns ``False`` if the spec contains compiler-only annotations
+        (e.g. priorities) that cannot be resolved without a compiler.
+        """
+        return self.mapping.is_fully_resolved
+
+    @property
+    def is_fully_replicated(self) -> bool:
+        """Whether every device holds a complete copy of the tensor.
+
+        Returns ``True`` if no dimension is sharded and there are no
+        pending reductions.
+        """
+        return self.mapping.is_fully_replicated
+
+    def to_placements(self) -> tuple[Placement, ...]:
+        """Converts to mesh-axis-indexed placements for eager dispatch."""
+        return self.mapping.to_placements()
+
+    def to_named_sharding(self, tensor_rank: int) -> NamedMapping:
+        """Converts to tensor-dim-indexed spec for compiler lowering."""
+        return self.mapping.to_named_sharding(tensor_rank)
 
     def __repr__(self) -> str:
         shape_str = ", ".join(str(d) for d in self.shape)
