@@ -174,7 +174,7 @@ def run_rms_norm_fused_residual_cpu[
     # Verify results
     for r in range(rows):
         # Compute expected residual output: dropout(input) + residual
-        var sum_ptr = alloc[Scalar[dtype]](cols)
+        var sum_ptr = List(length=cols, fill=Scalar[dtype](0))
         for c in range(cols):
             var idx = r * cols + c
             var input_val = input_ptr[idx]
@@ -198,7 +198,7 @@ def run_rms_norm_fused_residual_cpu[
             assert_almost_equal(sum_ptr[c], residual_output_ptr[idx], rtol=rtol)
 
         # Compute RMS of the sum
-        var rms_val = compute_rms_ref(sum_ptr, cols, epsilon)
+        var rms_val = compute_rms_ref(sum_ptr.unsafe_ptr(), cols, epsilon)
 
         # Verify normalized output
         for c in range(cols):
@@ -208,8 +208,7 @@ def run_rms_norm_fused_residual_cpu[
                 gamma_ptr[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_ptr[idx], rtol=rtol)
-
-        sum_ptr.free()
+        _ = sum_ptr^
 
 
 def test_rms_norm_fused_residual_float32_2d() raises:

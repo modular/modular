@@ -47,24 +47,26 @@ def do_test[
         kv_params.head_size,
     )
 
-    var blocks_ptr = alloc[Float32](shape.flattened_length())
+    var blocks_ptr = List(length=shape.flattened_length(), fill=Float32(0))
     var blocks = LayoutTensor[DType.float32, Layout.row_major[6]()](
         blocks_ptr, RuntimeLayout[Layout.row_major[6]()].row_major(shape)
-    ).fill(0)
+    )
     comptime layout_1d = Layout(UNKNOWN_VALUE)
-    var cache_lengths_ptr = alloc[UInt32](batch_size)
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
     var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
         cache_lengths_ptr,
         RuntimeLayout[layout_1d].row_major(IndexList[1](batch_size)),
-    ).fill(0)
+    )
     comptime layout_2d = Layout.row_major[2]()
-    var lookup_table_ptr = alloc[UInt32](batch_size * max_num_blocks)
+    var lookup_table_ptr = List(
+        length=batch_size * max_num_blocks, fill=UInt32(0)
+    )
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
         lookup_table_ptr,
         RuntimeLayout[layout_2d].row_major(
             IndexList[2](batch_size, max_num_blocks)
         ),
-    ).fill(0)
+    )
     for i in range(batch_size):
         cache_lengths[i] = UInt32(i)
         for j in range(max_num_blocks):
@@ -125,11 +127,9 @@ def do_test[
 
     var cache = collection.get_key_cache(1)
     _ = cache.block_paged_ptr[layout_block_size](1, layout_block_size, 0)
-
-    # Clean up heap allocations
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
+    _ = lookup_table_ptr^
+    _ = cache_lengths_ptr^
+    _ = blocks_ptr^
 
 
 def test_paged_kv_cache_stride_is_unknown() raises:
@@ -217,7 +217,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     comptime total_elems = shape_6d.flattened_length()
 
     # Allocate and fill with unique values (value = flattened index)
-    var blocks_ptr = alloc[Float32](total_elems)
+    var blocks_ptr = List(length=total_elems, fill=Float32(0))
     for i in range(total_elems):
         blocks_ptr[i] = Float32(i)
 
@@ -227,8 +227,7 @@ def test_paged_kv_cache_offset_correctness() raises:
 
     # Create minimal supporting tensors
     comptime batch_size = 1
-    var cache_lengths_ptr = alloc[UInt32](batch_size)
-    cache_lengths_ptr[0] = 0
+    var cache_lengths_ptr = List(length=batch_size, fill=UInt32(0))
     comptime layout_1d = Layout(UNKNOWN_VALUE)
     var cache_lengths = LayoutTensor[DType.uint32, layout_1d](
         cache_lengths_ptr,
@@ -236,7 +235,7 @@ def test_paged_kv_cache_offset_correctness() raises:
     )
 
     comptime layout_2d = Layout.row_major[2]()
-    var lookup_table_ptr = alloc[UInt32](batch_size * num_blocks)
+    var lookup_table_ptr = List(length=batch_size * num_blocks, fill=UInt32(0))
     for i in range(num_blocks):
         lookup_table_ptr[i] = UInt32(i)  # Identity mapping
     var lookup_table = LayoutTensor[DType.uint32, layout_2d](
@@ -320,11 +319,9 @@ def test_paged_kv_cache_offset_correctness() raises:
         + String(expected_6d_offset)
         + "). This indicates stride[0] is using incorrect compile-time value.",
     )
-
-    # Clean up
-    blocks_ptr.free()
-    cache_lengths_ptr.free()
-    lookup_table_ptr.free()
+    _ = lookup_table_ptr^
+    _ = cache_lengths_ptr^
+    _ = blocks_ptr^
 
 
 def test_paged_kv_cache_quantization() raises:

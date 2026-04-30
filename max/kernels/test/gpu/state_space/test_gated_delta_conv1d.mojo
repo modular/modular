@@ -24,7 +24,6 @@ from layout import (
     row_major,
 )
 from std.random import rand
-from std.memory import alloc
 from state_space.gated_delta_conv1d import gated_delta_conv1d_fwd_gpu
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
@@ -63,35 +62,39 @@ def run_gated_delta_conv1d_gpu[
 
     # ── Allocate host tensors ──────────────────────────────────────────────────
     # qkv_input_ragged: [total_seq_len, conv_dim]
-    var qkv_input_heap = alloc[Scalar[dtype]](total_seq_len * conv_dim)
-    var qkv_input_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var qkv_input_heap = List(
+        length=total_seq_len * conv_dim, fill=Scalar[dtype](0)
+    )
+    var qkv_input_h = LayoutTensor[dtype, layout_2d, _](
         qkv_input_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
     )
 
     # conv_weight: [conv_dim, KERNEL_SIZE]
-    var conv_weight_heap = alloc[Scalar[dtype]](conv_dim * KERNEL_SIZE)
-    var conv_weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var conv_weight_heap = List(
+        length=conv_dim * KERNEL_SIZE, fill=Scalar[dtype](0)
+    )
+    var conv_weight_h = LayoutTensor[dtype, layout_2d, _](
         conv_weight_heap,
         RuntimeLayout[layout_2d].row_major(Index(conv_dim, KERNEL_SIZE)),
     )
 
     # conv_state_in: [batch_size, conv_dim, state_len], zeroed
-    var conv_state_in_heap = alloc[Scalar[dtype]](
-        batch_size * conv_dim * state_len
+    var conv_state_in_heap = List(
+        length=batch_size * conv_dim * state_len, fill=Scalar[dtype](0)
     )
-    var conv_state_in_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_state_in_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_in_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(batch_size, conv_dim, state_len)
         ),
-    ).fill(0)
+    )
 
     # input_row_offsets: [batch_size + 1]
-    var input_row_offsets_heap = alloc[Scalar[DType.uint32]](batch_size + 1)
-    var input_row_offsets_h = LayoutTensor[
-        DType.uint32, layout_1d, MutAnyOrigin
-    ](
+    var input_row_offsets_heap = List(
+        length=batch_size + 1, fill=Scalar[DType.uint32](0)
+    )
+    var input_row_offsets_h = LayoutTensor[DType.uint32, layout_1d, _](
         input_row_offsets_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
     )
@@ -102,39 +105,43 @@ def run_gated_delta_conv1d_gpu[
         input_row_offsets_h.ptr.store(b + 1, Scalar[DType.uint32](cumsum))
 
     # conv_output_gpu: [total_seq_len, conv_dim] — receives GPU results
-    var conv_output_gpu_heap = alloc[Scalar[dtype]](total_seq_len * conv_dim)
-    var conv_output_gpu_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var conv_output_gpu_heap = List(
+        length=total_seq_len * conv_dim, fill=Scalar[dtype](0)
+    )
+    var conv_output_gpu_h = LayoutTensor[dtype, layout_2d, _](
         conv_output_gpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
-    ).fill(0)
+    )
 
     # conv_state_out_gpu: [batch_size, conv_dim, state_len] — receives GPU state
-    var conv_state_out_gpu_heap = alloc[Scalar[dtype]](
-        batch_size * conv_dim * state_len
+    var conv_state_out_gpu_heap = List(
+        length=batch_size * conv_dim * state_len, fill=Scalar[dtype](0)
     )
-    var conv_state_out_gpu_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var conv_state_out_gpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_out_gpu_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(batch_size, conv_dim, state_len)
         ),
-    ).fill(0)
+    )
 
     # conv_output_cpu / conv_state_out_cpu: for CPU reference
-    var conv_output_cpu_heap = alloc[Scalar[dtype]](total_seq_len * conv_dim)
-    var conv_output_cpu_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var conv_output_cpu_heap = List(
+        length=total_seq_len * conv_dim, fill=Scalar[dtype](0)
+    )
+    var conv_output_cpu_h = LayoutTensor[dtype, layout_2d, _](
         conv_output_cpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
-    ).fill(0)
-
-    var conv_state_out_cpu_heap = alloc[Scalar[dtype]](
-        batch_size * conv_dim * state_len
     )
-    var conv_state_out_cpu_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+
+    var conv_state_out_cpu_heap = List(
+        length=batch_size * conv_dim * state_len, fill=Scalar[dtype](0)
+    )
+    var conv_state_out_cpu_h = LayoutTensor[dtype, layout_3d, _](
         conv_state_out_cpu_heap,
         RuntimeLayout[layout_3d].row_major(
             Index(batch_size, conv_dim, state_len)
         ),
-    ).fill(0)
+    )
 
     # ── Fill inputs with random values ─────────────────────────────────────────
     rand[dtype](qkv_input_h.ptr, qkv_input_h.size())
@@ -349,16 +356,14 @@ def run_gated_delta_conv1d_gpu[
             conv_state_out_cpu_h.ptr[i],
             rtol=rtol,
         )
-
-    # ── Cleanup ────────────────────────────────────────────────────────────────
-    qkv_input_heap.free()
-    conv_weight_heap.free()
-    conv_state_in_heap.free()
-    input_row_offsets_heap.free()
-    conv_output_gpu_heap.free()
-    conv_state_out_gpu_heap.free()
-    conv_output_cpu_heap.free()
-    conv_state_out_cpu_heap.free()
+    _ = conv_state_out_cpu_heap^
+    _ = conv_output_cpu_heap^
+    _ = conv_state_out_gpu_heap^
+    _ = conv_output_gpu_heap^
+    _ = input_row_offsets_heap^
+    _ = conv_state_in_heap^
+    _ = conv_weight_heap^
+    _ = qkv_input_heap^
 
 
 # =============================================================================

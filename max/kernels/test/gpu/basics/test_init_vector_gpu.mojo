@@ -28,7 +28,7 @@ def test_vec_init[
     dtype: DType, block_dim: Int = 256
 ](length: Int, init_type: InitializationType, context: DeviceContext) raises:
     var timer = Timer()
-    var out_host = alloc[Scalar[dtype]](length)
+    var out_host = List(length=length, fill=Scalar[dtype](0))
     var out_device = context.enqueue_create_buffer[dtype](length)
     timer.measure("create-buffer")
 
@@ -45,24 +45,22 @@ def test_vec_init[
         InitializationType.one,
         InitializationType.arange,
     ]:
-        var verification_ptr = alloc[Scalar[dtype]](length)
+        var verification_ptr = List(length=length, fill=Scalar[dtype](0))
         var verification_data = TileTensor(
             verification_ptr, row_major(Idx(length))
         )
         seed(0)
-        if init_type == InitializationType.zero:
-            _ = verification_data.fill(0)
-        elif init_type == InitializationType.one:
+        if init_type == InitializationType.one:
             _ = verification_data.fill(1)
         elif init_type == InitializationType.arange:
             for i in range(length):
                 verification_data.raw_store(i, Scalar[dtype](i))
         for i in range(length):
             assert_equal(verification_ptr[i], out_host[i])
-        verification_ptr.free()
+        _ = verification_ptr^
 
-    out_host.free()
     timer.print()
+    _ = out_host^
 
 
 def main() raises:

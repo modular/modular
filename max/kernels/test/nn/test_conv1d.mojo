@@ -74,13 +74,13 @@ def test[
 
     var C_per_group = C // num_groups
 
-    var input_ptr = alloc[Scalar[dtype]](N * W * C)
-    var filter_ptr = alloc[Scalar[dtype]](S * C_per_group * F)
-    var output_ptr = alloc[Scalar[dtype]](N * WO * F)
-    var output_ref_ptr = alloc[Scalar[dtype]](N * WO * F)
+    var input_ptr = List(length=N * W * C, fill=Scalar[dtype](0))
+    var filter_ptr = List(length=S * C_per_group * F, fill=Scalar[dtype](0))
+    var output_ptr = List(length=N * WO * F, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=N * WO * F, fill=Scalar[dtype](0))
 
-    rand[dtype](input_ptr, N * W * C)
-    rand[dtype](filter_ptr, S * C_per_group * F)
+    rand[dtype](input_ptr)
+    rand[dtype](filter_ptr)
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -102,8 +102,8 @@ def test[
         lt_to_tt(filter), num_groups
     )
 
-    var packed_filter_ptr = alloc[Scalar[dtype]](
-        packed_filter_shape.flattened_length()
+    var packed_filter_ptr = List(
+        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
     var packed_filter = LayoutTensor[dtype, layout_4d](
         packed_filter_ptr,
@@ -122,9 +122,9 @@ def test[
         dtype,
         dtype,
     ].run(
-        output_ref_ptr,
-        input_ptr,
-        filter_ptr,
+        output_ref_ptr.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         Index(N, 1, 1, WO, F),  # output shape
         Index(N, 1, 1, W, C),  # input shape
         Index(1, 1, S, C // num_groups, F),  # filter shape
@@ -162,10 +162,6 @@ def test[
             conv_attr,
         ].run(output, input, filter, conv_shape)
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
-
     # Check results, return on the first failed comparison.
     var idx = 0
     for n, wo, f in product(range(N), range(WO), range(F)):
@@ -182,16 +178,16 @@ def test[
             print("Test failed at index: ", Index(n, wo, f))
             print("Golden value: ", output_ref_ptr[idx])
             print("Actual value: ", output_ptr[idx])
-            output_ptr.free()
-            output_ref_ptr.free()
             return
         idx += 1
 
-    output_ptr.free()
-    output_ref_ptr.free()
-
     # CHECK: Succeed
     print("Succeed")
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

@@ -35,7 +35,7 @@ def run_vec_add(ctx: DeviceContext) raises:
 
     comptime length = 1024
 
-    var in_host = alloc[Float32](length)
+    var in_host = List(length=length, fill=Float32(0))
 
     for i in range(length):
         in_host[i] = Float32(i)
@@ -82,8 +82,7 @@ def run_vec_add(ctx: DeviceContext) raises:
                 assert_equal(expected[i], out_host[i])
 
     _ = in_device
-
-    in_host.free()
+    _ = in_host^
 
 
 def main() raises:

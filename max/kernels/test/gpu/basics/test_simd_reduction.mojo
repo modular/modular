@@ -24,8 +24,10 @@ comptime simd_width = 4
 
 
 def test_simd_reduction(ctx: DeviceContext) raises:
-    var input_host = alloc[Scalar[DType.int]](buffer_size)
-    var output_host = alloc[Scalar[DType.int]](buffer_size // simd_width)
+    var input_host = List(length=buffer_size, fill=Scalar[DType.int](0))
+    var output_host = List(
+        length=buffer_size // simd_width, fill=Scalar[DType.int](0)
+    )
 
     for i in range(0, buffer_size, simd_width):
         for j in range(simd_width):
@@ -71,9 +73,8 @@ def test_simd_reduction(ctx: DeviceContext) raises:
         assert_equal(
             output_host[i], Scalar[DType.int](i * simd_width + simd_sum)
         )
-
-    input_host.free()
-    output_host.free()
+    _ = output_host^
+    _ = input_host^
 
 
 def main() raises:

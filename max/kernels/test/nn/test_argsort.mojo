@@ -26,13 +26,11 @@ def test_argsort[
 
     comptime n = 16384
 
-    var input_ptr = alloc[Float32](n)
+    var input_ptr = List(length=n, fill=Float32(0))
     var input = TileTensor(input_ptr, row_major(Idx(n)))
 
-    var indices_ptr = alloc[Int32](n)
-    var indices = TileTensor(indices_ptr, row_major(Idx(n))).fill[
-        use_runtime_layout=True
-    ](0)
+    var indices_ptr = List(length=n, fill=Int32(0))
+    var indices = TileTensor(indices_ptr, row_major(Idx(n)))
 
     for i in range(n):
         input[i] = filler(i, n)
@@ -124,9 +122,8 @@ def test_argsort[
                         ascending,
                     ),
                 )
-
-    input_ptr.free()
-    indices_ptr.free()
+    _ = indices_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

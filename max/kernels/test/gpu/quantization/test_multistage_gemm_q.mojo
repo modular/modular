@@ -45,7 +45,7 @@ from layout.layout import *
 from layout.layout_tensor import copy_dram_to_sram
 from linalg.matmul.gpu import multistage_gemm
 from linalg.utils_gpu import MatmulKernels
-from std.memory import alloc, memset_zero
+from std.memory import memset_zero
 from std.memory.unsafe import bitcast
 from quantization import Q4sym
 from quantization.qmatmul_gpu import multistage_gemm_q, pack_Q_tile
@@ -454,10 +454,16 @@ def test_repack_Q4_0_for_sm8x[
     var repacked_b_size = N * ((K // group_size) * group_bytes)
     var dequan_size = K * N
 
-    var gguf_b_host_ptr = alloc[Scalar[DType.uint8]](gguf_b_size)
-    var repacked_b_host_ptr = alloc[Scalar[DType.uint8]](repacked_b_size)
-    var gguf_dequan_ref_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
-    var repacked_dequan_host_ptr = alloc[Scalar[DType.bfloat16]](dequan_size)
+    var gguf_b_host_ptr = List(length=gguf_b_size, fill=Scalar[DType.uint8](0))
+    var repacked_b_host_ptr = List(
+        length=repacked_b_size, fill=Scalar[DType.uint8](0)
+    )
+    var gguf_dequan_ref_host_ptr = List(
+        length=dequan_size, fill=Scalar[DType.bfloat16](0)
+    )
+    var repacked_dequan_host_ptr = List(
+        length=dequan_size, fill=Scalar[DType.bfloat16](0)
+    )
 
     comptime gguf_b_host_layout = Layout.row_major(_gguf_b_dim0, _gguf_b_dim1)
     var gguf_b_host_lt = LayoutTensor[DType.uint8, gguf_b_host_layout, _](
@@ -478,8 +484,7 @@ def test_repack_Q4_0_for_sm8x[
         ),
     )
 
-    memset_zero(repacked_b_host_ptr, repacked_b_size)
-    build_b_buffer(N, K, gguf_b_host_ptr)
+    build_b_buffer(N, K, gguf_b_host_ptr.unsafe_ptr())
     Q4sym[group_size, DType.bfloat16].dequantize_and_write_to_tensor(
         lt_to_tt(gguf_b_host_lt).as_immut(),
         lt_to_tt(gguf_dequan_ref_host_lt),
@@ -487,7 +492,6 @@ def test_repack_Q4_0_for_sm8x[
             gguf_dequan_ref_host_lt.runtime_layout.shape.value.canonicalize()
         ),
     )
-    memset_zero(repacked_dequan_host_ptr, dequan_size)
 
     var gguf_b_device = ctx.enqueue_create_buffer[DType.uint8](gguf_b_size)
     var repacked_b_device = ctx.enqueue_create_buffer[DType.uint8](
@@ -586,23 +590,23 @@ def test_repack_Q4_0_for_sm8x[
 
     comptime rtol = 2e-2
     assert_almost_equal(
-        gguf_dequan_ref_host_ptr,
-        repacked_dequan_host_ptr,
+        gguf_dequan_ref_host_ptr.unsafe_ptr(),
+        repacked_dequan_host_ptr.unsafe_ptr(),
         dequan_size,
         atol=0.0001,
         rtol=rtol,
     )
 
-    gguf_b_host_ptr.free()
-    repacked_b_host_ptr.free()
-    gguf_dequan_ref_host_ptr.free()
-    repacked_dequan_host_ptr.free()
     _ = repacked_dequan_tensor
     _ = gguf_b_tensor
     _ = repacked_b_tensor
     _ = gguf_b_device^
     _ = repacked_b_device^
     _ = repacked_dequan_device^
+    _ = repacked_dequan_host_ptr^
+    _ = gguf_dequan_ref_host_ptr^
+    _ = repacked_b_host_ptr^
+    _ = gguf_b_host_ptr^
 
 
 def test_quantized[
@@ -643,20 +647,21 @@ def test_quantized[
     var b_ref_size = N * K
     var c_size = M * N
 
-    var a_host_ptr = alloc[Scalar[a_type]](a_size)
-    var b_host_ptr = alloc[Scalar[dtype]](b_size)
-    var c_host_ptr = alloc[Scalar[a_type]](c_size)
-    var c_host_ref_ptr = alloc[Scalar[a_type]](c_size)
+    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
+    var c_host_ptr = List(length=c_size, fill=Scalar[a_type](0))
+    var c_host_ref_ptr = List(length=c_size, fill=Scalar[a_type](0))
 
-    memset_zero(c_host_ptr, c_size)
-    rand(a_host_ptr, a_size)
+    rand(a_host_ptr)
 
-    var b_scales_ptr = (b_host_ptr + N * K // 2).bitcast[Scalar[a_type]]()
+    var b_scales_ptr = (b_host_ptr.unsafe_ptr() + N * K // 2).bitcast[
+        Scalar[a_type]
+    ]()
     var b_scales_size = (K // group_size) * N
     # elements of b matrix is between [-1, 1]
     rand(b_scales_ptr, b_scales_size, min=0, max=0.125)
     randint(
-        b_host_ptr.bitcast[UInt32](),
+        b_host_ptr.unsafe_ptr().bitcast[UInt32](),
         N * (K // pack_factor),
         Int(UInt32.MIN),
         Int(UInt32.MAX),
@@ -814,17 +819,13 @@ def test_quantized[
 
     comptime rtol = 1e-2
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         c_size,
         atol=0.0001,
         rtol=rtol,
     )
 
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = b_device_ref^
@@ -832,6 +833,10 @@ def test_quantized[
     _ = c_device_ref^
 
     _ = b_tensor
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def main() raises:

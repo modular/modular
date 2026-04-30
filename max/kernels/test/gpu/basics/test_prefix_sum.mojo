@@ -41,12 +41,8 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     comptime BLOCK_SIZE = WARP_SIZE
 
     # Allocate and initialize host memory
-    var in_host = alloc[Scalar[dtype]](size)
-    var out_host = alloc[Scalar[dtype]](size)
-
-    for i in range(size):
-        in_host[i] = UInt64(i)
-        out_host[i] = 0
+    var in_host = List(range(UInt64(0), UInt64(size)))
+    var out_host = List(length=size, fill=Scalar[dtype](0))
 
     # Create device buffers and copy input data
     var in_device = ctx.enqueue_create_buffer[dtype](size)
@@ -81,10 +77,8 @@ def test_warp_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
             expected,
             msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
-
-    # Cleanup
-    in_host.free()
-    out_host.free()
+    _ = out_host^
+    _ = in_host^
 
 
 def block_prefix_sum_kernel[
@@ -111,12 +105,8 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
     comptime size = BLOCK_SIZE
 
     # Allocate and initialize host memory
-    var in_host = alloc[Scalar[dtype]](size)
-    var out_host = alloc[Scalar[dtype]](size)
-
-    for i in range(size):
-        in_host[i] = UInt64(i)
-        out_host[i] = 0
+    var in_host = List(range(UInt64(0), UInt64(size)))
+    var out_host = List(length=size, fill=Scalar[dtype](0))
 
     # Create device buffers and copy input data
     var in_device = ctx.enqueue_create_buffer[dtype](size)
@@ -153,10 +143,8 @@ def test_block_prefix_sum[exclusive: Bool](ctx: DeviceContext) raises:
             expected,
             msg=String(t"out_host[{i}] = {out_host[i]} expected = {expected}"),
         )
-
-    # Cleanup
-    in_host.free()
-    out_host.free()
+    _ = out_host^
+    _ = in_host^
 
 
 def main() raises:

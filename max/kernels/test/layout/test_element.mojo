@@ -170,7 +170,7 @@ def test_element_dynamic_layout() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
-    var storage = alloc[Float32](dynamic_layout.size())
+    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor_8x8 = LayoutTensor[
         DType.float32,
@@ -273,7 +273,7 @@ def test_element_dynamic_layout() raises:
 
     _ = tensor_Ux8^
     _ = tensor_8xU^
-    storage.free()
+    _ = storage^
 
 
 # CHECK-LABEL: test_element_masked_load

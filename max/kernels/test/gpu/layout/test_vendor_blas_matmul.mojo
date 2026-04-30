@@ -16,7 +16,7 @@ from std.os import abort
 from std.sys import has_amd_gpu_accelerator, has_nvidia_gpu_accelerator
 
 from std.gpu.host import DeviceContext
-from std.memory import UnsafePointer, memset_zero
+from std.memory import UnsafePointer
 from internal_utils import assert_almost_equal
 from std.random import rand
 from layout import Coord, Idx, TileTensor, row_major
@@ -29,15 +29,13 @@ def test_matmul[
 ](ctx: DeviceContext) raises:
     print("== test_vendor_blas", input_type, "x", M, "x", N, "x", K)
 
-    var a_host_ptr = alloc[Scalar[input_type]](M * K)
-    var b_host_ptr = alloc[Scalar[input_type]](N * K)
-    var c_host_ptr = alloc[Scalar[DType.float32]](M * N)
-    var c_host_ref_ptr = alloc[Scalar[DType.float32]](M * N)
+    var a_host_ptr = List(length=M * K, fill=Scalar[input_type](0))
+    var b_host_ptr = List(length=N * K, fill=Scalar[input_type](0))
+    var c_host_ptr = List(length=M * N, fill=Scalar[DType.float32](0))
+    var c_host_ref_ptr = List(length=M * N, fill=Scalar[DType.float32](0))
 
-    rand(a_host_ptr, M * K)
-    rand(b_host_ptr, N * K)
-    memset_zero(c_host_ptr, M * N)
-    memset_zero(c_host_ref_ptr, M * N)
+    rand(a_host_ptr)
+    rand(b_host_ptr)
 
     var a_device = ctx.enqueue_create_buffer[input_type](M * K)
     var b_device = ctx.enqueue_create_buffer[input_type](N * K)
@@ -117,22 +115,21 @@ def test_matmul[
     ctx.synchronize()
 
     assert_almost_equal(
-        c_host_ptr,
-        c_host_ref_ptr,
+        c_host_ptr.unsafe_ptr(),
+        c_host_ref_ptr.unsafe_ptr(),
         M * N,
         atol=0.01,
         rtol=0.01,
     )
 
-    # Cleanup
-    a_host_ptr.free()
-    b_host_ptr.free()
-    c_host_ptr.free()
-    c_host_ref_ptr.free()
     _ = a_device^
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
+    _ = c_host_ref_ptr^
+    _ = c_host_ptr^
+    _ = b_host_ptr^
+    _ = a_host_ptr^
 
 
 def test_matmul[input_types: List[DType]]() raises:

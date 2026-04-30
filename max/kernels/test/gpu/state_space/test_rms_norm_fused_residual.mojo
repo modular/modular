@@ -13,7 +13,6 @@
 """GPU tests for RMSNorm with fused residual connection."""
 
 from std.math import sqrt
-from std.memory import alloc
 from std.gpu.host import DeviceContext
 from layout import (
     Idx,
@@ -61,15 +60,15 @@ def run_rms_norm_fused_residual_gpu[
     var rows = shape.flattened_length() // cols
 
     # Allocate host memory
-    var input_h = alloc[Scalar[dtype]](rows * cols)
-    var residual_h = alloc[Scalar[dtype]](rows * cols)
-    var output_h = alloc[Scalar[dtype]](rows * cols)
-    var residual_output_h = alloc[Scalar[dtype]](rows * cols)
-    var gamma_h = alloc[Scalar[dtype]](cols)
+    var input_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var output_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var residual_output_h = List(length=rows * cols, fill=Scalar[dtype](0))
+    var gamma_h = List(length=cols, fill=Scalar[dtype](0))
 
     # Initialize input data
-    rand[dtype](input_h, rows * cols)
-    rand[dtype](residual_h, rows * cols)
+    rand(input_h)
+    rand(residual_h)
 
     # Scale inputs to reasonable range
     for i in range(rows * cols):
@@ -79,11 +78,6 @@ def run_rms_norm_fused_residual_gpu[
     # Initialize gamma (weight)
     for i in range(cols):
         gamma_h[i] = Scalar[dtype](Float64(i + cols) / Float64(cols))
-
-    # Initialize output buffers to zero
-    for i in range(rows * cols):
-        output_h[i] = Scalar[dtype](0)
-        residual_output_h[i] = Scalar[dtype](0)
 
     # Allocate device memory
     var input_d = ctx.enqueue_create_buffer[dtype](rows * cols)
@@ -193,7 +187,7 @@ def run_rms_norm_fused_residual_gpu[
     # Verify results
     for r in range(rows):
         # Compute expected residual output: dropout(input) + residual
-        var sum_ptr = alloc[Scalar[dtype]](cols)
+        var sum_ptr = List(length=cols, fill=Scalar[dtype](0))
         for c in range(cols):
             var idx = r * cols + c
             var input_val = input_h[idx]
@@ -217,7 +211,7 @@ def run_rms_norm_fused_residual_gpu[
             assert_almost_equal(sum_ptr[c], residual_output_h[idx], rtol=rtol)
 
         # Compute RMS of the sum
-        var rms_val = compute_rms_ref(sum_ptr, cols, epsilon)
+        var rms_val = compute_rms_ref(sum_ptr.unsafe_ptr(), cols, epsilon)
 
         # Verify normalized output
         for c in range(cols):
@@ -227,15 +221,12 @@ def run_rms_norm_fused_residual_gpu[
                 gamma_h[c] + weight_offset
             )
             assert_almost_equal(expected_norm, output_h[idx], rtol=rtol)
-
-        sum_ptr.free()
-
-    # Cleanup host memory
-    input_h.free()
-    residual_h.free()
-    output_h.free()
-    residual_output_h.free()
-    gamma_h.free()
+        _ = sum_ptr^
+    _ = gamma_h^
+    _ = residual_output_h^
+    _ = output_h^
+    _ = residual_h^
+    _ = input_h^
 
 
 # =============================================================================

@@ -26,7 +26,6 @@ from layout import (
     row_major,
 )
 from std.random import rand
-from std.memory import alloc
 from state_space.gated_delta import gated_delta_recurrence_fwd_gpu
 from std.testing import TestSuite, assert_almost_equal
 from std.utils.index import Index, IndexList
@@ -71,15 +70,17 @@ def run_gated_delta_recurrence_gpu[
 
     # ── Allocate host tensors ──────────────────────────────────────────────────
     # qkv_conv_output: [total_seq_len, conv_dim]
-    var qkv_heap = alloc[Scalar[dtype]](total_seq_len * conv_dim)
-    var qkv_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var qkv_heap = List(length=total_seq_len * conv_dim, fill=Scalar[dtype](0))
+    var qkv_h = LayoutTensor[dtype, layout_2d, _](
         qkv_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, conv_dim)),
     )
 
     # decay_per_token: [total_seq_len, num_value_heads], values in (0, 1)
-    var decay_heap = alloc[Scalar[dtype]](total_seq_len * num_value_heads)
-    var decay_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var decay_heap = List(
+        length=total_seq_len * num_value_heads, fill=Scalar[dtype](0)
+    )
+    var decay_h = LayoutTensor[dtype, layout_2d, _](
         decay_heap,
         RuntimeLayout[layout_2d].row_major(
             Index(total_seq_len, num_value_heads)
@@ -87,8 +88,10 @@ def run_gated_delta_recurrence_gpu[
     )
 
     # beta_per_token: [total_seq_len, num_value_heads], values in (0, 1)
-    var beta_heap = alloc[Scalar[dtype]](total_seq_len * num_value_heads)
-    var beta_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var beta_heap = List(
+        length=total_seq_len * num_value_heads, fill=Scalar[dtype](0)
+    )
+    var beta_h = LayoutTensor[dtype, layout_2d, _](
         beta_heap,
         RuntimeLayout[layout_2d].row_major(
             Index(total_seq_len, num_value_heads)
@@ -96,8 +99,8 @@ def run_gated_delta_recurrence_gpu[
     )
 
     # input_row_offsets: [batch_size + 1]
-    var offsets_heap = alloc[Scalar[DType.uint32]](batch_size + 1)
-    var offsets_h = LayoutTensor[DType.uint32, layout_1d, MutAnyOrigin](
+    var offsets_heap = List(length=batch_size + 1, fill=Scalar[DType.uint32](0))
+    var offsets_h = LayoutTensor[DType.uint32, layout_1d, _](
         offsets_heap,
         RuntimeLayout[layout_1d].row_major(Index(batch_size + 1)),
     )
@@ -108,53 +111,56 @@ def run_gated_delta_recurrence_gpu[
         offsets_h.ptr.store(b + 1, Scalar[DType.uint32](cumsum))
 
     # recurrent_state_in: [batch_size, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM]
-    var state_in_heap = alloc[Scalar[dtype]](
-        batch_size * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
+    var state_in_heap = List(
+        length=batch_size * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM,
+        fill=Scalar[dtype](0),
     )
-    var state_in_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
+    var state_in_h = LayoutTensor[dtype, layout_4d, _](
         state_in_heap,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM)
         ),
-    ).fill(0)
+    )
 
     # GPU outputs
-    var recurrence_output_gpu_heap = alloc[Scalar[dtype]](
-        total_seq_len * value_dim
+    var recurrence_output_gpu_heap = List(
+        length=total_seq_len * value_dim, fill=Scalar[dtype](0)
     )
-    var recurrence_output_gpu_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var recurrence_output_gpu_h = LayoutTensor[dtype, layout_2d, _](
         recurrence_output_gpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, value_dim)),
-    ).fill(0)
-
-    var state_out_gpu_heap = alloc[Scalar[dtype]](
-        batch_size * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
     )
-    var state_out_gpu_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
+
+    var state_out_gpu_heap = List(
+        length=batch_size * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM,
+        fill=Scalar[dtype](0),
+    )
+    var state_out_gpu_h = LayoutTensor[dtype, layout_4d, _](
         state_out_gpu_heap,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM)
         ),
-    ).fill(0)
+    )
 
     # CPU outputs
-    var recurrence_output_cpu_heap = alloc[Scalar[dtype]](
-        total_seq_len * value_dim
+    var recurrence_output_cpu_heap = List(
+        length=total_seq_len * value_dim, fill=Scalar[dtype](0)
     )
-    var recurrence_output_cpu_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var recurrence_output_cpu_h = LayoutTensor[dtype, layout_2d, _](
         recurrence_output_cpu_heap,
         RuntimeLayout[layout_2d].row_major(Index(total_seq_len, value_dim)),
-    ).fill(0)
-
-    var state_out_cpu_heap = alloc[Scalar[dtype]](
-        batch_size * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM
     )
-    var state_out_cpu_h = LayoutTensor[dtype, layout_4d, MutAnyOrigin](
+
+    var state_out_cpu_heap = List(
+        length=batch_size * num_value_heads * KEY_HEAD_DIM * VALUE_HEAD_DIM,
+        fill=Scalar[dtype](0),
+    )
+    var state_out_cpu_h = LayoutTensor[dtype, layout_4d, _](
         state_out_cpu_heap,
         RuntimeLayout[layout_4d].row_major(
             Index(batch_size, num_value_heads, KEY_HEAD_DIM, VALUE_HEAD_DIM)
         ),
-    ).fill(0)
+    )
 
     # ── Fill inputs with random values ─────────────────────────────────────────
     rand[dtype](qkv_h.ptr, qkv_h.size())
@@ -474,17 +480,15 @@ def run_gated_delta_recurrence_gpu[
             state_out_cpu_h.ptr[i],
             rtol=rtol,
         )
-
-    # ── Cleanup ────────────────────────────────────────────────────────────────
-    qkv_heap.free()
-    decay_heap.free()
-    beta_heap.free()
-    offsets_heap.free()
-    state_in_heap.free()
-    recurrence_output_gpu_heap.free()
-    state_out_gpu_heap.free()
-    recurrence_output_cpu_heap.free()
-    state_out_cpu_heap.free()
+    _ = state_out_cpu_heap^
+    _ = recurrence_output_cpu_heap^
+    _ = state_out_gpu_heap^
+    _ = recurrence_output_gpu_heap^
+    _ = state_in_heap^
+    _ = offsets_heap^
+    _ = beta_heap^
+    _ = decay_heap^
+    _ = qkv_heap^
 
 
 # =============================================================================

@@ -86,7 +86,9 @@ def _initialize_ragged_inputs[
     # Initialize ragged hidden state.
     comptime hidden_state_layout = Layout.row_major(UNKNOWN_VALUE, hidden_size)
     var ragged_size = total_length * hidden_size
-    var hidden_state_ragged_host_ptr = alloc[Scalar[dtype]](ragged_size)
+    var hidden_state_ragged_host_ptr = List(
+        length=ragged_size, fill=Scalar[dtype](0)
+    )
     var hidden_state_ragged_host = LayoutTensor[dtype, hidden_state_layout](
         hidden_state_ragged_host_ptr,
         RuntimeLayout[hidden_state_layout].row_major(
@@ -102,7 +104,9 @@ def _initialize_ragged_inputs[
 
     # Initialize padded hidden state.
     var padded_size = batch_size * max_seq_length_batch * hidden_size
-    var hidden_state_padded_host_ptr = alloc[Scalar[dtype]](padded_size)
+    var hidden_state_padded_host_ptr = List(
+        length=padded_size, fill=Scalar[dtype](0)
+    )
 
     # Copy over the ragged values to the padded tensor.
     # Don't worry about padded values, we won't read them.
@@ -111,11 +115,11 @@ def _initialize_ragged_inputs[
         var ragged_start_idx = Int(input_row_offsets_host_ptr[bs])
         for s in range(unpadded_seq_len):
             var padded_ptr = (
-                hidden_state_padded_host_ptr
+                hidden_state_padded_host_ptr.unsafe_ptr()
                 + (bs * max_seq_length_batch + s) * hidden_size
             )
             var ragged_ptr = (
-                hidden_state_ragged_host_ptr
+                hidden_state_ragged_host_ptr.unsafe_ptr()
                 + (ragged_start_idx + s) * hidden_size
             )
             memcpy(dest=padded_ptr, src=ragged_ptr, count=hidden_size)
@@ -128,8 +132,8 @@ def _initialize_ragged_inputs[
     # Sync here so that HtoD transfers complete prior to host buffer dtor.
     ctx.synchronize()
 
-    hidden_state_ragged_host_ptr.free()
-    hidden_state_padded_host_ptr.free()
+    _ = hidden_state_padded_host_ptr^
+    _ = hidden_state_ragged_host_ptr^
 
     return (
         input_row_offsets_device,
@@ -243,9 +247,11 @@ def execute_matmul_k_cache_ragged_scale[
     var k_cache_host = kv_collection_host.get_key_cache(layer_idx)
 
     # Initialize input row offsets and hidden states.
-    var input_row_offsets_host_ptr = alloc[Scalar[DType.uint32]](batch_size + 1)
+    var input_row_offsets_host_ptr = List(
+        length=batch_size + 1, fill=Scalar[DType.uint32](0)
+    )
     var init_result = _initialize_ragged_inputs[weight_dtype, hidden_size](
-        input_row_offsets_host_ptr, batch_size, prompt_lens, ctx
+        input_row_offsets_host_ptr.unsafe_ptr(), batch_size, prompt_lens, ctx
     )
     var input_row_offsets_device = init_result[0]
     var hidden_state_ragged_device = init_result[1]
@@ -256,7 +262,7 @@ def execute_matmul_k_cache_ragged_scale[
     # Initialize the weights.
     var weight_size = kv_hidden_size * hidden_size
     var weight_shape = IndexList[2](kv_hidden_size, hidden_size)
-    var weight_host_ptr = alloc[Scalar[weight_dtype]](weight_size)
+    var weight_host_ptr = List(length=weight_size, fill=Scalar[weight_dtype](0))
     var weight_host = LayoutTensor[weight_dtype, weight_layout](
         weight_host_ptr,
         RuntimeLayout[weight_layout].row_major(weight_shape),
@@ -396,10 +402,6 @@ def execute_matmul_k_cache_ragged_scale[
                 )
                 assert_almost_equal(a, b, atol=atol, rtol=rtol)
 
-    # Cleanup host memory
-    input_row_offsets_host_ptr.free()
-    weight_host_ptr.free()
-
     # Cleanup device buffers
     _ = hidden_state_ragged_device^
     _ = hidden_state_padded_device^
@@ -409,6 +411,8 @@ def execute_matmul_k_cache_ragged_scale[
     # Cleanup managed objects.
     _ = cache_lengths_table^
     _ = paged_lut^
+    _ = weight_host_ptr^
+    _ = input_row_offsets_host_ptr^
 
 
 def execute_fused_matmul_suite_float8_e4m3fn(ctx: DeviceContext) raises:

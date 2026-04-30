@@ -32,7 +32,7 @@ bit-exact against the expected slice.
 
 from std.gpu import barrier, thread_idx
 from std.gpu.host import DeviceContext
-from std.memory import AddressSpace, alloc
+from std.memory import AddressSpace
 from std.testing import assert_equal
 from layout import (
     ComptimeInt,
@@ -154,8 +154,8 @@ def test_case_a(ctx: DeviceContext) raises:
 
     var size = BN * DEPTH
 
-    var host_in = alloc[Scalar[DType.bfloat16]](size)
-    var host_out = alloc[Scalar[DType.bfloat16]](size)
+    var host_in = List(length=size, fill=Scalar[DType.bfloat16](0))
+    var host_out = List(length=size, fill=Scalar[DType.bfloat16](0))
 
     # Fill input with deterministic pattern.
     for i in range(BN):
@@ -178,11 +178,11 @@ def test_case_a(ctx: DeviceContext) raises:
         for j in range(DEPTH):
             assert_equal(host_out[i * DEPTH + j], _pattern(i, j))
 
-    host_in.free()
-    host_out.free()
     _ = dev_in^
     _ = dev_out^
     print("  PASSED")
+    _ = host_out^
+    _ = host_in^
 
 
 def test_case_b(ctx: DeviceContext) raises:
@@ -193,8 +193,8 @@ def test_case_b(ctx: DeviceContext) raises:
     var full_size = BN * CACHE_DEPTH_B
     var out_size = BN * DEPTH
 
-    var host_in = alloc[Scalar[DType.bfloat16]](full_size)
-    var host_out = alloc[Scalar[DType.bfloat16]](out_size)
+    var host_in = List(length=full_size, fill=Scalar[DType.bfloat16](0))
+    var host_out = List(length=out_size, fill=Scalar[DType.bfloat16](0))
 
     # Fill the entire cache buffer with (i, j) pattern; we'll only read
     # columns [512, 576) via the src tile ptr + head_dim_offset.
@@ -226,11 +226,11 @@ def test_case_b(ctx: DeviceContext) raises:
                 host_out[i * DEPTH + j], _pattern(i, head_dim_offset + j)
             )
 
-    host_in.free()
-    host_out.free()
     _ = dev_in^
     _ = dev_out^
     print("  PASSED")
+    _ = host_out^
+    _ = host_in^
 
 
 def main() raises:

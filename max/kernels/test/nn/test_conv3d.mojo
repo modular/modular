@@ -93,13 +93,13 @@ def test[
     var filter_size = Q * R * S * C_per_group * F
     var output_size = N * DO * HO * WO * F
 
-    var input_ptr = alloc[Scalar[dtype]](input_size)
-    var filter_ptr = alloc[Scalar[dtype]](filter_size)
-    var output_ptr = alloc[Scalar[dtype]](output_size)
-    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var input_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    var filter_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    var output_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
-    rand[dtype](input_ptr, input_size)
-    rand[dtype](filter_ptr, filter_size)
+    rand(input_ptr)
+    rand(filter_ptr)
 
     # Find the tile size used in packing.
     comptime micro_kernel_height = get_direct_conv_micro_kernel_height()
@@ -123,8 +123,8 @@ def test[
         lt_to_tt(filter), num_groups
     )
 
-    var packed_filter_ptr = alloc[Scalar[dtype]](
-        packed_filter_shape.flattened_length()
+    var packed_filter_ptr = List(
+        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
     var packed_filter = LayoutTensor[dtype, layout_6d](
         packed_filter_ptr,
@@ -143,9 +143,9 @@ def test[
         dtype,
         dtype,
     ].run(
-        output_ref_ptr,
-        input_ptr,
-        filter_ptr,
+        output_ref_ptr.unsafe_ptr(),
+        input_ptr.unsafe_ptr(),
+        filter_ptr.unsafe_ptr(),
         Index(N, DO, HO, WO, F),
         Index(N, D, H, W, C),
         Index(Q, R, S, C // num_groups, F),
@@ -222,14 +222,13 @@ def test[
             match_percentage,
         )
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
-    output_ptr.free()
-    output_ref_ptr.free()
-
     if matching_elements == total_elements:
         print("Succeed")
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

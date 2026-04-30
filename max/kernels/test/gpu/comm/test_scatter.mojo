@@ -75,7 +75,7 @@ def _test_pull[
 
     # Allocate input chunks on GPU 0.
     var input_devbufs = List[DeviceBuffer[dtype]]()
-    var host_buf = alloc[Scalar[dtype]](max_chunk_size)
+    var host_buf = List(length=max_chunk_size, fill=Scalar[dtype](0))
 
     comptime InputTileType = TileTensor[
         dtype, type_of(row_major(Idx(Int(0)))), ImmutAnyOrigin
@@ -91,7 +91,6 @@ def _test_pull[
         ctxs[0].synchronize()
         tt_input_bufs[dp] = TileTensor(dev_buf, row_major(Idx(n))).as_immut()
         input_devbufs.append(dev_buf)
-    host_buf.free()
 
     # Output buffers on each GPU (sized to its replica's chunk).
     var output_devbufs = List[DeviceBuffer[dtype]]()
@@ -129,7 +128,7 @@ def _test_pull[
         ctxs[i].synchronize()
 
     # Verify.
-    var host_out = alloc[Scalar[dtype]](max_chunk_size)
+    var host_out = List(length=max_chunk_size, fill=Scalar[dtype](0))
     for gpu in range(ngpus):
         var replica = gpu // tp_size
         var n = len(expected[replica])
@@ -149,7 +148,6 @@ def _test_pull[
                     "expected",
                     expected[replica][j],
                 )
-    host_out.free()
     print(
         "PASS: scatter ngpus=",
         ngpus,
@@ -162,6 +160,8 @@ def _test_pull[
     _ = signal_bufs^
     _ = output_devbufs^
     _ = input_devbufs^
+    _ = host_out^
+    _ = host_buf^
 
 
 def _test_dp2() raises:

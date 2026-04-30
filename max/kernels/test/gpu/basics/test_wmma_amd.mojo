@@ -164,10 +164,10 @@ def run_mma_fp32_fp32(
 ) raises:
     print("== run_matmul fp32.fp32 matrix core kernel")
 
-    var a_host = alloc[Float32](M * K)
-    var b_host = alloc[Float32](K * N)
-    var c_host = alloc[Float32](M * N)
-    var c_host_ref = alloc[Float32](M * N)
+    var a_host = List(length=M * K, fill=Float32(0))
+    var b_host = List(length=K * N, fill=Float32(0))
+    var c_host = List(length=M * N, fill=Float32(0))
+    var c_host_ref = List(length=M * N, fill=Float32(0))
 
     for i in range(M * K):
         var val = random_si64(rand_min, rand_max)
@@ -176,10 +176,6 @@ def run_mma_fp32_fp32(
     for i in range(K * N):
         var val = random_si64(rand_min, rand_max)
         b_host[i] = val.cast[DType.float32]()
-
-    for i in range(M * N):
-        c_host[i] = 0
-        c_host_ref[i] = 0
 
     var a_device = ctx.enqueue_create_buffer[DType.float32](M * K)
     var b_device = ctx.enqueue_create_buffer[DType.float32](K * N)
@@ -209,7 +205,14 @@ def run_mma_fp32_fp32(
 
     ctx.enqueue_copy(c_host, c_device)
 
-    matmul_naive(a_host, b_host, c_host_ref, M, N, K)
+    matmul_naive(
+        a_host.unsafe_ptr(),
+        b_host.unsafe_ptr(),
+        c_host_ref.unsafe_ptr(),
+        M,
+        N,
+        K,
+    )
 
     var errors = 0
     for i in range(M * N):
@@ -219,14 +222,6 @@ def run_mma_fp32_fp32(
     _ = a_device
     _ = b_device
     _ = c_device
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    c_host_ref.free()
 
     if errors == 0:
         print("Success 🎉: Results match.")
@@ -234,6 +229,10 @@ def run_mma_fp32_fp32(
         print("Failed ❌: results mismatch.")
 
     assert_equal(errors, 0)
+    _ = c_host_ref^
+    _ = c_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def run_mma_fp32_fp16[
@@ -243,10 +242,10 @@ def run_mma_fp32_fp16[
 ) raises:
     print("== run_matmul fp32.fp16 matrix core kernel")
 
-    var a_host = alloc[Float16](M * K * mma_n_blocks)
-    var b_host = alloc[Float16](K * N * mma_n_blocks)
-    var c_host = alloc[Float32](M * N * mma_n_blocks)
-    var c_host_ref = alloc[Float32](M * N * mma_n_blocks)
+    var a_host = List(length=M * K * mma_n_blocks, fill=Float16(0))
+    var b_host = List(length=K * N * mma_n_blocks, fill=Float16(0))
+    var c_host = List(length=M * N * mma_n_blocks, fill=Float32(0))
+    var c_host_ref = List(length=M * N * mma_n_blocks, fill=Float32(0))
 
     for b in range(mma_n_blocks):
         for i in range(M * K):
@@ -297,7 +296,14 @@ def run_mma_fp32_fp16[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    matmul_naive[mma_n_blocks](a_host, b_host, c_host_ref, M, N, K)
+    matmul_naive[mma_n_blocks](
+        a_host.unsafe_ptr(),
+        b_host.unsafe_ptr(),
+        c_host_ref.unsafe_ptr(),
+        M,
+        N,
+        K,
+    )
 
     var errors = 0
     for b in range(mma_n_blocks):
@@ -308,14 +314,6 @@ def run_mma_fp32_fp16[
     _ = a_device
     _ = b_device
     _ = c_device
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    c_host_ref.free()
 
     if errors == 0:
         print("Success 🎉: Results match.")
@@ -323,6 +321,10 @@ def run_mma_fp32_fp16[
         print("Failed ❌: results mismatch.")
 
     assert_equal(errors, 0)
+    _ = c_host_ref^
+    _ = c_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def run_mma_fp32_bf16[
@@ -337,10 +339,10 @@ def run_mma_fp32_bf16[
 ) raises:
     print("== run_matmul fp32.bf16 matrix core kernel")
 
-    var a_host = alloc[BFloat16](M * K * mma_n_blocks)
-    var b_host = alloc[BFloat16](K * N * mma_n_blocks)
-    var c_host = alloc[Float32](M * N * mma_n_blocks)
-    var c_host_ref = alloc[Float32](M * N * mma_n_blocks)
+    var a_host = List(length=M * K * mma_n_blocks, fill=BFloat16(0))
+    var b_host = List(length=K * N * mma_n_blocks, fill=BFloat16(0))
+    var c_host = List(length=M * N * mma_n_blocks, fill=Float32(0))
+    var c_host_ref = List(length=M * N * mma_n_blocks, fill=Float32(0))
 
     for b in range(mma_n_blocks):
         for i in range(M * K):
@@ -391,7 +393,14 @@ def run_mma_fp32_bf16[
 
     ctx.enqueue_copy(c_host, c_device)
 
-    matmul_naive[mma_n_blocks](a_host, b_host, c_host_ref, M, N, K)
+    matmul_naive[mma_n_blocks](
+        a_host.unsafe_ptr(),
+        b_host.unsafe_ptr(),
+        c_host_ref.unsafe_ptr(),
+        M,
+        N,
+        K,
+    )
 
     var errors = 0
     for b in range(mma_n_blocks):
@@ -402,14 +411,6 @@ def run_mma_fp32_bf16[
     _ = a_device
     _ = b_device
     _ = c_device
-    _ = a_host
-    _ = b_host
-    _ = c_host
-    _ = c_host_ref
-    a_host.free()
-    b_host.free()
-    c_host.free()
-    c_host_ref.free()
 
     if errors == 0:
         print("Success 🎉: Results match.")
@@ -417,6 +418,10 @@ def run_mma_fp32_bf16[
         print("Failed ❌: results mismatch.")
 
     assert_equal(errors, 0)
+    _ = c_host_ref^
+    _ = c_host^
+    _ = b_host^
+    _ = a_host^
 
 
 def main() raises:

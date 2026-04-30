@@ -20,7 +20,7 @@ comptime block_dim = 32
 
 
 def test_fill_thread_idx(ctx: DeviceContext) raises:
-    var output_host = alloc[Scalar[DType.int]](buffer_size)
+    var output_host = List(length=buffer_size, fill=Scalar[DType.int](0))
     var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
@@ -39,12 +39,11 @@ def test_fill_thread_idx(ctx: DeviceContext) raises:
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
             assert_equal(output_host[i + j], Scalar[DType.int](j))
-
-    output_host.free()
+    _ = output_host^
 
 
 def test_fill_block_idx(ctx: DeviceContext) raises:
-    var output_host = alloc[Scalar[DType.int]](buffer_size)
+    var output_host = List(length=buffer_size, fill=Scalar[DType.int](0))
     var output_buffer = ctx.enqueue_create_buffer[DType.int](buffer_size)
     output_buffer.enqueue_fill(9)
 
@@ -63,8 +62,7 @@ def test_fill_block_idx(ctx: DeviceContext) raises:
     for i in range(0, buffer_size, block_dim):
         for j in range(block_dim):
             assert_equal(output_host[i + j], Scalar[DType.int](i // block_dim))
-
-    output_host.free()
+    _ = output_host^
 
 
 def main() raises:

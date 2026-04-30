@@ -18,11 +18,8 @@ from std.testing import assert_almost_equal
 
 
 def test_assert_with_custom_measure() raises:
-    var t0 = alloc[Float32](100)
-    var t1 = alloc[Float32](100)
-    for i in range(100):
-        t0[i] = 1.0
-        t1[i] = 1.0
+    var t0 = List(length=100, fill=Float32(1.0))
+    var t1 = List(length=100, fill=Float32(1.0))
 
     def always_zero[
         dtype: DType
@@ -33,40 +30,54 @@ def test_assert_with_custom_measure() raises:
     ) -> Float64:
         return 0
 
-    assert_with_measure[always_zero](t0, t1, 100)
-
-    t0.free()
-    t1.free()
+    assert_with_measure[always_zero](t0.unsafe_ptr(), t1.unsafe_ptr(), 100)
+    _ = t1^
+    _ = t0^
 
 
 def test_correlation() raises:
     var a = 10
     var b = 10
     var len = a * b
-    var u = alloc[Float32](len)
-    var v = alloc[Float32](len)
-    var x = alloc[Float32](len)
+    var u = List(length=len, fill=Float32(0))
+    var v = List(length=len, fill=Float32(0))
+    var x = List(length=len, fill=Float32(0))
     for i in range(len):
-        u.store(i, (0.01 * Float64(i)).cast[DType.float32]())
-        v.store(i, (-0.01 * Float64(i)).cast[DType.float32]())
+        u[i] = (0.01 * Float64(i)).cast[DType.float32]()
+        v[i] = (-0.01 * Float64(i)).cast[DType.float32]()
     for i, j in product(range(a), range(b)):
-        x.store(
-            b * i + j,
-            (0.1 * Float64(i) + 0.1 * Float64(j)).cast[DType.float32](),
-        )
+        x[b * i + j] = (0.1 * Float64(i) + 0.1 * Float64(j)).cast[
+            DType.float32
+        ]()
 
-    assert_almost_equal(1.0, correlation[out_type=DType.float64](u, u, len))
-    assert_almost_equal(-1.0, correlation[out_type=DType.float64](u, v, len))
+    assert_almost_equal(
+        1.0,
+        correlation[out_type=DType.float64](
+            u.unsafe_ptr(), u.unsafe_ptr(), len
+        ),
+    )
+    assert_almost_equal(
+        -1.0,
+        correlation[out_type=DType.float64](
+            u.unsafe_ptr(), v.unsafe_ptr(), len
+        ),
+    )
     # +/- 0.773957299203321 is the exactly rounded fp64 answer calculated using mpfr
     assert_almost_equal(
-        0.773957299203321, correlation[out_type=DType.float64](u, x, len)
+        0.773957299203321,
+        correlation[out_type=DType.float64](
+            u.unsafe_ptr(), x.unsafe_ptr(), len
+        ),
     )
     assert_almost_equal(
-        -0.773957299203321, correlation[out_type=DType.float64](v, x, len)
+        -0.773957299203321,
+        correlation[out_type=DType.float64](
+            v.unsafe_ptr(), x.unsafe_ptr(), len
+        ),
     )
-    u.free()
-    v.free()
-    x.free()
+    _ = x^
+    _ = v^
+    _ = u^
 
 
 def test_kl_div() raises:

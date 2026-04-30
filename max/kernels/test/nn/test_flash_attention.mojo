@@ -109,7 +109,7 @@ def reference_attention_bshd[
     )
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
+    var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -161,8 +161,7 @@ def reference_attention_bshd[
                             v_4d[b, k, kv_h, n][0], accum
                         )
                     output_4d[b, m, h, n] = accum
-
-    score_ptr.free()
+    _ = score_ptr^
 
 
 def reference_attention_bshd_with_sinks[
@@ -227,7 +226,7 @@ def reference_attention_bshd_with_sinks[
     var kv_group_count = num_heads // kv_num_heads
 
     comptime layout_2d = Layout.row_major[2]()
-    var score_ptr = alloc[Scalar[dtype]](seq_len * kv_seq_len)
+    var score_ptr = List(length=seq_len * kv_seq_len, fill=Scalar[dtype](0))
     var score_2d = LayoutTensor[dtype, layout_2d](
         score_ptr,
         RuntimeLayout[layout_2d].row_major(Index(seq_len, kv_seq_len)),
@@ -289,8 +288,7 @@ def reference_attention_bshd_with_sinks[
                             v_4d[b, k, kv_h, n][0], accum
                         )
                     output_4d[b, m, h, n] = accum
-
-    score_ptr.free()
+    _ = score_ptr^
 
 
 @fieldwise_init

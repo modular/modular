@@ -90,7 +90,7 @@ def broadcast_test[
     var root_ctx = list_of_ctxs[root]
 
     # Create input buffer on root GPU
-    var host_input_ptr = alloc[Scalar[dtype]](length)
+    var host_input_ptr = List(length=length, fill=Scalar[dtype](0))
     for j in range(length):
         host_input_ptr[j] = _input_value[dtype](root, j)
     var input_dev = root_ctx.enqueue_create_buffer[dtype](length)
@@ -160,7 +160,7 @@ def broadcast_test[
         list_of_ctxs[i].synchronize()
 
     # Copy results back to host and verify
-    var host_output = alloc[Scalar[dtype]](length)
+    var host_output = List(length=length, fill=Scalar[dtype](0))
     for i in range(ngpus):
         list_of_ctxs[i].enqueue_copy(host_output, out_dev_list[i])
         list_of_ctxs[i].synchronize()
@@ -179,10 +179,8 @@ def broadcast_test[
                     "expected:",
                     expected,
                 )
-
-    # Cleanup
-    host_input_ptr.free()
-    host_output.free()
+    _ = host_output^
+    _ = host_input_ptr^
 
 
 @parameter

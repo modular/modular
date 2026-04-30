@@ -22,23 +22,21 @@ def main() raises:
     def test_scatter_ax0() raises:
         print("== test_scatter_ax0")
 
-        var data_ptr = alloc[Float32](9)
-        for i in range(9):
-            data_ptr[i] = 0
-        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](3, 3))
+        var data_ptr = List(length=9, fill=Float32(0))
+        var data = DynamicTensor[DType.float32, 2](
+            data_ptr.unsafe_ptr(), IndexList[2](3, 3)
+        )
 
-        var indices_ptr = alloc[Int32](6)
+        var indices_ptr = List(length=6, fill=Int32(0))
         indices_ptr[0] = 1
-        indices_ptr[1] = 0
         indices_ptr[2] = 2
-        indices_ptr[3] = 0
         indices_ptr[4] = 2
         indices_ptr[5] = 1
         var indices = DynamicTensor[DType.int32, 2](
-            indices_ptr, IndexList[2](2, 3)
+            indices_ptr.unsafe_ptr(), IndexList[2](2, 3)
         )
 
-        var updates_ptr = alloc[Float32](6)
+        var updates_ptr = List(length=6, fill=Float32(0))
         updates_ptr[0] = 1.0
         updates_ptr[1] = 1.1
         updates_ptr[2] = 1.2
@@ -46,12 +44,12 @@ def main() raises:
         updates_ptr[4] = 2.1
         updates_ptr[5] = 2.2
         var updates = DynamicTensor[DType.float32, 2](
-            updates_ptr, IndexList[2](2, 3)
+            updates_ptr.unsafe_ptr(), IndexList[2](2, 3)
         )
 
-        var output_ptr = alloc[Float32](9)
+        var output_ptr = List(length=9, fill=Float32(0))
         var output = DynamicTensor[DType.float32, 2](
-            output_ptr, IndexList[2](3, 3)
+            output_ptr.unsafe_ptr(), IndexList[2](3, 3)
         )
 
         var expected: InlineArray[Float32, 9] = [
@@ -79,11 +77,10 @@ def main() raises:
 
         for i in range(9):
             assert_equal(output_ptr[i], expected[i])
-
-        data_ptr.free()
-        indices_ptr.free()
-        updates_ptr.free()
-        output_ptr.free()
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
 
     # CHECK-LABEL: test_scatter_ax0
     # CHECK-NOT: FAIL
@@ -92,28 +89,30 @@ def main() raises:
     def test_scatter_ax1() raises:
         print("== test_scatter_ax1")
 
-        var data_ptr = alloc[Float32](5)
+        var data_ptr = List(length=5, fill=Float32(0))
         for i in range(5):
             data_ptr[i] = Float32(i + 1)
-        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
+        var data = DynamicTensor[DType.float32, 2](
+            data_ptr.unsafe_ptr(), IndexList[2](1, 5)
+        )
 
-        var indices_ptr = alloc[Int32](2)
+        var indices_ptr = List(length=2, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[1] = 3
         var indices = DynamicTensor[DType.int32, 2](
-            indices_ptr, IndexList[2](1, 2)
+            indices_ptr.unsafe_ptr(), IndexList[2](1, 2)
         )
 
-        var updates_ptr = alloc[Float32](2)
+        var updates_ptr = List(length=2, fill=Float32(0))
         updates_ptr[0] = 1.1
         updates_ptr[1] = 2.1
         var updates = DynamicTensor[DType.float32, 2](
-            updates_ptr, IndexList[2](1, 2)
+            updates_ptr.unsafe_ptr(), IndexList[2](1, 2)
         )
 
-        var output_ptr = alloc[Float32](5)
+        var output_ptr = List(length=5, fill=Float32(0))
         var output = DynamicTensor[DType.float32, 2](
-            output_ptr, IndexList[2](1, 5)
+            output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
         var expected: InlineArray[Float32, 5] = [
@@ -137,11 +136,10 @@ def main() raises:
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
-
-        data_ptr.free()
-        indices_ptr.free()
-        updates_ptr.free()
-        output_ptr.free()
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
 
     # CHECK-LABEL: test_scatter_ax1
     # CHECK-NOT: FAIL
@@ -150,28 +148,30 @@ def main() raises:
     def test_scatter_neg_indices() raises:
         print("== test_scatter_neg_indices")
 
-        var data_ptr = alloc[Float32](5)
+        var data_ptr = List(length=5, fill=Float32(0))
         for i in range(5):
             data_ptr[i] = Float32(i + 1)
-        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
+        var data = DynamicTensor[DType.float32, 2](
+            data_ptr.unsafe_ptr(), IndexList[2](1, 5)
+        )
 
-        var indices_ptr = alloc[Int32](2)
+        var indices_ptr = List(length=2, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[1] = -3
         var indices = DynamicTensor[DType.int32, 2](
-            indices_ptr, IndexList[2](1, 2)
+            indices_ptr.unsafe_ptr(), IndexList[2](1, 2)
         )
 
-        var updates_ptr = alloc[Float32](2)
+        var updates_ptr = List(length=2, fill=Float32(0))
         updates_ptr[0] = 1.1
         updates_ptr[1] = 2.1
         var updates = DynamicTensor[DType.float32, 2](
-            updates_ptr, IndexList[2](1, 2)
+            updates_ptr.unsafe_ptr(), IndexList[2](1, 2)
         )
 
-        var output_ptr = alloc[Float32](5)
+        var output_ptr = List(length=5, fill=Float32(0))
         var output = DynamicTensor[DType.float32, 2](
-            output_ptr, IndexList[2](1, 5)
+            output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
         var expected: InlineArray[Float32, 5] = [
@@ -195,11 +195,10 @@ def main() raises:
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
-
-        data_ptr.free()
-        indices_ptr.free()
-        updates_ptr.free()
-        output_ptr.free()
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
 
     # CHECK-LABEL: test_scatter_neg_indices
     # CHECK-NOT: FAIL
@@ -208,28 +207,30 @@ def main() raises:
     def test_scatter_reduce_max() raises:
         print("== test_scatter_reduce_max")
 
-        var data_ptr = alloc[Float32](5)
+        var data_ptr = List(length=5, fill=Float32(0))
         for i in range(5):
             data_ptr[i] = Float32(i + 1)
-        var data = DynamicTensor[DType.float32, 2](data_ptr, IndexList[2](1, 5))
+        var data = DynamicTensor[DType.float32, 2](
+            data_ptr.unsafe_ptr(), IndexList[2](1, 5)
+        )
 
-        var indices_ptr = alloc[Int32](2)
+        var indices_ptr = List(length=2, fill=Int32(0))
         indices_ptr[0] = 1
         indices_ptr[1] = 1
         var indices = DynamicTensor[DType.int32, 2](
-            indices_ptr, IndexList[2](1, 2)
+            indices_ptr.unsafe_ptr(), IndexList[2](1, 2)
         )
 
-        var updates_ptr = alloc[Float32](2)
+        var updates_ptr = List(length=2, fill=Float32(0))
         updates_ptr[0] = 1.1
         updates_ptr[1] = 2.1
         var updates = DynamicTensor[DType.float32, 2](
-            updates_ptr, IndexList[2](1, 2)
+            updates_ptr.unsafe_ptr(), IndexList[2](1, 2)
         )
 
-        var output_ptr = alloc[Float32](5)
+        var output_ptr = List(length=5, fill=Float32(0))
         var output = DynamicTensor[DType.float32, 2](
-            output_ptr, IndexList[2](1, 5)
+            output_ptr.unsafe_ptr(), IndexList[2](1, 5)
         )
 
         var expected: InlineArray[Float32, 5] = [
@@ -251,11 +252,10 @@ def main() raises:
 
         for i in range(5):
             assert_equal(output_ptr[i], expected[i])
-
-        data_ptr.free()
-        indices_ptr.free()
-        updates_ptr.free()
-        output_ptr.free()
+        _ = output_ptr^
+        _ = updates_ptr^
+        _ = indices_ptr^
+        _ = data_ptr^
 
     # CHECK-LABEL: test_scatter_reduce_max
     # CHECK-NOT: FAIL

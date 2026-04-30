@@ -188,7 +188,7 @@ def scatter_nd[
 
     # Buffer below will store both input_strides and data dimensions.
     # (combine both in one to reduce number of memcpy from H->D).
-    var ptr = alloc[Int64](last_shape_of_indices * 2)
+    var ptr = List(length=last_shape_of_indices * 2, fill=Int64(0))
 
     # input_strides
     # e.g., for a shape of 2, 3, 4, 5
@@ -249,8 +249,7 @@ def scatter_nd[
     _ = element_counts_and_input_dims_device
     _ = updates_device
     _ = indices_device
-
-    ptr.free()
+    _ = ptr^
 
 
 def linear_fill[

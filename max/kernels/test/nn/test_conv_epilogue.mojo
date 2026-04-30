@@ -95,17 +95,19 @@ def test[
     var C_per_group = C // num_groups
 
     var input_size = N * conv_shape.input_image_flat_size() * C
-    var input_ptr = alloc[Scalar[dtype]](input_size)
-    rand(input_ptr, input_size)
+    var input_ptr = List(length=input_size, fill=Scalar[dtype](0))
+    rand(input_ptr)
 
     var filter_size = conv_shape.filter_window_flat_size() * C_per_group * F
-    var filter_ptr = alloc[Scalar[dtype]](filter_size)
-    rand(filter_ptr, filter_size)
+    var filter_ptr = List(length=filter_size, fill=Scalar[dtype](0))
+    rand(filter_ptr)
 
     var output_size = N * conv_shape.output_image_flat_size() * F
-    var output_ptr = alloc[Scalar[dtype]](output_size)
-    var output_ref_ptr = alloc[Scalar[dtype]](output_size)
+    var output_ptr = List(length=output_size, fill=Scalar[dtype](0))
+    var output_ref_ptr = List(length=output_size, fill=Scalar[dtype](0))
 
+    # Kept as raw alloc because it's captured by closure bodies, which
+    # require ImplicitlyCopyable.
     var bias_ptr = alloc[Scalar[dtype]](F)
     rand(bias_ptr, F)
 
@@ -134,8 +136,8 @@ def test[
     var packed_filter_shape = pack_conv_filter_shape(
         lt_to_tt(filter), num_groups
     )
-    var packed_filter_ptr = alloc[Scalar[dtype]](
-        packed_filter_shape.flattened_length()
+    var packed_filter_ptr = List(
+        length=packed_filter_shape.flattened_length(), fill=Scalar[dtype](0)
     )
     var packed_filter = LayoutTensor[dtype, layout_p3](
         packed_filter_ptr,
@@ -272,11 +274,6 @@ def test[
             rebind[ConvShape[rank + 2 - 2]](conv_shape),
         )
 
-    input_ptr.free()
-    filter_ptr.free()
-    packed_filter_ptr.free()
-    bias_ptr.free()
-
     # Check results, return on the first failed comparison.
     for i in range(output_size):
         if not isclose(
@@ -292,15 +289,17 @@ def test[
             print("flat output index:", i)
             print("Golden value: ", output_ref.ptr[i])
             print("Actual value: ", output.ptr[i])
-            output_ptr.free()
-            output_ref_ptr.free()
+            bias_ptr.free()
             return
-
-    output_ptr.free()
-    output_ref_ptr.free()
 
     # CHECK: Succeed
     print("Succeed")
+    bias_ptr.free()
+    _ = output_ref_ptr^
+    _ = output_ptr^
+    _ = packed_filter_ptr^
+    _ = filter_ptr^
+    _ = input_ptr^
 
 
 def main() raises:

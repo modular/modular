@@ -40,7 +40,7 @@ def test_fill_and_print() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
-    var storage = alloc[Float32](dynamic_layout.size())
+    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -55,8 +55,7 @@ def test_fill_and_print() raises:
     # CHECK: 16.0 17.0 18.0 19.0 20.0 21.0 22.0 23.0
     # CHECK: 24.0 25.0 26.0 27.0 28.0 29.0 30.0 31.0
     print(tensor)
-
-    storage.free()
+    _ = storage^
 
 
 #  CHECK-LABEL: test_set_and_get_items
@@ -72,7 +71,7 @@ def test_set_and_get_items() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
-    var storage = alloc[Float32](dynamic_layout.size())
+    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -90,8 +89,7 @@ def test_set_and_get_items() raises:
     # CHECK: 10.0 11.0 12.0 13.0
     # CHECK: 14.0 15.0 16.0 17.0
     print(tensor)
-
-    storage.free()
+    _ = storage^
 
 
 #  CHECK-LABEL: test_tile
@@ -107,7 +105,7 @@ def test_tile() raises:
         RuntimeTuple[layout.stride, element_type=DType.int32](4, 1),
     )
 
-    var storage = alloc[Float32](dynamic_layout.size())
+    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -141,8 +139,7 @@ def test_tile() raises:
             print("----tile-data[", tile_i, ",", tile_j, "]----")
             var tile_2x2 = tensor.tile[2, 2](tile_i, tile_j)
             print(tile_2x2)
-
-    storage.free()
+    _ = storage^
 
 
 def test_tile_and_distribute():
@@ -156,7 +153,7 @@ def test_tile_and_distribute():
         RuntimeTuple[layout.stride](8, 1).cast[DType.int64](),
     )
 
-    var storage = alloc[Float32](dynamic_layout.size())
+    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -243,8 +240,7 @@ def test_tile_and_distribute():
                 var tile_2x2 = tile_4x4.distribute[Layout.row_major(2, 2)](th_i)
                 print("----fragments-data[", th_i, "]----")
                 print(tile_2x2)
-
-    storage.free()
+    _ = storage^
 
 
 # CHECK-LABEL: test_tile_and_vectorize
@@ -260,7 +256,7 @@ def test_tile_and_vectorize():
         RuntimeTuple[layout.stride, element_type=DType.int32](16, 1),
     )
 
-    var storage = alloc[Float32](dynamic_layout.size())
+    var storage = List(length=dynamic_layout.size(), fill=Float32(0))
 
     var tensor = LayoutTensor[
         DType.float32,
@@ -465,8 +461,7 @@ def test_tile_and_vectorize():
             var tensor_v_8x2 = tensor_8x8.vectorize[1, 4]()
             print("----vectorized-matrix----")
             print(tensor_v_8x2)
-
-    storage.free()
+    _ = storage^
 
 
 # CHECK-LABEL: test_copy_from
@@ -482,26 +477,25 @@ def test_copy_from():
         RuntimeTuple[layout.shape, element_type=DType.int32](8, 8),
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
+    var src_storage = List(length=dynamic_layout.size(), fill=Float32(0))
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](alloc[Float32](dynamic_layout.size()), dynamic_layout)
+    ](src_storage, dynamic_layout)
     arange(src_tensor)
 
+    var dst_storage = List(length=dynamic_layout.size(), fill=Float32(0))
     var dst_tensor = LayoutTensor[
         DType.float32,
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](alloc[Float32](dynamic_layout.size()), dynamic_layout).fill(0)
+    ](dst_storage, dynamic_layout)
     print(dst_tensor)
     dst_tensor.copy_from(src_tensor)
     print(dst_tensor)
-
-    src_tensor.ptr.free()
-    dst_tensor.ptr.free()
 
 
 # CHECK-LABEL: test_linspace_fill
@@ -517,12 +511,13 @@ def test_linspace_fill():
         RuntimeTuple[layout.shape, element_type=DType.int32](8, 8),
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
+    var src_storage = List(length=dynamic_layout.size(), fill=Float32(0))
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](alloc[Float32](dynamic_layout.size()), dynamic_layout)
+    ](src_storage, dynamic_layout)
     arange(src_tensor)
 
     # CHECK: ----source-tensor----
@@ -566,8 +561,6 @@ def test_linspace_fill():
     print(src_tensor_copy)
     print(src_tensor.ptr == src_tensor_copy.ptr)
 
-    src_tensor.ptr.free()
-
 
 # CHECK-LABEL: test_random_fill
 def test_random_fill():
@@ -582,12 +575,13 @@ def test_random_fill():
         RuntimeLayoutType.ShapeType(comptime (layout.size())),
         RuntimeLayoutType.StrideType(1),
     )
+    var src_storage = List(length=dynamic_layout.size(), fill=Float32(0))
     var src_tensor = LayoutTensor[
         DType.float32,
         layout,
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
-    ](alloc[Float32](dynamic_layout.size()), dynamic_layout)
+    ](src_storage, dynamic_layout)
     random(src_tensor)
     var sum: Float32 = 0.0
     for i in range(src_tensor.runtime_layout.size()):
@@ -599,7 +593,6 @@ def test_random_fill():
         var diff = rebind[Float32](src_tensor[i]) - mean
         variance += diff * diff
     variance = sqrt(variance / Float32(src_tensor.runtime_layout.size()))
-    src_tensor.ptr.free()
     # Check that the mean value is close to 0.5 and variance is more than 0.1
     # CHECK: ----mean-variance----
     # CHECK: True
@@ -621,7 +614,7 @@ def test_iterator():
         RuntimeTuple[layout.stride, element_type=DType.int32](8, 1),
     )
 
-    var ptr = alloc[Float32](dynamic_layout.size())
+    var ptr = List(length=dynamic_layout.size(), fill=Float32(0))
     var tensor = LayoutTensor[
         DType.float32,
         layout,
@@ -673,7 +666,7 @@ def test_iterator():
         layout_int_type=DType.int32,
         linear_idx_type=DType.int32,
         circular=True,
-    ](ptr, 64, dynamic_layout1)
+    ](ptr.unsafe_ptr(), 64, dynamic_layout1)
     iter += 9
     print(iter.runtime_layout)
     print(iter.bound, iter.offset, iter.stride)
@@ -691,7 +684,7 @@ def test_iterator():
         element_type=DType.int32,
         linear_idx_type=DType.int32,
     ].row_major(IndexList[2, element_type=DType.int32](M, N))
-    var ptr1 = alloc[Scalar[type]](M * N)
+    var ptr1 = List(length=M * N, fill=Scalar[type](0))
 
     var tensor1 = LayoutTensor[
         type,
@@ -712,16 +705,15 @@ def test_iterator():
     # CHECK: 16.0 17.0
     # CHECK: 24.0 25.0
     print(tensor_slice2[])
-
-    ptr.free()
-    ptr1.free()
+    _ = ptr1^
+    _ = ptr^
 
 
 # CHECK-LABEL: test_split
 def test_split():
     print("== test_split")
 
-    var ptr = alloc[Float32](16)
+    var ptr = List(length=16, fill=Float32(0))
 
     comptime layout_Ux4 = Layout(IntTuple(UNKNOWN_VALUE, 4), IntTuple(4, 1))
     var dynamic_layout_2x4 = RuntimeLayout[
@@ -839,8 +831,7 @@ def test_split():
     # CHECK: 12.0 13.0
     # CHECK: 14.0 15.0
     print(tensor_8x2_split2)
-
-    ptr.free()
+    _ = ptr^
 
 
 def main() raises:

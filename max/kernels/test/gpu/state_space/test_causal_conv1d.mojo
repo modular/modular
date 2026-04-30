@@ -24,7 +24,6 @@ from layout import (
     row_major,
 )
 from std.random import rand
-from std.memory import alloc
 from state_space.causal_conv1d import (
     causal_conv1d_channel_first_fwd_cpu,
     causal_conv1d_channel_first_fwd_gpu,
@@ -66,29 +65,33 @@ def run_causal_conv1d_gpu[
     comptime layout_2d = Layout.row_major[2]()
     comptime layout_1d = Layout(UNKNOWN_VALUE)
 
-    var input_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var input_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    var input_heap = List(length=batch * dim * seqlen, fill=Scalar[dtype](0))
+    var input_h = LayoutTensor[dtype, layout_3d, _](
         input_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
     )
-    var weight_heap = alloc[Scalar[dtype]](dim * width)
-    var weight_h = LayoutTensor[dtype, layout_2d, MutAnyOrigin](
+    var weight_heap = List(length=dim * width, fill=Scalar[dtype](0))
+    var weight_h = LayoutTensor[dtype, layout_2d, _](
         weight_heap, RuntimeLayout[layout_2d].row_major(Index(dim, width))
     )
-    var bias_heap = alloc[Scalar[dtype]](dim)
-    var bias_h = LayoutTensor[dtype, layout_1d, MutAnyOrigin](
+    var bias_heap = List(length=dim, fill=Scalar[dtype](0))
+    var bias_h = LayoutTensor[dtype, layout_1d, _](
         bias_heap, RuntimeLayout[layout_1d].row_major(Index(dim))
     )
-    var result_gpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var result_gpu_h = LayoutTensor[dtype, layout_3d](
+    var result_gpu_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var result_gpu_h = LayoutTensor[dtype, layout_3d, _](
         result_gpu_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
-    var result_cpu_heap = alloc[Scalar[dtype]](batch * dim * seqlen)
-    var result_cpu_h = LayoutTensor[dtype, layout_3d, MutAnyOrigin](
+    )
+    var result_cpu_heap = List(
+        length=batch * dim * seqlen, fill=Scalar[dtype](0)
+    )
+    var result_cpu_h = LayoutTensor[dtype, layout_3d, _](
         result_cpu_heap,
         RuntimeLayout[layout_3d].row_major(Index(batch, dim, seqlen)),
-    ).fill(0)
+    )
 
     # Initialize input data
     rand[dtype](input_h.ptr, input_h.size())
@@ -448,13 +451,11 @@ def run_causal_conv1d_gpu[
             result_cpu_h.ptr[i],
             rtol=rtol,
         )
-
-    # Cleanup
-    input_heap.free()
-    weight_heap.free()
-    bias_heap.free()
-    result_gpu_heap.free()
-    result_cpu_heap.free()
+    _ = result_cpu_heap^
+    _ = result_gpu_heap^
+    _ = bias_heap^
+    _ = weight_heap^
+    _ = input_heap^
 
 
 def test_basic_gpu_causal_conv1d() raises:
