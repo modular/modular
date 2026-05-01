@@ -2,25 +2,9 @@ load("//bazel:api.bzl", "mojo_library")
 
 package(default_visibility = ["//max:consumers"])
 
-# amd_rdna/ has not been ported to the amd_structured/ expert-object
-# architecture and currently imports from the (deleted) amd/ path, so
-# the files can't build. Keep them in-tree as reference for a future
-# port, referenced via this filegroup to satisfy the unreferenced-files
-# lint without attempting to compile them. When someone picks up the
-# port, move the sources into the `nn` library's glob and delete this
-# target.
-filegroup(
-    name = "amd_rdna_unported",
-    srcs = glob(["attention/gpu/amd_rdna/**/*.mojo"]),
-    tags = ["maybe-unused"],
-)
-
 mojo_library(
     name = "nn",
-    srcs = glob(
-        ["**/*.mojo"],
-        exclude = ["attention/gpu/amd_rdna/**/*.mojo"],
-    ),
+    srcs = glob(["**/*.mojo"]),
     docs_base_path = "kernels",
     validate_missing_docs = False,
     deps = [

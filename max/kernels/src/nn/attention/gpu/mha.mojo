@@ -26,6 +26,7 @@ from std.sys import (
     simd_width_of,
     size_of,
 )
+from std.sys.info import _is_amd_rdna
 from std.sys.intrinsics import _type_is_eq
 import std.gpu.primitives.warp as warp
 from std.algorithm import elementwise
@@ -81,6 +82,9 @@ from linalg.matmul.gpu._multistage_gemm_gpu import multistage_mma
 from linalg.transpose import transpose
 from std.memory import stack_allocation
 
+from .amd_rdna.attention import AttentionRDNA
+from .amd_rdna.mha_decode import AttentionRDNA
+from .amd_rdna.mha_prefill import AttentionRDNA
 from .amd_structured.attention import Attention
 from .amd_structured.mha_decode import Attention
 from .amd_structured.mha_decode_streaming import Attention
@@ -1730,29 +1734,47 @@ def mha[
                 sink_weights,
             )
     elif is_amd_gpu():
-        # Single unified gfx950 prefill kernel — handles BF16+FP8, any mask,
+        # Single unified prefill kernel — handles BF16+FP8, any mask,
         # depth∈{64,128,256,512}, with/without sink. Depth-supported asserts
-        # live in the kernel itself.
+        # live in the kernel itself.  Branches on `_is_amd_rdna()` because
+        # gfx950 (CDNA) and gfx11/12 (RDNA) need different fragment
+        # geometry / wave size / WMMA intrinsics.
         var sink_weights_ptr = OptionalReg[
             UnsafePointer[Scalar[q_type], ImmutAnyOrigin]
         ]()
         comptime if sink:
             sink_weights_ptr = sink_weights.value().ptr
 
-        var attention = Attention[config, group, sink](
-            output_ptr + q_batch_offset,
-            q_ptr + q_batch_offset,
-            k,
-            v,
-            mask,
-            sink_weights_ptr,
-            batch_idx,
-            scale,
-            seq_len,
-            num_keys,
-            Int(start_pos),
-        )
-        attention.mha_prefill()
+        comptime if _is_amd_rdna():
+            var attention = AttentionRDNA[config, group, sink](
+                output_ptr + q_batch_offset,
+                q_ptr + q_batch_offset,
+                k,
+                v,
+                mask,
+                sink_weights_ptr,
+                batch_idx,
+                scale,
+                seq_len,
+                num_keys,
+                Int(start_pos),
+            )
+            attention.mha_prefill()
+        else:
+            var attention = Attention[config, group, sink](
+                output_ptr + q_batch_offset,
+                q_ptr + q_batch_offset,
+                k,
+                v,
+                mask,
+                sink_weights_ptr,
+                batch_idx,
+                scale,
+                seq_len,
+                num_keys,
+                Int(start_pos),
+            )
+            attention.mha_prefill()
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()
@@ -3339,31 +3361,53 @@ def mha_decoding[
         comptime if sink:
             sink_weights_ptr = sink_weights.value().ptr
 
-        var attention = Attention[config, group, sink, token_gen=True](
-            output_ptr + output_batch_offset,
-            q_ptr + q_batch_offset,
-            k,
-            v,
-            mask,
-            sink_weights_ptr,
-            batch_idx,
-            scale,
-            1,
-            num_keys,
-            0,
-        )
-        comptime if use_streaming_decode:
-            attention.mha_decode_streaming(
-                exp_sum_batch_ptr,
-                qk_max_batch_ptr,
-                num_partitions,
+        comptime if _is_amd_rdna():
+            # MHA_STREAMING_DECODE is CDNA-only and is intentionally
+            # ignored on RDNA, which has only `mha_decode`.
+            var attention = AttentionRDNA[config, group, sink, token_gen=True](
+                output_ptr + output_batch_offset,
+                q_ptr + q_batch_offset,
+                k,
+                v,
+                mask,
+                sink_weights_ptr,
+                batch_idx,
+                scale,
+                1,
+                num_keys,
+                0,
             )
-        else:
             attention.mha_decode(
                 exp_sum_batch_ptr,
                 qk_max_batch_ptr,
                 num_partitions,
             )
+        else:
+            var attention = Attention[config, group, sink, token_gen=True](
+                output_ptr + output_batch_offset,
+                q_ptr + q_batch_offset,
+                k,
+                v,
+                mask,
+                sink_weights_ptr,
+                batch_idx,
+                scale,
+                1,
+                num_keys,
+                0,
+            )
+            comptime if use_streaming_decode:
+                attention.mha_decode_streaming(
+                    exp_sum_batch_ptr,
+                    qk_max_batch_ptr,
+                    num_partitions,
+                )
+            else:
+                attention.mha_decode(
+                    exp_sum_batch_ptr,
+                    qk_max_batch_ptr,
+                    num_partitions,
+                )
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name()

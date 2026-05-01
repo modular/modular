@@ -10,67 +10,58 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ===----------------------------------------------------------------------=== #
-"""RDNA-specific Attention struct for Wave32 WMMA operations.
+"""Attention struct for RDNA Wave32 MHA kernels (prefill + decode).
 
-This module provides an Attention implementation optimized for AMD RDNA consumer
-GPUs (Radeon RX 7000/8000 series) using Wave32 WMMA instructions.
-
-Key differences from CDNA Attention:
-- Wave size: 32 lanes (vs 64 for CDNA)
-- MMA shape: 16x16x16 only (vs multiple shapes for CDNA)
-- Fragment sizes: A/B = 16 elements, C/D = 8 elements per lane
-- k_group_size = 1 (single MMA per K iteration)
+TileTensor throughout. Wave32 + 16x16x16 WMMA + wave-cooperative
+fragments. Constructor surface matches `amd_structured/Attention` so
+the dispatcher (`nn/attention/gpu/mha.mojo`) can branch on
+`_is_amd_rdna()` without restructuring its call sites.
 """
 
 from std.collections import OptionalReg
-from std.math import ceildiv
+from std.math import ceildiv, recip
 from std.math.uutils import umod, ufloordiv
 from std.math.constants import log2e
-
-
 from std.algorithm.functional import unswitch
 from std.gpu import block_idx, lane_id, thread_idx
-from layout import (
-    Layout,
-    LayoutTensor,
-    TileTensor,
-    UNKNOWN_VALUE,
-    row_major as tt_row_major,
-    stack_allocation as tt_stack_allocation,
-)
-from layout.tensor_core import TiledTensorCore
 from std.memory import stack_allocation
+from std.sys import align_of, simd_width_of
+from std.utils import IndexList
+from std.utils.numerics import get_accum_type, min_or_neg_inf
+
+from layout import (
+    ComptimeInt,
+    Coord,
+    Idx,
+    MixedLayout,
+    RuntimeInt,
+    TileTensor,
+)
+from layout.tile_layout import row_major
+from layout.tensor_core import TiledTensorCore
+
 from nn.attention.mha_mask import MHAMask, TileMaskStatus
 from nn.attention.mha_operand import MHAOperand
 from nn.attention.mha_utils import MHAConfig
-from nn.softmax import _online_softmax_iter_for_mma_output
 
-from std.utils import Index, IndexList
-from std.utils.numerics import get_accum_type, min_or_neg_inf
-
-from nn.attention.gpu.amd.attention import AttentionConfig
-from nn.attention.gpu.amd.buffers import KVBuffer
-from .buffers_rdna import (
+from .buffers import (
     QRegisterBufferRDNA,
     OutputRegisterBufferRDNA,
     PRegisterBufferRDNA,
+    RDNA_AB_FRAG_SIZE,
+    RDNA_CD_FRAG_SIZE,
+)
+from .config import (
+    MHAAttentionConfigRDNA,
     RDNA_MMA_M,
     RDNA_MMA_N,
     RDNA_MMA_K,
-    RDNA_CD_FRAG_SIZE,
-    get_rdna_fragment_layout,
-    get_rdna_warp_layout,
 )
-from .mma_rdna import mma_rdna
-from nn.attention.gpu.amd.utils import (
-    GlobalMemoryManager,
-    SharedLayoutTensor,
-    SharedMemoryManager,
-    get_warp_coords,
-)
+from .softmax import SoftmaxRDNA
+from .utils import get_warp_coords, pad
 
-# RDNA-specific constants
-comptime RDNA_K_GROUP_SIZE = 1  # Always 1 for RDNA 16x16x16 WMMA
+# RDNA k_group_size is always 1 (full K per WMMA fragment).
+comptime RDNA_K_GROUP_SIZE = 1
 
 
 @always_inline
@@ -83,7 +74,7 @@ def _mask_apply_rdna[
     num_n_mmas: Int,
     mask_t: MHAMask,
     group: Int,
-    frag_num_rows: Int,  # Physical fragment size (8 for RDNA)
+    frag_num_rows: Int,
     use_exp2: Bool = False,
 ](
     kv_tile_start_row: UInt32,
@@ -96,19 +87,21 @@ def _mask_apply_rdna[
     mask_warp_col: UInt32,
     scale: Float32,
     mask: mask_t,
-    p_reg_vectorized: LayoutTensor[mut=True, accum_type, ...],
+    p_reg_tile: TileTensor[
+        mut=True,
+        accum_type,
+        _,
+        _,
+        address_space=AddressSpace.LOCAL,
+        linear_idx_type=_,
+    ],
     not_last_iter: Bool,
     cache_start_pos: UInt32 = 0,
 ):
-    """RDNA-specific mask application for WMMA fragments with swap_a_b=True.
-
-    For RDNA WMMA 16x16 C/D register mapping:
-    - Lane l, element v → D[row=v*2+l//16, col=l%16]
-    - P^T[key, seq]: key = v*2 + l//16 (interleaved), seq = l%16
-    - Lanes 0-15 hold even keys (0,2,4,...,14), lanes 16-31 hold odd keys (1,3,...,15)
-    - All 8 elements in a lane are at the SAME seq position (l%16)
-    """
-    comptime output_frag_size = frag_num_rows  # 8 for RDNA
+    """Apply `mask` to the per-lane QK score fragments in place."""
+    comptime output_frag_size = frag_num_rows
+    var p_reg_vectorized = p_reg_tile.vectorize[1, output_frag_size]()
+    comptime assert p_reg_vectorized.flat_rank == 2
 
     var lane = lane_id()
     var scale_log2e: Scalar[accum_type] = scale.cast[accum_type]() * (
@@ -116,8 +109,7 @@ def _mask_apply_rdna[
         and not mask_t.apply_log2e_after_mask else Scalar[accum_type](1)
     )
 
-    # RDNA WMMA C/D: lane l, elem v → D[row=v*2+l//16, col=l%16]
-    # P^T[key, seq]: seq = l%16, key = v*2 + l//16 (interleaved)
+    # RDNA WMMA C/D: lane l, elem v -> D[row=v*2+l//16, col=l%16].
     var lane_seq_offset = umod(lane, 16)
     var lane_key_group = ufloordiv(lane, 16)
 
@@ -128,7 +120,6 @@ def _mask_apply_rdna[
                 p_reg_vectorized[mma_id, 0] * scale_log2e
             )
 
-            # Base coordinates for this MMA tile in P matrix
             var mma_seq_base = mask_warp_row + UInt32(m_mma * mma_shape[0])
             var mma_key_base = (
                 mask_warp_col
@@ -145,16 +136,13 @@ def _mask_apply_rdna[
 
             comptime if masked:
                 comptime for j in range(output_frag_size):
-                    # Interleaved key: elem j at lane group g → key = j*2 + g
                     var score_key = mma_key_base + UInt32(
                         j * 2 + lane_key_group
                     )
                     var score_key_with_cache_start_pos = (
                         score_key + cache_start_pos
                     )
-                    # For RDNA, lane_key_group (lane//16) is the interleave
-                    # group (even/odd keys), NOT the GQA group offset.
-                    # Use lane % group to match MHAAttentionConfigRDNA.q_head_idx().
+                    # Use lane % group to match q_head_idx().
                     var group_idx = umod(lane, group)
                     var q_head_idx = (
                         block_idx.y * group
@@ -175,15 +163,16 @@ def _mask_apply_rdna[
                     p_reg_vectorized[mma_id, 0] * log2e
                 )
 
-            # Always mask out-of-bound keys on RDNA. Upstream, CausalMask sets
-            # mask_out_of_bound=False on all AMD GPUs, but we do need this to
-            # be masked for RDNA. To avoid a broader impact on CDNA
-            # functionality, perform the masking here.
+            # OOB key clamp: CausalMask sets `mask_out_of_bound=False`
+            # for the AMD path, so apply the row/col bound mask here
+            # rather than upstream.
             var bound_seq = num_keys if token_gen else seq_len
 
             if score_seq >= bound_seq:
                 comptime for j in range(output_frag_size):
-                    p_reg_vectorized[mma_id, 0][j] = Scalar[accum_type](-10000)
+                    p_reg_vectorized[mma_id, 0][j] = min_or_neg_inf[
+                        accum_type
+                    ]()
             elif not not_last_iter or token_gen:
                 var bound_key = (
                     kv_tile_start_row
@@ -195,13 +184,12 @@ def _mask_apply_rdna[
                         j * 2 + lane_key_group
                     )
                     if score_key >= bound_key:
-                        p_reg_vectorized[mma_id, 0][j] = Scalar[accum_type](
-                            -10000
-                        )
+                        p_reg_vectorized[mma_id, 0][j] = min_or_neg_inf[
+                            accum_type
+                        ]()
 
 
 struct AttentionRDNA[
-    attention_config_t: AttentionConfig,
     output_type: DType,
     q_type: DType,
     k_t: MHAOperand,
@@ -210,18 +198,15 @@ struct AttentionRDNA[
     //,
     config: MHAConfig,
     group: Int,
-    token_gen: Bool,
     sink: Bool,
+    token_gen: Bool = False,
     q_depth: Int = config.depth,
     cache_depth: Int = config.depth,
     output_depth: Int = config.depth,
 ]:
-    """RDNA-specific Attention implementation for Wave32 WMMA.
-
-    This struct provides attention computation using RDNA's 16x16x16 WMMA
-    operations with Wave32 execution. It uses RDNA-specific buffer types
-    with 16-element A/B fragments and 8-element C/D fragments.
-    """
+    comptime attention_config = MHAAttentionConfigRDNA[
+        Self.token_gen, Self.config, Self.group
+    ]
 
     comptime BM = Self.config.block_m()
     comptime BN = Self.config.block_n()
@@ -235,13 +220,11 @@ struct AttentionRDNA[
     comptime depth = Self.config.depth
     comptime accum_type = get_accum_type[Self.q_type]()
 
-    # RDNA always uses 16x16x16 WMMA
     comptime mma_shape = IndexList[3](RDNA_MMA_M, RDNA_MMA_N, RDNA_MMA_K)
 
-    # RDNA fragment layouts
-    comptime fragment_layout = get_rdna_fragment_layout()
+    # Per-lane C/D fragment: 1 row x 8 cols.
+    comptime frag_num_rows = 1
     comptime output_frag_size = RDNA_CD_FRAG_SIZE
-    comptime fragment_layout_nested = Layout.row_major(1, RDNA_CD_FRAG_SIZE)
 
     comptime num_m_mmas = ceildiv(Self.WM, Self.mma_shape[0])
     comptime num_n_mmas = ceildiv(Self.WN, Self.mma_shape[1])
@@ -252,18 +235,13 @@ struct AttentionRDNA[
     comptime swap_a_b = True
     comptime use_exp2 = True
 
-    # RDNA k_group_size is always 1
     comptime k_group_size = RDNA_K_GROUP_SIZE
     comptime num_k_mmas2 = ceildiv(
         Self.BK, Self.mma_shape[2] * Self.k_group_size
     )
 
-    # RDNA warp layout: 16 rows x 2 columns = 32 threads
-    comptime warp_layout = get_rdna_warp_layout()
-
     comptime num_stages = 2
 
-    # RDNA-specific buffer types
     comptime OutputRegisterBufferType = OutputRegisterBufferRDNA[
         Self.accum_type,
         Self.num_m_mmas,
@@ -284,45 +262,6 @@ struct AttentionRDNA[
         Self.k_group_size,
     ]
 
-    comptime row_tt_layout = tt_row_major[
-        Self.num_m_mmas, Self.fragment_layout.shape[0].value()
-    ]()
-
-    comptime RowMaxTensorType = TileTensor[
-        Self.accum_type,
-        type_of(Self.row_tt_layout),
-        MutExternalOrigin,
-        address_space=AddressSpace.LOCAL,
-    ]
-
-    comptime RowSumTensorType = Self.RowMaxTensorType
-
-    comptime GlobalMemoryManagerType = GlobalMemoryManager[
-        Self.q_type,
-        UInt32(Self.BM),
-        UInt32(Self.BN),
-        UInt32(Self.BK),
-        UInt32(Self.depth),
-        UInt32(Self.num_heads),
-        UInt32(Self.group),
-        Self.token_gen,
-        UInt32(Self.q_depth),
-        UInt32(Self.output_depth),
-    ]
-
-    comptime SharedMemoryManagerType = SharedMemoryManager[
-        Self.attention_config_t.shared_kv,
-        Self.attention_config_t.full_kv,
-        Self.attention_config_t.depth_padded,
-        Self.attention_config_t.double_buffer,
-        Self.q_type,
-        Self.BM,
-        Self.BN,
-        Self.BK,
-        Self.depth,
-        Self.token_gen,
-    ]
-
     comptime QRegisterBufferType = QRegisterBufferRDNA[
         dtype=Self.q_type,
         mma_shape=Self.mma_shape,
@@ -332,20 +271,83 @@ struct AttentionRDNA[
         BN=Self.BN,
         BK=Self.BK,
         depth=Self.q_depth,
-        thread_layout=Self.warp_layout,
     ]
+
+    comptime SoftmaxType = SoftmaxRDNA[
+        Self.accum_type,
+        Self.num_m_mmas,
+        Self.num_n_mmas,
+        Self.num_warps_m,
+        Self.num_warps_n,
+        use_exp2=Self.use_exp2,
+    ]
+
+    # Q / output / KV DRAM tile layouts. RuntimeInt rows + ComptimeInt
+    # depth/strides; the runtime row count drives SRD OOB clamping.
+
+    comptime kv_num_heads = Self.num_heads // Self.group
+
+    comptime _q_stride0 = (
+        Self.num_heads * Self.q_depth if not Self.token_gen else Self.q_depth
+    )
+    comptime QTileLayout = MixedLayout[
+        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.q_depth]].element_types,
+        Coord[ComptimeInt[Self._q_stride0], ComptimeInt[1]].element_types,
+    ]
+
+    comptime _output_stride0 = (
+        Self.num_heads
+        * Self.output_depth if not Self.token_gen else Self.output_depth
+    )
+    comptime OutputTileLayout = MixedLayout[
+        Coord[
+            RuntimeInt[DType.int64], ComptimeInt[Self.output_depth]
+        ].element_types,
+        Coord[ComptimeInt[Self._output_stride0], ComptimeInt[1]].element_types,
+    ]
+
+    comptime _kv_stride0 = Self.kv_num_heads * Self.depth
+    comptime KvTileLayout = MixedLayout[
+        Coord[RuntimeInt[DType.int64], ComptimeInt[Self.depth]].element_types,
+        Coord[ComptimeInt[Self._kv_stride0], ComptimeInt[1]].element_types,
+    ]
+
+    comptime _smem_alignment = align_of[
+        SIMD[Self.q_type, simd_width_of[Self.q_type]()]
+    ]()
+    # K SMEM: BN x BK (one strip at a time).
+    comptime _k_smem_size = Self.BN * Self.BK
+    # V SMEM: pad(depth) x BK (transposed).
+    comptime _v_smem_size = Self._padded_depth() * Self.BK
+    # P SMEM (decode only): BM x BN, A operand staging for PV.
+    comptime _p_smem_size = Self.BM * Self.BN if Self.token_gen else 0
+
+    # Online-softmax cross-warp scratch; reuses K SMEM (writes happen
+    # at iter boundaries, after K is consumed).
+    comptime _warp_scratch_layout = row_major[
+        2 * Int(Self.num_warps_n), Int(Self.BM)
+    ]()
 
     var out_reg_buffer: Self.OutputRegisterBufferType
     var p_reg_buffer: Self.PRegisterBufferType
 
-    var rowmax: Self.RowMaxTensorType
-    var rowsum: Self.RowSumTensorType
+    var softmax: Self.SoftmaxType
 
-    var gmem_manager: Self.GlobalMemoryManagerType
-    var smem_manager: Self.SharedMemoryManagerType
+    var k_smem_ptr: UnsafePointer[
+        Scalar[Self.k_t.dtype],
+        MutExternalOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
+    var v_smem_ptr: UnsafePointer[
+        Scalar[Self.v_t.dtype],
+        MutExternalOrigin,
+        address_space=AddressSpace.SHARED,
+    ]
 
     var q_buffer: Self.QRegisterBufferType
-    var output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin]
+    var output_tile: TileTensor[
+        Self.output_type, Self.OutputTileLayout, MutAnyOrigin
+    ]
 
     var batch_idx: Int
 
@@ -364,25 +366,25 @@ struct AttentionRDNA[
     var start_pos: Int
     var cache_start_pos: Int
 
-    var warp_scratch_tensor: SharedLayoutTensor[
-        Self.accum_type,
-        Layout.row_major(2 * Self.num_warps_n, Self.BM),
-    ]
+    @staticmethod
+    @always_inline
+    def _padded_depth() -> Int:
+        return pad[Self.v_t.dtype, Self.depth, Self.depth]()
 
     @staticmethod
     @always_inline
     def q_head_idx() -> Int:
-        return Self.attention_config_t.q_head_idx()
+        return Self.attention_config.q_head_idx()
 
     @staticmethod
     @always_inline
     def q_tile_idx() -> Int:
-        return Self.attention_config_t.q_tile_idx()
+        return Self.attention_config.q_tile_idx()
 
     @staticmethod
     @always_inline
     def kv_head_idx() -> Int:
-        return Self.attention_config_t.kv_head_idx()
+        return Self.attention_config.kv_head_idx()
 
     @always_inline
     def zero_p_buffer(self):
@@ -418,54 +420,33 @@ struct AttentionRDNA[
     ):
         return type_of(result)()
 
+    @staticmethod
     @always_inline
-    def mma_qk[
-        k_buffer_type: KVBuffer,
+    def make_kv_tile[
+        operand_t: MHAOperand,
         //,
-        prefetch_function: OptionalReg[def() capturing -> None] = None,
-        beg_iter: Int = 0,
-        num_iters: Int = Self.depth // Self.BK,
-        prefetched_b_tile: Bool = False,
-    ](mut self, mut k_buffer: k_buffer_type):
-        mma_rdna[
-            tensor_core_mma=Self.get_tensor_core_mma_qk(),
-            BK=Self.BK,
-            prefetch_function=prefetch_function,
-            swap_a_b=Self.swap_a_b,
-            beg_iter=beg_iter,
-            num_iters=num_iters,
-            prefetched_b_tile=prefetched_b_tile,
-        ](
-            self.p_reg_buffer,
-            self.q_buffer,
-            k_buffer,
+    ](
+        operand: operand_t,
+        batch_idx: UInt32,
+        start_tok_idx: UInt32,
+        head_idx: UInt32,
+        kv_tile_num_rows: UInt32,
+    ) -> TileTensor[operand_t.dtype, Self.KvTileLayout, ImmutAnyOrigin]:
+        return operand.block_paged_tile[Int(Self.BN)](
+            batch_idx,
+            start_tok_idx,
+            head_idx,
+            Self.KvTileLayout(
+                Coord(
+                    RuntimeInt[DType.int64](Int64(kv_tile_num_rows)),
+                    Idx[Self.depth](),
+                ),
+                Coord(Idx[Self._kv_stride0](), Idx[1]()),
+            ),
         )
 
-    @always_inline
-    def mma_pv[
-        v_buffer_type: KVBuffer,
-        //,
-        prefetch_function: OptionalReg[def() capturing -> None] = None,
-        prefetched_b_tile: Bool = True,
-    ](mut self, mut v_buffer: v_buffer_type):
-        # Create a callback that copies P chunk i to shared memory
-        @parameter
-        def copy_p_chunk[i: Int]():
-            self.p_reg_buffer.copy_to_shared[i]()
-
-        mma_rdna[
-            tensor_core_mma=Self.get_tensor_core_mma_pv(),
-            BK=Self.BK,
-            prefetch_function=prefetch_function,
-            swap_a_b=Self.swap_a_b,
-            num_iters=Self.BN // Self.BK,
-            prefetched_b_tile=prefetched_b_tile,
-            a_copy_fn=copy_p_chunk,
-        ](
-            self.out_reg_buffer,
-            self.p_reg_buffer,
-            v_buffer,
-        )
+    # `mma_qk` / `mma_pv` are inlined into the prefill / decode kernels
+    # where the concrete K/V buffer types are known.
 
     @always_inline
     def mask_status(
@@ -474,19 +455,19 @@ struct AttentionRDNA[
     ) -> TileMaskStatus:
         comptime if Self.token_gen:
             return self.mask.status(
-                Index[dtype=DType.uint32](
+                IndexList[2, element_type=DType.uint32](
                     Int(self.num_keys - 1),
                     Int(kv_tile_start_row),
                 ),
-                Index[dtype=DType.uint32](1, Self.BN),
+                IndexList[2, element_type=DType.uint32](1, Self.BN),
             )
         else:
             return self.mask.status(
-                Index[dtype=DType.uint32](
+                IndexList[2, element_type=DType.uint32](
                     Int(self.mask_block_row + UInt32(self.start_pos)),
                     Int(kv_tile_start_row + UInt32(self.cache_start_pos)),
                 ),
-                Index[dtype=DType.uint32](Self.BM, Self.BN),
+                IndexList[2, element_type=DType.uint32](Self.BM, Self.BN),
             )
 
     @always_inline
@@ -504,9 +485,7 @@ struct AttentionRDNA[
         kv_tile_start_row: UInt32,
     ) -> Bool:
         comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
-            var status = self.mask_status(
-                kv_tile_start_row,
-            )
+            var status = self.mask_status(kv_tile_start_row)
             if self.mask_skip_tile(status):
                 self.mask_advance()
                 return True
@@ -544,15 +523,13 @@ struct AttentionRDNA[
                 self.mask_warp_col,
                 self.scale,
                 self.mask,
-                self.p_reg_buffer.vectorize(),
+                self.p_reg_buffer.reg_tile,
                 not_last_iter,
                 UInt32(self.cache_start_pos),
             )
 
         comptime if not Self.token_gen or Self.mask_t.check_mask_during_decoding:
-            var mask_status = self.mask_status(
-                kv_tile_start_row,
-            )
+            var mask_status = self.mask_status(kv_tile_start_row)
             unswitch[_mask_apply_impl](
                 mask_status == TileMaskStatus.PARTIAL_MASK
             )
@@ -563,16 +540,13 @@ struct AttentionRDNA[
     @always_inline
     def __init__(
         out self,
-        attention_config: Self.attention_config_t,
         output_ptr: UnsafePointer[Scalar[Self.output_type], MutAnyOrigin],
         q: UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin],
         k: Self.k_t,
         v: Self.v_t,
         mask: Self.mask_t,
         sink_weights: OptionalReg[
-            LayoutTensor[
-                Self.q_type, Layout.row_major(UNKNOWN_VALUE), ImmutAnyOrigin
-            ]
+            UnsafePointer[Scalar[Self.q_type], ImmutAnyOrigin]
         ],
         batch_idx: Int,
         scale: Float32,
@@ -581,32 +555,28 @@ struct AttentionRDNA[
         start_pos: Int,
         cache_start_pos: Int = 0,
     ):
-        self.rowmax = tt_stack_allocation[
-            dtype=Self.accum_type, address_space=AddressSpace.LOCAL
-        ](Self.row_tt_layout)
-        self.rowsum = tt_stack_allocation[
-            dtype=Self.accum_type, address_space=AddressSpace.LOCAL
-        ](Self.row_tt_layout)
+        # Online softmax + output accumulator (registers).
+        self.softmax = Self.SoftmaxType()
         self.out_reg_buffer = Self.OutputRegisterBufferType()
         self.out_reg_buffer.zero()
 
-        self.gmem_manager = Self.GlobalMemoryManagerType(
-            UInt32(Self.q_tile_idx()),
-            UInt32(Self.kv_head_idx()),
-            seq_len,
-            Self.attention_config_t.get_q_offset[Self.q_depth](),
-            Self.attention_config_t.get_output_offset[Self.output_depth](),
-        )
-        self.smem_manager = Self.SharedMemoryManagerType()
+        # SMEM allocations.
+        self.k_smem_ptr = stack_allocation[
+            Self._k_smem_size,
+            Self.k_t.dtype,
+            address_space=AddressSpace.SHARED,
+            alignment=Self._smem_alignment,
+        ]()
+        self.v_smem_ptr = stack_allocation[
+            Self._v_smem_size,
+            Self.v_t.dtype,
+            address_space=AddressSpace.SHARED,
+            alignment=Self._smem_alignment,
+        ]()
 
-        self.warp_scratch_tensor = type_of(self.warp_scratch_tensor)(
-            self.smem_manager.get_warp_scratch_ptr[Self.accum_type]()
-        )
-
+        # P buffer: dedicated SMEM for prefill (BM*BK), borrows decode-mode
+        # P SMEM region (BM*BN) otherwise.
         comptime if not Self.token_gen:
-            # In prefill mode, P needs BM*BK elements of shared memory.
-            # K only has BN*BK elements, and BM can exceed BN (e.g. depth=64:
-            # BM=128, BN=64), so we allocate a dedicated P buffer.
             var p_ptr = stack_allocation[
                 Self.BM * Self.BK,
                 Self.q_type,
@@ -614,23 +584,59 @@ struct AttentionRDNA[
             ]()
             self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
         else:
-            var p_ptr = self.smem_manager.get_p_ptr[Self.q_type]()
+            var p_ptr = stack_allocation[
+                Self._p_smem_size,
+                Self.q_type,
+                address_space=AddressSpace.SHARED,
+            ]()
             self.p_reg_buffer = Self.PRegisterBufferType(p_ptr)
 
-        var q_tile = self.gmem_manager.get_q_tensor(q)
-        self.q_buffer = Self.QRegisterBufferType(q_tile)
+        # Q tile: pre-offset and wrapped as TileTensor with RuntimeInt rows.
+        var valid_rows: UInt32 = UInt32(Self.group) if Self.token_gen else min(
+            UInt32(Self.BM),
+            UInt32(seq_len) - UInt32(Self.q_tile_idx()) * UInt32(Self.BM),
+        )
+        var q_offset = Self.attention_config.get_q_offset[Self.q_depth]()
+        var output_offset = Self.attention_config.get_output_offset[
+            Self.output_depth
+        ]()
 
-        self.output_ptr = output_ptr
+        var q_tile = TileTensor[Self.q_type, Self.QTileLayout, ImmutAnyOrigin](
+            ptr=q + Int(q_offset),
+            layout=Self.QTileLayout(
+                Coord(
+                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Idx[Self.q_depth](),
+                ),
+                Coord(Idx[Self._q_stride0](), Idx[1]()),
+            ),
+        )
+        self.q_buffer = Self.QRegisterBufferType(q_tile, Int(valid_rows))
+
+        self.output_tile = TileTensor[
+            Self.output_type, Self.OutputTileLayout, MutAnyOrigin
+        ](
+            ptr=output_ptr + Int(output_offset),
+            layout=Self.OutputTileLayout(
+                Coord(
+                    RuntimeInt[DType.int64](Int64(valid_rows)),
+                    Idx[Self.output_depth](),
+                ),
+                Coord(
+                    Idx[Self._output_stride0](),
+                    Idx[1](),
+                ),
+            ),
+        )
 
         self.k = k
         self.v = v
         self.mask = mask
 
         self.mask_block_row = UInt32(self.q_tile_idx() * Self.BM)
-        var warp_row = get_warp_coords[Self.BN, Self.WN]()[0]
-        var warp_col = get_warp_coords[Self.BN, Self.WN]()[1]
-        self.mask_warp_row = UInt32(warp_row * Self.WM)
-        self.mask_warp_col = UInt32(warp_col * Self.WN)
+        var warp_coords = get_warp_coords[Self.BN, Self.WN]()
+        self.mask_warp_row = UInt32(warp_coords[0] * Self.WM)
+        self.mask_warp_col = UInt32(warp_coords[1] * Self.WN)
 
         self.batch_idx = batch_idx
         self.scale = scale
@@ -645,51 +651,69 @@ struct AttentionRDNA[
                 sink_weights
             ), "expect sink_weights to be non-null when sink=true"
             var sink_weight = (
-                sink_weights.value()[self.q_head_idx()][0].cast[
-                    Self.accum_type
-                ]()
+                sink_weights.value()[self.q_head_idx()].cast[Self.accum_type]()
                 * log2e
             )
-            self.rowmax = self.rowmax.fill(sink_weight)
-            self.rowsum = self.rowsum.fill(1)
+            _ = self.softmax.rowmax_tensor.fill(sink_weight)
+            _ = self.softmax.rowsum_tensor.fill(1)
         else:
-            self.rowmax = self.rowmax.fill(min_or_neg_inf[Self.accum_type]())
-            self.rowsum = self.rowsum.fill(0)
+            _ = self.softmax.rowmax_tensor.fill(
+                min_or_neg_inf[Self.accum_type]()
+            )
+            _ = self.softmax.rowsum_tensor.fill(0)
 
     @always_inline
-    def online_softmax(self):
-        var warp_scratch = self.warp_scratch_tensor
+    def online_softmax(mut self):
+        """One online softmax iteration: max → exp → sum → correction
+        → update output."""
         var warp_row: Int = get_warp_coords[Self.BN, Self.WN]()[0]
 
-        _online_softmax_iter_for_mma_output[
+        # Cross-warp reduction scratch reuses K SMEM (writes only happen
+        # at iteration boundaries, after K has been consumed).
+        var warp_scratch = TileTensor[
             Self.accum_type,
-            Layout.row_major(Self.num_m_mmas, Self.num_n_mmas),
-            Layout.row_major(Self.num_warps_m, Self.num_warps_n),
-            Self.warp_layout,
-            use_exp2=Self.use_exp2,
-            fragment_layout=Self.fragment_layout,
+            type_of(Self._warp_scratch_layout),
+            MutAnyOrigin,
+            address_space=AddressSpace.SHARED,
         ](
-            self.out_reg_buffer.vectorize(),
-            self.p_reg_buffer.vectorize(),
-            warp_scratch.tile[2 * Self.num_warps_n, Self.WM](0, warp_row),
-            self.rowmax.ptr.address_space_cast[AddressSpace.GENERIC](),
-            self.rowsum.ptr.address_space_cast[AddressSpace.GENERIC](),
+            self.k_smem_ptr.bitcast[Scalar[Self.accum_type]](),
+            Self._warp_scratch_layout,
+        ).tile[
+            2 * Self.num_warps_n, Self.WM
+        ](
+            0, warp_row
         )
+
+        self.softmax.full(
+            self.out_reg_buffer.reg_tile,
+            self.p_reg_buffer.reg_tile,
+            warp_scratch,
+        )
+
+    @always_inline
+    def apply_softmax_denominator(self):
+        """Divide the output accumulator by the softmax row sum, in-place."""
+        comptime for m_mma in range(Self.num_m_mmas):
+            var rowsum_inv = recip(self.softmax.rowsum_tensor[m_mma, 0][0])
+            comptime for n_mma in range(Self.num_n_mmas_output):
+                comptime for i in range(Self.output_frag_size):
+                    self.out_reg_buffer.reg_tile[
+                        n_mma * Self.num_m_mmas + m_mma, i
+                    ] *= rowsum_inv
 
     @always_inline
     def store_output(self):
         """Store output from registers to global memory."""
         var warp_row: Int = get_warp_coords[Self.BN, Self.WN]()[0]
         var warp_col: Int = get_warp_coords[Self.BN, Self.WN]()[1]
-        var output_tile = self.gmem_manager.get_output_tensor(self.output_ptr)
 
         var reg_tile = self.out_reg_buffer.get_reg_tile()
         var lane = lane_id()
         var row_group = lane // 16
         var col_within_mma = lane % 16
 
-        # For decoding, M-dim rows are heads in the GQA group (stride=output_depth).
-        # For prefill, M-dim rows are seq positions (stride=num_heads*output_depth).
+        # Decode rows = heads in GQA group (stride=output_depth).
+        # Prefill rows = seq positions (stride=num_heads*output_depth).
         comptime row_stride = Self.output_depth if Self.token_gen else Self.num_heads * Self.output_depth
         var row_bound = Self.group if Self.token_gen else self.seq_len
 
@@ -697,30 +721,31 @@ struct AttentionRDNA[
             comptime for seq_tile in range(Self.num_m_mmas):
                 comptime mma_idx = depth_tile * Self.num_m_mmas + seq_tile
 
-                comptime for elem in range(8):
-                    # RDNA WMMA C/D: lane l, elem v → D[row=v*2+l//16, col=l%16]
-                    # O^T[depth, seq]: depth = elem*2 + row_group (interleaved)
+                comptime for elem in range(Self.output_frag_size):
                     var seq_in_mma = col_within_mma
                     var depth_in_mma = elem * 2 + row_group
 
                     var global_seq = (
-                        warp_row * Self.WM + seq_tile * 16 + seq_in_mma
+                        warp_row * Self.WM
+                        + seq_tile * Self.mma_shape[0]
+                        + Int(seq_in_mma)
                     )
                     var global_depth = (
                         warp_col * Self.output_depth // Self.num_warps_n
-                        + depth_tile * 16
-                        + depth_in_mma
+                        + depth_tile * Self.mma_shape[1]
+                        + Int(depth_in_mma)
                     )
 
                     if global_seq < row_bound:
                         var output_offset = (
                             global_seq * row_stride + global_depth
                         )
-                        comptime reg_offset = mma_idx * 8 + elem
+                        comptime reg_offset = (
+                            mma_idx * Self.output_frag_size + elem
+                        )
                         var val = reg_tile.ptr[reg_offset]
-
-                        output_tile.ptr[output_offset] = val.cast[
-                            output_tile.dtype
+                        self.output_tile.ptr[output_offset] = val.cast[
+                            Self.output_type
                         ]()
 
     @always_inline
@@ -745,8 +770,7 @@ struct AttentionRDNA[
         var q_head_idx = self.q_head_idx()
         if num_partitions > 1:
             if thread_idx.x < Self.group:
-                var row_sum = self.rowsum[0, 0][0]
-                var row_max = self.rowmax[0, 0][0]
-
+                var row_sum = self.softmax.rowsum_tensor[0, 0][0]
+                var row_max = self.softmax.rowmax_tensor[0, 0][0]
                 exp_sum_ptr[q_head_idx] = row_sum
                 qk_max_ptr[q_head_idx] = row_max
