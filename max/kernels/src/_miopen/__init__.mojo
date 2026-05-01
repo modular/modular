@@ -36,6 +36,7 @@ from .miopen import (
     miopenCreateTensorDescriptor,
     miopenDestroyTensorDescriptor,
     miopenSetTensorDescriptor,
+    miopenSetTensorDescriptorV2,
     miopenSetNdTensorDescriptorWithLayout,
     miopenSet4dTensorDescriptorEx,
     miopenCreateConvolutionDescriptor,

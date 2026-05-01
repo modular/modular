@@ -61,7 +61,7 @@ from _miopen.miopen import (
     miopenCreate,
     miopenSetStream,
     miopenCreateTensorDescriptor,
-    miopenSet4dTensorDescriptorEx,
+    miopenSetTensorDescriptorV2,
     miopenCreateConvolutionDescriptor,
     miopenInitConvolutionNdDescriptor,
     miopenSetConvolutionGroupCount,
@@ -3804,7 +3804,9 @@ def conv_cudnn[
 # ===----------------------------------------------------------------------=== #
 
 
-struct CachedMIOpenMeta(Movable):
+struct CachedMIOpenMeta[conv_rank: Int](Movable):
+    comptime tensor_rank = Self.conv_rank + 2
+
     var handle: MIOpenHandle
     var input_desc: MIOpenTensorDescriptor
     var filter_desc: MIOpenTensorDescriptor
@@ -3817,14 +3819,13 @@ struct CachedMIOpenMeta(Movable):
 
     # Cache key fields
     var is_set: Bool
-    var in_dtype: DType
-    var in_: Tuple[Int, Int, Int, Int]
-    var filt: Tuple[Int, Int, Int, Int]
-    var out: Tuple[Int, Int, Int, Int]
-    var pad: Tuple[Int, Int]
-    var stride: Tuple[Int, Int]
-    var dil: Tuple[Int, Int]
-    var filter_is_fcrs: Bool
+    var input_dtype: DType
+    var input_shape: InlineArray[UInt64, Self.tensor_rank]
+    var filter_shape: InlineArray[UInt64, Self.tensor_rank]
+    var output_shape: InlineArray[UInt64, Self.tensor_rank]
+    var padding: InlineArray[Int32, Self.conv_rank]
+    var stride: InlineArray[Int32, Self.conv_rank]
+    var dilation: InlineArray[Int32, Self.conv_rank]
 
     def __init__(out self) raises:
         self.handle = MIOpenHandle()
@@ -3864,28 +3865,33 @@ struct CachedMIOpenMeta(Movable):
         self.workspace_size = 0
 
         self.is_set = False
-        self.in_dtype = DType.invalid
-        self.in_ = (0, 0, 0, 0)
-        self.filt = (0, 0, 0, 0)
-        self.out = (0, 0, 0, 0)
-        self.pad = (0, 0)
-        self.stride = (0, 0)
-        self.dil = (0, 0)
-        self.filter_is_fcrs = False
+        self.input_dtype = DType.invalid
+        self.input_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
+        self.filter_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
+        self.output_shape = InlineArray[UInt64, Self.tensor_rank](fill=0)
+        self.padding = InlineArray[Int32, Self.conv_rank](fill=0)
+        self.stride = InlineArray[Int32, Self.conv_rank](fill=0)
+        self.dilation = InlineArray[Int32, Self.conv_rank](fill=0)
 
 
-def _get_cached_miopen_meta(
+def _get_cached_miopen_meta[
+    conv_rank: Int
+](
     ctx: DeviceContext,
-) raises -> UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]]:
-    var cache_key = "MIOPEN_CACHED_META_" + String(ctx.id())
+) raises -> UnsafePointer[
+    CachedMIOpenMeta[conv_rank], MutAnyOrigin
+]:
+    var cache_key = String(
+        "MIOPEN_CACHED_META_", String(conv_rank), "D_", String(ctx.id())
+    )
 
     if ptr_meta := _get_global_or_null(cache_key):
-        var ptr = ptr_meta.unsafe_value().bitcast[CachedMIOpenMeta]()
+        var ptr = ptr_meta.unsafe_value().bitcast[CachedMIOpenMeta[conv_rank]]()
         check_miopen_error(miopenSetStream(ptr[].handle, HIP(ctx.stream())))
         return ptr
 
-    var new_ptr_meta = alloc[CachedMIOpenMeta](1)
-    new_ptr_meta.init_pointee_move(CachedMIOpenMeta())
+    var new_ptr_meta = alloc[CachedMIOpenMeta[conv_rank]](1)
+    new_ptr_meta.init_pointee_move(CachedMIOpenMeta[conv_rank]())
 
     external_call["KGEN_CompilerRT_InsertGlobal", NoneType](
         StringSlice(cache_key),
@@ -3899,125 +3905,249 @@ def _get_cached_miopen_meta(
     return new_ptr_meta
 
 
-def _miopen_algo_find_and_forward[
+def _conv_miopen[
+    conv_rank: Int,
+    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    filter_is_fcrs: Bool = False,
 ](
-    ptr_meta: UnsafePointer[CachedMIOpenMeta, AnyOrigin[mut=True]],
     input: TileTensor[input_type, ...],
-    filter_ptr: OpaquePointer,
-    filt: Tuple[Int, Int, Int, Int],
+    filter: TileTensor[filter_type, ...],
     output: TileTensor[output_type, ...],
-    in_shape: Tuple[Int, Int, Int, Int],
-    out_shape: Tuple[Int, Int, Int, Int],
-    pad: Tuple[Int, Int],
-    stride: Tuple[Int, Int],
-    dil: Tuple[Int, Int],
+    stride_list: IndexList[conv_rank],
+    dilation_list: IndexList[conv_rank],
+    padding_list: IndexList[conv_rank],
     num_groups: Int,
-    params_match: Bool,
-    filter_is_fcrs: Bool,
     ctx: DeviceContext,
 ) raises:
-    """Set up descriptors, find algorithm, and run forward convolution.
+    comptime tensor_rank = conv_rank + 2
 
-    Uses NHWC strides for input/output and appropriate strides for
-    the filter physical layout, avoiding NHWC↔NCHW transposes.
-    Dimensions are passed in NCHW logical order with strides describing
-    the actual physical memory layout (following PyTorch's approach).
-    """
-    # in_shape is NHWC: (N, H, W, C)
-    var in_N = in_shape[0]
-    var in_H = in_shape[1]
-    var in_W = in_shape[2]
-    var in_C = in_shape[3]
+    comptime assert input.rank == tensor_rank, "incorrect tensor rank"
+    comptime assert filter.rank == tensor_rank, "incorrect tensor rank"
+    comptime assert output.rank == tensor_rank, "incorrect tensor rank"
 
-    var out_N = out_shape[0]
-    var out_H = out_shape[1]
-    var out_W = out_shape[2]
-    var out_C = out_shape[3]
+    # MIOpen needs all tensors in the same layout. Since input/output use
+    # NHWC strides, the filter must also be NHWC (FRSC physical layout).
+    # Transpose RSCF→FRSC or FCRS→FRSC on GPU. This is a small weight
+    # tensor — the cost is negligible compared to the conv itself.
+    var filter_size = filter.num_elements()
+    var filter_frsc_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
+    var filter_frsc_ptr = filter_frsc_buf.unsafe_ptr()
+    var filter_shape = InlineArray[UInt64, tensor_rank](fill=0)
 
-    if not params_match:
+    comptime if filter_is_fcrs:
+        comptime assert conv_rank == 2, "FCRS requires 2D convolution"
+
+        # FCRS [F,C,R,S] -> FRSC [F,R,S,C]
+        var F_dim = Int(filter.dim[0]())
+        var C_dim = Int(filter.dim[1]())
+        var R_dim = Int(filter.dim[2]())
+        var S_dim = Int(filter.dim[3]())
+
+        @parameter
+        @__copy_capture(filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
+        @always_inline
+        def transpose_fcrs_to_frsc[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            var f = coords[0]
+            var r = coords[1]
+            var s = coords[2]
+            var c = coords[3]
+            var val = filter.load_linear[width=_width](Index(f, c, r, s))
+            var out_idx = (
+                f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
+            )
+            filter_frsc_ptr.store(out_idx, val)
+
+        elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
+            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
+        )
+        filter_shape[0] = UInt64(F_dim)
+        filter_shape[1] = UInt64(C_dim)
+        filter_shape[2] = UInt64(R_dim)
+        filter_shape[3] = UInt64(S_dim)
+
+    elif conv_rank == 2:
+        # RSCF [R,S,C,F] -> FRSC [F,R,S,C]
+        var R_dim = Int(filter.dim[0]())
+        var S_dim = Int(filter.dim[1]())
+        var C_dim = Int(filter.dim[2]())
+        var F_dim = Int(filter.dim[3]())
+
+        @parameter
+        @__copy_capture(filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
+        @always_inline
+        def transpose_rscf_to_frsc[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            var f = coords[0]
+            var r = coords[1]
+            var s = coords[2]
+            var c = coords[3]
+            var val = filter.load_linear[width=_width](Index(r, s, c, f))
+            var out_idx = (
+                f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
+            )
+            filter_frsc_ptr.store(out_idx, val)
+
+        elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
+            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
+        )
+
+        filter_shape[0] = UInt64(F_dim)
+        filter_shape[1] = UInt64(C_dim)
+        filter_shape[2] = UInt64(R_dim)
+        filter_shape[3] = UInt64(S_dim)
+
+    else:
+        comptime assert conv_rank == 3, "Only support 2D/3D convolution"
+
+        # QRSCF [Q,R,S,C,F] -> FQRSC [F,Q,R,S,C]
+        var Q_dim = Int(filter.dim[0]())
+        var R_dim = Int(filter.dim[1]())
+        var S_dim = Int(filter.dim[2]())
+        var C_dim = Int(filter.dim[3]())
+        var F_dim = Int(filter.dim[4]())
+
+        @parameter
+        @__copy_capture(filter_frsc_ptr, Q_dim, R_dim, S_dim, C_dim, F_dim)
+        @always_inline
+        def transpose_qrscf_to_fqrsc[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            var f = coords[0]
+            var q = coords[1]
+            var r = coords[2]
+            var s = coords[3]
+            var c = coords[4]
+            var val = filter.load_linear[width=_width](Index(q, r, s, c, f))
+            var out_idx = (
+                f * Q_dim * R_dim * S_dim * C_dim
+                + q * R_dim * S_dim * C_dim
+                + r * S_dim * C_dim
+                + s * C_dim
+                + c
+            )
+            filter_frsc_ptr.store(out_idx, val)
+
+        elementwise[transpose_qrscf_to_fqrsc, 1, target="gpu"](
+            Index(F_dim, Q_dim, R_dim, S_dim, C_dim), ctx
+        )
+
+        filter_shape[0] = UInt64(F_dim)
+        filter_shape[1] = UInt64(C_dim)
+        filter_shape[2] = UInt64(Q_dim)
+        filter_shape[3] = UInt64(R_dim)
+        filter_shape[4] = UInt64(S_dim)
+
+    @always_inline
+    def image_shape_from_tensor(
+        tensor: TileTensor[...],
+    ) -> InlineArray[UInt64, tensor_rank]:
+        # Convert to channels first format.
+        var shape = InlineArray[UInt64, tensor_rank](fill=0)
+        shape[0] = UInt64(tensor.dim[0]())
+        shape[1] = UInt64(tensor.dim[tensor_rank - 1]())
+        comptime for i in range(conv_rank):
+            shape[2 + i] = UInt64(tensor.dim[1 + i]())
+        return shape
+
+    var input_shape = image_shape_from_tensor(input)
+    var output_shape = image_shape_from_tensor(output)
+
+    @always_inline
+    def int32_array_from_list[
+        name: StaticString
+    ](list: IndexList[conv_rank],) raises -> InlineArray[Int32, conv_rank]:
+        var array = InlineArray[Int32, conv_rank](fill=0)
+        for i in range(conv_rank):
+            array[i] = Int32(list[i])
+            if Int(array[i]) != list[i]:
+                raise Error(t"{name} value is too large: ", list[i])
+        return array
+
+    var padding = int32_array_from_list["padding"](padding_list)
+    var stride = int32_array_from_list["stride"](stride_list)
+    var dilation = int32_array_from_list["dilation"](dilation_list)
+
+    var ptr_meta = _get_cached_miopen_meta[conv_rank](ctx)
+
+    if (
+        not ptr_meta[].is_set
+        or ptr_meta[].input_dtype != input_type
+        or ptr_meta[].input_shape != input_shape
+        or ptr_meta[].filter_shape != filter_shape
+        or ptr_meta[].output_shape != output_shape
+        or ptr_meta[].padding != padding
+        or ptr_meta[].stride != stride
+        or ptr_meta[].dilation != dilation
+    ):
+
+        @always_inline
+        def strides_from_shape(
+            shape: InlineArray[UInt64, tensor_rank]
+        ) -> InlineArray[UInt64, tensor_rank]:
+            # For logical image (NCHW) or filter (FCRS) shapes, the innermost physical
+            # stride is the channels dimension (C) with all other channels expanding
+            # out from that.
+            var strides = InlineArray[UInt64, tensor_rank](fill=0)
+            var product = shape[1]
+            comptime for i in reversed(range(2, tensor_rank)):
+                strides[i] = product
+                product *= shape[i]
+            strides[1] = 1
+            strides[0] = product
+            return strides
+
+        var input_strides = strides_from_shape(input_shape)
+        var filter_strides = strides_from_shape(filter_shape)
+        var output_strides = strides_from_shape(output_shape)
+
         # Input descriptor: NCHW logical dims with NHWC physical strides
         check_miopen_error(
-            miopenSet4dTensorDescriptorEx(
+            miopenSetTensorDescriptorV2(
                 ptr_meta[].input_desc,
                 MIOpenDataType(input_type),
-                Int32(in_N),
-                Int32(in_C),
-                Int32(in_H),
-                Int32(in_W),
-                Int32(in_H * in_W * in_C),  # N stride
-                Int32(1),  # C stride (channels-last)
-                Int32(in_W * in_C),  # H stride
-                Int32(in_C),  # W stride
+                Int32(tensor_rank),
+                input_shape.unsafe_ptr(),
+                input_strides.unsafe_ptr(),
             )
         )
 
         # Filter descriptor: NHWC strides (matching input/output layout).
         # Filter data must be in FRSC physical layout for NHWC strides.
-        var f_F: Int
-        var f_C: Int
-        var f_R: Int
-        var f_S: Int
-        if filter_is_fcrs:
-            f_F = filt[0]
-            f_C = filt[1]
-            f_R = filt[2]
-            f_S = filt[3]
-        else:
-            f_F = filt[3]
-            f_C = filt[2]
-            f_R = filt[0]
-            f_S = filt[1]
         check_miopen_error(
-            miopenSet4dTensorDescriptorEx(
+            miopenSetTensorDescriptorV2(
                 ptr_meta[].filter_desc,
                 MIOpenDataType(filter_type),
-                Int32(f_F),
-                Int32(f_C),
-                Int32(f_R),
-                Int32(f_S),
-                Int32(f_R * f_S * f_C),  # F stride (NHWC: channels-last)
-                Int32(1),  # C stride
-                Int32(f_S * f_C),  # R stride
-                Int32(f_C),  # S stride
+                Int32(tensor_rank),
+                filter_shape.unsafe_ptr(),
+                filter_strides.unsafe_ptr(),
             )
         )
 
         # Output descriptor: NCHW logical dims with NHWC physical strides
         check_miopen_error(
-            miopenSet4dTensorDescriptorEx(
+            miopenSetTensorDescriptorV2(
                 ptr_meta[].output_desc,
                 MIOpenDataType(output_type),
-                Int32(out_N),
-                Int32(out_C),
-                Int32(out_H),
-                Int32(out_W),
-                Int32(out_H * out_W * out_C),  # N stride
-                Int32(1),  # C stride (channels-last)
-                Int32(out_W * out_C),  # H stride
-                Int32(out_C),  # W stride
+                Int32(tensor_rank),
+                output_shape.unsafe_ptr(),
+                output_strides.unsafe_ptr(),
             )
         )
 
-        # Convolution descriptor (stack-allocated to avoid leak on raise)
-        var conv_pad: InlineArray[Int32, 2] = [Int32(pad[0]), Int32(pad[1])]
-        var conv_stride: InlineArray[Int32, 2] = [
-            Int32(stride[0]),
-            Int32(stride[1]),
-        ]
-        var conv_dilation: InlineArray[Int32, 2] = [
-            Int32(dil[0]),
-            Int32(dil[1]),
-        ]
+        # Convolution descriptor
         check_miopen_error(
             miopenInitConvolutionNdDescriptor(
                 ptr_meta[].conv_desc,
-                Int32(2),
-                conv_pad.unsafe_ptr().bitcast[NoneType](),
-                conv_stride.unsafe_ptr().bitcast[NoneType](),
-                conv_dilation.unsafe_ptr().bitcast[NoneType](),
+                Int32(conv_rank),
+                padding.unsafe_ptr(),
+                stride.unsafe_ptr(),
+                dilation.unsafe_ptr(),
                 ConvolutionMode.CONVOLUTION,
             )
         )
@@ -4030,7 +4160,7 @@ def _miopen_algo_find_and_forward[
             )
 
         # Get workspace size
-        var ws_size: UInt64 = 0
+        var workspace_size: UInt64 = 0
         check_miopen_error(
             miopenConvolutionForwardGetWorkSpaceSize(
                 ptr_meta[].handle,
@@ -4038,11 +4168,13 @@ def _miopen_algo_find_and_forward[
                 ptr_meta[].input_desc,
                 ptr_meta[].conv_desc,
                 ptr_meta[].output_desc,
-                UnsafePointer(to=ws_size).bitcast[NoneType](),
+                UnsafePointer(to=workspace_size),
             )
         )
 
-        var find_ws = ctx.enqueue_create_buffer[DType.uint8](Int(ws_size))
+        var find_workspace = ctx.enqueue_create_buffer[DType.uint8](
+            Int(workspace_size)
+        )
 
         var perf = ConvAlgoPerf()
         var returned_count: Int32 = 0
@@ -4052,19 +4184,18 @@ def _miopen_algo_find_and_forward[
                 ptr_meta[].input_desc,
                 input.ptr.bitcast[NoneType](),
                 ptr_meta[].filter_desc,
-                filter_ptr.bitcast[NoneType](),
+                filter_frsc_ptr.bitcast[NoneType](),
                 ptr_meta[].conv_desc,
                 ptr_meta[].output_desc,
                 output.ptr.bitcast[NoneType](),
                 Int32(1),
-                UnsafePointer(to=returned_count).bitcast[NoneType](),
-                UnsafePointer(to=perf).bitcast[NoneType](),
-                find_ws.unsafe_ptr().bitcast[NoneType](),
-                ws_size,
+                UnsafePointer(to=returned_count),
+                UnsafePointer(to=perf),
+                find_workspace.unsafe_ptr().bitcast[NoneType](),
+                workspace_size,
                 False,  # non-exhaustive search
             )
         )
-        _ = find_ws^
 
         if returned_count == 0:
             raise Error("MIOpen: no algorithm found for convolution")
@@ -4074,191 +4205,44 @@ def _miopen_algo_find_and_forward[
 
         # Update cache state
         ptr_meta[].is_set = True
-        ptr_meta[].in_dtype = input_type
-        ptr_meta[].in_ = in_shape
-        ptr_meta[].filt = filt
-        ptr_meta[].out = out_shape
-        ptr_meta[].pad = pad
+        ptr_meta[].input_dtype = input_type
+        ptr_meta[].input_shape = input_shape
+        ptr_meta[].filter_shape = filter_shape
+        ptr_meta[].output_shape = output_shape
+        ptr_meta[].padding = padding
         ptr_meta[].stride = stride
-        ptr_meta[].dil = dil
-        ptr_meta[].filter_is_fcrs = filter_is_fcrs
+        ptr_meta[].dilation = dilation
 
     # Run forward convolution
-    var fwd_ws_size = Int(ptr_meta[].workspace_size)
-    var workspace_buffer = ctx.enqueue_create_buffer[DType.uint8](fwd_ws_size)
+    var forward_workspace = ctx.enqueue_create_buffer[DType.uint8](
+        Int(ptr_meta[].workspace_size)
+    )
 
     var alpha = Float32(1.0)
     var beta = Float32(0.0)
+
     check_miopen_error(
         miopenConvolutionForward(
             ptr_meta[].handle,
-            UnsafePointer(to=alpha).bitcast[NoneType](),
+            UnsafePointer(to=alpha),
             ptr_meta[].input_desc,
             input.ptr.bitcast[NoneType](),
             ptr_meta[].filter_desc,
-            filter_ptr.bitcast[NoneType](),
+            filter_frsc_ptr.bitcast[NoneType](),
             ptr_meta[].conv_desc,
             ptr_meta[].algo,
-            UnsafePointer(to=beta).bitcast[NoneType](),
+            UnsafePointer(to=beta),
             ptr_meta[].output_desc,
             output.ptr.bitcast[NoneType](),
-            workspace_buffer.unsafe_ptr().bitcast[NoneType](),
+            forward_workspace.unsafe_ptr().bitcast[NoneType](),
             ptr_meta[].workspace_size,
         )
     )
 
-    _ = workspace_buffer^
-
-
-def _conv_miopen[
-    input_type: DType,
-    filter_type: DType,
-    output_type: DType,
-    filter_is_fcrs: Bool = False,
-](
-    input: TileTensor[input_type, ...],
-    filter: TileTensor[filter_type, ...],
-    output: TileTensor[output_type, ...],
-    stride_list: IndexList[2],
-    dilation_list: IndexList[2],
-    padding_list: IndexList[2],
-    num_groups: Int,
-    ctx: DeviceContext,
-) raises:
-    var ptr_meta = _get_cached_miopen_meta(ctx)
-
-    # Bridge to LayoutTensor for filter transpose closures that capture it.
-    var filter_lt = filter.to_layout_tensor()
-
-    # Input shape: NHWC
-    var in_: Tuple[Int, Int, Int, Int] = (
-        Int(input.dim[0]()),
-        Int(input.dim[1]()),
-        Int(input.dim[2]()),
-        Int(input.dim[3]()),
-    )
-
-    # Filter shape depends on filter_is_fcrs
-    var filt: Tuple[Int, Int, Int, Int] = (
-        Int(filter.dim[0]()),
-        Int(filter.dim[1]()),
-        Int(filter.dim[2]()),
-        Int(filter.dim[3]()),
-    )
-
-    # Output shape: NHWC
-    var out: Tuple[Int, Int, Int, Int] = (
-        Int(output.dim[0]()),
-        Int(output.dim[1]()),
-        Int(output.dim[2]()),
-        Int(output.dim[3]()),
-    )
-
-    var pad: Tuple[Int, Int] = (padding_list[0], padding_list[1])
-    var stride: Tuple[Int, Int] = (stride_list[0], stride_list[1])
-    var dil: Tuple[Int, Int] = (dilation_list[0], dilation_list[1])
-
-    var params_match = ptr_meta[].is_set
-
-    if params_match:
-        if ptr_meta[].in_dtype != input_type:
-            params_match = False
-        elif ptr_meta[].in_ != in_:
-            params_match = False
-        elif ptr_meta[].filt != filt:
-            params_match = False
-        elif ptr_meta[].out != out:
-            params_match = False
-        elif ptr_meta[].pad != pad:
-            params_match = False
-        elif ptr_meta[].stride != stride:
-            params_match = False
-        elif ptr_meta[].dil != dil:
-            params_match = False
-        elif ptr_meta[].filter_is_fcrs != filter_is_fcrs:
-            params_match = False
-
-    # MIOpen needs all tensors in the same layout. Since input/output use
-    # NHWC strides, the filter must also be NHWC (FRSC physical layout).
-    # Transpose RSCF→FRSC or FCRS→FRSC on GPU. This is a small weight
-    # tensor — the cost is negligible compared to the conv itself.
-    var filter_size = filter.num_elements()
-    var filter_frsc_buf = ctx.enqueue_create_buffer[filter_type](filter_size)
-    var filter_frsc_ptr = filter_frsc_buf.unsafe_ptr()
-
-    comptime if filter_is_fcrs:
-        # FCRS [F,C,R,S] -> FRSC [F,R,S,C]
-        var F_dim = Int(filter.dim[0]())
-        var C_dim = Int(filter.dim[1]())
-        var R_dim = Int(filter.dim[2]())
-        var S_dim = Int(filter.dim[3]())
-
-        @parameter
-        @__copy_capture(filter_lt, filter_frsc_ptr, F_dim, C_dim, R_dim, S_dim)
-        @always_inline
-        def transpose_fcrs_to_frsc[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var f = coords[0]
-            var r = coords[1]
-            var s = coords[2]
-            var c = coords[3]
-            var val = filter_lt.load[width=_width](IndexList[4](f, c, r, s))
-            var out_idx = (
-                f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
-            )
-            filter_frsc_ptr.store(out_idx, val)
-
-        elementwise[transpose_fcrs_to_frsc, 1, target="gpu"](
-            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
-        )
-    else:
-        # RSCF [R,S,C,F] -> FRSC [F,R,S,C]
-        var R_dim = Int(filter.dim[0]())
-        var S_dim = Int(filter.dim[1]())
-        var C_dim = Int(filter.dim[2]())
-        var F_dim = Int(filter.dim[3]())
-
-        @parameter
-        @__copy_capture(filter_lt, filter_frsc_ptr, R_dim, S_dim, C_dim, F_dim)
-        @always_inline
-        def transpose_rscf_to_frsc[
-            _width: Int, _rank: Int, alignment: Int = 1
-        ](coords: IndexList[_rank]):
-            var f = coords[0]
-            var r = coords[1]
-            var s = coords[2]
-            var c = coords[3]
-            var val = filter_lt.load[width=_width](IndexList[4](r, s, c, f))
-            var out_idx = (
-                f * R_dim * S_dim * C_dim + r * S_dim * C_dim + s * C_dim + c
-            )
-            filter_frsc_ptr.store(out_idx, val)
-
-        elementwise[transpose_rscf_to_frsc, 1, target="gpu"](
-            IndexList[4](F_dim, R_dim, S_dim, C_dim), ctx
-        )
-
-    _miopen_algo_find_and_forward[input_type, filter_type, output_type](
-        ptr_meta,
-        input,
-        filter_frsc_ptr.bitcast[NoneType](),
-        filt,
-        output,
-        in_,
-        out,
-        pad,
-        stride,
-        dil,
-        num_groups,
-        params_match,
-        filter_is_fcrs,
-        ctx,
-    )
-    _ = filter_frsc_buf^
-
 
 def conv_miopen[
+    conv_rank: Int,
+    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
@@ -4267,9 +4251,9 @@ def conv_miopen[
     input: TileTensor[input_type, ...],
     filter: TileTensor[filter_type, ...],
     output: TileTensor[output_type, ...],
-    stride: IndexList[2],
-    dilation: IndexList[2],
-    padding: IndexList[2],
+    stride: IndexList[conv_rank],
+    dilation: IndexList[conv_rank],
+    padding: IndexList[conv_rank],
     num_groups: Int,
     ctx: DeviceContext,
 ) raises:
