@@ -31,6 +31,7 @@ Usage (kbench):
 from std.math import ceildiv
 from std.random import rand
 from std.sys import get_defined_dtype, get_defined_int, get_defined_string
+from std.sys.info import has_amd_gpu_accelerator
 
 from std.benchmark import (
     Bench,
@@ -52,7 +53,7 @@ from layout import (
     TileTensor,
     row_major,
 )
-from nn.conv.conv import conv3d_gpu_naive_ndhwc_qrscf, conv3d_cudnn
+from nn.conv.conv import conv3d_gpu_naive_ndhwc_qrscf, conv3d_cudnn, conv_miopen
 from nn.conv.gpu.im2col_matmul_3d import dispatch_im2col_matmul_conv3d
 from nn.conv.gpu.matmul_1x1x1_conv3d import dispatch_1x1x1_matmul_conv3d
 from nn.conv.gpu.nvidia.sm100.qslice_conv3d import (
@@ -237,7 +238,7 @@ def bench_conv3d[
 
     # TileTensor views (used by dispatcher-based paths).
     var input_tt = TileTensor(
-        input_dev.unsafe_ptr(),
+        input_dev,
         row_major(
             Coord(
                 IndexList[5](batch, in_depth, in_height, in_width, in_channels)
@@ -245,7 +246,7 @@ def bench_conv3d[
         ),
     )
     var filter_qrscf_tt = TileTensor(
-        filter_qrscf_dev.unsafe_ptr(),
+        filter_qrscf_dev,
         row_major(
             Coord(
                 IndexList[5](
@@ -255,7 +256,7 @@ def bench_conv3d[
         ),
     )
     var output_tt = TileTensor(
-        output_dev.unsafe_ptr(),
+        output_dev,
         row_major(
             Coord(IndexList[5](batch, d_out, h_out, w_out, out_channels))
         ),
@@ -410,31 +411,59 @@ def bench_conv3d[
             [ThroughputMeasure(BenchMetric.flops, flops)],
         )
     elif impl == "cudnn":
+        comptime if has_amd_gpu_accelerator():
 
-        @parameter
-        @always_inline
-        @__copy_capture(input_buf, filter_fcqrs_buf, output_buf)
-        def cudnn_bench(mut bencher: Bencher) raises:
             @parameter
             @always_inline
-            def kernel(ctx: DeviceContext) raises:
-                conv3d_cudnn[dtype, dtype, dtype](
-                    input_buf,
-                    filter_fcqrs_buf,
-                    output_buf,
-                    stride_idx,
-                    dilation_idx,
-                    pad_idx,
-                    1,
-                    ctx,
-                )
+            @__copy_capture(input_buf, filter_qrscf_tt, output_buf)
+            def miopen_bench(mut bencher: Bencher) raises:
+                @parameter
+                @always_inline
+                def kernel(ctx: DeviceContext) raises:
+                    conv_miopen(
+                        input_tt,
+                        filter_qrscf_tt,
+                        output_tt,
+                        stride_idx,
+                        dilation_idx,
+                        pad_idx,
+                        1,
+                        ctx,
+                    )
 
-            bencher.iter_custom[kernel](ctx)
+                bencher.iter_custom[kernel](ctx)
 
-        b.bench_function[cudnn_bench](
-            BenchId("conv3d_cudnn", input_id=bench_input_id),
-            [ThroughputMeasure(BenchMetric.flops, flops)],
-        )
+            b.bench_function[miopen_bench](
+                BenchId("conv3d_miopen", input_id=bench_input_id),
+                [ThroughputMeasure(BenchMetric.flops, flops)],
+            )
+
+        else:
+
+            @parameter
+            @always_inline
+            @__copy_capture(input_buf, filter_fcqrs_buf, output_buf)
+            def cudnn_bench(mut bencher: Bencher) raises:
+                @parameter
+                @always_inline
+                def kernel(ctx: DeviceContext) raises:
+                    conv3d_cudnn(
+                        input_buf,
+                        filter_fcqrs_buf,
+                        output_buf,
+                        stride_idx,
+                        dilation_idx,
+                        pad_idx,
+                        1,
+                        ctx,
+                    )
+
+                bencher.iter_custom[kernel](ctx)
+
+            b.bench_function[cudnn_bench](
+                BenchId("conv3d_cudnn", input_id=bench_input_id),
+                [ThroughputMeasure(BenchMetric.flops, flops)],
+            )
     else:
         # Naive Mojo NDHWC-QRSCF kernel.
         comptime naive_kernel = conv3d_gpu_naive_ndhwc_qrscf[
@@ -479,20 +508,31 @@ def bench_conv3d[
 
     # Optional correctness cross-check against cuDNN.
     if verify:
-        var output_ref_buf = LayoutTensor[dtype, output_layout](
-            output_ref_dev.unsafe_ptr(), output_runtime_layout
-        )
-        conv3d_cudnn[dtype, dtype, dtype](
-            input_buf,
-            filter_fcqrs_buf,
-            output_ref_buf,
-            stride_idx,
-            dilation_idx,
-            pad_idx,
-            1,
-            ctx,
-        )
-        ctx.synchronize()
+        comptime if has_amd_gpu_accelerator():
+            conv_miopen(
+                input_tt,
+                filter_qrscf_tt,
+                TileTensor(output_ref_dev, output_tt.layout),
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
+            )
+        else:
+            var output_ref_buf = LayoutTensor[dtype, output_layout](
+                output_ref_dev.unsafe_ptr(), output_runtime_layout
+            )
+            conv3d_cudnn(
+                input_buf,
+                filter_fcqrs_buf,
+                output_ref_buf,
+                stride_idx,
+                dilation_idx,
+                pad_idx,
+                1,
+                ctx,
+            )
         var output_host = List(length=output_size, fill=Scalar[dtype](0))
         var output_ref_host = List(length=output_size, fill=Scalar[dtype](0))
         ctx.enqueue_copy(output_host, output_dev)

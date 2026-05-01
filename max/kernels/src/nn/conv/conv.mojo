@@ -91,9 +91,11 @@ from linalg.utils import (
     partial_simd_load,
     partial_simd_store,
 )
-from std.gpu.host import DeviceContext
-from std.gpu.host._nvidia_cuda import CUDA
 from std.gpu import block_dim, block_idx, thread_idx
+from std.gpu.host import get_gpu_target, DeviceContext
+from std.gpu.host._amdgpu_hip import HIP
+from std.gpu.host._nvidia_cuda import CUDA
+from std.gpu.host.info import _is_sm10x_gpu
 from layout import (
     Idx,
     IntTuple,
@@ -112,8 +114,6 @@ from std.runtime.asyncrt import parallelism_level
 from std.runtime.tracing import Trace, TraceLevel, trace_arg
 
 from std.sys import has_amd_gpu_accelerator, has_amd_rdna_gpu_accelerator
-from std.gpu.host.info import _is_sm10x_gpu
-from std.gpu.host._amdgpu_hip import HIP
 from std.utils.index import Index, IndexList
 from std.utils.numerics import get_accum_type
 
@@ -3907,10 +3907,10 @@ def _get_cached_miopen_meta[
 
 def _conv_miopen[
     conv_rank: Int,
-    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    //,
     filter_is_fcrs: Bool = False,
 ](
     input: TileTensor[input_type, ...],
@@ -4240,12 +4240,81 @@ def _conv_miopen[
     )
 
 
-def conv_miopen[
+def _conv_miopen[
     conv_rank: Int,
-    //,
     input_type: DType,
     filter_type: DType,
     output_type: DType,
+    //,
+    maybe_epilogue_func: Optional[elementwise_simd_epilogue_type] = None,
+    filter_is_fcrs: Bool = False,
+](
+    input: TileTensor[input_type, ...],
+    filter: TileTensor[filter_type, ...],
+    output: TileTensor[output_type, ...],
+    stride: IndexList[conv_rank],
+    dilation: IndexList[conv_rank],
+    padding: IndexList[conv_rank],
+    num_groups: Int,
+    ctx: DeviceContext,
+) raises:
+    comptime if maybe_epilogue_func:
+        # MIOpen doesn't support epilogues. Compute to temp buffer,
+        # then apply epilogue.
+        comptime epilogue = maybe_epilogue_func.value()
+        var output_tmp_data = ctx.enqueue_create_buffer[output_type](
+            output.num_elements()
+        )
+        var output_tmp = TileTensor[
+            output_type, output.LayoutType, MutAnyOrigin
+        ](output_tmp_data, output.layout)
+        _conv_miopen[filter_is_fcrs=filter_is_fcrs](
+            input,
+            filter,
+            output_tmp,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            ctx,
+        )
+
+        @parameter
+        @__copy_capture(output_tmp)
+        @always_inline
+        def miopen_epilogue[
+            _width: Int, _rank: Int, alignment: Int = 1
+        ](coords: IndexList[_rank]):
+            epilogue(coords, output_tmp.load_linear[width=_width](coords))
+
+        elementwise[
+            miopen_epilogue,
+            simd_width_of[output_type, target=get_gpu_target()](),
+            target="gpu",
+        ](
+            coord_to_index_list(output.layout.shape_coord()),
+            ctx,
+        )
+        _ = output_tmp_data^
+    else:
+        _conv_miopen[filter_is_fcrs=filter_is_fcrs](
+            input,
+            filter,
+            output,
+            stride,
+            dilation,
+            padding,
+            num_groups,
+            ctx,
+        )
+
+
+def conv_miopen[
+    conv_rank: Int,
+    input_type: DType,
+    filter_type: DType,
+    output_type: DType,
+    //,
     filter_is_fcrs: Bool = False,
 ](
     input: TileTensor[input_type, ...],
@@ -4577,66 +4646,20 @@ def conv_gpu[
                 return
 
         # AMD GPU path: use MIOpen for conv2d.
-        # Note: MIOpen's miopenConvolution mode (0) is cross-correlation
-        # (standard DNN conv). The old CROSS_CORRELATION (1) was actually
-        # miopenTranspose (deconvolution), causing x/y descriptor swaps.
         comptime if has_amd_gpu_accelerator():
-            comptime if maybe_epilogue_func:
-                # MIOpen doesn't support epilogues. Compute to temp buffer,
-                # then apply epilogue.
-                comptime epilogue = maybe_epilogue_func.value()
-                var output_tmp_data = ctx.enqueue_create_buffer[output_type](
-                    output_lt.size()
-                )
-                var output_tmp_lt = LayoutTensor[
-                    output_type, output_layout, MutAnyOrigin
-                ](
-                    output_tmp_data.unsafe_ptr(),
-                    output_lt.runtime_layout,
-                )
-                var output_tmp_tt = lt_to_tt(output_tmp_lt)
-                _conv_miopen[filter_is_fcrs=filter_is_fcrs](
-                    input,
-                    filter,
-                    output_tmp_tt,
-                    rebind[IndexList[2]](stride),
-                    rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](symmetric_padding),
-                    num_groups,
-                    ctx,
-                )
-
-                @parameter
-                @__copy_capture(output_tmp_lt)
-                @always_inline
-                def amd_miopen_epilogue[
-                    _width: Int, _rank: Int, alignment: Int = 1
-                ](coords: IndexList[_rank]):
-                    var vec = output_tmp_lt.load[width=_width](
-                        rebind[IndexList[4]](coords)
-                    )
-                    epilogue(coords, vec)
-
-                elementwise[
-                    amd_miopen_epilogue,
-                    simd_width_of[output_type](),
-                    target="gpu",
-                ](
-                    output_lt.runtime_layout.shape.value.canonicalize(),
-                    ctx,
-                )
-                _ = output_tmp_data^
-            else:
-                _conv_miopen[filter_is_fcrs=filter_is_fcrs](
-                    input,
-                    filter,
-                    output,
-                    rebind[IndexList[2]](stride),
-                    rebind[IndexList[2]](dilation),
-                    rebind[IndexList[2]](symmetric_padding),
-                    num_groups,
-                    ctx,
-                )
+            _conv_miopen[
+                maybe_epilogue_func=maybe_epilogue_func,
+                filter_is_fcrs=filter_is_fcrs,
+            ](
+                input,
+                filter,
+                output,
+                stride,
+                dilation,
+                symmetric_padding,
+                num_groups,
+                ctx,
+            )
             return
 
         # Fallback paths for non-SM100, unsupported dtypes, or constraints
