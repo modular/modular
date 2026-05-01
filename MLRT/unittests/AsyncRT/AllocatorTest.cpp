@@ -15,10 +15,8 @@ using namespace M::MLRT;
 namespace {
 
 TEST(AllocatorTest, DefaultFactories_ReportNoNumaAffinity) {
-  EXPECT_EQ(createMallocAllocator()->getNumaPlacement(),
-            Allocator::kAnyNumaNode);
-  EXPECT_EQ(createTCMallocAllocator()->getNumaPlacement(),
-            Allocator::kAnyNumaNode);
+  EXPECT_EQ(createMallocAllocator()->getNumaPlacement(), M::kAnyNumaNode);
+  EXPECT_EQ(createTCMallocAllocator()->getNumaPlacement(), M::kAnyNumaNode);
 }
 
 TEST(AllocatorTest, TCMallocNumaFactory_StoresNumaPlacement) {
@@ -33,8 +31,8 @@ TEST(AllocatorTest, TCMallocNumaFactory_StoresNumaPlacement) {
 }
 
 TEST(AllocatorTest, TCMallocNumaFactory_AcceptsAnyNumaNodeSentinel) {
-  auto allocator = createTCMallocAllocator(Allocator::kAnyNumaNode);
-  EXPECT_EQ(allocator->getNumaPlacement(), Allocator::kAnyNumaNode);
+  auto allocator = createTCMallocAllocator(M::kAnyNumaNode);
+  EXPECT_EQ(allocator->getNumaPlacement(), M::kAnyNumaNode);
 }
 
 TEST(AllocatorTest, Use_TCMalloc) {

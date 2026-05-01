@@ -41,7 +41,7 @@ TEST(LeakCheckAllocator, ForwardsNumaPlacementFromBase) {
 
 TEST(LeakCheckAllocator, ReportsAnyNumaNodeForPlainBase) {
   auto wrapped = createLeakCheckAllocator(createMallocAllocator());
-  EXPECT_EQ(wrapped->getNumaPlacement(), Allocator::kAnyNumaNode);
+  EXPECT_EQ(wrapped->getNumaPlacement(), M::kAnyNumaNode);
 }
 
 TEST(ProfilingAllocator, ForwardsNumaPlacementFromBase) {

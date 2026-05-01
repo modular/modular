@@ -81,6 +81,9 @@ struct CPUSystemInfo {
   void print(raw_ostream &os) const;
 };
 
+/// Sentinel value used to indicate that a resource has no NUMA affinity.
+constexpr int kAnyNumaNode = -1;
+
 /// Describes the NUMA topology of the system, including NUMA nodes, CPU IDs
 /// per node, and PCI bus to NUMA node mappings.
 struct NUMATopology {
