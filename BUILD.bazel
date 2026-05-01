@@ -89,7 +89,7 @@ config_setting(
 
 string_flag(
     name = "max_base_version",
-    build_setting_default = "26.3.0",
+    build_setting_default = "26.4.0",
     make_variable = "MAX_BASE_VERSION",
 )
 
