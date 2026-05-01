@@ -322,7 +322,7 @@ def test_matrix_equal[
 def partialBind(mut C: Matrix[1, 2]) raises:
     # CHECK-NEXT: %exp = lit.var.decl "exp
     # CHECK-NEXT: lit.call {{.*}}::@"test_matrix_equal{{.*}}"[mut *"C`{{.*}}", mut *"__error__`{{.*}}", mut *"exp`{{.*}}"]
-    # CHECK-SAME: <:!lit.generator<<?, ".rows`": !Int, ".cols`1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
+    # CHECK-SAME: <:!lit.generator<<?, ".rows`2x": !Int, ".cols`2x1": !Int>[1](!lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut, |) -> !kgen.none>
     # CHECK-SAME: rebind(:!lit.generator<<?, "C.rows`": !Int, "C.cols`1": !Int>[1]("C": !lit.ref<!lit.struct<#Matrix <:!Int *(0,0), :!Int *(0,1)>>, mut *[0,0]> mut) -> !kgen.none>
     # CHECK-SAME: @{{.*}}::@"matmul_unrolled{{.*}}"<:!Int {0}, :!Int ?, :!Int ?>), :!Int {1}, :!Int {2}>(%C, %__error__, %exp)
     var exp = test_matrix_equal[matmul_unrolled[0]](C)

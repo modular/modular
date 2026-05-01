@@ -28,6 +28,7 @@ ASTDecl::ASTDecl(SharedState &shared, DeclIRValue irValue, llvm::SMLoc loc,
   hasReferenceError = false;
   hasBodyDecorators = false;
   loadedFromBytecode = false;
+  isExplicitParamScope = false;
 }
 
 DocStringAttr ASTDecl::getDocString() const {
@@ -196,10 +197,14 @@ static std::pair<ASTDecl *, size_t> getNearestParamScopeAndDepth(
   while (decl) {
     checkForCollision(decl);
 
-    if (isa_and_nonnull<DeclInterface>(decl->getIfOperation())) {
+    bool isParamScope =
+        isa_and_nonnull<DeclInterface>(decl->getIfOperation()) ||
+        decl->getIsExplicitParamScope();
+    if (!paramScope && isParamScope)
+      paramScope = decl;
+
+    if (isParamScope) {
       ++depth;
-      if (!paramScope)
-        paramScope = decl;
       if (isa_and_nonnull<FileModuleOp>(decl->getIfOperation()))
         break;
     }

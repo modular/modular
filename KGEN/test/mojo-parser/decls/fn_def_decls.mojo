@@ -5,6 +5,8 @@
 # ===----------------------------------------------------------------------=== #
 
 # RUN: %parse-mojo-isolated %s | FileCheck %s
+# RUN: %parse-mojo-isolated %s --kgen-print-inline-type-values \
+# RUN:     | FileCheck %s --check-prefix=INLINE
 
 
 # CHECK-LABEL: lit.fn @"empty_def()"() -> !kgen.none
@@ -308,3 +310,26 @@ struct Foo[x: Int, y: Int](FooTrait):
     # CHECK: kgen.witness "foo[::Int,::Int]($0)"
     def foo[q: Int, z: Int](self) -> Int:
         return Self.x + Self.y
+
+
+# Ensure nested function types mangle independently of their enclosing
+# scope.
+
+# INLINE-LABEL: lit.trait.decl @PluginHooks
+# INLINE: lit.alias.decl *"print_emit_fn{{[`0-9]*}}":
+# INLINE-SAME: !lit.generator<<"[[OMUT:O.mut`2x]]": !Bool,
+# INLINE-SAME: "[[OORIGIN:O._mlir_origin`2x1]]": origin<
+trait PluginHooks:
+    comptime print_emit_fn: Optional[def[O: Origin](str: StringSlice[O]) thin]
+
+
+# INLINE-LABEL: lit.struct.decl @DefaultPlugin
+# INLINE: lit.alias.decl *"print_emit_fn{{[`0-9]*}}":
+# INLINE-SAME: !lit.generator<<"[[OMUT]]": !Bool,
+# INLINE-SAME: "[[OORIGIN]]": origin<
+# INLINE: kgen.conformance @"{{.*}}PluginHooks"
+# INLINE: kgen.witness "print_emit_fn"
+struct DefaultPlugin(PluginHooks):
+    comptime print_emit_fn: Optional[def[O: Origin](str: StringSlice[O]) thin] = (
+        None
+    )

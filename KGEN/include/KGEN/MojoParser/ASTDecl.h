@@ -282,6 +282,11 @@ public:
   /// ASTDecl instance and help generate such names.
   unsigned getNextUniqueID() { return counter++; }
 
+  /// Mark this ASTDecl as an explicit parameter scope so that parameter
+  /// mangling can be applied for in-flight types.
+  void setExplicitParamScope() { isExplicitParamScope = true; }
+  bool getIsExplicitParamScope() const { return isExplicitParamScope; }
+
   /// Get the map of trait conformance lineage for this decl. This is lazily
   /// initialized because it is only needed for structs.
   DenseMap<SymbolRefAttr, std::pair<SymbolRefAttr, SMLoc>> *
@@ -371,6 +376,11 @@ private:
   /// than source decls, and e.g., do not resolve in the same way as source
   /// decls.
   bool loadedFromBytecode : 1;
+
+  /// True if this ASTDecl explicitly opts in to being treated as a parameter
+  /// scope by `mangleParamName` even though its IR value isn't a
+  /// `DeclInterface` op
+  bool isExplicitParamScope : 1;
 
   /// The counter to allow the generation of unique IDs for this ASTDecl.
   unsigned counter = 0;
