@@ -265,6 +265,13 @@ class CreateChatCompletionRequest(
     # MAX-only chat-template extension.
     chat_template_kwargs: dict[str, Any] | None = None
 
+    # Pre-tokenized prompt injected by the orchestrator for KV cache-aware
+    # routing. When set, the route uses these tokens directly instead of
+    # tokenizing ``messages`` (the orchestrator must use the same
+    # HuggingFace tokenizer as MAX so the IDs match the model vocabulary).
+    # If both are provided, ``prompt_tokens`` takes precedence.
+    prompt_tokens: list[int] | None = None
+
 
 class CreateCompletionRequest(
     _MaxRequestExtensions, _TextCompletionParamsBase  # type: ignore[misc,valid-type]

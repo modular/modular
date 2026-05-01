@@ -1062,10 +1062,17 @@ async def openai_create_chat_completion(
                 else 1
             )
 
+        # When the orchestrator has already tokenized the prompt for
+        # KV cache-aware routing, pass the token IDs directly so MAX Serve
+        # skips re-tokenization. ``messages`` and ``prompt`` are mutually
+        # exclusive on TextGenerationRequest, so omit ``messages`` in that
+        # case. If both are sent on the wire, ``prompt_tokens`` wins.
+        prompt_token_ids = completion_request.prompt_tokens
         token_request = TextGenerationRequest(
             request_id=RequestID(request_id),
             model_name=completion_request.model,
-            messages=request_messages,
+            prompt=prompt_token_ids if prompt_token_ids else None,
+            messages=[] if prompt_token_ids else request_messages,
             images=request_images,
             videos=request_videos,
             tools=tools,

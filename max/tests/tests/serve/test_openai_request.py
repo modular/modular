@@ -200,6 +200,25 @@ async def test_openai_user_message_with_null_content() -> None:
     assert messages[0].content == ""
 
 
+def test_openai_chat_completion_accepts_prompt_tokens() -> None:
+    """Schema must accept ``prompt_tokens`` (orchestrator pre-tokenized input).
+
+    The Mammoth orchestrator tokenizes incoming requests once and forwards
+    the integer token IDs to MAX Serve under the ``prompt_tokens`` field,
+    bypassing re-tokenization. Regression coverage for SERVSYS-1239: the
+    schema rewrite in #84789 dropped this MAX-only field, causing
+    ``CreateChatCompletionRequest.model_validate_json`` to fail with
+    ``ValidationError: prompt_tokens - Extra inputs are not permitted``.
+    """
+    body = (
+        '{"model":"test","ignore_eos":true,"max_tokens":4,'
+        '"messages":[{"role":"user","content":"hi"}],'
+        '"prompt_tokens":[101,202,303]}'
+    )
+    request = CreateChatCompletionRequest.model_validate_json(body)
+    assert request.prompt_tokens == [101, 202, 303]
+
+
 def test_openai_user_message_content_nullable_schema() -> None:
     """Test that the CreateChatCompletionRequest schema accepts null user content."""
     # Test with explicit null content in user message
