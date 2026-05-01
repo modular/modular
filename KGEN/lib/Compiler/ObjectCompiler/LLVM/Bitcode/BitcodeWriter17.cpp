@@ -2837,54 +2837,63 @@ void ModuleBitcodeWriter::writeConstants(unsigned FirstVal, unsigned LastVal,
     const Constant *C = cast<Constant>(V);
     unsigned Code = -1U;
     unsigned AbbrevToUse = 0;
-    if (C->isNullValue()) {
-
-      // For integer null constants, emit as CST_CODE_INTEGER instead of
-      // CST_CODE_NULL to avoid BitcodeReader issues with single-record
-      // constants blocks
-      if (C->getType()->isIntegerTy()) {
-        emitSignedInt64(Record, 0); // Emit as integer 0
-        Code = bitc::CST_CODE_INTEGER;
-        AbbrevToUse = CONSTANTS_INTEGER_ABBREV;
-      } else {
-        Code = bitc::CST_CODE_NULL;
-      }
-    } else if (isa<PoisonValue>(C)) {
-      Code = bitc::CST_CODE_POISON;
-    } else if (isa<UndefValue>(C)) {
-      Code = bitc::CST_CODE_UNDEF;
-    } else if (const ConstantInt *IV = dyn_cast<ConstantInt>(C)) {
-
-      if (IV->getBitWidth() <= 64) {
+    // ConstantInt/ConstantFP before isNullValue(): the bitcode reader
+    // mishandles CST_CODE_NULL for scalar constants; use typed encodings.
+    if (const ConstantInt *IV = dyn_cast<ConstantInt>(C)) {
+      if (IV->getType()->isVectorTy()) {
+        // LLVM PR#74502: integer vector splat stored as ConstantInt with vector
+        // type.
+        Code = bitc::CST_CODE_DATA;
+        auto *VTy = cast<FixedVectorType>(IV->getType());
+        uint64_t EltBits = IV->getValue().getZExtValue();
+        for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i)
+          Record.push_back(EltBits);
+      } else if (IV->getBitWidth() <= 64) {
         uint64_t V = IV->getSExtValue();
         emitSignedInt64(Record, V);
         Code = bitc::CST_CODE_INTEGER;
         AbbrevToUse = CONSTANTS_INTEGER_ABBREV;
-      } else { // Wide integers, > 64 bits in size.
+      } else {
         emitWideAPInt(Record, IV->getValue());
         Code = bitc::CST_CODE_WIDE_INTEGER;
       }
     } else if (const ConstantFP *CFP = dyn_cast<ConstantFP>(C)) {
-      Code = bitc::CST_CODE_FLOAT;
-      Type *Ty = CFP->getType()->getScalarType();
-      if (Ty->isHalfTy() || Ty->isBFloatTy() || Ty->isFloatTy() ||
-          Ty->isDoubleTy()) {
-        Record.push_back(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
-      } else if (Ty->isX86_FP80Ty()) {
-        // api needed to prevent premature destruction
-        // bits are not in the same order as a normal i80 APInt, compensate.
-        APInt api = CFP->getValueAPF().bitcastToAPInt();
-        const uint64_t *p = api.getRawData();
-        Record.push_back((p[1] << 48) | (p[0] >> 16));
-        Record.push_back(p[0] & 0xffffLL);
-      } else if (Ty->isFP128Ty() || Ty->isPPC_FP128Ty()) {
-        APInt api = CFP->getValueAPF().bitcastToAPInt();
-        const uint64_t *p = api.getRawData();
-        Record.push_back(p[0]);
-        Record.push_back(p[1]);
+      // LLVM PR#74502: FP vector splat stored as ConstantFP with vector type;
+      // expand to CST_CODE_DATA since LLVM 17 readers expect that encoding.
+      if (CFP->getType()->isVectorTy()) {
+        Code = bitc::CST_CODE_DATA;
+        auto *VTy = cast<FixedVectorType>(CFP->getType());
+        uint64_t EltBits = CFP->getValueAPF().bitcastToAPInt().getZExtValue();
+        for (unsigned i = 0, e = VTy->getNumElements(); i != e; ++i)
+          Record.push_back(EltBits);
       } else {
-        assert(0 && "Unknown FP type!");
+        Code = bitc::CST_CODE_FLOAT;
+        Type *Ty = CFP->getType();
+        if (Ty->isHalfTy() || Ty->isBFloatTy() || Ty->isFloatTy() ||
+            Ty->isDoubleTy()) {
+          Record.push_back(CFP->getValueAPF().bitcastToAPInt().getZExtValue());
+        } else if (Ty->isX86_FP80Ty()) {
+          // api needed to prevent premature destruction
+          // bits are not in the same order as a normal i80 APInt, compensate.
+          APInt api = CFP->getValueAPF().bitcastToAPInt();
+          const uint64_t *p = api.getRawData();
+          Record.push_back((p[1] << 48) | (p[0] >> 16));
+          Record.push_back(p[0] & 0xffffLL);
+        } else if (Ty->isFP128Ty() || Ty->isPPC_FP128Ty()) {
+          APInt api = CFP->getValueAPF().bitcastToAPInt();
+          const uint64_t *p = api.getRawData();
+          Record.push_back(p[0]);
+          Record.push_back(p[1]);
+        } else {
+          assert(0 && "Unknown FP type!");
+        }
       }
+    } else if (C->isNullValue()) {
+      Code = bitc::CST_CODE_NULL;
+    } else if (isa<PoisonValue>(C)) {
+      Code = bitc::CST_CODE_POISON;
+    } else if (isa<UndefValue>(C)) {
+      Code = bitc::CST_CODE_UNDEF;
     } else if (isa<ConstantDataSequential>(C) &&
                cast<ConstantDataSequential>(C)->isString()) {
       const ConstantDataSequential *Str = cast<ConstantDataSequential>(C);
