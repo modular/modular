@@ -42,48 +42,27 @@ pycross_wheel_library(
     ],
 )
 
-pycross_wheel_library(
+modular_py_library(
     name = "flashinfer",
     target_compatible_with = [
         "//:nvidia_gpu",
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    wheel = "@flashinfer_sm100_wheel//file",
     deps = [
-        requirement("apache-tvm-ffi"),
-        requirement("click"),
-        requirement("einops"),
-        requirement("ninja"),  # JIT compilation at runtime
-        requirement("numpy"),
-        requirement("nvidia-cudnn-frontend"),
-        requirement("nvidia-cutlass-dsl"),
-        requirement("nvitop"),  # provides pynvml via nvidia-ml-py
-        requirement("packaging"),
-        requirement("requests"),
-        requirement("tabulate"),
-        requirement("torch"),
-        requirement("tqdm"),
+        requirement("flashinfer-python"),
     ],
 )
 
-pycross_wheel_library(
+modular_py_library(
     name = "flash-attn",
     target_compatible_with = [
         "//:nvidia_gpu",
         "@platforms//cpu:x86_64",
         "@platforms//os:linux",
     ],
-    wheel = "@flash_attn_sm100_wheel//file",
     deps = [
         ":cutlass-imports",  # adds nvidia_cutlass_dsl/python_packages to sys.path
-        requirement("apache-tvm-ffi"),
-        requirement("einops"),
-        requirement("nvidia-cutlass-dsl"),
-        requirement("setuptools"),
-        requirement("torch"),
-        requirement("typing-extensions"),
-        "@modular_pip_lock_file_repo//deps:quack-kernels@0.3.3",
-        "@modular_pip_lock_file_repo//deps:torch-c-dlpack-ext@0.1.5",
+        requirement("flash-attn-4"),
     ],
 )

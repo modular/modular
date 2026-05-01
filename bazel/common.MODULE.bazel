@@ -455,20 +455,6 @@ http_file(
     urls = ["https://modular-bazel-artifacts-public.s3.amazonaws.com/artifacts/deep_gemm/sm100/91a898b8704b91726646e98403f6028b1e601603b2d34f8e4530370072e474cf/deep_gemm-2.2.0_38f8ef7-cp312-cp312-linux_x86_64.whl"],
 )
 
-http_file(
-    name = "flashinfer_sm100_wheel",
-    downloaded_file_path = "flashinfer_python-0.6.7.post3-py3-none-any.whl",
-    sha256 = "9d3f1aa0313cf9e5cf99f7560b8e003c57876088c8abfe7a3d330cccd4873052",
-    urls = ["https://files.pythonhosted.org/packages/01/6b/4117cd7cbeff07818ae7c6b8bf5a6d1ee3eed29356672b731b55af3d4453/flashinfer_python-0.6.7.post3-py3-none-any.whl"],
-)
-
-http_file(
-    name = "flash_attn_sm100_wheel",
-    downloaded_file_path = "flash_attn_4-4.0.0b4-py3-none-any.whl",
-    sha256 = "daaec7e76e9aed0bbc717228b4b8461387a99fa71629fb34a8dd00fc56e291e4",
-    urls = ["https://files.pythonhosted.org/packages/73/8e/b27eed4f2dcb9e5a89719e2233be36e86faa64fd1bead802265c7a7b046c/flash_attn_4-4.0.0b4-py3-none-any.whl"],
-)
-
 # https://github.com/modularml/breathe
 http_archive(
     name = "breathe",
