@@ -14,7 +14,7 @@ For example, start a server for a Gemma 3 model on the first GPU:
       --device-memory-utilization 0.9
 
 For details about the endpoint APIs provided by the server, see [the MAX REST
-API reference](/max/api/serve).
+API reference](/max/rest-api/).
 
 You can extend MAX with your own model implementations by loading custom
 architectures through the ``--custom-architectures`` flag. Each value takes

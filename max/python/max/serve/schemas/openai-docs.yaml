@@ -22,7 +22,7 @@ info:
     - [Serve an embedding model](/max/inference/embeddings)
     - [Image-to-text use cases](/max/inference/image-to-text)
     - [Image generation](/max/inference/image-generation)
-    - [Deploy MAX on GPU in the cloud](/max/tutorials/max-serve-local-to-cloud)
+    - [Deploy MAX on GPU in the cloud](/max/deploy/local-to-cloud/)
 
     ## OpenAI API compatibility
 
@@ -33,13 +33,13 @@ info:
 
     - **Supported endpoints:**
 
-        - [Responses](#operation/createResponse) (`/v1/responses`)
-        - [Chat completions](#operation/createChatCompletion) (`/v1/chat/completions`)
-        - [Completions](#operation/createCompletion) (`/v1/completions`)
-        - [Embeddings](#operation/createEmbedding) (`/v1/embeddings`)
-        - [Batches](#operation/createBatch) (`/v1/batches`) - The `v1/batches` API is only available as part of Modular's Dedicated Endpoint and Enterprise [editions](https://www.modular.com/pricing).
-        - [List models](#operation/listModels) (`/v1/models`)
-        - [Health check](#operation/health) (`/health`)
+        - [Responses](#POST/v1/responses) (`/v1/responses`)
+        - [Chat completions](#POST/v1/chat/completions) (`/v1/chat/completions`)
+        - [Completions](#POST/v1/completions) (`/v1/completions`)
+        - [Embeddings](#POST/v1/embeddings) (`/v1/embeddings`)
+        - [Batches](#POST/v1/batches) (`/v1/batches`) - The `v1/batches` API is only available as part of Modular's Dedicated Endpoint and Enterprise [editions](https://www.modular.com/pricing).
+        - [List models](#GET/v1/models) (`/v1/models`)
+        - [Health check](#GET/health) (`/health`)
 
     - **Parameter handling:** While aiming for high compatibility, not all
     OpenAI body parameters are implemented. Some may be accepted as no-ops

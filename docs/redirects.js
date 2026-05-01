@@ -163,6 +163,10 @@ const redirects = [
     from: '/max/api/',
     to: '/max/api/python/',
   },
+  {
+    from: '/max/api/serve/',
+    to: '/max/rest-api/',
+  },
 ];
 
 module.exports = {
