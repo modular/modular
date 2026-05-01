@@ -1070,11 +1070,6 @@ def elect() -> Int32:
 
 
 @always_inline
-def llvm_opaque_tid() -> UInt32:
-    return inlined_assembly["mov.u32 $0, %tid.x;", UInt32, constraints="=r"]()
-
-
-@always_inline
 def intrin_ftz[intrin: String](a: Float32, b: Float32) -> Float32:
     return inlined_assembly[
         String(intrin, ".ftz.f32 $0, $1, $2;"),
