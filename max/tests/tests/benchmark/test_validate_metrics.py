@@ -24,7 +24,7 @@ from max.benchmark.benchmark_shared.metrics import (
 )
 
 # ---------------------------------------------------------------------------
-# PercentileMetrics.validate()
+# PercentileMetrics.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
@@ -33,59 +33,59 @@ def test_percentile_metrics_valid() -> None:
     pm = PercentileMetrics(
         mean=10.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
     )
-    ok, errors = pm.validate()
+    ok, errors = pm.validate_metrics()
     assert ok is True
     assert errors == []
 
 
 def test_percentile_metrics_nan_mean() -> None:
-    """NaN mean is flagged by PercentileMetrics.validate()."""
+    """NaN mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
         mean=float("nan"), std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
     )
-    ok, errors = pm.validate()
+    ok, errors = pm.validate_metrics()
     assert ok is False
     assert len(errors) == 1
     assert "mean" in errors[0].lower()
 
 
 def test_percentile_metrics_zero_mean() -> None:
-    """Zero mean is flagged by PercentileMetrics.validate()."""
+    """Zero mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
         mean=0.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
     )
-    ok, errors = pm.validate()
+    ok, errors = pm.validate_metrics()
     assert ok is False
     assert len(errors) == 1
 
 
 def test_percentile_metrics_inf_mean() -> None:
-    """Infinite mean is flagged by PercentileMetrics.validate()."""
+    """Infinite mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
         mean=float("inf"), std=0.0, median=0.0, p90=0.0, p95=0.0, p99=0.0
     )
-    ok, _ = pm.validate()
+    ok, _ = pm.validate_metrics()
     assert ok is False
 
 
 def test_percentile_metrics_negative_mean() -> None:
-    """Negative mean is flagged by PercentileMetrics.validate()."""
+    """Negative mean is flagged by PercentileMetrics.validate_metrics()."""
     pm = PercentileMetrics(
         mean=-5.0, std=1.0, median=9.5, p90=15.0, p95=18.0, p99=20.0
     )
-    ok, _ = pm.validate()
+    ok, _ = pm.validate_metrics()
     assert ok is False
 
 
 # ---------------------------------------------------------------------------
-# ThroughputMetrics.validate()
+# ThroughputMetrics.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
 def test_throughput_metrics_valid() -> None:
     """Healthy ThroughputMetrics passes validation."""
     tm = ThroughputMetrics([50.0, 60.0], unit="tok/s")
-    ok, errors = tm.validate()
+    ok, errors = tm.validate_metrics()
     assert ok is True
     assert errors == []
 
@@ -93,14 +93,14 @@ def test_throughput_metrics_valid() -> None:
 def test_throughput_metrics_nan() -> None:
     """NaN input produces a validation error via delegation."""
     tm = ThroughputMetrics([float("nan")], unit="tok/s")
-    ok, errors = tm.validate()
+    ok, errors = tm.validate_metrics()
     assert ok is False
     assert len(errors) == 1
     assert "mean" in errors[0].lower()
 
 
 # ---------------------------------------------------------------------------
-# StandardPercentileMetrics.validate()
+# StandardPercentileMetrics.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
@@ -109,7 +109,7 @@ def test_standard_percentile_metrics_valid() -> None:
     spm = StandardPercentileMetrics(
         [0.05, 0.06], scale_factor=1000.0, unit="ms"
     )
-    ok, errors = spm.validate()
+    ok, errors = spm.validate_metrics()
     assert ok is True
     assert errors == []
 
@@ -119,14 +119,14 @@ def test_standard_percentile_metrics_nan() -> None:
     spm = StandardPercentileMetrics(
         [float("nan")], scale_factor=1000.0, unit="ms"
     )
-    ok, errors = spm.validate()
+    ok, errors = spm.validate_metrics()
     assert ok is False
     assert len(errors) == 1
     assert "mean" in errors[0].lower()
 
 
 # ---------------------------------------------------------------------------
-# BenchmarkMetrics.validate()
+# BenchmarkMetrics.validate_metrics()
 # ---------------------------------------------------------------------------
 
 
@@ -189,42 +189,44 @@ def _make_metrics(
 
 def test_healthy_metrics_pass_validation() -> None:
     """Healthy metrics produce no validation errors."""
-    ok, errors = _make_metrics().validate()
+    ok, errors = _make_metrics().validate_metrics()
     assert ok is True
     assert errors == []
 
 
 def test_failures_detected() -> None:
     """Any failed requests are flagged."""
-    ok, errors = _make_metrics(failures=3).validate()
+    ok, errors = _make_metrics(failures=3).validate_metrics()
     assert ok is False
     assert any("failures=3" in e for e in errors)
 
 
 def test_zero_completed_detected() -> None:
     """Zero completed requests are flagged."""
-    ok, errors = _make_metrics(completed=0).validate()
+    ok, errors = _make_metrics(completed=0).validate_metrics()
     assert ok is False
     assert any("completed=0" in e for e in errors)
 
 
 def test_zero_output_tokens_detected() -> None:
     """Zero total output tokens are flagged."""
-    ok, errors = _make_metrics(total_output=0).validate()
+    ok, errors = _make_metrics(total_output=0).validate_metrics()
     assert ok is False
     assert any("total_output=0" in e for e in errors)
 
 
 def test_zero_request_throughput_detected() -> None:
     """Zero request throughput is flagged."""
-    ok, errors = _make_metrics(request_throughput=0.0).validate()
+    ok, errors = _make_metrics(request_throughput=0.0).validate_metrics()
     assert ok is False
     assert any("request_throughput" in e for e in errors)
 
 
 def test_nan_request_throughput_detected() -> None:
     """NaN request throughput is flagged."""
-    ok, errors = _make_metrics(request_throughput=float("nan")).validate()
+    ok, errors = _make_metrics(
+        request_throughput=float("nan")
+    ).validate_metrics()
     assert ok is False
     assert any("request_throughput" in e for e in errors)
 
@@ -233,21 +235,21 @@ def test_nan_output_throughput_detected() -> None:
     """NaN output throughput mean is flagged with field prefix."""
     ok, errors = _make_metrics(
         output_throughput_values=[float("nan")]
-    ).validate()
+    ).validate_metrics()
     assert ok is False
     assert any("output_throughput" in e for e in errors)
 
 
 def test_nan_ttft_detected() -> None:
     """NaN TTFT mean is flagged with field prefix."""
-    ok, errors = _make_metrics(ttft_values=[float("nan")]).validate()
+    ok, errors = _make_metrics(ttft_values=[float("nan")]).validate_metrics()
     assert ok is False
     assert any("ttft_ms" in e for e in errors)
 
 
 def test_nan_latency_detected() -> None:
     """NaN latency mean is flagged with field prefix."""
-    ok, errors = _make_metrics(latency_values=[float("nan")]).validate()
+    ok, errors = _make_metrics(latency_values=[float("nan")]).validate_metrics()
     assert ok is False
     assert any("latency_ms" in e for e in errors)
 
@@ -262,7 +264,7 @@ def test_all_degenerate_reports_all_errors() -> None:
         output_throughput_values=[float("nan")],
         ttft_values=[float("nan")],
         latency_values=[float("nan")],
-    ).validate()
+    ).validate_metrics()
     assert ok is False
     assert len(errors) == 7
     assert any("failures" in e for e in errors)
@@ -276,14 +278,16 @@ def test_all_degenerate_reports_all_errors() -> None:
 
 def test_inf_throughput_detected() -> None:
     """Infinite throughput is flagged as invalid."""
-    ok, errors = _make_metrics(request_throughput=float("inf")).validate()
+    ok, errors = _make_metrics(
+        request_throughput=float("inf")
+    ).validate_metrics()
     assert ok is False
     assert any("request_throughput" in e for e in errors)
 
 
 def test_negative_throughput_detected() -> None:
     """Negative throughput is flagged as invalid."""
-    ok, errors = _make_metrics(request_throughput=-1.0).validate()
+    ok, errors = _make_metrics(request_throughput=-1.0).validate_metrics()
     assert ok is False
     assert any("request_throughput" in e for e in errors)
 
@@ -292,7 +296,7 @@ def test_sub_metric_errors_prefixed() -> None:
     """Sub-metric errors are prefixed with the field name."""
     ok, errors = _make_metrics(
         output_throughput_values=[float("nan")]
-    ).validate()
+    ).validate_metrics()
     assert ok is False
     assert any(e.startswith("output_throughput: ") for e in errors)
 

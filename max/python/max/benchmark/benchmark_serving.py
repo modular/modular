@@ -3254,7 +3254,7 @@ def _execute_benchmark(
         )
     )
 
-    ok, validation_errors = benchmark_result.validate()
+    ok, validation_errors = benchmark_result.validate_metrics()
     if not ok:
         for err in validation_errors:
             logger.error(f"Benchmark result validation failed: {err}")

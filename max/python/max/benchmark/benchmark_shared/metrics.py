@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar
 
 import numpy as np
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from max.diagnostics.cpu import CPUMetrics
@@ -134,7 +135,7 @@ class Metrics(ABC):
     """Base class for all benchmark metric containers."""
 
     @abstractmethod
-    def validate(self) -> tuple[bool, list[str]]:
+    def validate_metrics(self) -> tuple[bool, list[str]]:
         """Validate metric values are meaningful (not 0, NaN, inf, or negative).
 
         Returns:
@@ -211,7 +212,7 @@ class PercentileMetrics(Metrics):
             f"{name}_sample_size": ci.sample_size,
         }
 
-    def validate(self) -> tuple[bool, list[str]]:
+    def validate_metrics(self) -> tuple[bool, list[str]]:
         """Validate that the mean is finite and positive."""
         if not _is_finite_and_positive(self.mean):
             return False, [f"Invalid mean: {self.mean}"]
@@ -270,9 +271,9 @@ class ThroughputMetrics(Metrics):
         """Return a formatted string representation of throughput metrics in table format."""
         return self.format_with_prefix(prefix="throughput")
 
-    def validate(self) -> tuple[bool, list[str]]:
+    def validate_metrics(self) -> tuple[bool, list[str]]:
         """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate()
+        return self._metrics.validate_metrics()
 
 
 class StandardPercentileMetrics(Metrics):
@@ -327,9 +328,9 @@ class StandardPercentileMetrics(Metrics):
         """Return a formatted string representation of standard percentile metrics in table format."""
         return self.format_with_prefix(prefix="metric")
 
-    def validate(self) -> tuple[bool, list[str]]:
+    def validate_metrics(self) -> tuple[bool, list[str]]:
         """Validate by delegating to the inner PercentileMetrics."""
-        return self._metrics.validate()
+        return self._metrics.validate_metrics()
 
 
 @dataclass
@@ -356,9 +357,10 @@ class LoRAMetrics:
         }
 
 
-@dataclass(kw_only=True)
-class BaseBenchmarkMetrics(Metrics):
+class BaseBenchmarkMetrics(BaseModel, Metrics):
     """Shared fields and logic for all benchmark metric containers."""
+
+    model_config = ConfigDict(arbitrary_types_allowed=True)
 
     duration: float
     completed: int
@@ -374,7 +376,7 @@ class BaseBenchmarkMetrics(Metrics):
 
     cpu_metrics: CPUMetrics | None = None
 
-    metrics_by_endpoint: Mapping[str, ParsedMetrics] = field(
+    metrics_by_endpoint: Mapping[str, ParsedMetrics] = Field(
         default_factory=dict
     )
 
@@ -400,13 +402,13 @@ class BaseBenchmarkMetrics(Metrics):
         }
         if self.cpu_metrics is not None:
             d["cpu_metrics"] = dataclasses.asdict(self.cpu_metrics)
-        for f in dataclasses.fields(self):
-            val = getattr(self, f.name)
+        for name in type(self).model_fields:
+            val = getattr(self, name)
             if isinstance(val, (StandardPercentileMetrics, ThroughputMetrics)):
-                d.update(val.to_flat_dict(f.name))
-                d.update(val.confidence_to_flat_dict(f.name))
+                d.update(val.to_flat_dict(name))
+                d.update(val.confidence_to_flat_dict(name))
             elif isinstance(val, ChunkTimingMetrics):
-                d.update(val.to_flat_dict(f.name))
+                d.update(val.to_flat_dict(name))
         if self.metrics_by_endpoint:
             # Backwards compat: `server_metrics` mirrors the first endpoint so
             # existing BigQuery/analysis consumers keep working.
@@ -419,11 +421,11 @@ class BaseBenchmarkMetrics(Metrics):
             }
         return d
 
-    def validate(self) -> tuple[bool, list[str]]:
+    def validate_metrics(self) -> tuple[bool, list[str]]:
         """Validate common metric invariants.
 
-        Subclasses should call ``super().validate()`` and extend the error
-        list with their own checks.
+        Subclasses should call ``super().validate_metrics()`` and extend the
+        error list with their own checks.
         """
         errors: list[str] = []
 
@@ -439,18 +441,17 @@ class BaseBenchmarkMetrics(Metrics):
                 f" request_throughput={self.request_throughput}"
             )
 
-        for f in dataclasses.fields(self):
-            val = getattr(self, f.name)
+        for name in type(self).model_fields:
+            val = getattr(self, name)
             if isinstance(val, Metrics):
-                ok, sub_errors = val.validate()
+                ok, sub_errors = val.validate_metrics()
                 if not ok:
                     for err in sub_errors:
-                        errors.append(f"{f.name}: {err}")
+                        errors.append(f"{name}: {err}")
 
         return len(errors) == 0, errors
 
 
-@dataclass(kw_only=True)
 class BenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for comprehensive text-generation benchmark metrics."""
 
@@ -485,16 +486,16 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
     # only non-cancelled outputs (failures get 0, not None — they failed, they
     # did not produce a zero-length response). The two lists are not aligned
     # index-for-index: failures appear first in output_lens, then successes.
-    input_lens: list[int] = field(default_factory=list)
-    output_lens: list[int] = field(default_factory=list)
-    ttfts: list[float] = field(default_factory=list)
-    itls: list[list[float]] = field(default_factory=list)
-    generated_texts: list[str] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    request_submit_times: list[float | None] = field(default_factory=list)
-    request_complete_times: list[float | None] = field(default_factory=list)
+    input_lens: list[int] = Field(default_factory=list)
+    output_lens: list[int] = Field(default_factory=list)
+    ttfts: list[float] = Field(default_factory=list)
+    itls: list[list[float]] = Field(default_factory=list)
+    generated_texts: list[str] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    request_submit_times: list[float | None] = Field(default_factory=list)
+    request_complete_times: list[float | None] = Field(default_factory=list)
     # Empty when the server did not report per-request cached_tokens.
-    per_turn_cached_token_rates: list[float] = field(default_factory=list)
+    per_turn_cached_token_rates: list[float] = Field(default_factory=list)
 
     def _find_batch_histogram(self, batch_type: str) -> HistogramData | None:
         """First endpoint that exposes the MAX-serve batch-time histogram."""
@@ -531,8 +532,8 @@ class BenchmarkMetrics(BaseBenchmarkMetrics):
         hist = self._find_batch_histogram("TG")
         return int(hist.count) if hist else 0
 
-    def validate(self) -> tuple[bool, list[str]]:
-        _, errors = super().validate()
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        _, errors = super().validate_metrics()
 
         if self.total_output <= 0:
             errors.append(
@@ -647,8 +648,8 @@ class BaseBenchmarkResult(Generic[_BenchmarkMetricT]):
             d["lora_metrics"] = self.lora_metrics.to_result_dict()
         return d
 
-    def validate(self) -> tuple[bool, list[str]]:
-        return self.metrics.validate()
+    def validate_metrics(self) -> tuple[bool, list[str]]:
+        return self.metrics.validate_metrics()
 
 
 @dataclass(kw_only=True)
@@ -672,27 +673,26 @@ class TextGenerationBenchmarkResult(BaseBenchmarkResult[BenchmarkMetrics]):
             d["aggregate_server_stats"] = self.aggregate_server_stats
         return d
 
-    def validate(self) -> tuple[bool, list[str]]:
+    def validate_metrics(self) -> tuple[bool, list[str]]:
         # TODO: Mirroring previous behavior, we only validate the normal
         # metrics.  Perhaps we should validate the steady-state metrics too,
         # but that would be a change in behavior.
-        return super().validate()
+        return super().validate_metrics()
 
 
-@dataclass(kw_only=True)
 class PixelGenerationBenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for pixel generation serving benchmark metrics."""
 
     total_generated_outputs: int
 
     # Per-request raw data, preserved for archival and post-processing.
-    latencies: list[float] = field(default_factory=list)
+    latencies: list[float] = Field(default_factory=list)
     # Per-request output counts (distinct from total_generated_outputs, which
     # is the run-level sum of successful outputs only).
-    num_generated_outputs: list[int] = field(default_factory=list)
-    errors: list[str] = field(default_factory=list)
-    request_submit_times: list[float | None] = field(default_factory=list)
-    request_complete_times: list[float | None] = field(default_factory=list)
+    num_generated_outputs: list[int] = Field(default_factory=list)
+    errors: list[str] = Field(default_factory=list)
+    request_submit_times: list[float | None] = Field(default_factory=list)
+    request_complete_times: list[float | None] = Field(default_factory=list)
 
     def to_result_dict(self) -> dict[str, object]:
         d = super().to_result_dict()
@@ -746,7 +746,6 @@ class ChunkTimingMetrics:
         }
 
 
-@dataclass(kw_only=True)
 class TTSBenchmarkMetrics(BaseBenchmarkMetrics):
     """Container for TTS (text-to-speech) serving benchmark metrics.
 
@@ -964,3 +963,18 @@ def calculate_spec_decode_stats(
     return SpecDecodeStats(
         per_position_acceptance_rates=per_pos_rates,
     )
+
+
+# Resolve forward references on the pydantic models. ``CPUMetrics`` and
+# ``ParsedMetrics`` are kept under ``TYPE_CHECKING`` to avoid a circular
+# import (``server_metrics`` imports ``SpecDecodeMetrics`` from this module),
+# so we re-import them here once all of this module's classes are defined and
+# call ``model_rebuild()`` so pydantic can resolve the annotations.
+from max.diagnostics.cpu import CPUMetrics
+
+from .server_metrics import ParsedMetrics
+
+BaseBenchmarkMetrics.model_rebuild()
+BenchmarkMetrics.model_rebuild()
+PixelGenerationBenchmarkMetrics.model_rebuild()
+TTSBenchmarkMetrics.model_rebuild()
