@@ -319,6 +319,20 @@ logit_verification_pipelines:
     cos_dist_threshold: 6.0e-03
     kl_div_threshold: 1.5e-02
 
+  # TODO(PRDT-458): Add pregenerated_torch_goldens after running the
+  # "Generate Pipeline Goldens" GitHub Action (avoids autoregressive-drift
+  # false-failures from bfloat16 tie-breaks in live torch comparison).
+  # Observed non-drift accuracy: max cos_dist=7.4e-04, max kl=1.6e-03.
+  LiquidAI/LFM2.5-1.2B-Instruct-bfloat16:
+    pre_submit_agents: []
+    post_submit_agents: [*h100_1x, *b200_1x, *mi355_1x]
+    pipeline: "LiquidAI/LFM2.5-1.2B-Instruct"
+    compatible_with: [gpu]
+    encoding: bfloat16
+    tags: []
+    cos_dist_threshold: 5.0e-03
+    kl_div_threshold: 1.0e-02
+
   meta-llama/Llama-3.3-70B-Instruct-bfloat16:
     pre_submit_agents: []
     post_submit_agents: [*h100_4x, *b200_2x]

@@ -61,6 +61,7 @@ def register_all_models() -> None:
     from .idefics3_modulev3 import idefics3_modulev3_arch
     from .internvl import internvl_arch
     from .kimik2_5 import eagle3_kimik25_arch, kimik2_5_arch, kimivl_arch
+    from .lfm2 import lfm2_arch
     from .llama3 import llama_arch
     from .llama3_modulev3 import llama_modulev3_arch
     from .mamba import mamba_arch
@@ -125,6 +126,7 @@ def register_all_models() -> None:
         kimivl_arch,
         llama_arch,
         llama_modulev3_arch,
+        lfm2_arch,
         mamba_arch,
         minimax_m2_arch,
         bert_arch,

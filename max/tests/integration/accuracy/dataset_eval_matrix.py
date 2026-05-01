@@ -59,6 +59,17 @@ PIPELINES = [
         "timeout": 120,  # 2 hours
     },
     {
+        "pipeline": "LiquidAI/LFM2.5-1.2B-Instruct",
+        "runner": "modrunner-h100",
+        "gpu_flag": "--devices gpu:0",
+        "instance_type": "bm.gpu.h100.1",
+        # LFM2 requires batch_size=1 (SSM/conv state can't be batched across
+        # sequences in the same way as pure-attention models), so all evaluation
+        # tasks run sequentially rather than in parallel batches.  3 hours
+        # instead of the usual 2 hours accounts for that serialization overhead.
+        "timeout": 180,
+    },
+    {
         "pipeline": "Qwen/Qwen2.5-VL-3B-Instruct",
         "runner": "modrunner-h100",
         "gpu_flag": "--devices gpu:0",

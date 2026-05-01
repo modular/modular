@@ -43,6 +43,7 @@ family.
    pipelines.architectures.idefics3_modulev3
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
+   pipelines.architectures.lfm2
    pipelines.architectures.llama3
    pipelines.architectures.llama3_modulev3
    pipelines.architectures.mamba
@@ -102,6 +103,7 @@ Text generation
    ~max.pipelines.architectures.idefics3_modulev3
    ~max.pipelines.architectures.internvl
    ~max.pipelines.architectures.kimik2_5
+   ~max.pipelines.architectures.lfm2
    ~max.pipelines.architectures.llama3
    ~max.pipelines.architectures.llama3_modulev3
    ~max.pipelines.architectures.mamba

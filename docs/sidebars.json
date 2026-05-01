@@ -543,6 +543,7 @@
             "max/api/python/pipelines.architectures.idefics3_modulev3",
             "max/api/python/pipelines.architectures.internvl",
             "max/api/python/pipelines.architectures.kimik2_5",
+            "max/api/python/pipelines.architectures.lfm2",
             "max/api/python/pipelines.architectures.llama3",
             "max/api/python/pipelines.architectures.llama3_modulev3",
             "max/api/python/pipelines.architectures.mamba",

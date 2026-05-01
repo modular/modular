@@ -1360,6 +1360,13 @@ PIPELINE_ORACLES: Mapping[str, PipelineOracle] = {
         },
         device_encoding_map={"cpu": ["float32"], "gpu": ["float32"]},
     ),
+    "LiquidAI/LFM2.5-1.2B-Instruct": GenericOracle(
+        model_path="LiquidAI/LFM2.5-1.2B-Instruct",
+        config_params={"trust_remote_code": True},
+        device_encoding_map={
+            "gpu": ["float32", "bfloat16"],
+        },
+    ),
     "meta-llama/Meta-Llama-3-8B-Instruct": GenericOracle(
         model_path="meta-llama/Meta-Llama-3-8B-Instruct",
         weight_path_map={

@@ -71,6 +71,7 @@ Modules
    pipelines.architectures.idefics3_modulev3
    pipelines.architectures.internvl
    pipelines.architectures.kimik2_5
+   pipelines.architectures.lfm2
    pipelines.architectures.llama3
    pipelines.architectures.llama3_modulev3
    pipelines.architectures.mamba
