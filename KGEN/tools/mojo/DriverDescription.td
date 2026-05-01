@@ -30,7 +30,7 @@ def : MojoDriverDescription<
   "\n"
   "You can check your current version with `mojo --version`. "
   "For version information, see the "
-  "[Mojo changelog](https://docs.modular.com/mojo/changelog).",
+  "[Mojo changelog](https://www.mojolang.org/releases).",
   [
     UsageInfo<"", "command", /*variadicInput=*/false>,
     UsageInfo<"run-options", "path", /*variadicInput=*/false>,
