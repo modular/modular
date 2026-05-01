@@ -56,10 +56,10 @@ def test[
     var c_size = m * n
 
     # Host allocations
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # Device allocations
     var a_device_buffer = ctx.enqueue_create_buffer[a_type](a_size)
@@ -142,10 +142,6 @@ def test[
     _ = b_device_buffer^
     _ = c_device_buffer^
     _ = c_device_ref_buffer^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def test[

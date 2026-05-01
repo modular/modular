@@ -130,13 +130,13 @@ def _test_kernel_impl_base[
     var b_size = num_experts * expert_shape[0] * expert_shape[1] // 2
     var c_size = total_num_tokens * expert_shape[0]
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -176,17 +176,17 @@ def _test_kernel_impl_base[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_ref_tensor = TileTensor(c_device_ref, c_shape)
 
-    var a_offsets_host_ptr = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts + 1
     )
-    var a_scale_offsets_ptr = List(
-        length=num_active_experts, fill=Scalar[DType.uint32](0)
+    var a_scale_offsets_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts
     )
-    var expert_ids_host_ptr = List(
-        length=num_experts, fill=Scalar[DType.int32](0)
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+        num_experts
     )
-    var expert_scales_host_ptr = List(
-        length=num_experts, fill=Scalar[DType.float32](0)
+    var expert_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        num_experts
     )
     # Initialize expert_scales to non-trivial values: 1 + (i+1)/num_experts
     for i in range(num_experts):
@@ -227,12 +227,12 @@ def _test_kernel_impl_base[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = List(
-        length=a_scales_total, fill=Scalar[scales_dtype](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = List(
-        length=b_scales_total, fill=Scalar[scales_dtype](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
@@ -647,16 +647,6 @@ def _test_kernel_impl_base[
     _ = a_scale_offsets_device^
     _ = expert_ids_device^
     _ = expert_scales_device^
-    _ = expert_scales_host_ptr^
-    _ = expert_ids_host_ptr^
-    _ = a_scale_offsets_ptr^
-    _ = a_offsets_host_ptr^
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 # Backward-compatible wrapper that maintains the original function name

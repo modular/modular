@@ -942,10 +942,10 @@ def test_blackwell_kernel_7[
     var c_shape = Coord(m, n)
 
     # Host memory allocation
-    var a_host_ptr = List(length=M * K, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=N * K, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=M * N, fill=Scalar[c_type](0))
-    var c_host_ref_ptr = List(length=M * N, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     # Device memory allocation
     var a_device = ctx.enqueue_create_buffer[a_type](M * K)
@@ -1052,10 +1052,6 @@ def test_blackwell_kernel_7[
             rtol=rtol,
         )
         print("\n=== TEST PASSED ===\n")
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_host_ref_ptr^
 
 
 def get_shapes_dict(

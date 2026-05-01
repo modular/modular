@@ -327,10 +327,10 @@ def test_gemv_tma[
     var b_size = K
     var c_size = M * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
     rand[dtype](a_host_ptr.unsafe_ptr(), M * K)
     rand[dtype](b_host_ptr.unsafe_ptr(), K * N)
@@ -430,12 +430,6 @@ def test_gemv_tma[
             atol=0.0001,
             rtol=rtol,
         )
-
-    # Cleanup
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_host_ref_ptr^
 
 
 def main() raises:

@@ -91,11 +91,11 @@ def test_matmul_sm100_epilogue[
     var b_size = Int(n.value()) * Int(k.value())
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var c_host_copy_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_copy_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
@@ -257,11 +257,6 @@ def test_matmul_sm100_epilogue[
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
-    _ = c_host_copy_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

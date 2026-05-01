@@ -83,15 +83,15 @@ def test[
     var b_size = num_experts * 3 * N * K
 
     # Host allocations
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=lora_c_size, fill=Scalar[c_type](0))
-    var c_ref_host_ptr = List(length=c_ref_size, fill=Scalar[c_type](0))
-    var a_offsets_host_ptr = List(
-        length=num_experts + 1, fill=Scalar[DType.uint32](0)
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](lora_c_size)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_ref_size)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_experts + 1
     )
-    var expert_ids_host_ptr = List(
-        length=num_experts, fill=Scalar[DType.int32](0)
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+        num_experts
     )
 
     var a_host = TileTensor(
@@ -228,12 +228,6 @@ def test[
     _ = c_ref_dev_buffer^
     _ = a_offsets_dev_buffer^
     _ = expert_ids_dev_buffer^
-    _ = expert_ids_host_ptr^
-    _ = a_offsets_host_ptr^
-    _ = c_ref_host_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

@@ -82,10 +82,10 @@ def test_naive_blockwise_fp8_matmul[
     var a_scale_size = ceildiv(K, BLOCK_SCALE_K) * ceildiv(M, BLOCK_SCALE_M)
     var b_scale_size = ceildiv(N, BLOCK_SCALE_N) * ceildiv(K, BLOCK_SCALE_K)
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[input_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[input_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[DType.float32](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[DType.float32](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
 
     rand(a_host_ptr.unsafe_ptr(), a_size)
     rand(b_host_ptr.unsafe_ptr(), b_size)
@@ -94,11 +94,11 @@ def test_naive_blockwise_fp8_matmul[
         c_host_ptr[i] = 0
         c_host_ref_ptr[i] = 0
 
-    var a_scale_host_ptr = List(
-        length=a_scale_size, fill=Scalar[DType.float32](0)
+    var a_scale_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        a_scale_size
     )
-    var b_scale_host_ptr = List(
-        length=b_scale_size, fill=Scalar[DType.float32](0)
+    var b_scale_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        b_scale_size
     )
 
     rand(a_scale_host_ptr.unsafe_ptr(), a_scale_size)
@@ -198,12 +198,6 @@ def test_naive_blockwise_fp8_matmul[
         atol=0.0001,
         rtol=0.0001,
     )
-    _ = b_scale_host_ptr^
-    _ = a_scale_host_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

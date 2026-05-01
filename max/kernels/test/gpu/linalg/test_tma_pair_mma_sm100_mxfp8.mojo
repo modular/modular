@@ -802,14 +802,14 @@ def test_blockscaled_pair_cta_mxfp8[
         k, REF_BLOCK_SCALE
     )
 
-    var a_scales_host_ref_ptr = List(
-        length=ref_a_scales_size, fill=Scalar[ref_scales_type](0)
+    var a_scales_host_ref_ptr = ctx.enqueue_create_host_buffer[ref_scales_type](
+        ref_a_scales_size
     )
     var a_scales_host_ref = TileTensor(
         a_scales_host_ref_ptr, row_major(ref_a_scales_shape)
     )
-    var b_scales_host_ref_ptr = List(
-        length=ref_b_scales_size, fill=Scalar[ref_scales_type](0)
+    var b_scales_host_ref_ptr = ctx.enqueue_create_host_buffer[ref_scales_type](
+        ref_b_scales_size
     )
     var b_scales_host_ref = TileTensor(
         b_scales_host_ref_ptr, row_major(ref_b_scales_shape)
@@ -905,12 +905,12 @@ def test_blockscaled_pair_cta_mxfp8[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = List(
-        length=a_scales_total, fill=Scalar[scales_type](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_total
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, row_major(a_scales_shape))
-    var b_scales_host_ptr = List(
-        length=b_scales_total, fill=Scalar[scales_type](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_total
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, row_major(b_scales_shape))
 
@@ -921,10 +921,10 @@ def test_blockscaled_pair_cta_mxfp8[
     var b_size = N * k
     var c_size = M * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
     var b_device = ctx.enqueue_create_buffer[b_type](b_size)
@@ -1011,14 +1011,6 @@ def test_blockscaled_pair_cta_mxfp8[
         atol=1e-3,
         rtol=1e-4,
     )
-    _ = b_scales_host_ref_ptr^
-    _ = a_scales_host_ref_ptr^
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

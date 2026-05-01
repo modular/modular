@@ -16,7 +16,6 @@ import std.itertools
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from std.random import rand
 from layout import (
     TileTensor,
@@ -89,13 +88,13 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     )
     var c_size = Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[accum_dtype](0))
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[accum_dtype](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -196,10 +195,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized[
     _ = b_device^
     _ = c_device^
     _ = c_device_ref^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

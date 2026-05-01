@@ -84,9 +84,9 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
 
     var c_size = total_tokens * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[in_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[in_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[out_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[in_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[in_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[out_type](c_size)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -98,11 +98,11 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     )
 
     # Create offsets and expert_ids
-    var a_offsets_host_ptr = List(
-        length=num_offsets, fill=Scalar[DType.uint32](0)
+    var a_offsets_host_ptr = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_offsets
     )
-    var expert_ids_host_ptr = List(
-        length=num_expert_ids, fill=Scalar[DType.int32](0)
+    var expert_ids_host_ptr = ctx.enqueue_create_host_buffer[DType.int32](
+        num_expert_ids
     )
 
     # Set up offsets
@@ -120,11 +120,11 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
         num_experts * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
     )
 
-    var a_scales_host_ptr = List(
-        length=a_scales_size, fill=Scalar[DType.float32](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        a_scales_size
     )
-    var b_scales_host_ptr = List(
-        length=b_scales_size, fill=Scalar[DType.float32](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        b_scales_size
     )
 
     var a_scales_host = TileTensor(
@@ -236,13 +236,6 @@ def test_grouped_matmul_dynamic_scaled_fp8_zero_edge_case[
     _ = expert_ids_device_buffer^
     _ = a_scales_device_buffer^
     _ = b_scales_device_buffer^
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = expert_ids_host_ptr^
-    _ = a_offsets_host_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

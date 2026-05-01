@@ -112,10 +112,10 @@ def test[
     var c_size = m * n
 
     # Host allocations
-    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[dtype](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[dtype](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[dtype](c_size)
 
     var a_host = TileTensor(
         a_host_ptr,
@@ -313,10 +313,6 @@ def test[
     _ = b_device_buffer^
     _ = c_device_buffer^
     _ = c_device_ref_buffer^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

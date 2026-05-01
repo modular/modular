@@ -148,9 +148,9 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var a_scales_size = bs * (K // BLOCK_SCALE_K) * M
     var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
@@ -174,12 +174,12 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = List(
-        length=a_scales_size, fill=Scalar[DType.float32](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        a_scales_size
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = List(
-        length=b_scales_size, fill=Scalar[DType.float32](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        b_scales_size
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
@@ -276,12 +276,6 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8[
         rtol=1e-2,
     )
 
-    # Cleanup
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
-
 
 def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     a_type: DType,
@@ -361,9 +355,9 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var a_scales_size = bs * (K // BLOCK_SCALE_K) * M_aligned_for_scales
     var b_scales_size = bs * (N // BLOCK_SCALE_K) * (K // BLOCK_SCALE_K)
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host_managed = ManagedLayoutTensor[c_type, Layout(UNKNOWN_VALUE)](
         RuntimeLayout[Layout(UNKNOWN_VALUE)].row_major(IndexList[1](c_size)),
@@ -387,12 +381,12 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
     var c_device_ref = ctx.enqueue_create_buffer[c_type](c_size)
     var c_device_ref_nd = TileTensor(c_device_ref, c_shape)
 
-    var a_scales_host_ptr = List(
-        length=a_scales_size, fill=Scalar[DType.float32](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        a_scales_size
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = List(
-        length=b_scales_size, fill=Scalar[DType.float32](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](
+        b_scales_size
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
@@ -474,10 +468,6 @@ def test_batched_matmul_sm100_blockwise_scaled_fp8_non_row_major_c[
         atol=1e-2,
         rtol=1e-2,
     )
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

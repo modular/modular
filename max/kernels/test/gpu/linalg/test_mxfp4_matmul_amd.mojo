@@ -177,12 +177,16 @@ def test_mxfp4_matmul[
     comptime a_scales_shape = row_major[M_static, K_SCALES]()
     comptime b_scales_shape = row_major[N_static, K_SCALES]()
 
-    var a_host = List(length=a_size, fill=Scalar[input_dtype](0))
-    var b_host = List(length=b_size, fill=Scalar[input_dtype](0))
-    var a_scales_host = List(length=a_scales_size, fill=Scalar[scales_dtype](0))
-    var b_scales_host = List(length=b_scales_size, fill=Scalar[scales_dtype](0))
-    var c_host = List(length=c_size, fill=Scalar[output_dtype](0))
-    var c_host_ref = List(length=c_size, fill=Scalar[output_dtype](0))
+    var a_host = ctx.enqueue_create_host_buffer[input_dtype](a_size)
+    var b_host = ctx.enqueue_create_host_buffer[input_dtype](b_size)
+    var a_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_size
+    )
+    var b_scales_host = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_size
+    )
+    var c_host = ctx.enqueue_create_host_buffer[output_dtype](c_size)
+    var c_host_ref = ctx.enqueue_create_host_buffer[output_dtype](c_size)
 
     for i in range(a_size):
         a_host[i] = UInt8(random_ui64(0, 255))
@@ -265,12 +269,6 @@ def test_mxfp4_matmul[
     )
 
     print("  PASSED")
-    _ = a_host^
-    _ = b_host^
-    _ = a_scales_host^
-    _ = b_scales_host^
-    _ = c_host^
-    _ = c_host_ref^
 
 
 def main() raises:

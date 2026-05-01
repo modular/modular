@@ -41,16 +41,16 @@ def test_split_k_reduce_rank3[
         N,
     )
 
-    var c_host = List(length=M * N, fill=Scalar[c_type](0))
-    var c_host_ref = List(length=M * N, fill=Scalar[c_type](0))
+    var c_host = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     # Random buffer for host computation.
-    var epilogue_data_host = List(length=M * N, fill=Scalar[c_type](0))
+    var epilogue_data_host = ctx.enqueue_create_host_buffer[c_type](M * N)
     rand[c_type](epilogue_data_host.unsafe_ptr(), M * N)
 
     var work_space_size = num_partitions * M * N
-    var work_space_host = List(
-        length=work_space_size, fill=Scalar[work_space_type](0)
+    var work_space_host = ctx.enqueue_create_host_buffer[work_space_type](
+        work_space_size
     )
     rand[work_space_type](work_space_host.unsafe_ptr(), work_space_size)
 
@@ -103,6 +103,7 @@ def test_split_k_reduce_rank3[
     split_k_reduce[elementwise_lambda_fn=epilogue_fn](c, work_space, ctx)
 
     ctx.enqueue_copy(c_host, c_device)
+    ctx.synchronize()
 
     comptime rtol = 1e-4 if c_type == DType.float32 else 1e-2
     for i in range(M * N):
@@ -114,10 +115,6 @@ def test_split_k_reduce_rank3[
                 abs((c_host[i] - c_host_ref[i]) / c_host_ref[i]),
             )
         assert_almost_equal(c_host[i], c_host_ref[i], rtol=rtol)
-    _ = work_space_host^
-    _ = epilogue_data_host^
-    _ = c_host_ref^
-    _ = c_host^
 
 
 def main() raises:

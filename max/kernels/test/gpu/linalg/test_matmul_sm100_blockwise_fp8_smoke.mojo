@@ -124,22 +124,21 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     )
 
     # Allocate host memory
-    var a_host_ptr = List(length=M * K, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=N * K, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=M * N, fill=Scalar[c_type](0))
-    var c_host_ref_ptr = List(length=M * N, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](M * K)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](N * K)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](M * N)
 
     var a_host = TileTensor(a_host_ptr, a_shape)
     var b_host = TileTensor(b_host_ptr, b_shape)
     var c_host = TileTensor(c_host_ptr, c_shape)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
-    var a_scales_host_ptr = List(
-        length=a_scales_shape_k * M, fill=Scalar[scales_type](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_shape_k * M
     )
-    var b_scales_host_ptr = List(
-        length=b_scales_shape_n * b_scales_shape_k,
-        fill=Scalar[scales_type](0),
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_shape_n * b_scales_shape_k
     )
 
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
@@ -241,12 +240,6 @@ def test_blackwell_matmul_tma_umma_warp_specialized_blockwise_fp8[
     _ = b_scales_device^
 
     print("PASSED")
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

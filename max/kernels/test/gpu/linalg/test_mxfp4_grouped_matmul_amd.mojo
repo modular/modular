@@ -87,25 +87,23 @@ def test_mxfp4_grouped_matmul[
     )
 
     # --- Host allocations ---
-    var a_host = List(
-        length=total_tokens * packed_K, fill=Scalar[DType.uint8](0)
+    var a_host = ctx.enqueue_create_host_buffer[DType.uint8](
+        total_tokens * packed_K
     )
-    var b_host = List(
-        length=num_experts * N * packed_K, fill=Scalar[DType.uint8](0)
+    var b_host = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * packed_K
     )
-    var a_scales_host = List(
-        length=total_tokens * scale_K,
-        fill=Scalar[DType.float8_e8m0fnu](0),
+    var a_scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+        total_tokens * scale_K
     )
-    var b_scales_host = List(
-        length=num_experts * N * scale_K,
-        fill=Scalar[DType.float8_e8m0fnu](0),
+    var b_scales_host = ctx.enqueue_create_host_buffer[DType.float8_e8m0fnu](
+        num_experts * N * scale_K
     )
-    var a_offsets_host = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts + 1
     )
-    var expert_ids_host = List(
-        length=num_active_experts, fill=Scalar[DType.int32](0)
+    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+        num_active_experts
     )
 
     # Random packed FP4 data.
@@ -238,9 +236,9 @@ def test_mxfp4_grouped_matmul[
     ctx.synchronize()
 
     # --- Compare ---
-    var c_host = List(length=total_tokens * N, fill=Scalar[DType.float32](0))
-    var c_ref_host = List(
-        length=total_tokens * N, fill=Scalar[DType.float32](0)
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](total_tokens * N)
+    var c_ref_host = ctx.enqueue_create_host_buffer[DType.float32](
+        total_tokens * N
     )
     ctx.enqueue_copy(c_host, c_dev)
     ctx.enqueue_copy(c_ref_host, c_ref_dev)
@@ -265,14 +263,6 @@ def test_mxfp4_grouped_matmul[
     _ = expert_ids_dev^
     _ = c_dev^
     _ = c_ref_dev^
-    _ = c_ref_host^
-    _ = c_host^
-    _ = expert_ids_host^
-    _ = a_offsets_host^
-    _ = b_scales_host^
-    _ = a_scales_host^
-    _ = b_host^
-    _ = a_host^
 
 
 def main() raises:

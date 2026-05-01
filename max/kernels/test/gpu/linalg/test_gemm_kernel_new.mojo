@@ -170,10 +170,10 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     comptime N = 1024
     comptime K = 128
 
-    var a_host = List(length=M * K, fill=Float32(0))
-    var b_host = List(length=K * N, fill=Float32(0))
-    var c_host = List(length=M * N, fill=Float32(0))
-    var c_host_ref = List(length=M * N, fill=Float32(0))
+    var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](M * N)
 
     for i in range(M * K):
         a_host[i] = Float32(i)
@@ -290,10 +290,6 @@ def test_gemm_kernel_dynamic(ctx: DeviceContext) raises:
     _ = c_device_ref
     _ = a_device
     _ = b_device
-    _ = a_host^
-    _ = b_host^
-    _ = c_host^
-    _ = c_host_ref^
 
 
 def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
@@ -315,10 +311,10 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     comptime N = 64
     comptime K = 16
 
-    var a_host = List(length=M * K, fill=Float32(0))
-    var b_host = List(length=K * N, fill=Float32(0))
-    var c_host = List(length=M * N, fill=Float32(0))
-    var c_host_ref = List(length=M * N, fill=Float32(0))
+    var a_host = ctx.enqueue_create_host_buffer[DType.float32](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[DType.float32](K * N)
+    var c_host = ctx.enqueue_create_host_buffer[DType.float32](M * N)
+    var c_host_ref = ctx.enqueue_create_host_buffer[DType.float32](M * N)
 
     # Initialize with sequential integers like the main test
     for i in range(M * K):
@@ -468,10 +464,6 @@ def test_gemm_kernel_minimal(ctx: DeviceContext) raises:
     _ = c_device_ref
     _ = a_device
     _ = b_device
-    _ = a_host^
-    _ = b_host^
-    _ = c_host^
-    _ = c_host_ref^
 
 
 def main() raises:

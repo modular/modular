@@ -69,14 +69,20 @@ def test_mxfp4_grouped_matmul[
     )
 
     # Allocate host buffers
-    var a_host = List(length=total_tokens * K, fill=Scalar[DType.bfloat16](0))
-    var b_packed_host = List(length=num_experts * N * packed_K, fill=UInt8(0))
-    var b_scales_host = List(length=num_experts * N * scale_K, fill=UInt8(0))
-    var a_offsets_host = List(
-        length=num_active_experts + 1, fill=Scalar[DType.uint32](0)
+    var a_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        total_tokens * K
     )
-    var expert_ids_host = List(
-        length=num_active_experts, fill=Scalar[DType.int32](0)
+    var b_packed_host = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * packed_K
+    )
+    var b_scales_host = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * scale_K
+    )
+    var a_offsets_host = ctx.enqueue_create_host_buffer[DType.uint32](
+        num_active_experts + 1
+    )
+    var expert_ids_host = ctx.enqueue_create_host_buffer[DType.int32](
+        num_active_experts
     )
 
     # Initialize with random data
@@ -96,8 +102,8 @@ def test_mxfp4_grouped_matmul[
         expert_ids_host[i] = Int32(expert_ids_list[i])
 
     # Compute reference: per-expert dequant + vendor BLAS
-    var c_ref_host = List(
-        length=total_tokens * N, fill=Scalar[DType.bfloat16](0)
+    var c_ref_host = ctx.enqueue_create_host_buffer[DType.bfloat16](
+        total_tokens * N
     )
 
     for i in range(num_active_experts):
@@ -306,12 +312,6 @@ def test_mxfp4_grouped_matmul[
     _ = a_offsets_dev^
     _ = expert_ids_dev^
     _ = c_dev^
-    _ = c_ref_host^
-    _ = expert_ids_host^
-    _ = a_offsets_host^
-    _ = b_scales_host^
-    _ = b_packed_host^
-    _ = a_host^
 
 
 def test_dequant_all_experts[
@@ -327,8 +327,12 @@ def test_dequant_all_experts[
     )
 
     # Allocate and fill random packed data
-    var bp_host = List(length=num_experts * N * packed_K, fill=UInt8(0))
-    var bs_host = List(length=num_experts * N * scale_K, fill=UInt8(0))
+    var bp_host = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * packed_K
+    )
+    var bs_host = ctx.enqueue_create_host_buffer[DType.uint8](
+        num_experts * N * scale_K
+    )
     for i in range(num_experts * N * packed_K):
         bp_host[i] = UInt8(random_ui64(0, 255))
     for i in range(num_experts * N * scale_K):
@@ -412,8 +416,6 @@ def test_dequant_all_experts[
     _ = bs_dev^
     _ = all_fp8_dev^
     _ = single_fp8_dev^
-    _ = bs_host^
-    _ = bp_host^
 
 
 def main() raises:

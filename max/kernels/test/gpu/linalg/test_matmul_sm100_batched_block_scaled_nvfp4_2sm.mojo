@@ -94,13 +94,13 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var b_size = Int(batch.value()) * Int(n.value()) * (KType.static_value // 2)
     var c_size = Int(batch.value()) * Int(m.value()) * Int(n.value())
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
 
     var a_device = ctx.enqueue_create_buffer[a_type](a_size)
@@ -136,12 +136,12 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     var a_scales_total = a_scales_shape.product()
     var b_scales_total = b_scales_shape.product()
 
-    var a_scales_host_ptr = List(
-        length=a_scales_total, fill=Scalar[scales_dtype](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        a_scales_total
     )
     var a_scales_host = TileTensor(a_scales_host_ptr, a_scales_shape)
-    var b_scales_host_ptr = List(
-        length=b_scales_total, fill=Scalar[scales_dtype](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](
+        b_scales_total
     )
     var b_scales_host = TileTensor(b_scales_host_ptr, b_scales_shape)
 
@@ -315,12 +315,6 @@ def test_blackwell_block_scaled_matmul_tma_umma_warp_specialized[
     _ = c_device_ref^
     _ = a_scales_device^
     _ = b_scales_device^
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

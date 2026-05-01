@@ -68,20 +68,20 @@ def matmul_test_case[
     var mat_c_dev = ctx.enqueue_create_buffer[dtype](Int(shape_c.product()))
     var mat_c_tensor = TileTensor(mat_c_dev, row_major(shape_c))
 
-    var mat_a_host_buf = List(
-        length=Int(shape_a.product()), fill=Scalar[dtype](0)
+    var mat_a_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_a.product())
     )
     var mat_a_host = TileTensor(mat_a_host_buf, row_major(shape_a))
-    var mat_b_host_buf = List(
-        length=Int(shape_b.product()), fill=Scalar[dtype](0)
+    var mat_b_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_b.product())
     )
     var mat_b_host = TileTensor(mat_b_host_buf, row_major(shape_b))
-    var mat_c_host_buf = List(
-        length=Int(shape_c.product()), fill=Scalar[dtype](0)
+    var mat_c_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_c.product())
     )
     var mat_c_host = TileTensor(mat_c_host_buf, row_major(shape_c))
-    var mat_c_ref_host_buf = List(
-        length=Int(shape_c.product()), fill=Scalar[dtype](0)
+    var mat_c_ref_host_buf = ctx.enqueue_create_host_buffer[dtype](
+        Int(shape_c.product())
     )
     var mat_c_ref_host = TileTensor(mat_c_ref_host_buf, row_major(shape_c))
 

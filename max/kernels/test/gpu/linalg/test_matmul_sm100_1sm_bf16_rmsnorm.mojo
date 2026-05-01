@@ -24,7 +24,6 @@ from std.sys import size_of
 import linalg.matmul.vendor.blas as vendor_blas
 from std.gpu.host import DeviceContext
 from std.gpu.host.nvidia.tma import TensorMapSwizzle
-from std.memory import alloc
 from linalg.utils import elementwise_epilogue_type
 
 from internal_utils import assert_almost_equal
@@ -90,11 +89,11 @@ def test_rmsnorm_then_matmul[
     var c_size = M * N
 
     # --- Host allocations ---
-    var a_raw_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var gamma_host_ptr = List(length=K, fill=Scalar[a_type](0))
-    var c_vendor_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var c_ours_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_raw_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var gamma_host_ptr = ctx.enqueue_create_host_buffer[a_type](K)
+    var c_vendor_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_ours_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # Random A and B; gamma[i] = (i + K) / K
     rand(a_raw_host_ptr.unsafe_ptr(), a_size)
@@ -255,11 +254,6 @@ def test_rmsnorm_then_matmul[
     _ = a_normed_ours_device^
     _ = c_vendor_device^
     _ = c_ours_device^
-    _ = c_ours_host_ptr^
-    _ = c_vendor_host_ptr^
-    _ = gamma_host_ptr^
-    _ = b_host_ptr^
-    _ = a_raw_host_ptr^
 
 
 def main() raises:

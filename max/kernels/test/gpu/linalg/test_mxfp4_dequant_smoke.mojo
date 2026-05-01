@@ -100,9 +100,11 @@ def test_mxfp4_dequant[
     comptime out_size = num_rows * num_cols
 
     # Allocate and fill host input
-    var in_host = List(length=in_size, fill=UInt8(0))
-    var scales_host = List(length=scales_size, fill=scale_exp)
-    var expected_host = List(length=out_size, fill=Scalar[out_dtype](0))
+    var in_host = ctx.enqueue_create_host_buffer[DType.uint8](in_size)
+    var scales_host = ctx.enqueue_create_host_buffer[DType.uint8](scales_size)
+    var expected_host = ctx.enqueue_create_host_buffer[out_dtype](out_size)
+    for i in range(scales_size):
+        scales_host[i] = scale_exp
 
     for row in range(num_rows):
         for col in range(packed_cols):
@@ -198,9 +200,6 @@ def test_mxfp4_dequant[
         raise Error("MXFP4 dequant test failed")
 
     print("    PASS max_err=", max_err)
-    _ = in_host^
-    _ = scales_host^
-    _ = expected_host^
 
 
 def main() raises:

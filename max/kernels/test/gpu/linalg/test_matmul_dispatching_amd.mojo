@@ -30,7 +30,6 @@ from layout import (
 )
 from layout._fillers import random
 from linalg.matmul.gpu import _matmul_gpu
-from std.memory import alloc
 
 from std.testing import assert_true
 from std.utils.index import IndexList
@@ -54,10 +53,10 @@ def test_dispatch_dynamic_m[
     var b_size = N * K
     var c_size = m * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
-    var c_ref_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     var a_host = TileTensor(a_host_ptr, row_major(Coord(Idx(m), Idx[K]())))
     random(a_host)
@@ -140,10 +139,6 @@ def test_dispatch_dynamic_m[
     _ = c_dev^
     _ = c_ref_dev^
     ctx.synchronize()
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_ref_host_ptr^
 
 
 def test_oob_diagnostic[
@@ -175,10 +170,10 @@ def test_oob_diagnostic[
     var c_valid_size = M * N
 
     # Host allocations (oversized for A and C)
-    var a_host_ptr = List(length=a_alloc_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_alloc_size, fill=Scalar[c_type](0))
-    var c_ref_host_ptr = List(length=c_valid_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_alloc_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_alloc_size)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_valid_size)
 
     # Initialize A: random for rows [0, M), poison for rows [M, alloc_M)
     var a_host = TileTensor(a_host_ptr, row_major[alloc_M, K]())
@@ -190,8 +185,8 @@ def test_oob_diagnostic[
     var b_host = TileTensor(b_host_ptr, row_major[N, K]())
     random(b_host)
 
-    # Initialize C: rows [0, M) are already zero from the buffer's
-    # `fill=Scalar[c_type](0)`; sentinel out the trailing rows [M, alloc_M).
+    # Initialize C: kernel writes the full valid region [0, M); sentinel out
+    # the trailing rows [M, alloc_M) to detect OOB writes.
     for i in range(c_valid_size, c_alloc_size):
         c_host_ptr[i] = Scalar[c_type](sentinel)
 
@@ -332,10 +327,6 @@ def test_oob_diagnostic[
     _ = c_dev^
     _ = c_ref_dev^
     ctx.synchronize()
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_ref_host_ptr^
 
 
 def test_oob_epilogue[
@@ -370,14 +361,14 @@ def test_oob_epilogue[
     var out_alloc_size = alloc_M * alloc_N
 
     # Host allocations
-    var a_host_ptr = List(length=a_alloc_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_alloc_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_alloc_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_alloc_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     # Output: sentinel everywhere — epilogue should only write [0..M, 0..N].
-    var out_host_ptr = List(
-        length=out_alloc_size, fill=Scalar[c_type](sentinel)
-    )
-    var c_ref_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var out_host_ptr = ctx.enqueue_create_host_buffer[c_type](out_alloc_size)
+    for i in range(out_alloc_size):
+        out_host_ptr[i] = Scalar[c_type](sentinel)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # A: random for [0, M), poison for [M, alloc_M)
     var a_host = TileTensor(a_host_ptr, row_major[alloc_M, K]())
@@ -553,11 +544,6 @@ def test_oob_epilogue[
     _ = out_dev^
     _ = c_ref_dev^
     ctx.synchronize()
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_ref_host_ptr^
-    _ = out_host_ptr^
 
 
 def test_oob_epilogue_dynamic_m[
@@ -583,14 +569,14 @@ def test_oob_epilogue_dynamic_m[
     var c_size = m * N
     var out_alloc_size = alloc_m * N
 
-    var a_host_ptr = List(length=a_alloc_size, fill=Scalar[a_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_alloc_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     # Output: sentinel everywhere — epilogue should only write [0..M, 0..N].
-    var out_host_ptr = List(
-        length=out_alloc_size, fill=Scalar[c_type](sentinel)
-    )
-    var c_ref_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var out_host_ptr = ctx.enqueue_create_host_buffer[c_type](out_alloc_size)
+    for i in range(out_alloc_size):
+        out_host_ptr[i] = Scalar[c_type](sentinel)
+    var c_ref_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
 
     # A: random for [0, M), poison for [M, alloc_m)
     var a_host = TileTensor(
@@ -728,11 +714,6 @@ def test_oob_epilogue_dynamic_m[
     _ = out_dev^
     _ = c_ref_dev^
     ctx.synchronize()
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_ref_host_ptr^
-    _ = out_host_ptr^
 
 
 def main() raises:

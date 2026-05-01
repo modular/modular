@@ -98,11 +98,11 @@ def test_scaled_mxfp8_cublaslt[
         * SF_ATOM_K
     )
 
-    var a_scales_host_ptr = List(
-        length=a_scales_size, fill=Scalar[scales_type](0)
+    var a_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        a_scales_size
     )
-    var b_scales_host_ptr = List(
-        length=b_scales_size, fill=Scalar[scales_type](0)
+    var b_scales_host_ptr = ctx.enqueue_create_host_buffer[scales_type](
+        b_scales_size
     )
 
     var a_scales_device = ctx.enqueue_create_buffer[scales_type](a_scales_size)
@@ -112,8 +112,8 @@ def test_scaled_mxfp8_cublaslt[
     var b_size = N * K
     var c_size = M * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[input_type](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[input_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[input_type](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[input_type](b_size)
     var c_host_ptr = alloc[Scalar[output_type]](c_size)
     var c_host_ref_ptr = alloc[Scalar[output_type]](c_size)
 
@@ -221,12 +221,6 @@ def test_scaled_mxfp8_cublaslt[
         atol=0.01,
         rtol=0.01,
     )
-
-    # Cleanup
-    _ = b_scales_host_ptr^
-    _ = a_scales_host_ptr^
-    _ = b_host_ptr^
-    _ = a_host_ptr^
 
 
 def main() raises:

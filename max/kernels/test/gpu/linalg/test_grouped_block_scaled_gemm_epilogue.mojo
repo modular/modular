@@ -113,15 +113,15 @@ def test_grouped_gemm_epilogue[
     var c_size = Int(m.value()) * Int(n.value())
 
     # Host allocations
-    var a_host_ptr = List(length=a_size, fill=Scalar[a_type](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[a_type](a_size)
     var a_host = TileTensor(a_host_ptr, a_shape)
-    var b_host_ptr = List(length=b_size, fill=Scalar[b_type](0))
+    var b_host_ptr = ctx.enqueue_create_host_buffer[b_type](b_size)
     var b_host = TileTensor(b_host_ptr, b_shape)
-    var c_host_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host = TileTensor(c_host_ptr, c_shape)
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_ref = TileTensor(c_host_ref_ptr, c_shape)
-    var c_host_original_ptr = List(length=c_size, fill=Scalar[c_type](0))
+    var c_host_original_ptr = ctx.enqueue_create_host_buffer[c_type](c_size)
     var c_host_original = TileTensor(c_host_original_ptr, c_shape)
 
     # Device allocations
@@ -164,14 +164,15 @@ def test_grouped_gemm_epilogue[
     var sfb_tensor = TileTensor(sfb_device, b_scales_shape)
 
     # Scale factor host allocations — initialized to 1.0 (identity scaling)
-    var sfa_host_ptr = List(
-        length=sfa_size, fill=Float32(1.0).cast[scales_dtype]()
-    )
+    var sfa_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](sfa_size)
     var sfa_host = TileTensor(sfa_host_ptr, a_scales_shape)
-    var sfb_host_ptr = List(
-        length=sfb_size, fill=Float32(1.0).cast[scales_dtype]()
-    )
+    var sfb_host_ptr = ctx.enqueue_create_host_buffer[scales_dtype](sfb_size)
     var sfb_host = TileTensor(sfb_host_ptr, b_scales_shape)
+    var scale_one = Float32(1.0).cast[scales_dtype]()
+    for i in range(sfa_size):
+        sfa_host_ptr[i] = scale_one
+    for i in range(sfb_size):
+        sfb_host_ptr[i] = scale_one
 
     # The C LayoutTensor that will be captured by the epilogue lambda
     var c_tensor_lt = c_tensor.to_layout_tensor()
@@ -223,7 +224,9 @@ def test_grouped_gemm_epilogue[
     )
 
     # Problem sizes tensor
-    var problem_sizes_host = List(length=max_groups * 4, fill=Int32(0))
+    var problem_sizes_host = ctx.enqueue_create_host_buffer[DType.int32](
+        max_groups * 4
+    )
     problem_sizes_host[0] = Int32(Int(m.value()))  # M
     problem_sizes_host[1] = Int32(Int(n.value()))  # N
     problem_sizes_host[2] = Int32(Int(k.value()))  # K
@@ -239,11 +242,11 @@ def test_grouped_gemm_epilogue[
     )
 
     # Pointer arrays
-    var a_ptrs_host = List(length=max_groups, fill=UInt64(0))
-    var b_ptrs_host = List(length=max_groups, fill=UInt64(0))
-    var c_ptrs_host = List(length=max_groups, fill=UInt64(0))
-    var sfa_ptrs_host = List(length=max_groups, fill=UInt64(0))
-    var sfb_ptrs_host = List(length=max_groups, fill=UInt64(0))
+    var a_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var b_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var c_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfa_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
+    var sfb_ptrs_host = ctx.enqueue_create_host_buffer[DType.uint64](max_groups)
 
     a_ptrs_host[0] = UInt64(Int(a_device.unsafe_ptr()))
     b_ptrs_host[0] = UInt64(Int(b_device.unsafe_ptr()))
@@ -396,21 +399,6 @@ def test_grouped_gemm_epilogue[
     )
 
     print("  PASSED!")
-
-    # Cleanup
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_host_ref_ptr^
-    _ = c_host_original_ptr^
-    _ = sfa_host_ptr^
-    _ = sfb_host_ptr^
-    _ = problem_sizes_host^
-    _ = a_ptrs_host^
-    _ = b_ptrs_host^
-    _ = c_ptrs_host^
-    _ = sfa_ptrs_host^
-    _ = sfb_ptrs_host^
 
 
 def main() raises:

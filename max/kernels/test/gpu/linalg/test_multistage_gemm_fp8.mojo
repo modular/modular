@@ -40,10 +40,10 @@ def test_fp8_multistage_gemm[
     comptime b_size = b_size_0 * b_size_1
     comptime c_size = M * N
 
-    var a_host_ptr = List(length=a_size, fill=Scalar[dtype](0))
-    var b_host_ptr = List(length=b_size, fill=Scalar[dtype](0))
-    var c_host_ptr = List(length=c_size, fill=Scalar[DType.float32](0))
-    var c_host_ref_ptr = List(length=c_size, fill=Scalar[DType.float32](0))
+    var a_host_ptr = ctx.enqueue_create_host_buffer[dtype](a_size)
+    var b_host_ptr = ctx.enqueue_create_host_buffer[dtype](b_size)
+    var c_host_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
+    var c_host_ref_ptr = ctx.enqueue_create_host_buffer[DType.float32](c_size)
 
     var a_host = TileTensor(a_host_ptr, row_major[M, K]())
     var b_host = TileTensor(
@@ -132,8 +132,8 @@ def test_fp8_multistage_gemm[
     else:
         # TODO: Matrix B should always be in col-major layout for cublasLt to work
         comptime b_col_major_size = N * K
-        var b_host_col_major_ptr = List(
-            length=b_col_major_size, fill=Scalar[dtype](0)
+        var b_host_col_major_ptr = ctx.enqueue_create_host_buffer[dtype](
+            b_col_major_size
         )
         var b_host_col_major = TileTensor(
             b_host_col_major_ptr, row_major[N, K]()
@@ -161,7 +161,6 @@ def test_fp8_multistage_gemm[
         )
 
         _ = b_device_col_major^
-        _ = b_host_col_major_ptr^
 
     ctx.enqueue_copy(c_host_ref_ptr, c_device_ref)
 
@@ -174,10 +173,6 @@ def test_fp8_multistage_gemm[
         atol=0.0001,
         rtol=0.01,
     )
-    _ = a_host_ptr^
-    _ = b_host_ptr^
-    _ = c_host_ptr^
-    _ = c_host_ref_ptr^
 
 
 def main() raises:

@@ -90,9 +90,13 @@ def run_pdl_race_test[
 
     # Allocate host buffers. Initialize A and B with 1.0 so the matmul result
     # is K (sum of K products of 1.0 * 1.0) for each element of C.
-    var a_host = List(length=M * K, fill=Scalar[dtype](1.0))
-    var b_host = List(length=K * N, fill=Scalar[dtype](1.0))
-    var result_host = List(length=M * N, fill=Scalar[dtype](0))
+    var a_host = ctx.enqueue_create_host_buffer[dtype](M * K)
+    var b_host = ctx.enqueue_create_host_buffer[dtype](K * N)
+    var result_host = ctx.enqueue_create_host_buffer[dtype](M * N)
+    for i in range(M * K):
+        a_host[i] = Scalar[dtype](1.0)
+    for i in range(K * N):
+        b_host[i] = Scalar[dtype](1.0)
 
     # Expected value: each element of C = K (dot product of K ones)
     var expected_val = Scalar[dtype](K)
@@ -209,9 +213,6 @@ def run_pdl_race_test[
             raise Error("PDL race condition detected!")
 
     print("PASS: ", num_iters, " iterations completed without race")
-    _ = a_host^
-    _ = b_host^
-    _ = result_host^
 
 
 def main() raises:
