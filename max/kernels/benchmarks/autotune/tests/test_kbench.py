@@ -14,6 +14,7 @@
 
 # Run: bazel test max/kernels/benchmarks/autotune:autotune_tests
 
+import ctypes
 import json
 import os
 import string
@@ -630,6 +631,42 @@ def test_build_shared_lib(tmp_path: Path) -> None:
     content = wrapper.read_text()
     assert "from sample import main as _bench_main" in content
     assert "benchmark_entry" in content
+
+
+def test_shared_lib_dlopen_resolves_sanitizer_runtime(tmp_path: Path) -> None:
+    """Unit-level regression guard for `kbench_model._maybe_preload_libubsan`
+    (MOTO-1576).
+
+    The end-to-end behavior — kbench compiling a .so, dlopen-ing it via
+    `_SharedLibExecutor`, and running it under UBSan — is already covered
+    by `test_shared_lib_*_recovery` and `test_kbench@kbench_e2e`. This test
+    is narrower: it exercises the loader-side preload helper directly so a
+    refactor that breaks the helper or the BUILD.bazel env-var wiring fails
+    a small, targeted test rather than a large end-to-end one.
+
+    Historically this scenario failed with `undefined symbol:
+    __ubsan_handle_*_abort` because libKGENCompilerRTShared.so leaves those
+    references unresolved (`-Wl,-z,undefs`) and Python isn't UBSan-
+    instrumented, so the process had no handlers. The preload pulls
+    libubsan into the global symbol namespace before dlopen, so the
+    handlers resolve against it.
+    """
+    from kbench_model import _maybe_preload_libubsan
+
+    spec = _make_spec_instance({"dtype": "DType.float16"}, {"x": 0})
+    result = spec.build_shared_lib(output_dir=tmp_path, build_opts=[])
+    assert result.return_code == os.EX_OK, result.stderr
+    assert result.path is not None and result.path.exists()
+
+    # The preload is a no-op outside `--config=ubsan` (no
+    # KBENCH_LIBUBSAN_PATH env var is set), so this test passes equally
+    # under any build config.
+    _maybe_preload_libubsan()
+    lib = ctypes.CDLL(str(result.path))
+    lib.benchmark_entry.restype = ctypes.c_int32
+    # Actually invoke the entry point so the test exercises preload →
+    # dlopen → call. sample.mojo's main returns 0 on success.
+    assert lib.benchmark_entry() == 0
 
 
 def test_scheduler_output_dir_list_per_item(tmp_path: Path) -> None:

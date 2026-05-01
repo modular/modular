@@ -1000,6 +1000,50 @@ class ItemPool:
             return None
 
 
+_libubsan_preloaded = False
+
+
+def _maybe_preload_libubsan() -> None:
+    """Load libubsan into the process before any user .so dlopen.
+
+    Mojo's `libKGENCompilerRTShared.so` (which kbench-built .so's depend on)
+    leaves `__ubsan_handle_*_abort` references unresolved under UBSan
+    (`-Wl,-z,undefs` allows it; the executable normally provides them via
+    static UBSan link). When kbench loads a user .so via `ctypes.CDLL` from
+    a non-UBSan Python interpreter, those symbols can't resolve → dlopen
+    fails with "undefined symbol".
+
+    Fix: bring libubsan into the process's global symbol namespace by
+    `ctypes.CDLL(..., mode=RTLD_GLOBAL)` once, before opening any user .so.
+    Subsequent dlopens then resolve `__ubsan_handle_*` against the loaded
+    libubsan.
+
+    The path comes from the `KBENCH_LIBUBSAN_PATH` env var that the kbench
+    `modular_py_binary` rule sets (and includes the .so in runfiles) only
+    under `--config=ubsan` on Linux. No-op everywhere else. Tracks MOTO-1576.
+    """
+    global _libubsan_preloaded
+    if _libubsan_preloaded:
+        return
+    libubsan_rel = os.environ.get("KBENCH_LIBUBSAN_PATH")
+    if not libubsan_rel:
+        return
+    # `KBENCH_LIBUBSAN_PATH` is a runfiles-relative path emitted by bazel's
+    # `$(rootpath ...)` substitution. Resolve via the runfiles helper so the
+    # lookup works under both `bazel run` and `bazel test`. If resolution
+    # fails the helper returns None and we let ctypes raise OSError so the
+    # caller can produce a libubsan-specific diagnostic.
+    from python.runfiles import runfiles
+
+    r = runfiles.Create()
+    libubsan_path = (
+        r.Rlocation(libubsan_rel) if r is not None else None
+    ) or libubsan_rel
+    ctypes.CDLL(libubsan_path, mode=ctypes.RTLD_GLOBAL)
+    _libubsan_preloaded = True
+    logging.info(f"UBSan: preloaded libubsan from {libubsan_path}")
+
+
 class _SharedLibExecutor:
     """Manages a cached ctypes shared library for worker-process benchmarks."""
 
@@ -1013,11 +1057,21 @@ class _SharedLibExecutor:
         if self._so_path != bi.bin_path:
             self._so_path = bi.bin_path
             try:
-                self._lib = ctypes.CDLL(str(self._so_path))
-                self._lib.benchmark_entry.restype = ctypes.c_int32
+                _maybe_preload_libubsan()
             except OSError as e:
-                logging.error(f"Failed to load {self._so_path}: {e}")
+                kbench_libubsan_path = os.environ.get("KBENCH_LIBUBSAN_PATH")
+                logging.error(
+                    f"Failed to preload libubsan from"
+                    f" KBENCH_LIBUBSAN_PATH={kbench_libubsan_path!r}: {e}"
+                )
                 self._lib = None
+            else:
+                try:
+                    self._lib = ctypes.CDLL(str(self._so_path))
+                    self._lib.benchmark_entry.restype = ctypes.c_int32
+                except OSError as e:
+                    logging.error(f"Failed to load {self._so_path}: {e}")
+                    self._lib = None
 
         # Benchmark execution — redirect output to capture files.
         with _redirect_output(bi.stdout_capture_path, bi.stderr_capture_path):

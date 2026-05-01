@@ -658,28 +658,13 @@ def cli(
         exec_prefix_list.extend(["mpirun", "-np", str(mpirun_np)])
 
     # Auto-select: use shared lib (.so) mode when possible for faster execution.
-    # Falls back to subprocess mode when profiling, using custom exec wrappers,
-    # or running under a sanitizer. Sanitizer-instrumented .so's loaded via
-    # ctypes from a non-instrumented Python interpreter hit runtime issues
-    # (silent execution failures) that subprocess mode sidesteps because the
-    # subprocess is the executable, not a dlopen target. Tracks MOTO-1576.
-    sanitizer_active = any(
-        os.environ.get(name)
-        for name in ("UBSAN_OPTIONS", "ASAN_OPTIONS", "TSAN_OPTIONS")
-    )
-    use_shared_lib = (
-        not profile
-        and not exec_prefix
-        and not exec_suffix
-        and not sanitizer_active
-    )
+    # Falls back to subprocess mode when profiling or using custom exec wrappers.
+    # Under sanitizers, kbench_model._maybe_preload_libubsan handles the
+    # dlopen-from-non-instrumented-Python case, so shared-lib mode works there
+    # too (see MOTO-1576).
+    use_shared_lib = not profile and not exec_prefix and not exec_suffix
     if use_shared_lib:
         logging.info("Using shared library (.so) mode for faster execution")
-    elif sanitizer_active:
-        logging.info(
-            "Sanitizer detected (UBSAN/ASAN/TSAN_OPTIONS in env);"
-            " using subprocess mode for shared-lib safety (MOTO-1576)."
-        )
 
     # Resolve num_cpu sentinel value once before the shape loop.
     if num_cpu == -1:

@@ -14,12 +14,27 @@ modular_py_binary(
     data = [
         "@nvshmem_prebuilt//:device",
         "@nvshmem_prebuilt//:host",
-    ],
+    ] + select({
+        # Bundle libubsan as a runfile so kbench can ctypes.CDLL it with
+        # RTLD_GLOBAL before opening user .so's. See _maybe_preload_libubsan
+        # in kbench_model.py and MOTO-1576.
+        "//:ubsan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//:ubsan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//conditions:default": [],
+    }),
     env = {
         "KERNEL_BENCHMARKS_ROOT": "$$BUILD_WORKSPACE_DIRECTORY/" + package_name() + "/..",
         "BITCODE_LIBS_PATH": "$(rootpath @nvshmem_prebuilt//:device)",
         "MODULAR_SHMEM_LIB_DIR": "../+http_archive+nvshmem_prebuilt",
-    },
+    } | select({
+        "//:ubsan_linux_aarch64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//:ubsan_linux_x86_64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//conditions:default": {},
+    }),
     imports = ["."],
     main = "kbench.py",
     mojo_deps = [
@@ -40,18 +55,6 @@ modular_py_binary(
         "@mojo//:std",
     ],
     tags = ["no-pydeps"],  # TODO: Fix and re-enable
-    target_compatible_with = select({
-        # FIXME: MOTO-1576 — partial fixes landed:
-        #   * `-shared-libsan` in ubsan_link_args (resolves "undefined symbol:
-        #     __ubsan_handle_*" at dlopen time).
-        #   * kbench falls back to subprocess mode when running under any
-        #     sanitizer (avoids the dlopen+ctypes path entirely).
-        # The remaining blocker is runtime discovery of
-        # libclang_rt.ubsan_standalone.so by Mojo-built binaries (rpath /
-        # LD_LIBRARY_PATH wiring). Re-enable once that lands.
-        "//:ubsan": ["@platforms//:incompatible"],
-        "//conditions:default": [],
-    }),
     deps = [
         requirement("click"),
         requirement("numpy"),
@@ -65,6 +68,7 @@ modular_py_binary(
         requirement("torch"),
         requirement("packaging"),
         "//max/kernels/benchmarks/autotune:bencher_utils",
+        "@rules_python//python/runfiles",
     ] + select({
         "//:nvidia_gpu": ["//max/kernels/benchmarks/misc/comparison:bench_baseline_lib"],
         "//conditions:default": [],
@@ -155,8 +159,21 @@ modular_py_test(
         "tests/sample_failure.mojo",
         "tests/test_crash.yaml",
         "tests/test_timeout.yaml",
-    ],
-    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"},
+    ] + select({
+        # See _maybe_preload_libubsan in kbench_model.py and MOTO-1576.
+        "//:ubsan_linux_aarch64": ["@clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//:ubsan_linux_x86_64": ["@clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so"],
+        "//conditions:default": [],
+    }),
+    env = {"KERNEL_BENCHMARKS_ROOT": "max/kernels/benchmarks/"} | select({
+        "//:ubsan_linux_aarch64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-aarch64//:lib/clang/20/lib/aarch64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//:ubsan_linux_x86_64": {
+            "KBENCH_LIBUBSAN_PATH": "$(rootpath @clang-linux-x86_64//:lib/clang/20/lib/x86_64-unknown-linux-gnu/libclang_rt.ubsan_standalone.so)",
+        },
+        "//conditions:default": {},
+    }),
     mojo_deps = [
         "//max:internal_utils",
         "//max:kv_cache",
