@@ -112,6 +112,7 @@ modular_py_library(
         "//max/python/max/entrypoints:gpu-query",
         "//max/python/max/entrypoints:pipelines",
         "//max/python/max/entrypoints:replay_recording",
+        "//max/python/max/experimental/cascade",
         "//max/python/max/experimental/nn",
         "//max/python/max/experimental/torch",
         "//max/python/max/graph",

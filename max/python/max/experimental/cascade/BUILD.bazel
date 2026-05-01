@@ -1,0 +1,16 @@
+load("//bazel:api.bzl", "modular_py_library")
+
+package(default_visibility = ["//max:consumers"])
+
+# Umbrella target: pulls in the full cascade surface (core + runtimes +
+# pipelines). External consumers should depend on this; internal consumers
+# depend on the more specific subtargets to keep strict-deps happy.
+modular_py_library(
+    name = "cascade",
+    srcs = ["__init__.py"],
+    deps = [
+        "//max/python/max/experimental/cascade/core",
+        "//max/python/max/experimental/cascade/pipelines",
+        "//max/python/max/experimental/cascade/runtimes",
+    ],
+)

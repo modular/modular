@@ -28,11 +28,7 @@ from typing import Any, ParamSpec, TypeVar
 
 logger = logging.getLogger("max.serve.process_control")
 
-if sys.version_info < (3, 11):
-    from exceptiongroup import BaseExceptionGroup
-    from taskgroup import TaskGroup
-else:
-    from asyncio import TaskGroup
+from max.support.taskgroups import BaseExceptionGroup, TaskGroup
 
 _P = ParamSpec("_P")
 _R = TypeVar("_R")

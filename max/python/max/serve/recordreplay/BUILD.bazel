@@ -6,10 +6,10 @@ modular_py_library(
     name = "recordreplay",
     srcs = glob(["**/*.py"]),
     deps = [
+        "//max/python/max/support:taskgroups",
         requirement("asgiref"),
         requirement("httpx"),
         requirement("msgspec"),
         requirement("scipy"),
-        requirement("taskgroup"),
     ],
 )

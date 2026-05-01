@@ -1,0 +1,58 @@
+load("//bazel:api.bzl", "modular_py_library", "modular_py_test", "requirement")
+
+package(default_visibility = [
+    "//:__pkg__",
+    "//SDK/integration-test:__subpackages__",
+    "//max/tests:__subpackages__",
+    "//oss/modular/max/tests:__subpackages__",
+])
+
+# Shared dummy pipelines used only by tests in this directory.
+modular_py_library(
+    name = "test_helpers",
+    testonly = True,
+    srcs = [
+        "dummy_imgen.py",
+        "dummy_textgen.py",
+    ],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("scipy"),
+    ],
+)
+
+modular_py_test(
+    name = "test_contexts",
+    size = "small",
+    srcs = ["test_contexts.py"],
+    deps = [
+        "//max/python/max/experimental/cascade",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_dummy_textgen",
+    size = "small",
+    srcs = ["test_dummy_textgen.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        requirement("pytest-asyncio"),
+    ],
+)
+
+modular_py_test(
+    name = "test_dummy_imgen",
+    size = "small",
+    srcs = ["test_dummy_imgen.py"],
+    deps = [
+        ":test_helpers",
+        "//max/python/max/experimental/cascade",
+        requirement("numpy"),
+        requirement("pillow"),
+        requirement("pytest-asyncio"),
+    ],
+)
