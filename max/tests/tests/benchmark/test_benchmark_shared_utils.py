@@ -14,7 +14,7 @@
 from __future__ import annotations
 
 import resource
-from unittest.mock import MagicMock, patch, sentinel
+from unittest.mock import MagicMock, sentinel
 
 import numpy as np
 import pytest
@@ -26,26 +26,28 @@ from max.benchmark.benchmark_shared.utils import (
     parse_comma_separated,
     print_section,
     set_ulimit,
+    wait_for_server_ready,
 )
+from pytest_mock import MockerFixture
 
 
-def test_get_tokenizer_passes_model_max_length_when_provided() -> None:
-    config = MagicMock(architectures=[])
-    with (
-        patch(
-            "max.benchmark.benchmark_shared.utils.AutoTokenizer.from_pretrained",
-            return_value=sentinel.tokenizer,
-        ) as from_pretrained,
-        patch(
-            "max.benchmark.benchmark_shared.utils.AutoConfig.from_pretrained",
-            return_value=config,
-        ),
-    ):
-        tokenizer = get_tokenizer(
-            "repo/model",
-            model_max_length=4096,
-            trust_remote_code=True,
-        )
+def test_get_tokenizer_passes_model_max_length_when_provided(
+    mocker: MockerFixture,
+) -> None:
+    from_pretrained = mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        return_value=sentinel.tokenizer,
+    )
+    mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        return_value=MagicMock(architectures=[]),
+    )
+
+    tokenizer = get_tokenizer(
+        "repo/model",
+        model_max_length=4096,
+        trust_remote_code=True,
+    )
 
     assert tokenizer is sentinel.tokenizer
     from_pretrained.assert_called_once_with(
@@ -55,19 +57,19 @@ def test_get_tokenizer_passes_model_max_length_when_provided() -> None:
     )
 
 
-def test_get_tokenizer_omits_model_max_length_when_unspecified() -> None:
-    config = MagicMock(architectures=[])
-    with (
-        patch(
-            "max.benchmark.benchmark_shared.utils.AutoTokenizer.from_pretrained",
-            return_value=sentinel.tokenizer,
-        ) as from_pretrained,
-        patch(
-            "max.benchmark.benchmark_shared.utils.AutoConfig.from_pretrained",
-            return_value=config,
-        ),
-    ):
-        tokenizer = get_tokenizer("repo/model", trust_remote_code=False)
+def test_get_tokenizer_omits_model_max_length_when_unspecified(
+    mocker: MockerFixture,
+) -> None:
+    from_pretrained = mocker.patch(
+        "transformers.AutoTokenizer.from_pretrained",
+        return_value=sentinel.tokenizer,
+    )
+    mocker.patch(
+        "transformers.AutoConfig.from_pretrained",
+        return_value=MagicMock(architectures=[]),
+    )
+
+    tokenizer = get_tokenizer("repo/model", trust_remote_code=False)
 
     assert tokenizer is sentinel.tokenizer
     from_pretrained.assert_called_once_with(
@@ -76,17 +78,13 @@ def test_get_tokenizer_omits_model_max_length_when_unspecified() -> None:
     )
 
 
-def test_set_ulimit_updates_soft_limit_when_needed() -> None:
-    with (
-        patch(
-            "max.benchmark.benchmark_shared.utils.resource.getrlimit",
-            return_value=(1024, 65535),
-        ) as getrlimit,
-        patch(
-            "max.benchmark.benchmark_shared.utils.resource.setrlimit"
-        ) as setrlimit,
-    ):
-        set_ulimit(target_soft_limit=4096)
+def test_set_ulimit_updates_soft_limit_when_needed(
+    mocker: MockerFixture,
+) -> None:
+    getrlimit = mocker.patch("resource.getrlimit", return_value=(1024, 65535))
+    setrlimit = mocker.patch("resource.setrlimit")
+
+    set_ulimit(target_soft_limit=4096)
 
     getrlimit.assert_called_once_with(resource.RLIMIT_NOFILE)
     setrlimit.assert_called_once_with(
@@ -95,17 +93,13 @@ def test_set_ulimit_updates_soft_limit_when_needed() -> None:
     )
 
 
-def test_set_ulimit_skips_update_when_soft_limit_is_high_enough() -> None:
-    with (
-        patch(
-            "max.benchmark.benchmark_shared.utils.resource.getrlimit",
-            return_value=(8192, 65535),
-        ),
-        patch(
-            "max.benchmark.benchmark_shared.utils.resource.setrlimit"
-        ) as setrlimit,
-    ):
-        set_ulimit(target_soft_limit=4096)
+def test_set_ulimit_skips_update_when_soft_limit_is_high_enough(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("resource.getrlimit", return_value=(8192, 65535))
+    setrlimit = mocker.patch("resource.setrlimit")
+
+    set_ulimit(target_soft_limit=4096)
 
     setrlimit.assert_not_called()
 
@@ -208,3 +202,94 @@ def test_argmedian_single_element() -> None:
 def test_argmedian_even_length_picks_nearest() -> None:
     idx = argmedian(np.array([1, 3, 5, 7]))
     assert idx in (1, 2)
+
+
+# ---- wait_for_server_ready ----
+
+
+def _mock_response(status: int) -> MagicMock:
+    response = MagicMock()
+    response.__enter__.return_value.status = status
+    response.__exit__.return_value = False
+    return response
+
+
+def test_wait_for_server_ready_returns_on_200(mocker: MockerFixture) -> None:
+    mocker.patch("urllib.request.urlopen", return_value=_mock_response(200))
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.5])
+    sleep = mocker.patch("time.sleep")
+
+    elapsed = wait_for_server_ready("localhost", 8000, timeout_s=60)
+
+    assert elapsed == pytest.approx(1.5)
+    sleep.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "first_attempt",
+    [503, 404, 204, ConnectionRefusedError()],
+)
+def test_wait_for_server_ready_polls_past_non_ready(
+    mocker: MockerFixture,
+    first_attempt: int | Exception,
+) -> None:
+    urlopen = mocker.patch("urllib.request.urlopen")
+    if isinstance(first_attempt, Exception):
+        urlopen.side_effect = [first_attempt, _mock_response(200)]
+    else:
+        urlopen.side_effect = [
+            _mock_response(first_attempt),
+            _mock_response(200),
+        ]
+    mocker.patch("time.monotonic", side_effect=[100.0, 101.0, 105.0])
+    sleep = mocker.patch("time.sleep")
+
+    elapsed = wait_for_server_ready("localhost", 8000, timeout_s=60)
+
+    assert elapsed == pytest.approx(5.0)
+    assert urlopen.call_count == 2
+    sleep.assert_called_once_with(5.0)
+
+
+def test_wait_for_server_ready_raises_on_timeout(
+    mocker: MockerFixture,
+) -> None:
+    mocker.patch("urllib.request.urlopen", return_value=_mock_response(503))
+    mocker.patch("time.monotonic", side_effect=[100.0, 200.0])
+    sleep = mocker.patch("time.sleep")
+
+    with pytest.raises(RuntimeError, match="not ready"):
+        wait_for_server_ready("localhost", 8000, timeout_s=5)
+
+    sleep.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("first_attempt", "expects_raise"),
+    [
+        (200, False),
+        (503, True),
+        (ConnectionRefusedError(), True),
+    ],
+)
+def test_wait_for_server_ready_zero_timeout_tries_once(
+    mocker: MockerFixture,
+    first_attempt: int | Exception,
+    expects_raise: bool,
+) -> None:
+    urlopen = mocker.patch("urllib.request.urlopen")
+    if isinstance(first_attempt, Exception):
+        urlopen.side_effect = [first_attempt]
+    else:
+        urlopen.return_value = _mock_response(first_attempt)
+    mocker.patch("time.monotonic", side_effect=[100.0, 100.0])
+    sleep = mocker.patch("time.sleep")
+
+    if expects_raise:
+        with pytest.raises(RuntimeError):
+            wait_for_server_ready("localhost", 8000, timeout_s=0)
+    else:
+        wait_for_server_ready("localhost", 8000, timeout_s=0)
+
+    assert urlopen.call_count == 1
+    sleep.assert_not_called()

@@ -16,6 +16,9 @@
 from __future__ import annotations
 
 import resource
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from typing import Any, TypeVar
 
@@ -26,6 +29,37 @@ from transformers import (
     PreTrainedTokenizer,
     PreTrainedTokenizerFast,
 )
+
+
+def wait_for_server_ready(
+    host: str,
+    port: int,
+    path: str = "v1/models",
+    *,
+    timeout_s: int = 120 * 60,
+    interval_s: float = 5.0,
+) -> float:
+    """Polls ``http://<host>:<port>/<path>`` until it responds with HTTP 200.
+
+    Always attempts at least one request, even when ``timeout_s == 0``, so
+    standalone callers get a fast error on misconfigured ``host``/``port``.
+    Returns the elapsed seconds; raises :class:`RuntimeError` on timeout.
+    Stdlib-only so both the orchestrator (``benchmark.py``) and the load
+    generator (``benchmark_serving.py``) can share one implementation.
+    """
+    url = f"http://{host}:{port}/{path}"
+    start = time.monotonic()
+    deadline = start + timeout_s
+    while True:
+        try:
+            with urllib.request.urlopen(url, timeout=5) as resp:
+                if resp.status == 200:
+                    return time.monotonic() - start
+        except (urllib.error.URLError, ConnectionError, OSError):
+            pass
+        if time.monotonic() >= deadline:
+            raise RuntimeError(f"Server at {url} not ready after {timeout_s}s")
+        time.sleep(interval_s)
 
 
 def get_tokenizer(

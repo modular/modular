@@ -708,6 +708,11 @@ class ServingBenchmarkConfig(BaseServingBenchmarkConfig):
         json_schema_extra={"group": "Result Saving"},
     )
 
+    server_ready_timeout_s: int = Field(
+        default=0,
+        description="Maximum seconds to wait for the server to become ready (HTTP-poll) after sample generation finishes.",
+    )
+
     log_dir: str | None = Field(
         default=None,
         description="Path to save logs. Default: <backend>-latency-Y.m.d-H.M.S",

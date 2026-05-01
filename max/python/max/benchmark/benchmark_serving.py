@@ -136,6 +136,7 @@ from max.benchmark.benchmark_shared.utils import (
     parse_comma_separated,
     print_section,
     set_ulimit,
+    wait_for_server_ready,
 )
 from max.diagnostics.cpu import (
     CPUMetrics,
@@ -3858,6 +3859,12 @@ def main_with_parsed_args(
 
     if args.print_inputs_and_outputs:
         print_input_prompts(samples)
+
+    # Samples are ready; wait for the server before issuing any requests.
+    if not args.dry_run:
+        wait_for_server_ready(
+            args.host, args.port, timeout_s=args.server_ready_timeout_s
+        )
 
     # ---- Dry run: build dataset + show warmup-sampling preview ----
     if args.dry_run:
