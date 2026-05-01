@@ -626,9 +626,6 @@ def async_copy[
         not fill or size_of[dtype]() <= size_of[Int32]()
     ), "if the fill value is specified, then the dtype must be 32bit or less"
     comptime assert size in (4, 8, 16)
-    comptime assert not (
-        l2_prefetch.__bool__() == bypass_L1_16B == True
-    ), "both enable l2 prefetching and l1 bypass cannot be True"
     comptime assert not l2_prefetch or l2_prefetch.value() in (
         64,
         128,

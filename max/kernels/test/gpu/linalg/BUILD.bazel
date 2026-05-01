@@ -120,6 +120,7 @@ _EXTRA_CONSTRAINTS = {
     "test_cublaslt_scaled_mxfp8_matmul.mojo": ["//:b200_gpu"],
     "test_cublaslt_scaled_nvfp4_matmul.mojo": ["//:b200_gpu"],
     "test_hipblaslt_scaled_mxfp4_matmul.mojo": ["//:mi355_gpu"],
+    "test_gemm_mma_cpasync.mojo": ["//:b200_gpu"],
 } | {
     # Grouped GEMM infra tests - work on any NVIDIA GPU with 32-thread warps
     src: ["//:nvidia_gpu"]

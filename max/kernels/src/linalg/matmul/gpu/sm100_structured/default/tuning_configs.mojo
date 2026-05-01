@@ -12,6 +12,7 @@
 # ===----------------------------------------------------------------------=== #
 
 from ...tile_scheduler import RasterOrder
+from linalg.gemv import GEMVAlgorithm
 from internal_utils import TuningConfig
 
 
@@ -140,15 +141,17 @@ struct TuningConfigSM100(TrivialRegisterPassable, TuningConfig):
         self.batch_size = batch_size
 
 
-struct TuningConfigGEMV(TrivialRegisterPassable, TuningConfig):
+struct TuningConfigSmallMNGemms(TrivialRegisterPassable, TuningConfig):
     var M: Int
     var M_end: Int
     var N: Int
     var K: Int
+    var kernel_kind: GEMVAlgorithm
     var tile_m: Int
     var tile_n: Int
     var num_threads: Int
     var unroll_factor: Int
+    var tile_k: Int
 
     def __init__(
         out self,
@@ -159,21 +162,27 @@ struct TuningConfigGEMV(TrivialRegisterPassable, TuningConfig):
         tile_m: Int,
         tile_n: Int,
         num_threads: Int,
+        kernel_kind: GEMVAlgorithm,
         unroll_factor: Int = 1,
+        tile_k: Int = 128,
     ):
         self.M = M
         self.M_end = M_end
         self.N = N
         self.K = K
+        self.kernel_kind = kernel_kind
         self.tile_m = tile_m
         self.tile_n = tile_n
         self.num_threads = num_threads
         self.unroll_factor = unroll_factor
+        self.tile_k = tile_k
 
     def write_to(self, mut writer: Some[Writer]):
         writer.write(
-            "gemv_config: ",
-            "m:",
+            "small_mn_config: ",
+            "kernel:",
+            self.kernel_kind,
+            "/m:",
             self.M,
             "-",
             self.M_end,
@@ -2082,12 +2091,19 @@ def _get_tuning_list_sm100_batched_fp8() -> List[TuningConfigSM100]:
 # ===----------------------------------------------------------------------=== #
 
 
-def _get_tuning_list_gemv_bf16() -> List[TuningConfigGEMV]:
+def _get_tuning_list_small_MN_gemms_bf16() -> List[TuningConfigSmallMNGemms]:
     return [
-        TuningConfigGEMV(
-            M=2, M_end=5, N=384, K=7168, tile_m=1, tile_n=2, num_threads=256
+        TuningConfigSmallMNGemms(
+            M=2,
+            M_end=5,
+            N=384,
+            K=7168,
+            tile_m=1,
+            tile_n=2,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
         ),
-        TuningConfigGEMV(
+        TuningConfigSmallMNGemms(
             M=5,
             M_end=9,
             N=384,
@@ -2096,8 +2112,9 @@ def _get_tuning_list_gemv_bf16() -> List[TuningConfigGEMV]:
             tile_n=2,
             num_threads=128,
             unroll_factor=2,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
         ),
-        TuningConfigGEMV(
+        TuningConfigSmallMNGemms(
             M=9,
             M_end=13,
             N=384,
@@ -2105,12 +2122,20 @@ def _get_tuning_list_gemv_bf16() -> List[TuningConfigGEMV]:
             tile_m=2,
             tile_n=2,
             num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
             unroll_factor=2,
         ),
-        TuningConfigGEMV(
-            M=13, M_end=17, N=384, K=7168, tile_m=2, tile_n=2, num_threads=128
+        TuningConfigSmallMNGemms(
+            M=13,
+            M_end=17,
+            N=384,
+            K=7168,
+            tile_m=2,
+            tile_n=2,
+            num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
         ),
-        TuningConfigGEMV(
+        TuningConfigSmallMNGemms(
             M=17,
             M_end=25,
             N=384,
@@ -2118,6 +2143,18 @@ def _get_tuning_list_gemv_bf16() -> List[TuningConfigGEMV]:
             tile_m=4,
             tile_n=2,
             num_threads=128,
+            kernel_kind=GEMVAlgorithm.GEMV_SPLIT_K,
             unroll_factor=2,
+        ),
+        TuningConfigSmallMNGemms(
+            M=25,
+            M_end=33,
+            N=384,
+            K=7168,
+            tile_m=16,
+            tile_n=8,
+            num_threads=256,
+            kernel_kind=GEMVAlgorithm.GEMM_MMA_CPASYNC,
+            tile_k=256,
         ),
     ]

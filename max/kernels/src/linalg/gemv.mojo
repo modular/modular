@@ -20,8 +20,14 @@ from std.sys import (
     llvm_intrinsic,
     simd_width_of,
 )
-from std.sys.info import _is_amd_mi250x
-
+from std.sys.info import _is_amd_mi250x, _is_sm_100x, size_of
+from std.gpu.compute.mma import ld_matrix, mma
+from std.gpu.sync import async_copy_arrive, named_barrier
+from layout.tma_async import SharedMemBarrier
+from structured_kernels.kernel_common import _to_batched_3d
+from structured_kernels.smem_types import SMemArray
+from structured_kernels.tile_types import SMemTileArray2D
+from layout.swizzle import Swizzle, make_swizzle
 
 import std.gpu.primitives.warp as warp
 from std.algorithm.reduction import _reduce_generator
@@ -38,8 +44,11 @@ from std.gpu import (
 from std.gpu.host import (
     DeviceAttribute,
     DeviceContext,
+    FuncAttribute,
     get_gpu_target,
 )
+from std.gpu.host.info import B200
+from std.gpu.memory import AddressSpace, async_copy, external_memory
 from std.gpu.primitives.grid_controls import (
     PDLLevel,
     pdl_launch_attributes,
@@ -71,7 +80,7 @@ comptime logger = Logger()
 
 
 @fieldwise_init
-struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
+struct GEMVAlgorithm(Equatable, Hashable, TrivialRegisterPassable, Writable):
     var _value: Int
 
     comptime GEMV_KERNEL = Self(0)
@@ -80,21 +89,50 @@ struct GEMVAlgorithm(ImplicitlyCopyable, Writable):
     comptime GEVM_KERNEL_VECTOR = Self(3)
     comptime GEVM_KERNEL = Self(4)
     comptime MATMUL_NAIVE = Self(5)
+    comptime GEMM_MMA_CPASYNC = Self(6)
 
+    @always_inline("nodebug")
+    def __int__(self) -> Int:
+        return Int(self._value)
+
+    @always_inline
     def __eq__(self, other: Self) -> Bool:
         return self._value == other._value
 
+    @always_inline
     def __ne__(self, other: Self) -> Bool:
-        return not (self == other)
+        return self._value != other._value
 
+    @always_inline
     def __is__(self, other: Self) -> Bool:
         return self == other
 
+    @always_inline
     def __isnot__(self, other: Self) -> Bool:
         return self != other
 
+    @always_inline
+    def __hash__(self) -> UInt:
+        return UInt(Int(self._value))
+
+    @always_inline
     def write_to(self, mut writer: Some[Writer]):
-        writer.write(String(self))
+        if self == Self.GEMV_KERNEL:
+            writer.write("GEMV")
+        elif self == Self.GEMV_KERNEL_VECTOR:
+            writer.write("GEMV_KERNEL_VECTOR")
+        elif self == Self.GEMV_SPLIT_K:
+            writer.write("GEMV_SPLIT_K")
+        elif self == Self.GEVM_KERNEL_VECTOR:
+            writer.write("GEVM_KERNEL_VECTOR")
+        elif self == Self.GEVM_KERNEL:
+            writer.write("GEVM_KERNEL")
+        elif self == Self.MATMUL_NAIVE:
+            writer.write("MATMUL_NAIVE")
+        elif self == Self.GEMM_MMA_CPASYNC:
+            writer.write("GEMM_MMA_CPASYNC")
+        else:
+            writer.write("UNKNOWN")
 
 
 @always_inline
@@ -1172,3 +1210,745 @@ def naive_gemv(
         for m in range(M):
             var a_val = a_ptr[m * K + k].cast[c_type]()
             c_ptr[m] += a_val * b_val
+
+
+struct _MmaCpAsyncGmemLoaderA[
+    a_type: DType,
+    a_layout: TensorLayout,
+    tile_m: Int,
+    tile_k: Int,
+    stage_cnt: Int,
+]:
+    """Producer warp pair (warps 0-1) for activation tiles."""
+
+    comptime LOAD_THREADS = 64
+    comptime VEC_ELEMS = simd_width_of[Self.a_type, target=get_gpu_target()]()
+    comptime VEC_BYTES = Self.VEC_ELEMS * size_of[Self.a_type]()
+    comptime vec_per_iter = (Self.tile_m * Self.tile_k) // (
+        Self.VEC_ELEMS * Self.LOAD_THREADS
+    )
+    comptime per_warp_k = Self.tile_k // 4
+    comptime SmemTiles = SMemTileArray2D[
+        Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
+    ]
+    comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
+    comptime ActTensor = TileTensor[Self.a_type, Self.a_layout, ImmutAnyOrigin]
+    comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
+
+    @always_inline
+    def _k_project(
+        self,
+        tile_k_idx: Int,
+    ) -> Int:
+        return (tile_k_idx // Self.per_warp_k) * self.k_each_chunk + (
+            tile_k_idx % Self.per_warp_k
+        )
+
+    var act: Self.ActTensor
+    var smem_a: Self.SmemTiles
+    var smem_barrier: Self.Barriers
+    var local_tid: Int
+    var batch_idx: Int
+    var cta_m: Int
+    var k_each_chunk: Int
+    var stage: Int
+    var phase: UInt32
+    var need_wait: Bool
+    var smem_offsets: InlineArray[Int, Self.vec_per_iter]
+
+    def __init__(
+        out self,
+        act: Self.ActTensor,
+        smem_a: Self.SmemTiles,
+        smem_barrier: Self.Barriers,
+        local_tid: Int,
+        batch_idx: Int,
+        cta_m: Int,
+        k_each_chunk: Int,
+    ):
+        self.act = act
+        self.smem_a = smem_a
+        self.smem_barrier = smem_barrier
+        self.local_tid = local_tid
+        self.batch_idx = batch_idx
+        self.cta_m = cta_m
+        self.k_each_chunk = k_each_chunk
+        self.stage = 0
+        self.phase = UInt32(1)
+        self.need_wait = True
+        self.smem_offsets = InlineArray[Int, Self.vec_per_iter](
+            uninitialized=True
+        )
+
+    def prepare(mut self):
+        comptime for v in range(Self.vec_per_iter):
+            var linear = (
+                self.local_tid * Self.VEC_ELEMS
+                + v * Self.LOAD_THREADS * Self.VEC_ELEMS
+            )
+            self.smem_offsets[v] = Self.swizzle(linear)
+
+    def issue_mainloop(mut self, k_iters: Int):
+        var gmem_a_off = 0
+        for loop_idx in range(k_iters):
+            if self.need_wait:
+                self.smem_barrier[1 + self.stage * 2][].wait(self.phase)
+
+            var raw_next = self.stage + 1
+            var next_phase = self.phase ^ (
+                UInt32(1) if raw_next == Self.stage_cnt else UInt32(0)
+            )
+            var next_stage = 0 if raw_next == Self.stage_cnt else raw_next
+            if loop_idx != k_iters - 1:
+                self.need_wait = not self.smem_barrier[
+                    1 + next_stage * 2
+                ][].try_wait(next_phase)
+
+            var gmem_base = self.act.ptr.address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
+            var smem_tile_ptr = self.smem_a[self.stage].ptr
+            comptime for v in range(Self.vec_per_iter):
+                var linear = (
+                    self.local_tid * Self.VEC_ELEMS
+                    + v * Self.LOAD_THREADS * Self.VEC_ELEMS
+                )
+                var m_idx = linear // Self.tile_k
+                var k_idx = linear % Self.tile_k
+                var gmem_k = self._k_project(k_idx) + gmem_a_off
+                var offset = self.act._linear_offset(
+                    Index(self.batch_idx, self.cta_m + m_idx, gmem_k)
+                )
+                async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
+                    gmem_base + Int(offset),
+                    smem_tile_ptr + self.smem_offsets[v],
+                )
+
+            async_copy_arrive[noinc=True](self.smem_barrier[self.stage * 2])
+
+            gmem_a_off += Self.per_warp_k
+            self.stage = next_stage
+            self.phase = next_phase
+
+
+struct _MmaCpAsyncGmemLoaderB[
+    b_type: DType,
+    b_layout: TensorLayout,
+    tile_n: Int,
+    tile_k: Int,
+    stage_cnt: Int,
+]:
+    """Producer warp pair (warps 2-3) for weight tiles."""
+
+    comptime LOAD_THREADS = 64
+    comptime VEC_ELEMS = simd_width_of[Self.b_type, target=get_gpu_target()]()
+    comptime VEC_BYTES = Self.VEC_ELEMS * size_of[Self.b_type]()
+    comptime vec_per_iter = (Self.tile_n * Self.tile_k) // (
+        Self.VEC_ELEMS * Self.LOAD_THREADS
+    )
+    comptime per_warp_k = Self.tile_k // 4
+    comptime SmemTiles = SMemTileArray2D[
+        Self.b_type, Self.tile_n, Self.tile_k, Self.stage_cnt
+    ]
+    comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
+    comptime WeightTensor = TileTensor[
+        Self.b_type, Self.b_layout, ImmutAnyOrigin
+    ]
+    comptime swizzle = make_swizzle[8, Self.tile_k, 8]()
+
+    @always_inline
+    def _k_project(
+        self,
+        tile_k_idx: Int,
+    ) -> Int:
+        return (tile_k_idx // Self.per_warp_k) * self.k_each_chunk + (
+            tile_k_idx % Self.per_warp_k
+        )
+
+    var weight: Self.WeightTensor
+    var smem_b: Self.SmemTiles
+    var smem_barrier: Self.Barriers
+    var local_tid: Int
+    var batch_idx: Int
+    var cta_n: Int
+    var gemm_n: Int
+    var k_each_chunk: Int
+    var stage: Int
+    var phase: UInt32
+    var need_wait: Bool
+    var smem_offsets: InlineArray[Int, Self.vec_per_iter]
+    var preds: InlineArray[Bool, Self.vec_per_iter]
+
+    def __init__(
+        out self,
+        weight: Self.WeightTensor,
+        smem_b: Self.SmemTiles,
+        smem_barrier: Self.Barriers,
+        local_tid: Int,
+        batch_idx: Int,
+        cta_n: Int,
+        gemm_n: Int,
+        k_each_chunk: Int,
+    ):
+        self.weight = weight
+        self.smem_b = smem_b
+        self.smem_barrier = smem_barrier
+        self.local_tid = local_tid
+        self.batch_idx = batch_idx
+        self.cta_n = cta_n
+        self.gemm_n = gemm_n
+        self.k_each_chunk = k_each_chunk
+        self.stage = 0
+        self.phase = UInt32(1)
+        self.need_wait = True
+        self.smem_offsets = InlineArray[Int, Self.vec_per_iter](
+            uninitialized=True
+        )
+        self.preds = InlineArray[Bool, Self.vec_per_iter](fill=False)
+
+    def prepare(mut self):
+        comptime for v in range(Self.vec_per_iter):
+            var linear = (
+                self.local_tid * Self.VEC_ELEMS
+                + v * Self.LOAD_THREADS * Self.VEC_ELEMS
+            )
+            var n_idx = linear // Self.tile_k
+            self.smem_offsets[v] = Self.swizzle(linear)
+            self.preds[v] = self.cta_n + n_idx < self.gemm_n
+
+    def issue_mainloop(mut self, k_iters: Int):
+        var gmem_b_off = 0
+        for loop_idx in range(k_iters):
+            if self.need_wait:
+                self.smem_barrier[1 + self.stage * 2][].wait(self.phase)
+
+            var raw_next = self.stage + 1
+            var next_phase = self.phase ^ (
+                UInt32(1) if raw_next == Self.stage_cnt else UInt32(0)
+            )
+            var next_stage = 0 if raw_next == Self.stage_cnt else raw_next
+            if loop_idx != k_iters - 1:
+                self.need_wait = not self.smem_barrier[
+                    1 + next_stage * 2
+                ][].try_wait(next_phase)
+
+            var gmem_base = self.weight.ptr.address_space_cast[
+                AddressSpace.GLOBAL
+            ]()
+            var smem_tile_ptr = self.smem_b[self.stage].ptr
+            comptime for v in range(Self.vec_per_iter):
+                var linear = (
+                    self.local_tid * Self.VEC_ELEMS
+                    + v * Self.LOAD_THREADS * Self.VEC_ELEMS
+                )
+                var n_idx = linear // Self.tile_k
+                var k_idx = linear % Self.tile_k
+                var gmem_k = self._k_project(k_idx) + gmem_b_off
+                if self.preds[v]:
+                    var offset = self.weight._linear_offset(
+                        Index(self.batch_idx, self.cta_n + n_idx, gmem_k)
+                    )
+                    async_copy[16, bypass_L1_16B=True, l2_prefetch=128](
+                        gmem_base + Int(offset),
+                        smem_tile_ptr + self.smem_offsets[v],
+                    )
+                else:
+                    async_copy[
+                        Self.VEC_BYTES,
+                        bypass_L1_16B=True,
+                        fill=Scalar[Self.b_type](0),
+                    ](
+                        gmem_base,
+                        smem_tile_ptr + self.smem_offsets[v],
+                        src_size=0,
+                    )
+
+            async_copy_arrive[noinc=True](self.smem_barrier[self.stage * 2])
+
+            gmem_b_off += Self.per_warp_k
+            self.stage = next_stage
+            self.phase = next_phase
+
+
+struct _MmaCpAsyncMmaComputer[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    accum_type: DType,
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    stage_cnt: Int,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+]:
+    """Consumer warp group (warps 4-7) for tensor-core MMA with 4-way split-K.
+    """
+
+    comptime COMPUTE_THREADS = 128
+    comptime per_warp_k = Self.tile_k // 4
+    comptime k_phases = Self.per_warp_k // 16
+    comptime SmemTilesA = SMemTileArray2D[
+        Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
+    ]
+    comptime SmemTilesB = SMemTileArray2D[
+        Self.b_type, Self.tile_n, Self.tile_k, Self.stage_cnt
+    ]
+    comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
+    comptime swizzle_a = make_swizzle[8, Self.tile_k, 8]()
+    comptime swizzle_b = make_swizzle[8, Self.tile_k, 8]()
+
+    var smem_a: Self.SmemTilesA
+    var smem_b: Self.SmemTilesB
+    var smem_barrier: Self.Barriers
+    var out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin]
+    var compute_warp: Int
+    var lane_idx: Int
+    var warp_k_off: Int
+    var cta_m: Int
+    var cta_n: Int
+    var gemm_m: Int
+    var gemm_n: Int
+    var stage: Int
+    var phase: UInt32
+    var acc: SIMD[Self.accum_type, 4]
+
+    def __init__(
+        out self,
+        smem_a: Self.SmemTilesA,
+        smem_b: Self.SmemTilesB,
+        smem_barrier: Self.Barriers,
+        out_ptr: UnsafePointer[Scalar[Self.c_type], MutAnyOrigin],
+        compute_warp: Int,
+        lane_idx: Int,
+        warp_k_off: Int,
+        cta_m: Int,
+        cta_n: Int,
+        gemm_m: Int,
+        gemm_n: Int,
+    ):
+        self.smem_a = smem_a
+        self.smem_b = smem_b
+        self.smem_barrier = smem_barrier
+        self.out_ptr = out_ptr
+        self.compute_warp = compute_warp
+        self.lane_idx = lane_idx
+        self.warp_k_off = warp_k_off
+        self.cta_m = cta_m
+        self.cta_n = cta_n
+        self.gemm_m = gemm_m
+        self.gemm_n = gemm_n
+        self.stage = 0
+        self.phase = UInt32(0)
+        self.acc = SIMD[Self.accum_type, 4](0)
+
+    def issue_mainloop(mut self, k_iters: Int):
+        for loop_idx in range(k_iters):
+            self.smem_barrier[self.stage * 2][].wait(self.phase)
+
+            var a_tile_ptr = self.smem_a[self.stage].ptr
+            var b_tile_ptr = self.smem_b[self.stage].ptr
+            comptime for phase in range(Self.k_phases):
+                var k_in_tile = self.warp_k_off + phase * 16
+
+                # ld_matrix for A (16x16 bf16 block).
+                var a_m_idx = self.lane_idx % 16
+                var a_k_base = k_in_tile + (self.lane_idx // 16) * 8
+                var a_reg = ld_matrix[8](
+                    a_tile_ptr
+                    + Self.swizzle_a(a_m_idx * Self.tile_k + a_k_base)
+                )
+
+                # ld_matrix for B (8x16 bf16 block).
+                var b_n_idx = self.lane_idx % 8
+                var b_k_base = k_in_tile + (self.lane_idx // 8) * 8
+                if b_k_base >= Self.tile_k:
+                    b_k_base = k_in_tile
+                var b_reg_full = ld_matrix[8](
+                    b_tile_ptr
+                    + Self.swizzle_b(b_n_idx * Self.tile_k + b_k_base)
+                )
+                var b_reg = SIMD[Self.b_type, 4](
+                    b_reg_full[0], b_reg_full[1], b_reg_full[2], b_reg_full[3]
+                )
+
+                mma(self.acc, a_reg, b_reg, self.acc)
+
+            _ = self.smem_barrier[self.stage * 2 + 1][].arrive()
+
+            var raw_next = self.stage + 1
+            self.phase = self.phase ^ (
+                UInt32(1) if raw_next == Self.stage_cnt else UInt32(0)
+            )
+            self.stage = 0 if raw_next == Self.stage_cnt else raw_next
+
+    def epi(mut self):
+        """Epilogue: reduce acc across 4 compute-warp partials, write C[gemm_m, gemm_n].
+        """
+        var smem_epi = self.smem_a.ptr.bitcast[Scalar[Self.accum_type]]()
+        var base_off = self.compute_warp * Self.tile_m * Self.tile_n
+        var m0 = self.lane_idx // 4
+        var n0 = (self.lane_idx % 4) * 2
+
+        smem_epi[base_off + m0 * Self.tile_n + n0] = self.acc[0]
+        smem_epi[base_off + m0 * Self.tile_n + n0 + 1] = self.acc[1]
+        smem_epi[base_off + (m0 + 8) * Self.tile_n + n0] = self.acc[2]
+        smem_epi[base_off + (m0 + 8) * Self.tile_n + n0 + 1] = self.acc[3]
+
+        named_barrier[Int32(Self.COMPUTE_THREADS)](Int32(1))
+
+        if self.compute_warp == 0:
+            comptime out_per_thread = (Self.tile_m * Self.tile_n + 31) // 32
+
+            comptime for r in range(out_per_thread):
+                var lin = r * 32 + self.lane_idx
+                var m_idx = lin % Self.tile_m
+                var n_idx = lin // Self.tile_m
+
+                var total = Scalar[Self.accum_type](0)
+                comptime for w in range(4):
+                    total += smem_epi[
+                        w * Self.tile_m * Self.tile_n
+                        + m_idx * Self.tile_n
+                        + n_idx
+                    ]
+
+                if (
+                    self.cta_m + m_idx < self.gemm_m
+                    and self.cta_n + n_idx < self.gemm_n
+                ):
+                    comptime if Self.elementwise_lambda_fn:
+                        comptime elementwise_lambda = Self.elementwise_lambda_fn.value()
+                        elementwise_lambda[Self.c_type, 1](
+                            Index(self.cta_m + m_idx, self.cta_n + n_idx),
+                            total.cast[Self.c_type](),
+                        )
+                    else:
+                        self.out_ptr[
+                            (self.cta_m + m_idx) * self.gemm_n
+                            + self.cta_n
+                            + n_idx
+                        ] = total.cast[Self.c_type]()
+
+
+struct _MmaCpAsyncSmem[
+    a_type: DType,
+    tile_m: Int,
+    tile_n: Int,
+    tile_k: Int,
+    stage_cnt: Int,
+]:
+    comptime SmemA = SMemTileArray2D[
+        Self.a_type, Self.tile_m, Self.tile_k, Self.stage_cnt
+    ]
+    comptime SmemB = SMemTileArray2D[
+        Self.a_type, Self.tile_n, Self.tile_k, Self.stage_cnt
+    ]
+    comptime Barriers = SMemArray[SharedMemBarrier, Self.stage_cnt * 2]
+
+    var a_storage: InlineArray[Scalar[Self.a_type], Self.SmemA.num_elements]
+    var b_storage: InlineArray[Scalar[Self.a_type], Self.SmemB.num_elements]
+    var barrier_storage: Self.Barriers.Storage
+
+    @always_inline
+    def a_tiles(ref[AddressSpace.SHARED] self) -> Self.SmemA:
+        return Self.SmemA(self.a_storage.unsafe_ptr())
+
+    @always_inline
+    def b_tiles(ref[AddressSpace.SHARED] self) -> Self.SmemB:
+        return Self.SmemB(self.b_storage.unsafe_ptr())
+
+    @always_inline
+    def barriers(ref[AddressSpace.SHARED] self) -> Self.Barriers:
+        return Self.Barriers(self.barrier_storage)
+
+
+@__llvm_metadata(
+    MAX_THREADS_PER_BLOCK_METADATA=StaticTuple[Int32, 1](Int32(256))
+)
+@__name(
+    t"gemm_mma_cpasync_{c_type}_{a_type}_{b_type}_{tile_k}_{stage_cnt}",
+    mangle=True,
+)
+def gemm_mma_cpasync_kernel[
+    c_type: DType,
+    a_type: DType,
+    b_type: DType,
+    c_layout: TensorLayout,
+    a_layout: TensorLayout,
+    b_layout: TensorLayout,
+    *,
+    tile_m: Int = 16,
+    tile_n: Int = 8,
+    tile_k: Int = 128,
+    stage_cnt: Int = 2,
+    accum_type: DType = DType.float32,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+    pdl_level: PDLLevel = PDLLevel(),
+](
+    output: TileTensor[c_type, c_layout, MutAnyOrigin],
+    act: TileTensor[a_type, a_layout, ImmutAnyOrigin],
+    weight: TileTensor[b_type, b_layout, ImmutAnyOrigin],
+    gemm_m: Int,
+    gemm_k: Int,
+    gemm_n: Int,
+    batch_size: Int,
+):
+    comptime assert _is_sm_100x(), "gemm_mma_cpasync requires B200 (sm_100x)"
+    comptime assert tile_m == 16, "tile_m must be 16 for m16n8k16 MMA"
+    comptime assert tile_n == 8, "tile_n must be 8 for m16n8k16 MMA"
+    comptime assert tile_k % 64 == 0, "tile_k must be a multiple of 64"
+    comptime assert stage_cnt >= 1, "stage_cnt must be at least 1"
+
+    comptime LOAD_THREADS = 64
+    comptime COMPUTE_THREADS = 128
+    comptime VEC_ELEMS = simd_width_of[a_type, target=get_gpu_target()]()
+    comptime VEC_BYTES = VEC_ELEMS * size_of[a_type]()
+
+    var tid = thread_idx.x
+    var warp_idx_ = warp_id()
+    var lane_idx_ = lane_id()
+
+    # CTA tile origin.
+    var cta_m = tile_m * Int(block_idx.x)
+    var cta_n = tile_n * Int(block_idx.y)
+    var batch_idx = Int(block_idx.z)
+
+    var out_ptr = output.ptr.mut_cast[True]() + batch_idx * gemm_m * gemm_n
+
+    # K-loop parameters.
+    var k_iters = gemm_k // tile_k
+    comptime mma_warp_cnt = 4
+    comptime per_warp_k = tile_k // mma_warp_cnt
+    var k_each_chunk = gemm_k // mma_warp_cnt
+
+    var a_local_tid = tid
+    var b_local_tid = tid - LOAD_THREADS
+    var compute_warp = warp_idx_ - 4
+
+    comptime SmemType = _MmaCpAsyncSmem[
+        a_type, tile_m, tile_n, tile_k, stage_cnt
+    ]
+    ref smem = external_memory[
+        Scalar[DType.uint8],
+        address_space=AddressSpace.SHARED,
+        alignment=128,
+    ]().bitcast[SmemType]()[]
+    var smem_a = smem.a_tiles()
+    var smem_b = smem.b_tiles()
+    var smem_barrier = smem.barriers()
+
+    if warp_idx_ == 4:
+        for stage in range(stage_cnt):
+            smem_barrier[stage * 2 + 0][].init(Int32(LOAD_THREADS * 2))
+            smem_barrier[stage * 2 + 1][].init(Int32(COMPUTE_THREADS))
+    barrier()
+
+    comptime if pdl_level > PDLLevel.OFF:
+        wait_on_dependent_grids()
+
+    if warp_idx_ < 2:
+        var loader = _MmaCpAsyncGmemLoaderA[
+            a_type, type_of(act).LayoutType, tile_m, tile_k, stage_cnt
+        ](
+            act,
+            smem_a,
+            smem_barrier,
+            Int(a_local_tid),
+            batch_idx,
+            cta_m,
+            k_each_chunk,
+        )
+        loader.prepare()
+        loader.issue_mainloop(k_iters)
+
+    elif warp_idx_ < 4:
+        comptime LoaderB = _MmaCpAsyncGmemLoaderB[
+            a_type, type_of(weight).LayoutType, tile_n, tile_k, stage_cnt
+        ]
+        var loader = LoaderB(
+            rebind[LoaderB.WeightTensor](weight),
+            smem_b,
+            smem_barrier,
+            Int(b_local_tid),
+            batch_idx,
+            cta_n,
+            gemm_n,
+            k_each_chunk,
+        )
+        loader.prepare()
+        loader.issue_mainloop(k_iters)
+
+    else:
+        var computer = _MmaCpAsyncMmaComputer[
+            c_type,
+            a_type,
+            a_type,
+            accum_type,
+            tile_m,
+            tile_n,
+            tile_k,
+            stage_cnt,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+        ](
+            smem_a,
+            smem_b,
+            smem_barrier,
+            out_ptr,
+            Int(compute_warp),
+            Int(lane_idx_),
+            Int(compute_warp) * per_warp_k,
+            cta_m,
+            cta_n,
+            gemm_m,
+            gemm_n,
+        )
+        computer.issue_mainloop(k_iters)
+        computer.epi()
+
+    comptime if pdl_level > PDLLevel.OFF:
+        launch_dependent_grids()
+
+
+def gemm_mma_cpasync[
+    pdl_level: PDLLevel = PDLLevel(),
+    tile_k: Int = 128,
+    elementwise_lambda_fn: Optional[elementwise_epilogue_type] = None,
+](
+    c: TileTensor[mut=True, ...],
+    act: TileTensor[mut=False, ...],
+    weight: TileTensor[mut=False, ...],
+    gemm_m: Int,
+    gemm_k: Int,
+    gemm_n: Int,
+    batch_size: Int,
+    ctx: DeviceContext,
+) raises:
+    """Launch the batched GEMM tensor-core kernel.
+
+    C[gemm_m, gemm_n] = act[gemm_m, K] x weight[gemm_n, K]^T.
+
+    Args:
+        c:          Output, shape (gemm_m, gemm_n) or (batch, gemm_m, gemm_n).
+        act:        Activation, shape (gemm_m, gemm_k) or (batch, gemm_m, gemm_k).
+        weight:     Weight, shape (gemm_n, gemm_k) or (batch, gemm_n, gemm_k).
+        gemm_m:     Activation rows (output rows).
+        gemm_k:     Reduction dimension.
+        gemm_n:     Weight rows (output cols).
+        batch_size: Batch size; ignored for 2D inputs (treated as 1).
+        ctx:        GPU device context.
+    """
+    comptime assert (
+        act.rank in (2, 3) and act.rank == weight.rank == c.rank
+    ), "act, weight, and c must have the same rank and be 2D or 3D"
+
+    comptime is_batched = act.rank == 3
+
+    comptime c_type = c.dtype
+    comptime a_type = act.dtype
+    comptime b_type = weight.dtype
+
+    comptime assert a_type == b_type, "a_type and b_type must be the same"
+    comptime assert (
+        a_type == c_type == DType.bfloat16
+    ), "a_type and c_type must be bfloat16"
+    comptime assert (
+        ctx.default_device_info.compute == B200.compute
+    ), "This kernel is only supported on SM100"
+
+    comptime tile_m = 16
+    comptime tile_n = 8
+    comptime TOTAL_THREADS = 256
+
+    comptime b200_smem = B200.shared_memory_per_multiprocessor - 1024
+    comptime per_stage = (
+        (tile_m + tile_n) * tile_k * size_of[a_type]()
+        + 2 * size_of[SharedMemBarrier]()
+    )
+    comptime stage_cnt = b200_smem // per_stage
+    comptime SmemType = _MmaCpAsyncSmem[
+        a_type, tile_m, tile_n, tile_k, stage_cnt
+    ]
+    comptime smem_size = size_of[SmemType]()
+
+    logger.info("------ Dispatching gemm_mma_cpasync ------")
+    logger.info(
+        "batch=",
+        batch_size,
+        " gemm_m=",
+        gemm_m,
+        " gemm_k=",
+        gemm_k,
+        " gemm_n=",
+        gemm_n,
+        " stage_cnt=",
+        stage_cnt,
+    )
+
+    var grid_x = ceildiv(gemm_m, tile_m)
+    var grid_y = ceildiv(gemm_n, tile_n)
+
+    comptime if is_batched:
+        comptime kernel = gemm_mma_cpasync_kernel[
+            c_type,
+            a_type,
+            b_type,
+            type_of(c).LayoutType,
+            type_of(act).LayoutType,
+            type_of(weight).LayoutType,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            tile_k=tile_k,
+            stage_cnt=stage_cnt,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ]
+        ctx.enqueue_function[kernel, kernel, dump_asm=False](
+            c,
+            act,
+            weight,
+            gemm_m,
+            gemm_k,
+            gemm_n,
+            batch_size,
+            grid_dim=(grid_x, grid_y, batch_size),
+            block_dim=TOTAL_THREADS,
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+            attributes=pdl_launch_attributes(pdl_level),
+        )
+    else:
+        var c3d = _to_batched_3d(c)
+        var a3d = _to_batched_3d(act)
+        var w3d = _to_batched_3d(weight)
+        comptime kernel = gemm_mma_cpasync_kernel[
+            c_type,
+            a_type,
+            b_type,
+            type_of(c3d).LayoutType,
+            type_of(a3d).LayoutType,
+            type_of(w3d).LayoutType,
+            tile_m=tile_m,
+            tile_n=tile_n,
+            tile_k=tile_k,
+            stage_cnt=stage_cnt,
+            elementwise_lambda_fn=elementwise_lambda_fn,
+            pdl_level=pdl_level,
+        ]
+        ctx.enqueue_function[kernel, kernel, dump_asm=False](
+            c3d,
+            a3d,
+            w3d,
+            gemm_m,
+            gemm_k,
+            gemm_n,
+            1,
+            grid_dim=(grid_x, grid_y, 1),
+            block_dim=TOTAL_THREADS,
+            shared_mem_bytes=smem_size,
+            func_attribute=FuncAttribute.MAX_DYNAMIC_SHARED_SIZE_BYTES(
+                UInt32(b200_smem)
+            ),
+            attributes=pdl_launch_attributes(pdl_level),
+        )

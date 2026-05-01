@@ -511,8 +511,30 @@ def _mbarrier_impl[
 
 
 @always_inline("nodebug")
-def async_copy_arrive[
+def _mbarrier_noinc_impl[
     type: AnyType, address_space: AddressSpace
+](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
+    """Internal noinc implementation for making a memory barrier track async operations.
+
+    The noinc variant does not increment the expected transaction count.
+    It still tracks the async copies for mbarrier completion, but avoids
+    incrementing outstanding bytes.
+
+    Args:
+        address: Pointer to the memory barrier object location.
+    """
+
+    comptime if address_space == AddressSpace.SHARED:
+        llvm_intrinsic[
+            "llvm.nvvm.cp.async.mbarrier.arrive.noinc.shared", NoneType
+        ](address)
+    else:
+        comptime assert False, "invalid address space"
+
+
+@always_inline("nodebug")
+def async_copy_arrive[
+    type: AnyType, address_space: AddressSpace, *, noinc: Bool = False
 ](address: UnsafePointer[mut=True, type, _, address_space=address_space]):
     """Makes a memory barrier track all prior async copy operations from this thread.
 
@@ -520,16 +542,25 @@ def async_copy_arrive[
     from the executing thread are tracked by the memory barrier at the specified location.
     Only supported on NVIDIA GPUs.
 
+    When `noinc` is True, the increment to the pending count of the mbarrier
+    object is not performed. The decrement of the pending count done by the
+    asynchronous arrive-on operation must be accounted for in the
+    initialization of the mbarrier object.
+
     Parameters:
         type: The data type stored at the barrier location.
         address_space: The memory address space where the barrier is located.
+        noinc: If True, do not increment the pending count. Defaults to False.
 
     Args:
         address: Pointer to the memory barrier object location.
     """
 
     comptime if is_nvidia_gpu():
-        _mbarrier_impl(address)
+        comptime if noinc:
+            _mbarrier_noinc_impl(address)
+        else:
+            _mbarrier_impl(address)
     else:
         CompilationTarget.unsupported_target_error[
             operation=__get_current_function_name(),

@@ -51,8 +51,7 @@ from std.logger import Logger
 from std.memory import stack_allocation
 from std.utils import Index, IndexList
 from std.utils.numerics import get_accum_type
-
-from ...gemv import gemv_gpu
+from ...gemv import gemv_gpu, gemm_mma_cpasync
 from ...utils import (
     GemmShape,
     elementwise_compute_lambda_type,
